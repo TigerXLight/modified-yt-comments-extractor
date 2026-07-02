@@ -13,7 +13,7 @@ from typing import Dict
 # =============================================================================
 
 APP_NAME = "YouTube Comment Extractor"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.1.1"
 APP_DESCRIPTION = "Extract and filter YouTube comments into a clean, research-ready dataset."
 
 
