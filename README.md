@@ -252,6 +252,26 @@ python main.py
 
 ---
 
+## Evidence Folder Export
+
+The app includes an **Evidence** export option.
+
+This creates a single organised folder containing the extracted comments, source details, export files, and any screenshots you manually attach.
+
+This is useful when you want to keep the API-extracted comment data together with visual screenshots of the YouTube page.
+
+Example evidence folder:
+
+```text
+video_title_evidence_20260702_170412/
+├─ comments_readable.txt
+├─ comments.csv
+├─ source_info.txt
+└─ screenshots/
+   ├─ page_screenshot_001.png
+   ├─ page_screenshot_002.png
+   └─ page_screenshot_003.png
+
 ## Rawest Extraction Settings
 
 For the most raw extraction possible, use these settings:
