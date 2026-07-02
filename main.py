@@ -12,6 +12,7 @@ import os
 import random
 import threading
 import time
+import webbrowser
 from dataclasses import dataclass
 from tkinter import filedialog, messagebox
 from typing import Any, Dict, List, Optional, Tuple
@@ -51,6 +52,9 @@ from extractor import (
     VideoNotFoundError,
     QuotaExceededError,
 )
+
+from updater import check_for_updates
+from evidence_exporter import create_evidence_package
 
 # Configure logging
 logging.basicConfig(
@@ -140,6 +144,7 @@ class App(ctk.CTk):
         self.all_metadata: List[Dict[str, Any]] = []
         self.all_comments: List[Dict[str, Any]] = []
         self.all_spam: List[Dict[str, Any]] = []
+        self.attached_screenshots: List[str] = []
 
         # Custom filter patterns
         self._blacklist_patterns: str = ""
@@ -745,9 +750,13 @@ class App(ctk.CTk):
         )
         self.filter_words_entry.pack(fill="x", pady=(8, 0))
 
-        # Action buttons
-        action_frame = ctk.CTkFrame(url_card, fg_color="transparent")
-        action_frame.pack(fill="x", padx=20, pady=(0, 20))
+        # Action buttons area
+        action_area = ctk.CTkFrame(url_card, fg_color="transparent")
+        action_area.pack(fill="x", padx=20, pady=(0, 20))
+
+        # Main row: Go / Comments / Livechat / exports
+        action_frame = ctk.CTkFrame(action_area, fg_color="transparent")
+        action_frame.pack(fill="x")
 
         # Go button
         self.fetch_button = ctk.CTkButton(
@@ -853,6 +862,58 @@ class App(ctk.CTk):
             state="disabled"
         )
         self.export_txt_button.pack(side="right", padx=(0, 10))
+
+        # Second row: screenshot/package/update tools
+        tools_frame = ctk.CTkFrame(action_area, fg_color="transparent")
+        tools_frame.pack(fill="x", pady=(10, 0))
+
+        tools_hint = ctk.CTkLabel(
+            tools_frame,
+            text="Screenshots + folder package",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"]
+        )
+        tools_hint.pack(side="left")
+
+        self.update_button = ctk.CTkButton(
+            tools_frame,
+            text="🔄 Updates",
+            command=self.check_for_updates_clicked,
+            width=105,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8
+        )
+        self.update_button.pack(side="right")
+
+        self.evidence_button = ctk.CTkButton(
+            tools_frame,
+            text="📁 Folder",
+            command=self.export_evidence_folder,
+            width=105,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.evidence_button.pack(side="right", padx=(0, 10))
+
+        self.screenshot_button = ctk.CTkButton(
+            tools_frame,
+            text="🖼 Screens",
+            command=self.attach_screenshots,
+            width=105,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8
+        )
+        self.screenshot_button.pack(side="right", padx=(0, 10))
 
     def _create_progress_section(self) -> None:
         """Create the progress indicator section."""
@@ -1369,6 +1430,7 @@ class App(ctk.CTk):
         self.export_button.configure(state="disabled")
         self.export_excel_button.configure(state="disabled")
         self.export_txt_button.configure(state="disabled")
+        self.evidence_button.configure(state="disabled")
         self.progress_bar.set(0)
         self.status_label.configure(text="Initializing...", text_color=COLORS["text_secondary"])
 
@@ -1539,6 +1601,7 @@ class App(ctk.CTk):
                 self.after(0, lambda: self.export_button.configure(state="normal"))
                 self.after(0, lambda: self.export_excel_button.configure(state="normal"))
                 self.after(0, lambda: self.export_txt_button.configure(state="normal"))
+                self.after(0, lambda: self.evidence_button.configure(state="normal"))
 
         except Exception as e:
             logger.exception("Fetch thread error")
@@ -1672,6 +1735,146 @@ class App(ctk.CTk):
                 self.log_message(f"Export failed: {e}", "error")
                 messagebox.showerror("Export Error", f"Failed to save file:\n{e}")
 
+    def attach_screenshots(self) -> None:
+        """Attach manually captured page screenshots for evidence export."""
+        files = filedialog.askopenfilenames(
+            title="Select screenshot images",
+            filetypes=[
+                ("Image files", "*.png *.jpg *.jpeg *.webp *.bmp"),
+                ("PNG files", "*.png"),
+                ("JPEG files", "*.jpg *.jpeg"),
+                ("All files", "*.*"),
+            ],
+        )
+
+        if not files:
+            return
+
+        added = 0
+        for file_path in files:
+            if file_path not in self.attached_screenshots:
+                self.attached_screenshots.append(file_path)
+                added += 1
+
+        self.log_message(
+            f"Attached {added} screenshot(s). Total attached: {len(self.attached_screenshots)}",
+            "success"
+        )
+
+        if self.attached_screenshots:
+            self.evidence_button.configure(state="normal")
+
+    def _get_current_source_urls(self) -> List[str]:
+        """Return URLs currently present in the URL text box."""
+        current_text = self.url_entry.get("1.0", "end").strip()
+        if current_text == self._url_placeholder.strip():
+            return []
+
+        valid_urls, _ = URLValidator.parse_url_list(current_text)
+        return valid_urls
+
+    def export_evidence_folder(self) -> None:
+        """Export comments, metadata, source info, and attached screenshots into one folder."""
+        with self._data_lock:
+            metadata = list(self.all_metadata)
+            comments = list(self.all_comments)
+            spam = list(self.all_spam)
+
+        if not comments and not self.attached_screenshots:
+            messagebox.showwarning(
+                "No Evidence",
+                "Fetch comments or attach screenshots first."
+            )
+            return
+
+        output_parent = filedialog.askdirectory(
+            title="Choose folder to save evidence package"
+        )
+
+        if not output_parent:
+            return
+
+        settings = {
+            "Filter Spam": self.spam_filter_var.get(),
+            "Sensitivity": self.spam_threshold_var.get(),
+            "Exclude Creator": self.exclude_creator_var.get(),
+            "Min Likes": self._get_min_likes(),
+            "Max Comments": self._get_max_comments(),
+            "Sort By": self.sort_var.get(),
+            "Date From": self.from_date_entry.get().strip(),
+            "Date To": self.to_date_entry.get().strip(),
+            "Filter Words": self.filter_words_entry.get().strip(),
+            "Comments Selected": self.extract_comments_var.get(),
+            "Livechat Selected": self.extract_live_chat_var.get(),
+        }
+
+        try:
+            package_dir = create_evidence_package(
+                output_parent=output_parent,
+                metadata=metadata,
+                comments=comments,
+                spam=spam,
+                screenshots=list(self.attached_screenshots),
+                source_urls=self._get_current_source_urls(),
+                app_version=APP_VERSION,
+                settings=settings,
+            )
+
+            self.log_message(f"Evidence package created: {package_dir}", "success")
+            messagebox.showinfo(
+                "Evidence Export Complete",
+                f"Evidence package saved:\n\n{package_dir}"
+            )
+
+        except Exception as e:
+            logger.exception("Evidence export error")
+            self.log_message(f"Evidence export failed: {e}", "error")
+            messagebox.showerror("Evidence Export Error", str(e))
+
+    def check_for_updates_clicked(self) -> None:
+        """Check GitHub Releases for a newer version without freezing the UI."""
+        self.update_button.configure(state="disabled", text="Checking...")
+        self.log_message("Checking GitHub for updates...", "info")
+
+        def worker():
+            result = check_for_updates(APP_VERSION)
+
+            def show_result():
+                self.update_button.configure(state="normal", text="🔄 Updates")
+
+                if not result.ok:
+                    messagebox.showwarning(
+                        "Update Check Failed",
+                        f"Could not check for updates.\n\n{result.error}"
+                    )
+                    self.log_message(f"Update check failed: {result.error}", "warning")
+                    return
+
+                if result.update_available:
+                    answer = messagebox.askyesno(
+                        "Update Available",
+                        f"A newer version is available.\n\n"
+                        f"Current version: {result.current_version}\n"
+                        f"Latest version: {result.latest_version}\n\n"
+                        f"Open the Releases page?"
+                    )
+                    self.log_message(
+                        f"Update available: {result.latest_version}",
+                        "success"
+                    )
+                    if answer:
+                        webbrowser.open(result.release_url)
+                else:
+                    messagebox.showinfo(
+                        "No Update Available",
+                        f"You are using the latest version.\n\n"
+                        f"Current version: {result.current_version}"
+                    )
+                    self.log_message("No update available.", "success")
+
+            self.after(0, show_result)
+
+        threading.Thread(target=worker, daemon=True).start()
 
 # =============================================================================
 # MAIN ENTRY POINT
