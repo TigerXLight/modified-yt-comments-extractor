@@ -663,11 +663,16 @@ class App(ctk.CTk):
     # =========================================================================
 
     def _create_main_content(self) -> None:
-        """Create the main content area."""
-        self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        """Create the scrollable main content area."""
+        self.main_frame = ctk.CTkScrollableFrame(
+            self,
+            fg_color="transparent",
+            scrollbar_button_color=COLORS["border"],
+            scrollbar_button_hover_color=COLORS["accent_secondary"]
+        )
         self.main_frame.grid(row=1, column=1, sticky="nsew", padx=20, pady=20)
         self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(3, weight=1)  # Log section expands
+        self.main_frame.grid_rowconfigure(3, weight=1)
 
         self._create_url_section()
         self._create_progress_section()
@@ -1939,10 +1944,10 @@ class App(ctk.CTk):
             comments = list(self.all_comments)
             spam = list(self.all_spam)
 
-        if not comments and not self.attached_screenshots:
+        if not comments and not self.attached_screenshots and not self.transcript_segments:
             messagebox.showwarning(
-                "No Evidence",
-                "Fetch comments or attach screenshots first."
+                "Nothing to Package",
+                "Fetch comments, attach screenshots, or import a transcript first."
             )
             return
 
@@ -1965,6 +1970,7 @@ class App(ctk.CTk):
             "Filter Words": self.filter_words_entry.get().strip(),
             "Comments Selected": self.extract_comments_var.get(),
             "Livechat Selected": self.extract_live_chat_var.get(),
+            "Transcript Segments": len(self.transcript_segments),
         }
 
         try:
@@ -1978,6 +1984,29 @@ class App(ctk.CTk):
                 app_version=APP_VERSION,
                 settings=settings,
             )
+
+            if self.transcript_segments:
+                transcript_dir = os.path.join(package_dir, "transcript")
+                os.makedirs(transcript_dir, exist_ok=True)
+
+                export_transcript_txt(
+                    self.transcript_segments,
+                    os.path.join(transcript_dir, "transcript_readable.txt")
+                )
+                export_transcript_csv(
+                    self.transcript_segments,
+                    os.path.join(transcript_dir, "transcript.csv")
+                )
+                export_transcript_srt(
+                    self.transcript_segments,
+                    os.path.join(transcript_dir, "transcript.srt")
+                )
+                export_transcript_vtt(
+                    self.transcript_segments,
+                    os.path.join(transcript_dir, "transcript.vtt")
+                )
+
+                self.log_message("Added transcript files to export package.", "success")
 
             self.log_message(f"Export package created: {package_dir}", "success")
             messagebox.showinfo(
@@ -2202,7 +2231,7 @@ class App(ctk.CTk):
             messagebox.showerror("Transcript Export Error", str(e))
 
     def rename_transcript_speaker(self) -> None:
-        """Rename a speaker globally across all transcript segments."""
+        """Rename a speaker globally across all transcript segments using one dialog."""
         if not self.transcript_segments:
             messagebox.showwarning(
                 "No Transcript",
@@ -2215,46 +2244,154 @@ class App(ctk.CTk):
             if segment.speaker
         })
 
-        old_name = simpledialog.askstring(
-            "Rename Speaker",
-            "Current speakers:\n"
-            + "\n".join(f"- {speaker}" for speaker in speakers)
-            + "\n\nEnter speaker name to rename:"
-        )
-
-        if not old_name:
-            return
-
-        old_name = old_name.strip()
-
-        new_name = simpledialog.askstring(
-            "Rename Speaker",
-            f"Rename '{old_name}' to:"
-        )
-
-        if not new_name:
-            return
-
-        new_name = new_name.strip()
-
-        changed = 0
-        for segment in self.transcript_segments:
-            if segment.speaker == old_name:
-                segment.speaker = new_name
-                changed += 1
-
-        if changed == 0:
+        if not speakers:
             messagebox.showwarning(
-                "Speaker Not Found",
-                f"No segments found for speaker:\n\n{old_name}"
+                "No Speakers",
+                "No speaker labels were found in the transcript."
             )
             return
 
-        self._refresh_transcript_display()
-        self.log_message(
-            f"Renamed speaker '{old_name}' to '{new_name}' in {changed:,} segment(s)",
-            "success"
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Rename Speaker")
+        dialog.geometry("430x240")
+        dialog.configure(fg_color=COLORS["bg_dark"])
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center dialog
+        dialog.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() - 430) // 2
+        y = self.winfo_y() + (self.winfo_height() - 240) // 2
+        dialog.geometry(f"430x240+{x}+{y}")
+
+        container = ctk.CTkFrame(
+            dialog,
+            fg_color=COLORS["bg_card"],
+            corner_radius=12,
+            border_width=1,
+            border_color=COLORS["border"]
         )
+        container.pack(fill="both", expand=True, padx=16, pady=16)
+
+        title = ctk.CTkLabel(
+            container,
+            text="👤 Rename Speaker",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=COLORS["text_primary"]
+        )
+        title.pack(anchor="w", padx=16, pady=(14, 8))
+
+        old_label = ctk.CTkLabel(
+            container,
+            text="Current speaker",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary"]
+        )
+        old_label.pack(anchor="w", padx=16)
+
+        selected_speaker = ctk.StringVar(value=speakers[0])
+
+        new_name_entry = ctk.CTkEntry(
+            container,
+            height=34,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["bg_input"],
+            border_color=COLORS["border"],
+            corner_radius=6
+        )
+
+        def on_speaker_selected(value: str) -> None:
+            new_name_entry.delete(0, "end")
+            new_name_entry.insert(0, value)
+
+        speaker_menu = ctk.CTkOptionMenu(
+            container,
+            values=speakers,
+            variable=selected_speaker,
+            command=on_speaker_selected,
+            height=34,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["bg_input"],
+            button_color=COLORS["accent_secondary"],
+            button_hover_color=COLORS["accent"],
+            dropdown_fg_color=COLORS["bg_card"],
+            dropdown_hover_color=COLORS["accent_secondary"],
+            corner_radius=6
+        )
+        speaker_menu.pack(fill="x", padx=16, pady=(4, 10))
+
+        new_label = ctk.CTkLabel(
+            container,
+            text="New speaker name",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary"]
+        )
+        new_label.pack(anchor="w", padx=16)
+
+        new_name_entry.pack(fill="x", padx=16, pady=(4, 12))
+        new_name_entry.insert(0, speakers[0])
+        new_name_entry.focus_set()
+        new_name_entry.select_range(0, "end")
+
+        button_row = ctk.CTkFrame(container, fg_color="transparent")
+        button_row.pack(fill="x", padx=16, pady=(0, 14))
+
+        def do_rename() -> None:
+            old_name = selected_speaker.get().strip()
+            new_name = new_name_entry.get().strip()
+
+            if not new_name:
+                messagebox.showwarning(
+                    "Missing Name",
+                    "Enter a new speaker name."
+                )
+                return
+
+            changed = 0
+            for segment in self.transcript_segments:
+                if segment.speaker == old_name:
+                    segment.speaker = new_name
+                    changed += 1
+
+            dialog.destroy()
+            self._refresh_transcript_display()
+            self.log_message(
+                f"Renamed speaker '{old_name}' to '{new_name}' in {changed:,} segment(s)",
+                "success"
+            )
+
+        cancel_btn = ctk.CTkButton(
+            button_row,
+            text="Cancel",
+            command=dialog.destroy,
+            width=90,
+            height=34,
+            font=ctk.CTkFont(size=12),
+            fg_color="transparent",
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_secondary"],
+            corner_radius=8
+        )
+        cancel_btn.pack(side="right", padx=(8, 0))
+
+        rename_btn = ctk.CTkButton(
+            button_row,
+            text="Rename",
+            command=do_rename,
+            width=100,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color="#000000",
+            corner_radius=8
+        )
+        rename_btn.pack(side="right")
+
+        dialog.bind("<Return>", lambda event: do_rename())
+        dialog.bind("<Escape>", lambda event: dialog.destroy())
+
+        dialog.wait_window()
 
     def clear_transcript(self) -> None:
         """Clear imported transcript from the app."""
