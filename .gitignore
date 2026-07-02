@@ -1,0 +1,43 @@
+# Python / virtual environment
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+*.egg-info/
+.mypy_cache/
+
+# Local app settings / secrets
+settings.json
+.env
+
+# Build outputs
+dist/
+build/
+*.spec
+*.exe
+
+# Exported data
+*.csv
+*.xlsx
+*.log
+*_metadata.csv
+*_comments.csv
+*_spam.csv
+*_comments.txt
+
+# Optional files not needed for release source
+tests/
+screenshot.png
+python
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
