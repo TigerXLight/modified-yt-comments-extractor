@@ -6,8 +6,7 @@ echo Closing running app if open...
 taskkill /f /im "YouTube Comment Extractor.exe" >nul 2>&1
 
 echo Copying source files...
-robocopy "%SOURCE%" "%DEST%" main.py extractor.py spam_filter.py requirements.txt README.md RELEASE_NOTES.md LICENSE run_app.bat updater.py evidence_exporter.py /R:1 /W:1
-
+robocopy "%SOURCE%" "%DEST%" main.py extractor.py spam_filter.py transcript_tools.py requirements.txt README.md RELEASE_NOTES.md LICENSE run_app.bat updater.py evidence_exporter.py /R:1 /W:1
 echo Copying core folder...
 robocopy "%SOURCE%\core" "%DEST%\core" /E /R:1 /W:1
 

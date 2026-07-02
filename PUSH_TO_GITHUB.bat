@@ -13,7 +13,7 @@ if "%MSG%"=="" (
     exit /b
 )
 
-git add main.py extractor.py updater.py evidence_exporter.py README.md RELEASE_NOTES.md requirements.txt core assets *.bat .gitignore
+git add main.py extractor.py updater.py evidence_exporter.py transcript_tools.py README.md RELEASE_NOTES.md requirements.txt core assets *.bat .gitignore
 git commit -m "%MSG%"
 git push
 

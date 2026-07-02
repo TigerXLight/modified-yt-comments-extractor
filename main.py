@@ -14,7 +14,7 @@ import threading
 import time
 import webbrowser
 from dataclasses import dataclass
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 from typing import Any, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
@@ -55,6 +55,14 @@ from extractor import (
 
 from updater import check_for_updates
 from evidence_exporter import create_evidence_package
+from transcript_tools import (
+    TranscriptSegment,
+    import_transcript,
+    export_transcript_txt,
+    export_transcript_csv,
+    export_transcript_srt,
+    export_transcript_vtt,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -145,6 +153,7 @@ class App(ctk.CTk):
         self.all_comments: List[Dict[str, Any]] = []
         self.all_spam: List[Dict[str, Any]] = []
         self.attached_screenshots: List[str] = []
+        self.transcript_segments: List[TranscriptSegment] = []
 
         # Custom filter patterns
         self._blacklist_patterns: str = ""
@@ -658,10 +667,11 @@ class App(ctk.CTk):
         self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.main_frame.grid(row=1, column=1, sticky="nsew", padx=20, pady=20)
         self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(2, weight=1)  # Log section expands
+        self.main_frame.grid_rowconfigure(3, weight=1)  # Log section expands
 
         self._create_url_section()
         self._create_progress_section()
+        self._create_transcript_section()
         self._create_log_section()
 
     def _create_url_section(self) -> None:
@@ -951,6 +961,155 @@ class App(ctk.CTk):
         self.progress_bar.pack(fill="x", pady=(8, 0))
         self.progress_bar.set(0)
 
+    def _create_transcript_section(self) -> None:
+        """Create transcript import/export section."""
+        self.transcript_card = ctk.CTkFrame(
+            self.main_frame,
+            fg_color=COLORS["bg_card"],
+            corner_radius=12,
+            border_width=1,
+            border_color=COLORS["border"]
+        )
+        self.transcript_card.grid(row=2, column=0, sticky="ew", pady=(0, 15))
+        self.transcript_card.grid_columnconfigure(0, weight=1)
+
+        # Header row
+        header = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
+        header.pack(fill="x", padx=15, pady=(12, 8))
+
+        title = ctk.CTkLabel(
+            header,
+            text="🗣 Transcript",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS["text_primary"]
+        )
+        title.pack(side="left")
+
+        self.transcript_stats_label = ctk.CTkLabel(
+            header,
+            text="No transcript loaded",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"]
+        )
+        self.transcript_stats_label.pack(side="left", padx=(12, 0))
+
+        # Button row
+        button_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
+        button_row.pack(fill="x", padx=15, pady=(0, 8))
+
+        self.transcript_import_button = ctk.CTkButton(
+            button_row,
+            text="📂 Import",
+            command=self.import_transcript_file,
+            width=90,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8
+        )
+        self.transcript_import_button.pack(side="left")
+
+        self.transcript_rename_button = ctk.CTkButton(
+            button_row,
+            text="👤 Rename Speaker",
+            command=self.rename_transcript_speaker,
+            width=140,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_rename_button.pack(side="left", padx=(8, 0))
+
+        self.transcript_clear_button = ctk.CTkButton(
+            button_row,
+            text="Clear",
+            command=self.clear_transcript,
+            width=70,
+            height=32,
+            font=ctk.CTkFont(size=12),
+            fg_color="transparent",
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_muted"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_clear_button.pack(side="left", padx=(8, 0))
+
+        self.transcript_export_csv_button = ctk.CTkButton(
+            button_row,
+            text="CSV",
+            command=lambda: self.export_transcript_file("csv"),
+            width=70,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_export_csv_button.pack(side="right")
+
+        self.transcript_export_vtt_button = ctk.CTkButton(
+            button_row,
+            text="VTT",
+            command=lambda: self.export_transcript_file("vtt"),
+            width=70,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_export_vtt_button.pack(side="right", padx=(0, 8))
+
+        self.transcript_export_srt_button = ctk.CTkButton(
+            button_row,
+            text="SRT",
+            command=lambda: self.export_transcript_file("srt"),
+            width=70,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_export_srt_button.pack(side="right", padx=(0, 8))
+
+        self.transcript_export_txt_button = ctk.CTkButton(
+            button_row,
+            text="TXT",
+            command=lambda: self.export_transcript_file("txt"),
+            width=70,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_export_txt_button.pack(side="right", padx=(0, 8))
+
+        # Transcript preview
+        self.transcript_textbox = ctk.CTkTextbox(
+            self.transcript_card,
+            height=150,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["bg_input"],
+            border_color=COLORS["border"],
+            border_width=1,
+            corner_radius=8,
+            wrap="word"
+        )
+        self.transcript_textbox.pack(fill="x", padx=15, pady=(0, 15))
+
+        self._refresh_transcript_display()
+
     def _create_log_section(self) -> None:
         """Create the activity log section."""
         self.log_card = ctk.CTkFrame(
@@ -960,7 +1119,7 @@ class App(ctk.CTk):
             border_width=1,
             border_color=COLORS["border"]
         )
-        self.log_card.grid(row=2, column=0, sticky="nsew")
+        self.log_card.grid(row=3, column=0, sticky="nsew")
         self.log_card.grid_rowconfigure(1, weight=1)
         self.log_card.grid_columnconfigure(0, weight=1)
 
@@ -1875,6 +2034,244 @@ class App(ctk.CTk):
             self.after(0, show_result)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _set_transcript_buttons_state(self, state: str) -> None:
+        """Enable or disable transcript-related buttons."""
+        self.transcript_export_txt_button.configure(state=state)
+        self.transcript_export_srt_button.configure(state=state)
+        self.transcript_export_vtt_button.configure(state=state)
+        self.transcript_export_csv_button.configure(state=state)
+        self.transcript_rename_button.configure(state=state)
+        self.transcript_clear_button.configure(state=state)
+
+    def _refresh_transcript_display(self) -> None:
+        """Refresh transcript preview and stats."""
+        has_transcript = len(self.transcript_segments) > 0
+        state = "normal" if has_transcript else "disabled"
+
+        self._set_transcript_buttons_state(state)
+
+        self.transcript_textbox.configure(state="normal")
+        self.transcript_textbox.delete("1.0", "end")
+
+        if not has_transcript:
+            self.transcript_stats_label.configure(
+                text="No transcript loaded",
+                text_color=COLORS["text_muted"]
+            )
+            self.transcript_textbox.insert(
+                "1.0",
+                "Import an SRT, VTT, or TXT transcript file here.\n\n"
+                "v2.2.0 supports local transcript import/export.\n"
+                "YouTube transcript downloading and ASR transcription will be added later."
+            )
+            self.transcript_textbox.configure(state="disabled")
+            return
+
+        speakers = sorted({
+            segment.speaker for segment in self.transcript_segments
+            if segment.speaker
+        })
+
+        self.transcript_stats_label.configure(
+            text=f"{len(self.transcript_segments):,} segment(s) • {len(speakers)} speaker(s)",
+            text_color=COLORS["text_muted"]
+        )
+
+        preview_limit = 80
+
+        for i, segment in enumerate(self.transcript_segments[:preview_limit], start=1):
+            speaker = segment.speaker or "Speaker"
+            start = segment.start or "no start"
+            end = segment.end or "no end"
+
+            self.transcript_textbox.insert("end", f"{i}. {speaker}\n")
+            self.transcript_textbox.insert("end", f"   {start} → {end}\n")
+            self.transcript_textbox.insert("end", f"   {segment.text}\n\n")
+
+        remaining = len(self.transcript_segments) - preview_limit
+        if remaining > 0:
+            self.transcript_textbox.insert(
+                "end",
+                f"... {remaining:,} more segment(s) not shown in preview.\n"
+            )
+
+        self.transcript_textbox.configure(state="disabled")
+
+    def import_transcript_file(self) -> None:
+        """Import SRT, VTT, or TXT transcript file."""
+        filename = filedialog.askopenfilename(
+            title="Import Transcript",
+            filetypes=[
+                ("Transcript files", "*.srt *.vtt *.txt"),
+                ("SRT files", "*.srt"),
+                ("VTT files", "*.vtt"),
+                ("Text files", "*.txt"),
+                ("All files", "*.*"),
+            ],
+        )
+
+        if not filename:
+            return
+
+        try:
+            segments = import_transcript(filename)
+
+            if not segments:
+                messagebox.showwarning(
+                    "No Transcript Segments",
+                    "No transcript segments could be imported from this file."
+                )
+                return
+
+            self.transcript_segments = segments
+            self._refresh_transcript_display()
+
+            self.log_message(
+                f"Imported transcript: {len(segments):,} segment(s) from {os.path.basename(filename)}",
+                "success"
+            )
+
+        except Exception as e:
+            logger.exception("Transcript import error")
+            self.log_message(f"Transcript import failed: {e}", "error")
+            messagebox.showerror("Transcript Import Error", str(e))
+
+    def export_transcript_file(self, export_type: str) -> None:
+        """Export loaded transcript to TXT, SRT, VTT, or CSV."""
+        if not self.transcript_segments:
+            messagebox.showwarning(
+                "No Transcript",
+                "Import a transcript first."
+            )
+            return
+
+        export_type = export_type.lower()
+
+        if export_type == "txt":
+            default_ext = ".txt"
+            filetypes = [("Text files", "*.txt")]
+            title = "Export Transcript TXT"
+            exporter = export_transcript_txt
+        elif export_type == "srt":
+            default_ext = ".srt"
+            filetypes = [("SRT subtitle files", "*.srt")]
+            title = "Export Transcript SRT"
+            exporter = export_transcript_srt
+        elif export_type == "vtt":
+            default_ext = ".vtt"
+            filetypes = [("WebVTT subtitle files", "*.vtt")]
+            title = "Export Transcript VTT"
+            exporter = export_transcript_vtt
+        elif export_type == "csv":
+            default_ext = ".csv"
+            filetypes = [("CSV files", "*.csv")]
+            title = "Export Transcript CSV"
+            exporter = export_transcript_csv
+        else:
+            messagebox.showerror(
+                "Unsupported Export",
+                f"Unsupported transcript export type: {export_type}"
+            )
+            return
+
+        filename = filedialog.asksaveasfilename(
+            defaultextension=default_ext,
+            filetypes=filetypes,
+            title=title
+        )
+
+        if not filename:
+            return
+
+        try:
+            exporter(self.transcript_segments, filename)
+
+            self.log_message(
+                f"Exported transcript {export_type.upper()} to: {os.path.basename(filename)}",
+                "success"
+            )
+            messagebox.showinfo(
+                "Transcript Export Complete",
+                f"Transcript saved:\n\n{os.path.basename(filename)}"
+            )
+
+        except Exception as e:
+            logger.exception("Transcript export error")
+            self.log_message(f"Transcript export failed: {e}", "error")
+            messagebox.showerror("Transcript Export Error", str(e))
+
+    def rename_transcript_speaker(self) -> None:
+        """Rename a speaker globally across all transcript segments."""
+        if not self.transcript_segments:
+            messagebox.showwarning(
+                "No Transcript",
+                "Import a transcript first."
+            )
+            return
+
+        speakers = sorted({
+            segment.speaker for segment in self.transcript_segments
+            if segment.speaker
+        })
+
+        old_name = simpledialog.askstring(
+            "Rename Speaker",
+            "Current speakers:\n"
+            + "\n".join(f"- {speaker}" for speaker in speakers)
+            + "\n\nEnter speaker name to rename:"
+        )
+
+        if not old_name:
+            return
+
+        old_name = old_name.strip()
+
+        new_name = simpledialog.askstring(
+            "Rename Speaker",
+            f"Rename '{old_name}' to:"
+        )
+
+        if not new_name:
+            return
+
+        new_name = new_name.strip()
+
+        changed = 0
+        for segment in self.transcript_segments:
+            if segment.speaker == old_name:
+                segment.speaker = new_name
+                changed += 1
+
+        if changed == 0:
+            messagebox.showwarning(
+                "Speaker Not Found",
+                f"No segments found for speaker:\n\n{old_name}"
+            )
+            return
+
+        self._refresh_transcript_display()
+        self.log_message(
+            f"Renamed speaker '{old_name}' to '{new_name}' in {changed:,} segment(s)",
+            "success"
+        )
+
+    def clear_transcript(self) -> None:
+        """Clear imported transcript from the app."""
+        if not self.transcript_segments:
+            return
+
+        answer = messagebox.askyesno(
+            "Clear Transcript",
+            "Remove the currently loaded transcript from the app?"
+        )
+
+        if not answer:
+            return
+
+        self.transcript_segments = []
+        self._refresh_transcript_display()
+        self.log_message("Transcript cleared.", "muted")
 
 # =============================================================================
 # MAIN ENTRY POINT
