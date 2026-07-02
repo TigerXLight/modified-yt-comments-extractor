@@ -154,6 +154,7 @@ class App(ctk.CTk):
         self.all_spam: List[Dict[str, Any]] = []
         self.attached_screenshots: List[str] = []
         self.transcript_segments: List[TranscriptSegment] = []
+        self.last_package_dir: Optional[str] = None
 
         # Custom filter patterns
         self._blacklist_patterns: str = ""
@@ -929,6 +930,47 @@ class App(ctk.CTk):
             corner_radius=8
         )
         self.screenshot_button.pack(side="right", padx=(0, 10))
+
+        # Extra package helper row
+        package_tools_frame = ctk.CTkFrame(action_area, fg_color="transparent")
+        package_tools_frame.pack(fill="x", pady=(8, 0))
+
+        package_tools_hint = ctk.CTkLabel(
+            package_tools_frame,
+            text="Package tools",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"]
+        )
+        package_tools_hint.pack(side="left")
+
+        self.open_last_package_button = ctk.CTkButton(
+            package_tools_frame,
+            text="📂 Open Last",
+            command=self.open_last_package,
+            width=105,
+            height=30,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.open_last_package_button.pack(side="right")
+
+        self.clear_screenshots_button = ctk.CTkButton(
+            package_tools_frame,
+            text="🧹 Clear Attach",
+            command=self.clear_attached_screenshots,
+            width=115,
+            height=30,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="transparent",
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_muted"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.clear_screenshots_button.pack(side="right", padx=(0, 10))
 
     def _create_progress_section(self) -> None:
         """Create the progress indicator section."""
@@ -1927,6 +1969,30 @@ class App(ctk.CTk):
 
         if self.attached_screenshots:
             self.evidence_button.configure(state="normal")
+            self.clear_screenshots_button.configure(state="normal")
+
+    def clear_attached_screenshots(self) -> None:
+        ...
+        self.log_message("Attached screenshots cleared.", "muted")
+
+    def open_last_package(self) -> None:
+        """Open the last created package folder in File Explorer."""
+        if not self.last_package_dir or not os.path.isdir(self.last_package_dir):
+            messagebox.showwarning(
+                "No Package Folder",
+                "No package folder is available yet."
+            )
+            self.open_last_package_button.configure(state="disabled")
+            return
+
+        try:
+            os.startfile(self.last_package_dir)
+        except Exception as e:
+            logger.exception("Open package folder error")
+            messagebox.showerror(
+                "Open Folder Error",
+                f"Could not open package folder:\n\n{e}"
+            )
 
     def _get_current_source_urls(self) -> List[str]:
         """Return URLs currently present in the URL text box."""
@@ -2007,6 +2073,9 @@ class App(ctk.CTk):
                 )
 
                 self.log_message("Added transcript files to export package.", "success")
+
+            self.last_package_dir = package_dir
+            self.open_last_package_button.configure(state="normal")
 
             self.log_message(f"Export package created: {package_dir}", "success")
             messagebox.showinfo(
@@ -2155,6 +2224,7 @@ class App(ctk.CTk):
 
             self.transcript_segments = segments
             self._refresh_transcript_display()
+            self.evidence_button.configure(state="normal")
 
             self.log_message(
                 f"Imported transcript: {len(segments):,} segment(s) from {os.path.basename(filename)}",
@@ -2409,6 +2479,12 @@ class App(ctk.CTk):
         self.transcript_segments = []
         self._refresh_transcript_display()
         self.log_message("Transcript cleared.", "muted")
+
+        with self._data_lock:
+            has_comments = len(self.all_comments) > 0
+
+        if not has_comments and not self.attached_screenshots:
+            self.evidence_button.configure(state="disabled")
 
 # =============================================================================
 # MAIN ENTRY POINT
