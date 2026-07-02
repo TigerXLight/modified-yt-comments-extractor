@@ -1,0 +1,27 @@
+@echo off
+cd /d "%~dp0"
+
+echo Closing running app if open...
+taskkill /f /im "YouTube Comment Extractor.exe" >nul 2>&1
+
+echo Activating virtual environment...
+if not exist "venv\Scripts\python.exe" (
+    echo Creating venv...
+    python -m venv venv
+)
+
+call venv\Scripts\activate.bat
+
+echo Installing/updating build tools...
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install pyinstaller keyring
+
+echo Building EXE...
+python -m PyInstaller --noconfirm --clean --windowed --name "YouTube Comment Extractor" --collect-all customtkinter --add-data "assets;assets" main.py
+
+echo.
+echo Build complete.
+echo Output:
+echo %cd%\dist\YouTube Comment Extractor
+pause

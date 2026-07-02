@@ -869,7 +869,7 @@ class App(ctk.CTk):
 
         tools_hint = ctk.CTkLabel(
             tools_frame,
-            text="Screenshots + folder package",
+            text="Attach screenshots, then create an export package",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_muted"]
         )
@@ -890,7 +890,7 @@ class App(ctk.CTk):
 
         self.evidence_button = ctk.CTkButton(
             tools_frame,
-            text="📁 Folder",
+            text="📁 Package",
             command=self.export_evidence_folder,
             width=105,
             height=34,
@@ -904,7 +904,7 @@ class App(ctk.CTk):
 
         self.screenshot_button = ctk.CTkButton(
             tools_frame,
-            text="🖼 Screens",
+            text="🖼 Attach",
             command=self.attach_screenshots,
             width=105,
             height=34,
@@ -1788,7 +1788,7 @@ class App(ctk.CTk):
             return
 
         output_parent = filedialog.askdirectory(
-            title="Choose folder to save evidence package"
+            title="Choose parent folder for the export package"
         )
 
         if not output_parent:
@@ -1820,10 +1820,10 @@ class App(ctk.CTk):
                 settings=settings,
             )
 
-            self.log_message(f"Evidence package created: {package_dir}", "success")
+            self.log_message(f"Export package created: {package_dir}", "success")
             messagebox.showinfo(
-                "Evidence Export Complete",
-                f"Evidence package saved:\n\n{package_dir}"
+                "Package Export Complete",
+                f"Export package saved:\n\n{package_dir}"
             )
 
         except Exception as e:
