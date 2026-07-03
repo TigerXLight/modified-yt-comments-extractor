@@ -42,3 +42,4 @@ python
 *.swo
 .DS_Store
 Thumbs.db
+experimental/
