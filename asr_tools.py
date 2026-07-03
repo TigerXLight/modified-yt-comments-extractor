@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from faster_whisper import WhisperModel
 
 from transcript_tools import TranscriptSegment
+
+
+
+def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    """Return SHA-256 hash for a local file."""
+    digest = hashlib.sha256()
+
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(chunk_size), b""):
+            digest.update(chunk)
+
+    return digest.hexdigest()
 
 
 def _seconds_to_timestamp(seconds: float) -> str:
@@ -82,6 +95,9 @@ def transcribe_media_file(
 
     metadata: Dict[str, Any] = {
         "source_file": str(path),
+        "source_file_name": path.name,
+        "source_file_size_bytes": path.stat().st_size,
+        "source_file_sha256": _sha256_file(path),
         "model_name": model_name,
         "device": device,
         "compute_type": compute_type,

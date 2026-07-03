@@ -2159,6 +2159,9 @@ class App(ctk.CTk):
 
         fields = [
             ("Source File", "source_file"),
+            ("Source File Name", "source_file_name"),
+            ("Source File Size Bytes", "source_file_size_bytes"),
+            ("Source File SHA256", "source_file_sha256"),
             ("Model", "model_name"),
             ("Device", "device"),
             ("Compute Type", "compute_type"),
