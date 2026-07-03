@@ -163,6 +163,7 @@ class App(ctk.CTk):
         self.transcript_segments: List[TranscriptSegment] = []
         self.last_transcript_source: Optional[str] = None
         self.last_youtube_video_info: Optional[Dict[str, Any]] = None
+        self.last_asr_metadata: Optional[Dict[str, Any]] = None
         self.last_package_dir: Optional[str] = None
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
@@ -2137,6 +2138,69 @@ class App(ctk.CTk):
         with open(source_info_path, "a", encoding="utf-8", newline="\n") as f:
             f.write("\n".join(lines))
 
+
+    def _append_asr_metadata_to_source_info(self, package_dir: str) -> None:
+        """Append Local ASR metadata to source_info.txt when available."""
+        if not self.last_asr_metadata:
+            return
+
+        info = self.last_asr_metadata
+        source_info_path = os.path.join(package_dir, "source_info.txt")
+
+        probability = info.get("language_probability")
+
+        if probability is not None:
+            try:
+                probability_text = f"{float(probability):.2%}"
+            except Exception:
+                probability_text = str(probability)
+        else:
+            probability_text = "unknown"
+
+        fields = [
+            ("Source File", "source_file"),
+            ("Model", "model_name"),
+            ("Device", "device"),
+            ("Compute Type", "compute_type"),
+            ("Speaker Label", "speaker_name"),
+            ("Language Setting", "requested_language"),
+            ("Detected Language", "language"),
+            ("Language Confidence", None),
+            ("Known Words / Context Prompt", "initial_prompt"),
+            ("VAD Filter", "vad_filter"),
+            ("Beam Size", "beam_size"),
+            ("Segment Count", "segment_count"),
+            ("Duration", "duration"),
+            ("Duration After VAD", "duration_after_vad"),
+        ]
+
+        lines = []
+        lines.append("")
+        lines.append("")
+        lines.append("Local ASR Metadata")
+        lines.append("=" * 80)
+
+        for label, key in fields:
+            if key is None:
+                value = probability_text
+            else:
+                value = info.get(key)
+
+            if value not in (None, ""):
+                lines.append(f"{label}: {value}")
+
+        lines.append("")
+        lines.append("Note")
+        lines.append("-" * 80)
+        lines.append(
+            "Local ASR transcripts are machine-generated drafts. "
+            "They may contain transcription errors and do not include speaker diarization."
+        )
+        lines.append("")
+
+        with open(source_info_path, "a", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(lines))
+
     def export_evidence_folder(self) -> None:
         """Export comments, metadata, source info, and attached screenshots into one folder."""
         with self._data_lock:
@@ -2209,6 +2273,7 @@ class App(ctk.CTk):
 
                 self.log_message("Added transcript files to export package.", "success")
             self._append_youtube_metadata_to_source_info(package_dir)
+            self._append_asr_metadata_to_source_info(package_dir)
 
             self.last_package_dir = package_dir
             self.open_last_package_button.configure(state="normal")
@@ -2586,6 +2651,7 @@ class App(ctk.CTk):
                     language_code = info.get("language_code") or ", ".join(languages)
 
                     self.transcript_segments = segments
+                    self.last_asr_metadata = None
                     self.last_youtube_video_info = video_info or None
                     self.last_transcript_source = (
                         f"YouTube {transcript_type} transcript "
@@ -2787,6 +2853,7 @@ class App(ctk.CTk):
                 def on_success() -> None:
                     self.transcript_segments = segments
                     self.last_youtube_video_info = None
+                    self.last_asr_metadata = metadata
                     self.last_transcript_source = (
                         f"Local ASR transcript from {os.path.basename(media_file)} "
                         f"using faster-whisper {model_name}"

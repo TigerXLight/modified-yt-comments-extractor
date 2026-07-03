@@ -86,6 +86,7 @@ def transcribe_media_file(
         "device": device,
         "compute_type": compute_type,
         "speaker_name": speaker_name,
+        "requested_language": language,
         "language": getattr(info, "language", None),
         "language_probability": getattr(info, "language_probability", None),
         "initial_prompt": initial_prompt,
