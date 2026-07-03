@@ -1110,50 +1110,20 @@ class App(ctk.CTk):
         )
         self.transcript_clear_button.pack(side="left", padx=(8, 0))
 
-        self.transcript_export_csv_button = ctk.CTkButton(
-            button_row,
-            text="CSV",
-            command=lambda: self.export_transcript_file("csv"),
-            width=70,
-            height=32,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["accent_secondary"],
-            hover_color=COLORS["border"],
-            corner_radius=8,
-            state="disabled"
-        )
-        self.transcript_export_csv_button.pack(side="right")
+        # Transcript export row
+        transcript_export_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
+        transcript_export_row.pack(fill="x", padx=15, pady=(0, 8))
 
-        self.transcript_export_vtt_button = ctk.CTkButton(
-            button_row,
-            text="VTT",
-            command=lambda: self.export_transcript_file("vtt"),
-            width=70,
-            height=32,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["accent_secondary"],
-            hover_color=COLORS["border"],
-            corner_radius=8,
-            state="disabled"
+        export_label = ctk.CTkLabel(
+            transcript_export_row,
+            text="Export:",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"]
         )
-        self.transcript_export_vtt_button.pack(side="right", padx=(0, 8))
-
-        self.transcript_export_srt_button = ctk.CTkButton(
-            button_row,
-            text="SRT",
-            command=lambda: self.export_transcript_file("srt"),
-            width=70,
-            height=32,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["accent_secondary"],
-            hover_color=COLORS["border"],
-            corner_radius=8,
-            state="disabled"
-        )
-        self.transcript_export_srt_button.pack(side="right", padx=(0, 8))
+        export_label.pack(side="left")
 
         self.transcript_export_txt_button = ctk.CTkButton(
-            button_row,
+            transcript_export_row,
             text="TXT",
             command=lambda: self.export_transcript_file("txt"),
             width=70,
@@ -1164,7 +1134,49 @@ class App(ctk.CTk):
             corner_radius=8,
             state="disabled"
         )
-        self.transcript_export_txt_button.pack(side="right", padx=(0, 8))
+        self.transcript_export_txt_button.pack(side="left", padx=(10, 0))
+
+        self.transcript_export_srt_button = ctk.CTkButton(
+            transcript_export_row,
+            text="SRT",
+            command=lambda: self.export_transcript_file("srt"),
+            width=70,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_export_srt_button.pack(side="left", padx=(8, 0))
+
+        self.transcript_export_vtt_button = ctk.CTkButton(
+            transcript_export_row,
+            text="VTT",
+            command=lambda: self.export_transcript_file("vtt"),
+            width=70,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_export_vtt_button.pack(side="left", padx=(8, 0))
+
+        self.transcript_export_csv_button = ctk.CTkButton(
+            transcript_export_row,
+            text="CSV",
+            command=lambda: self.export_transcript_file("csv"),
+            width=70,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_export_csv_button.pack(side="left", padx=(8, 0))
 
         # Display options row
         transcript_options_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
@@ -2257,15 +2269,26 @@ class App(ctk.CTk):
 
     def _get_readable_transcript_segments(self) -> List[TranscriptSegment]:
         """
-        Combine consecutive segments from the same speaker into readable speaker turns.
+        Combine consecutive same-speaker transcript segments into readable chunks.
 
-        This is only for preview/TXT/package readable export.
-        SRT, VTT, and CSV still keep the original timed subtitle segments.
+        This avoids repeated speaker labels while preventing one huge 60-minute
+        textbox block, which makes scrolling slow.
         """
         if not self.transcript_segments:
             return []
 
+        max_duration_seconds = 90.0
+        max_chars = 2200
+
         readable: List[TranscriptSegment] = []
+
+        def to_seconds(timestamp: str) -> float:
+            timestamp = (timestamp or "").replace(",", ".").strip()
+            try:
+                h, m, s = timestamp.split(":")
+                return int(h) * 3600 + int(m) * 60 + float(s)
+            except Exception:
+                return 0.0
 
         current = TranscriptSegment(
             speaker=self.transcript_segments[0].speaker,
@@ -2277,8 +2300,20 @@ class App(ctk.CTk):
         for segment in self.transcript_segments[1:]:
             same_speaker = (segment.speaker or "") == (current.speaker or "")
 
-            if same_speaker:
-                current.text = f"{current.text.rstrip()} {segment.text.strip()}".strip()
+            current_start = to_seconds(current.start)
+            next_end = to_seconds(segment.end)
+            combined_duration = next_end - current_start
+
+            combined_text = f"{current.text.rstrip()} {segment.text.strip()}".strip()
+
+            should_continue_chunk = (
+                same_speaker
+                and combined_duration <= max_duration_seconds
+                and len(combined_text) <= max_chars
+            )
+
+            if should_continue_chunk:
+                current.text = combined_text
                 current.end = segment.end
             else:
                 readable.append(current)
@@ -2332,17 +2367,23 @@ class App(ctk.CTk):
         show_speakers = self.transcript_show_speakers_var.get()
         show_timestamps = self.transcript_show_timestamps_var.get()
 
-        for i, segment in enumerate(readable_segments[:preview_limit], start=1):
+        last_displayed_speaker = None
+
+        for segment in readable_segments[:preview_limit]:
             speaker = segment.speaker or "Speaker"
             start = segment.start or "no start"
             end = segment.end or "no end"
 
-            self.transcript_textbox.insert("end", f"{i}. ")
-
-            if show_speakers:
+            if show_speakers and speaker != last_displayed_speaker:
                 self.transcript_textbox.insert("end", f"{speaker}\n")
-            else:
-                self.transcript_textbox.insert("end", "\n")
+                last_displayed_speaker = speaker
+
+            self.transcript_textbox.insert("end", f"{segment.text}\n")
+
+            if show_timestamps:
+                self.transcript_textbox.insert("end", f"[{start} - {end}]\n")
+
+            self.transcript_textbox.insert("end", "\n")
 
             self.transcript_textbox.insert("end", f"   {segment.text}\n")
 
@@ -2545,6 +2586,8 @@ class App(ctk.CTk):
         show_speakers = self.transcript_show_speakers_var.get()
         show_timestamps = self.transcript_show_timestamps_var.get()
 
+        readable_segments = self._get_readable_transcript_segments()
+
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write("Transcript Export\n")
             f.write("=" * 80)
@@ -2553,25 +2596,24 @@ class App(ctk.CTk):
             if self.last_transcript_source:
                 f.write(f"Source: {self.last_transcript_source}\n\n")
 
-            for segment in self._get_readable_transcript_segments():
+            last_displayed_speaker = None
+
+            for segment in readable_segments:
                 speaker = segment.speaker or "Speaker"
                 start = segment.start or ""
                 end = segment.end or ""
 
-                header_parts = []
-
-                if show_speakers:
-                    header_parts.append(speaker)
-
-                if show_timestamps and start and end:
-                    header_parts.append(f"[{start} - {end}]")
-
-                if header_parts:
-                    f.write(" ".join(header_parts))
-                    f.write("\n")
+                if show_speakers and speaker != last_displayed_speaker:
+                    f.write(f"{speaker}\n")
+                    last_displayed_speaker = speaker
 
                 f.write(segment.text.strip())
-                f.write("\n\n")
+                f.write("\n")
+
+                if show_timestamps and start and end:
+                    f.write(f"[{start} - {end}]\n")
+
+                f.write("\n")
 
     def export_transcript_file(self, export_type: str) -> None:
         """Export loaded transcript to TXT, SRT, VTT, or CSV."""
