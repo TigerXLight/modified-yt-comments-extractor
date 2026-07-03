@@ -2255,6 +2255,43 @@ class App(ctk.CTk):
         self.transcript_rename_button.configure(state=state)
         self.transcript_clear_button.configure(state=state)
 
+    def _get_readable_transcript_segments(self) -> List[TranscriptSegment]:
+        """
+        Combine consecutive segments from the same speaker into readable speaker turns.
+
+        This is only for preview/TXT/package readable export.
+        SRT, VTT, and CSV still keep the original timed subtitle segments.
+        """
+        if not self.transcript_segments:
+            return []
+
+        readable: List[TranscriptSegment] = []
+
+        current = TranscriptSegment(
+            speaker=self.transcript_segments[0].speaker,
+            start=self.transcript_segments[0].start,
+            end=self.transcript_segments[0].end,
+            text=self.transcript_segments[0].text.strip(),
+        )
+
+        for segment in self.transcript_segments[1:]:
+            same_speaker = (segment.speaker or "") == (current.speaker or "")
+
+            if same_speaker:
+                current.text = f"{current.text.rstrip()} {segment.text.strip()}".strip()
+                current.end = segment.end
+            else:
+                readable.append(current)
+                current = TranscriptSegment(
+                    speaker=segment.speaker,
+                    start=segment.start,
+                    end=segment.end,
+                    text=segment.text.strip(),
+                )
+
+        readable.append(current)
+        return readable
+
     def _refresh_transcript_display(self) -> None:
         """Refresh transcript preview and stats."""
         has_transcript = len(self.transcript_segments) > 0
@@ -2289,12 +2326,13 @@ class App(ctk.CTk):
             text_color=COLORS["text_muted"]
         )
 
+        readable_segments = self._get_readable_transcript_segments()
         preview_limit = 80
 
         show_speakers = self.transcript_show_speakers_var.get()
         show_timestamps = self.transcript_show_timestamps_var.get()
 
-        for i, segment in enumerate(self.transcript_segments[:preview_limit], start=1):
+        for i, segment in enumerate(readable_segments[:preview_limit], start=1):
             speaker = segment.speaker or "Speaker"
             start = segment.start or "no start"
             end = segment.end or "no end"
@@ -2313,7 +2351,7 @@ class App(ctk.CTk):
 
             self.transcript_textbox.insert("end", "\n")
 
-        remaining = len(self.transcript_segments) - preview_limit
+        remaining = len(readable_segments) - preview_limit
         if remaining > 0:
             self.transcript_textbox.insert(
                 "end",
@@ -2515,7 +2553,7 @@ class App(ctk.CTk):
             if self.last_transcript_source:
                 f.write(f"Source: {self.last_transcript_source}\n\n")
 
-            for segment in segments:
+            for segment in self._get_readable_transcript_segments():
                 speaker = segment.speaker or "Speaker"
                 start = segment.start or ""
                 end = segment.end or ""
