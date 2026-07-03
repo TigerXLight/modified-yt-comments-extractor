@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 
-set VERSION=2.3.0
+set VERSION=2.4.0
 set ZIP_NAME=YouTube-Comment-Extractor-Windows-v%VERSION%.zip
 
 echo Closing running app if open...
