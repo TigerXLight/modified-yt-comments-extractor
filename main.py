@@ -2729,6 +2729,17 @@ class App(ctk.CTk):
             if self.last_transcript_source:
                 f.write(f"Source: {self.last_transcript_source}\n\n")
 
+            if self.last_asr_metadata:
+                f.write("ASR Warning:\n")
+                f.write("-" * 80)
+                f.write("\n")
+                f.write(
+                    "This transcript was generated using local automatic speech recognition. "
+                    "It is a machine-generated draft and may contain transcription errors. "
+                    "Speaker diarization is not included. Verify important lines against the original media."
+                )
+                f.write("\n\n")
+
             last_displayed_speaker = None
 
             for segment in readable_segments:
