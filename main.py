@@ -70,6 +70,7 @@ from youtube_transcript_downloader import (
 )
 from youtube_video_metadata import fetch_youtube_video_metadata
 from asr_tools import transcribe_media_file
+from asr_defaults import load_asr_defaults, save_asr_defaults
 
 # Configure logging
 logging.basicConfig(
@@ -2778,6 +2779,8 @@ class App(ctk.CTk):
         if not media_file:
             return
 
+        asr_defaults = load_asr_defaults()
+
         model_name = simpledialog.askstring(
             "ASR Model",
             "Choose faster-whisper model:\n\n"
@@ -2785,7 +2788,7 @@ class App(ctk.CTk):
             "base = fast, basic accuracy\n"
             "small = better accuracy, slower\n"
             "medium = better again, much slower on CPU",
-            initialvalue="base",
+            initialvalue=asr_defaults.get("model_name", "small"),
             parent=self,
         )
 
@@ -2806,7 +2809,7 @@ class App(ctk.CTk):
         speaker_name = simpledialog.askstring(
             "Speaker Label",
             "Speaker label to use for this ASR transcript:",
-            initialvalue="Speaker 1",
+            initialvalue=asr_defaults.get("speaker_name", "Speaker 1"),
             parent=self,
         )
 
@@ -2820,7 +2823,7 @@ class App(ctk.CTk):
             "Optional language code.\n\n"
             "Leave blank for auto-detect.\n"
             "Examples: en, ar, fr, de, es",
-            initialvalue="",
+            initialvalue=asr_defaults.get("language", "en"),
             parent=self,
         )
 
@@ -2835,7 +2838,7 @@ class App(ctk.CTk):
             "This can improve unusual names, usernames, game terms, or repeated phrases.\n\n"
             "Example:\n"
             "Freckelston, Kingman, ZoneX, Nyxara, Caltheris, BLACKED, Nicolas Cage",
-            initialvalue="",
+            initialvalue=asr_defaults.get("initial_prompt", ""),
             parent=self,
         )
 
@@ -2843,6 +2846,13 @@ class App(ctk.CTk):
             return
 
         initial_prompt = initial_prompt.strip() or None
+
+        save_asr_defaults(
+            model_name=model_name,
+            speaker_name=speaker_name,
+            language=language_code or "",
+            initial_prompt=initial_prompt or "",
+        )
 
         self.transcript_asr_button.configure(state="disabled")
         self.log_message(
