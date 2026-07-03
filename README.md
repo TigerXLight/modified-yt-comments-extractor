@@ -14,6 +14,15 @@ This version adds extra extraction and export features, including:
 - CSV and Excel exports
 - Spam filtering options
 - Date, likes, creator, and keyword filters
+- Extract YouTube comments and replies
+- Export comments to TXT, CSV, and Excel
+- Filter spam and suspicious comments
+- Attach screenshots and create a packaged export folder
+- Import SRT, VTT, and TXT transcripts
+- Download available YouTube captions/transcripts
+- Export transcripts to TXT, SRT, VTT, and CSV
+- Save transcript files inside Package exports
+- Add YouTube video metadata to `source_info.txt` when available
 
 This project is a modified version of the original open-source project:
 
@@ -22,7 +31,24 @@ Original project: https://github.com/vijaykumarpeta/yt-comments-extractor
 Please see the `LICENSE` file for licensing information.
 
 ---
+## What’s New in v2.3.0
 
+This version adds the first YouTube transcript/caption workflow.
+
+New transcript features:
+
+- Download available YouTube captions/transcripts from a pasted video URL
+- Import local transcript files: `.srt`, `.vtt`, `.txt`
+- Export transcripts as readable `.txt`, `.srt`, `.vtt`, and `.csv`
+- Show or hide transcript speaker labels
+- Show or hide transcript timestamps
+- Use the YouTube channel name as the speaker label when there is only one speaker
+- Create readable speaker-turn transcript exports
+- Keep SRT/VTT/CSV exports in subtitle/editing format
+- Save transcript files inside Package exports
+
+YouTube transcript download uses captions/transcripts already available from YouTube. It does **not** transcribe audio. Local ASR transcription is planned for a later release.
+---
 ## Download for Windows Users
 
 The easiest way to use this modified version is to download the ready-made Windows ZIP from the **Releases** page.
@@ -271,6 +297,15 @@ video_title_evidence_20260702_170412/
    ├─ page_screenshot_001.png
    ├─ page_screenshot_002.png
    └─ page_screenshot_003.png
+
+   When a transcript is loaded, the Package export includes:
+
+```text
+transcript/
+├─ transcript_readable.txt
+├─ transcript.csv
+├─ transcript.srt
+└─ transcript.vtt
 
 ## Rawest Extraction Settings
 
