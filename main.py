@@ -2267,28 +2267,48 @@ class App(ctk.CTk):
         self.transcript_rename_button.configure(state=state)
         self.transcript_clear_button.configure(state=state)
 
+    @staticmethod
+    def _apply_speaker_label_rule(
+        segments: List[TranscriptSegment],
+        single_speaker_name: str
+    ) -> None:
+        """
+        Speaker label rule:
+        - If only one speaker exists, use the channel/source name.
+        - If multiple speakers exist, normalise labels to Speaker 1, Speaker 2, etc.
+        """
+        speakers: List[str] = []
+
+        for segment in segments:
+            speaker = (segment.speaker or "").strip()
+            if speaker and speaker not in speakers:
+                speakers.append(speaker)
+
+        if len(speakers) <= 1:
+            for segment in segments:
+                segment.speaker = single_speaker_name or "YouTube"
+            return
+
+        speaker_map = {
+            speaker: f"Speaker {index}"
+            for index, speaker in enumerate(speakers, start=1)
+        }
+
+        for segment in segments:
+            old_speaker = (segment.speaker or "").strip()
+            segment.speaker = speaker_map.get(old_speaker, "Speaker")
+
     def _get_readable_transcript_segments(self) -> List[TranscriptSegment]:
         """
-        Combine consecutive same-speaker transcript segments into readable chunks.
+        Combine consecutive same-speaker segments into full speaker turns.
 
-        This avoids repeated speaker labels while preventing one huge 60-minute
-        textbox block, which makes scrolling slow.
+        For a one-speaker YouTube video, this produces one readable speaker turn.
+        The preview will truncate for speed, but TXT/package export will include all text.
         """
         if not self.transcript_segments:
             return []
 
-        max_duration_seconds = 90.0
-        max_chars = 2200
-
         readable: List[TranscriptSegment] = []
-
-        def to_seconds(timestamp: str) -> float:
-            timestamp = (timestamp or "").replace(",", ".").strip()
-            try:
-                h, m, s = timestamp.split(":")
-                return int(h) * 3600 + int(m) * 60 + float(s)
-            except Exception:
-                return 0.0
 
         current = TranscriptSegment(
             speaker=self.transcript_segments[0].speaker,
@@ -2300,20 +2320,8 @@ class App(ctk.CTk):
         for segment in self.transcript_segments[1:]:
             same_speaker = (segment.speaker or "") == (current.speaker or "")
 
-            current_start = to_seconds(current.start)
-            next_end = to_seconds(segment.end)
-            combined_duration = next_end - current_start
-
-            combined_text = f"{current.text.rstrip()} {segment.text.strip()}".strip()
-
-            should_continue_chunk = (
-                same_speaker
-                and combined_duration <= max_duration_seconds
-                and len(combined_text) <= max_chars
-            )
-
-            if should_continue_chunk:
-                current.text = combined_text
+            if same_speaker:
+                current.text = f"{current.text.rstrip()} {segment.text.strip()}".strip()
                 current.end = segment.end
             else:
                 readable.append(current)
@@ -2326,6 +2334,34 @@ class App(ctk.CTk):
 
         readable.append(current)
         return readable
+
+    @staticmethod
+    def _split_readable_text(text: str, max_chars: int = 1800) -> List[str]:
+        """Split long transcript text into readable paragraphs without changing timestamps."""
+        words = " ".join((text or "").split()).split()
+
+        if not words:
+            return []
+
+        paragraphs: List[str] = []
+        current_words: List[str] = []
+        current_len = 0
+
+        for word in words:
+            extra_len = len(word) + (1 if current_words else 0)
+
+            if current_words and current_len + extra_len > max_chars:
+                paragraphs.append(" ".join(current_words))
+                current_words = [word]
+                current_len = len(word)
+            else:
+                current_words.append(word)
+                current_len += extra_len
+
+        if current_words:
+            paragraphs.append(" ".join(current_words))
+
+        return paragraphs
 
     def _refresh_transcript_display(self) -> None:
         """Refresh transcript preview and stats."""
@@ -2362,14 +2398,20 @@ class App(ctk.CTk):
         )
 
         readable_segments = self._get_readable_transcript_segments()
-        preview_limit = 80
+        preview_char_limit = 12000
+        chars_written = 0
+        truncated = False
 
         show_speakers = self.transcript_show_speakers_var.get()
         show_timestamps = self.transcript_show_timestamps_var.get()
 
         last_displayed_speaker = None
 
-        for segment in readable_segments[:preview_limit]:
+        for segment in readable_segments:
+            if chars_written >= preview_char_limit:
+                truncated = True
+                break
+
             speaker = segment.speaker or "Speaker"
             start = segment.start or "no start"
             end = segment.end or "no end"
@@ -2378,25 +2420,34 @@ class App(ctk.CTk):
                 self.transcript_textbox.insert("end", f"{speaker}\n")
                 last_displayed_speaker = speaker
 
-            self.transcript_textbox.insert("end", f"{segment.text}\n")
+            for paragraph in self._split_readable_text(segment.text):
+                remaining_chars = preview_char_limit - chars_written
+
+                if remaining_chars <= 0:
+                    truncated = True
+                    break
+
+                if len(paragraph) > remaining_chars:
+                    self.transcript_textbox.insert("end", paragraph[:remaining_chars].rstrip())
+                    self.transcript_textbox.insert("end", "...\n\n")
+                    chars_written += remaining_chars
+                    truncated = True
+                    break
+
+                self.transcript_textbox.insert("end", paragraph)
+                self.transcript_textbox.insert("end", "\n\n")
+                chars_written += len(paragraph)
 
             if show_timestamps:
-                self.transcript_textbox.insert("end", f"[{start} - {end}]\n")
+                self.transcript_textbox.insert("end", f"[{start} - {end}]\n\n")
 
-            self.transcript_textbox.insert("end", "\n")
+            if truncated:
+                break
 
-            self.transcript_textbox.insert("end", f"   {segment.text}\n")
-
-            if show_timestamps:
-                self.transcript_textbox.insert("end", f"   {start} → {end}\n")
-
-            self.transcript_textbox.insert("end", "\n")
-
-        remaining = len(readable_segments) - preview_limit
-        if remaining > 0:
+        if truncated:
             self.transcript_textbox.insert(
                 "end",
-                f"... {remaining:,} more segment(s) not shown in preview.\n"
+                "... preview truncated for speed. Export TXT or Package for the full readable transcript.\n"
             )
 
         self.transcript_textbox.configure(state="disabled")
@@ -2514,6 +2565,11 @@ class App(ctk.CTk):
                     speaker_name=speaker_name,
                 )
 
+                self._apply_speaker_label_rule(
+                    segments,
+                    single_speaker_name=speaker_name,
+                )
+
                 def on_success() -> None:
                     transcript_type = "auto-generated" if info.get("is_generated") else "manual"
                     language_code = info.get("language_code") or ", ".join(languages)
@@ -2607,8 +2663,9 @@ class App(ctk.CTk):
                     f.write(f"{speaker}\n")
                     last_displayed_speaker = speaker
 
-                f.write(segment.text.strip())
-                f.write("\n")
+                for paragraph in self._split_readable_text(segment.text):
+                    f.write(paragraph)
+                    f.write("\n\n")
 
                 if show_timestamps and start and end:
                     f.write(f"[{start} - {end}]\n")
