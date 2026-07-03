@@ -18,7 +18,7 @@ pip install -r requirements.txt
 pip install pyinstaller keyring
 
 echo Building EXE...
-python -m PyInstaller --noconfirm --clean --windowed --name "YouTube Comment Extractor" --collect-all customtkinter --add-data "assets;assets" main.py
+python -m PyInstaller --noconfirm --clean --windowed --name "YouTube Comment Extractor" --collect-all customtkinter --collect-all faster_whisper --add-data "assets;assets" main.py
 
 echo.
 echo Build complete.
