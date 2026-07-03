@@ -2393,7 +2393,7 @@ class App(ctk.CTk):
                 "1.0",
                 "Import an SRT, VTT, or TXT transcript file here.\n\n"
                 "v2.3.0 supports local import/export and YouTube transcript download.\n"
-                "Local ASR transcription will be added later."
+                "Use Local ASR to transcribe local audio/video files. Speaker diarization is not included yet."
             )
             self.transcript_textbox.configure(state="disabled")
             return
