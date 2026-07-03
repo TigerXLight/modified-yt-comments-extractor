@@ -2393,7 +2393,7 @@ class App(ctk.CTk):
                 "1.0",
                 "Import an SRT, VTT, or TXT transcript file here.\n\n"
                 "v2.3.0 supports local import/export and YouTube transcript download.\n"
-                "Use Local ASR to transcribe local audio/video files. Speaker diarization is not included yet."
+                "Local ASR transcription will be added later."
             )
             self.transcript_textbox.configure(state="disabled")
             return
@@ -2700,7 +2700,11 @@ class App(ctk.CTk):
 
         model_name = simpledialog.askstring(
             "ASR Model",
-            "Choose faster-whisper model:\n\nbase = faster\nsmall = better\nmedium = slower/better",
+            "Choose faster-whisper model:\n\n"
+            "tiny = fastest, weakest accuracy\n"
+            "base = fast, basic accuracy\n"
+            "small = better accuracy, slower\n"
+            "medium = better again, much slower on CPU",
             initialvalue="base",
             parent=self,
         )
@@ -2708,7 +2712,16 @@ class App(ctk.CTk):
         if model_name is None:
             return
 
-        model_name = model_name.strip() or "base"
+        model_name = model_name.strip().lower() or "base"
+
+        allowed_models = {"tiny", "base", "small", "medium"}
+        if model_name not in allowed_models:
+            messagebox.showerror(
+                "Invalid ASR Model",
+                "Please choose one of:\n\n"
+                "tiny\nbase\nsmall\nmedium"
+            )
+            return
 
         speaker_name = simpledialog.askstring(
             "Speaker Label",
@@ -2722,8 +2735,40 @@ class App(ctk.CTk):
 
         speaker_name = speaker_name.strip() or "Speaker 1"
 
+        language_code = simpledialog.askstring(
+            "ASR Language",
+            "Optional language code.\n\n"
+            "Leave blank for auto-detect.\n"
+            "Examples: en, ar, fr, de, es",
+            initialvalue="",
+            parent=self,
+        )
+
+        if language_code is None:
+            return
+
+        language_code = language_code.strip() or None
+
+        initial_prompt = simpledialog.askstring(
+            "ASR Known Words",
+            "Optional known names/terms/context.\n\n"
+            "This can improve unusual names, usernames, game terms, or repeated phrases.\n\n"
+            "Example:\n"
+            "Freckelston, Kingman, ZoneX, Nyxara, Caltheris, BLACKED, Nicolas Cage",
+            initialvalue="",
+            parent=self,
+        )
+
+        if initial_prompt is None:
+            return
+
+        initial_prompt = initial_prompt.strip() or None
+
         self.transcript_asr_button.configure(state="disabled")
-        self.log_message(f"Starting local ASR with faster-whisper model: {model_name}", "info")
+        self.log_message(
+            f"Starting local ASR with faster-whisper model: {model_name}",
+            "info"
+        )
 
         def worker() -> None:
             try:
@@ -2733,7 +2778,8 @@ class App(ctk.CTk):
                     device="cpu",
                     compute_type="int8",
                     speaker_name=speaker_name,
-                    language=None,
+                    language=language_code,
+                    initial_prompt=initial_prompt,
                     vad_filter=True,
                     beam_size=5,
                 )
@@ -2758,7 +2804,8 @@ class App(ctk.CTk):
                         probability_text = "unknown"
 
                     self.log_message(
-                        f"Local ASR complete: {len(segments):,} segment(s), language={language}, confidence={probability_text}",
+                        f"Local ASR complete: {len(segments):,} segment(s), "
+                        f"language={language}, confidence={probability_text}",
                         "success",
                     )
 
@@ -2772,12 +2819,13 @@ class App(ctk.CTk):
 
                 self.after(0, on_success)
 
-            except Exception as e:
+            except Exception as error:
                 logger.exception("Local ASR error")
+                error_text = str(error)
 
                 def on_error() -> None:
-                    self.log_message(f"Local ASR failed: {e}", "error")
-                    messagebox.showerror("Local ASR Error", str(e))
+                    self.log_message(f"Local ASR failed: {error_text}", "error")
+                    messagebox.showerror("Local ASR Error", error_text)
 
                 self.after(0, on_error)
 

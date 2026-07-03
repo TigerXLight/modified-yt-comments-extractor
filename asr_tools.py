@@ -14,6 +14,7 @@ def _seconds_to_timestamp(seconds: float) -> str:
         seconds = 0.0
 
     total_ms = int(round(float(seconds) * 1000))
+
     hours = total_ms // 3_600_000
     total_ms %= 3_600_000
 
@@ -33,6 +34,7 @@ def transcribe_media_file(
     compute_type: str = "int8",
     speaker_name: str = "ASR",
     language: Optional[str] = None,
+    initial_prompt: Optional[str] = None,
     vad_filter: bool = True,
     beam_size: int = 5,
 ) -> Tuple[List[TranscriptSegment], Dict[str, Any]]:
@@ -56,6 +58,7 @@ def transcribe_media_file(
     whisper_segments, info = model.transcribe(
         str(path),
         language=language,
+        initial_prompt=initial_prompt,
         beam_size=beam_size,
         vad_filter=vad_filter,
     )
@@ -85,6 +88,7 @@ def transcribe_media_file(
         "speaker_name": speaker_name,
         "language": getattr(info, "language", None),
         "language_probability": getattr(info, "language_probability", None),
+        "initial_prompt": initial_prompt,
         "duration": getattr(info, "duration", None),
         "duration_after_vad": getattr(info, "duration_after_vad", None),
         "vad_filter": vad_filter,
