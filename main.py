@@ -64,6 +64,12 @@ from transcript_tools import (
     export_transcript_vtt,
 )
 
+from youtube_transcript_downloader import (
+    download_youtube_transcript,
+    merge_transcript_segments,
+)
+from youtube_video_metadata import fetch_youtube_video_metadata
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -154,7 +160,12 @@ class App(ctk.CTk):
         self.all_spam: List[Dict[str, Any]] = []
         self.attached_screenshots: List[str] = []
         self.transcript_segments: List[TranscriptSegment] = []
+        self.last_transcript_source: Optional[str] = None
+        self.last_youtube_video_info: Optional[Dict[str, Any]] = None
         self.last_package_dir: Optional[str] = None
+
+        self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
+        self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
         # Custom filter patterns
         self._blacklist_patterns: str = ""
@@ -1057,6 +1068,19 @@ class App(ctk.CTk):
         )
         self.transcript_import_button.pack(side="left")
 
+        self.transcript_youtube_button = ctk.CTkButton(
+            button_row,
+            text="⬇ YouTube",
+            command=self.download_youtube_transcript_clicked,
+            width=105,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8
+        )
+        self.transcript_youtube_button.pack(side="left", padx=(8, 0))
+
         self.transcript_rename_button = ctk.CTkButton(
             button_row,
             text="👤 Rename Speaker",
@@ -1141,6 +1165,48 @@ class App(ctk.CTk):
             state="disabled"
         )
         self.transcript_export_txt_button.pack(side="right", padx=(0, 8))
+
+        # Display options row
+        transcript_options_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
+        transcript_options_row.pack(fill="x", padx=15, pady=(0, 8))
+
+        options_label = ctk.CTkLabel(
+            transcript_options_row,
+            text="Display:",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"]
+        )
+        options_label.pack(side="left")
+
+        self.transcript_show_speakers_checkbox = ctk.CTkCheckBox(
+            transcript_options_row,
+            text="Speakers",
+            variable=self.transcript_show_speakers_var,
+            command=self._refresh_transcript_display,
+            width=90,
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_secondary"],
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            border_color=COLORS["border"],
+            checkmark_color="#000000"
+        )
+        self.transcript_show_speakers_checkbox.pack(side="left", padx=(10, 0))
+
+        self.transcript_show_timestamps_checkbox = ctk.CTkCheckBox(
+            transcript_options_row,
+            text="Timestamps",
+            variable=self.transcript_show_timestamps_var,
+            command=self._refresh_transcript_display,
+            width=110,
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_secondary"],
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            border_color=COLORS["border"],
+            checkmark_color="#000000"
+        )
+        self.transcript_show_timestamps_checkbox.pack(side="left", padx=(10, 0))
 
         # Transcript preview
         self.transcript_textbox = ctk.CTkTextbox(
@@ -2003,6 +2069,51 @@ class App(ctk.CTk):
         valid_urls, _ = URLValidator.parse_url_list(current_text)
         return valid_urls
 
+    def _append_youtube_metadata_to_source_info(self, package_dir: str) -> None:
+        """Append YouTube video metadata to source_info.txt when available."""
+        if not self.last_youtube_video_info:
+            return
+
+        info = self.last_youtube_video_info
+        source_info_path = os.path.join(package_dir, "source_info.txt")
+
+        lines = []
+        lines.append("")
+        lines.append("")
+        lines.append("YouTube Video Metadata")
+        lines.append("=" * 80)
+
+        fields = [
+            ("Title", "title"),
+            ("URL", "url"),
+            ("Video ID", "video_id"),
+            ("Channel", "channel_title"),
+            ("Channel ID", "channel_id"),
+            ("Subscribers", "subscriber_count_text"),
+            ("Published At", "published_at"),
+            ("Views", "view_count_text"),
+            ("Likes", "like_count_text"),
+            ("Comments", "comment_count_text"),
+        ]
+
+        for label, key in fields:
+            value = info.get(key)
+            if value not in (None, ""):
+                lines.append(f"{label}: {value}")
+
+        description = (info.get("description") or "").strip()
+
+        if description:
+            lines.append("")
+            lines.append("Description")
+            lines.append("-" * 80)
+            lines.append(description)
+
+        lines.append("")
+
+        with open(source_info_path, "a", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(lines))
+
     def export_evidence_folder(self) -> None:
         """Export comments, metadata, source info, and attached screenshots into one folder."""
         with self._data_lock:
@@ -2037,6 +2148,7 @@ class App(ctk.CTk):
             "Comments Selected": self.extract_comments_var.get(),
             "Livechat Selected": self.extract_live_chat_var.get(),
             "Transcript Segments": len(self.transcript_segments),
+            "Transcript Source": self.last_transcript_source or "",
         }
 
         try:
@@ -2055,7 +2167,7 @@ class App(ctk.CTk):
                 transcript_dir = os.path.join(package_dir, "transcript")
                 os.makedirs(transcript_dir, exist_ok=True)
 
-                export_transcript_txt(
+                self._export_readable_transcript_txt(
                     self.transcript_segments,
                     os.path.join(transcript_dir, "transcript_readable.txt")
                 )
@@ -2073,6 +2185,7 @@ class App(ctk.CTk):
                 )
 
                 self.log_message("Added transcript files to export package.", "success")
+            self._append_youtube_metadata_to_source_info(package_dir)
 
             self.last_package_dir = package_dir
             self.open_last_package_button.configure(state="normal")
@@ -2160,8 +2273,8 @@ class App(ctk.CTk):
             self.transcript_textbox.insert(
                 "1.0",
                 "Import an SRT, VTT, or TXT transcript file here.\n\n"
-                "v2.2.0 supports local transcript import/export.\n"
-                "YouTube transcript downloading and ASR transcription will be added later."
+                "v2.3.0 supports local import/export and YouTube transcript download.\n"
+                "Local ASR transcription will be added later."
             )
             self.transcript_textbox.configure(state="disabled")
             return
@@ -2178,14 +2291,27 @@ class App(ctk.CTk):
 
         preview_limit = 80
 
+        show_speakers = self.transcript_show_speakers_var.get()
+        show_timestamps = self.transcript_show_timestamps_var.get()
+
         for i, segment in enumerate(self.transcript_segments[:preview_limit], start=1):
             speaker = segment.speaker or "Speaker"
             start = segment.start or "no start"
             end = segment.end or "no end"
 
-            self.transcript_textbox.insert("end", f"{i}. {speaker}\n")
-            self.transcript_textbox.insert("end", f"   {start} → {end}\n")
-            self.transcript_textbox.insert("end", f"   {segment.text}\n\n")
+            self.transcript_textbox.insert("end", f"{i}. ")
+
+            if show_speakers:
+                self.transcript_textbox.insert("end", f"{speaker}\n")
+            else:
+                self.transcript_textbox.insert("end", "\n")
+
+            self.transcript_textbox.insert("end", f"   {segment.text}\n")
+
+            if show_timestamps:
+                self.transcript_textbox.insert("end", f"   {start} → {end}\n")
+
+            self.transcript_textbox.insert("end", "\n")
 
         remaining = len(self.transcript_segments) - preview_limit
         if remaining > 0:
@@ -2223,6 +2349,7 @@ class App(ctk.CTk):
                 return
 
             self.transcript_segments = segments
+            self.last_transcript_source = f"Imported file: {os.path.basename(filename)}"
             self._refresh_transcript_display()
             self.evidence_button.configure(state="normal")
 
@@ -2235,6 +2362,178 @@ class App(ctk.CTk):
             logger.exception("Transcript import error")
             self.log_message(f"Transcript import failed: {e}", "error")
             messagebox.showerror("Transcript Import Error", str(e))
+
+    def download_youtube_transcript_clicked(self) -> None:
+        """Download YouTube captions/transcript for the first URL in the Video URLs box."""
+        urls = self._get_current_source_urls()
+
+        if not urls:
+            messagebox.showwarning(
+                "No YouTube URL",
+                "Paste a YouTube video URL into the Video URLs box first."
+            )
+            return
+
+        selected_url = urls[0]
+
+        language_text = simpledialog.askstring(
+            "YouTube Transcript Languages",
+            "Language priority, comma-separated.\n\nExample: en, en-GB, ar",
+            initialvalue="en"
+        )
+
+        if not language_text:
+            return
+
+        languages = [
+            item.strip()
+            for item in language_text.split(",")
+            if item.strip()
+        ]
+
+        if not languages:
+            languages = ["en"]
+
+        prefer_manual_answer = messagebox.askyesno(
+            "Transcript Preference",
+            "Prefer manually created captions if available?\n\n"
+            "Yes = manual captions first\n"
+            "No = auto-generated captions first"
+        )
+
+        self.transcript_youtube_button.configure(state="disabled", text="Loading...")
+        self.log_message(
+            f"Downloading YouTube transcript for: {selected_url}",
+            "info"
+        )
+
+        def worker() -> None:
+            try:
+                segments, info = download_youtube_transcript(
+                    selected_url,
+                    languages=languages,
+                    prefer_manual=prefer_manual_answer,
+                )
+
+                video_info: Dict[str, Any] = {}
+                speaker_name = "YouTube"
+
+                api_key = self.api_key_entry.get().strip()
+
+                if api_key:
+                    try:
+                        video_info = fetch_youtube_video_metadata(
+                            selected_url,
+                            api_key
+                        )
+                        speaker_name = video_info.get("channel_title") or "YouTube"
+                    except Exception as metadata_error:
+                        logger.warning(f"Could not fetch YouTube video metadata: {metadata_error}")
+
+                segments = merge_transcript_segments(
+                    segments,
+                    speaker_name=speaker_name,
+                )
+
+                def on_success() -> None:
+                    transcript_type = "auto-generated" if info.get("is_generated") else "manual"
+                    language_code = info.get("language_code") or ", ".join(languages)
+
+                    self.transcript_segments = segments
+                    self.last_youtube_video_info = video_info or None
+                    self.last_transcript_source = (
+                        f"YouTube {transcript_type} transcript "
+                        f"({language_code}) for {selected_url}"
+                    )
+
+                    self._refresh_transcript_display()
+                    self.evidence_button.configure(state="normal")
+
+                    self.log_message(
+                        f"Downloaded YouTube transcript: {len(segments):,} segment(s), "
+                        f"{transcript_type}, language {language_code}",
+                        "success"
+                    )
+
+                    messagebox.showinfo(
+                        "YouTube Transcript Downloaded",
+                        f"Transcript loaded into the Transcript section.\n\n"
+                        f"Segments: {len(segments):,}\n"
+                        f"Type: {transcript_type}\n"
+                        f"Language: {language_code}"
+                    )
+
+                self.after(0, on_success)
+
+            except Exception as e:
+                error_message = str(e)
+
+                def on_error() -> None:
+                    self.log_message(
+                        f"YouTube transcript download failed: {error_message}",
+                        "error"
+                    )
+                    messagebox.showerror(
+                        "YouTube Transcript Error",
+                        "Could not download a transcript for this video.\n\n"
+                        "Possible reasons:\n"
+                        "• No captions are available\n"
+                        "• Requested language is unavailable\n"
+                        "• Captions are disabled\n"
+                        "• YouTube blocked the request\n"
+                        "• YouTube changed how captions are exposed\n\n"
+                        f"Error:\n{error_message}"
+                    )
+
+                self.after(0, on_error)
+
+            finally:
+                def reset_button() -> None:
+                    self.transcript_youtube_button.configure(
+                        state="normal",
+                        text="⬇ YouTube"
+                    )
+
+                self.after(0, reset_button)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _export_readable_transcript_txt(
+        self,
+        segments: List[TranscriptSegment],
+        path: str
+    ) -> None:
+        """Export readable transcript TXT using current speaker/timestamp display options."""
+        show_speakers = self.transcript_show_speakers_var.get()
+        show_timestamps = self.transcript_show_timestamps_var.get()
+
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write("Transcript Export\n")
+            f.write("=" * 80)
+            f.write("\n\n")
+
+            if self.last_transcript_source:
+                f.write(f"Source: {self.last_transcript_source}\n\n")
+
+            for segment in segments:
+                speaker = segment.speaker or "Speaker"
+                start = segment.start or ""
+                end = segment.end or ""
+
+                header_parts = []
+
+                if show_speakers:
+                    header_parts.append(speaker)
+
+                if show_timestamps and start and end:
+                    header_parts.append(f"[{start} - {end}]")
+
+                if header_parts:
+                    f.write(" ".join(header_parts))
+                    f.write("\n")
+
+                f.write(segment.text.strip())
+                f.write("\n\n")
 
     def export_transcript_file(self, export_type: str) -> None:
         """Export loaded transcript to TXT, SRT, VTT, or CSV."""
@@ -2284,7 +2583,10 @@ class App(ctk.CTk):
             return
 
         try:
-            exporter(self.transcript_segments, filename)
+            if export_type == "txt":
+                self._export_readable_transcript_txt(self.transcript_segments, filename)
+            else:
+                exporter(self.transcript_segments, filename)
 
             self.log_message(
                 f"Exported transcript {export_type.upper()} to: {os.path.basename(filename)}",
@@ -2477,6 +2779,7 @@ class App(ctk.CTk):
             return
 
         self.transcript_segments = []
+        self.last_transcript_source = None
         self._refresh_transcript_display()
         self.log_message("Transcript cleared.", "muted")
 
