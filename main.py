@@ -2878,9 +2878,12 @@ class App(ctk.CTk):
                     self.transcript_segments = segments
                     self.last_youtube_video_info = None
                     self.last_asr_metadata = metadata
+                    prompt_note = " with known-words prompt" if initial_prompt else ""
+                    language_note = f", language={language_code}" if language_code else ", language=auto-detect"
+
                     self.last_transcript_source = (
                         f"Local ASR transcript from {os.path.basename(media_file)} "
-                        f"using faster-whisper {model_name}"
+                        f"using faster-whisper {model_name}{language_note}{prompt_note}"
                     )
 
                     self._refresh_transcript_display()
@@ -2898,6 +2901,19 @@ class App(ctk.CTk):
                         f"Local ASR complete: {len(segments):,} segment(s), "
                         f"language={language}, confidence={probability_text}",
                         "success",
+                    )
+
+                    prompt_used = "yes" if metadata.get("initial_prompt") else "no"
+                    requested_language = metadata.get("requested_language") or "auto-detect"
+                    source_hash = metadata.get("source_file_sha256") or ""
+                    source_hash_short = f"{source_hash[:12]}..." if source_hash else "not recorded"
+
+                    self.log_message(
+                        f"ASR settings: model={metadata.get('model_name')}, "
+                        f"language setting={requested_language}, "
+                        f"known words prompt={prompt_used}, "
+                        f"source hash={source_hash_short}",
+                        "muted",
                     )
 
                     messagebox.showinfo(
