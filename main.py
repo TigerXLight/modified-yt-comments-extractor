@@ -69,6 +69,8 @@ from youtube_transcript_downloader import (
     merge_transcript_segments,
 )
 from youtube_video_metadata import fetch_youtube_video_metadata
+from asr_tools import transcribe_media_file
+from asr_defaults import load_asr_defaults, save_asr_defaults
 
 # Configure logging
 logging.basicConfig(
@@ -162,6 +164,7 @@ class App(ctk.CTk):
         self.transcript_segments: List[TranscriptSegment] = []
         self.last_transcript_source: Optional[str] = None
         self.last_youtube_video_info: Optional[Dict[str, Any]] = None
+        self.last_asr_metadata: Optional[Dict[str, Any]] = None
         self.last_package_dir: Optional[str] = None
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
@@ -1080,6 +1083,16 @@ class App(ctk.CTk):
             corner_radius=8
         )
         self.transcript_youtube_button.pack(side="left", padx=(8, 0))
+
+        self.transcript_asr_button = ctk.CTkButton(
+            button_row,
+            text="🎙 Local ASR",
+            command=self.local_asr_transcribe_clicked,
+            width=110,
+            fg_color="#7C3AED",
+            hover_color="#6D28D9",
+        )
+        self.transcript_asr_button.pack(side="left", padx=3, pady=3)
 
         self.transcript_rename_button = ctk.CTkButton(
             button_row,
@@ -2126,6 +2139,72 @@ class App(ctk.CTk):
         with open(source_info_path, "a", encoding="utf-8", newline="\n") as f:
             f.write("\n".join(lines))
 
+
+    def _append_asr_metadata_to_source_info(self, package_dir: str) -> None:
+        """Append Local ASR metadata to source_info.txt when available."""
+        if not self.last_asr_metadata:
+            return
+
+        info = self.last_asr_metadata
+        source_info_path = os.path.join(package_dir, "source_info.txt")
+
+        probability = info.get("language_probability")
+
+        if probability is not None:
+            try:
+                probability_text = f"{float(probability):.2%}"
+            except Exception:
+                probability_text = str(probability)
+        else:
+            probability_text = "unknown"
+
+        fields = [
+            ("Source File", "source_file"),
+            ("Source File Name", "source_file_name"),
+            ("Source File Size Bytes", "source_file_size_bytes"),
+            ("Source File SHA256", "source_file_sha256"),
+            ("Model", "model_name"),
+            ("Device", "device"),
+            ("Compute Type", "compute_type"),
+            ("Speaker Label", "speaker_name"),
+            ("Language Setting", "requested_language"),
+            ("Detected Language", "language"),
+            ("Language Confidence", None),
+            ("Known Words / Context Prompt", "initial_prompt"),
+            ("VAD Filter", "vad_filter"),
+            ("Beam Size", "beam_size"),
+            ("Segment Count", "segment_count"),
+            ("Duration", "duration"),
+            ("Duration After VAD", "duration_after_vad"),
+        ]
+
+        lines = []
+        lines.append("")
+        lines.append("")
+        lines.append("Local ASR Metadata")
+        lines.append("=" * 80)
+
+        for label, key in fields:
+            if key is None:
+                value = probability_text
+            else:
+                value = info.get(key)
+
+            if value not in (None, ""):
+                lines.append(f"{label}: {value}")
+
+        lines.append("")
+        lines.append("Note")
+        lines.append("-" * 80)
+        lines.append(
+            "Local ASR transcripts are machine-generated drafts. "
+            "They may contain transcription errors and do not include speaker diarization."
+        )
+        lines.append("")
+
+        with open(source_info_path, "a", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(lines))
+
     def export_evidence_folder(self) -> None:
         """Export comments, metadata, source info, and attached screenshots into one folder."""
         with self._data_lock:
@@ -2198,6 +2277,7 @@ class App(ctk.CTk):
 
                 self.log_message("Added transcript files to export package.", "success")
             self._append_youtube_metadata_to_source_info(package_dir)
+            self._append_asr_metadata_to_source_info(package_dir)
 
             self.last_package_dir = package_dir
             self.open_last_package_button.configure(state="normal")
@@ -2381,8 +2461,8 @@ class App(ctk.CTk):
             self.transcript_textbox.insert(
                 "1.0",
                 "Import an SRT, VTT, or TXT transcript file here.\n\n"
-                "v2.3.0 supports local import/export and YouTube transcript download.\n"
-                "Local ASR transcription will be added later."
+                "v2.4.0 supports local import/export, YouTube transcript download, and Local ASR transcription.\n"
+                "Use Local ASR to transcribe local audio/video files with faster-whisper."
             )
             self.transcript_textbox.configure(state="disabled")
             return
@@ -2575,6 +2655,7 @@ class App(ctk.CTk):
                     language_code = info.get("language_code") or ", ".join(languages)
 
                     self.transcript_segments = segments
+                    self.last_asr_metadata = None
                     self.last_youtube_video_info = video_info or None
                     self.last_transcript_source = (
                         f"YouTube {transcript_type} transcript "
@@ -2652,6 +2733,17 @@ class App(ctk.CTk):
             if self.last_transcript_source:
                 f.write(f"Source: {self.last_transcript_source}\n\n")
 
+            if self.last_asr_metadata:
+                f.write("ASR Warning:\n")
+                f.write("-" * 80)
+                f.write("\n")
+                f.write(
+                    "This transcript was generated using local automatic speech recognition. "
+                    "It is a machine-generated draft and may contain transcription errors. "
+                    "Speaker diarization is not included. Verify important lines against the original media."
+                )
+                f.write("\n\n")
+
             last_displayed_speaker = None
 
             for segment in readable_segments:
@@ -2671,6 +2763,186 @@ class App(ctk.CTk):
                     f.write(f"[{start} - {end}]\n")
 
                 f.write("\n")
+
+    def local_asr_transcribe_clicked(self) -> None:
+        """Transcribe a local audio/video file using faster-whisper."""
+        media_file = filedialog.askopenfilename(
+            title="Choose audio or video file for local ASR",
+            filetypes=[
+                ("Media files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg *.mp4 *.mkv *.webm *.mov *.avi"),
+                ("Audio files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
+                ("Video files", "*.mp4 *.mkv *.webm *.mov *.avi"),
+                ("All files", "*.*"),
+            ],
+        )
+
+        if not media_file:
+            return
+
+        asr_defaults = load_asr_defaults()
+
+        model_name = simpledialog.askstring(
+            "ASR Model",
+            "Choose faster-whisper model:\n\n"
+            "tiny = fastest, weakest accuracy\n"
+            "base = fast, basic accuracy\n"
+            "small = better accuracy, slower\n"
+            "medium = better again, much slower on CPU",
+            initialvalue=asr_defaults.get("model_name", "small"),
+            parent=self,
+        )
+
+        if model_name is None:
+            return
+
+        model_name = model_name.strip().lower() or "base"
+
+        allowed_models = {"tiny", "base", "small", "medium"}
+        if model_name not in allowed_models:
+            messagebox.showerror(
+                "Invalid ASR Model",
+                "Please choose one of:\n\n"
+                "tiny\nbase\nsmall\nmedium"
+            )
+            return
+
+        speaker_name = simpledialog.askstring(
+            "Speaker Label",
+            "Speaker label to use for this ASR transcript:",
+            initialvalue=asr_defaults.get("speaker_name", "Speaker 1"),
+            parent=self,
+        )
+
+        if speaker_name is None:
+            return
+
+        speaker_name = speaker_name.strip() or "Speaker 1"
+
+        language_code = simpledialog.askstring(
+            "ASR Language",
+            "Optional language code.\n\n"
+            "Leave blank for auto-detect.\n"
+            "Examples: en, ar, fr, de, es",
+            initialvalue=asr_defaults.get("language", "en"),
+            parent=self,
+        )
+
+        if language_code is None:
+            return
+
+        language_code = language_code.strip() or None
+
+        initial_prompt = simpledialog.askstring(
+            "ASR Known Words",
+            "Optional known names/terms/context.\n\n"
+            "This can improve unusual names, usernames, game terms, or repeated phrases.\n\n"
+            "Example:\n"
+            "Freckelston, Kingman, ZoneX, Nyxara, Caltheris, BLACKED, Nicolas Cage",
+            initialvalue=asr_defaults.get("initial_prompt", ""),
+            parent=self,
+        )
+
+        if initial_prompt is None:
+            return
+
+        initial_prompt = initial_prompt.strip() or None
+
+        save_asr_defaults(
+            model_name=model_name,
+            speaker_name=speaker_name,
+            language=language_code or "",
+            initial_prompt=initial_prompt or "",
+        )
+
+        self.transcript_asr_button.configure(state="disabled")
+        self.log_message(
+            f"Starting local ASR with faster-whisper model: {model_name}",
+            "info"
+        )
+
+        def worker() -> None:
+            try:
+                segments, metadata = transcribe_media_file(
+                    media_file,
+                    model_name=model_name,
+                    device="cpu",
+                    compute_type="int8",
+                    speaker_name=speaker_name,
+                    language=language_code,
+                    initial_prompt=initial_prompt,
+                    vad_filter=True,
+                    beam_size=5,
+                )
+
+                def on_success() -> None:
+                    self.transcript_segments = segments
+                    self.last_youtube_video_info = None
+                    self.last_asr_metadata = metadata
+                    prompt_note = " with known-words prompt" if initial_prompt else ""
+                    language_note = f", language={language_code}" if language_code else ", language=auto-detect"
+
+                    self.last_transcript_source = (
+                        f"Local ASR transcript from {os.path.basename(media_file)} "
+                        f"using faster-whisper {model_name}{language_note}{prompt_note}"
+                    )
+
+                    self._refresh_transcript_display()
+                    self.evidence_button.configure(state="normal")
+
+                    language = metadata.get("language") or "unknown"
+                    probability = metadata.get("language_probability")
+
+                    if probability is not None:
+                        probability_text = f"{probability:.2%}"
+                    else:
+                        probability_text = "unknown"
+
+                    self.log_message(
+                        f"Local ASR complete: {len(segments):,} segment(s), "
+                        f"language={language}, confidence={probability_text}",
+                        "success",
+                    )
+
+                    prompt_used = "yes" if metadata.get("initial_prompt") else "no"
+                    requested_language = metadata.get("requested_language") or "auto-detect"
+                    source_hash = metadata.get("source_file_sha256") or ""
+                    source_hash_short = f"{source_hash[:12]}..." if source_hash else "not recorded"
+
+                    self.log_message(
+                        f"ASR settings: model={metadata.get('model_name')}, "
+                        f"language setting={requested_language}, "
+                        f"known words prompt={prompt_used}, "
+                        f"source hash={source_hash_short}",
+                        "muted",
+                    )
+
+                    messagebox.showinfo(
+                        "Local ASR Complete",
+                        f"Transcribed file:\n\n{os.path.basename(media_file)}\n\n"
+                        f"Segments: {len(segments):,}\n"
+                        f"Detected language: {language}\n"
+                        f"Language confidence: {probability_text}",
+                    )
+
+                self.after(0, on_success)
+
+            except Exception as error:
+                logger.exception("Local ASR error")
+                error_text = str(error)
+
+                def on_error() -> None:
+                    self.log_message(f"Local ASR failed: {error_text}", "error")
+                    messagebox.showerror("Local ASR Error", error_text)
+
+                self.after(0, on_error)
+
+            finally:
+                self.after(
+                    0,
+                    lambda: self.transcript_asr_button.configure(state="normal")
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def export_transcript_file(self, export_type: str) -> None:
         """Export loaded transcript to TXT, SRT, VTT, or CSV."""
