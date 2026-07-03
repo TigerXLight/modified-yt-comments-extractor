@@ -813,3 +813,11 @@ Original project by Vijay Kumar Peta:
 https://github.com/vijaykumarpeta/yt-comments-extractor
 
 Modified version maintained by TigerXLight.
+
+## Local ASR transcription
+
+Version 2.4.0 adds local automatic speech recognition through faster-whisper. In the Transcript tab, use **Local ASR** to select a local audio or video file and generate a transcript without using a paid speech-to-text API.
+
+Local ASR supports saved defaults for the model, speaker label, language code, and known-words/context prompt. Export packages include ASR metadata such as the source filename, file size, SHA256 hash, model name, language settings, VAD setting, beam size, and segment count.
+
+Local ASR transcripts are machine-generated drafts and may contain errors. Verify important lines against the original media.

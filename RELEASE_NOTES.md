@@ -379,3 +379,12 @@ MIT License — see [LICENSE](LICENSE) file for details.
 **Thank you for using YouTube Comment Extractor!**
 
 Report issues: [GitHub Issues](https://github.com/vijaykumarpeta/yt-comments-extractor/issues)
+
+## v2.4.0 - Local ASR transcription
+
+- Added local automatic speech recognition using faster-whisper.
+- Added a Local ASR button in the Transcript tab for transcribing local audio/video files.
+- Added saved ASR defaults for model, speaker label, language, and known-words prompt.
+- Added ASR metadata to export packages, including source file name, file size, SHA256 hash, model, language settings, VAD setting, beam size, and segment count.
+- Added ASR warning text to readable transcript exports so machine-generated transcripts are clearly labelled.
+- Kept WhisperX diarization and word-level alignment as experimental work for a later release.
