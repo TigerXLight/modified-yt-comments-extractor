@@ -3982,6 +3982,61 @@ class App(ctk.CTk):
 
         threading.Thread(target=worker, daemon=True).start()
 
+
+    def _get_transcript_active_waveform_range(self):
+        """Return the segment time range currently under the playhead marker."""
+        playhead_seconds = self._get_transcript_playhead_time()
+
+        if playhead_seconds is None:
+            return None
+
+        explicit_playhead = getattr(self, "transcript_playhead_seconds", None)
+        selected_index = getattr(self, "selected_transcript_segment_index", None)
+
+        def get_segment_range(index: int):
+            if not isinstance(index, int) or not (0 <= index < len(self.transcript_segments)):
+                return None
+
+            segment = self.transcript_segments[index]
+            start_seconds = self._transcript_time_to_seconds(segment.start)
+            end_seconds = self._transcript_time_to_seconds(segment.end)
+
+            if start_seconds is None or end_seconds is None:
+                return None
+
+            if end_seconds < start_seconds:
+                return None
+
+            return float(start_seconds), float(end_seconds)
+
+        # Prefer selected segment if the playhead is inside it.
+        selected_range = get_segment_range(selected_index)
+
+        if selected_range:
+            start_seconds, end_seconds = selected_range
+
+            if start_seconds <= playhead_seconds <= end_seconds:
+                return selected_range
+
+        # Otherwise find whichever timed segment the playhead is over.
+        for index in range(len(self.transcript_segments)):
+            segment_range = get_segment_range(index)
+
+            if not segment_range:
+                continue
+
+            start_seconds, end_seconds = segment_range
+
+            if start_seconds <= playhead_seconds <= end_seconds:
+                return segment_range
+
+        # Before the marker has been manually moved, highlight the selected segment.
+        if explicit_playhead is None and selected_range:
+            return selected_range
+
+        return None
+
+
     def _draw_transcript_waveform(
         self,
         canvas,
@@ -4019,6 +4074,28 @@ class App(ctk.CTk):
         x_start = int(left_margin)
         x_end = int(width - right_margin)
 
+        active_waveform_range = self._get_transcript_active_waveform_range()
+        active_start = None
+        active_end = None
+
+        if active_waveform_range:
+            active_start, active_end = active_waveform_range
+
+            if active_end >= min_time and active_start <= max_time:
+                active_visible_start = max(active_start, min_time)
+                active_visible_end = min(active_end, max_time)
+                active_x1 = left_margin + ((active_visible_start - min_time) / visible_duration) * timeline_width
+                active_x2 = left_margin + ((active_visible_end - min_time) / visible_duration) * timeline_width
+
+                canvas.create_rectangle(
+                    active_x1,
+                    wave_top,
+                    active_x2,
+                    wave_bottom,
+                    fill="#2A1717",
+                    outline=""
+                )
+
         for x in range(x_start, x_end + 1, 2):
             fraction = (x - left_margin) / max(1, timeline_width)
             time_at_x = min_time + visible_duration * fraction
@@ -4032,13 +4109,21 @@ class App(ctk.CTk):
             y1 = wave_mid - amplitude * wave_amp
             y2 = wave_mid + amplitude * wave_amp
 
+            is_active_wave = (
+                active_start is not None
+                and active_end is not None
+                and active_start <= time_at_x <= active_end
+            )
+            wave_color = "#EF4444" if is_active_wave else "#334155"
+            wave_width = 2 if is_active_wave else 1
+
             canvas.create_line(
                 x,
                 y1,
                 x,
                 y2,
-                fill="#334155",
-                width=1
+                fill=wave_color,
+                width=wave_width
             )
 
 
