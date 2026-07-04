@@ -1331,6 +1331,11 @@ class App(ctk.CTk):
         )
         self.transcript_search_count_label.pack(side="left", padx=(10, 0))
 
+        self.transcript_search_var.trace_add(
+            "write",
+            lambda *_: self._search_transcript_changed()
+        )
+
         self.transcript_cursor_status_label = ctk.CTkLabel(
             self.transcript_card,
             text="Click inside the transcript to select a segment.",
@@ -3068,7 +3073,7 @@ class App(ctk.CTk):
 
         text_widget = self._get_transcript_text_widget()
 
-        previous_state = "disabled"
+        previous_state = "normal"
         try:
             previous_state = self.transcript_textbox.cget("state")
         except Exception:
@@ -3098,21 +3103,25 @@ class App(ctk.CTk):
                 self._set_transcript_search_navigation_state(False)
                 return
 
-            index = "1.0"
+            full_text = text_widget.get("1.0", "end-1c")
+            haystack = full_text.lower()
+            needle = query.lower()
+
+            search_from = 0
+            needle_length = len(needle)
+
             while True:
-                index = text_widget.search(
-                    query,
-                    index,
-                    stopindex="end",
-                    nocase=True
-                )
-                if not index:
+                found_at = haystack.find(needle, search_from)
+                if found_at == -1:
                     break
 
-                end_index = f"{index}+{len(query)}c"
-                self.transcript_search_matches.append(index)
-                text_widget.tag_add("transcript_search_match", index, end_index)
-                index = end_index
+                start_index = f"1.0+{found_at}c"
+                end_index = f"1.0+{found_at + needle_length}c"
+
+                self.transcript_search_matches.append((start_index, end_index))
+                text_widget.tag_add("transcript_search_match", start_index, end_index)
+
+                search_from = found_at + max(1, needle_length)
 
             total = len(self.transcript_search_matches)
 
@@ -3137,15 +3146,15 @@ class App(ctk.CTk):
             if previous_state == "disabled":
                 self.transcript_textbox.configure(state="disabled")
 
+
     def _apply_current_transcript_search_match(self) -> None:
         """Highlight and scroll to the current transcript search match."""
         if not self.transcript_search_matches:
             return
 
         text_widget = self._get_transcript_text_widget()
-        query = self.transcript_search_var.get().strip()
 
-        previous_state = "disabled"
+        previous_state = "normal"
         try:
             previous_state = self.transcript_textbox.cget("state")
         except Exception:
@@ -3155,23 +3164,33 @@ class App(ctk.CTk):
             self.transcript_textbox.configure(state="normal")
             text_widget.tag_remove("transcript_search_current", "1.0", "end")
 
-            current_index = self.transcript_search_matches[self.transcript_search_current_index]
-            current_end = f"{current_index}+{len(query)}c"
+            current_match = self.transcript_search_matches[self.transcript_search_current_index]
+
+            if isinstance(current_match, tuple):
+                current_index, current_end = current_match
+            else:
+                query = self.transcript_search_var.get().strip()
+                current_index = current_match
+                current_end = f"{current_index}+{len(query)}c"
 
             text_widget.tag_add("transcript_search_current", current_index, current_end)
             text_widget.see(current_index)
+            text_widget.mark_set("insert", current_index)
 
             self.transcript_search_count_label.configure(
                 text=(
                     f"{self.transcript_search_current_index + 1}/"
                     f"{len(self.transcript_search_matches)} matches"
                 ),
-                text_color=COLORS["text_muted"]
+                text_color=COLORS["text_primary"]
             )
+
+            self._on_transcript_preview_cursor_changed()
 
         finally:
             if previous_state == "disabled":
                 self.transcript_textbox.configure(state="disabled")
+
 
     def _jump_to_transcript_search_match(self, direction: int) -> None:
         """Jump to the previous or next transcript search match."""
@@ -3747,8 +3766,8 @@ class App(ctk.CTk):
             )
             return
 
-        dialog_width = 620
-        dialog_height = 500
+        dialog_width = 900
+        dialog_height = 660
 
         dialog = ctk.CTkToplevel(self)
         dialog.title("Edit Segment Speaker")
@@ -3760,7 +3779,7 @@ class App(ctk.CTk):
         dialog.update_idletasks()
         x = self.winfo_x() + (self.winfo_width() - dialog_width) // 2
         y = self.winfo_y() + (self.winfo_height() - dialog_height) // 2
-        dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+        dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{max(y, 20)}")
 
         container = ctk.CTkFrame(
             dialog,
@@ -3770,6 +3789,9 @@ class App(ctk.CTk):
             border_color=COLORS["border"]
         )
         container.pack(fill="both", expand=True, padx=16, pady=16)
+        container.grid_columnconfigure(0, weight=0)
+        container.grid_columnconfigure(1, weight=1)
+        container.grid_rowconfigure(2, weight=1)
 
         title = ctk.CTkLabel(
             container,
@@ -3777,44 +3799,96 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=COLORS["text_primary"]
         )
-        title.pack(anchor="w", padx=16, pady=(14, 6))
+        title.grid(row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(14, 2))
 
         help_text = ctk.CTkLabel(
             container,
-            text="This changes only the selected transcript segment, not every matching speaker label.",
+            text="Search or scroll the segment list, then choose a speaker for that one segment only.",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_muted"],
-            wraplength=560,
+            wraplength=820,
             justify="left"
         )
-        help_text.pack(anchor="w", padx=16, pady=(0, 12))
+        help_text.grid(row=1, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 10))
+
+        # Left side: searchable segment list
+        list_panel = ctk.CTkFrame(container, fg_color="transparent")
+        list_panel.grid(row=2, column=0, sticky="nsew", padx=(16, 8), pady=(0, 12))
+        list_panel.grid_rowconfigure(3, weight=1)
 
         segment_label = ctk.CTkLabel(
-            container,
-            text="Segment",
+            list_panel,
+            text="Segments",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["text_primary"]
+        )
+        segment_label.grid(row=0, column=0, sticky="w", pady=(0, 6))
+
+        search_var = ctk.StringVar(value="")
+        segment_search_entry = ctk.CTkEntry(
+            list_panel,
+            textvariable=search_var,
+            placeholder_text="Search segment text or speaker...",
+            width=330,
+            height=32,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["bg_input"],
+            border_color=COLORS["border"],
+            corner_radius=6
+        )
+        segment_search_entry.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+
+        segment_count_label = ctk.CTkLabel(
+            list_panel,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"]
+        )
+        segment_count_label.grid(row=2, column=0, sticky="w", pady=(0, 6))
+
+        segment_list_frame = ctk.CTkScrollableFrame(
+            list_panel,
+            width=340,
+            height=395,
+            fg_color=COLORS["bg_input"],
+            corner_radius=8
+        )
+        segment_list_frame.grid(row=3, column=0, sticky="nsew")
+
+        # Right side: selected segment details
+        details_panel = ctk.CTkFrame(container, fg_color="transparent")
+        details_panel.grid(row=2, column=1, sticky="nsew", padx=(8, 16), pady=(0, 12))
+        details_panel.grid_columnconfigure(0, weight=1)
+        details_panel.grid_rowconfigure(6, weight=1)
+
+        selected_title_label = ctk.CTkLabel(
+            details_panel,
+            text="Selected segment",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["text_primary"]
+        )
+        selected_title_label.grid(row=0, column=0, sticky="w", pady=(0, 6))
+
+        selected_info_label = ctk.CTkLabel(
+            details_panel,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            wraplength=480,
+            justify="left"
+        )
+        selected_info_label.grid(row=1, column=0, sticky="w", pady=(0, 10))
+
+        speaker_label = ctk.CTkLabel(
+            details_panel,
+            text="Speaker for this segment only",
             font=ctk.CTkFont(size=12),
             text_color=COLORS["text_secondary"]
         )
-        segment_label.pack(anchor="w", padx=16)
-
-        display_to_index = {}
-
-        for i, segment in enumerate(self.transcript_segments):
-            speaker = segment.speaker or "Speaker"
-            start = segment.start or "no start"
-            end = segment.end or "no end"
-            text_preview = " ".join((segment.text or "").split())
-            if len(text_preview) > 80:
-                text_preview = text_preview[:77].rstrip() + "..."
-
-            display = f"{i + 1}. [{start} - {end}] {speaker}: {text_preview}"
-            display_to_index[display] = i
-
-        display_values = list(display_to_index.keys())
-        selected_segment_display = ctk.StringVar(value=display_values[0])
+        speaker_label.grid(row=2, column=0, sticky="w", pady=(0, 4))
 
         speaker_entry = ctk.CTkEntry(
-            container,
+            details_panel,
             height=34,
             font=ctk.CTkFont(size=12),
             fg_color=COLORS["bg_input"],
@@ -3830,7 +3904,7 @@ class App(ctk.CTk):
             self._set_entry_text(speaker_entry, value)
 
         speaker_picker = ctk.CTkOptionMenu(
-            container,
+            details_panel,
             values=speaker_choices,
             command=set_segment_speaker_from_picker,
             height=34,
@@ -3842,10 +3916,21 @@ class App(ctk.CTk):
             dropdown_hover_color=COLORS["accent_secondary"],
             corner_radius=6
         )
+        speaker_picker.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+
+        speaker_entry.grid(row=4, column=0, sticky="ew", pady=(0, 12))
+
+        preview_label = ctk.CTkLabel(
+            details_panel,
+            text="Preview",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary"]
+        )
+        preview_label.grid(row=5, column=0, sticky="w", pady=(0, 4))
 
         preview_textbox = ctk.CTkTextbox(
-            container,
-            height=75,
+            details_panel,
+            height=210,
             font=ctk.CTkFont(size=12),
             fg_color=COLORS["bg_input"],
             border_color=COLORS["border"],
@@ -3853,77 +3938,159 @@ class App(ctk.CTk):
             corner_radius=8,
             wrap="word"
         )
+        preview_textbox.grid(row=6, column=0, sticky="nsew", pady=(0, 12))
 
-        def get_selected_index() -> int:
-            return display_to_index.get(selected_segment_display.get(), 0)
+        button_row = ctk.CTkFrame(details_panel, fg_color="transparent")
+        button_row.grid(row=7, column=0, sticky="ew")
 
-        def refresh_selected_segment_details() -> None:
-            index = get_selected_index()
+        selected_state = {
+            "index": self.selected_transcript_segment_index
+            if isinstance(getattr(self, "selected_transcript_segment_index", None), int)
+            and 0 <= self.selected_transcript_segment_index < len(self.transcript_segments)
+            else 0,
+            "filtered": [],
+        }
+
+        def format_segment_button_text(index: int) -> str:
+            segment = self.transcript_segments[index]
+            speaker = segment.speaker or "Speaker"
+            start = segment.start or "no start"
+            end = segment.end or "no end"
+            text_preview = " ".join((segment.text or "").split())
+
+            if len(text_preview) > 72:
+                text_preview = text_preview[:69].rstrip() + "..."
+
+            return f"{index + 1}. [{start} - {end}] {speaker}: {text_preview}"
+
+        def segment_matches_query(index: int, query: str) -> bool:
+            query = query.strip().lower()
+            if not query:
+                return True
+
+            segment = self.transcript_segments[index]
+            haystack = " ".join([
+                str(index + 1),
+                segment.speaker or "",
+                segment.start or "",
+                segment.end or "",
+                segment.text or "",
+            ]).lower()
+
+            return query in haystack
+
+        def load_selected_segment_details() -> None:
+            index = selected_state["index"]
             segment = self.transcript_segments[index]
             speaker = segment.speaker or "Speaker"
 
-            speaker_entry.delete(0, "end")
-            speaker_entry.insert(0, speaker)
+            selected_info_label.configure(
+                text=(
+                    f"Segment {index + 1:,} of {len(self.transcript_segments):,}\n"
+                    f"Time: {segment.start or 'no start'} → {segment.end or 'no end'}\n"
+                    f"Current speaker: {speaker}"
+                )
+            )
+
+            self._set_entry_text(speaker_entry, speaker)
 
             if speaker in speaker_choices:
                 speaker_picker.set(speaker)
 
             preview_textbox.configure(state="normal")
             preview_textbox.delete("1.0", "end")
-            preview_textbox.insert(
-                "1.0",
-                f"Segment {index + 1} of {len(self.transcript_segments)}\n"
-                f"Time: {segment.start or 'no start'} → {segment.end or 'no end'}\n"
-                f"Current speaker: {speaker}\n\n"
-                f"{segment.text or ''}"
-            )
+            preview_textbox.insert("1.0", segment.text or "")
             preview_textbox.configure(state="disabled")
 
-        segment_menu = ctk.CTkOptionMenu(
-            container,
-            values=display_values,
-            variable=selected_segment_display,
-            command=lambda _value: refresh_selected_segment_details(),
-            height=34,
-            font=ctk.CTkFont(size=12),
-            fg_color=COLORS["bg_input"],
-            button_color=COLORS["accent_secondary"],
-            button_hover_color=COLORS["accent"],
-            dropdown_fg_color=COLORS["bg_card"],
-            dropdown_hover_color=COLORS["accent_secondary"],
-            corner_radius=6
-        )
-        segment_menu.pack(fill="x", padx=16, pady=(4, 12))
+        def select_segment(index: int) -> None:
+            selected_state["index"] = index
+            load_selected_segment_details()
+            rebuild_segment_list()
 
-        new_label = ctk.CTkLabel(
-            container,
-            text="Speaker for this segment only",
-            font=ctk.CTkFont(size=12),
-            text_color=COLORS["text_secondary"]
-        )
-        new_label.pack(anchor="w", padx=16)
+        def scroll_segment_list_to_top() -> None:
+            """Reset the segment list scroll position after filtering."""
+            try:
+                segment_list_frame._parent_canvas.yview_moveto(0)
+            except Exception:
+                pass
 
-        speaker_picker.pack(fill="x", padx=16, pady=(4, 8))
-        speaker_entry.pack(fill="x", padx=16, pady=(4, 12))
+        def rebuild_segment_list(force_first_match: bool = False) -> None:
+            query = search_var.get().strip()
+            filtered = [
+                i for i in range(len(self.transcript_segments))
+                if segment_matches_query(i, query)
+            ]
+            selected_state["filtered"] = filtered
 
-        preview_label = ctk.CTkLabel(
-            container,
-            text="Preview",
-            font=ctk.CTkFont(size=12),
-            text_color=COLORS["text_secondary"]
-        )
-        preview_label.pack(anchor="w", padx=16)
+            for child in segment_list_frame.winfo_children():
+                child.destroy()
 
-        preview_textbox.pack(fill="x", padx=16, pady=(4, 12))
-        refresh_selected_segment_details()
-        speaker_entry.focus_set()
-        speaker_entry.select_range(0, "end")
+            if not filtered:
+                segment_count_label.configure(
+                    text=f"0 matching segment(s) for: {query}" if query else "0 matching segment(s)"
+                )
+                no_results = ctk.CTkLabel(
+                    segment_list_frame,
+                    text="No matching segments.",
+                    font=ctk.CTkFont(size=12),
+                    text_color=COLORS["text_muted"]
+                )
+                no_results.pack(anchor="w", padx=8, pady=8)
+                dialog.after_idle(scroll_segment_list_to_top)
+                return
 
-        button_row = ctk.CTkFrame(container, fg_color="transparent")
-        button_row.pack(fill="x", padx=16, pady=(0, 14))
+            if force_first_match or selected_state["index"] not in filtered:
+                selected_state["index"] = filtered[0]
+                load_selected_segment_details()
+
+            if query:
+                segment_count_label.configure(
+                    text=f"{len(filtered):,} matching segment(s) for: {query}"
+                )
+            else:
+                segment_count_label.configure(
+                    text=f"{len(filtered):,} matching segment(s)"
+                )
+
+            for index in filtered:
+                is_selected = index == selected_state["index"]
+                button = ctk.CTkButton(
+                    segment_list_frame,
+                    text=format_segment_button_text(index),
+                    command=lambda idx=index: select_segment(idx),
+                    width=315,
+                    height=32,
+                    anchor="w",
+                    font=ctk.CTkFont(size=11),
+                    fg_color=COLORS["accent_secondary"] if is_selected else "transparent",
+                    hover_color=COLORS["border"],
+                    text_color=COLORS["text_primary"] if is_selected else COLORS["text_secondary"],
+                    corner_radius=6
+                )
+                button.pack(fill="x", padx=6, pady=(4, 0))
+
+            if force_first_match:
+                dialog.after_idle(scroll_segment_list_to_top)
+
+        def move_selection(delta: int) -> str:
+            filtered = selected_state.get("filtered") or []
+
+            if not filtered:
+                return "break"
+
+            current_index = selected_state["index"]
+
+            if current_index in filtered:
+                current_position = filtered.index(current_index)
+            else:
+                current_position = 0
+
+            new_position = max(0, min(len(filtered) - 1, current_position + delta))
+            select_segment(filtered[new_position])
+            return "break"
 
         def do_update() -> None:
-            index = get_selected_index()
+            index = selected_state["index"]
             segment = self.transcript_segments[index]
 
             old_speaker = segment.speaker or "Speaker"
@@ -3943,18 +4110,23 @@ class App(ctk.CTk):
                 )
                 return
 
+            self._ensure_transcript_custom_speakers()
+            self.transcript_custom_speakers.add(new_speaker)
+
             segment.speaker = new_speaker
 
-            dialog.destroy()
             self._refresh_transcript_display()
+            load_selected_segment_details()
+            rebuild_segment_list()
+
             self.log_message(
                 f"Changed segment {index + 1:,} speaker: '{old_speaker}' → '{new_speaker}'",
                 "success"
             )
 
-        cancel_btn = ctk.CTkButton(
+        close_btn = ctk.CTkButton(
             button_row,
-            text="Cancel",
+            text="Close",
             command=dialog.destroy,
             width=90,
             height=34,
@@ -3964,13 +4136,13 @@ class App(ctk.CTk):
             text_color=COLORS["text_secondary"],
             corner_radius=8
         )
-        cancel_btn.pack(side="right")
+        close_btn.pack(side="right")
 
         update_btn = ctk.CTkButton(
             button_row,
             text="Update Segment",
             command=do_update,
-            width=140,
+            width=150,
             height=34,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=COLORS["accent"],
@@ -3980,8 +4152,21 @@ class App(ctk.CTk):
         )
         update_btn.pack(side="right", padx=(0, 8))
 
+        def on_search_changed(*_args) -> None:
+            rebuild_segment_list(force_first_match=True)
+
+        search_var.trace_add("write", on_search_changed)
+        segment_search_entry.bind("<KeyRelease>", lambda _event: rebuild_segment_list(force_first_match=True))
+        segment_search_entry.bind("<Down>", lambda _event: move_selection(1))
+        segment_search_entry.bind("<Up>", lambda _event: move_selection(-1))
+        dialog.bind("<Down>", lambda _event: move_selection(1))
+        dialog.bind("<Up>", lambda _event: move_selection(-1))
         dialog.bind("<Return>", lambda _event: do_update())
         dialog.bind("<Escape>", lambda _event: dialog.destroy())
+
+        load_selected_segment_details()
+        rebuild_segment_list()
+        segment_search_entry.focus_set()
 
     def rename_transcript_speaker(self) -> None:
         """Rename one speaker label globally across all transcript segments."""
