@@ -1148,6 +1148,34 @@ class App(ctk.CTk):
         )
         self.transcript_edit_segment_button.pack(side="left", padx=(8, 0))
 
+        self.transcript_merge_up_button = ctk.CTkButton(
+            self.transcript_edit_segment_button.master,
+            text="↑ Merge Up",
+            command=self.merge_selected_transcript_segment_up,
+            width=115,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_merge_up_button.pack(side="left", padx=(8, 0))
+
+        self.transcript_merge_down_button = ctk.CTkButton(
+            self.transcript_edit_segment_button.master,
+            text="↓ Merge Down",
+            command=self.merge_selected_transcript_segment_down,
+            width=130,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_merge_down_button.pack(side="left", padx=(8, 0))
+
         self.transcript_clear_button = ctk.CTkButton(
             transcript_edit_row,
             text="Clear",
@@ -2483,6 +2511,10 @@ class App(ctk.CTk):
             self.transcript_create_speaker_button.configure(state=state)
         if hasattr(self, "transcript_edit_segment_button"):
             self.transcript_edit_segment_button.configure(state=state)
+        if hasattr(self, "transcript_merge_up_button"):
+            self.transcript_merge_up_button.configure(state=state)
+        if hasattr(self, "transcript_merge_down_button"):
+            self.transcript_merge_down_button.configure(state=state)
         self.transcript_clear_button.configure(state=state)
 
     @staticmethod
@@ -2717,7 +2749,11 @@ class App(ctk.CTk):
 
         for tag_name in text_widget.tag_names():
             tag_name = str(tag_name)
-            if tag_name.startswith("transcript_speaker_label_") or tag_name == "transcript_timestamp":
+            if (
+                tag_name.startswith("transcript_speaker_label_")
+                or tag_name.startswith("transcript_segment_text_wrap_")
+                or tag_name == "transcript_timestamp"
+            ):
                 text_widget.tag_delete(tag_name)
 
         text_widget.tag_configure(
@@ -2866,6 +2902,25 @@ class App(ctk.CTk):
             segment_text_start_index = self.transcript_textbox.index("end-1c")
             self.transcript_textbox.insert("end", readable_text)
             segment_text_end_index = self.transcript_textbox.index("end-1c")
+
+            # Keep visually wrapped lines aligned under the transcript text column.
+            # This fixes long merged segments wrapping back under the speaker buttons.
+            wrap_tag = f"transcript_segment_text_wrap_{segment_index}"
+            try:
+                char_width_px = 9
+                wrap_indent_px = max(0, prefix_width * char_width_px)
+                text_widget.tag_add(
+                    wrap_tag,
+                    segment_text_start_index,
+                    segment_text_end_index
+                )
+                text_widget.tag_configure(
+                    wrap_tag,
+                    lmargin2=wrap_indent_px
+                )
+            except Exception:
+                pass
+
             chars_written += len(readable_text)
 
             if show_timestamps:
@@ -4307,6 +4362,143 @@ class App(ctk.CTk):
 
         dialog.bind("<Escape>", lambda _event: dialog.destroy())
         return "break"
+
+
+
+    def merge_selected_transcript_segment_up(self) -> None:
+        """Merge the selected transcript segment into the previous segment."""
+        self._merge_selected_transcript_segment(direction="up")
+
+    def merge_selected_transcript_segment_down(self) -> None:
+        """Merge the selected transcript segment into the next segment."""
+        self._merge_selected_transcript_segment(direction="down")
+
+    def _merge_selected_transcript_segment(self, direction: str) -> None:
+        """Merge the selected transcript segment up or down."""
+        if not self.transcript_segments:
+            messagebox.showwarning(
+                "No Transcript",
+                "Import a transcript first."
+            )
+            return
+
+        selected_index = getattr(self, "selected_transcript_segment_index", None)
+
+        if not isinstance(selected_index, int):
+            messagebox.showwarning(
+                "No Segment Selected",
+                "Click inside a transcript segment first, then choose Merge Up or Merge Down."
+            )
+            return
+
+        if selected_index < 0 or selected_index >= len(self.transcript_segments):
+            messagebox.showwarning(
+                "Invalid Selection",
+                "The selected transcript segment is no longer valid."
+            )
+            return
+
+        if direction == "up":
+            if selected_index == 0:
+                messagebox.showwarning(
+                    "Cannot Merge Up",
+                    "The selected segment is already the first segment."
+                )
+                return
+
+            first_index = selected_index - 1
+            second_index = selected_index
+            result_index = first_index
+            speaker_rule = "previous"
+
+        elif direction == "down":
+            if selected_index >= len(self.transcript_segments) - 1:
+                messagebox.showwarning(
+                    "Cannot Merge Down",
+                    "The selected segment is already the last segment."
+                )
+                return
+
+            first_index = selected_index
+            second_index = selected_index + 1
+            result_index = first_index
+            speaker_rule = "selected"
+
+        else:
+            return
+
+        first = self.transcript_segments[first_index]
+        second = self.transcript_segments[second_index]
+
+        first_speaker = first.speaker or "Speaker"
+        second_speaker = second.speaker or "Speaker"
+
+        if direction == "up":
+            merged_speaker = first_speaker
+            direction_label = "up"
+            confirm_text = (
+                "These two segments have different speakers:\n\n"
+                f"Previous segment: {first_speaker}\n"
+                f"Selected segment: {second_speaker}\n\n"
+                f"Merge anyway using '{merged_speaker}' as the speaker?"
+            )
+        else:
+            merged_speaker = first_speaker
+            direction_label = "down"
+            confirm_text = (
+                "These two segments have different speakers:\n\n"
+                f"Selected segment: {first_speaker}\n"
+                f"Next segment: {second_speaker}\n\n"
+                f"Merge anyway using '{merged_speaker}' as the speaker?"
+            )
+
+        if first_speaker != second_speaker:
+            proceed = messagebox.askyesno(
+                "Different Speakers",
+                confirm_text
+            )
+
+            if not proceed:
+                return
+
+        first_text = (first.text or "").strip()
+        second_text = (second.text or "").strip()
+
+        if first_text and second_text:
+            merged_text = f"{first_text} {second_text}"
+        else:
+            merged_text = first_text or second_text
+
+        if hasattr(self, "_end_transcript_text_edit_phase"):
+            self._end_transcript_text_edit_phase()
+
+        self._push_transcript_undo_state(f"merge {direction_label} segment")
+
+        merged_segment = TranscriptSegment(
+            speaker=merged_speaker,
+            start=first.start,
+            end=second.end,
+            text=merged_text,
+        )
+
+        self.transcript_segments[first_index:second_index + 1] = [merged_segment]
+        self.selected_transcript_segment_index = result_index
+
+        self._refresh_transcript_display()
+
+        self.log_message(
+            f"Merged segment {selected_index + 1:,} {direction_label}",
+            "success"
+        )
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=(
+                    f"Merged segment {selected_index + 1:,} {direction_label}. "
+                    f"New time: {merged_segment.start or 'no start'} → {merged_segment.end or 'no end'}"
+                ),
+                text_color=COLORS["text_primary"]
+            )
 
 
     def edit_transcript_segment_speaker(self) -> None:
