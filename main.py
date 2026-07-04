@@ -1468,9 +1468,9 @@ class App(ctk.CTk):
             insertofftime=300,
             insertontime=600
         )
-        transcript_text_widget.bind("<ButtonRelease-1>", self._on_transcript_preview_cursor_changed)
+        transcript_text_widget.bind("<ButtonRelease-1>", self._on_transcript_preview_interaction)
         transcript_text_widget.bind("<KeyPress>", self._on_transcript_preview_key_press)
-        transcript_text_widget.bind("<KeyRelease>", self._on_transcript_preview_cursor_changed)
+        transcript_text_widget.bind("<KeyRelease>", self._on_transcript_preview_interaction)
 
         self._refresh_transcript_display()
 
@@ -3508,6 +3508,18 @@ class App(ctk.CTk):
                 ),
                 text_color=COLORS["text_primary"]
             )
+
+
+
+    def _on_transcript_preview_interaction(self, event=None):
+        """Handle transcript preview click/key interaction, then sync timeline selection."""
+        try:
+            self._on_transcript_preview_cursor_changed(event)
+        finally:
+            if hasattr(self, "_refresh_transcript_timeline"):
+                self.after(75, self._refresh_transcript_timeline)
+
+        return None
 
 
     def _on_transcript_preview_cursor_changed(self, event=None):
