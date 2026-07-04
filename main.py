@@ -1094,11 +1094,15 @@ class App(ctk.CTk):
         )
         self.transcript_asr_button.pack(side="left", padx=3, pady=3)
 
+        # Transcript editor tools row
+        transcript_edit_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
+        transcript_edit_row.pack(fill="x", padx=15, pady=(0, 8))
+
         self.transcript_rename_button = ctk.CTkButton(
-            button_row,
-            text="👤 Rename Speaker",
+            transcript_edit_row,
+            text="👤 Rename",
             command=self.rename_transcript_speaker,
-            width=140,
+            width=110,
             height=32,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=COLORS["accent_secondary"],
@@ -1109,7 +1113,7 @@ class App(ctk.CTk):
         self.transcript_rename_button.pack(side="left", padx=(8, 0))
 
         self.transcript_create_speaker_button = ctk.CTkButton(
-            button_row,
+            transcript_edit_row,
             text="➕ Create Speaker",
             command=self.create_transcript_speaker,
             width=135,
@@ -1123,7 +1127,7 @@ class App(ctk.CTk):
         self.transcript_create_speaker_button.pack(side="left", padx=(8, 0))
 
         self.transcript_edit_segment_button = ctk.CTkButton(
-            button_row,
+            transcript_edit_row,
             text="✏ Segment",
             command=self.edit_transcript_segment_speaker,
             width=105,
@@ -1137,7 +1141,7 @@ class App(ctk.CTk):
         self.transcript_edit_segment_button.pack(side="left", padx=(8, 0))
 
         self.transcript_clear_button = ctk.CTkButton(
-            button_row,
+            transcript_edit_row,
             text="Clear",
             command=self.clear_transcript,
             width=70,
@@ -1153,7 +1157,7 @@ class App(ctk.CTk):
 
         # Transcript export row
         transcript_export_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
-        transcript_export_row.pack(fill="x", padx=15, pady=(0, 8))
+        transcript_export_row.pack(fill="x", padx=15, pady=(2, 8))
 
         export_label = ctk.CTkLabel(
             transcript_export_row,
