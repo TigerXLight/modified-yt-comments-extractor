@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 import os
+import array
+import subprocess
 import random
 import threading
 import time
@@ -171,6 +173,8 @@ class App(ctk.CTk):
         self.last_youtube_video_info: Optional[Dict[str, Any]] = None
         self.last_asr_metadata: Optional[Dict[str, Any]] = None
         self.linked_transcript_media_path: Optional[str] = None
+        self.transcript_waveform_peaks: List[float] = []
+        self.transcript_waveform_source_path: Optional[str] = None
         self.last_package_dir: Optional[str] = None
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
@@ -1455,6 +1459,7 @@ class App(ctk.CTk):
         )
 
         self.transcript_timeline_zoom_level = 1.0
+        self.transcript_timeline_pan_fraction = 0.0
 
         timeline_zoom_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
         timeline_zoom_row.pack(fill="x", padx=15, pady=(0, 15))
@@ -1493,6 +1498,56 @@ class App(ctk.CTk):
             corner_radius=6
         )
         self.transcript_timeline_zoom_reset_button.grid(row=0, column=2, sticky="e")
+
+        self.transcript_waveform_button = ctk.CTkButton(
+            timeline_zoom_row,
+            text="Waveform",
+            command=self.generate_transcript_waveform,
+            width=85,
+            height=24,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=6
+        )
+        self.transcript_waveform_button.grid(row=0, column=3, sticky="e", padx=(8, 0))
+
+        self.transcript_waveform_status_label = ctk.CTkLabel(
+            timeline_zoom_row,
+            text="No waveform",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"],
+            width=95,
+            anchor="w"
+        )
+        self.transcript_waveform_status_label.grid(row=0, column=4, sticky="w", padx=(8, 0))
+
+        self.transcript_timeline_pan_label = ctk.CTkLabel(
+            timeline_zoom_row,
+            text="Position: Full",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"],
+            width=75,
+            anchor="w"
+        )
+        self.transcript_timeline_pan_label.grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
+
+        self.transcript_timeline_pan_slider = ctk.CTkSlider(
+            timeline_zoom_row,
+            from_=0,
+            to=100,
+            number_of_steps=100,
+            command=self._on_transcript_timeline_pan_changed,
+            height=16
+        )
+        self.transcript_timeline_pan_slider.grid(
+            row=1,
+            column=1,
+            columnspan=4,
+            sticky="ew",
+            pady=(6, 0)
+        )
+        self.transcript_timeline_pan_slider.set(0)
 
         self.transcript_display_ranges = []
         self.selected_transcript_segment_index = None
@@ -3649,6 +3704,226 @@ class App(ctk.CTk):
         return None
 
 
+
+    def _update_transcript_waveform_status(self, text: Optional[str] = None, color: Optional[str] = None) -> None:
+        """Refresh waveform status label."""
+        if not hasattr(self, "transcript_waveform_status_label"):
+            return
+
+        if text is None:
+            if (
+                getattr(self, "transcript_waveform_peaks", None)
+                and getattr(self, "transcript_waveform_source_path", None)
+                == getattr(self, "linked_transcript_media_path", None)
+            ):
+                text = "Waveform ready"
+                color = COLORS["text_secondary"]
+            else:
+                text = "No waveform"
+                color = COLORS["text_muted"]
+
+        self.transcript_waveform_status_label.configure(
+            text=text,
+            text_color=color or COLORS["text_muted"]
+        )
+
+    def _clear_transcript_waveform(self, refresh: bool = True) -> None:
+        """Clear cached waveform data."""
+        self.transcript_waveform_peaks = []
+        self.transcript_waveform_source_path = None
+        self._update_transcript_waveform_status()
+
+        if refresh and hasattr(self, "transcript_timeline_canvas"):
+            self._refresh_transcript_timeline()
+
+    def _extract_transcript_waveform_peaks(self, media_path: str, peak_count: int = 1200) -> List[float]:
+        """Extract normalized mono waveform peaks using ffmpeg."""
+        command = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            media_path,
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "8000",
+            "-f",
+            "s16le",
+            "-"
+        ]
+
+        try:
+            result = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=240
+            )
+        except FileNotFoundError as error:
+            raise RuntimeError(
+                "ffmpeg was not found. Install ffmpeg and make sure it is available on PATH, then try Generate Waveform again."
+            ) from error
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("ffmpeg took too long while generating waveform peaks.") from error
+
+        if result.returncode != 0:
+            stderr_text = result.stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(stderr_text or "ffmpeg failed to read the linked media file.")
+
+        raw_audio = result.stdout
+
+        if not raw_audio:
+            raise RuntimeError("No audio samples were extracted from the linked media file.")
+
+        usable_length = len(raw_audio) - (len(raw_audio) % 2)
+        samples = array.array("h")
+        samples.frombytes(raw_audio[:usable_length])
+
+        if not samples:
+            raise RuntimeError("No usable audio samples were extracted from the linked media file.")
+
+        sample_count = len(samples)
+        peak_count = max(200, min(int(peak_count), 4000))
+        chunk_size = max(1, sample_count // peak_count)
+        peaks = []
+
+        for start in range(0, sample_count, chunk_size):
+            chunk = samples[start:start + chunk_size]
+
+            if not chunk:
+                continue
+
+            peak = max(abs(value) for value in chunk)
+            peaks.append(min(1.0, peak / 32768.0))
+
+        return peaks or [0.0]
+
+    def generate_transcript_waveform(self) -> None:
+        """Generate waveform peaks for the linked transcript media."""
+        media_path = getattr(self, "linked_transcript_media_path", None)
+
+        if not media_path:
+            messagebox.showwarning(
+                "No Linked Media",
+                "Choose a media file first, then generate the waveform."
+            )
+            return
+
+        if not os.path.exists(media_path):
+            self._set_linked_transcript_media(None)
+            messagebox.showerror(
+                "Linked Media Missing",
+                "The linked media file could not be found. Choose the media file again."
+            )
+            return
+
+        if hasattr(self, "transcript_waveform_button"):
+            self.transcript_waveform_button.configure(state="disabled", text="Working...")
+
+        self._update_transcript_waveform_status("Generating...", COLORS["text_secondary"])
+
+        def worker() -> None:
+            try:
+                peaks = self._extract_transcript_waveform_peaks(media_path)
+            except Exception as error:
+                def on_error() -> None:
+                    if hasattr(self, "transcript_waveform_button"):
+                        self.transcript_waveform_button.configure(state="normal", text="Waveform")
+
+                    self._clear_transcript_waveform(refresh=True)
+                    messagebox.showerror("Waveform Error", str(error))
+
+                self.after(0, on_error)
+                return
+
+            def on_success() -> None:
+                if getattr(self, "linked_transcript_media_path", None) != media_path:
+                    if hasattr(self, "transcript_waveform_button"):
+                        self.transcript_waveform_button.configure(state="normal", text="Waveform")
+                    self._update_transcript_waveform_status()
+                    return
+
+                self.transcript_waveform_peaks = peaks
+                self.transcript_waveform_source_path = media_path
+
+                if hasattr(self, "transcript_waveform_button"):
+                    self.transcript_waveform_button.configure(state="normal", text="Waveform")
+
+                self._update_transcript_waveform_status("Waveform ready", COLORS["text_secondary"])
+                self._refresh_transcript_timeline()
+                self.log_message(
+                    f"Generated waveform peaks for: {os.path.basename(media_path)}",
+                    "success"
+                )
+
+            self.after(0, on_success)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _draw_transcript_waveform(
+        self,
+        canvas,
+        min_time: float,
+        max_time: float,
+        full_min_time: float,
+        full_max_time: float,
+        left_margin: int,
+        right_margin: int,
+        top_margin: int,
+        bottom_margin: int,
+        width: int,
+        canvas_height: int,
+        timeline_width: int
+    ) -> None:
+        """Draw cached waveform peaks behind transcript timeline blocks."""
+        peaks = getattr(self, "transcript_waveform_peaks", None)
+
+        if not peaks:
+            return
+
+        if (
+            getattr(self, "transcript_waveform_source_path", None)
+            != getattr(self, "linked_transcript_media_path", None)
+        ):
+            return
+
+        full_duration = max(1.0, full_max_time - full_min_time)
+        visible_duration = max(0.001, max_time - min_time)
+
+        wave_top = top_margin
+        wave_bottom = max(wave_top + 20, canvas_height - bottom_margin)
+        wave_mid = (wave_top + wave_bottom) / 2
+        wave_amp = max(8, (wave_bottom - wave_top) * 0.42)
+        x_start = int(left_margin)
+        x_end = int(width - right_margin)
+
+        for x in range(x_start, x_end + 1, 2):
+            fraction = (x - left_margin) / max(1, timeline_width)
+            time_at_x = min_time + visible_duration * fraction
+            peak_position = int(
+                ((time_at_x - full_min_time) / full_duration)
+                * max(0, len(peaks) - 1)
+            )
+            peak_position = max(0, min(len(peaks) - 1, peak_position))
+            amplitude = peaks[peak_position]
+
+            y1 = wave_mid - amplitude * wave_amp
+            y2 = wave_mid + amplitude * wave_amp
+
+            canvas.create_line(
+                x,
+                y1,
+                x,
+                y2,
+                fill="#334155",
+                width=1
+            )
+
+
     def _get_transcript_timeline_bounds(self):
         """Return min/max seconds for transcript timeline drawing."""
         times = []
@@ -3700,6 +3975,78 @@ class App(ctk.CTk):
         return speakers
 
 
+
+    def _set_transcript_timeline_pan_slider(self, fraction: float) -> None:
+        """Update pan slider without causing a second redraw loop."""
+        fraction = max(0.0, min(1.0, float(fraction)))
+        self.transcript_timeline_pan_fraction = fraction
+
+        if not hasattr(self, "transcript_timeline_pan_slider"):
+            return
+
+        try:
+            self._updating_transcript_timeline_pan_slider = True
+            self.transcript_timeline_pan_slider.set(fraction * 100.0)
+        finally:
+            self._updating_transcript_timeline_pan_slider = False
+
+    def _center_transcript_timeline_pan_on_selected(self) -> None:
+        """Set pan fraction so the selected segment is near the middle when zooming."""
+        min_time, max_time = self._get_transcript_timeline_bounds()
+
+        if min_time is None or max_time is None:
+            self._set_transcript_timeline_pan_slider(0.0)
+            return
+
+        full_duration = max(1.0, max_time - min_time)
+
+        try:
+            zoom_level = float(getattr(self, "transcript_timeline_zoom_level", 1.0))
+        except Exception:
+            zoom_level = 1.0
+
+        zoom_level = max(1.0, min(10.0, zoom_level))
+
+        if zoom_level <= 1.05:
+            self._set_transcript_timeline_pan_slider(0.0)
+            return
+
+        visible_duration = max(1.0, full_duration / zoom_level)
+        max_pan_seconds = max(0.0, full_duration - visible_duration)
+
+        if max_pan_seconds <= 0:
+            self._set_transcript_timeline_pan_slider(0.0)
+            return
+
+        selected_index = getattr(self, "selected_transcript_segment_index", None)
+        center_time = min_time + full_duration / 2
+
+        if isinstance(selected_index, int) and 0 <= selected_index < len(self.transcript_segments):
+            segment = self.transcript_segments[selected_index]
+            start_seconds = self._transcript_time_to_seconds(segment.start)
+            end_seconds = self._transcript_time_to_seconds(segment.end)
+
+            if start_seconds is not None and end_seconds is not None:
+                center_time = (start_seconds + end_seconds) / 2
+
+        target_visible_min = center_time - visible_duration / 2
+        fraction = (target_visible_min - min_time) / max_pan_seconds
+        self._set_transcript_timeline_pan_slider(fraction)
+
+    def _on_transcript_timeline_pan_changed(self, value) -> None:
+        """Pan the zoomed transcript timeline left/right."""
+        if getattr(self, "_updating_transcript_timeline_pan_slider", False):
+            return
+
+        try:
+            fraction = float(value) / 100.0
+        except Exception:
+            fraction = 0.0
+
+        self.transcript_timeline_pan_fraction = max(0.0, min(1.0, fraction))
+        self._refresh_transcript_timeline()
+
+
     def _on_transcript_timeline_zoom_changed(self, value) -> None:
         """Update timeline zoom and redraw timeline."""
         try:
@@ -3708,7 +4055,13 @@ class App(ctk.CTk):
             zoom_level = 1.0
 
         zoom_level = max(1.0, min(10.0, zoom_level))
+        previous_zoom_level = float(getattr(self, "transcript_timeline_zoom_level", 1.0))
         self.transcript_timeline_zoom_level = zoom_level
+
+        if previous_zoom_level <= 1.05 and zoom_level > 1.05:
+            self._center_transcript_timeline_pan_on_selected()
+        elif zoom_level <= 1.05:
+            self._set_transcript_timeline_pan_slider(0.0)
 
         if hasattr(self, "transcript_timeline_zoom_value_label"):
             if zoom_level <= 1.05:
@@ -3723,6 +4076,7 @@ class App(ctk.CTk):
     def _reset_transcript_timeline_zoom(self) -> None:
         """Reset timeline zoom to full transcript view."""
         self.transcript_timeline_zoom_level = 1.0
+        self._set_transcript_timeline_pan_slider(0.0)
 
         if hasattr(self, "transcript_timeline_zoom_slider"):
             self.transcript_timeline_zoom_slider.set(1.0)
@@ -3796,19 +4150,27 @@ class App(ctk.CTk):
 
         if zoom_level > 1.05:
             visible_duration = max(1.0, full_duration / zoom_level)
-            visible_min = center_time - visible_duration / 2
-            visible_max = center_time + visible_duration / 2
+            max_pan_seconds = max(0.0, full_duration - visible_duration)
 
-            if visible_min < full_min_time:
-                visible_min = full_min_time
-                visible_max = visible_min + visible_duration
+            try:
+                pan_fraction = float(getattr(self, "transcript_timeline_pan_fraction", 0.0))
+            except Exception:
+                pan_fraction = 0.0
 
-            if visible_max > full_max_time:
-                visible_max = full_max_time
-                visible_min = visible_max - visible_duration
+            pan_fraction = max(0.0, min(1.0, pan_fraction))
+            visible_min = full_min_time + max_pan_seconds * pan_fraction
+            visible_max = visible_min + visible_duration
 
             min_time = max(full_min_time, visible_min)
             max_time = min(full_max_time, visible_max)
+
+            if hasattr(self, "transcript_timeline_pan_label"):
+                self.transcript_timeline_pan_label.configure(
+                    text=f"Position: {pan_fraction * 100:.0f}%"
+                )
+        else:
+            if hasattr(self, "transcript_timeline_pan_label"):
+                self.transcript_timeline_pan_label.configure(text="Position: Full")
 
         speakers = self._get_timeline_speakers()
         lane_height = 28
@@ -3845,6 +4207,21 @@ class App(ctk.CTk):
             for index, speaker in enumerate(speakers)
         }
 
+        self._draw_transcript_waveform(
+            canvas,
+            min_time,
+            max_time,
+            full_min_time,
+            full_max_time,
+            left_margin,
+            right_margin,
+            top_margin,
+            bottom_margin,
+            width,
+            canvas_height,
+            timeline_width
+        )
+
         # Time ticks
         tick_count = 5
         for tick in range(tick_count + 1):
@@ -3866,6 +4243,42 @@ class App(ctk.CTk):
                 anchor="n",
                 fill=COLORS["text_muted"],
                 font=("Cascadia Mono", 8)
+            )
+
+        # Selected segment / playhead marker
+        selected_marker_time = None
+
+        if isinstance(selected_index, int) and 0 <= selected_index < len(self.transcript_segments):
+            marker_segment = self.transcript_segments[selected_index]
+            marker_start = self._transcript_time_to_seconds(marker_segment.start)
+            marker_end = self._transcript_time_to_seconds(marker_segment.end)
+
+            if marker_start is not None and marker_end is not None:
+                selected_marker_time = (marker_start + marker_end) / 2
+            elif marker_start is not None:
+                selected_marker_time = marker_start
+
+        if selected_marker_time is not None and min_time <= selected_marker_time <= max_time:
+            marker_x = left_margin + ((selected_marker_time - min_time) / duration) * timeline_width
+            marker_color = "#38BDF8"
+
+            canvas.create_polygon(
+                marker_x - 6,
+                top_margin - 17,
+                marker_x + 6,
+                top_margin - 17,
+                marker_x,
+                top_margin - 6,
+                fill=marker_color,
+                outline=marker_color
+            )
+            canvas.create_line(
+                marker_x,
+                top_margin - 5,
+                marker_x,
+                canvas_height - bottom_margin + 4,
+                fill=marker_color,
+                width=1
             )
 
         # Speaker lanes
@@ -4298,7 +4711,13 @@ class App(ctk.CTk):
 
     def _set_linked_transcript_media(self, media_path: Optional[str], log: bool = False) -> None:
         """Store linked media path for future waveform/timeline features."""
-        self.linked_transcript_media_path = media_path or None
+        previous_media_path = getattr(self, "linked_transcript_media_path", None)
+        new_media_path = media_path or None
+
+        if previous_media_path != new_media_path and hasattr(self, "_clear_transcript_waveform"):
+            self._clear_transcript_waveform(refresh=True)
+
+        self.linked_transcript_media_path = new_media_path
         self._update_transcript_media_status()
 
         if log and media_path:
@@ -4312,6 +4731,9 @@ class App(ctk.CTk):
         """Clear only the linked transcript media file."""
         had_media = getattr(self, "linked_transcript_media_path", None)
         self._set_linked_transcript_media(None)
+
+        if hasattr(self, '_refresh_transcript_timeline'):
+            self._refresh_transcript_timeline()
 
         if had_media:
             self.log_message("Cleared linked transcript media.", "info")
