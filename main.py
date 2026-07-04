@@ -1486,6 +1486,10 @@ class App(ctk.CTk):
             corner_radius=6
         )
         self.transcript_play_button.pack(side="right")
+        self.transcript_play_button.bind(
+            "<Button-3>",
+            lambda _event: self.check_transcript_vlc_ready(show_success=True)
+        )
 
         self.transcript_timeline_canvas = tk.Canvas(
             self.transcript_card,
@@ -1532,6 +1536,9 @@ class App(ctk.CTk):
         self.transcript_vlc_player = None
         self.transcript_vlc_media_path: Optional[str] = None
         self.transcript_playback_backend: Optional[str] = None
+        self.transcript_vlc_ready_checked = False
+        self.transcript_vlc_ready = False
+        self.transcript_vlc_error: Optional[str] = None
         self._transcript_timeline_view = None
 
         timeline_zoom_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
@@ -3821,6 +3828,40 @@ class App(ctk.CTk):
 
 
 
+
+    def check_transcript_vlc_ready(self, show_success: bool = False) -> bool:
+        """Check whether VLC playback is available."""
+        try:
+            self._get_or_create_transcript_vlc_player()
+        except Exception as error:
+            self.transcript_vlc_ready_checked = True
+            self.transcript_vlc_ready = False
+            self.transcript_vlc_error = str(error)
+
+            messagebox.showerror(
+                "VLC Playback Not Ready",
+                (
+                    "VLC playback is not ready.\n\n"
+                    f"{error}\n\n"
+                    "Install VLC Media Player and make sure python-vlc is installed "
+                    "inside this app's virtual environment."
+                )
+            )
+            return False
+
+        self.transcript_vlc_ready_checked = True
+        self.transcript_vlc_ready = True
+        self.transcript_vlc_error = None
+
+        if show_success:
+            messagebox.showinfo(
+                "VLC Ready",
+                "VLC playback is ready."
+            )
+
+        return True
+
+
     def _get_transcript_vlc_module(self):
         """Load python-vlc and help it find VLC on Windows."""
         cached_module = getattr(self, "transcript_vlc_module", None)
@@ -4027,6 +4068,10 @@ class App(ctk.CTk):
                 "Linked Media Missing",
                 "The linked media file could not be found. Choose the media file again."
             )
+            return
+
+        if not self.check_transcript_vlc_ready(show_success=False):
+            self._update_transcript_playback_buttons(False)
             return
 
         media_path = os.path.abspath(media_path)
