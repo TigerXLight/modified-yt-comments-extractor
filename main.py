@@ -170,6 +170,7 @@ class App(ctk.CTk):
         self.last_transcript_source: Optional[str] = None
         self.last_youtube_video_info: Optional[Dict[str, Any]] = None
         self.last_asr_metadata: Optional[Dict[str, Any]] = None
+        self.linked_transcript_media_path: Optional[str] = None
         self.last_package_dir: Optional[str] = None
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
@@ -1102,6 +1103,41 @@ class App(ctk.CTk):
             hover_color="#6D28D9",
         )
         self.transcript_asr_button.pack(side="left", padx=3, pady=3)
+
+        self.transcript_media_button = ctk.CTkButton(
+            button_row,
+            text="🎞 Media",
+            command=self.choose_transcript_media_file,
+            width=95,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8
+        )
+        self.transcript_media_button.pack(side="left", padx=(8, 0))
+
+        self.transcript_media_status_label = ctk.CTkLabel(
+            button_row,
+            text="No media",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"]
+        )
+        self.transcript_media_status_label.pack(side="left", padx=(8, 0))
+
+        self.transcript_media_clear_button = ctk.CTkButton(
+            button_row,
+            text="✕",
+            command=self.clear_transcript_media_link,
+            width=28,
+            height=28,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="transparent",
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_muted"],
+            corner_radius=6
+        )
+        self.transcript_media_clear_button.pack(side="left", padx=(4, 0))
 
         # Transcript editor tools row
         transcript_edit_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
@@ -4241,6 +4277,83 @@ class App(ctk.CTk):
         self._apply_current_transcript_search_match()
 
 
+
+    def _update_transcript_media_status(self) -> None:
+        """Refresh linked transcript media display."""
+        if not hasattr(self, "transcript_media_status_label"):
+            return
+
+        media_path = getattr(self, "linked_transcript_media_path", None)
+
+        if media_path:
+            self.transcript_media_status_label.configure(
+                text=os.path.basename(media_path),
+                text_color=COLORS["text_secondary"]
+            )
+        else:
+            self.transcript_media_status_label.configure(
+                text="No media",
+                text_color=COLORS["text_muted"]
+            )
+
+    def _set_linked_transcript_media(self, media_path: Optional[str], log: bool = False) -> None:
+        """Store linked media path for future waveform/timeline features."""
+        self.linked_transcript_media_path = media_path or None
+        self._update_transcript_media_status()
+
+        if log and media_path:
+            self.log_message(
+                f"Linked transcript media: {os.path.basename(media_path)}",
+                "success"
+            )
+
+
+    def clear_transcript_media_link(self) -> None:
+        """Clear only the linked transcript media file."""
+        had_media = getattr(self, "linked_transcript_media_path", None)
+        self._set_linked_transcript_media(None)
+
+        if had_media:
+            self.log_message("Cleared linked transcript media.", "info")
+
+            if hasattr(self, "transcript_cursor_status_label"):
+                self.transcript_cursor_status_label.configure(
+                    text="Linked media cleared.",
+                    text_color=COLORS["text_muted"]
+                )
+
+
+    def choose_transcript_media_file(self) -> None:
+        """Choose a local media file to link to the current transcript."""
+        filename = filedialog.askopenfilename(
+            title="Choose Media for Transcript",
+            filetypes=[
+                ("Media files", "*.mp4 *.mkv *.mov *.avi *.webm *.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
+                ("Video files", "*.mp4 *.mkv *.mov *.avi *.webm"),
+                ("Audio files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
+                ("All files", "*.*"),
+            ]
+        )
+
+        if not filename:
+            return
+
+        if not os.path.exists(filename):
+            messagebox.showerror(
+                "Media Not Found",
+                "The selected media file does not exist."
+            )
+            return
+
+        self._set_linked_transcript_media(filename, log=True)
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=f"Linked media: {os.path.basename(filename)}",
+                text_color=COLORS["text_primary"]
+            )
+
+
     def import_transcript_file(self) -> None:
         """Import SRT, VTT, or TXT transcript file."""
         filename = filedialog.askopenfilename(
@@ -4269,6 +4382,7 @@ class App(ctk.CTk):
 
             self.transcript_segments = segments
             self.last_transcript_source = f"Imported file: {os.path.basename(filename)}"
+            self._set_linked_transcript_media(None)
             self._refresh_transcript_display()
             self.evidence_button.configure(state="normal")
 
@@ -4440,7 +4554,13 @@ class App(ctk.CTk):
             f.write("\n\n")
 
             if self.last_transcript_source:
-                f.write(f"Source: {self.last_transcript_source}\n\n")
+                f.write(f"Source: {self.last_transcript_source}\n")
+
+            if getattr(self, "linked_transcript_media_path", None):
+                f.write(f"Linked Media: {self.linked_transcript_media_path}\n")
+
+            if self.last_transcript_source or getattr(self, "linked_transcript_media_path", None):
+                f.write("\n")
 
             if self.last_asr_metadata:
                 f.write("ASR Warning:\n")
@@ -4493,15 +4613,31 @@ class App(ctk.CTk):
 
     def local_asr_transcribe_clicked(self) -> None:
         """Transcribe a local audio/video file using faster-whisper."""
-        media_file = filedialog.askopenfilename(
-            title="Choose audio or video file for local ASR",
-            filetypes=[
-                ("Media files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg *.mp4 *.mkv *.webm *.mov *.avi"),
-                ("Audio files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
-                ("Video files", "*.mp4 *.mkv *.webm *.mov *.avi"),
-                ("All files", "*.*"),
-            ],
-        )
+        linked_media_file = getattr(self, "linked_transcript_media_path", None)
+
+        if linked_media_file and os.path.exists(linked_media_file):
+            media_file = linked_media_file
+            self.log_message(
+                f"Using linked media for Local ASR: {os.path.basename(media_file)}",
+                "info"
+            )
+        else:
+            if linked_media_file and not os.path.exists(linked_media_file):
+                self._set_linked_transcript_media(None)
+                messagebox.showwarning(
+                    "Linked Media Missing",
+                    "The linked media file could not be found. Choose the media file again."
+                )
+
+            media_file = filedialog.askopenfilename(
+                title="Choose audio or video file for local ASR",
+                filetypes=[
+                    ("Media files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg *.mp4 *.mkv *.webm *.mov *.avi"),
+                    ("Audio files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
+                    ("Video files", "*.mp4 *.mkv *.webm *.mov *.avi"),
+                    ("All files", "*.*"),
+                ],
+            )
 
         if not media_file:
             return
@@ -4605,6 +4741,7 @@ class App(ctk.CTk):
                     self.transcript_segments = segments
                     self.last_youtube_video_info = None
                     self.last_asr_metadata = metadata
+                    self._set_linked_transcript_media(media_file)
                     prompt_note = " with known-words prompt" if initial_prompt else ""
                     language_note = f", language={language_code}" if language_code else ", language=auto-detect"
 
@@ -6032,6 +6169,7 @@ class App(ctk.CTk):
 
         self.transcript_segments = []
         self.last_transcript_source = None
+        self._set_linked_transcript_media(None)
         self._refresh_transcript_display()
         self.log_message("Transcript cleared.", "muted")
 
