@@ -1233,6 +1233,77 @@ class App(ctk.CTk):
         )
         self.transcript_show_timestamps_checkbox.pack(side="left", padx=(10, 0))
 
+        # Transcript search row
+        self.transcript_search_matches = []
+        self.transcript_search_current_index = -1
+        self.transcript_search_var = ctk.StringVar(value="")
+
+        transcript_search_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
+        transcript_search_row.pack(fill="x", padx=15, pady=(0, 8))
+
+        search_label = ctk.CTkLabel(
+            transcript_search_row,
+            text="Search:",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"]
+        )
+        search_label.pack(side="left")
+
+        self.transcript_search_entry = ctk.CTkEntry(
+            transcript_search_row,
+            textvariable=self.transcript_search_var,
+            placeholder_text="Find in transcript...",
+            width=260,
+            height=32,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["bg_input"],
+            border_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_search_entry.pack(side="left", padx=(10, 0))
+
+        self.transcript_search_prev_button = ctk.CTkButton(
+            transcript_search_row,
+            text="Previous",
+            command=lambda: self._jump_to_transcript_search_match(-1),
+            width=85,
+            height=32,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_search_prev_button.pack(side="left", padx=(8, 0))
+
+        self.transcript_search_next_button = ctk.CTkButton(
+            transcript_search_row,
+            text="Next",
+            command=lambda: self._jump_to_transcript_search_match(1),
+            width=70,
+            height=32,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_search_next_button.pack(side="left", padx=(8, 0))
+
+        self.transcript_search_count_label = ctk.CTkLabel(
+            transcript_search_row,
+            text="0 matches",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"]
+        )
+        self.transcript_search_count_label.pack(side="left", padx=(10, 0))
+
+        self.transcript_search_var.trace_add(
+            "write",
+            lambda *_: self._search_transcript_changed()
+        )
+
         # Transcript preview
         self.transcript_textbox = ctk.CTkTextbox(
             self.transcript_card,
@@ -2450,6 +2521,9 @@ class App(ctk.CTk):
 
         self._set_transcript_buttons_state(state)
 
+        if hasattr(self, "transcript_search_entry"):
+            self.transcript_search_entry.configure(state=state)
+
         self.transcript_textbox.configure(state="normal")
         self.transcript_textbox.delete("1.0", "end")
 
@@ -2465,6 +2539,8 @@ class App(ctk.CTk):
                 "Use Local ASR to transcribe local audio/video files with faster-whisper."
             )
             self.transcript_textbox.configure(state="disabled")
+            if hasattr(self, "transcript_search_count_label"):
+                self._update_transcript_search_matches(reset_index=True)
             return
 
         speakers = sorted({
@@ -2531,6 +2607,166 @@ class App(ctk.CTk):
             )
 
         self.transcript_textbox.configure(state="disabled")
+        if hasattr(self, "transcript_search_count_label"):
+            self._update_transcript_search_matches(reset_index=True)
+
+
+    def _get_transcript_text_widget(self):
+        """Return the underlying Tk text widget used by CTkTextbox."""
+        return getattr(self.transcript_textbox, "_textbox", self.transcript_textbox)
+
+    def _search_transcript_changed(self) -> None:
+        """Update transcript search matches after the query changes."""
+        self._update_transcript_search_matches(reset_index=True)
+
+    def _set_transcript_search_navigation_state(self, enabled: bool) -> None:
+        """Enable or disable transcript search navigation controls."""
+        if not hasattr(self, "transcript_search_prev_button"):
+            return
+
+        state = "normal" if enabled else "disabled"
+        self.transcript_search_prev_button.configure(state=state)
+        self.transcript_search_next_button.configure(state=state)
+
+    def _clear_transcript_search_tags(self) -> None:
+        """Remove transcript search highlight tags."""
+        if not hasattr(self, "transcript_textbox"):
+            return
+
+        text_widget = self._get_transcript_text_widget()
+        try:
+            text_widget.tag_remove("transcript_search_match", "1.0", "end")
+            text_widget.tag_remove("transcript_search_current", "1.0", "end")
+        except Exception:
+            pass
+
+    def _update_transcript_search_matches(self, reset_index: bool = False) -> None:
+        """Find and highlight all matches in the transcript preview."""
+        if not hasattr(self, "transcript_search_var"):
+            return
+
+        query = self.transcript_search_var.get().strip()
+        self.transcript_search_matches = []
+
+        text_widget = self._get_transcript_text_widget()
+
+        previous_state = "disabled"
+        try:
+            previous_state = self.transcript_textbox.cget("state")
+        except Exception:
+            pass
+
+        try:
+            self.transcript_textbox.configure(state="normal")
+            self._clear_transcript_search_tags()
+
+            text_widget.tag_configure(
+                "transcript_search_match",
+                background="#854D0E",
+                foreground="#FFFFFF"
+            )
+            text_widget.tag_configure(
+                "transcript_search_current",
+                background="#F97316",
+                foreground="#000000"
+            )
+
+            if not query or not self.transcript_segments:
+                self.transcript_search_current_index = -1
+                self.transcript_search_count_label.configure(
+                    text="0 matches",
+                    text_color=COLORS["text_muted"]
+                )
+                self._set_transcript_search_navigation_state(False)
+                return
+
+            index = "1.0"
+            while True:
+                index = text_widget.search(
+                    query,
+                    index,
+                    stopindex="end",
+                    nocase=True
+                )
+                if not index:
+                    break
+
+                end_index = f"{index}+{len(query)}c"
+                self.transcript_search_matches.append(index)
+                text_widget.tag_add("transcript_search_match", index, end_index)
+                index = end_index
+
+            total = len(self.transcript_search_matches)
+
+            if total == 0:
+                self.transcript_search_current_index = -1
+                self.transcript_search_count_label.configure(
+                    text="0 matches",
+                    text_color=COLORS["warning"]
+                )
+                self._set_transcript_search_navigation_state(False)
+                return
+
+            if reset_index or self.transcript_search_current_index < 0:
+                self.transcript_search_current_index = 0
+            elif self.transcript_search_current_index >= total:
+                self.transcript_search_current_index = total - 1
+
+            self._set_transcript_search_navigation_state(True)
+            self._apply_current_transcript_search_match()
+
+        finally:
+            if previous_state == "disabled":
+                self.transcript_textbox.configure(state="disabled")
+
+    def _apply_current_transcript_search_match(self) -> None:
+        """Highlight and scroll to the current transcript search match."""
+        if not self.transcript_search_matches:
+            return
+
+        text_widget = self._get_transcript_text_widget()
+        query = self.transcript_search_var.get().strip()
+
+        previous_state = "disabled"
+        try:
+            previous_state = self.transcript_textbox.cget("state")
+        except Exception:
+            pass
+
+        try:
+            self.transcript_textbox.configure(state="normal")
+            text_widget.tag_remove("transcript_search_current", "1.0", "end")
+
+            current_index = self.transcript_search_matches[self.transcript_search_current_index]
+            current_end = f"{current_index}+{len(query)}c"
+
+            text_widget.tag_add("transcript_search_current", current_index, current_end)
+            text_widget.see(current_index)
+
+            self.transcript_search_count_label.configure(
+                text=(
+                    f"{self.transcript_search_current_index + 1}/"
+                    f"{len(self.transcript_search_matches)} matches"
+                ),
+                text_color=COLORS["text_muted"]
+            )
+
+        finally:
+            if previous_state == "disabled":
+                self.transcript_textbox.configure(state="disabled")
+
+    def _jump_to_transcript_search_match(self, direction: int) -> None:
+        """Jump to the previous or next transcript search match."""
+        if not self.transcript_search_matches:
+            return
+
+        total = len(self.transcript_search_matches)
+        self.transcript_search_current_index = (
+            self.transcript_search_current_index + direction
+        ) % total
+
+        self._apply_current_transcript_search_match()
+
 
     def import_transcript_file(self) -> None:
         """Import SRT, VTT, or TXT transcript file."""
