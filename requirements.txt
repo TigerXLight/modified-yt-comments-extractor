@@ -9,3 +9,4 @@ Pillow>=10.0.0
 # Optional: Secure credential storage
 keyring>=24.0.0
 faster-whisper==1.2.1
+python-vlc==3.0.21203

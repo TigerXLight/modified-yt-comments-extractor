@@ -1435,14 +1435,57 @@ class App(ctk.CTk):
         )
         self.transcript_textbox.pack(fill="x", padx=15, pady=(0, 10))
 
-        self.transcript_timeline_label = ctk.CTkLabel(
+        self.transcript_timeline_header = ctk.CTkFrame(
             self.transcript_card,
+            fg_color="transparent"
+        )
+        self.transcript_timeline_header.pack(fill="x", padx=15, pady=(0, 4))
+
+        self.transcript_timeline_label = ctk.CTkLabel(
+            self.transcript_timeline_header,
             text="Timeline",
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=COLORS["text_secondary"],
             anchor="w"
         )
-        self.transcript_timeline_label.pack(fill="x", padx=15, pady=(0, 4))
+        self.transcript_timeline_label.pack(side="left")
+
+        self.transcript_playback_status_label = ctk.CTkLabel(
+            self.transcript_timeline_header,
+            text="",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"]
+        )
+        self.transcript_playback_status_label.pack(side="left", padx=(10, 0))
+
+        self.transcript_pause_button = ctk.CTkButton(
+            self.transcript_timeline_header,
+            text="Pause",
+            command=self.pause_transcript_timeline,
+            width=64,
+            height=24,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=6,
+            state="disabled"
+        )
+        self.transcript_pause_button.pack(side="right", padx=(6, 0))
+        self.transcript_pause_button.pack_forget()
+
+        self.transcript_play_button = ctk.CTkButton(
+            self.transcript_timeline_header,
+            text="▶ Play",
+            command=self.toggle_transcript_timeline_playback,
+            width=72,
+            height=24,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color="#000000",
+            corner_radius=6
+        )
+        self.transcript_play_button.pack(side="right")
 
         self.transcript_timeline_canvas = tk.Canvas(
             self.transcript_card,
@@ -1473,6 +1516,22 @@ class App(ctk.CTk):
         self.transcript_timeline_zoom_level = 1.0
         self.transcript_timeline_pan_fraction = 0.0
         self.transcript_playhead_seconds: Optional[float] = None
+        self.transcript_playback_process = None
+        self.transcript_playback_after_id = None
+        self.transcript_playback_start_seconds: Optional[float] = None
+        self.transcript_playback_start_wall_time: Optional[float] = None
+        self.transcript_playback_latency_offset_seconds = 0.0
+        self.transcript_playback_active_segment_index: Optional[int] = None
+        self.transcript_playback_tick_ms = 30
+        self.transcript_playback_requested_start_seconds: Optional[float] = None
+        self.transcript_vlc_clock_anchor_seconds: Optional[float] = None
+        self.transcript_vlc_clock_anchor_wall_time: Optional[float] = None
+        self.transcript_vlc_last_reported_seconds: Optional[float] = None
+        self.transcript_vlc_module = None
+        self.transcript_vlc_instance = None
+        self.transcript_vlc_player = None
+        self.transcript_vlc_media_path: Optional[str] = None
+        self.transcript_playback_backend: Optional[str] = None
         self._transcript_timeline_view = None
 
         timeline_zoom_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
@@ -3720,6 +3779,498 @@ class App(ctk.CTk):
 
 
 
+
+
+    def _get_transcript_segment_index_at_time(self, seconds: float) -> Optional[int]:
+        """Return the transcript segment index that contains the given time."""
+        try:
+            seconds = float(seconds)
+        except Exception:
+            return None
+
+        for index, segment in enumerate(self.transcript_segments):
+            start_seconds = self._transcript_time_to_seconds(segment.start)
+            end_seconds = self._transcript_time_to_seconds(segment.end)
+
+            if start_seconds is None or end_seconds is None:
+                continue
+
+            if end_seconds < start_seconds:
+                continue
+
+            if start_seconds <= seconds <= end_seconds:
+                return index
+
+        return None
+
+    def _sync_transcript_selection_to_playback_time(self, seconds: float) -> None:
+        """Update selected/current transcript segment while playback moves."""
+        segment_index = self._get_transcript_segment_index_at_time(seconds)
+
+        if segment_index is None:
+            return
+
+        if getattr(self, "transcript_playback_active_segment_index", None) == segment_index:
+            return
+
+        self.transcript_playback_active_segment_index = segment_index
+
+        if getattr(self, "selected_transcript_segment_index", None) != segment_index:
+            self.selected_transcript_segment_index = segment_index
+            self._refresh_transcript_display()
+
+
+
+    def _get_transcript_vlc_module(self):
+        """Load python-vlc and help it find VLC on Windows."""
+        cached_module = getattr(self, "transcript_vlc_module", None)
+
+        if cached_module is not None:
+            return cached_module
+
+        if os.name == "nt":
+            for vlc_dir in (
+                r"C:\Program Files\VideoLAN\VLC",
+                r"C:\Program Files (x86)\VideoLAN\VLC",
+            ):
+                libvlc_path = os.path.join(vlc_dir, "libvlc.dll")
+
+                if os.path.exists(libvlc_path):
+                    try:
+                        os.add_dll_directory(vlc_dir)
+                    except Exception:
+                        pass
+
+                    if vlc_dir not in os.environ.get("PATH", ""):
+                        os.environ["PATH"] = vlc_dir + os.pathsep + os.environ.get("PATH", "")
+
+                    break
+
+        try:
+            import vlc
+        except Exception as error:
+            raise RuntimeError(
+                "VLC playback is not available. Install VLC Media Player, then run "
+                "'python -m pip install python-vlc==3.0.21203' inside the app venv."
+            ) from error
+
+        self.transcript_vlc_module = vlc
+        return vlc
+
+    def _get_or_create_transcript_vlc_player(self):
+        """Create or reuse an audio-only VLC media player."""
+        self._get_transcript_vlc_module()
+
+        if getattr(self, "transcript_vlc_instance", None) is None:
+            self.transcript_vlc_instance = self.transcript_vlc_module.Instance(
+                "--quiet",
+                "--intf=dummy",
+                "--no-video",
+                "--vout=dummy",
+                "--no-video-title-show"
+            )
+
+        if getattr(self, "transcript_vlc_player", None) is None:
+            self.transcript_vlc_player = self.transcript_vlc_instance.media_player_new()
+
+        return self.transcript_vlc_player
+
+
+    def _set_transcript_vlc_media(self, media_path: str, start_seconds: Optional[float] = None) -> None:
+        """Attach a media file to the VLC player."""
+        player = self._get_or_create_transcript_vlc_player()
+        media_path = os.path.abspath(media_path)
+
+        try:
+            media = self.transcript_vlc_instance.media_new_path(media_path)
+        except Exception:
+            media = self.transcript_vlc_instance.media_new(media_path)
+
+        try:
+            media.add_option(":no-video")
+            media.add_option(":vout=dummy")
+            media.add_option(":no-video-title-show")
+
+            if start_seconds is not None:
+                media.add_option(f":start-time={max(0.0, float(start_seconds)):.3f}")
+        except Exception:
+            pass
+
+        player.set_media(media)
+        self.transcript_vlc_media_path = media_path
+
+
+    def _is_transcript_vlc_playing(self) -> bool:
+        """Return whether VLC is actively playing."""
+        player = getattr(self, "transcript_vlc_player", None)
+
+        if player is None:
+            return False
+
+        try:
+            return bool(player.is_playing())
+        except Exception:
+            return False
+
+
+    def _get_transcript_playback_start_time(self) -> Optional[float]:
+        """Return timeline playback start time in seconds."""
+        playhead_seconds = getattr(self, "transcript_playhead_seconds", None)
+
+        if isinstance(playhead_seconds, (int, float)):
+            return float(playhead_seconds)
+
+        selected_time = self._get_transcript_selected_segment_center_time()
+
+        if selected_time is not None:
+            return selected_time
+
+        min_time, _max_time = self._get_transcript_timeline_bounds()
+        return min_time
+
+    def _update_transcript_playback_buttons(self, playing: bool) -> None:
+        """Update single Play/Pause toggle button state."""
+        if hasattr(self, "transcript_play_button"):
+            self.transcript_play_button.configure(
+                state="normal",
+                text="Pause" if playing else "▶ Play",
+                fg_color=COLORS["accent_secondary"] if playing else COLORS["accent"],
+                hover_color=COLORS["border"] if playing else COLORS["accent_hover"],
+                text_color=COLORS["text_primary"] if playing else "#000000"
+            )
+
+        if hasattr(self, "transcript_pause_button"):
+            try:
+                self.transcript_pause_button.pack_forget()
+            except Exception:
+                pass
+
+        if hasattr(self, "transcript_playback_status_label"):
+            self.transcript_playback_status_label.configure(
+                text="Playing" if playing else "",
+                text_color=COLORS["accent"] if playing else COLORS["text_muted"]
+            )
+
+
+    def _stop_transcript_playback_process(self) -> None:
+        """Stop active transcript playback and cancel timers."""
+        after_id = getattr(self, "transcript_playback_after_id", None)
+
+        if after_id:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+
+        self.transcript_playback_after_id = None
+
+        player = getattr(self, "transcript_vlc_player", None)
+
+        if player is not None:
+            try:
+                player.stop()
+            except Exception:
+                pass
+
+        process = getattr(self, "transcript_playback_process", None)
+
+        if process is not None:
+            try:
+                if process.poll() is None:
+                    process.terminate()
+            except Exception:
+                pass
+
+        self.transcript_playback_process = None
+        self.transcript_playback_backend = None
+        self.transcript_playback_start_seconds = None
+        self.transcript_playback_start_wall_time = None
+        self.transcript_playback_requested_start_seconds = None
+        self.transcript_vlc_clock_anchor_seconds = None
+        self.transcript_vlc_clock_anchor_wall_time = None
+        self.transcript_vlc_last_reported_seconds = None
+
+
+    def toggle_transcript_timeline_playback(self) -> None:
+        """Toggle transcript timeline playback from one button."""
+        if self._is_transcript_vlc_playing():
+            self.pause_transcript_timeline()
+            return
+
+        process = getattr(self, "transcript_playback_process", None)
+
+        if process is not None:
+            try:
+                if process.poll() is None:
+                    self.pause_transcript_timeline()
+                    return
+            except Exception:
+                pass
+
+        self.play_transcript_timeline()
+
+
+    def play_transcript_timeline(self) -> None:
+        """Play linked media audio from the current transcript timeline marker using VLC."""
+        media_path = getattr(self, "linked_transcript_media_path", None)
+
+        if not media_path:
+            messagebox.showwarning(
+                "No Linked Media",
+                "Choose a media file first."
+            )
+            return
+
+        if not os.path.exists(media_path):
+            self._set_linked_transcript_media(None)
+            messagebox.showerror(
+                "Linked Media Missing",
+                "The linked media file could not be found. Choose the media file again."
+            )
+            return
+
+        media_path = os.path.abspath(media_path)
+        start_seconds = self._get_transcript_playback_start_time()
+
+        if start_seconds is None:
+            messagebox.showwarning(
+                "No Timeline Time",
+                "The transcript needs timestamps before playback can start."
+            )
+            return
+
+        start_seconds = float(start_seconds)
+
+        try:
+            player = self._get_or_create_transcript_vlc_player()
+        except Exception as error:
+            messagebox.showerror("VLC Playback Error", str(error))
+            self._update_transcript_playback_buttons(False)
+            return
+
+        self._stop_transcript_playback_process()
+
+        try:
+            self._set_transcript_vlc_media(media_path, start_seconds=start_seconds)
+            player = self.transcript_vlc_player
+
+            result = player.play()
+
+            if result == -1:
+                raise RuntimeError("VLC could not start playback.")
+
+            # One safety seek only. No retry loop, because repeated set_time()
+            # causes audible stutter at playback startup.
+            target_ms = int(max(0.0, start_seconds) * 1000)
+
+            def apply_single_start_seek() -> None:
+                current_player = getattr(self, "transcript_vlc_player", None)
+
+                if current_player is None or current_player is not player:
+                    return
+
+                try:
+                    current_ms = current_player.get_time()
+                except Exception:
+                    current_ms = -1
+
+                # Only correct if VLC started far from the requested marker.
+                if current_ms >= 0 and abs(current_ms - target_ms) < 350:
+                    return
+
+                try:
+                    current_player.set_time(target_ms)
+                except Exception:
+                    pass
+
+            self.after(120, apply_single_start_seek)
+
+        except Exception as error:
+            self._stop_transcript_playback_process()
+            messagebox.showerror("VLC Playback Error", str(error))
+            self._update_transcript_playback_buttons(False)
+            return
+
+        self.transcript_playback_backend = "vlc"
+        self.transcript_playback_requested_start_seconds = start_seconds
+        self.transcript_playback_start_seconds = start_seconds
+        self.transcript_playback_start_wall_time = time.monotonic()
+        self.transcript_vlc_clock_anchor_seconds = start_seconds
+        self.transcript_vlc_clock_anchor_wall_time = time.monotonic()
+        self.transcript_vlc_last_reported_seconds = None
+        self.transcript_playhead_seconds = start_seconds
+        self.transcript_playback_active_segment_index = None
+
+        if hasattr(self, "_center_transcript_timeline_pan_on_time"):
+            self._center_transcript_timeline_pan_on_time(start_seconds)
+
+        self._sync_transcript_selection_to_playback_time(start_seconds)
+        self._refresh_transcript_timeline()
+
+        self._update_transcript_playback_buttons(True)
+        self._tick_transcript_timeline_playback()
+
+
+    def pause_transcript_timeline(self) -> None:
+        """Pause transcript timeline playback at the current marker."""
+        current_seconds = self._update_transcript_playhead_from_playback_clock()
+
+        if current_seconds is not None:
+            self._sync_transcript_selection_to_playback_time(current_seconds)
+
+        after_id = getattr(self, "transcript_playback_after_id", None)
+
+        if after_id:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+
+        self.transcript_playback_after_id = None
+
+        player = getattr(self, "transcript_vlc_player", None)
+
+        if player is not None and getattr(self, "transcript_playback_backend", None) == "vlc":
+            try:
+                player.pause()
+                self.transcript_playback_backend = "vlc_paused"
+            except Exception:
+                self._stop_transcript_playback_process()
+        else:
+            self._stop_transcript_playback_process()
+
+        self._update_transcript_playback_buttons(False)
+        self._refresh_transcript_timeline()
+
+
+    def _update_transcript_playhead_from_playback_clock(self) -> Optional[float]:
+        """Update playhead from VLC's media clock, interpolated for smooth GUI movement."""
+        backend = getattr(self, "transcript_playback_backend", None)
+
+        if backend not in {"vlc", "vlc_paused"}:
+            return None
+
+        player = getattr(self, "transcript_vlc_player", None)
+
+        if player is None:
+            return None
+
+        now = time.monotonic()
+
+        try:
+            raw_ms = player.get_time()
+        except Exception:
+            raw_ms = -1
+
+        raw_seconds = None
+
+        if raw_ms is not None and raw_ms >= 0:
+            raw_seconds = raw_ms / 1000.0
+
+        requested_start = getattr(self, "transcript_playback_requested_start_seconds", None)
+        start_wall_time = getattr(self, "transcript_playback_start_wall_time", None)
+
+        # During startup, VLC can briefly report 0 before the start-time lands.
+        # Do not let the marker jump backward during that opening phase.
+        if (
+            raw_seconds is not None
+            and isinstance(requested_start, (int, float))
+            and isinstance(start_wall_time, (int, float))
+            and float(requested_start) > 0.5
+            and raw_seconds < float(requested_start) - 0.5
+            and now - float(start_wall_time) < 1.0
+        ):
+            raw_seconds = float(requested_start)
+
+        last_reported = getattr(self, "transcript_vlc_last_reported_seconds", None)
+
+        # Update interpolation anchor only when VLC gives a genuinely new media time.
+        if raw_seconds is not None:
+            if last_reported is None or abs(raw_seconds - float(last_reported)) >= 0.015:
+                self.transcript_vlc_clock_anchor_seconds = raw_seconds
+                self.transcript_vlc_clock_anchor_wall_time = now
+                self.transcript_vlc_last_reported_seconds = raw_seconds
+
+        anchor_seconds = getattr(self, "transcript_vlc_clock_anchor_seconds", None)
+        anchor_wall = getattr(self, "transcript_vlc_clock_anchor_wall_time", None)
+
+        if anchor_seconds is None:
+            if isinstance(requested_start, (int, float)):
+                anchor_seconds = float(requested_start)
+                anchor_wall = now
+            else:
+                return None
+
+        if anchor_wall is None:
+            anchor_wall = now
+
+        if backend == "vlc" and self._is_transcript_vlc_playing():
+            current_seconds = float(anchor_seconds) + max(0.0, now - float(anchor_wall))
+        else:
+            current_seconds = float(anchor_seconds)
+
+        min_time, max_time = self._get_transcript_timeline_bounds()
+
+        if min_time is not None and max_time is not None:
+            current_seconds = max(float(min_time), min(float(max_time), current_seconds))
+
+        self.transcript_playhead_seconds = current_seconds
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=f"Playing: {self._format_timeline_time(current_seconds)}",
+                text_color=COLORS["accent"]
+            )
+
+        return current_seconds
+
+
+    def _tick_transcript_timeline_playback(self) -> None:
+        """Move playhead marker smoothly while VLC is playing."""
+        backend = getattr(self, "transcript_playback_backend", None)
+
+        if backend == "vlc":
+            player = getattr(self, "transcript_vlc_player", None)
+
+            if player is None:
+                self._update_transcript_playback_buttons(False)
+                return
+
+            try:
+                state_text = str(player.get_state()).lower()
+            except Exception:
+                state_text = ""
+
+            if "ended" in state_text or "stopped" in state_text or "error" in state_text:
+                self._stop_transcript_playback_process()
+                self._update_transcript_playback_buttons(False)
+                self._refresh_transcript_timeline()
+                return
+
+            current_seconds = self._update_transcript_playhead_from_playback_clock()
+
+            if current_seconds is not None:
+                self._sync_transcript_selection_to_playback_time(current_seconds)
+
+                try:
+                    zoom_level = float(getattr(self, "transcript_timeline_zoom_level", 1.0))
+                except Exception:
+                    zoom_level = 1.0
+
+                if zoom_level > 1.05 and hasattr(self, "_center_transcript_timeline_pan_on_time"):
+                    self._center_transcript_timeline_pan_on_time(current_seconds)
+
+            self._refresh_transcript_timeline()
+
+            self.transcript_playback_after_id = self.after(
+                25,
+                self._tick_transcript_timeline_playback
+            )
+            return
+
+        self._update_transcript_playback_buttons(False)
+
+
     def _get_transcript_selected_segment_center_time(self) -> Optional[float]:
         """Return selected segment midpoint in seconds, if available."""
         selected_index = getattr(self, "selected_transcript_segment_index", None)
@@ -3773,6 +4324,14 @@ class App(ctk.CTk):
             )
 
         if refresh:
+            try:
+                zoom_level = float(getattr(self, "transcript_timeline_zoom_level", 1.0))
+            except Exception:
+                zoom_level = 1.0
+
+            if zoom_level > 1.05 and hasattr(self, "_center_transcript_timeline_pan_on_time"):
+                self._center_transcript_timeline_pan_on_time(seconds)
+
             self._refresh_transcript_timeline()
 
     def _timeline_canvas_event_to_seconds(self, event) -> Optional[float]:
@@ -4193,12 +4752,18 @@ class App(ctk.CTk):
         finally:
             self._updating_transcript_timeline_pan_slider = False
 
-    def _center_transcript_timeline_pan_on_selected(self) -> None:
-        """Set pan fraction so the selected segment is near the middle when zooming."""
+
+    def _center_transcript_timeline_pan_on_time(self, center_time: float) -> None:
+        """Center the zoomed timeline view around a specific time."""
         min_time, max_time = self._get_transcript_timeline_bounds()
 
         if min_time is None or max_time is None:
             self._set_transcript_timeline_pan_slider(0.0)
+            return
+
+        try:
+            center_time = float(center_time)
+        except Exception:
             return
 
         full_duration = max(1.0, max_time - min_time)
@@ -4221,16 +4786,89 @@ class App(ctk.CTk):
             self._set_transcript_timeline_pan_slider(0.0)
             return
 
-        selected_index = getattr(self, "selected_transcript_segment_index", None)
+        center_time = max(min_time, min(max_time, center_time))
+        visible_min = center_time - visible_duration / 2
+        fraction = (visible_min - min_time) / max_pan_seconds
+
+        self._set_transcript_timeline_pan_slider(fraction)
+
+    def _keep_transcript_playhead_visible(self, seconds: float) -> None:
+        """Auto-pan during playback so the blue marker stays visible without hard jumps."""
+        view = getattr(self, "_transcript_timeline_view", None)
+
+        if not view:
+            self._center_transcript_timeline_pan_on_time(seconds)
+            return
+
+        try:
+            seconds = float(seconds)
+            visible_min = float(view.get("min_time"))
+            visible_max = float(view.get("max_time"))
+        except Exception:
+            return
+
+        visible_duration = max(0.001, visible_max - visible_min)
+        right_guard = visible_min + visible_duration * 0.72
+        left_guard = visible_min + visible_duration * 0.18
+
+        # When playing forward, pan ahead only when the marker approaches the right side.
+        if seconds > right_guard:
+            target_center = seconds + visible_duration * 0.18
+            self._center_transcript_timeline_pan_on_time(target_center)
+        elif seconds < left_guard:
+            target_center = seconds - visible_duration * 0.18
+            self._center_transcript_timeline_pan_on_time(target_center)
+
+
+    def _center_transcript_timeline_pan_on_selected(self) -> None:
+        """Set pan fraction so the selected segment is near the middle when zooming."""
+        min_time, max_time = self._get_transcript_timeline_bounds()
+
+        if min_time is None or max_time is None:
+            self._set_transcript_timeline_pan_slider(0.0)
+            return
+
+        full_duration = max(1.0, max_time - min_time)
+
+        try:
+            zoom_level = float(getattr(self, "transcript_timeline_zoom_level", 1.0))
+        except Exception:
+            zoom_level = 1.0
+
+        zoom_level = max(1.0, min(10.0, zoom_level))
+
+        if zoom_level <= 1.05:
+            self._set_transcript_timeline_pan_slider(0.0)
+            return
+
+        playhead_seconds = getattr(self, "transcript_playhead_seconds", None)
+
+        if isinstance(playhead_seconds, (int, float)):
+            self._center_transcript_timeline_pan_on_time(float(playhead_seconds))
+            return
+
+        visible_duration = max(1.0, full_duration / zoom_level)
+        max_pan_seconds = max(0.0, full_duration - visible_duration)
+
+        if max_pan_seconds <= 0:
+            self._set_transcript_timeline_pan_slider(0.0)
+            return
+
         center_time = min_time + full_duration / 2
+        playhead_seconds = getattr(self, "transcript_playhead_seconds", None)
 
-        if isinstance(selected_index, int) and 0 <= selected_index < len(self.transcript_segments):
-            segment = self.transcript_segments[selected_index]
-            start_seconds = self._transcript_time_to_seconds(segment.start)
-            end_seconds = self._transcript_time_to_seconds(segment.end)
+        if isinstance(playhead_seconds, (int, float)):
+            center_time = max(min_time, min(max_time, float(playhead_seconds)))
+        else:
+            selected_index = getattr(self, "selected_transcript_segment_index", None)
 
-            if start_seconds is not None and end_seconds is not None:
-                center_time = (start_seconds + end_seconds) / 2
+            if isinstance(selected_index, int) and 0 <= selected_index < len(self.transcript_segments):
+                segment = self.transcript_segments[selected_index]
+                start_seconds = self._transcript_time_to_seconds(segment.start)
+                end_seconds = self._transcript_time_to_seconds(segment.end)
+
+                if start_seconds is not None and end_seconds is not None:
+                    center_time = (start_seconds + end_seconds) / 2
 
         target_visible_min = center_time - visible_duration / 2
         fraction = (target_visible_min - min_time) / max_pan_seconds
@@ -4261,9 +4899,14 @@ class App(ctk.CTk):
         previous_zoom_level = float(getattr(self, "transcript_timeline_zoom_level", 1.0))
         self.transcript_timeline_zoom_level = zoom_level
 
-        if previous_zoom_level <= 1.05 and zoom_level > 1.05:
-            self._center_transcript_timeline_pan_on_selected()
-        elif zoom_level <= 1.05:
+        if zoom_level > 1.05:
+            playhead_seconds = getattr(self, "transcript_playhead_seconds", None)
+
+            if isinstance(playhead_seconds, (int, float)):
+                self._center_transcript_timeline_pan_on_time(float(playhead_seconds))
+            elif previous_zoom_level <= 1.05:
+                self._center_transcript_timeline_pan_on_selected()
+        else:
             self._set_transcript_timeline_pan_slider(0.0)
 
         if hasattr(self, "transcript_timeline_zoom_value_label"):
@@ -4946,6 +5589,8 @@ class App(ctk.CTk):
     def clear_transcript_media_link(self) -> None:
         """Clear only the linked transcript media file."""
         had_media = getattr(self, "linked_transcript_media_path", None)
+        self._stop_transcript_playback_process()
+        self._update_transcript_playback_buttons(False)
         self._set_linked_transcript_media(None)
 
         if hasattr(self, '_refresh_transcript_timeline'):
@@ -6805,6 +7450,8 @@ class App(ctk.CTk):
         if not answer:
             return
 
+        self._stop_transcript_playback_process()
+        self._update_transcript_playback_buttons(False)
         self.transcript_segments = []
         self.transcript_playhead_seconds = None
         self.last_transcript_source = None
