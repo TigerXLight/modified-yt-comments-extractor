@@ -162,6 +162,9 @@ class App(ctk.CTk):
         self.all_spam: List[Dict[str, Any]] = []
         self.attached_screenshots: List[str] = []
         self.transcript_segments: List[TranscriptSegment] = []
+        self.transcript_undo_stack: List[List[TranscriptSegment]] = []
+        self.transcript_redo_stack: List[List[TranscriptSegment]] = []
+        self.transcript_history_limit: int = 75
         self.last_transcript_source: Optional[str] = None
         self.last_youtube_video_info: Optional[Dict[str, Any]] = None
         self.last_asr_metadata: Optional[Dict[str, Any]] = None
@@ -187,6 +190,10 @@ class App(ctk.CTk):
         self.bind("<Control-s>", lambda e: self.export_csv())
         self.bind("<Control-e>", lambda e: self.export_excel())
         self.bind("<Control-t>", lambda e: self.export_txt())
+        self.bind_all("<Control-z>", self.undo_transcript_edit)
+        self.bind_all("<Control-Z>", self.undo_transcript_edit)
+        self.bind_all("<Control-y>", self.redo_transcript_edit)
+        self.bind_all("<Control-Y>", self.redo_transcript_edit)
 
         # Handle window close
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -2573,6 +2580,110 @@ class App(ctk.CTk):
 
         return paragraphs
 
+
+    def _clone_transcript_segments(self) -> List[TranscriptSegment]:
+        """Create a safe copy of the current transcript segments."""
+        return [
+            TranscriptSegment(
+                speaker=segment.speaker,
+                start=segment.start,
+                end=segment.end,
+                text=segment.text,
+            )
+            for segment in self.transcript_segments
+        ]
+
+    def _push_transcript_undo_state(self, reason: str = "") -> None:
+        """Save the current transcript state before an edit."""
+        if not self.transcript_segments:
+            return
+
+        snapshot = self._clone_transcript_segments()
+
+        if self.transcript_undo_stack:
+            last = self.transcript_undo_stack[-1]
+            if [
+                (x.speaker, x.start, x.end, x.text)
+                for x in last
+            ] == [
+                (x.speaker, x.start, x.end, x.text)
+                for x in snapshot
+            ]:
+                return
+
+        self.transcript_undo_stack.append(snapshot)
+
+        if len(self.transcript_undo_stack) > self.transcript_history_limit:
+            self.transcript_undo_stack.pop(0)
+
+        self.transcript_redo_stack.clear()
+
+    def _restore_transcript_snapshot(self, snapshot: List[TranscriptSegment], label: str) -> None:
+        """Restore transcript segments from a snapshot."""
+        self.transcript_segments = [
+            TranscriptSegment(
+                speaker=segment.speaker,
+                start=segment.start,
+                end=segment.end,
+                text=segment.text,
+            )
+            for segment in snapshot
+        ]
+
+        self._refresh_transcript_display()
+
+        if hasattr(self, "evidence_button"):
+            self.evidence_button.configure(
+                state="normal" if self.transcript_segments else "disabled"
+            )
+
+        self.log_message(f"{label} transcript edit", "success")
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=f"{label} transcript edit",
+                text_color=COLORS["text_primary"]
+            )
+
+    def undo_transcript_edit(self, event=None):
+        """Undo the previous transcript edit."""
+        if not self.transcript_undo_stack:
+            if hasattr(self, "transcript_cursor_status_label"):
+                self.transcript_cursor_status_label.configure(
+                    text="Nothing to undo.",
+                    text_color=COLORS["text_muted"]
+                )
+            return "break"
+
+        current_snapshot = self._clone_transcript_segments()
+        previous_snapshot = self.transcript_undo_stack.pop()
+
+        if current_snapshot:
+            self.transcript_redo_stack.append(current_snapshot)
+
+        self._restore_transcript_snapshot(previous_snapshot, "Undid")
+        return "break"
+
+    def redo_transcript_edit(self, event=None):
+        """Redo the previous undone transcript edit."""
+        if not self.transcript_redo_stack:
+            if hasattr(self, "transcript_cursor_status_label"):
+                self.transcript_cursor_status_label.configure(
+                    text="Nothing to redo.",
+                    text_color=COLORS["text_muted"]
+                )
+            return "break"
+
+        current_snapshot = self._clone_transcript_segments()
+        next_snapshot = self.transcript_redo_stack.pop()
+
+        if current_snapshot:
+            self.transcript_undo_stack.append(current_snapshot)
+
+        self._restore_transcript_snapshot(next_snapshot, "Redid")
+        return "break"
+
+
     def _refresh_transcript_display(self) -> None:
         """Refresh transcript preview, stats, and inline editor mapping."""
         has_transcript = len(self.transcript_segments) > 0
@@ -3038,6 +3149,8 @@ class App(ctk.CTk):
 
         original = self.transcript_segments[segment_index]
         original_text = original.text or ""
+
+        self._push_transcript_undo_state("split segment")
 
         char_offset = self._estimate_text_offset_in_segment(info, text_index)
         snapped_offset = self._snap_transcript_split_offset_to_word_boundary(
@@ -3942,6 +4055,7 @@ class App(ctk.CTk):
                 dialog.destroy()
                 return "break"
 
+            self._push_transcript_undo_state("inline speaker change")
             segment.speaker = new_speaker
             self.selected_transcript_segment_index = segment_index
             self._refresh_transcript_display()
