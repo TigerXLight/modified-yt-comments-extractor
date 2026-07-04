@@ -1108,6 +1108,20 @@ class App(ctk.CTk):
         )
         self.transcript_rename_button.pack(side="left", padx=(8, 0))
 
+        self.transcript_edit_segment_button = ctk.CTkButton(
+            button_row,
+            text="✏ Segment",
+            command=self.edit_transcript_segment_speaker,
+            width=105,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_edit_segment_button.pack(side="left", padx=(8, 0))
+
         self.transcript_clear_button = ctk.CTkButton(
             button_row,
             text="Clear",
@@ -2416,6 +2430,8 @@ class App(ctk.CTk):
         self.transcript_export_vtt_button.configure(state=state)
         self.transcript_export_csv_button.configure(state=state)
         self.transcript_rename_button.configure(state=state)
+        if hasattr(self, "transcript_edit_segment_button"):
+            self.transcript_edit_segment_button.configure(state=state)
         self.transcript_clear_button.configure(state=state)
 
     @staticmethod
@@ -3246,6 +3262,227 @@ class App(ctk.CTk):
             logger.exception("Transcript export error")
             self.log_message(f"Transcript export failed: {e}", "error")
             messagebox.showerror("Transcript Export Error", str(e))
+
+
+    def edit_transcript_segment_speaker(self) -> None:
+        """Edit the speaker label for one transcript segment only."""
+        if not self.transcript_segments:
+            messagebox.showwarning(
+                "No Transcript",
+                "Import a transcript first."
+            )
+            return
+
+        dialog_width = 620
+        dialog_height = 500
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Edit Segment Speaker")
+        dialog.geometry(f"{dialog_width}x{dialog_height}")
+        dialog.configure(fg_color=COLORS["bg_dark"])
+        dialog.transient(self)
+        dialog.grab_set()
+
+        dialog.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() - dialog_width) // 2
+        y = self.winfo_y() + (self.winfo_height() - dialog_height) // 2
+        dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+
+        container = ctk.CTkFrame(
+            dialog,
+            fg_color=COLORS["bg_card"],
+            corner_radius=12,
+            border_width=1,
+            border_color=COLORS["border"]
+        )
+        container.pack(fill="both", expand=True, padx=16, pady=16)
+
+        title = ctk.CTkLabel(
+            container,
+            text="✏ Edit One Segment Speaker",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=COLORS["text_primary"]
+        )
+        title.pack(anchor="w", padx=16, pady=(14, 6))
+
+        help_text = ctk.CTkLabel(
+            container,
+            text="This changes only the selected transcript segment, not every matching speaker label.",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            wraplength=560,
+            justify="left"
+        )
+        help_text.pack(anchor="w", padx=16, pady=(0, 12))
+
+        segment_label = ctk.CTkLabel(
+            container,
+            text="Segment",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary"]
+        )
+        segment_label.pack(anchor="w", padx=16)
+
+        display_to_index = {}
+
+        for i, segment in enumerate(self.transcript_segments):
+            speaker = segment.speaker or "Speaker"
+            start = segment.start or "no start"
+            end = segment.end or "no end"
+            text_preview = " ".join((segment.text or "").split())
+            if len(text_preview) > 80:
+                text_preview = text_preview[:77].rstrip() + "..."
+
+            display = f"{i + 1}. [{start} - {end}] {speaker}: {text_preview}"
+            display_to_index[display] = i
+
+        display_values = list(display_to_index.keys())
+        selected_segment_display = ctk.StringVar(value=display_values[0])
+
+        speaker_entry = ctk.CTkEntry(
+            container,
+            height=34,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["bg_input"],
+            border_color=COLORS["border"],
+            corner_radius=6
+        )
+
+        preview_textbox = ctk.CTkTextbox(
+            container,
+            height=75,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["bg_input"],
+            border_color=COLORS["border"],
+            border_width=1,
+            corner_radius=8,
+            wrap="word"
+        )
+
+        def get_selected_index() -> int:
+            return display_to_index.get(selected_segment_display.get(), 0)
+
+        def refresh_selected_segment_details() -> None:
+            index = get_selected_index()
+            segment = self.transcript_segments[index]
+            speaker = segment.speaker or "Speaker"
+
+            speaker_entry.delete(0, "end")
+            speaker_entry.insert(0, speaker)
+
+            preview_textbox.configure(state="normal")
+            preview_textbox.delete("1.0", "end")
+            preview_textbox.insert(
+                "1.0",
+                f"Segment {index + 1} of {len(self.transcript_segments)}\n"
+                f"Time: {segment.start or 'no start'} → {segment.end or 'no end'}\n"
+                f"Current speaker: {speaker}\n\n"
+                f"{segment.text or ''}"
+            )
+            preview_textbox.configure(state="disabled")
+
+        segment_menu = ctk.CTkOptionMenu(
+            container,
+            values=display_values,
+            variable=selected_segment_display,
+            command=lambda _value: refresh_selected_segment_details(),
+            height=34,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["bg_input"],
+            button_color=COLORS["accent_secondary"],
+            button_hover_color=COLORS["accent"],
+            dropdown_fg_color=COLORS["bg_card"],
+            dropdown_hover_color=COLORS["accent_secondary"],
+            corner_radius=6
+        )
+        segment_menu.pack(fill="x", padx=16, pady=(4, 12))
+
+        new_label = ctk.CTkLabel(
+            container,
+            text="Speaker for this segment only",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary"]
+        )
+        new_label.pack(anchor="w", padx=16)
+
+        speaker_entry.pack(fill="x", padx=16, pady=(4, 12))
+
+        preview_label = ctk.CTkLabel(
+            container,
+            text="Preview",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary"]
+        )
+        preview_label.pack(anchor="w", padx=16)
+
+        preview_textbox.pack(fill="x", padx=16, pady=(4, 12))
+        refresh_selected_segment_details()
+        speaker_entry.focus_set()
+        speaker_entry.select_range(0, "end")
+
+        button_row = ctk.CTkFrame(container, fg_color="transparent")
+        button_row.pack(fill="x", padx=16, pady=(0, 14))
+
+        def do_update() -> None:
+            index = get_selected_index()
+            segment = self.transcript_segments[index]
+
+            old_speaker = segment.speaker or "Speaker"
+            new_speaker = speaker_entry.get().strip()
+
+            if not new_speaker:
+                messagebox.showwarning(
+                    "Missing Speaker",
+                    "Enter a speaker name for this segment."
+                )
+                return
+
+            if new_speaker == old_speaker:
+                messagebox.showinfo(
+                    "No Change",
+                    "The speaker name is already the same for this segment."
+                )
+                return
+
+            segment.speaker = new_speaker
+
+            dialog.destroy()
+            self._refresh_transcript_display()
+            self.log_message(
+                f"Changed segment {index + 1:,} speaker: '{old_speaker}' → '{new_speaker}'",
+                "success"
+            )
+
+        cancel_btn = ctk.CTkButton(
+            button_row,
+            text="Cancel",
+            command=dialog.destroy,
+            width=90,
+            height=34,
+            font=ctk.CTkFont(size=12),
+            fg_color="transparent",
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_secondary"],
+            corner_radius=8
+        )
+        cancel_btn.pack(side="right")
+
+        update_btn = ctk.CTkButton(
+            button_row,
+            text="Update Segment",
+            command=do_update,
+            width=140,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color="#000000",
+            corner_radius=8
+        )
+        update_btn.pack(side="right", padx=(0, 8))
+
+        dialog.bind("<Return>", lambda _event: do_update())
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
 
     def rename_transcript_speaker(self) -> None:
         """Rename one speaker label globally across all transcript segments."""
