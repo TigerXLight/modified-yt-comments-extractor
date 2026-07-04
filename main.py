@@ -1313,10 +1313,14 @@ class App(ctk.CTk):
         )
         self.transcript_search_count_label.pack(side="left", padx=(10, 0))
 
-        self.transcript_search_var.trace_add(
-            "write",
-            lambda *_: self._search_transcript_changed()
+        self.transcript_cursor_status_label = ctk.CTkLabel(
+            self.transcript_card,
+            text="Click inside the transcript to select a segment.",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_primary"],
+            anchor="w"
         )
+        self.transcript_cursor_status_label.pack(fill="x", padx=15, pady=(0, 6))
 
         # Transcript preview
         self.transcript_textbox = ctk.CTkTextbox(
@@ -1330,6 +1334,19 @@ class App(ctk.CTk):
             wrap="word"
         )
         self.transcript_textbox.pack(fill="x", padx=15, pady=(0, 15))
+        self.transcript_display_ranges = []
+        self.selected_transcript_segment_index = None
+
+        transcript_text_widget = self._get_transcript_text_widget()
+        transcript_text_widget.configure(
+            insertbackground="#FFFFFF",
+            insertwidth=2,
+            insertofftime=300,
+            insertontime=600
+        )
+        transcript_text_widget.bind("<ButtonRelease-1>", self._on_transcript_preview_cursor_changed)
+        transcript_text_widget.bind("<KeyPress>", self._on_transcript_preview_key_press)
+        transcript_text_widget.bind("<KeyRelease>", self._on_transcript_preview_cursor_changed)
 
         self._refresh_transcript_display()
 
@@ -2532,7 +2549,7 @@ class App(ctk.CTk):
         return paragraphs
 
     def _refresh_transcript_display(self) -> None:
-        """Refresh transcript preview and stats."""
+        """Refresh transcript preview, stats, and inline editor mapping."""
         has_transcript = len(self.transcript_segments) > 0
         state = "normal" if has_transcript else "disabled"
 
@@ -2540,6 +2557,21 @@ class App(ctk.CTk):
 
         if hasattr(self, "transcript_search_entry"):
             self.transcript_search_entry.configure(state=state)
+
+        self.transcript_display_ranges = []
+        self.selected_transcript_segment_index = None
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            if has_transcript:
+                self.transcript_cursor_status_label.configure(
+                    text="Click inside the transcript to select a segment.",
+                    text_color=COLORS["text_muted"]
+                )
+            else:
+                self.transcript_cursor_status_label.configure(
+                    text="No transcript segment selected.",
+                    text_color=COLORS["text_muted"]
+                )
 
         self.transcript_textbox.configure(state="normal")
         self.transcript_textbox.delete("1.0", "end")
@@ -2570,7 +2602,6 @@ class App(ctk.CTk):
             text_color=COLORS["text_muted"]
         )
 
-        readable_segments = self._get_readable_transcript_segments()
         preview_char_limit = 12000
         chars_written = 0
         truncated = False
@@ -2578,22 +2609,22 @@ class App(ctk.CTk):
         show_speakers = self.transcript_show_speakers_var.get()
         show_timestamps = self.transcript_show_timestamps_var.get()
 
-        last_displayed_speaker = None
-
-        for segment in readable_segments:
+        for segment_index, segment in enumerate(self.transcript_segments):
             if chars_written >= preview_char_limit:
                 truncated = True
                 break
 
             speaker = segment.speaker or "Speaker"
-            start = segment.start or "no start"
-            end = segment.end or "no end"
+            start_time = segment.start or "no start"
+            end_time = segment.end or "no end"
+            text = segment.text or ""
 
-            if show_speakers and speaker != last_displayed_speaker:
+            segment_start_index = self.transcript_textbox.index("end-1c")
+
+            if show_speakers:
                 self.transcript_textbox.insert("end", f"{speaker}\n")
-                last_displayed_speaker = speaker
 
-            for paragraph in self._split_readable_text(segment.text):
+            for paragraph in self._split_readable_text(text):
                 remaining_chars = preview_char_limit - chars_written
 
                 if remaining_chars <= 0:
@@ -2612,7 +2643,19 @@ class App(ctk.CTk):
                 chars_written += len(paragraph)
 
             if show_timestamps:
-                self.transcript_textbox.insert("end", f"[{start} - {end}]\n\n")
+                self.transcript_textbox.insert("end", f"[{start_time} - {end_time}]\n\n")
+
+            segment_end_index = self.transcript_textbox.index("end-1c")
+
+            self.transcript_display_ranges.append({
+                "segment_index": segment_index,
+                "start": segment_start_index,
+                "end": segment_end_index,
+                "text": text,
+                "speaker": speaker,
+                "start_time": segment.start,
+                "end_time": segment.end,
+            })
 
             if truncated:
                 break
@@ -2623,9 +2666,181 @@ class App(ctk.CTk):
                 "... preview truncated for speed. Export TXT or Package for the full readable transcript.\n"
             )
 
-        self.transcript_textbox.configure(state="disabled")
+        self.transcript_textbox.configure(state="normal")
         if hasattr(self, "transcript_search_count_label"):
             self._update_transcript_search_matches(reset_index=True)
+
+
+    def _transcript_time_to_seconds(self, value: str) -> Optional[float]:
+        """Convert transcript time to seconds."""
+        if not value:
+            return None
+
+        value = value.strip().replace(",", ".")
+        parts = value.split(":")
+
+        try:
+            if len(parts) == 3:
+                hours = int(parts[0])
+                minutes = int(parts[1])
+                seconds = float(parts[2])
+                return hours * 3600 + minutes * 60 + seconds
+
+            if len(parts) == 2:
+                minutes = int(parts[0])
+                seconds = float(parts[1])
+                return minutes * 60 + seconds
+
+            return float(value)
+
+        except ValueError:
+            return None
+
+    def _seconds_to_transcript_time(self, seconds: float) -> str:
+        """Convert seconds to HH:MM:SS.mmm transcript time."""
+        seconds = max(0.0, float(seconds))
+        hours = int(seconds // 3600)
+        seconds -= hours * 3600
+        minutes = int(seconds // 60)
+        seconds -= minutes * 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:06.3f}"
+
+    def _estimate_segment_cursor_time(self, segment_index: int, char_offset: int) -> str:
+        """Estimate transcript time for a cursor offset within one segment."""
+        if segment_index < 0 or segment_index >= len(self.transcript_segments):
+            return ""
+
+        segment = self.transcript_segments[segment_index]
+        start_seconds = self._transcript_time_to_seconds(segment.start)
+        end_seconds = self._transcript_time_to_seconds(segment.end)
+
+        if start_seconds is None or end_seconds is None:
+            return ""
+
+        if end_seconds <= start_seconds:
+            return ""
+
+        text_length = max(1, len(segment.text or ""))
+        ratio = max(0.0, min(1.0, char_offset / text_length))
+        cursor_seconds = start_seconds + ((end_seconds - start_seconds) * ratio)
+        return self._seconds_to_transcript_time(cursor_seconds)
+
+    def _get_transcript_segment_at_text_index(self, text_index: str) -> Optional[dict]:
+        """Return displayed segment range for a textbox index."""
+        if not hasattr(self, "transcript_display_ranges"):
+            return None
+
+        text_widget = self._get_transcript_text_widget()
+
+        for info in self.transcript_display_ranges:
+            try:
+                after_start = text_widget.compare(text_index, ">=", info["start"])
+                before_end = text_widget.compare(text_index, "<=", info["end"])
+            except Exception:
+                continue
+
+            if after_start and before_end:
+                return info
+
+        return None
+
+    def _estimate_text_offset_in_segment(self, info: dict, text_index: str) -> int:
+        """Estimate character offset in the actual segment text for a textbox index."""
+        text_widget = self._get_transcript_text_widget()
+
+        try:
+            display_text_before_cursor = text_widget.get(info["start"], text_index)
+        except Exception:
+            return 0
+
+        segment_text = info.get("text") or ""
+        if not segment_text:
+            return 0
+
+        try:
+            display_text_full = text_widget.get(info["start"], info["end"])
+        except Exception:
+            display_text_full = display_text_before_cursor
+
+        visible_chars = max(1, len(display_text_full))
+        ratio = max(0.0, min(1.0, len(display_text_before_cursor) / visible_chars))
+        return int(round(len(segment_text) * ratio))
+
+    def _on_transcript_preview_key_press(self, event=None):
+        """Keep transcript preview focusable while blocking accidental text edits."""
+        if event is None:
+            return None
+
+        allowed_navigation_keys = {
+            "Left", "Right", "Up", "Down",
+            "Home", "End", "Prior", "Next",
+            "Shift_L", "Shift_R", "Control_L", "Control_R",
+            "Alt_L", "Alt_R", "Escape",
+        }
+
+        # Allow Ctrl+C / Ctrl+A style shortcuts.
+        ctrl_pressed = bool(getattr(event, "state", 0) & 0x4)
+        if ctrl_pressed:
+            return None
+
+        if getattr(event, "keysym", "") in allowed_navigation_keys:
+            return None
+
+        # For now Enter should not insert a newline. Later this becomes split-here.
+        blocked_edit_keys = {
+            "Return", "KP_Enter", "BackSpace", "Delete", "Tab",
+        }
+
+        if getattr(event, "keysym", "") in blocked_edit_keys:
+            return "break"
+
+        # Block normal printable typing so preview text is not accidentally changed.
+        if getattr(event, "char", ""):
+            return "break"
+
+        return None
+
+
+    def _on_transcript_preview_cursor_changed(self, event=None):
+        """Update selected segment details when the transcript cursor changes."""
+        if not self.transcript_segments:
+            return
+
+        text_widget = self._get_transcript_text_widget()
+
+        try:
+            text_index = text_widget.index("insert")
+        except Exception:
+            return
+
+        info = self._get_transcript_segment_at_text_index(text_index)
+        if not info:
+            if hasattr(self, "transcript_cursor_status_label"):
+                self.transcript_cursor_status_label.configure(
+                    text="No segment selected.",
+                    text_color=COLORS["text_muted"]
+                )
+            return
+
+        segment_index = info["segment_index"]
+        self.selected_transcript_segment_index = segment_index
+        segment = self.transcript_segments[segment_index]
+
+        char_offset = self._estimate_text_offset_in_segment(info, text_index)
+        estimated_time = self._estimate_segment_cursor_time(segment_index, char_offset)
+
+        time_text = f" • estimated time {estimated_time}" if estimated_time else ""
+        speaker = segment.speaker or "Speaker"
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=(
+                    f"Selected segment {segment_index + 1:,}/{len(self.transcript_segments):,} "
+                    f"• {speaker} • character {char_offset:,}/{len(segment.text or ''):,}"
+                    f"{time_text}"
+                ),
+                text_color=COLORS["text_primary"]
+            )
 
 
     def _get_transcript_text_widget(self):
