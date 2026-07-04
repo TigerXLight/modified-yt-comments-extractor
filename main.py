@@ -1108,6 +1108,20 @@ class App(ctk.CTk):
         )
         self.transcript_rename_button.pack(side="left", padx=(8, 0))
 
+        self.transcript_create_speaker_button = ctk.CTkButton(
+            button_row,
+            text="➕ Create Speaker",
+            command=self.create_transcript_speaker,
+            width=135,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_create_speaker_button.pack(side="left", padx=(8, 0))
+
         self.transcript_edit_segment_button = ctk.CTkButton(
             button_row,
             text="✏ Segment",
@@ -2448,6 +2462,8 @@ class App(ctk.CTk):
         self.transcript_export_vtt_button.configure(state=state)
         self.transcript_export_csv_button.configure(state=state)
         self.transcript_rename_button.configure(state=state)
+        if hasattr(self, "transcript_create_speaker_button"):
+            self.transcript_create_speaker_button.configure(state=state)
         if hasattr(self, "transcript_edit_segment_button"):
             self.transcript_edit_segment_button.configure(state=state)
         self.transcript_clear_button.configure(state=state)
@@ -3646,6 +3662,78 @@ class App(ctk.CTk):
             messagebox.showerror("Transcript Export Error", str(e))
 
 
+
+    def _ensure_transcript_custom_speakers(self) -> None:
+        """Ensure the session speaker list exists."""
+        if not hasattr(self, "transcript_custom_speakers"):
+            self.transcript_custom_speakers = set()
+
+    def _get_transcript_speaker_names(self) -> list[str]:
+        """Return known speaker names from transcript plus manually created speakers."""
+        self._ensure_transcript_custom_speakers()
+
+        speakers = set(self.transcript_custom_speakers)
+
+        for segment in self.transcript_segments:
+            speaker = (segment.speaker or "").strip()
+            if speaker:
+                speakers.add(speaker)
+
+        return sorted(speakers, key=lambda value: value.lower())
+
+    def _set_entry_text(self, entry, value: str) -> None:
+        """Replace CTkEntry text safely."""
+        entry.delete(0, "end")
+        entry.insert(0, value)
+
+    def create_transcript_speaker(self) -> None:
+        """Create a reusable speaker name for this transcript editing session."""
+        self._ensure_transcript_custom_speakers()
+
+        existing_speakers = self._get_transcript_speaker_names()
+        existing_text = ", ".join(existing_speakers) if existing_speakers else "None yet"
+
+        new_speaker = simpledialog.askstring(
+            "Create Speaker",
+            "Create a new speaker name for this transcript.\n\n"
+            "Existing speakers:\n"
+            f"{existing_text}",
+            parent=self,
+        )
+
+        if new_speaker is None:
+            return
+
+        new_speaker = new_speaker.strip()
+
+        if not new_speaker:
+            messagebox.showwarning(
+                "Missing Speaker",
+                "Enter a speaker name."
+            )
+            return
+
+        if new_speaker in existing_speakers:
+            messagebox.showinfo(
+                "Speaker Already Exists",
+                f"'{new_speaker}' already exists."
+            )
+            return
+
+        self.transcript_custom_speakers.add(new_speaker)
+
+        self.log_message(
+            f"Created speaker '{new_speaker}'",
+            "success"
+        )
+
+        messagebox.showinfo(
+            "Speaker Created",
+            f"Created speaker:\n\n{new_speaker}\n\n"
+            "It will now appear in speaker pickers."
+        )
+
+
     def edit_transcript_segment_speaker(self) -> None:
         """Edit the speaker label for one transcript segment only."""
         if not self.transcript_segments:
@@ -3730,6 +3818,27 @@ class App(ctk.CTk):
             corner_radius=6
         )
 
+        speaker_choices = self._get_transcript_speaker_names()
+        if not speaker_choices:
+            speaker_choices = ["Speaker"]
+
+        def set_segment_speaker_from_picker(value: str) -> None:
+            self._set_entry_text(speaker_entry, value)
+
+        speaker_picker = ctk.CTkOptionMenu(
+            container,
+            values=speaker_choices,
+            command=set_segment_speaker_from_picker,
+            height=34,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["bg_input"],
+            button_color=COLORS["accent_secondary"],
+            button_hover_color=COLORS["accent"],
+            dropdown_fg_color=COLORS["bg_card"],
+            dropdown_hover_color=COLORS["accent_secondary"],
+            corner_radius=6
+        )
+
         preview_textbox = ctk.CTkTextbox(
             container,
             height=75,
@@ -3751,6 +3860,9 @@ class App(ctk.CTk):
 
             speaker_entry.delete(0, "end")
             speaker_entry.insert(0, speaker)
+
+            if speaker in speaker_choices:
+                speaker_picker.set(speaker)
 
             preview_textbox.configure(state="normal")
             preview_textbox.delete("1.0", "end")
@@ -3787,6 +3899,7 @@ class App(ctk.CTk):
         )
         new_label.pack(anchor="w", padx=16)
 
+        speaker_picker.pack(fill="x", padx=16, pady=(4, 8))
         speaker_entry.pack(fill="x", padx=16, pady=(4, 12))
 
         preview_label = ctk.CTkLabel(
