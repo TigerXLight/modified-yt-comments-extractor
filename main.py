@@ -5543,15 +5543,9 @@ class App(ctk.CTk):
             self.selected_transcript_segment_index = index
             self._refresh_transcript_display()
 
-            # Briefly flash the updated segment so the user can see where the edit applied.
-            if hasattr(self, "_flash_transcript_segment_selection"):
-                self.after(
-                    50,
-                    lambda idx=index: self._flash_transcript_segment_selection(
-                        idx,
-                        duration_ms=1000
-                    )
-                )
+            # Queue the visual flash until the Segment editor closes.
+            # Flashing immediately is mostly hidden behind the dialog.
+            selected_state["flash_after_close_index"] = index
 
             load_selected_segment_details()
             rebuild_segment_list()
@@ -5579,10 +5573,32 @@ class App(ctk.CTk):
                 )
 
 
+        def close_segment_editor() -> None:
+            flash_index = selected_state.get("flash_after_close_index")
+
+            dialog.destroy()
+
+            if isinstance(flash_index, int):
+                self.selected_transcript_segment_index = flash_index
+
+                if hasattr(self, "_refresh_transcript_timeline"):
+                    self._refresh_transcript_timeline()
+
+                if hasattr(self, "_flash_transcript_segment_selection"):
+                    self.after(
+                        100,
+                        lambda idx=flash_index: self._flash_transcript_segment_selection(
+                            idx,
+                            duration_ms=1000
+                        )
+                    )
+
+        dialog.protocol("WM_DELETE_WINDOW", close_segment_editor)
+
         close_btn = ctk.CTkButton(
             button_row,
             text="Close",
-            command=dialog.destroy,
+            command=close_segment_editor,
             width=90,
             height=34,
             font=ctk.CTkFont(size=12),
