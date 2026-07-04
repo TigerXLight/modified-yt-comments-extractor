@@ -1412,11 +1412,51 @@ class App(ctk.CTk):
             highlightbackground=COLORS["border"],
             bd=0
         )
-        self.transcript_timeline_canvas.pack(fill="x", padx=15, pady=(0, 15))
+        self.transcript_timeline_canvas.pack(fill="x", padx=15, pady=(0, 6))
         self.transcript_timeline_canvas.bind(
             "<Configure>",
             lambda event: self._refresh_transcript_timeline()
         )
+
+        self.transcript_timeline_zoom_level = 1.0
+
+        timeline_zoom_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
+        timeline_zoom_row.pack(fill="x", padx=15, pady=(0, 15))
+        timeline_zoom_row.grid_columnconfigure(1, weight=1)
+
+        self.transcript_timeline_zoom_value_label = ctk.CTkLabel(
+            timeline_zoom_row,
+            text="Zoom: Full",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"],
+            width=75,
+            anchor="w"
+        )
+        self.transcript_timeline_zoom_value_label.grid(row=0, column=0, sticky="w", padx=(0, 8))
+
+        self.transcript_timeline_zoom_slider = ctk.CTkSlider(
+            timeline_zoom_row,
+            from_=1,
+            to=10,
+            number_of_steps=18,
+            command=self._on_transcript_timeline_zoom_changed,
+            height=16
+        )
+        self.transcript_timeline_zoom_slider.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        self.transcript_timeline_zoom_slider.set(1)
+
+        self.transcript_timeline_zoom_reset_button = ctk.CTkButton(
+            timeline_zoom_row,
+            text="Reset",
+            command=self._reset_transcript_timeline_zoom,
+            width=65,
+            height=24,
+            font=ctk.CTkFont(size=10),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=6
+        )
+        self.transcript_timeline_zoom_reset_button.grid(row=0, column=2, sticky="e")
 
         self.transcript_display_ranges = []
         self.selected_transcript_segment_index = None
@@ -3553,6 +3593,40 @@ class App(ctk.CTk):
 
         return speakers
 
+
+    def _on_transcript_timeline_zoom_changed(self, value) -> None:
+        """Update timeline zoom and redraw timeline."""
+        try:
+            zoom_level = float(value)
+        except Exception:
+            zoom_level = 1.0
+
+        zoom_level = max(1.0, min(10.0, zoom_level))
+        self.transcript_timeline_zoom_level = zoom_level
+
+        if hasattr(self, "transcript_timeline_zoom_value_label"):
+            if zoom_level <= 1.05:
+                label = "Zoom: Full"
+            else:
+                label = f"Zoom: {zoom_level:.1f}x"
+
+            self.transcript_timeline_zoom_value_label.configure(text=label)
+
+        self._refresh_transcript_timeline()
+
+    def _reset_transcript_timeline_zoom(self) -> None:
+        """Reset timeline zoom to full transcript view."""
+        self.transcript_timeline_zoom_level = 1.0
+
+        if hasattr(self, "transcript_timeline_zoom_slider"):
+            self.transcript_timeline_zoom_slider.set(1.0)
+
+        if hasattr(self, "transcript_timeline_zoom_value_label"):
+            self.transcript_timeline_zoom_value_label.configure(text="Zoom: Full")
+
+        self._refresh_transcript_timeline()
+
+
     def _refresh_transcript_timeline(self) -> None:
         """Draw a simple timestamp-based transcript timeline."""
         if not hasattr(self, "transcript_timeline_canvas"):
@@ -3588,6 +3662,47 @@ class App(ctk.CTk):
                 font=("Cascadia Mono", 10)
             )
             return
+
+        full_min_time = min_time
+        full_max_time = max_time
+        full_duration = max(1.0, full_max_time - full_min_time)
+
+        try:
+            zoom_level = float(getattr(self, "transcript_timeline_zoom_level", 1.0))
+        except Exception:
+            zoom_level = 1.0
+
+        zoom_level = max(1.0, min(10.0, zoom_level))
+
+        selected_index = getattr(self, "selected_transcript_segment_index", None)
+        center_time = None
+
+        if isinstance(selected_index, int) and 0 <= selected_index < len(self.transcript_segments):
+            selected_segment = self.transcript_segments[selected_index]
+            selected_start = self._transcript_time_to_seconds(selected_segment.start)
+            selected_end = self._transcript_time_to_seconds(selected_segment.end)
+
+            if selected_start is not None and selected_end is not None:
+                center_time = (selected_start + selected_end) / 2
+
+        if center_time is None:
+            center_time = full_min_time + full_duration / 2
+
+        if zoom_level > 1.05:
+            visible_duration = max(1.0, full_duration / zoom_level)
+            visible_min = center_time - visible_duration / 2
+            visible_max = center_time + visible_duration / 2
+
+            if visible_min < full_min_time:
+                visible_min = full_min_time
+                visible_max = visible_min + visible_duration
+
+            if visible_max > full_max_time:
+                visible_max = full_max_time
+                visible_min = visible_max - visible_duration
+
+            min_time = max(full_min_time, visible_min)
+            max_time = min(full_max_time, visible_max)
 
         speakers = self._get_timeline_speakers()
         lane_height = 28
@@ -3680,12 +3795,18 @@ class App(ctk.CTk):
             if end_seconds < start_seconds:
                 continue
 
+            if end_seconds < min_time or start_seconds > max_time:
+                continue
+
+            visible_start_seconds = max(start_seconds, min_time)
+            visible_end_seconds = min(end_seconds, max_time)
+
             speaker = segment.speaker or "Speaker"
             lane = speaker_to_lane.get(speaker, 0)
             color = speaker_to_color.get(speaker, COLORS["accent"])
 
-            x1 = left_margin + ((start_seconds - min_time) / duration) * timeline_width
-            x2 = left_margin + ((end_seconds - min_time) / duration) * timeline_width
+            x1 = left_margin + ((visible_start_seconds - min_time) / duration) * timeline_width
+            x2 = left_margin + ((visible_end_seconds - min_time) / duration) * timeline_width
 
             if x2 - x1 < 5:
                 x2 = x1 + 5
