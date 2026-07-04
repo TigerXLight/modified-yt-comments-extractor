@@ -165,6 +165,7 @@ class App(ctk.CTk):
         self.transcript_undo_stack: List[List[TranscriptSegment]] = []
         self.transcript_redo_stack: List[List[TranscriptSegment]] = []
         self.transcript_history_limit: int = 75
+        self.transcript_text_edit_phase_segment_index: Optional[int] = None
         self.last_transcript_source: Optional[str] = None
         self.last_youtube_video_info: Optional[Dict[str, Any]] = None
         self.last_asr_metadata: Optional[Dict[str, Any]] = None
@@ -3069,10 +3070,166 @@ class App(ctk.CTk):
         return left
 
 
+    def _get_editable_transcript_text_info(self, text_index: str) -> Optional[dict]:
+        """Return segment info if text_index is inside editable segment text."""
+        info = self._get_transcript_segment_at_text_index(text_index)
+
+        if not info:
+            return None
+
+        text_widget = self._get_transcript_text_widget()
+        text_start = info.get("text_start")
+        text_end = info.get("text_end")
+
+        if not text_start or not text_end:
+            return None
+
+        try:
+            inside_text = (
+                text_widget.compare(text_index, ">=", text_start)
+                and text_widget.compare(text_index, "<=", text_end)
+            )
+        except Exception:
+            return None
+
+        return info if inside_text else None
+
+    def _place_transcript_cursor_at_segment_offset(self, segment_index: int, char_offset: int) -> None:
+        """Place the textbox cursor back inside a segment after preview redraw."""
+        if segment_index < 0 or segment_index >= len(self.transcript_segments):
+            return
+
+        if not hasattr(self, "transcript_display_ranges"):
+            return
+
+        text_widget = self._get_transcript_text_widget()
+
+        for info in self.transcript_display_ranges:
+            if info.get("segment_index") != segment_index:
+                continue
+
+            text_start = info.get("text_start")
+            text_end = info.get("text_end")
+
+            if not text_start or not text_end:
+                return
+
+            segment_text = self.transcript_segments[segment_index].text or ""
+            char_offset = max(0, min(int(char_offset), len(segment_text)))
+
+            try:
+                target_index = f"{text_start}+{char_offset}c"
+
+                if text_widget.compare(target_index, ">", text_end):
+                    target_index = text_end
+
+                text_widget.mark_set("insert", target_index)
+                text_widget.see(target_index)
+                self.selected_transcript_segment_index = segment_index
+                self._on_transcript_preview_cursor_changed()
+            except Exception:
+                return
+
+            return
+
+    def _begin_transcript_text_edit_phase(self, segment_index: int) -> None:
+        """Create one undo checkpoint for a continuous edit phase."""
+        if self.transcript_text_edit_phase_segment_index != segment_index:
+            self._push_transcript_undo_state("text edit")
+            self.transcript_text_edit_phase_segment_index = segment_index
+
+    def _end_transcript_text_edit_phase(self) -> None:
+        """End current text edit phase so the next edit gets a new undo checkpoint."""
+        self.transcript_text_edit_phase_segment_index = None
+
+    def _edit_transcript_segment_text_at_cursor(self, event, info: dict) -> str:
+        """Apply a typing/deletion key directly to the selected segment model."""
+        keysym = getattr(event, "keysym", "")
+        char = getattr(event, "char", "")
+
+        segment_index = info.get("segment_index")
+        if not isinstance(segment_index, int):
+            return "break"
+
+        if segment_index < 0 or segment_index >= len(self.transcript_segments):
+            return "break"
+
+        text_widget = self._get_transcript_text_widget()
+
+        try:
+            text_index = text_widget.index("insert")
+        except Exception:
+            return "break"
+
+        segment = self.transcript_segments[segment_index]
+        original_text = segment.text or ""
+        offset = self._estimate_text_offset_in_segment(info, text_index)
+        offset = max(0, min(offset, len(original_text)))
+
+        new_offset = offset
+        new_text = original_text
+
+        if keysym == "BackSpace":
+            if offset <= 0:
+                return "break"
+
+            self._begin_transcript_text_edit_phase(segment_index)
+            new_text = original_text[:offset - 1] + original_text[offset:]
+            new_offset = offset - 1
+
+        elif keysym == "Delete":
+            if offset >= len(original_text):
+                return "break"
+
+            self._begin_transcript_text_edit_phase(segment_index)
+            new_text = original_text[:offset] + original_text[offset + 1:]
+            new_offset = offset
+
+        elif char:
+            self._begin_transcript_text_edit_phase(segment_index)
+            new_text = original_text[:offset] + char + original_text[offset:]
+            new_offset = offset + len(char)
+
+        else:
+            return "break"
+
+        segment.text = new_text
+        self.selected_transcript_segment_index = segment_index
+
+        self._refresh_transcript_display()
+        self._place_transcript_cursor_at_segment_offset(segment_index, new_offset)
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=f"Editing segment {segment_index + 1:,}. Ctrl+Z undo, Ctrl+Y redo.",
+                text_color=COLORS["text_primary"]
+            )
+
+        return "break"
+
     def _on_transcript_preview_key_press(self, event=None):
-        """Keep transcript preview focusable while blocking accidental text edits."""
+        """Model-based inline editing: edit only segment.text, never the formatted preview."""
         if event is None:
             return None
+
+        keysym = getattr(event, "keysym", "")
+        ctrl_pressed = bool(getattr(event, "state", 0) & 0x4)
+
+        if ctrl_pressed:
+            if keysym.lower() == "z":
+                self._end_transcript_text_edit_phase()
+                self.undo_transcript_edit()
+                return "break"
+
+            if keysym.lower() == "y":
+                self._end_transcript_text_edit_phase()
+                self.redo_transcript_edit()
+                return "break"
+
+            if keysym.lower() in {"c", "a"}:
+                return None
+
+            return "break"
 
         allowed_navigation_keys = {
             "Left", "Right", "Up", "Down",
@@ -3081,28 +3238,33 @@ class App(ctk.CTk):
             "Alt_L", "Alt_R", "Escape",
         }
 
-        # Allow Ctrl+C / Ctrl+A style shortcuts.
-        ctrl_pressed = bool(getattr(event, "state", 0) & 0x4)
-        if ctrl_pressed:
+        if keysym in allowed_navigation_keys:
             return None
 
-        if getattr(event, "keysym", "") in allowed_navigation_keys:
-            return None
-
-        if getattr(event, "keysym", "") in {"Return", "KP_Enter"}:
+        if keysym in {"Return", "KP_Enter"}:
+            self._end_transcript_text_edit_phase()
             self._split_selected_transcript_segment_at_cursor()
             return "break"
 
-        blocked_edit_keys = {
-            "BackSpace", "Delete", "Tab",
-        }
+        text_widget = self._get_transcript_text_widget()
 
-        if getattr(event, "keysym", "") in blocked_edit_keys:
+        try:
+            text_index = text_widget.index("insert")
+        except Exception:
             return "break"
 
-        # Block normal printable typing so preview text is not accidentally changed.
-        if getattr(event, "char", ""):
+        info = self._get_editable_transcript_text_info(text_index)
+
+        if not info:
+            if getattr(event, "char", "") or keysym in {"BackSpace", "Delete", "Tab"}:
+                return "break"
+            return None
+
+        if keysym == "Tab":
             return "break"
+
+        if keysym in {"BackSpace", "Delete"} or getattr(event, "char", ""):
+            return self._edit_transcript_segment_text_at_cursor(event, info)
 
         return None
 
@@ -3150,6 +3312,7 @@ class App(ctk.CTk):
         original = self.transcript_segments[segment_index]
         original_text = original.text or ""
 
+        self._end_transcript_text_edit_phase()
         self._push_transcript_undo_state("split segment")
 
         char_offset = self._estimate_text_offset_in_segment(info, text_index)
@@ -4073,6 +4236,7 @@ class App(ctk.CTk):
                 dialog.destroy()
                 return "break"
 
+            self._end_transcript_text_edit_phase()
             self._push_transcript_undo_state("inline speaker change")
             segment.speaker = new_speaker
             self.selected_transcript_segment_index = segment_index
