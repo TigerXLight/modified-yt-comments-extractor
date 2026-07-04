@@ -1457,9 +1457,23 @@ class App(ctk.CTk):
             "<Configure>",
             lambda event: self._refresh_transcript_timeline()
         )
+        self.transcript_timeline_canvas.bind(
+            "<Button-1>",
+            self._on_transcript_timeline_canvas_press
+        )
+        self.transcript_timeline_canvas.bind(
+            "<B1-Motion>",
+            self._on_transcript_timeline_canvas_drag
+        )
+        self.transcript_timeline_canvas.bind(
+            "<ButtonRelease-1>",
+            self._on_transcript_timeline_canvas_release
+        )
 
         self.transcript_timeline_zoom_level = 1.0
         self.transcript_timeline_pan_fraction = 0.0
+        self.transcript_playhead_seconds: Optional[float] = None
+        self._transcript_timeline_view = None
 
         timeline_zoom_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
         timeline_zoom_row.pack(fill="x", padx=15, pady=(0, 15))
@@ -3705,6 +3719,110 @@ class App(ctk.CTk):
 
 
 
+
+    def _get_transcript_selected_segment_center_time(self) -> Optional[float]:
+        """Return selected segment midpoint in seconds, if available."""
+        selected_index = getattr(self, "selected_transcript_segment_index", None)
+
+        if not (
+            isinstance(selected_index, int)
+            and 0 <= selected_index < len(self.transcript_segments)
+        ):
+            return None
+
+        segment = self.transcript_segments[selected_index]
+        start_seconds = self._transcript_time_to_seconds(segment.start)
+        end_seconds = self._transcript_time_to_seconds(segment.end)
+
+        if start_seconds is not None and end_seconds is not None:
+            return (start_seconds + end_seconds) / 2
+
+        if start_seconds is not None:
+            return start_seconds
+
+        return end_seconds
+
+    def _get_transcript_playhead_time(self) -> Optional[float]:
+        """Return movable playhead time, falling back to selected segment midpoint."""
+        playhead_seconds = getattr(self, "transcript_playhead_seconds", None)
+
+        if isinstance(playhead_seconds, (int, float)):
+            return float(playhead_seconds)
+
+        return self._get_transcript_selected_segment_center_time()
+
+    def _set_transcript_playhead_time(self, seconds: float, refresh: bool = True) -> None:
+        """Move the transcript timeline playhead marker."""
+        min_time, max_time = self._get_transcript_timeline_bounds()
+
+        if min_time is None or max_time is None:
+            return
+
+        try:
+            seconds = float(seconds)
+        except Exception:
+            return
+
+        seconds = max(float(min_time), min(float(max_time), seconds))
+        self.transcript_playhead_seconds = seconds
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=f"Timeline marker: {self._format_timeline_time(seconds)}",
+                text_color=COLORS["text_primary"]
+            )
+
+        if refresh:
+            self._refresh_transcript_timeline()
+
+    def _timeline_canvas_event_to_seconds(self, event) -> Optional[float]:
+        """Convert timeline canvas x position into transcript seconds."""
+        view = getattr(self, "_transcript_timeline_view", None)
+
+        if not view:
+            return None
+
+        left_margin = view.get("left_margin", 90)
+        timeline_width = max(1, view.get("timeline_width", 1))
+        min_time = view.get("min_time")
+        max_time = view.get("max_time")
+
+        if min_time is None or max_time is None:
+            return None
+
+        x = max(left_margin, min(event.x, left_margin + timeline_width))
+        fraction = (x - left_margin) / timeline_width
+
+        return float(min_time) + (float(max_time) - float(min_time)) * fraction
+
+    def _on_transcript_timeline_canvas_press(self, event) -> None:
+        """Move playhead marker when the timeline background is clicked."""
+        seconds = self._timeline_canvas_event_to_seconds(event)
+
+        if seconds is None:
+            return
+
+        self._set_transcript_playhead_time(seconds, refresh=True)
+
+    def _on_transcript_timeline_canvas_drag(self, event) -> None:
+        """Scrub playhead marker while dragging over the timeline."""
+        seconds = self._timeline_canvas_event_to_seconds(event)
+
+        if seconds is None:
+            return
+
+        self._set_transcript_playhead_time(seconds, refresh=True)
+
+    def _on_transcript_timeline_canvas_release(self, event) -> None:
+        """Finalize playhead marker position after dragging."""
+        seconds = self._timeline_canvas_event_to_seconds(event)
+
+        if seconds is None:
+            return
+
+        self._set_transcript_playhead_time(seconds, refresh=True)
+
+
     def _update_transcript_waveform_status(self, text: Optional[str] = None, color: Optional[str] = None) -> None:
         """Refresh waveform status label."""
         if not hasattr(self, "transcript_waveform_status_label"):
@@ -4184,6 +4302,14 @@ class App(ctk.CTk):
         canvas.configure(height=canvas_height)
 
         duration = max_time - min_time
+        self._transcript_timeline_view = {
+            "min_time": min_time,
+            "max_time": max_time,
+            "left_margin": left_margin,
+            "right_margin": right_margin,
+            "timeline_width": timeline_width,
+            "width": width,
+        }
         selected_index = getattr(self, "selected_transcript_segment_index", None)
 
         speaker_palette = [
@@ -4245,18 +4371,8 @@ class App(ctk.CTk):
                 font=("Cascadia Mono", 8)
             )
 
-        # Selected segment / playhead marker
-        selected_marker_time = None
-
-        if isinstance(selected_index, int) and 0 <= selected_index < len(self.transcript_segments):
-            marker_segment = self.transcript_segments[selected_index]
-            marker_start = self._transcript_time_to_seconds(marker_segment.start)
-            marker_end = self._transcript_time_to_seconds(marker_segment.end)
-
-            if marker_start is not None and marker_end is not None:
-                selected_marker_time = (marker_start + marker_end) / 2
-            elif marker_start is not None:
-                selected_marker_time = marker_start
+        # Selected segment / movable playhead marker
+        selected_marker_time = self._get_transcript_playhead_time()
 
         if selected_marker_time is not None and min_time <= selected_marker_time <= max_time:
             marker_x = left_margin + ((selected_marker_time - min_time) / duration) * timeline_width
@@ -4496,6 +4612,21 @@ class App(ctk.CTk):
             return
 
         self.selected_transcript_segment_index = segment_index
+
+        segment = self.transcript_segments[segment_index]
+        playhead_time = None
+        start_seconds = self._transcript_time_to_seconds(segment.start)
+        end_seconds = self._transcript_time_to_seconds(segment.end)
+
+        if start_seconds is not None and end_seconds is not None:
+            playhead_time = (start_seconds + end_seconds) / 2
+        elif start_seconds is not None:
+            playhead_time = start_seconds
+        elif end_seconds is not None:
+            playhead_time = end_seconds
+
+        if playhead_time is not None:
+            self.transcript_playhead_seconds = playhead_time
 
         if hasattr(self, "_place_transcript_cursor_at_segment_offset"):
             self._place_transcript_cursor_at_segment_offset(segment_index, 0)
@@ -6590,6 +6721,7 @@ class App(ctk.CTk):
             return
 
         self.transcript_segments = []
+        self.transcript_playhead_seconds = None
         self.last_transcript_source = None
         self._set_linked_transcript_media(None)
         self._refresh_transcript_display()
