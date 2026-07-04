@@ -38,6 +38,13 @@ Some transcript timeline features need external media tools:
 
 If VLC or ffmpeg is missing, the app should still open normally, but playback or waveform generation will show a clear warning.
 
+Windows ZIP users can run:
+
+- `INSTALL_MEDIA_TOOLS.bat` to install VLC Media Player and FFmpeg through winget.
+- `CHECK_MEDIA_TOOLS.bat` to check whether VLC/libVLC and FFmpeg are available.
+
+These helpers do not bundle VLC or FFmpeg inside the app. They use Windows Package Manager to install the external tools.
+
 This project is a modified version of the original open-source project:
 
 Original project: https://github.com/vijaykumarpeta/yt-comments-extractor

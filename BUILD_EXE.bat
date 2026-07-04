@@ -20,6 +20,11 @@ pip install pyinstaller keyring
 echo Building EXE...
 python -m PyInstaller --noconfirm --clean --windowed --name "YouTube Comment Extractor" --collect-all customtkinter --collect-all faster_whisper --add-data "assets;assets" main.py
 
+
+echo Copying helper scripts...
+if exist "INSTALL_MEDIA_TOOLS.bat" copy /Y "INSTALL_MEDIA_TOOLS.bat" "dist\YouTube Comment Extractor\INSTALL_MEDIA_TOOLS.bat" >nul
+if exist "CHECK_MEDIA_TOOLS.bat" copy /Y "CHECK_MEDIA_TOOLS.bat" "dist\YouTube Comment Extractor\CHECK_MEDIA_TOOLS.bat" >nul
+
 echo.
 echo Build complete.
 echo Output:
