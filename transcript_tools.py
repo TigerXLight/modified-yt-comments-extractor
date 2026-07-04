@@ -20,12 +20,38 @@ def _normalise_time(value: str) -> str:
     return value
 
 
-def _parse_srt_time_line(line: str) -> Optional[tuple[str, str]]:
+def _parse_srt_time_line(line: str) -> Optional[tuple[str, str, Optional[str]]]:
+    """Parse an SRT/VTT timestamp line and optional speaker label.
+
+    Supported examples:
+    00:00:00,579 --> 00:00:02,079
+    00:00:00,579 --> 00:00:02,079 [Kingman]
+    00:00:00.579 --> 00:00:02.079 [Kingman]
+    """
     if "-->" not in line:
         return None
 
     left, right = line.split("-->", 1)
-    return _normalise_time(left), _normalise_time(right)
+    left = left.strip()
+    right = right.strip()
+
+    speaker = None
+
+    speaker_match = re.search(r"\[([^\]]{1,80})\]\s*$", right)
+    if speaker_match:
+        speaker = speaker_match.group(1).strip()
+        right = right[:speaker_match.start()].strip()
+
+    # Remove common VTT cue settings after the end timestamp, while keeping
+    # only the actual end time.
+    end_match = re.match(
+        r"^(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}|\d{1,2}:\d{2}[,.]\d{1,3})",
+        right
+    )
+    if end_match:
+        right = end_match.group(1)
+
+    return _normalise_time(left), _normalise_time(right), speaker
 
 
 def _clean_vtt(content: str) -> str:
@@ -49,13 +75,39 @@ def _clean_vtt(content: str) -> str:
     return "\n".join(cleaned)
 
 
-def import_srt_or_vtt(path: str) -> List[TranscriptSegment]:
-    file_path = Path(path)
-    content = file_path.read_text(encoding="utf-8-sig", errors="replace")
+def _extract_speaker_from_text(text: str) -> tuple[str, str]:
+    """Extract optional speaker labels from transcript text."""
+    text = text.strip()
+    speaker = "Speaker 1"
 
-    if file_path.suffix.lower() == ".vtt":
-        content = _clean_vtt(content)
+    bracket_match = re.match(r"^\[([^\]]{1,80})\]\s*(.*)$", text)
+    if bracket_match:
+        speaker = bracket_match.group(1).strip()
+        text = bracket_match.group(2).strip()
+        return speaker, text
 
+    vtt_voice_match = re.match(r"^<v\s+([^>]{1,80})>\s*(.*)$", text)
+    if vtt_voice_match:
+        speaker = vtt_voice_match.group(1).strip()
+        text = vtt_voice_match.group(2).strip()
+        return speaker, text
+
+    # Optional format: Speaker: text
+    if ":" in text:
+        possible_speaker, possible_text = text.split(":", 1)
+        possible_speaker = possible_speaker.strip()
+
+        # Avoid treating timestamps such as 00:00:00 as speaker names.
+        looks_like_time = bool(re.match(r"^\d{1,2}$|^\d{1,2}:\d{2}", possible_speaker))
+        if 1 <= len(possible_speaker) <= 40 and not looks_like_time:
+            speaker = possible_speaker
+            text = possible_text.strip()
+
+    return speaker, text
+
+
+def _parse_timed_transcript_content(content: str) -> List[TranscriptSegment]:
+    """Parse SRT/VTT-style timed blocks, including .txt files with timestamps."""
     blocks = re.split(r"\n\s*\n", content.strip())
     segments: List[TranscriptSegment] = []
 
@@ -77,21 +129,17 @@ def import_srt_or_vtt(path: str) -> List[TranscriptSegment]:
         if not times:
             continue
 
-        start, end = times
+        start, end, speaker_from_time = times
         text_lines = lines[time_index + 1:]
 
         if not text_lines:
             continue
 
         text = " ".join(text_lines).strip()
-        speaker = "Speaker 1"
+        speaker, text = _extract_speaker_from_text(text)
 
-        # Optional format: Speaker: text
-        if ":" in text:
-            possible_speaker, possible_text = text.split(":", 1)
-            if 1 <= len(possible_speaker.strip()) <= 40:
-                speaker = possible_speaker.strip()
-                text = possible_text.strip()
+        if speaker_from_time:
+            speaker = speaker_from_time
 
         segments.append(
             TranscriptSegment(
@@ -105,22 +153,29 @@ def import_srt_or_vtt(path: str) -> List[TranscriptSegment]:
     return segments
 
 
+def import_srt_or_vtt(path: str) -> List[TranscriptSegment]:
+    file_path = Path(path)
+    content = file_path.read_text(encoding="utf-8-sig", errors="replace")
+
+    if file_path.suffix.lower() == ".vtt":
+        content = _clean_vtt(content)
+
+    return _parse_timed_transcript_content(content)
+
+
 def import_plain_txt(path: str) -> List[TranscriptSegment]:
     file_path = Path(path)
     content = file_path.read_text(encoding="utf-8-sig", errors="replace")
+
+    timed_segments = _parse_timed_transcript_content(content)
+    if timed_segments:
+        return timed_segments
 
     segments: List[TranscriptSegment] = []
     lines = [line.strip() for line in content.splitlines() if line.strip()]
 
     for i, line in enumerate(lines, start=1):
-        speaker = "Speaker 1"
-        text = line
-
-        if ":" in line:
-            possible_speaker, possible_text = line.split(":", 1)
-            if 1 <= len(possible_speaker.strip()) <= 40:
-                speaker = possible_speaker.strip()
-                text = possible_text.strip()
+        speaker, text = _extract_speaker_from_text(line)
 
         segments.append(
             TranscriptSegment(
