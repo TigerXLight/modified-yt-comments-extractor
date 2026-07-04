@@ -5542,6 +5542,17 @@ class App(ctk.CTk):
 
             self.selected_transcript_segment_index = index
             self._refresh_transcript_display()
+
+            # Briefly flash the updated segment so the user can see where the edit applied.
+            if hasattr(self, "_flash_transcript_segment_selection"):
+                self.after(
+                    50,
+                    lambda idx=index: self._flash_transcript_segment_selection(
+                        idx,
+                        duration_ms=1000
+                    )
+                )
+
             load_selected_segment_details()
             rebuild_segment_list()
 
