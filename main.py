@@ -2582,6 +2582,61 @@ class App(ctk.CTk):
         valid_urls, _ = URLValidator.parse_url_list(current_text)
         return valid_urls
 
+
+    def _get_transcript_playback_metadata(self) -> Dict[str, str]:
+        """Return transcript playback/editor metadata for package/source exports."""
+        metadata: Dict[str, str] = {}
+
+        linked_media = getattr(self, "linked_transcript_media_path", None)
+
+        if linked_media:
+            metadata["Linked Media"] = linked_media
+
+        try:
+            visual_sync_ms = int(round(
+                float(getattr(self, "transcript_audio_sync_offset_seconds", 0.0)) * 1000
+            ))
+        except Exception:
+            visual_sync_ms = 0
+
+        metadata["Visual Sync Offset"] = f"{visual_sync_ms:+d} ms"
+        metadata["Playback Backend"] = "VLC"
+
+        waveform_peaks = getattr(self, "transcript_waveform_peaks", None) or []
+        waveform_source = getattr(self, "transcript_waveform_source_path", None)
+
+        if waveform_peaks and waveform_source:
+            metadata["Waveform"] = (
+                f"Generated from {os.path.basename(waveform_source)} "
+                f"({len(waveform_peaks):,} peak samples)"
+            )
+        else:
+            metadata["Waveform"] = "Not generated"
+
+        return metadata
+
+    def _append_transcript_playback_metadata_to_source_info(self, package_dir: str) -> None:
+        """Append transcript media/playback metadata to source_info.txt."""
+        metadata = self._get_transcript_playback_metadata()
+
+        if not metadata:
+            return
+
+        source_info_path = os.path.join(package_dir, "source_info.txt")
+
+        try:
+            with open(source_info_path, "a", encoding="utf-8", newline="\n") as f:
+                f.write("\n\nTranscript Playback Metadata\n")
+                f.write("-" * 80)
+                f.write("\n")
+
+                for key, value in metadata.items():
+                    f.write(f"{key}: {value}\n")
+
+        except Exception as error:
+            logger.warning(f"Could not append transcript playback metadata: {error}")
+
+
     def _append_youtube_metadata_to_source_info(self, package_dir: str) -> None:
         """Append YouTube video metadata to source_info.txt when available."""
         if not self.last_youtube_video_info:
@@ -2729,6 +2784,7 @@ class App(ctk.CTk):
             "Transcript Segments": len(self.transcript_segments),
             "Transcript Source": self.last_transcript_source or "",
         }
+        settings.update(self._get_transcript_playback_metadata())
 
         try:
             package_dir = create_evidence_package(
@@ -2766,6 +2822,7 @@ class App(ctk.CTk):
                 self.log_message("Added transcript files to export package.", "success")
             self._append_youtube_metadata_to_source_info(package_dir)
             self._append_asr_metadata_to_source_info(package_dir)
+            self._append_transcript_playback_metadata_to_source_info(package_dir)
 
             self.last_package_dir = package_dir
             self.open_last_package_button.configure(state="normal")
@@ -6169,7 +6226,19 @@ class App(ctk.CTk):
             if getattr(self, "linked_transcript_media_path", None):
                 f.write(f"Linked Media: {self.linked_transcript_media_path}\n")
 
-            if self.last_transcript_source or getattr(self, "linked_transcript_media_path", None):
+            playback_metadata = self._get_transcript_playback_metadata()
+
+            for metadata_key in ("Visual Sync Offset", "Playback Backend", "Waveform"):
+                metadata_value = playback_metadata.get(metadata_key)
+
+                if metadata_value:
+                    f.write(f"{metadata_key}: {metadata_value}\n")
+
+            if (
+                self.last_transcript_source
+                or getattr(self, "linked_transcript_media_path", None)
+                or playback_metadata
+            ):
                 f.write("\n")
 
             if self.last_asr_metadata:
