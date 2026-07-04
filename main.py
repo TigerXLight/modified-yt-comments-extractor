@@ -1609,7 +1609,7 @@ class App(ctk.CTk):
             timeline_zoom_row,
             from_=0,
             to=100,
-            number_of_steps=100,
+            number_of_steps=2000,
             command=self._on_transcript_timeline_pan_changed,
             height=16
         )
@@ -4144,7 +4144,7 @@ class App(ctk.CTk):
 
 
     def _update_transcript_playhead_from_playback_clock(self) -> Optional[float]:
-        """Update playhead from VLC's media clock, interpolated for smooth GUI movement."""
+        """Update playhead from VLC's media clock, with monotonic smoothing."""
         backend = getattr(self, "transcript_playback_backend", None)
 
         if backend not in {"vlc", "vlc_paused"}:
@@ -4169,9 +4169,10 @@ class App(ctk.CTk):
 
         requested_start = getattr(self, "transcript_playback_requested_start_seconds", None)
         start_wall_time = getattr(self, "transcript_playback_start_wall_time", None)
+        previous_displayed = getattr(self, "transcript_playhead_seconds", None)
 
-        # During startup, VLC can briefly report 0 before the start-time lands.
-        # Do not let the marker jump backward during that opening phase.
+        # During startup, VLC may briefly report 0 before the requested start seek lands.
+        # Do not let the GUI jump backward during that opening phase.
         if (
             raw_seconds is not None
             and isinstance(requested_start, (int, float))
@@ -4184,18 +4185,32 @@ class App(ctk.CTk):
 
         last_reported = getattr(self, "transcript_vlc_last_reported_seconds", None)
 
-        # Update interpolation anchor only when VLC gives a genuinely new media time.
+        # VLC time can report in coarse/late chunks. Accept new anchors only when
+        # they do not pull the visible marker backward.
         if raw_seconds is not None:
-            if last_reported is None or abs(raw_seconds - float(last_reported)) >= 0.015:
-                self.transcript_vlc_clock_anchor_seconds = raw_seconds
-                self.transcript_vlc_clock_anchor_wall_time = now
-                self.transcript_vlc_last_reported_seconds = raw_seconds
+            safe_to_anchor = True
+
+            if (
+                backend == "vlc"
+                and isinstance(previous_displayed, (int, float))
+                and raw_seconds < float(previous_displayed) - 0.040
+            ):
+                safe_to_anchor = False
+
+            if safe_to_anchor:
+                if last_reported is None or abs(raw_seconds - float(last_reported)) >= 0.010:
+                    self.transcript_vlc_clock_anchor_seconds = raw_seconds
+                    self.transcript_vlc_clock_anchor_wall_time = now
+                    self.transcript_vlc_last_reported_seconds = raw_seconds
 
         anchor_seconds = getattr(self, "transcript_vlc_clock_anchor_seconds", None)
         anchor_wall = getattr(self, "transcript_vlc_clock_anchor_wall_time", None)
 
         if anchor_seconds is None:
-            if isinstance(requested_start, (int, float)):
+            if isinstance(raw_seconds, (int, float)):
+                anchor_seconds = float(raw_seconds)
+                anchor_wall = now
+            elif isinstance(requested_start, (int, float)):
                 anchor_seconds = float(requested_start)
                 anchor_wall = now
             else:
@@ -4205,9 +4220,24 @@ class App(ctk.CTk):
             anchor_wall = now
 
         if backend == "vlc" and self._is_transcript_vlc_playing():
-            current_seconds = float(anchor_seconds) + max(0.0, now - float(anchor_wall))
+            interpolated_seconds = float(anchor_seconds) + max(0.0, now - float(anchor_wall))
         else:
-            current_seconds = float(anchor_seconds)
+            interpolated_seconds = float(anchor_seconds)
+
+        current_seconds = interpolated_seconds
+
+        # If VLC reports a time far ahead, ease forward rather than snapping.
+        if (
+            raw_seconds is not None
+            and isinstance(previous_displayed, (int, float))
+            and raw_seconds > current_seconds + 0.180
+        ):
+            current_seconds = float(previous_displayed) + min(0.080, raw_seconds - float(previous_displayed))
+
+        # Main jitter fix: never move the playhead backward during normal playback.
+        if backend == "vlc" and isinstance(previous_displayed, (int, float)):
+            if current_seconds < float(previous_displayed):
+                current_seconds = float(previous_displayed)
 
         min_time, max_time = self._get_transcript_timeline_bounds()
 
@@ -4316,6 +4346,9 @@ class App(ctk.CTk):
 
         seconds = max(float(min_time), min(float(max_time), seconds))
         self.transcript_playhead_seconds = seconds
+        self.transcript_vlc_clock_anchor_seconds = seconds
+        self.transcript_vlc_clock_anchor_wall_time = time.monotonic()
+        self.transcript_vlc_last_reported_seconds = seconds
 
         if hasattr(self, "transcript_cursor_status_label"):
             self.transcript_cursor_status_label.configure(
@@ -5033,10 +5066,16 @@ class App(ctk.CTk):
         self._transcript_timeline_view = {
             "min_time": min_time,
             "max_time": max_time,
+            "full_min_time": full_min_time,
+            "full_max_time": full_max_time,
             "left_margin": left_margin,
             "right_margin": right_margin,
+            "top_margin": top_margin,
+            "bottom_margin": bottom_margin,
             "timeline_width": timeline_width,
+            "canvas_height": canvas_height,
             "width": width,
+            "duration": duration,
         }
         selected_index = getattr(self, "selected_transcript_segment_index", None)
 
@@ -5114,7 +5153,8 @@ class App(ctk.CTk):
                 marker_x,
                 top_margin - 6,
                 fill=marker_color,
-                outline=marker_color
+                outline=marker_color,
+                tags=("transcript_playhead_marker",)
             )
             canvas.create_line(
                 marker_x,
@@ -5122,7 +5162,8 @@ class App(ctk.CTk):
                 marker_x,
                 canvas_height - bottom_margin + 4,
                 fill=marker_color,
-                width=1
+                width=1,
+                tags=("transcript_playhead_marker",)
             )
 
         # Speaker lanes
