@@ -4956,7 +4956,7 @@ class App(ctk.CTk):
         )
         close_btn.pack(side="right")
 
-        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        dialog.bind("<Escape>", lambda _event: close_segment_editor())
         return "break"
 
 
@@ -5340,6 +5340,7 @@ class App(ctk.CTk):
             and 0 <= self.selected_transcript_segment_index < len(self.transcript_segments)
             else 0,
             "filtered": [],
+            "search_after_id": None,
         }
 
         def format_segment_button_text(index: int) -> str:
@@ -5773,8 +5774,23 @@ class App(ctk.CTk):
         def on_search_changed(*_args) -> None:
             rebuild_segment_list(force_first_match=True)
 
-        search_var.trace_add("write", on_search_changed)
-        segment_search_entry.bind("<KeyRelease>", lambda _event: rebuild_segment_list(force_first_match=True))
+        def schedule_segment_search_refresh(*_) -> None:
+            """Debounce Segment editor search so typing does not rebuild the list every keypress."""
+            existing_after_id = selected_state.get("search_after_id")
+        
+            if existing_after_id:
+                try:
+                    dialog.after_cancel(existing_after_id)
+                except Exception:
+                    pass
+        
+            def run_search_refresh() -> None:
+                selected_state["search_after_id"] = None
+                rebuild_segment_list(force_first_match=True)
+        
+            selected_state["search_after_id"] = dialog.after(180, run_search_refresh)
+        
+        search_var.trace_add("write", schedule_segment_search_refresh)
         segment_search_entry.bind("<Down>", lambda _event: move_selection(1))
         segment_search_entry.bind("<Up>", lambda _event: move_selection(-1))
         dialog.bind("<Down>", lambda _event: move_selection(1))
