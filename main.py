@@ -1536,6 +1536,7 @@ class App(ctk.CTk):
         self.transcript_vlc_player = None
         self.transcript_vlc_media_path: Optional[str] = None
         self.transcript_playback_backend: Optional[str] = None
+        self.transcript_audio_sync_offset_seconds = 0.0
         self.transcript_vlc_ready_checked = False
         self.transcript_vlc_ready = False
         self.transcript_vlc_error: Optional[str] = None
@@ -1628,6 +1629,57 @@ class App(ctk.CTk):
             pady=(6, 0)
         )
         self.transcript_timeline_pan_slider.set(0)
+
+        self.transcript_audio_sync_label = ctk.CTkLabel(
+            timeline_zoom_row,
+            text="Visual: 0 ms",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"],
+            width=75,
+            anchor="w"
+        )
+        self.transcript_audio_sync_label.grid(row=2, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
+
+        self.transcript_audio_sync_minus_button = ctk.CTkButton(
+            timeline_zoom_row,
+            text="-50 ms",
+            command=lambda: self._adjust_transcript_audio_sync_offset(-0.05),
+            width=70,
+            height=24,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=6
+        )
+        self.transcript_audio_sync_minus_button.grid(row=2, column=1, sticky="w", pady=(6, 0))
+
+        self.transcript_audio_sync_plus_button = ctk.CTkButton(
+            timeline_zoom_row,
+            text="+50 ms",
+            command=lambda: self._adjust_transcript_audio_sync_offset(0.05),
+            width=70,
+            height=24,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=6
+        )
+        self.transcript_audio_sync_plus_button.grid(row=2, column=1, sticky="w", padx=(78, 0), pady=(6, 0))
+
+        self.transcript_audio_sync_reset_button = ctk.CTkButton(
+            timeline_zoom_row,
+            text="Sync Reset",
+            command=self._reset_transcript_audio_sync_offset,
+            width=85,
+            height=24,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=6
+        )
+        self.transcript_audio_sync_reset_button.grid(row=2, column=2, sticky="w", padx=(8, 0), pady=(6, 0))
+
+        self._bind_transcript_sync_controls_scroll_passthrough()
 
         self.transcript_display_ranges = []
         self.selected_transcript_segment_index = None
@@ -3829,6 +3881,131 @@ class App(ctk.CTk):
 
 
 
+
+
+    def _restore_main_scroll_focus(self) -> None:
+        """Return focus to the main scroll area after clicking small controls."""
+        try:
+            self.main_frame._parent_canvas.focus_set()
+            return
+        except Exception:
+            pass
+
+        try:
+            self.focus_set()
+        except Exception:
+            pass
+
+    def _scroll_main_frame_with_mousewheel(self, event) -> str:
+        """Let mouse wheel scroll the main app even after sync controls are focused."""
+        try:
+            canvas = self.main_frame._parent_canvas
+        except Exception:
+            return "break"
+
+        delta = getattr(event, "delta", 0)
+
+        if delta:
+            units = -1 * int(delta / 120)
+        else:
+            # Linux/X11 fallback if ever used.
+            button_number = getattr(event, "num", None)
+            units = -1 if button_number == 4 else 1
+
+        if units == 0:
+            units = -1 if delta > 0 else 1
+
+        try:
+            canvas.yview_scroll(units, "units")
+        except Exception:
+            pass
+
+        return "break"
+
+    def _bind_transcript_sync_controls_scroll_passthrough(self) -> None:
+        """Keep main mouse-wheel scrolling working after using sync controls."""
+        sync_widgets = [
+            getattr(self, "transcript_audio_sync_label", None),
+            getattr(self, "transcript_audio_sync_minus_button", None),
+            getattr(self, "transcript_audio_sync_plus_button", None),
+            getattr(self, "transcript_audio_sync_reset_button", None),
+            getattr(self, "transcript_timeline_pan_slider", None),
+            getattr(self, "transcript_timeline_zoom_slider", None),
+        ]
+
+        for widget in sync_widgets:
+            if widget is None:
+                continue
+
+            try:
+                widget.bind("<MouseWheel>", self._scroll_main_frame_with_mousewheel)
+                widget.bind("<Button-4>", self._scroll_main_frame_with_mousewheel)
+                widget.bind("<Button-5>", self._scroll_main_frame_with_mousewheel)
+                widget.bind("<ButtonRelease-1>", lambda _event: self._restore_main_scroll_focus())
+                widget.bind("<Leave>", lambda _event: self._restore_main_scroll_focus())
+            except Exception:
+                pass
+
+
+    def _get_transcript_audio_sync_offset_seconds(self) -> float:
+        """Return visual sync offset in seconds."""
+        try:
+            return float(getattr(self, "transcript_audio_sync_offset_seconds", 0.0))
+        except Exception:
+            return 0.0
+
+    def _update_transcript_audio_sync_label(self) -> None:
+        """Refresh audio sync label."""
+        if not hasattr(self, "transcript_audio_sync_label"):
+            return
+
+        offset_seconds = self._get_transcript_audio_sync_offset_seconds()
+        offset_ms = int(round(offset_seconds * 1000))
+
+        if offset_ms > 0:
+            label = f"Visual: +{offset_ms} ms"
+        elif offset_ms < 0:
+            label = f"Visual: {offset_ms} ms"
+        else:
+            label = "Visual: 0 ms"
+
+        self.transcript_audio_sync_label.configure(
+            text=label,
+            text_color=COLORS["text_secondary"] if offset_ms else COLORS["text_muted"]
+        )
+
+    def _adjust_transcript_audio_sync_offset(self, delta_seconds: float) -> None:
+        """Shift visual timeline marker relative to VLC audio clock."""
+        current = self._get_transcript_audio_sync_offset_seconds()
+        new_value = max(-2.0, min(2.0, current + float(delta_seconds)))
+        self.transcript_audio_sync_offset_seconds = new_value
+        self._update_transcript_audio_sync_label()
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            offset_ms = int(round(new_value * 1000))
+            self.transcript_cursor_status_label.configure(
+                text=f"Audio sync offset: {offset_ms:+d} ms",
+                text_color=COLORS["text_primary"]
+            )
+
+        self._refresh_transcript_timeline()
+        self._restore_main_scroll_focus()
+
+    def _reset_transcript_audio_sync_offset(self) -> None:
+        """Reset visual/audio sync offset."""
+        self.transcript_audio_sync_offset_seconds = 0.0
+        self._update_transcript_audio_sync_label()
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text="Audio sync offset reset.",
+                text_color=COLORS["text_muted"]
+            )
+
+        self._refresh_transcript_timeline()
+        self._restore_main_scroll_focus()
+
+
     def check_transcript_vlc_ready(self, show_success: bool = False) -> bool:
         """Check whether VLC playback is available."""
         try:
@@ -4075,16 +4252,18 @@ class App(ctk.CTk):
             return
 
         media_path = os.path.abspath(media_path)
-        start_seconds = self._get_transcript_playback_start_time()
+        visual_start_seconds = self._get_transcript_playback_start_time()
 
-        if start_seconds is None:
+        if visual_start_seconds is None:
             messagebox.showwarning(
                 "No Timeline Time",
                 "The transcript needs timestamps before playback can start."
             )
             return
 
-        start_seconds = float(start_seconds)
+        visual_start_seconds = float(visual_start_seconds)
+        sync_offset = self._get_transcript_audio_sync_offset_seconds()
+        media_start_seconds = max(0.0, visual_start_seconds - sync_offset)
 
         try:
             player = self._get_or_create_transcript_vlc_player()
@@ -4096,7 +4275,7 @@ class App(ctk.CTk):
         self._stop_transcript_playback_process()
 
         try:
-            self._set_transcript_vlc_media(media_path, start_seconds=start_seconds)
+            self._set_transcript_vlc_media(media_path, start_seconds=media_start_seconds)
             player = self.transcript_vlc_player
 
             result = player.play()
@@ -4104,9 +4283,8 @@ class App(ctk.CTk):
             if result == -1:
                 raise RuntimeError("VLC could not start playback.")
 
-            # One safety seek only. No retry loop, because repeated set_time()
-            # causes audible stutter at playback startup.
-            target_ms = int(max(0.0, start_seconds) * 1000)
+            # One safety seek only. Repeated seeking caused startup stutter.
+            target_ms = int(media_start_seconds * 1000)
 
             def apply_single_start_seek() -> None:
                 current_player = getattr(self, "transcript_vlc_player", None)
@@ -4119,7 +4297,6 @@ class App(ctk.CTk):
                 except Exception:
                     current_ms = -1
 
-                # Only correct if VLC started far from the requested marker.
                 if current_ms >= 0 and abs(current_ms - target_ms) < 350:
                     return
 
@@ -4137,19 +4314,19 @@ class App(ctk.CTk):
             return
 
         self.transcript_playback_backend = "vlc"
-        self.transcript_playback_requested_start_seconds = start_seconds
-        self.transcript_playback_start_seconds = start_seconds
+        self.transcript_playback_requested_start_seconds = media_start_seconds
+        self.transcript_playback_start_seconds = media_start_seconds
         self.transcript_playback_start_wall_time = time.monotonic()
-        self.transcript_vlc_clock_anchor_seconds = start_seconds
+        self.transcript_vlc_clock_anchor_seconds = media_start_seconds
         self.transcript_vlc_clock_anchor_wall_time = time.monotonic()
         self.transcript_vlc_last_reported_seconds = None
-        self.transcript_playhead_seconds = start_seconds
+        self.transcript_playhead_seconds = visual_start_seconds
         self.transcript_playback_active_segment_index = None
 
         if hasattr(self, "_center_transcript_timeline_pan_on_time"):
-            self._center_transcript_timeline_pan_on_time(start_seconds)
+            self._center_transcript_timeline_pan_on_time(visual_start_seconds)
 
-        self._sync_transcript_selection_to_playback_time(start_seconds)
+        self._sync_transcript_selection_to_playback_time(visual_start_seconds)
         self._refresh_transcript_timeline()
 
         self._update_transcript_playback_buttons(True)
@@ -4189,7 +4366,7 @@ class App(ctk.CTk):
 
 
     def _update_transcript_playhead_from_playback_clock(self) -> Optional[float]:
-        """Update playhead from VLC's media clock, with monotonic smoothing."""
+        """Update playhead from VLC's media clock, with sync offset and monotonic smoothing."""
         backend = getattr(self, "transcript_playback_backend", None)
 
         if backend not in {"vlc", "vlc_paused"}:
@@ -4207,56 +4384,55 @@ class App(ctk.CTk):
         except Exception:
             raw_ms = -1
 
-        raw_seconds = None
+        raw_media_seconds = None
 
         if raw_ms is not None and raw_ms >= 0:
-            raw_seconds = raw_ms / 1000.0
+            raw_media_seconds = raw_ms / 1000.0
 
-        requested_start = getattr(self, "transcript_playback_requested_start_seconds", None)
+        requested_media_start = getattr(self, "transcript_playback_requested_start_seconds", None)
         start_wall_time = getattr(self, "transcript_playback_start_wall_time", None)
         previous_displayed = getattr(self, "transcript_playhead_seconds", None)
+        sync_offset = self._get_transcript_audio_sync_offset_seconds()
 
-        # During startup, VLC may briefly report 0 before the requested start seek lands.
-        # Do not let the GUI jump backward during that opening phase.
+        # During startup, VLC may briefly report 0 before start-time lands.
         if (
-            raw_seconds is not None
-            and isinstance(requested_start, (int, float))
+            raw_media_seconds is not None
+            and isinstance(requested_media_start, (int, float))
             and isinstance(start_wall_time, (int, float))
-            and float(requested_start) > 0.5
-            and raw_seconds < float(requested_start) - 0.5
+            and float(requested_media_start) > 0.5
+            and raw_media_seconds < float(requested_media_start) - 0.5
             and now - float(start_wall_time) < 1.0
         ):
-            raw_seconds = float(requested_start)
+            raw_media_seconds = float(requested_media_start)
 
         last_reported = getattr(self, "transcript_vlc_last_reported_seconds", None)
 
-        # VLC time can report in coarse/late chunks. Accept new anchors only when
-        # they do not pull the visible marker backward.
-        if raw_seconds is not None:
+        if raw_media_seconds is not None:
+            raw_display_seconds = raw_media_seconds + sync_offset
             safe_to_anchor = True
 
             if (
                 backend == "vlc"
                 and isinstance(previous_displayed, (int, float))
-                and raw_seconds < float(previous_displayed) - 0.040
+                and raw_display_seconds < float(previous_displayed) - 0.040
             ):
                 safe_to_anchor = False
 
             if safe_to_anchor:
-                if last_reported is None or abs(raw_seconds - float(last_reported)) >= 0.010:
-                    self.transcript_vlc_clock_anchor_seconds = raw_seconds
+                if last_reported is None or abs(raw_media_seconds - float(last_reported)) >= 0.010:
+                    self.transcript_vlc_clock_anchor_seconds = raw_media_seconds
                     self.transcript_vlc_clock_anchor_wall_time = now
-                    self.transcript_vlc_last_reported_seconds = raw_seconds
+                    self.transcript_vlc_last_reported_seconds = raw_media_seconds
 
-        anchor_seconds = getattr(self, "transcript_vlc_clock_anchor_seconds", None)
+        anchor_media_seconds = getattr(self, "transcript_vlc_clock_anchor_seconds", None)
         anchor_wall = getattr(self, "transcript_vlc_clock_anchor_wall_time", None)
 
-        if anchor_seconds is None:
-            if isinstance(raw_seconds, (int, float)):
-                anchor_seconds = float(raw_seconds)
+        if anchor_media_seconds is None:
+            if isinstance(raw_media_seconds, (int, float)):
+                anchor_media_seconds = float(raw_media_seconds)
                 anchor_wall = now
-            elif isinstance(requested_start, (int, float)):
-                anchor_seconds = float(requested_start)
+            elif isinstance(requested_media_start, (int, float)):
+                anchor_media_seconds = float(requested_media_start)
                 anchor_wall = now
             else:
                 return None
@@ -4265,21 +4441,25 @@ class App(ctk.CTk):
             anchor_wall = now
 
         if backend == "vlc" and self._is_transcript_vlc_playing():
-            interpolated_seconds = float(anchor_seconds) + max(0.0, now - float(anchor_wall))
+            media_seconds = float(anchor_media_seconds) + max(0.0, now - float(anchor_wall))
         else:
-            interpolated_seconds = float(anchor_seconds)
+            media_seconds = float(anchor_media_seconds)
 
-        current_seconds = interpolated_seconds
+        current_seconds = media_seconds + sync_offset
 
-        # If VLC reports a time far ahead, ease forward rather than snapping.
         if (
-            raw_seconds is not None
+            raw_media_seconds is not None
             and isinstance(previous_displayed, (int, float))
-            and raw_seconds > current_seconds + 0.180
         ):
-            current_seconds = float(previous_displayed) + min(0.080, raw_seconds - float(previous_displayed))
+            raw_display_seconds = raw_media_seconds + sync_offset
 
-        # Main jitter fix: never move the playhead backward during normal playback.
+            if raw_display_seconds > current_seconds + 0.180:
+                current_seconds = float(previous_displayed) + min(
+                    0.080,
+                    raw_display_seconds - float(previous_displayed)
+                )
+
+        # Do not jitter backwards during normal playback.
         if backend == "vlc" and isinstance(previous_displayed, (int, float)):
             if current_seconds < float(previous_displayed):
                 current_seconds = float(previous_displayed)
@@ -4391,9 +4571,12 @@ class App(ctk.CTk):
 
         seconds = max(float(min_time), min(float(max_time), seconds))
         self.transcript_playhead_seconds = seconds
-        self.transcript_vlc_clock_anchor_seconds = seconds
+
+        sync_offset = self._get_transcript_audio_sync_offset_seconds()
+        media_seconds = max(0.0, seconds - sync_offset)
+        self.transcript_vlc_clock_anchor_seconds = media_seconds
         self.transcript_vlc_clock_anchor_wall_time = time.monotonic()
-        self.transcript_vlc_last_reported_seconds = seconds
+        self.transcript_vlc_last_reported_seconds = media_seconds
 
         if hasattr(self, "transcript_cursor_status_label"):
             self.transcript_cursor_status_label.configure(
