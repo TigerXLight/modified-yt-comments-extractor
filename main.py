@@ -3738,6 +3738,60 @@ class App(ctk.CTk):
                 lambda event: canvas.configure(cursor="")
             )
 
+
+    def _flash_transcript_segment_selection(self, segment_index: int, duration_ms: int = 1500) -> None:
+        """Temporarily highlight the selected transcript segment in the preview."""
+        if not hasattr(self, "transcript_textbox"):
+            return
+
+        if not hasattr(self, "transcript_display_ranges"):
+            return
+
+        text_widget = self._get_transcript_text_widget()
+        tag_name = "transcript_timeline_flash"
+
+        try:
+            text_widget.tag_remove(tag_name, "1.0", "end")
+            text_widget.tag_configure(
+                tag_name,
+                background="#334155",
+                foreground="#FFFFFF"
+            )
+            text_widget.tag_raise(tag_name)
+        except Exception:
+            return
+
+        target_info = None
+
+        for info in self.transcript_display_ranges:
+            if info.get("segment_index") == segment_index:
+                target_info = info
+                break
+
+        if not target_info:
+            return
+
+        start_index = target_info.get("start")
+        end_index = target_info.get("end")
+
+        if not start_index or not end_index:
+            return
+
+        try:
+            text_widget.tag_add(tag_name, start_index, end_index)
+            text_widget.see(start_index)
+        except Exception:
+            return
+
+        def clear_flash() -> None:
+            try:
+                text_widget.tag_remove(tag_name, "1.0", "end")
+            except Exception:
+                pass
+
+        self.after(duration_ms, clear_flash)
+
+
     def _select_transcript_segment_from_timeline(self, segment_index: int) -> None:
         """Select a transcript segment from the timeline."""
         if segment_index < 0 or segment_index >= len(self.transcript_segments):
@@ -3747,6 +3801,8 @@ class App(ctk.CTk):
 
         if hasattr(self, "_place_transcript_cursor_at_segment_offset"):
             self._place_transcript_cursor_at_segment_offset(segment_index, 0)
+
+        self._flash_transcript_segment_selection(segment_index)
 
         segment = self.transcript_segments[segment_index]
         speaker = segment.speaker or "Speaker"
