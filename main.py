@@ -2827,6 +2827,7 @@ class App(ctk.CTk):
             if (
                 tag_name.startswith("transcript_speaker_label_")
                 or tag_name.startswith("transcript_segment_text_wrap_")
+                or tag_name.startswith("transcript_segment_click_")
                 or tag_name == "transcript_timestamp"
             ):
                 text_widget.tag_delete(tag_name)
@@ -3025,6 +3026,23 @@ class App(ctk.CTk):
             self.transcript_textbox.insert("end", "\n\n")
 
             segment_end_index = self.transcript_textbox.index("end-1c")
+
+            click_tag = f"transcript_segment_click_{segment_index}"
+
+            try:
+                text_widget_for_click = self._get_transcript_text_widget()
+                text_widget_for_click.tag_add(
+                    click_tag,
+                    segment_start_index,
+                    segment_end_index
+                )
+                text_widget_for_click.tag_bind(
+                    click_tag,
+                    "<ButtonRelease-1>",
+                    lambda event, idx=segment_index: self._select_transcript_segment_from_preview(idx, event)
+                )
+            except Exception:
+                pass
 
             self.transcript_display_ranges.append({
                 "segment_index": segment_index,
@@ -3565,6 +3583,35 @@ class App(ctk.CTk):
                 ),
                 text_color=COLORS["text_primary"]
             )
+
+
+    def _select_transcript_segment_from_preview(self, segment_index: int, event=None):
+        """Select a transcript segment when the user clicks its rendered preview text."""
+        if segment_index < 0 or segment_index >= len(self.transcript_segments):
+            return None
+
+        self.selected_transcript_segment_index = segment_index
+
+        segment = self.transcript_segments[segment_index]
+        speaker = segment.speaker or "Speaker"
+        start = segment.start or "no start"
+        end = segment.end or "no end"
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=(
+                    f"Selected segment {segment_index + 1:,}/{len(self.transcript_segments):,} "
+                    f"from transcript • {speaker} • {start} → {end}"
+                ),
+                text_color=COLORS["text_primary"]
+            )
+
+        if hasattr(self, "_refresh_transcript_timeline"):
+            self._refresh_transcript_timeline()
+            self.after(50, self._refresh_transcript_timeline)
+
+        return None
+
 
     def _get_transcript_timeline_bounds(self):
         """Return min/max seconds for transcript timeline drawing."""
