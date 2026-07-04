@@ -201,6 +201,9 @@ class App(ctk.CTk):
         self.bind_all("<Control-Z>", self.undo_transcript_edit)
         self.bind_all("<Control-y>", self.redo_transcript_edit)
         self.bind_all("<Control-Y>", self.redo_transcript_edit)
+        self.bind_all("[", self._on_visual_sync_minus_shortcut)
+        self.bind_all("]", self._on_visual_sync_plus_shortcut)
+        self.bind_all("<Control-0>", self._on_visual_sync_reset_shortcut)
 
         # Handle window close
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -1680,6 +1683,41 @@ class App(ctk.CTk):
         self.transcript_audio_sync_reset_button.grid(row=2, column=2, sticky="w", padx=(8, 0), pady=(6, 0))
 
         self._bind_transcript_sync_controls_scroll_passthrough()
+
+        self.transcript_audio_sync_fine_minus_button = ctk.CTkButton(
+            timeline_zoom_row,
+            text="-10 ms",
+            command=lambda: self._adjust_transcript_audio_sync_offset(-0.01),
+            width=70,
+            height=24,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=6
+        )
+        self.transcript_audio_sync_fine_minus_button.grid(row=3, column=1, sticky="w", pady=(6, 0))
+
+        self.transcript_audio_sync_fine_plus_button = ctk.CTkButton(
+            timeline_zoom_row,
+            text="+10 ms",
+            command=lambda: self._adjust_transcript_audio_sync_offset(0.01),
+            width=70,
+            height=24,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=6
+        )
+        self.transcript_audio_sync_fine_plus_button.grid(row=3, column=1, sticky="w", padx=(78, 0), pady=(6, 0))
+
+        self.transcript_audio_sync_shortcuts_label = ctk.CTkLabel(
+            timeline_zoom_row,
+            text="[ / ] fine sync, Ctrl+0 reset",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"],
+            anchor="w"
+        )
+        self.transcript_audio_sync_shortcuts_label.grid(row=3, column=2, columnspan=3, sticky="w", padx=(8, 0), pady=(6, 0))
 
         self.transcript_display_ranges = []
         self.selected_transcript_segment_index = None
@@ -3929,6 +3967,9 @@ class App(ctk.CTk):
             getattr(self, "transcript_audio_sync_minus_button", None),
             getattr(self, "transcript_audio_sync_plus_button", None),
             getattr(self, "transcript_audio_sync_reset_button", None),
+            getattr(self, "transcript_audio_sync_fine_minus_button", None),
+            getattr(self, "transcript_audio_sync_fine_plus_button", None),
+            getattr(self, "transcript_audio_sync_shortcuts_label", None),
             getattr(self, "transcript_timeline_pan_slider", None),
             getattr(self, "transcript_timeline_zoom_slider", None),
         ]
@@ -3945,6 +3986,23 @@ class App(ctk.CTk):
                 widget.bind("<Leave>", lambda _event: self._restore_main_scroll_focus())
             except Exception:
                 pass
+
+
+
+    def _on_visual_sync_minus_shortcut(self, event=None):
+        """Keyboard shortcut: fine visual sync backward."""
+        self._adjust_transcript_audio_sync_offset(-0.01)
+        return "break"
+
+    def _on_visual_sync_plus_shortcut(self, event=None):
+        """Keyboard shortcut: fine visual sync forward."""
+        self._adjust_transcript_audio_sync_offset(0.01)
+        return "break"
+
+    def _on_visual_sync_reset_shortcut(self, event=None):
+        """Keyboard shortcut: reset visual sync offset."""
+        self._reset_transcript_audio_sync_offset()
+        return "break"
 
 
     def _get_transcript_audio_sync_offset_seconds(self) -> float:
