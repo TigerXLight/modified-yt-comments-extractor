@@ -687,7 +687,7 @@ class App(ctk.CTk):
         )
         self.main_frame.grid(row=1, column=1, sticky="nsew", padx=20, pady=20)
         self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(3, weight=1)
+        self.main_frame.grid_rowconfigure(3, weight=0)
 
         self._create_url_section()
         self._create_progress_section()
@@ -708,7 +708,7 @@ class App(ctk.CTk):
 
         # URL input area
         url_frame = ctk.CTkFrame(url_card, fg_color="transparent")
-        url_frame.pack(fill="x", padx=20, pady=(20, 15))
+        url_frame.pack(fill="x", padx=20, pady=(20, 6))
 
         url_label = ctk.CTkLabel(
             url_frame,
@@ -720,7 +720,7 @@ class App(ctk.CTk):
 
         self.url_entry = ctk.CTkTextbox(
             url_frame,
-            height=100,
+            height=70,
             font=ctk.CTkFont(size=13),
             fg_color=COLORS["bg_input"],
             border_color=COLORS["border"],
@@ -744,11 +744,11 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_muted"]
         )
-        self.url_status.pack(anchor="e", pady=(5, 0))
+        self.url_status.pack(anchor="e", pady=(2, 0))
 
         # Filter words section
         filter_words_frame = ctk.CTkFrame(url_card, fg_color="transparent")
-        filter_words_frame.pack(fill="x", padx=20, pady=(0, 15))
+        filter_words_frame.pack(fill="x", padx=20, pady=(0, 10))
 
         filter_words_header = ctk.CTkFrame(filter_words_frame, fg_color="transparent")
         filter_words_header.pack(fill="x")
@@ -1321,7 +1321,7 @@ class App(ctk.CTk):
         # Transcript preview
         self.transcript_textbox = ctk.CTkTextbox(
             self.transcript_card,
-            height=150,
+            height=320,
             font=ctk.CTkFont(size=12),
             fg_color=COLORS["bg_input"],
             border_color=COLORS["border"],
@@ -1342,8 +1342,8 @@ class App(ctk.CTk):
             border_width=1,
             border_color=COLORS["border"]
         )
-        self.log_card.grid(row=3, column=0, sticky="nsew")
-        self.log_card.grid_rowconfigure(1, weight=1)
+        self.log_card.grid(row=3, column=0, sticky="ew")
+        self.log_card.grid_rowconfigure(1, weight=0)
         self.log_card.grid_columnconfigure(0, weight=1)
 
         # Log header
@@ -1385,10 +1385,11 @@ class App(ctk.CTk):
         # Log content
         self.log_frame = ctk.CTkScrollableFrame(
             self.log_card,
+            height=90,
             fg_color=COLORS["bg_input"],
             corner_radius=8
         )
-        self.log_frame.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
+        self.log_frame.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 15))
 
     # =========================================================================
     # DIALOG METHODS
