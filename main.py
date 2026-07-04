@@ -3750,6 +3750,11 @@ class App(ctk.CTk):
         text_widget = self._get_transcript_text_widget()
         tag_name = "transcript_timeline_flash"
 
+        # Each flash gets a token so old delayed clear callbacks cannot
+        # clear a newer flash early when the user clicks timeline blocks quickly.
+        flash_token = getattr(self, "_transcript_timeline_flash_token", 0) + 1
+        self._transcript_timeline_flash_token = flash_token
+
         try:
             text_widget.tag_remove(tag_name, "1.0", "end")
             text_widget.tag_configure(
@@ -3784,6 +3789,9 @@ class App(ctk.CTk):
             return
 
         def clear_flash() -> None:
+            if getattr(self, "_transcript_timeline_flash_token", None) != flash_token:
+                return
+
             try:
                 text_widget.tag_remove(tag_name, "1.0", "end")
             except Exception:
