@@ -4511,10 +4511,10 @@ class App(ctk.CTk):
             return
 
         dialog_width = 900
-        dialog_height = 660
+        dialog_height = 760
 
         dialog = ctk.CTkToplevel(self)
-        dialog.title("Edit Segment Speaker")
+        dialog.title("Edit Segment")
         dialog.geometry(f"{dialog_width}x{dialog_height}")
         dialog.configure(fg_color=COLORS["bg_dark"])
         dialog.transient(self)
@@ -4539,7 +4539,7 @@ class App(ctk.CTk):
 
         title = ctk.CTkLabel(
             container,
-            text="✏ Edit One Segment Speaker",
+            text="✏ Edit One Segment",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=COLORS["text_primary"]
         )
@@ -4547,7 +4547,7 @@ class App(ctk.CTk):
 
         help_text = ctk.CTkLabel(
             container,
-            text="Search or scroll the segment list, then choose a speaker for that one segment only.",
+            text="Search or scroll the segment list, then edit the speaker or timing for that one segment only.",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_muted"],
             wraplength=820,
@@ -4603,7 +4603,7 @@ class App(ctk.CTk):
         details_panel = ctk.CTkFrame(container, fg_color="transparent")
         details_panel.grid(row=2, column=1, sticky="nsew", padx=(8, 16), pady=(0, 12))
         details_panel.grid_columnconfigure(0, weight=1)
-        details_panel.grid_rowconfigure(6, weight=1)
+        details_panel.grid_rowconfigure(9, weight=1)
 
         selected_title_label = ctk.CTkLabel(
             details_panel,
@@ -4662,7 +4662,58 @@ class App(ctk.CTk):
         )
         speaker_picker.grid(row=3, column=0, sticky="ew", pady=(0, 8))
 
-        speaker_entry.grid(row=4, column=0, sticky="ew", pady=(0, 12))
+        speaker_entry.grid(row=4, column=0, sticky="ew", pady=(0, 10))
+
+        timing_row = ctk.CTkFrame(details_panel, fg_color="transparent")
+        timing_row.grid(row=5, column=0, sticky="ew", pady=(0, 10))
+        timing_row.grid_columnconfigure(0, weight=1)
+        timing_row.grid_columnconfigure(1, weight=1)
+
+        start_time_label = ctk.CTkLabel(
+            timing_row,
+            text="Start time",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary"]
+        )
+        start_time_label.grid(row=0, column=0, sticky="w", padx=(0, 6), pady=(0, 4))
+
+        end_time_label = ctk.CTkLabel(
+            timing_row,
+            text="End time",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary"]
+        )
+        end_time_label.grid(row=0, column=1, sticky="w", padx=(6, 0), pady=(0, 4))
+
+        start_time_entry = ctk.CTkEntry(
+            timing_row,
+            height=34,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["bg_input"],
+            border_color=COLORS["border"],
+            corner_radius=6,
+            placeholder_text="00:00:00.000"
+        )
+        start_time_entry.grid(row=1, column=0, sticky="ew", padx=(0, 6))
+
+        end_time_entry = ctk.CTkEntry(
+            timing_row,
+            height=34,
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS["bg_input"],
+            border_color=COLORS["border"],
+            corner_radius=6,
+            placeholder_text="00:00:00.000"
+        )
+        end_time_entry.grid(row=1, column=1, sticky="ew", padx=(6, 0))
+
+        timing_help_label = ctk.CTkLabel(
+            details_panel,
+            text="Accepted: HH:MM:SS.mmm or MM:SS.mmm. Leave blank for no timestamp.",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"]
+        )
+        timing_help_label.grid(row=6, column=0, sticky="w", pady=(0, 8))
 
         preview_label = ctk.CTkLabel(
             details_panel,
@@ -4670,11 +4721,11 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=12),
             text_color=COLORS["text_secondary"]
         )
-        preview_label.grid(row=5, column=0, sticky="w", pady=(0, 4))
+        preview_label.grid(row=7, column=0, sticky="w", pady=(0, 4))
 
         preview_textbox = ctk.CTkTextbox(
             details_panel,
-            height=210,
+            height=135,
             font=ctk.CTkFont(size=12),
             fg_color=COLORS["bg_input"],
             border_color=COLORS["border"],
@@ -4682,10 +4733,10 @@ class App(ctk.CTk):
             corner_radius=8,
             wrap="word"
         )
-        preview_textbox.grid(row=6, column=0, sticky="nsew", pady=(0, 12))
+        preview_textbox.grid(row=8, column=0, sticky="nsew", pady=(0, 12))
 
         button_row = ctk.CTkFrame(details_panel, fg_color="transparent")
-        button_row.grid(row=7, column=0, sticky="ew")
+        button_row.grid(row=9, column=0, sticky="ew", pady=(0, 4))
 
         selected_state = {
             "index": self.selected_transcript_segment_index
@@ -4737,6 +4788,8 @@ class App(ctk.CTk):
             )
 
             self._set_entry_text(speaker_entry, speaker)
+            self._set_entry_text(start_time_entry, segment.start or "")
+            self._set_entry_text(end_time_entry, segment.end or "")
 
             if speaker in speaker_choices:
                 speaker_picker.set(speaker)
@@ -4833,12 +4886,77 @@ class App(ctk.CTk):
             select_segment(filtered[new_position])
             return "break"
 
+        def normalise_segment_time(raw_value: str, label: str) -> Optional[str]:
+            """Normalise segment time input to HH:MM:SS.mmm, or blank."""
+            value = (raw_value or "").strip().replace(",", ".")
+
+            if not value:
+                return ""
+
+            if value.lower() in {"none", "no start", "no end"}:
+                return ""
+
+            parts = value.split(":")
+
+            if len(parts) == 2:
+                hours_text = "0"
+                minutes_text, seconds_text = parts
+            elif len(parts) == 3:
+                hours_text, minutes_text, seconds_text = parts
+            else:
+                messagebox.showwarning(
+                    "Invalid Time",
+                    f"{label} must look like HH:MM:SS.mmm or MM:SS.mmm."
+                )
+                return None
+
+            if "." in seconds_text:
+                seconds_main, millis_text = seconds_text.split(".", 1)
+            else:
+                seconds_main = seconds_text
+                millis_text = "000"
+
+            if not (
+                hours_text.strip().isdigit()
+                and minutes_text.strip().isdigit()
+                and seconds_main.strip().isdigit()
+                and millis_text.strip().isdigit()
+            ):
+                messagebox.showwarning(
+                    "Invalid Time",
+                    f"{label} contains invalid characters."
+                )
+                return None
+
+            hours = int(hours_text)
+            minutes = int(minutes_text)
+            seconds = int(seconds_main)
+
+            if minutes > 59 or seconds > 59:
+                messagebox.showwarning(
+                    "Invalid Time",
+                    f"{label} has minutes or seconds above 59."
+                )
+                return None
+
+            millis = millis_text[:3].ljust(3, "0")
+
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{millis}"
+
         def do_update() -> None:
             index = selected_state["index"]
             segment = self.transcript_segments[index]
 
             old_speaker = segment.speaker or "Speaker"
+            old_start = segment.start or ""
+            old_end = segment.end or ""
+
             new_speaker = speaker_entry.get().strip()
+            new_start = normalise_segment_time(start_time_entry.get(), "Start time")
+            new_end = normalise_segment_time(end_time_entry.get(), "End time")
+
+            if new_start is None or new_end is None:
+                return
 
             if not new_speaker:
                 messagebox.showwarning(
@@ -4847,26 +4965,72 @@ class App(ctk.CTk):
                 )
                 return
 
-            if new_speaker == old_speaker:
+            if new_start and new_end:
+                start_seconds = self._transcript_time_to_seconds(new_start)
+                end_seconds = self._transcript_time_to_seconds(new_end)
+
+                if (
+                    start_seconds is not None
+                    and end_seconds is not None
+                    and end_seconds < start_seconds
+                ):
+                    messagebox.showwarning(
+                        "Invalid Time Range",
+                        "End time must be the same as or later than start time."
+                    )
+                    return
+
+            speaker_changed = new_speaker != old_speaker
+            timing_changed = new_start != old_start or new_end != old_end
+
+            if not speaker_changed and not timing_changed:
                 messagebox.showinfo(
                     "No Change",
-                    "The speaker name is already the same for this segment."
+                    "The speaker and timing are already the same for this segment."
                 )
                 return
 
-            self._ensure_transcript_custom_speakers()
-            self.transcript_custom_speakers.add(new_speaker)
+            if hasattr(self, "_end_transcript_text_edit_phase"):
+                self._end_transcript_text_edit_phase()
 
-            segment.speaker = new_speaker
+            self._push_transcript_undo_state("segment speaker/timing edit")
 
+            if speaker_changed:
+                self._ensure_transcript_custom_speakers()
+                self.transcript_custom_speakers.add(new_speaker)
+                segment.speaker = new_speaker
+
+            if timing_changed:
+                segment.start = new_start
+                segment.end = new_end
+
+            self.selected_transcript_segment_index = index
             self._refresh_transcript_display()
             load_selected_segment_details()
             rebuild_segment_list()
 
+            changes = []
+
+            if speaker_changed:
+                changes.append(f"speaker: '{old_speaker}' → '{new_speaker}'")
+
+            if timing_changed:
+                changes.append(
+                    f"time: {old_start or 'no start'} → {old_end or 'no end'} "
+                    f"changed to {new_start or 'no start'} → {new_end or 'no end'}"
+                )
+
             self.log_message(
-                f"Changed segment {index + 1:,} speaker: '{old_speaker}' → '{new_speaker}'",
+                f"Updated segment {index + 1:,}: " + "; ".join(changes),
                 "success"
             )
+
+            if hasattr(self, "transcript_cursor_status_label"):
+                self.transcript_cursor_status_label.configure(
+                    text=f"Updated segment {index + 1:,}. Ctrl+Z undo, Ctrl+Y redo.",
+                    text_color=COLORS["text_primary"]
+                )
+
 
         close_btn = ctk.CTkButton(
             button_row,
