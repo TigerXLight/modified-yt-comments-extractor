@@ -24,4 +24,9 @@ echo.
 echo Build complete.
 echo Output:
 echo %cd%\dist\YouTube Comment Extractor
+echo.
+echo Notes:
+echo - Timeline playback requires VLC Media Player installed on the target PC.
+echo - Waveform generation requires ffmpeg available on PATH.
+echo - python-vlc is installed from requirements.txt, but desktop VLC/libVLC is external.
 pause

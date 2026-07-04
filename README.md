@@ -23,12 +23,61 @@ This version adds extra extraction and export features, including:
 - Export transcripts to TXT, SRT, VTT, and CSV
 - Save transcript files inside Package exports
 - Add YouTube video metadata to `source_info.txt` when available
+- Edit imported/local ASR transcripts with speaker, timing, split, and merge tools
+- Link local media, generate waveform, and play transcript timeline using VLC
+- Save transcript playback metadata, linked media, waveform, and visual sync details in exports
+
+---
+## Optional Playback Dependencies
+
+Some transcript timeline features need external media tools:
+
+- **VLC Media Player**: required for timeline Play/Pause playback through `python-vlc`.
+- **ffmpeg**: required for waveform generation from linked media.
+- `python-vlc` is installed through `requirements.txt`, but desktop VLC/libVLC must also be installed on Windows.
+
+If VLC or ffmpeg is missing, the app should still open normally, but playback or waveform generation will show a clear warning.
 
 This project is a modified version of the original open-source project:
 
 Original project: https://github.com/vijaykumarpeta/yt-comments-extractor
 
 Please see the `LICENSE` file for licensing information.
+
+---
+## What’s New in v2.5.0
+
+This version adds a full transcript editing workspace with timeline and waveform support.
+
+New transcript editor features:
+
+- ElevenLabs-style transcript editing workflow
+- Per-segment speaker editing
+- Global speaker rename
+- Create reusable speaker names
+- Split transcript segments at the cursor
+- Merge segments up or down
+- Edit segment start/end timings
+- Search transcript segments
+- Export matching segment search results
+- Undo/redo support for transcript edits
+- Click transcript text to sync timeline selection
+- Timeline blocks grouped by speaker
+- Timeline zoom and position controls
+- Link local media to an imported transcript
+- Generate waveform from linked media
+- Drag the blue timeline marker/playhead
+- Play/Pause linked media from the timeline using VLC
+- Active waveform highlight for the current spoken segment
+- Visual sync offset controls for fine alignment
+- Transcript playback metadata in package/source exports
+
+Playback requirements:
+
+- Timeline playback uses `python-vlc`.
+- VLC Media Player must be installed on Windows so libVLC is available.
+- Waveform generation uses `ffmpeg`; if it is missing, the app shows a clear warning.
+- Visual Sync changes editor playback alignment only. It does not change transcript timestamps or exported SRT/VTT timings.
 
 ---
 ## What’s New in v2.3.0
