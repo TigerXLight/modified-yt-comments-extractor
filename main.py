@@ -2793,7 +2793,17 @@ class App(ctk.CTk):
             self.transcript_search_entry.configure(state=state)
 
         self.transcript_display_ranges = []
-        self.selected_transcript_segment_index = None
+
+        current_selected_index = getattr(self, "selected_transcript_segment_index", None)
+
+        if (
+            has_transcript
+            and isinstance(current_selected_index, int)
+            and 0 <= current_selected_index < len(self.transcript_segments)
+        ):
+            self.selected_transcript_segment_index = current_selected_index
+        else:
+            self.selected_transcript_segment_index = None
 
         if hasattr(self, "transcript_cursor_status_label"):
             if has_transcript:
@@ -3860,6 +3870,56 @@ class App(ctk.CTk):
             )
 
 
+
+    def _scroll_transcript_segment_into_view(self, segment_index: int) -> None:
+        """Scroll selected transcript segment into a comfortable visible position."""
+        if not hasattr(self, "transcript_textbox"):
+            return
+
+        if not hasattr(self, "transcript_display_ranges"):
+            return
+
+        target_info = None
+
+        for info in self.transcript_display_ranges:
+            if info.get("segment_index") == segment_index:
+                target_info = info
+                break
+
+        if not target_info:
+            return
+
+        start_index = target_info.get("start")
+        end_index = target_info.get("end")
+
+        if not start_index or not end_index:
+            return
+
+        text_widget = self._get_transcript_text_widget()
+
+        try:
+            # First guarantee it is visible at all.
+            text_widget.see(end_index)
+            text_widget.see(start_index)
+
+            # Then move it closer to the upper-middle of the visible area.
+            start_line = int(str(text_widget.index(start_index)).split(".", 1)[0])
+            total_lines = int(str(text_widget.index("end-1c")).split(".", 1)[0])
+            total_lines = max(total_lines, 1)
+
+            # Keep a few lines of context above the selected segment.
+            target_fraction = max(0.0, min(1.0, (start_line - 4) / total_lines))
+            text_widget.yview_moveto(target_fraction)
+
+            # Re-assert visibility after yview move.
+            text_widget.see(start_index)
+        except Exception:
+            try:
+                text_widget.see(start_index)
+            except Exception:
+                pass
+
+
     def _flash_transcript_segment_selection(self, segment_index: int, duration_ms: int = 1500) -> None:
         """Temporarily highlight the selected transcript segment in the preview."""
         if not hasattr(self, "transcript_textbox"):
@@ -3905,7 +3965,7 @@ class App(ctk.CTk):
 
         try:
             text_widget.tag_add(tag_name, start_index, end_index)
-            text_widget.see(start_index)
+            self._scroll_transcript_segment_into_view(segment_index)
         except Exception:
             return
 
@@ -3930,6 +3990,9 @@ class App(ctk.CTk):
 
         if hasattr(self, "_place_transcript_cursor_at_segment_offset"):
             self._place_transcript_cursor_at_segment_offset(segment_index, 0)
+
+        if hasattr(self, "_scroll_transcript_segment_into_view"):
+            self._scroll_transcript_segment_into_view(segment_index)
 
         self._flash_transcript_segment_selection(segment_index)
 
