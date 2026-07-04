@@ -3529,6 +3529,9 @@ class App(ctk.CTk):
                     text="No segment selected.",
                     text_color=COLORS["text_muted"]
                 )
+
+        if hasattr(self, "_refresh_transcript_timeline"):
+            self._refresh_transcript_timeline()
             return
 
         segment_index = info["segment_index"]
@@ -3550,8 +3553,6 @@ class App(ctk.CTk):
                 ),
                 text_color=COLORS["text_primary"]
             )
-
-
 
     def _get_transcript_timeline_bounds(self):
         """Return min/max seconds for transcript timeline drawing."""
@@ -5575,6 +5576,14 @@ class App(ctk.CTk):
 
         def close_segment_editor() -> None:
             flash_index = selected_state.get("flash_after_close_index")
+
+            # If no edit was applied, still flash the last selected segment.
+            # This helps when the user only searched/selected inside the Segment editor.
+            if not isinstance(flash_index, int):
+                flash_index = selected_state.get(
+                    "index",
+                    getattr(self, "selected_transcript_segment_index", None)
+                )
 
             dialog.destroy()
 
