@@ -18,6 +18,7 @@ from tkinter import filedialog, messagebox, simpledialog
 from typing import Any, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
+import tkinter as tk
 from PIL import Image, ImageDraw
 
 from core.constants import (
@@ -1392,7 +1393,31 @@ class App(ctk.CTk):
             corner_radius=8,
             wrap="word"
         )
-        self.transcript_textbox.pack(fill="x", padx=15, pady=(0, 15))
+        self.transcript_textbox.pack(fill="x", padx=15, pady=(0, 10))
+
+        self.transcript_timeline_label = ctk.CTkLabel(
+            self.transcript_card,
+            text="Timeline",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=COLORS["text_secondary"],
+            anchor="w"
+        )
+        self.transcript_timeline_label.pack(fill="x", padx=15, pady=(0, 4))
+
+        self.transcript_timeline_canvas = tk.Canvas(
+            self.transcript_card,
+            height=125,
+            bg=COLORS["bg_input"],
+            highlightthickness=1,
+            highlightbackground=COLORS["border"],
+            bd=0
+        )
+        self.transcript_timeline_canvas.pack(fill="x", padx=15, pady=(0, 15))
+        self.transcript_timeline_canvas.bind(
+            "<Configure>",
+            lambda event: self._refresh_transcript_timeline()
+        )
+
         self.transcript_display_ranges = []
         self.selected_transcript_segment_index = None
 
@@ -2775,6 +2800,7 @@ class App(ctk.CTk):
             self.transcript_textbox.configure(state="disabled")
             if hasattr(self, "transcript_search_count_label"):
                 self._update_transcript_search_matches(reset_index=True)
+            self._refresh_transcript_timeline()
             return
 
         speakers = sorted({
@@ -2976,6 +3002,8 @@ class App(ctk.CTk):
         self.transcript_textbox.configure(state="normal")
         if hasattr(self, "transcript_search_count_label"):
             self._update_transcript_search_matches(reset_index=True)
+
+        self._refresh_transcript_timeline()
 
 
     def _transcript_time_to_seconds(self, value: str) -> Optional[float]:
@@ -3472,6 +3500,266 @@ class App(ctk.CTk):
                 ),
                 text_color=COLORS["text_primary"]
             )
+
+
+
+    def _get_transcript_timeline_bounds(self):
+        """Return min/max seconds for transcript timeline drawing."""
+        times = []
+
+        for segment in self.transcript_segments:
+            start_seconds = self._transcript_time_to_seconds(segment.start)
+            end_seconds = self._transcript_time_to_seconds(segment.end)
+
+            if start_seconds is not None:
+                times.append(start_seconds)
+
+            if end_seconds is not None:
+                times.append(end_seconds)
+
+        if not times:
+            return None, None
+
+        min_time = min(times)
+        max_time = max(times)
+
+        if max_time <= min_time:
+            max_time = min_time + 1.0
+
+        return min_time, max_time
+
+    def _format_timeline_time(self, seconds: float) -> str:
+        """Format seconds as compact timeline label."""
+        seconds = max(0.0, float(seconds))
+        minutes = int(seconds // 60)
+        sec = int(seconds % 60)
+
+        if minutes >= 60:
+            hours = minutes // 60
+            minutes = minutes % 60
+            return f"{hours:d}:{minutes:02d}:{sec:02d}"
+
+        return f"{minutes:d}:{sec:02d}"
+
+    def _get_timeline_speakers(self):
+        """Return speakers in first-seen transcript order."""
+        speakers = []
+
+        for segment in self.transcript_segments:
+            speaker = segment.speaker or "Speaker"
+
+            if speaker not in speakers:
+                speakers.append(speaker)
+
+        return speakers
+
+    def _refresh_transcript_timeline(self) -> None:
+        """Draw a simple timestamp-based transcript timeline."""
+        if not hasattr(self, "transcript_timeline_canvas"):
+            return
+
+        canvas = self.transcript_timeline_canvas
+        canvas.delete("all")
+
+        width = max(canvas.winfo_width(), 300)
+
+        if not self.transcript_segments:
+            canvas.configure(height=70)
+            canvas.create_text(
+                14,
+                34,
+                text="Import a transcript to show timeline blocks.",
+                anchor="w",
+                fill=COLORS["text_muted"],
+                font=("Cascadia Mono", 10)
+            )
+            return
+
+        min_time, max_time = self._get_transcript_timeline_bounds()
+
+        if min_time is None or max_time is None:
+            canvas.configure(height=70)
+            canvas.create_text(
+                14,
+                34,
+                text="Timeline needs segment timestamps.",
+                anchor="w",
+                fill=COLORS["text_muted"],
+                font=("Cascadia Mono", 10)
+            )
+            return
+
+        speakers = self._get_timeline_speakers()
+        lane_height = 28
+        top_margin = 26
+        bottom_margin = 16
+        left_margin = 90
+        right_margin = 18
+        timeline_width = max(1, width - left_margin - right_margin)
+        canvas_height = max(95, top_margin + bottom_margin + len(speakers) * lane_height)
+
+        canvas.configure(height=canvas_height)
+
+        duration = max_time - min_time
+        selected_index = getattr(self, "selected_transcript_segment_index", None)
+
+        speaker_palette = [
+            "#60A5FA",
+            "#A78BFA",
+            "#34D399",
+            "#FBBF24",
+            "#F87171",
+            "#22D3EE",
+            "#F472B6",
+            "#A3E635",
+        ]
+
+        speaker_to_lane = {
+            speaker: index
+            for index, speaker in enumerate(speakers)
+        }
+
+        speaker_to_color = {
+            speaker: speaker_palette[index % len(speaker_palette)]
+            for index, speaker in enumerate(speakers)
+        }
+
+        # Time ticks
+        tick_count = 5
+        for tick in range(tick_count + 1):
+            fraction = tick / tick_count
+            tick_time = min_time + duration * fraction
+            x = left_margin + timeline_width * fraction
+
+            canvas.create_line(
+                x,
+                18,
+                x,
+                canvas_height - 8,
+                fill=COLORS["border"]
+            )
+            canvas.create_text(
+                x,
+                9,
+                text=self._format_timeline_time(tick_time),
+                anchor="n",
+                fill=COLORS["text_muted"],
+                font=("Cascadia Mono", 8)
+            )
+
+        # Speaker lanes
+        for speaker in speakers:
+            lane = speaker_to_lane[speaker]
+            y = top_margin + lane * lane_height + lane_height // 2
+
+            canvas.create_text(
+                8,
+                y,
+                text=speaker[:13],
+                anchor="w",
+                fill=COLORS["text_secondary"],
+                font=("Cascadia Mono", 9, "bold")
+            )
+
+            canvas.create_line(
+                left_margin,
+                y,
+                width - right_margin,
+                y,
+                fill=COLORS["border"]
+            )
+
+        # Segment blocks
+        for segment_index, segment in enumerate(self.transcript_segments):
+            start_seconds = self._transcript_time_to_seconds(segment.start)
+            end_seconds = self._transcript_time_to_seconds(segment.end)
+
+            if start_seconds is None or end_seconds is None:
+                continue
+
+            if end_seconds < start_seconds:
+                continue
+
+            speaker = segment.speaker or "Speaker"
+            lane = speaker_to_lane.get(speaker, 0)
+            color = speaker_to_color.get(speaker, COLORS["accent"])
+
+            x1 = left_margin + ((start_seconds - min_time) / duration) * timeline_width
+            x2 = left_margin + ((end_seconds - min_time) / duration) * timeline_width
+
+            if x2 - x1 < 5:
+                x2 = x1 + 5
+
+            y = top_margin + lane * lane_height + lane_height // 2
+            y1 = y - 8
+            y2 = y + 8
+
+            is_selected = selected_index == segment_index
+            outline = "#FFFFFF" if is_selected else color
+            outline_width = 2 if is_selected else 1
+
+            tag = f"timeline_segment_{segment_index}"
+
+            canvas.create_rectangle(
+                x1,
+                y1,
+                x2,
+                y2,
+                fill=color,
+                outline=outline,
+                width=outline_width,
+                tags=(tag,)
+            )
+
+            if x2 - x1 > 38:
+                canvas.create_text(
+                    x1 + 4,
+                    y,
+                    text=str(segment_index + 1),
+                    anchor="w",
+                    fill="#000000",
+                    font=("Cascadia Mono", 8, "bold"),
+                    tags=(tag,)
+                )
+
+            canvas.tag_bind(
+                tag,
+                "<Button-1>",
+                lambda event, idx=segment_index: self._select_transcript_segment_from_timeline(idx)
+            )
+            canvas.tag_bind(
+                tag,
+                "<Enter>",
+                lambda event: canvas.configure(cursor="hand2")
+            )
+            canvas.tag_bind(
+                tag,
+                "<Leave>",
+                lambda event: canvas.configure(cursor="")
+            )
+
+    def _select_transcript_segment_from_timeline(self, segment_index: int) -> None:
+        """Select a transcript segment from the timeline."""
+        if segment_index < 0 or segment_index >= len(self.transcript_segments):
+            return
+
+        self.selected_transcript_segment_index = segment_index
+
+        if hasattr(self, "_place_transcript_cursor_at_segment_offset"):
+            self._place_transcript_cursor_at_segment_offset(segment_index, 0)
+
+        segment = self.transcript_segments[segment_index]
+        speaker = segment.speaker or "Speaker"
+        start = segment.start or "no start"
+        end = segment.end or "no end"
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=f"Selected segment {segment_index + 1:,}/{len(self.transcript_segments):,} from timeline • {speaker} • {start} → {end}",
+                text_color=COLORS["text_primary"]
+            )
+
+        self._refresh_transcript_timeline()
 
 
     def _get_transcript_text_widget(self):
