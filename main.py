@@ -2624,6 +2624,8 @@ class App(ctk.CTk):
             if show_speakers:
                 self.transcript_textbox.insert("end", f"{speaker}\n")
 
+            segment_text_start_index = self.transcript_textbox.index("end-1c")
+
             for paragraph in self._split_readable_text(text):
                 remaining_chars = preview_char_limit - chars_written
 
@@ -2642,6 +2644,8 @@ class App(ctk.CTk):
                 self.transcript_textbox.insert("end", "\n\n")
                 chars_written += len(paragraph)
 
+            segment_text_end_index = self.transcript_textbox.index("end-1c")
+
             if show_timestamps:
                 self.transcript_textbox.insert("end", f"[{start_time} - {end_time}]\n\n")
 
@@ -2651,6 +2655,8 @@ class App(ctk.CTk):
                 "segment_index": segment_index,
                 "start": segment_start_index,
                 "end": segment_end_index,
+                "text_start": segment_text_start_index,
+                "text_end": segment_text_end_index,
                 "text": text,
                 "speaker": speaker,
                 "start_time": segment.start,
@@ -2747,24 +2753,76 @@ class App(ctk.CTk):
     def _estimate_text_offset_in_segment(self, info: dict, text_index: str) -> int:
         """Estimate character offset in the actual segment text for a textbox index."""
         text_widget = self._get_transcript_text_widget()
-
-        try:
-            display_text_before_cursor = text_widget.get(info["start"], text_index)
-        except Exception:
-            return 0
-
         segment_text = info.get("text") or ""
+
         if not segment_text:
             return 0
 
+        text_start = info.get("text_start") or info.get("start")
+        text_end = info.get("text_end") or info.get("end")
+
         try:
-            display_text_full = text_widget.get(info["start"], info["end"])
+            if text_widget.compare(text_index, "<", text_start):
+                return 0
+
+            if text_widget.compare(text_index, ">", text_end):
+                return len(segment_text)
+
+            display_text_before_cursor = text_widget.get(text_start, text_index)
+
+        except Exception:
+            return 0
+
+        # In the normal segment preview, displayed text matches segment.text.
+        # Use exact length first instead of a ratio.
+        exact_offset = len(display_text_before_cursor)
+
+        if 0 <= exact_offset <= len(segment_text):
+            return exact_offset
+
+        # Fallback for paragraph-wrapped/preview-modified text.
+        try:
+            display_text_full = text_widget.get(text_start, text_end)
         except Exception:
             display_text_full = display_text_before_cursor
 
         visible_chars = max(1, len(display_text_full))
         ratio = max(0.0, min(1.0, len(display_text_before_cursor) / visible_chars))
         return int(round(len(segment_text) * ratio))
+
+    def _snap_transcript_split_offset_to_word_boundary(self, text: str, offset: int) -> int:
+        """Snap a split offset to the nearest word boundary to avoid broken words."""
+        if not text:
+            return offset
+
+        offset = max(0, min(len(text), int(offset)))
+
+        if offset <= 0 or offset >= len(text):
+            return offset
+
+        # If the cursor is already on whitespace, keep that clean boundary.
+        if text[offset].isspace() or text[offset - 1].isspace():
+            return offset
+
+        # Cursor is inside a word. Find the word span.
+        left = offset
+        while left > 0 and not text[left - 1].isspace():
+            left -= 1
+
+        right = offset
+        while right < len(text) and not text[right].isspace():
+            right += 1
+
+        # Prefer the nearest boundary. On ties, prefer the right boundary,
+        # because users usually click near a word to split after it.
+        distance_left = offset - left
+        distance_right = right - offset
+
+        if distance_right <= distance_left:
+            return right
+
+        return left
+
 
     def _on_transcript_preview_key_press(self, event=None):
         """Keep transcript preview focusable while blocking accidental text edits."""
@@ -2786,9 +2844,12 @@ class App(ctk.CTk):
         if getattr(event, "keysym", "") in allowed_navigation_keys:
             return None
 
-        # For now Enter should not insert a newline. Later this becomes split-here.
+        if getattr(event, "keysym", "") in {"Return", "KP_Enter"}:
+            self._split_selected_transcript_segment_at_cursor()
+            return "break"
+
         blocked_edit_keys = {
-            "Return", "KP_Enter", "BackSpace", "Delete", "Tab",
+            "BackSpace", "Delete", "Tab",
         }
 
         if getattr(event, "keysym", "") in blocked_edit_keys:
@@ -2799,6 +2860,111 @@ class App(ctk.CTk):
             return "break"
 
         return None
+
+
+    def _split_selected_transcript_segment_at_cursor(self) -> None:
+        """Split the selected transcript segment at the current cursor position."""
+        if not self.transcript_segments:
+            return
+
+        text_widget = self._get_transcript_text_widget()
+
+        try:
+            text_index = text_widget.index("insert")
+        except Exception:
+            return
+
+        info = self._get_transcript_segment_at_text_index(text_index)
+        if not info:
+            messagebox.showwarning(
+                "No Segment Selected",
+                "Click inside a transcript segment before pressing Enter."
+            )
+            return
+
+        segment_index = info["segment_index"]
+
+        if segment_index < 0 or segment_index >= len(self.transcript_segments):
+            return
+
+        # Only split from the actual text body, not the speaker label or timestamp line.
+        text_start = info.get("text_start")
+        text_end = info.get("text_end")
+
+        if text_start and text_end:
+            try:
+                if text_widget.compare(text_index, "<", text_start) or text_widget.compare(text_index, ">", text_end):
+                    messagebox.showwarning(
+                        "Invalid Split Point",
+                        "Click inside the transcript text, not the speaker name or timestamp."
+                    )
+                    return
+            except Exception:
+                pass
+
+        original = self.transcript_segments[segment_index]
+        original_text = original.text or ""
+
+        char_offset = self._estimate_text_offset_in_segment(info, text_index)
+        snapped_offset = self._snap_transcript_split_offset_to_word_boundary(
+            original_text,
+            char_offset
+        )
+
+        if snapped_offset != char_offset:
+            char_offset = snapped_offset
+
+        if char_offset <= 0 or char_offset >= len(original_text):
+            messagebox.showwarning(
+                "Invalid Split Point",
+                "Click inside the text first. The split point cannot be at the very beginning or end."
+            )
+            return
+
+        part1_text = original_text[:char_offset].strip()
+        part2_text = original_text[char_offset:].strip()
+
+        if not part1_text or not part2_text:
+            messagebox.showwarning(
+                "Invalid Split Point",
+                "Both split parts need text."
+            )
+            return
+
+        split_time = self._estimate_segment_cursor_time(segment_index, char_offset)
+
+        part1 = TranscriptSegment(
+            speaker=original.speaker,
+            start=original.start,
+            end=split_time,
+            text=part1_text,
+        )
+
+        part2 = TranscriptSegment(
+            speaker=original.speaker,
+            start=split_time,
+            end=original.end,
+            text=part2_text,
+        )
+
+        self.transcript_segments[segment_index:segment_index + 1] = [part1, part2]
+
+        self._refresh_transcript_display()
+
+        time_note = f" at {split_time}" if split_time else ""
+        self.log_message(
+            f"Split segment {segment_index + 1:,}{time_note}",
+            "success"
+        )
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=(
+                    f"Split segment {segment_index + 1:,} into two segments"
+                    f"{time_note}."
+                ),
+                text_color=COLORS["text_primary"]
+            )
 
 
     def _on_transcript_preview_cursor_changed(self, event=None):
