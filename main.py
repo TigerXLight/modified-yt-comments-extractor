@@ -3248,7 +3248,7 @@ class App(ctk.CTk):
             messagebox.showerror("Transcript Export Error", str(e))
 
     def rename_transcript_speaker(self) -> None:
-        """Rename a speaker globally across all transcript segments using one dialog."""
+        """Rename one speaker label globally across all transcript segments."""
         if not self.transcript_segments:
             messagebox.showwarning(
                 "No Transcript",
@@ -3256,10 +3256,13 @@ class App(ctk.CTk):
             )
             return
 
-        speakers = sorted({
-            segment.speaker for segment in self.transcript_segments
-            if segment.speaker
-        })
+        speaker_counts = {}
+        for segment in self.transcript_segments:
+            speaker = (segment.speaker or "").strip()
+            if speaker:
+                speaker_counts[speaker] = speaker_counts.get(speaker, 0) + 1
+
+        speakers = sorted(speaker_counts)
 
         if not speakers:
             messagebox.showwarning(
@@ -3268,18 +3271,26 @@ class App(ctk.CTk):
             )
             return
 
+        display_to_speaker = {
+            f"{speaker} ({speaker_counts[speaker]:,} segment(s))": speaker
+            for speaker in speakers
+        }
+        display_values = list(display_to_speaker.keys())
+
+        dialog_width = 500
+        dialog_height = 310
+
         dialog = ctk.CTkToplevel(self)
-        dialog.title("Rename Speaker")
-        dialog.geometry("430x240")
+        dialog.title("Rename Speaker Globally")
+        dialog.geometry(f"{dialog_width}x{dialog_height}")
         dialog.configure(fg_color=COLORS["bg_dark"])
         dialog.transient(self)
         dialog.grab_set()
 
-        # Center dialog
         dialog.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() - 430) // 2
-        y = self.winfo_y() + (self.winfo_height() - 240) // 2
-        dialog.geometry(f"430x240+{x}+{y}")
+        x = self.winfo_x() + (self.winfo_width() - dialog_width) // 2
+        y = self.winfo_y() + (self.winfo_height() - dialog_height) // 2
+        dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
 
         container = ctk.CTkFrame(
             dialog,
@@ -3292,21 +3303,31 @@ class App(ctk.CTk):
 
         title = ctk.CTkLabel(
             container,
-            text="👤 Rename Speaker",
+            text="👤 Rename Speaker Globally",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=COLORS["text_primary"]
         )
-        title.pack(anchor="w", padx=16, pady=(14, 8))
+        title.pack(anchor="w", padx=16, pady=(14, 6))
+
+        help_text = ctk.CTkLabel(
+            container,
+            text="This changes the selected speaker label everywhere it appears in the transcript.",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            wraplength=440,
+            justify="left"
+        )
+        help_text.pack(anchor="w", padx=16, pady=(0, 12))
 
         old_label = ctk.CTkLabel(
             container,
-            text="Current speaker",
+            text="Speaker to rename",
             font=ctk.CTkFont(size=12),
             text_color=COLORS["text_secondary"]
         )
         old_label.pack(anchor="w", padx=16)
 
-        selected_speaker = ctk.StringVar(value=speakers[0])
+        selected_display = ctk.StringVar(value=display_values[0])
 
         new_name_entry = ctk.CTkEntry(
             container,
@@ -3317,14 +3338,33 @@ class App(ctk.CTk):
             corner_radius=6
         )
 
+        count_label = ctk.CTkLabel(
+            container,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"]
+        )
+
+        def get_selected_speaker() -> str:
+            return display_to_speaker.get(selected_display.get(), speakers[0])
+
+        def update_count_label() -> None:
+            speaker = get_selected_speaker()
+            count = speaker_counts.get(speaker, 0)
+            count_label.configure(
+                text=f"Will rename {count:,} segment(s) currently labelled: {speaker}"
+            )
+
         def on_speaker_selected(value: str) -> None:
+            speaker = display_to_speaker.get(value, speakers[0])
             new_name_entry.delete(0, "end")
-            new_name_entry.insert(0, value)
+            new_name_entry.insert(0, speaker)
+            update_count_label()
 
         speaker_menu = ctk.CTkOptionMenu(
             container,
-            values=speakers,
-            variable=selected_speaker,
+            values=display_values,
+            variable=selected_display,
             command=on_speaker_selected,
             height=34,
             font=ctk.CTkFont(size=12),
@@ -3335,7 +3375,9 @@ class App(ctk.CTk):
             dropdown_hover_color=COLORS["accent_secondary"],
             corner_radius=6
         )
-        speaker_menu.pack(fill="x", padx=16, pady=(4, 10))
+        speaker_menu.pack(fill="x", padx=16, pady=(4, 8))
+
+        count_label.pack(anchor="w", padx=16, pady=(0, 10))
 
         new_label = ctk.CTkLabel(
             container,
@@ -3349,18 +3391,26 @@ class App(ctk.CTk):
         new_name_entry.insert(0, speakers[0])
         new_name_entry.focus_set()
         new_name_entry.select_range(0, "end")
+        update_count_label()
 
         button_row = ctk.CTkFrame(container, fg_color="transparent")
         button_row.pack(fill="x", padx=16, pady=(0, 14))
 
         def do_rename() -> None:
-            old_name = selected_speaker.get().strip()
+            old_name = get_selected_speaker()
             new_name = new_name_entry.get().strip()
 
             if not new_name:
                 messagebox.showwarning(
                     "Missing Name",
                     "Enter a new speaker name."
+                )
+                return
+
+            if new_name == old_name:
+                messagebox.showinfo(
+                    "No Change",
+                    "The new speaker name is the same as the current speaker name."
                 )
                 return
 
@@ -3373,8 +3423,12 @@ class App(ctk.CTk):
             dialog.destroy()
             self._refresh_transcript_display()
             self.log_message(
-                f"Renamed speaker '{old_name}' to '{new_name}' in {changed:,} segment(s)",
+                f"Renamed speaker globally: '{old_name}' → '{new_name}' in {changed:,} segment(s)",
                 "success"
+            )
+            messagebox.showinfo(
+                "Speaker Renamed",
+                f"Renamed:\n\n{old_name}\n\nTo:\n\n{new_name}\n\nSegments changed: {changed:,}"
             )
 
         cancel_btn = ctk.CTkButton(
@@ -3389,13 +3443,13 @@ class App(ctk.CTk):
             text_color=COLORS["text_secondary"],
             corner_radius=8
         )
-        cancel_btn.pack(side="right", padx=(8, 0))
+        cancel_btn.pack(side="right")
 
         rename_btn = ctk.CTkButton(
             button_row,
-            text="Rename",
+            text="Rename All",
             command=do_rename,
-            width=100,
+            width=120,
             height=34,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=COLORS["accent"],
@@ -3403,12 +3457,10 @@ class App(ctk.CTk):
             text_color="#000000",
             corner_radius=8
         )
-        rename_btn.pack(side="right")
+        rename_btn.pack(side="right", padx=(0, 8))
 
-        dialog.bind("<Return>", lambda event: do_rename())
-        dialog.bind("<Escape>", lambda event: dialog.destroy())
-
-        dialog.wait_window()
+        dialog.bind("<Return>", lambda _event: do_rename())
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
 
     def clear_transcript(self) -> None:
         """Clear imported transcript from the app."""
