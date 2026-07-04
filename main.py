@@ -5482,6 +5482,71 @@ class App(ctk.CTk):
             select_segment(filtered[new_position])
             return "break"
 
+        def export_segment_search_matches() -> None:
+            """Export the currently filtered Segment editor matches to TXT."""
+            query = search_var.get().strip()
+            filtered = selected_state.get("filtered") or []
+
+            if not filtered:
+                messagebox.showwarning(
+                    "No Matches",
+                    "There are no matching segments to export."
+                )
+                return
+
+            safe_query = "".join(
+                ch if ch.isalnum() or ch in ("-", "_") else "_"
+                for ch in (query or "all_segments")
+            ).strip("_") or "all_segments"
+
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt")],
+                title="Export Segment Search Matches",
+                initialfile=f"segment_matches_{safe_query}.txt"
+            )
+
+            if not filename:
+                return
+
+            try:
+                with open(filename, "w", encoding="utf-8", newline="\n") as f:
+                    f.write("Segment Search Matches\n")
+                    f.write("=" * 80)
+                    f.write("\n\n")
+                    f.write(f"Query: {query or '(all segments)'}\n")
+                    f.write(f"Matches: {len(filtered):,}\n\n")
+
+                    for output_number, segment_index in enumerate(filtered, start=1):
+                        segment = self.transcript_segments[segment_index]
+                        speaker = segment.speaker or "Speaker"
+                        start = segment.start or "no start"
+                        end = segment.end or "no end"
+                        text = " ".join((segment.text or "").split())
+
+                        f.write(f"{output_number}. Segment {segment_index + 1:,}\n")
+                        f.write(f"Speaker: {speaker}\n")
+                        f.write(f"Time: {start} -> {end}\n")
+                        f.write("Text:\n")
+                        f.write(text)
+                        f.write("\n\n")
+                        f.write("-" * 80)
+                        f.write("\n\n")
+
+                self.log_message(
+                    f"Exported {len(filtered):,} segment search match(es) to: {os.path.basename(filename)}",
+                    "success"
+                )
+                messagebox.showinfo(
+                    "Segment Matches Exported",
+                    f"Saved {len(filtered):,} matching segment(s):\n\n{os.path.basename(filename)}"
+                )
+
+            except Exception as error:
+                logger.exception("Segment search export error")
+                self.log_message(f"Segment search export failed: {error}", "error")
+                messagebox.showerror("Segment Search Export Error", str(error))
+
         def normalise_segment_time(raw_value: str, label: str) -> Optional[str]:
             """Normalise segment time input to HH:MM:SS.mmm, or blank."""
             value = (raw_value or "").strip().replace(",", ".")
@@ -5662,6 +5727,20 @@ class App(ctk.CTk):
                     )
 
         dialog.protocol("WM_DELETE_WINDOW", close_segment_editor)
+
+        export_matches_btn = ctk.CTkButton(
+            button_row,
+            text="Export Matches",
+            command=export_segment_search_matches,
+            width=135,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=8
+        )
+        export_matches_btn.pack(side="left")
 
         close_btn = ctk.CTkButton(
             button_row,
