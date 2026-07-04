@@ -340,7 +340,7 @@ class App(ctk.CTk):
             entry_frame,
             placeholder_text="Enter API key",
             height=36,
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(family="Cascadia Mono", size=13),
             fg_color=COLORS["bg_input"],
             border_color=COLORS["border"],
             corner_radius=6,
@@ -1349,7 +1349,7 @@ class App(ctk.CTk):
         self.transcript_textbox = ctk.CTkTextbox(
             self.transcript_card,
             height=320,
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(family="Cascadia Mono", size=13),
             fg_color=COLORS["bg_input"],
             border_color=COLORS["border"],
             border_width=1,
@@ -2589,7 +2589,7 @@ class App(ctk.CTk):
         if hasattr(self, "transcript_cursor_status_label"):
             if has_transcript:
                 self.transcript_cursor_status_label.configure(
-                    text="Click inside the transcript to select a segment.",
+                    text="Click inside the transcript to select a segment. Click a speaker button to change that segment.",
                     text_color=COLORS["text_muted"]
                 )
             else:
@@ -2600,6 +2600,18 @@ class App(ctk.CTk):
 
         self.transcript_textbox.configure(state="normal")
         self.transcript_textbox.delete("1.0", "end")
+
+        text_widget = self._get_transcript_text_widget()
+
+        for tag_name in text_widget.tag_names():
+            tag_name = str(tag_name)
+            if tag_name.startswith("transcript_speaker_label_") or tag_name == "transcript_timestamp":
+                text_widget.tag_delete(tag_name)
+
+        text_widget.tag_configure(
+            "transcript_timestamp",
+            foreground="#93C5FD"
+        )
 
         if not has_transcript:
             self.transcript_stats_label.configure(
@@ -2634,6 +2646,24 @@ class App(ctk.CTk):
         show_speakers = self.transcript_show_speakers_var.get()
         show_timestamps = self.transcript_show_timestamps_var.get()
 
+        # Dynamic speaker column keeps all transcript text aligned.
+        # Text begins 2 spaces after the longest visible speaker button.
+        longest_speaker_name_length = max(
+            [len((segment.speaker or "Speaker").strip()) for segment in self.transcript_segments]
+            + [len("Speaker")]
+        )
+        speaker_column_width = longest_speaker_name_length + 2
+        text_gap = 2
+
+        def make_speaker_button_text(value: str) -> str:
+            value = (value or "Speaker").strip()
+            max_len = speaker_column_width - 2
+
+            if len(value) > max_len:
+                value = value[:max_len - 1].rstrip() + "…"
+
+            return f" {value} "
+
         for segment_index, segment in enumerate(self.transcript_segments):
             if chars_written >= preview_char_limit:
                 truncated = True
@@ -2644,35 +2674,112 @@ class App(ctk.CTk):
             end_time = segment.end or "no end"
             text = segment.text or ""
 
+            readable_text = " ".join((text or "").split())
+            remaining_chars = preview_char_limit - chars_written
+
+            if remaining_chars <= 0:
+                truncated = True
+                break
+
+            if len(readable_text) > remaining_chars:
+                readable_text = readable_text[:remaining_chars].rstrip() + "..."
+                truncated = True
+
             segment_start_index = self.transcript_textbox.index("end-1c")
+            speaker_label_start_index = ""
+            speaker_label_end_index = ""
+            prefix_width = 0
 
             if show_speakers:
-                self.transcript_textbox.insert("end", f"{speaker}\n")
+                speaker_button_text = make_speaker_button_text(speaker)
+
+                speaker_label_start_index = self.transcript_textbox.index("end-1c")
+                self.transcript_textbox.insert("end", speaker_button_text)
+                speaker_label_end_index = self.transcript_textbox.index("end-1c")
+
+                speaker_tag = f"transcript_speaker_label_{segment_index}"
+                text_widget.tag_add(
+                    speaker_tag,
+                    speaker_label_start_index,
+                    speaker_label_end_index
+                )
+                text_widget.tag_configure(
+                    speaker_tag,
+                    background=COLORS["accent_secondary"],
+                    foreground=COLORS["text_primary"],
+                    relief="raised",
+                    borderwidth=2
+                )
+
+                # Break Button-1 so the click does not also move the text cursor.
+                text_widget.tag_bind(
+                    speaker_tag,
+                    "<Button-1>",
+                    lambda event: "break"
+                )
+
+                # Open after mouse release to avoid the popup opening and instantly closing.
+                text_widget.tag_bind(
+                    speaker_tag,
+                    "<ButtonRelease-1>",
+                    lambda event, idx=segment_index: (
+                        self.after(90, lambda: self._open_inline_speaker_picker(idx)),
+                        "break"
+                    )[1]
+                )
+
+                text_widget.tag_bind(
+                    speaker_tag,
+                    "<Enter>",
+                    lambda event: text_widget.configure(cursor="hand2")
+                )
+                text_widget.tag_bind(
+                    speaker_tag,
+                    "<Leave>",
+                    lambda event: text_widget.configure(cursor="xterm")
+                )
+
+                # Non-clickable padding after the visible speaker button.
+                padding_after_button = max(
+                    0,
+                    speaker_column_width - len(speaker_button_text)
+                )
+                self.transcript_textbox.insert(
+                    "end",
+                    (" " * padding_after_button) + (" " * text_gap)
+                )
+
+                prefix_width = speaker_column_width + text_gap
 
             segment_text_start_index = self.transcript_textbox.index("end-1c")
-
-            for paragraph in self._split_readable_text(text):
-                remaining_chars = preview_char_limit - chars_written
-
-                if remaining_chars <= 0:
-                    truncated = True
-                    break
-
-                if len(paragraph) > remaining_chars:
-                    self.transcript_textbox.insert("end", paragraph[:remaining_chars].rstrip())
-                    self.transcript_textbox.insert("end", "...\n\n")
-                    chars_written += remaining_chars
-                    truncated = True
-                    break
-
-                self.transcript_textbox.insert("end", paragraph)
-                self.transcript_textbox.insert("end", "\n\n")
-                chars_written += len(paragraph)
-
+            self.transcript_textbox.insert("end", readable_text)
             segment_text_end_index = self.transcript_textbox.index("end-1c")
+            chars_written += len(readable_text)
 
             if show_timestamps:
-                self.transcript_textbox.insert("end", f"[{start_time} - {end_time}]\n\n")
+                timestamp_text = f"[{start_time} - {end_time}]"
+
+                # Center timestamp under only the segment text.
+                center_offset_inside_text = max(
+                    0,
+                    (len(readable_text) - len(timestamp_text)) // 2
+                )
+                timestamp_padding = prefix_width + center_offset_inside_text
+
+                self.transcript_textbox.insert("end", "\n")
+                timestamp_start_index = self.transcript_textbox.index("end-1c")
+                self.transcript_textbox.insert(
+                    "end",
+                    f"{' ' * timestamp_padding}{timestamp_text}"
+                )
+                timestamp_end_index = self.transcript_textbox.index("end-1c")
+                text_widget.tag_add(
+                    "transcript_timestamp",
+                    timestamp_start_index,
+                    timestamp_end_index
+                )
+
+            self.transcript_textbox.insert("end", "\n\n")
 
             segment_end_index = self.transcript_textbox.index("end-1c")
 
@@ -2682,6 +2789,8 @@ class App(ctk.CTk):
                 "end": segment_end_index,
                 "text_start": segment_text_start_index,
                 "text_end": segment_text_end_index,
+                "speaker_label_start": speaker_label_start_index,
+                "speaker_label_end": speaker_label_end_index,
                 "text": text,
                 "speaker": speaker,
                 "start_time": segment.start,
@@ -3755,6 +3864,153 @@ class App(ctk.CTk):
             f"Created speaker:\n\n{new_speaker}\n\n"
             "It will now appear in speaker pickers."
         )
+
+
+
+    def _open_inline_speaker_picker(self, segment_index: int):
+        """Open a quick speaker picker for one clicked transcript segment."""
+        if segment_index < 0 or segment_index >= len(self.transcript_segments):
+            return "break"
+
+        self.selected_transcript_segment_index = segment_index
+        segment = self.transcript_segments[segment_index]
+        current_speaker = segment.speaker or "Speaker"
+
+        speaker_choices = self._get_transcript_speaker_names()
+        if current_speaker not in speaker_choices:
+            speaker_choices.append(current_speaker)
+            speaker_choices = sorted(set(speaker_choices), key=lambda value: value.lower())
+
+        dialog_width = 380
+        dialog_height = min(420, 150 + (len(speaker_choices) * 42))
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Change Segment Speaker")
+        dialog.geometry(f"{dialog_width}x{dialog_height}")
+        dialog.configure(fg_color=COLORS["bg_dark"])
+        dialog.transient(self)
+        dialog.grab_set()
+
+        dialog.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() - dialog_width) // 2
+        y = self.winfo_y() + (self.winfo_height() - dialog_height) // 2
+        dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{max(y, 20)}")
+
+        container = ctk.CTkFrame(
+            dialog,
+            fg_color=COLORS["bg_card"],
+            corner_radius=12,
+            border_width=1,
+            border_color=COLORS["border"]
+        )
+        container.pack(fill="both", expand=True, padx=14, pady=14)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(2, weight=1)
+
+        title = ctk.CTkLabel(
+            container,
+            text=f"Change speaker for segment {segment_index + 1:,}",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=COLORS["text_primary"]
+        )
+        title.grid(row=0, column=0, sticky="w", padx=14, pady=(12, 4))
+
+        info = ctk.CTkLabel(
+            container,
+            text=(
+                f"Current speaker: {current_speaker}\n"
+                "Pick an existing speaker. Use Create Speaker to add new names."
+            ),
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            justify="left"
+        )
+        info.grid(row=1, column=0, sticky="w", padx=14, pady=(0, 10))
+
+        speaker_list = ctk.CTkScrollableFrame(
+            container,
+            height=210,
+            fg_color=COLORS["bg_input"],
+            corner_radius=8
+        )
+        speaker_list.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 12))
+
+        def apply_speaker(new_speaker: str) -> str:
+            old_speaker = segment.speaker or "Speaker"
+
+            if new_speaker == old_speaker:
+                dialog.destroy()
+                return "break"
+
+            segment.speaker = new_speaker
+            self.selected_transcript_segment_index = segment_index
+            self._refresh_transcript_display()
+
+            self.log_message(
+                f"Changed segment {segment_index + 1:,} speaker: '{old_speaker}' → '{new_speaker}'",
+                "success"
+            )
+
+            if hasattr(self, "transcript_cursor_status_label"):
+                self.transcript_cursor_status_label.configure(
+                    text=(
+                        f"Changed segment {segment_index + 1:,} speaker: "
+                        f"{old_speaker} → {new_speaker}"
+                    ),
+                    text_color=COLORS["text_primary"]
+                )
+
+            dialog.destroy()
+            return "break"
+
+        for speaker in speaker_choices:
+            is_current = speaker == current_speaker
+            btn = ctk.CTkButton(
+                speaker_list,
+                text=speaker,
+                command=lambda value=speaker: apply_speaker(value),
+                height=34,
+                anchor="w",
+                font=ctk.CTkFont(size=12, weight="bold" if is_current else "normal"),
+                fg_color=COLORS["accent_secondary"] if is_current else "transparent",
+                hover_color=COLORS["border"],
+                text_color=COLORS["text_primary"],
+                corner_radius=6
+            )
+            btn.pack(fill="x", padx=6, pady=(4, 0))
+
+        button_row = ctk.CTkFrame(container, fg_color="transparent")
+        button_row.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 12))
+
+        edit_btn = ctk.CTkButton(
+            button_row,
+            text="Open Segment Editor",
+            command=lambda: (dialog.destroy(), self.edit_transcript_segment_speaker()),
+            width=150,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8
+        )
+        edit_btn.pack(side="left")
+
+        close_btn = ctk.CTkButton(
+            button_row,
+            text="Close",
+            command=dialog.destroy,
+            width=80,
+            height=32,
+            font=ctk.CTkFont(size=12),
+            fg_color="transparent",
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_secondary"],
+            corner_radius=8
+        )
+        close_btn.pack(side="right")
+
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        return "break"
 
 
     def edit_transcript_segment_speaker(self) -> None:
