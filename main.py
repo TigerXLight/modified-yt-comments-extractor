@@ -3659,6 +3659,24 @@ class App(ctk.CTk):
 
                 f.write("\n")
 
+
+        # Remove blank line directly before timestamp lines.
+        # Keeps one blank line between transcript blocks, but changes:
+        # text
+        #
+        # [time]
+        # into:
+        # text
+        # [time]
+        with open(path, "r", encoding="utf-8") as f:
+            readable_content = f.read()
+
+        readable_content = readable_content.replace("\n\n[", "\n[")
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(readable_content)
+
+
     def local_asr_transcribe_clicked(self) -> None:
         """Transcribe a local audio/video file using faster-whisper."""
         media_file = filedialog.askopenfilename(
