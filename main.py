@@ -6584,6 +6584,13 @@ class App(ctk.CTk):
         device = asr_settings.get("device", "cpu").strip().lower() or "cpu"
         compute_type = asr_settings.get("compute_type", "int8").strip() or "int8"
 
+        try:
+            probe_seconds = int(asr_settings.get("probe_seconds") or 0)
+        except Exception:
+            probe_seconds = 0
+
+        asr_mode_label = f"probe first {probe_seconds}s" if probe_seconds else "full transcription"
+
         save_asr_defaults(
             model_name=model_name,
             speaker_name=speaker_name,
@@ -6595,7 +6602,7 @@ class App(ctk.CTk):
 
         self.transcript_asr_button.configure(state="disabled")
         self.log_message(
-            f"Starting local ASR with faster-whisper model: {model_name} "
+            f"Starting local ASR {asr_mode_label} with faster-whisper model: {model_name} "
             f"({device}/{compute_type})",
             "info"
         )
@@ -6612,6 +6619,7 @@ class App(ctk.CTk):
                     initial_prompt=initial_prompt,
                     vad_filter=True,
                     beam_size=5,
+                    probe_seconds=probe_seconds,
                 )
 
                 def on_success() -> None:
@@ -6619,11 +6627,12 @@ class App(ctk.CTk):
                     self.last_youtube_video_info = None
                     self.last_asr_metadata = metadata
                     self._set_linked_transcript_media(media_file)
-                    prompt_note = " with known-words prompt" if initial_prompt else ""
+                    prompt_note = " with phrase hints" if initial_prompt else ""
                     language_note = f", language={language_code}" if language_code else ", language=auto-detect"
+                    probe_note = f"probe first {probe_seconds}s " if probe_seconds else ""
 
                     self.last_transcript_source = (
-                        f"Local ASR transcript from {os.path.basename(media_file)} "
+                        f"Local ASR {probe_note}transcript from {os.path.basename(media_file)} "
                         f"using faster-whisper {model_name}{language_note}{prompt_note}"
                     )
 
@@ -6639,7 +6648,7 @@ class App(ctk.CTk):
                         probability_text = "unknown"
 
                     self.log_message(
-                        f"Local ASR complete: {len(segments):,} segment(s), "
+                        f"Local ASR {'probe ' if probe_seconds else ''}complete: {len(segments):,} segment(s), "
                         f"language={language}, confidence={probability_text}",
                         "success",
                     )
@@ -6652,18 +6661,31 @@ class App(ctk.CTk):
                     self.log_message(
                         f"ASR settings: model={metadata.get('model_name')}, "
                         f"language setting={requested_language}, "
-                        f"known words prompt={prompt_used}, "
+                        f"phrase hints={prompt_used}, "
                         f"source hash={source_hash_short}",
                         "muted",
                     )
 
-                    messagebox.showinfo(
-                        "Local ASR Complete",
-                        f"Transcribed file:\n\n{os.path.basename(media_file)}\n\n"
-                        f"Segments: {len(segments):,}\n"
-                        f"Detected language: {language}\n"
-                        f"Language confidence: {probability_text}",
-                    )
+                    if probe_seconds:
+                        completion_title = "Local ASR Probe Complete"
+                        completion_message = (
+                            f"Probe transcribed first {probe_seconds} seconds:\n\n"
+                            f"{os.path.basename(media_file)}\n\n"
+                            f"Segments: {len(segments):,}\n"
+                            f"Detected language: {language}\n"
+                            f"Language confidence: {probability_text}\n\n"
+                            "Review the probe transcript. If it is acceptable, run full Local ASR."
+                        )
+                    else:
+                        completion_title = "Local ASR Complete"
+                        completion_message = (
+                            f"Transcribed file:\n\n{os.path.basename(media_file)}\n\n"
+                            f"Segments: {len(segments):,}\n"
+                            f"Detected language: {language}\n"
+                            f"Language confidence: {probability_text}"
+                        )
+
+                    messagebox.showinfo(completion_title, completion_message)
 
                 self.after(0, on_success)
 

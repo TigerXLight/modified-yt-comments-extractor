@@ -278,6 +278,23 @@ class AsrSettingsDialog(ctk.CTkToplevel):
         )
         check_button.grid(row=0, column=0, sticky="w")
 
+        if action_label == "Start ASR":
+            probe_button = ctk.CTkButton(
+                footer,
+                text="Probe 60s",
+                command=lambda: self._accept_probe(60),
+                width=120,
+                fg_color="#5a5a5a",
+            )
+            probe_button.grid(row=0, column=1, padx=(8, 0))
+            cancel_column = 2
+            save_column = 3
+            save_text = "Start Full ASR"
+        else:
+            cancel_column = 1
+            save_column = 2
+            save_text = action_label
+
         cancel_button = ctk.CTkButton(
             footer,
             text="Cancel",
@@ -285,15 +302,15 @@ class AsrSettingsDialog(ctk.CTkToplevel):
             width=110,
             fg_color="#3a3a3a",
         )
-        cancel_button.grid(row=0, column=1, padx=(8, 0))
+        cancel_button.grid(row=0, column=cancel_column, padx=(8, 0))
 
         save_button = ctk.CTkButton(
             footer,
-            text=action_label,
+            text=save_text,
             command=self._accept,
             width=140,
         )
-        save_button.grid(row=0, column=2, padx=(8, 0))
+        save_button.grid(row=0, column=save_column, padx=(8, 0))
 
         self.bind("<Escape>", lambda _event: self._cancel())
         self.bind("<Control-Return>", lambda _event: self._accept())
@@ -554,12 +571,23 @@ class AsrSettingsDialog(ctk.CTkToplevel):
 
         self._set_setup_status("\n".join(lines))
 
+    def _accept_probe(self, seconds: int = 60) -> None:
+        result = self._collect()
+
+        if result is None:
+            return
+
+        result["probe_seconds"] = int(seconds)
+        self.result = result
+        self.destroy()
+
     def _accept(self) -> None:
         result = self._collect()
 
         if result is None:
             return
 
+        result["probe_seconds"] = 0
         self.result = result
         self.destroy()
 
