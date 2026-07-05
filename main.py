@@ -77,6 +77,7 @@ from asr_tools import transcribe_media_file
 from asr_calibration import ensure_asr_calibration_sample, get_asr_calibration_reference_segments
 from asr_defaults import load_asr_defaults, save_asr_defaults
 from asr_settings_dialog import ask_asr_settings
+from asr_topic_resolver import resolve_asr_topic_glossary
 
 # Configure logging
 logging.basicConfig(
@@ -179,6 +180,7 @@ class App(ctk.CTk):
         self.transcript_waveform_peaks: List[float] = []
         self.transcript_waveform_source_path: Optional[str] = None
         self.last_package_dir: Optional[str] = None
+        self.last_asr_topic_glossary: Optional[Dict[str, Any]] = None
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
@@ -6934,11 +6936,9 @@ class App(ctk.CTk):
             prompt_parts.append(base_prompt.strip())
 
         if terms:
-            prompt_parts.append(
-                "Important vocabulary and exact spellings: "
-                + "; ".join(terms)
-                + ". Preserve these names and terms exactly when heard."
-            )
+            # Whisper prompts behave more like prior transcript/context than
+            # instructions. Keep this as glossary-like text to avoid prompt leakage.
+            prompt_parts.append("; ".join(terms))
 
         return "\n".join(part for part in prompt_parts if part).strip(), terms
 
@@ -7194,6 +7194,9 @@ class App(ctk.CTk):
         if best_failed_reference_gate:
             lines.append("- Best candidate failed the reference threshold, so the current transcript should be kept.")
             lines.append("- Try stronger ASR, better phrase hints/glossary, diarization, or an online method.")
+        elif calibration_probe_used:
+            lines.append("- Self-test does not replace the current transcript.")
+            lines.append("- Use a passing self-test as a basic sanity check before real media Auto Probe.")
         else:
             lines.append("- The best probe transcript was loaded into the Transcript tab for review.")
             lines.append("- Run full Local ASR only after the probe is acceptable.")
@@ -7218,6 +7221,41 @@ class App(ctk.CTk):
             dialog.focus_force()
         except Exception:
             pass
+
+    def _collect_asr_topic_resolver_context(self, language_code: Optional[str]) -> Dict[str, Any]:
+        """Collect background context for ASR topic glossary resolution."""
+        urls: List[str] = []
+
+        try:
+            urls = list(self._get_current_source_urls())
+        except Exception:
+            urls = []
+
+        raw_url_text = ""
+
+        try:
+            raw_url_text = self.url_entry.get("1.0", "end").strip()
+            if raw_url_text == getattr(self, "_url_placeholder", "").strip():
+                raw_url_text = ""
+        except Exception:
+            raw_url_text = ""
+
+        video_info = getattr(self, "last_youtube_video_info", None)
+
+        if not isinstance(video_info, dict):
+            video_info = {}
+
+        context: Dict[str, Any] = {
+            "language": language_code or "en",
+            "urls": urls,
+            "url_text": raw_url_text,
+            "video_info": dict(video_info),
+            "transcript_source": self.last_transcript_source or "",
+            "app_name": APP_NAME,
+            "app_version": APP_VERSION,
+        }
+
+        return context
 
     def _select_best_asr_probe_result(self, results: List[Dict[str, Any]]) -> int:
         """Select the best ASR probe result by reference score when available."""
@@ -7593,16 +7631,78 @@ class App(ctk.CTk):
             "info"
         )
 
+        asr_topic_context = self._collect_asr_topic_resolver_context(language_code)
+
         def worker() -> None:
             try:
                 if auto_probe_seconds:
                     auto_probe_initial_prompt = initial_prompt
                     auto_probe_reference_glossary_terms: List[str] = []
+                    auto_probe_topic_terms: List[str] = []
+                    auto_probe_topic_sources: List[Dict[str, Any]] = []
+                    auto_probe_topic_errors: List[str] = []
+                    auto_probe_topic_result: Dict[str, Any] = {}
+
+                    try:
+                        auto_probe_topic_result = resolve_asr_topic_glossary(
+                            asr_topic_context,
+                            base_prompt=auto_probe_initial_prompt,
+                            max_terms=80,
+                        )
+
+                        auto_probe_topic_terms = list(auto_probe_topic_result.get("terms") or [])
+                        auto_probe_topic_sources = list(auto_probe_topic_result.get("sources") or [])
+                        auto_probe_topic_errors = list(auto_probe_topic_result.get("errors") or [])
+
+                        if auto_probe_topic_result.get("prompt"):
+                            auto_probe_initial_prompt = auto_probe_topic_result.get("prompt")
+
+                        self.last_asr_topic_glossary = dict(auto_probe_topic_result)
+
+                        if auto_probe_topic_terms:
+                            topic_preview = ", ".join(auto_probe_topic_terms[:18])
+                            resolver_note = "cache" if auto_probe_topic_result.get("cache_hit") else (
+                                "remote" if auto_probe_topic_result.get("remote_used") else "local"
+                            )
+                            self.after(
+                                0,
+                                lambda topic_preview=topic_preview, resolver_note=resolver_note: self.log_message(
+                                    f"Auto Probe background topic glossary ({resolver_note}): {topic_preview}",
+                                    "info",
+                                )
+                            )
+                        elif auto_probe_topic_result.get("resolver_url_configured"):
+                            self.after(
+                                0,
+                                lambda: self.log_message(
+                                    "Auto Probe background topic resolver returned no glossary terms.",
+                                    "warning",
+                                )
+                            )
+
+                        for topic_error in auto_probe_topic_errors[:3]:
+                            if auto_probe_topic_result.get("resolver_url_configured"):
+                                self.after(
+                                    0,
+                                    lambda topic_error=topic_error: self.log_message(
+                                        f"Topic resolver warning: {topic_error}",
+                                        "warning",
+                                    )
+                                )
+
+                    except Exception as topic_error:
+                        self.after(
+                            0,
+                            lambda topic_error=str(topic_error): self.log_message(
+                                f"Background topic resolver failed: {topic_error}",
+                                "warning",
+                            )
+                        )
 
                     if auto_probe_reference_segments:
                         auto_probe_initial_prompt, auto_probe_reference_glossary_terms = self._build_asr_reference_glossary_prompt(
                             auto_probe_reference_segments,
-                            initial_prompt,
+                            auto_probe_initial_prompt,
                         )
 
                         if auto_probe_reference_glossary_terms:
@@ -7614,6 +7714,10 @@ class App(ctk.CTk):
                                     "info"
                                 )
                             )
+
+                    auto_probe_hotword_terms = list(dict.fromkeys(
+                        list(auto_probe_topic_terms) + list(auto_probe_reference_glossary_terms)
+                    ))
 
                     candidates = self._build_asr_auto_probe_candidates(
                         selected_model=model_name,
@@ -7632,8 +7736,11 @@ class App(ctk.CTk):
                         candidate_condition_on_previous_text = candidate.get("condition_on_previous_text")
                         candidate_hotwords = None
 
-                        if candidate.get("use_reference_hotwords") and auto_probe_reference_glossary_terms:
-                            candidate_hotwords = "; ".join(auto_probe_reference_glossary_terms)
+                        candidate_initial_prompt = auto_probe_initial_prompt
+
+                        if candidate.get("use_reference_hotwords") and auto_probe_hotword_terms:
+                            candidate_hotwords = "; ".join(auto_probe_hotword_terms)
+                            candidate_initial_prompt = initial_prompt
 
                         self.after(
                             0,
@@ -7651,7 +7758,7 @@ class App(ctk.CTk):
                                 compute_type=candidate_compute,
                                 speaker_name=speaker_name,
                                 language=language_code,
-                                initial_prompt=auto_probe_initial_prompt,
+                                initial_prompt=candidate_initial_prompt,
                                 vad_filter=candidate_vad_filter,
                                 beam_size=5,
                                 probe_seconds=auto_probe_seconds,
@@ -7663,6 +7770,13 @@ class App(ctk.CTk):
                             candidate_metadata["auto_probe_candidate_vad_filter"] = candidate_vad_filter
                             candidate_metadata["auto_probe_candidate_condition_on_previous_text"] = candidate_condition_on_previous_text
                             candidate_metadata["auto_probe_candidate_hotwords_used"] = bool(candidate_hotwords)
+                            candidate_metadata["auto_probe_topic_resolver_used"] = bool(auto_probe_topic_terms)
+                            candidate_metadata["auto_probe_topic_resolver_terms"] = list(auto_probe_topic_terms)
+                            candidate_metadata["auto_probe_topic_resolver_sources"] = list(auto_probe_topic_sources)
+                            candidate_metadata["auto_probe_topic_resolver_errors"] = list(auto_probe_topic_errors)
+                            candidate_metadata["auto_probe_topic_resolver_cache_hit"] = bool(auto_probe_topic_result.get("cache_hit"))
+                            candidate_metadata["auto_probe_topic_resolver_remote_used"] = bool(auto_probe_topic_result.get("remote_used"))
+                            candidate_metadata["auto_probe_hotword_terms"] = list(auto_probe_hotword_terms)
 
                             if auto_probe_reference_glossary_terms:
                                 candidate_metadata["auto_probe_reference_glossary_prompt_used"] = True
@@ -7828,6 +7942,60 @@ class App(ctk.CTk):
                     self.after(0, on_auto_probe_success)
                     return
 
+                full_asr_initial_prompt = initial_prompt
+                full_asr_topic_terms: List[str] = []
+                full_asr_topic_sources: List[Dict[str, Any]] = []
+                full_asr_topic_errors: List[str] = []
+                full_asr_topic_result: Dict[str, Any] = {}
+
+                try:
+                    full_asr_topic_result = resolve_asr_topic_glossary(
+                        asr_topic_context,
+                        base_prompt=full_asr_initial_prompt,
+                        max_terms=80,
+                    )
+
+                    full_asr_topic_terms = list(full_asr_topic_result.get("terms") or [])
+                    full_asr_topic_sources = list(full_asr_topic_result.get("sources") or [])
+                    full_asr_topic_errors = list(full_asr_topic_result.get("errors") or [])
+
+                    if full_asr_topic_result.get("prompt"):
+                        full_asr_initial_prompt = full_asr_topic_result.get("prompt")
+
+                    self.last_asr_topic_glossary = dict(full_asr_topic_result)
+
+                    if full_asr_topic_terms:
+                        topic_preview = ", ".join(full_asr_topic_terms[:18])
+                        resolver_note = "cache" if full_asr_topic_result.get("cache_hit") else (
+                            "remote" if full_asr_topic_result.get("remote_used") else "local"
+                        )
+                        self.after(
+                            0,
+                            lambda topic_preview=topic_preview, resolver_note=resolver_note: self.log_message(
+                                f"Local ASR background topic glossary ({resolver_note}): {topic_preview}",
+                                "info",
+                            )
+                        )
+
+                    for topic_error in full_asr_topic_errors[:3]:
+                        if full_asr_topic_result.get("resolver_url_configured"):
+                            self.after(
+                                0,
+                                lambda topic_error=topic_error: self.log_message(
+                                    f"Topic resolver warning: {topic_error}",
+                                    "warning",
+                                )
+                            )
+
+                except Exception as topic_error:
+                    self.after(
+                        0,
+                        lambda topic_error=str(topic_error): self.log_message(
+                            f"Background topic resolver failed: {topic_error}",
+                            "warning",
+                        )
+                    )
+
                 segments, metadata = transcribe_media_file(
                     media_file,
                     model_name=model_name,
@@ -7835,11 +8003,18 @@ class App(ctk.CTk):
                     compute_type=compute_type,
                     speaker_name=speaker_name,
                     language=language_code,
-                    initial_prompt=initial_prompt,
+                    initial_prompt=full_asr_initial_prompt,
                     vad_filter=True,
                     beam_size=5,
                     probe_seconds=probe_seconds,
                 )
+
+                metadata["asr_topic_resolver_used"] = bool(full_asr_topic_terms)
+                metadata["asr_topic_resolver_terms"] = list(full_asr_topic_terms)
+                metadata["asr_topic_resolver_sources"] = list(full_asr_topic_sources)
+                metadata["asr_topic_resolver_errors"] = list(full_asr_topic_errors)
+                metadata["asr_topic_resolver_cache_hit"] = bool(full_asr_topic_result.get("cache_hit"))
+                metadata["asr_topic_resolver_remote_used"] = bool(full_asr_topic_result.get("remote_used"))
 
                 def on_success() -> None:
                     self.transcript_segments = segments
