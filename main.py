@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import array
 import subprocess
 import random
@@ -21,7 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
 import tkinter as tk
-from PIL import Image, ImageDraw
+from PIL import Image, ImageTk, ImageDraw
 
 from core.constants import (
     APP_NAME,
@@ -1102,28 +1103,218 @@ class App(ctk.CTk):
         )
         self.transcript_youtube_button.pack(side="left", padx=(8, 0))
 
-        self.transcript_asr_button = ctk.CTkButton(
+        self.transcript_asr_button_wrap = ctk.CTkFrame(
             button_row,
+            fg_color="transparent",
+            width=150,
+            height=36
+        )
+        self.transcript_asr_button_wrap.pack(side="left", padx=3, pady=3)
+        self.transcript_asr_button_wrap.pack_propagate(False)
+
+        self.transcript_asr_button = ctk.CTkButton(
+            self.transcript_asr_button_wrap,
             text="🎙 Local ASR",
             command=self.local_asr_transcribe_clicked,
-            width=110,
-            fg_color="#7C3AED",
-            hover_color="#6D28D9",
-        )
-        self.transcript_asr_button.pack(side="left", padx=3, pady=3)
-
-        self.transcript_asr_settings_button = ctk.CTkButton(
-            button_row,
-            text="⚙ ASR Settings",
-            command=self.open_asr_settings_clicked,
-            width=120,
+            width=150,
             height=32,
             font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=COLORS["accent_secondary"],
-            hover_color=COLORS["border"],
-            corner_radius=8
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color=COLORS["text_primary"],
+            corner_radius=8,
+            anchor="w"
         )
-        self.transcript_asr_settings_button.pack(side="left", padx=3, pady=3)
+        self.transcript_asr_button.place(x=0, y=0)
+
+        # Transparent PNG cog over the Local ASR button.
+        # The cog has its own icon-only hover: the button hover and cog hover
+        # are intentionally separated.
+        try:
+            if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+                asset_base_dir = sys._MEIPASS
+            else:
+                asset_base_dir = os.path.dirname(os.path.abspath(__file__))
+
+            def _load_asr_cog_variant(filename: str):
+                icon_path = os.path.join(asset_base_dir, "assets", filename)
+                icon_image = Image.open(icon_path).convert("RGBA")
+                icon_image = icon_image.resize((24, 24), Image.LANCZOS)
+                return ImageTk.PhotoImage(icon_image)
+
+            self.asr_cog_icon_image = _load_asr_cog_variant("asr_cog_normal.png")
+            self.asr_cog_icon_hover_image = _load_asr_cog_variant("asr_cog_hover.png")
+
+        except Exception as icon_error:
+            logger.warning(f"Could not load ASR cog icons: {icon_error}")
+            self.asr_cog_icon_image = None
+            self.asr_cog_icon_hover_image = None
+
+        if self.asr_cog_icon_image is not None:
+            self.transcript_asr_settings_button = tk.Label(
+                self.transcript_asr_button_wrap,
+                image=self.asr_cog_icon_image,
+                bg=COLORS["accent"],
+                activebackground=COLORS["accent"],
+                bd=0,
+                relief="flat",
+                highlightthickness=0,
+                padx=0,
+                pady=0,
+                cursor="hand2"
+            )
+        else:
+            self.transcript_asr_settings_button = tk.Label(
+                self.transcript_asr_button_wrap,
+                text="⚙",
+                bg=COLORS["accent"],
+                fg="#5f5f5f",
+                activebackground=COLORS["accent"],
+                activeforeground="#2f2f2f",
+                bd=0,
+                relief="flat",
+                highlightthickness=0,
+                padx=0,
+                pady=0,
+                font=("Segoe UI Symbol", 13, "bold"),
+                cursor="hand2"
+            )
+
+        self.transcript_asr_settings_button.place(x=121, y=4, width=24, height=24)
+
+        def _set_local_asr_button_normal() -> None:
+            try:
+                self.transcript_asr_button.configure(
+                    fg_color=COLORS["accent"],
+                    hover_color=COLORS["accent_hover"]
+                )
+            except Exception:
+                pass
+
+            try:
+                self.transcript_asr_button_wrap.configure(bg=COLORS["accent"])
+            except Exception:
+                pass
+
+            try:
+                self.transcript_asr_settings_button.configure(bg=COLORS["accent"])
+            except Exception:
+                pass
+
+            try:
+                if self.asr_cog_icon_image is not None:
+                    self.transcript_asr_settings_button.configure(
+                        image=self.asr_cog_icon_image
+                    )
+                else:
+                    self.transcript_asr_settings_button.configure(fg="#5f5f5f")
+            except Exception:
+                pass
+
+        def _set_local_asr_button_hover() -> None:
+            try:
+                self.transcript_asr_button.configure(
+                    fg_color=COLORS["accent_hover"],
+                    hover_color=COLORS["accent_hover"]
+                )
+            except Exception:
+                pass
+
+            try:
+                self.transcript_asr_button_wrap.configure(bg=COLORS["accent_hover"])
+            except Exception:
+                pass
+
+            try:
+                self.transcript_asr_settings_button.configure(bg=COLORS["accent_hover"])
+            except Exception:
+                pass
+
+            try:
+                if self.asr_cog_icon_image is not None:
+                    self.transcript_asr_settings_button.configure(
+                        image=self.asr_cog_icon_image
+                    )
+                else:
+                    self.transcript_asr_settings_button.configure(fg="#5f5f5f")
+            except Exception:
+                pass
+
+        def _set_asr_cog_icon_hover() -> None:
+            # Cog hover is icon-only. Button background stays normal orange.
+            try:
+                self.transcript_asr_button.configure(
+                    fg_color=COLORS["accent"],
+                    hover_color=COLORS["accent_hover"]
+                )
+            except Exception:
+                pass
+
+            try:
+                self.transcript_asr_button_wrap.configure(bg=COLORS["accent"])
+            except Exception:
+                pass
+
+            try:
+                self.transcript_asr_settings_button.configure(bg=COLORS["accent"])
+            except Exception:
+                pass
+
+            try:
+                if self.asr_cog_icon_hover_image is not None:
+                    self.transcript_asr_settings_button.configure(
+                        image=self.asr_cog_icon_hover_image
+                    )
+                else:
+                    self.transcript_asr_settings_button.configure(fg="#2f2f2f")
+            except Exception:
+                pass
+
+        def _sync_asr_hover_from_pointer() -> None:
+            try:
+                pointer_widget = self.winfo_containing(
+                    self.winfo_pointerx(),
+                    self.winfo_pointery()
+                )
+            except Exception:
+                pointer_widget = None
+
+            if pointer_widget is self.transcript_asr_settings_button:
+                _set_asr_cog_icon_hover()
+                return
+
+            if pointer_widget is self.transcript_asr_button:
+                _set_local_asr_button_hover()
+                return
+
+            _set_local_asr_button_normal()
+
+        def _asr_button_enter(_event=None):
+            _set_local_asr_button_hover()
+            return None
+
+        def _asr_button_leave(_event=None):
+            self.after(40, _sync_asr_hover_from_pointer)
+            return None
+
+        def _asr_cog_enter(_event=None):
+            _set_asr_cog_icon_hover()
+            return "break"
+
+        def _asr_cog_leave(_event=None):
+            self.after(40, _sync_asr_hover_from_pointer)
+            return "break"
+
+        self.transcript_asr_button.bind("<Enter>", _asr_button_enter, add="+")
+        self.transcript_asr_button.bind("<Leave>", _asr_button_leave, add="+")
+
+        self.transcript_asr_settings_button.bind("<Enter>", _asr_cog_enter)
+        self.transcript_asr_settings_button.bind("<Leave>", _asr_cog_leave)
+        self.transcript_asr_settings_button.bind(
+            "<Button-1>",
+            lambda _event: self.open_asr_settings_clicked()
+        )
+
 
         self.transcript_media_button = ctk.CTkButton(
             button_row,
