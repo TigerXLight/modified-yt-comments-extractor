@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 from typing import Dict, Optional
 
 import customtkinter as ctk
@@ -220,7 +222,7 @@ class AsrSettingsDialog(ctk.CTkToplevel):
 
         prompt_label = ctk.CTkLabel(
             body,
-            text="Known words / prompt",
+            text="Rare words / names / phrase hints",
             font=ctk.CTkFont(size=13, weight="bold"),
             anchor="w",
         )
@@ -235,7 +237,30 @@ class AsrSettingsDialog(ctk.CTkToplevel):
         self._hint(
             body,
             row,
+            "Use this for rare names, usernames, fictional terms, foreign words, acronyms, unusual spellings, or case-specific vocabulary.\n"
+            "Do not use it to fix ordinary English words; if normal words are wrong, use a better model/profile, check the language setting, or improve the audio.\n\n"
             "Example: Freckelston, Kingman, ZoneX, Nyxara, Caltheris, BLACKED, Nicolas Cage"
+        )
+        row += 1
+
+        setup_status_label = ctk.CTkLabel(
+            body,
+            text="ASR setup status",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="w",
+        )
+        setup_status_label.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(16, 6))
+        row += 1
+
+        self.setup_status_textbox = ctk.CTkTextbox(
+            body,
+            height=150,
+            wrap="word",
+            font=ctk.CTkFont(size=11),
+        )
+        self.setup_status_textbox.grid(row=row, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
+        self._set_setup_status(
+            "Click Update ASR Check to check faster-whisper, selected model/device settings, VLC, and FFmpeg. Phrase hints are optional and should only be used for rare/special terms."
         )
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
@@ -244,7 +269,7 @@ class AsrSettingsDialog(ctk.CTkToplevel):
 
         check_button = ctk.CTkButton(
             footer,
-            text="Check ASR Setup",
+            text="Update ASR Check",
             command=self._check_asr_setup,
             width=140,
             fg_color="#3a3a3a",
@@ -408,6 +433,63 @@ class AsrSettingsDialog(ctk.CTkToplevel):
             "compute_type": compute_type,
         }
 
+    def _find_vlc_installation(self) -> str:
+        """Return VLC/libVLC location if found, otherwise empty string."""
+        candidate_paths = [
+            os.path.join(os.environ.get("ProgramFiles", ""), "VideoLAN", "VLC", "libvlc.dll"),
+            os.path.join(os.environ.get("ProgramFiles", ""), "VideoLAN", "VLC", "vlc.exe"),
+            os.path.join(os.environ.get("ProgramFiles(x86)", ""), "VideoLAN", "VLC", "libvlc.dll"),
+            os.path.join(os.environ.get("ProgramFiles(x86)", ""), "VideoLAN", "VLC", "vlc.exe"),
+        ]
+
+        for candidate in candidate_paths:
+            if candidate and os.path.exists(candidate):
+                return os.path.dirname(candidate)
+
+        vlc_on_path = shutil.which("vlc")
+
+        if vlc_on_path:
+            return vlc_on_path
+
+        return ""
+
+    def _append_media_tools_check_lines(self, lines: list[str]) -> None:
+        """Append VLC/ffmpeg check information to ASR setup result."""
+        lines.append("")
+        lines.append("Media tools:")
+
+        vlc_location = self._find_vlc_installation()
+
+        if vlc_location:
+            lines.append(f"[OK] VLC/libVLC found: {vlc_location}")
+            lines.append("     Timeline Play/Pause should be available.")
+        else:
+            lines.append("[MISSING] VLC/libVLC was not found.")
+            lines.append("          Install VLC Media Player for transcript timeline Play/Pause.")
+
+        ffmpeg_path = shutil.which("ffmpeg")
+
+        if ffmpeg_path:
+            lines.append(f"[OK] FFmpeg found: {ffmpeg_path}")
+            lines.append("     Waveform generation should be available.")
+        else:
+            lines.append("[MISSING] FFmpeg was not found on PATH.")
+            lines.append("          Install FFmpeg for waveform generation.")
+
+    def _set_setup_status(self, text: str) -> None:
+        """Write setup-check output into the inline status box."""
+        if not hasattr(self, "setup_status_textbox"):
+            return
+
+        try:
+            self.setup_status_textbox.configure(state="normal")
+            self.setup_status_textbox.delete("1.0", "end")
+            self.setup_status_textbox.insert("1.0", text)
+            self.setup_status_textbox.configure(state="disabled")
+            self.setup_status_textbox.see("1.0")
+        except Exception:
+            pass
+
     def _check_asr_setup(self) -> None:
         settings = self._collect()
 
@@ -456,18 +538,16 @@ class AsrSettingsDialog(ctk.CTkToplevel):
             lines.append(f"[INFO] Requested language: {settings['language']}")
 
         if settings["initial_prompt"]:
-            lines.append("[OK] Known words / prompt is set.")
+            lines.append("[OK] Rare words / phrase hints are set.")
         else:
-            lines.append("[INFO] Known words / prompt is blank.")
+            lines.append("[INFO] Rare words / phrase hints are blank.")
+
+        self._append_media_tools_check_lines(lines)
 
         lines.append("")
         lines.append("Note: faster-whisper models may download the first time they are used. After that, cached models can be reused.")
 
-        messagebox.showinfo(
-            "ASR Setup Check",
-            "\n".join(lines),
-            parent=self,
-        )
+        self._set_setup_status("\n".join(lines))
 
     def _accept(self) -> None:
         result = self._collect()
