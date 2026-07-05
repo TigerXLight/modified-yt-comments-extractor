@@ -6536,35 +6536,6 @@ class App(ctk.CTk):
 
     def local_asr_transcribe_clicked(self) -> None:
         """Transcribe a local audio/video file using faster-whisper."""
-        linked_media_file = getattr(self, "linked_transcript_media_path", None)
-
-        if linked_media_file and os.path.exists(linked_media_file):
-            media_file = linked_media_file
-            self.log_message(
-                f"Using linked media for Local ASR: {os.path.basename(media_file)}",
-                "info"
-            )
-        else:
-            if linked_media_file and not os.path.exists(linked_media_file):
-                self._set_linked_transcript_media(None)
-                messagebox.showwarning(
-                    "Linked Media Missing",
-                    "The linked media file could not be found. Choose the media file again."
-                )
-
-            media_file = filedialog.askopenfilename(
-                title="Choose audio or video file for local ASR",
-                filetypes=[
-                    ("Media files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg *.mp4 *.mkv *.webm *.mov *.avi"),
-                    ("Audio files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
-                    ("Video files", "*.mp4 *.mkv *.webm *.mov *.avi"),
-                    ("All files", "*.*"),
-                ],
-            )
-
-        if not media_file:
-            return
-
         asr_defaults = load_asr_defaults()
 
         asr_settings = ask_asr_settings(
@@ -6590,6 +6561,35 @@ class App(ctk.CTk):
             probe_seconds = 0
 
         asr_mode_label = f"probe first {probe_seconds}s" if probe_seconds else "full transcription"
+
+        linked_media_file = getattr(self, "linked_transcript_media_path", None)
+
+        if linked_media_file and os.path.exists(linked_media_file):
+            media_file = linked_media_file
+            self.log_message(
+                f"Using linked media for Local ASR: {os.path.basename(media_file)}",
+                "info"
+            )
+        else:
+            if linked_media_file and not os.path.exists(linked_media_file):
+                self._set_linked_transcript_media(None)
+                messagebox.showwarning(
+                    "Linked Media Missing",
+                    "The linked media file could not be found. Choose the media file again."
+                )
+
+            media_file = filedialog.askopenfilename(
+                title=f"Choose audio or video file for Local ASR {asr_mode_label}",
+                filetypes=[
+                    ("Media files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg *.mp4 *.mkv *.webm *.mov *.avi"),
+                    ("Audio files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
+                    ("Video files", "*.mp4 *.mkv *.webm *.mov *.avi"),
+                    ("All files", "*.*"),
+                ],
+            )
+
+        if not media_file:
+            return
 
         save_asr_defaults(
             model_name=model_name,
@@ -6627,6 +6627,7 @@ class App(ctk.CTk):
                     self.last_youtube_video_info = None
                     self.last_asr_metadata = metadata
                     self._set_linked_transcript_media(media_file)
+
                     prompt_note = " with phrase hints" if initial_prompt else ""
                     language_note = f", language={language_code}" if language_code else ", language=auto-detect"
                     probe_note = f"probe first {probe_seconds}s " if probe_seconds else ""
@@ -6706,6 +6707,7 @@ class App(ctk.CTk):
                 )
 
         threading.Thread(target=worker, daemon=True).start()
+
 
     def export_transcript_file(self, export_type: str) -> None:
         """Export loaded transcript to TXT, SRT, VTT, or CSV."""
