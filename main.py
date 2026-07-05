@@ -7245,12 +7245,55 @@ class App(ctk.CTk):
         if not isinstance(video_info, dict):
             video_info = {}
 
+        reference_terms: List[str] = []
+
+        try:
+            if self.transcript_segments and self.last_transcript_source != "Local ASR":
+                import re
+
+                seen_terms = set()
+
+                for segment in self.transcript_segments:
+                    values = [getattr(segment, "speaker", ""), getattr(segment, "text", "")]
+
+                    for value in values:
+                        for match in re.findall(r"\\b[A-Za-z][A-Za-z0-9'’_-]{2,50}\\b", value or ""):
+                            has_signal = (
+                                match[:1].isupper()
+                                or any(char.isupper() for char in match[1:])
+                                or any(char.isdigit() for char in match)
+                            )
+
+                            if not has_signal:
+                                continue
+
+                            key = match.lower()
+
+                            if key in seen_terms:
+                                continue
+
+                            seen_terms.add(key)
+                            reference_terms.append(match)
+
+                            if len(reference_terms) >= 60:
+                                break
+
+                        if len(reference_terms) >= 60:
+                            break
+
+                    if len(reference_terms) >= 60:
+                        break
+
+        except Exception:
+            reference_terms = []
+
         context: Dict[str, Any] = {
             "language": language_code or "en",
             "urls": urls,
             "url_text": raw_url_text,
             "video_info": dict(video_info),
             "transcript_source": self.last_transcript_source or "",
+            "reference_terms": reference_terms,
             "app_name": APP_NAME,
             "app_version": APP_VERSION,
         }
