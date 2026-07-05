@@ -1,3 +1,5 @@
+"""Local ASR default settings storage."""
+
 from __future__ import annotations
 
 import json
@@ -6,22 +8,24 @@ from pathlib import Path
 from typing import Dict
 
 
-DEFAULT_ASR_SETTINGS = {
+DEFAULT_ASR_SETTINGS: Dict[str, str] = {
     "model_name": "small",
     "speaker_name": "Speaker 1",
     "language": "en",
     "initial_prompt": "",
+    "device": "cpu",
+    "compute_type": "int8",
 }
 
 
-def _settings_path() -> Path:
+def get_asr_defaults_path() -> Path:
     """Return the ASR defaults file path in the user's AppData folder."""
     appdata = os.getenv("APPDATA")
 
     if appdata:
-        base_dir = Path(appdata) / "YouTube Comment Extractor"
+        base_dir = Path(appdata) / "Modified YouTube Comment Extractor"
     else:
-        base_dir = Path.home() / ".youtube_comment_extractor"
+        base_dir = Path.home() / ".modified_youtube_comment_extractor"
 
     base_dir.mkdir(parents=True, exist_ok=True)
     return base_dir / "asr_defaults.json"
@@ -29,7 +33,7 @@ def _settings_path() -> Path:
 
 def load_asr_defaults() -> Dict[str, str]:
     """Load saved Local ASR defaults."""
-    path = _settings_path()
+    path = get_asr_defaults_path()
 
     if not path.exists():
         return dict(DEFAULT_ASR_SETTINGS)
@@ -41,11 +45,12 @@ def load_asr_defaults() -> Dict[str, str]:
 
     defaults = dict(DEFAULT_ASR_SETTINGS)
 
-    for key in defaults:
-        value = data.get(key)
+    if isinstance(data, dict):
+        for key in DEFAULT_ASR_SETTINGS:
+            value = data.get(key)
 
-        if isinstance(value, str):
-            defaults[key] = value
+            if value is not None:
+                defaults[key] = str(value)
 
     return defaults
 
@@ -55,18 +60,21 @@ def save_asr_defaults(
     speaker_name: str,
     language: str,
     initial_prompt: str,
+    device: str = "cpu",
+    compute_type: str = "int8",
 ) -> None:
     """Save Local ASR defaults for the next run."""
-    path = _settings_path()
-
-    data = {
+    settings = {
         "model_name": model_name or DEFAULT_ASR_SETTINGS["model_name"],
         "speaker_name": speaker_name or DEFAULT_ASR_SETTINGS["speaker_name"],
         "language": language or "",
         "initial_prompt": initial_prompt or "",
+        "device": device or DEFAULT_ASR_SETTINGS["device"],
+        "compute_type": compute_type or DEFAULT_ASR_SETTINGS["compute_type"],
     }
 
+    path = get_asr_defaults_path()
     path.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
+        json.dumps(settings, indent=2, ensure_ascii=False),
+        encoding="utf-8"
     )

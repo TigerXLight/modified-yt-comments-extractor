@@ -74,6 +74,7 @@ from youtube_transcript_downloader import (
 from youtube_video_metadata import fetch_youtube_video_metadata
 from asr_tools import transcribe_media_file
 from asr_defaults import load_asr_defaults, save_asr_defaults
+from asr_settings_dialog import ask_asr_settings
 
 # Configure logging
 logging.basicConfig(
@@ -1110,6 +1111,19 @@ class App(ctk.CTk):
             hover_color="#6D28D9",
         )
         self.transcript_asr_button.pack(side="left", padx=3, pady=3)
+
+        self.transcript_asr_settings_button = ctk.CTkButton(
+            button_row,
+            text="⚙ ASR Settings",
+            command=self.open_asr_settings_clicked,
+            width=120,
+            height=32,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8
+        )
+        self.transcript_asr_settings_button.pack(side="left", padx=3, pady=3)
 
         self.transcript_media_button = ctk.CTkButton(
             button_row,
@@ -6290,6 +6304,45 @@ class App(ctk.CTk):
             f.write(readable_content)
 
 
+
+    def open_asr_settings_clicked(self) -> None:
+        """Open and save Local ASR default settings."""
+        asr_defaults = load_asr_defaults()
+
+        settings = ask_asr_settings(
+            self,
+            asr_defaults,
+            title="Local ASR Defaults",
+            action_label="Save Defaults",
+        )
+
+        if not settings:
+            return
+
+        save_asr_defaults(
+            model_name=settings.get("model_name", "small"),
+            speaker_name=settings.get("speaker_name", "Speaker 1"),
+            language=settings.get("language", ""),
+            initial_prompt=settings.get("initial_prompt", ""),
+            device=settings.get("device", "cpu"),
+            compute_type=settings.get("compute_type", "int8"),
+        )
+
+        self.log_message(
+            "Saved Local ASR defaults: "
+            f"model={settings.get('model_name')}, "
+            f"language={settings.get('language') or 'auto-detect'}, "
+            f"device={settings.get('device')}, "
+            f"compute={settings.get('compute_type')}",
+            "success"
+        )
+
+        messagebox.showinfo(
+            "ASR Settings Saved",
+            "Local ASR defaults were saved for future transcriptions."
+        )
+
+
     def local_asr_transcribe_clicked(self) -> None:
         """Transcribe a local audio/video file using faster-whisper."""
         linked_media_file = getattr(self, "linked_transcript_media_path", None)
@@ -6323,82 +6376,36 @@ class App(ctk.CTk):
 
         asr_defaults = load_asr_defaults()
 
-        model_name = simpledialog.askstring(
-            "ASR Model",
-            "Choose faster-whisper model:\n\n"
-            "tiny = fastest, weakest accuracy\n"
-            "base = fast, basic accuracy\n"
-            "small = better accuracy, slower\n"
-            "medium = better again, much slower on CPU",
-            initialvalue=asr_defaults.get("model_name", "small"),
-            parent=self,
+        asr_settings = ask_asr_settings(
+            self,
+            asr_defaults,
+            title="Local ASR",
+            action_label="Start ASR",
         )
 
-        if model_name is None:
+        if not asr_settings:
             return
 
-        model_name = model_name.strip().lower() or "base"
-
-        allowed_models = {"tiny", "base", "small", "medium"}
-        if model_name not in allowed_models:
-            messagebox.showerror(
-                "Invalid ASR Model",
-                "Please choose one of:\n\n"
-                "tiny\nbase\nsmall\nmedium"
-            )
-            return
-
-        speaker_name = simpledialog.askstring(
-            "Speaker Label",
-            "Speaker label to use for this ASR transcript:",
-            initialvalue=asr_defaults.get("speaker_name", "Speaker 1"),
-            parent=self,
-        )
-
-        if speaker_name is None:
-            return
-
-        speaker_name = speaker_name.strip() or "Speaker 1"
-
-        language_code = simpledialog.askstring(
-            "ASR Language",
-            "Optional language code.\n\n"
-            "Leave blank for auto-detect.\n"
-            "Examples: en, ar, fr, de, es",
-            initialvalue=asr_defaults.get("language", "en"),
-            parent=self,
-        )
-
-        if language_code is None:
-            return
-
-        language_code = language_code.strip() or None
-
-        initial_prompt = simpledialog.askstring(
-            "ASR Known Words",
-            "Optional known names/terms/context.\n\n"
-            "This can improve unusual names, usernames, game terms, or repeated phrases.\n\n"
-            "Example:\n"
-            "Freckelston, Kingman, ZoneX, Nyxara, Caltheris, BLACKED, Nicolas Cage",
-            initialvalue=asr_defaults.get("initial_prompt", ""),
-            parent=self,
-        )
-
-        if initial_prompt is None:
-            return
-
-        initial_prompt = initial_prompt.strip() or None
+        model_name = asr_settings.get("model_name", "small").strip().lower() or "small"
+        speaker_name = asr_settings.get("speaker_name", "Speaker 1").strip() or "Speaker 1"
+        language_code = asr_settings.get("language", "").strip() or None
+        initial_prompt = asr_settings.get("initial_prompt", "").strip() or None
+        device = asr_settings.get("device", "cpu").strip().lower() or "cpu"
+        compute_type = asr_settings.get("compute_type", "int8").strip() or "int8"
 
         save_asr_defaults(
             model_name=model_name,
             speaker_name=speaker_name,
             language=language_code or "",
             initial_prompt=initial_prompt or "",
+            device=device,
+            compute_type=compute_type,
         )
 
         self.transcript_asr_button.configure(state="disabled")
         self.log_message(
-            f"Starting local ASR with faster-whisper model: {model_name}",
+            f"Starting local ASR with faster-whisper model: {model_name} "
+            f"({device}/{compute_type})",
             "info"
         )
 
@@ -6407,8 +6414,8 @@ class App(ctk.CTk):
                 segments, metadata = transcribe_media_file(
                     media_file,
                     model_name=model_name,
-                    device="cpu",
-                    compute_type="int8",
+                    device=device,
+                    compute_type=compute_type,
                     speaker_name=speaker_name,
                     language=language_code,
                     initial_prompt=initial_prompt,
