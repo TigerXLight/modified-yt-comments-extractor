@@ -6834,6 +6834,10 @@ class App(ctk.CTk):
 
         return self._levenshtein_distance(reference_words, candidate_words) / max(1, len(reference_words))
 
+    def _asr_reference_acceptance_threshold(self) -> float:
+        """Minimum reference word accuracy required before accepting an ASR probe."""
+        return 0.95
+
     def _show_asr_auto_probe_results(
         self,
         media_file: str,
@@ -6873,7 +6877,24 @@ class App(ctk.CTk):
 
         if 0 <= best_index < len(results):
             best = results[best_index]
-            lines.append("SELECTED BEST PROBE")
+            best_metadata = best.get("metadata") or {}
+            best_reference_scored = bool(best_metadata.get("reference_scored"))
+            best_reference_accuracy = best_metadata.get("reference_word_accuracy")
+            reference_threshold = self._asr_reference_acceptance_threshold()
+
+            best_failed_reference_gate = (
+                best_reference_scored
+                and best_reference_accuracy is not None
+                and best_reference_accuracy < reference_threshold
+            )
+
+            if best_failed_reference_gate:
+                lines.append("BEST PROBE CANDIDATE — FAILED REFERENCE THRESHOLD")
+            elif best_reference_scored:
+                lines.append("SELECTED BEST PROBE — PASSED REFERENCE THRESHOLD")
+            else:
+                lines.append("SELECTED BEST PROBE — CONFIDENCE-SCORED ONLY")
+
             lines.append("=" * 80)
             lines.append(
                 f"{best.get('label')} — "
@@ -6887,6 +6908,15 @@ class App(ctk.CTk):
 
             if score is not None:
                 lines.append(f"Probe quality score: {score:.2f}")
+
+            if best_reference_scored:
+                lines.append(
+                    f"Reference word accuracy: {best_reference_accuracy:.2%}"
+                    if best_reference_accuracy is not None
+                    else "Reference word accuracy: unknown"
+                )
+                lines.append(f"Reference pass threshold: {reference_threshold:.2%}")
+                lines.append("Status: FAILED — keep reference transcript / try stronger method" if best_failed_reference_gate else "Status: PASSED")
 
             lines.append("")
 
@@ -6955,10 +6985,37 @@ class App(ctk.CTk):
         lines.append("")
         lines.append("=" * 80)
         lines.append("Note:")
-        lines.append("- Auto Probe compares settings without a reference transcript, so the score is a guide, not a proof.")
-        lines.append("- If common words are wrong on clear audio, that method should not be accepted for full subtitles.")
-        lines.append("- The best probe transcript was loaded into the Transcript tab for review.")
-        lines.append("- Run full Local ASR after choosing acceptable settings.")
+
+        reference_scoring_used = any(
+            bool((result.get("metadata") or {}).get("reference_scored"))
+            for result in results
+        )
+
+        best_failed_reference_gate = False
+
+        if 0 <= best_index < len(results):
+            best_metadata = results[best_index].get("metadata") or {}
+            best_reference_accuracy = best_metadata.get("reference_word_accuracy")
+            best_failed_reference_gate = (
+                bool(best_metadata.get("reference_scored"))
+                and best_reference_accuracy is not None
+                and best_reference_accuracy < self._asr_reference_acceptance_threshold()
+            )
+
+        if reference_scoring_used:
+            lines.append("- Reference scoring was used because a transcript was already imported.")
+            lines.append(f"- Passing threshold: {self._asr_reference_acceptance_threshold():.2%} reference word accuracy.")
+        else:
+            lines.append("- Auto Probe compared settings without a reference transcript, so the score is a guide, not proof.")
+
+        lines.append("- If common words or names are wrong on clear audio, that method should not be accepted for full subtitles.")
+
+        if best_failed_reference_gate:
+            lines.append("- Best candidate failed the reference threshold, so the current transcript should be kept.")
+            lines.append("- Try stronger ASR, better phrase hints/glossary, diarization, or an online method.")
+        else:
+            lines.append("- The best probe transcript was loaded into the Transcript tab for review.")
+            lines.append("- Run full Local ASR only after the probe is acceptable.")
 
         textbox.insert("1.0", "\n".join(lines))
         textbox.configure(state="disabled")
@@ -7186,43 +7243,70 @@ class App(ctk.CTk):
                     best_metadata["auto_probe_candidate_count"] = len(results)
 
                     def on_auto_probe_success() -> None:
-                        self.transcript_segments = list(best.get("segments") or [])
-                        self.last_youtube_video_info = None
-                        self.last_asr_metadata = best_metadata
-                        self._set_linked_transcript_media(media_file)
-
-                        self.last_transcript_source = (
-                            f"Local ASR Auto Quality Probe first {auto_probe_seconds}s from "
-                            f"{os.path.basename(media_file)} using best candidate "
-                            f"{best.get('label')} / {best.get('model_name')} "
-                            f"({best.get('device')}/{best.get('compute_type')})"
-                        )
-
-                        self._refresh_transcript_display()
-                        self.evidence_button.configure(state="normal")
-
-                        save_asr_defaults(
-                            model_name=best.get("model_name") or model_name,
-                            speaker_name=speaker_name,
-                            language=language_code or "",
-                            initial_prompt=initial_prompt or "",
-                            device=best.get("device") or device,
-                            compute_type=best.get("compute_type") or compute_type,
-                        )
-
                         score = best_metadata.get("quality_score")
                         score_text = f"{score:.2f}" if score is not None else "unknown"
 
                         best_reference_scored = bool(best_metadata.get("reference_scored"))
                         best_reference_accuracy = best_metadata.get("reference_word_accuracy")
+                        reference_threshold = self._asr_reference_acceptance_threshold()
+
+                        best_failed_reference_gate = (
+                            best_reference_scored
+                            and best_reference_accuracy is not None
+                            and best_reference_accuracy < reference_threshold
+                        )
+
+                        self._set_linked_transcript_media(media_file)
+
+                        if best_failed_reference_gate:
+                            self.log_message(
+                                f"Auto Probe candidate was not loaded because reference accuracy "
+                                f"{best_reference_accuracy:.2%} is below required {reference_threshold:.2%}. "
+                                f"Keeping current transcript.",
+                                "warning"
+                            )
+                        else:
+                            self.transcript_segments = list(best.get("segments") or [])
+                            self.last_youtube_video_info = None
+                            self.last_asr_metadata = best_metadata
+
+                            self.last_transcript_source = (
+                                f"Local ASR Auto Quality Probe first {auto_probe_seconds}s from "
+                                f"{os.path.basename(media_file)} using best candidate "
+                                f"{best.get('label')} / {best.get('model_name')} "
+                                f"({best.get('device')}/{best.get('compute_type')})"
+                            )
+
+                            self._refresh_transcript_display()
+                            self.evidence_button.configure(state="normal")
+
+                            save_asr_defaults(
+                                model_name=best.get("model_name") or model_name,
+                                speaker_name=speaker_name,
+                                language=language_code or "",
+                                initial_prompt=initial_prompt or "",
+                                device=best.get("device") or device,
+                                compute_type=best.get("compute_type") or compute_type,
+                            )
 
                         if best_reference_scored and best_reference_accuracy is not None:
-                            self.log_message(
-                                f"Auto Probe complete. Best by reference match: {best.get('label')} "
-                                f"{best.get('model_name')} ({best.get('device')}/{best.get('compute_type')}), "
-                                f"reference accuracy={best_reference_accuracy:.2%}, score={score_text}",
-                                "success"
-                            )
+                            if best_failed_reference_gate:
+                                self.log_message(
+                                    f"Auto Probe complete. Best by reference match FAILED threshold: "
+                                    f"{best.get('label')} {best.get('model_name')} "
+                                    f"({best.get('device')}/{best.get('compute_type')}), "
+                                    f"reference accuracy={best_reference_accuracy:.2%}, "
+                                    f"required={reference_threshold:.2%}, score={score_text}",
+                                    "warning"
+                                )
+                            else:
+                                self.log_message(
+                                    f"Auto Probe complete. Best by reference match PASSED: "
+                                    f"{best.get('label')} {best.get('model_name')} "
+                                    f"({best.get('device')}/{best.get('compute_type')}), "
+                                    f"reference accuracy={best_reference_accuracy:.2%}, score={score_text}",
+                                    "success"
+                                )
                         else:
                             self.log_message(
                                 f"Auto Probe complete. Best by confidence score: {best.get('label')} "
