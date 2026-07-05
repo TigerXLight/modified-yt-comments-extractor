@@ -9,6 +9,8 @@ from typing import Dict, Optional
 import customtkinter as ctk
 from tkinter import messagebox
 
+from asr_quality_policy import build_auto_quality_recommendation
+
 
 ASR_MODELS = ["tiny", "base", "small", "medium", "large-v3"]
 ASR_DEVICES = ["cpu", "cuda"]
@@ -260,7 +262,7 @@ class AsrSettingsDialog(ctk.CTkToplevel):
         )
         self.setup_status_textbox.grid(row=row, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
         self._set_setup_status(
-            "Click Update ASR Check to check faster-whisper, selected model/device settings, VLC, and FFmpeg. Phrase hints are optional and should only be used for rare/special terms."
+            "Click Update ASR Check to check faster-whisper, selected settings, hardware hints, VLC, FFmpeg, and the Auto Quality policy. Phrase hints are optional and should only be used for rare/special terms."
         )
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
@@ -511,6 +513,9 @@ class AsrSettingsDialog(ctk.CTkToplevel):
         lines.append(f"[INFO] Selected model: {model_name}")
         lines.append(f"[INFO] Selected device: {device}")
         lines.append(f"[INFO] Selected compute type: {compute_type}")
+
+        lines.append("")
+        lines.extend(build_auto_quality_recommendation(settings))
 
         if device == "cuda":
             try:
