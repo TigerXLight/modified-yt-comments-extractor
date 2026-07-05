@@ -6711,14 +6711,39 @@ class App(ctk.CTk):
         selected_model: str,
         selected_device: str,
         selected_compute_type: str,
-    ) -> List[Dict[str, str]]:
+    ) -> List[Dict[str, Any]]:
         """Return ASR candidates to test for Auto Quality Probe."""
-        candidates: List[Dict[str, str]] = []
+        candidates: List[Dict[str, Any]] = []
 
-        def add(label: str, model: str, device: str, compute: str) -> None:
-            key = (model, device, compute)
+        def add(
+            label: str,
+            model: str,
+            device: str,
+            compute: str,
+            vad_filter: bool = True,
+            condition_on_previous_text: Optional[bool] = None,
+            use_reference_hotwords: bool = False,
+        ) -> None:
+            key = (
+                model,
+                device,
+                compute,
+                bool(vad_filter),
+                condition_on_previous_text,
+                bool(use_reference_hotwords),
+            )
 
-            if any((item["model_name"], item["device"], item["compute_type"]) == key for item in candidates):
+            if any(
+                (
+                    item["model_name"],
+                    item["device"],
+                    item["compute_type"],
+                    bool(item.get("vad_filter", True)),
+                    item.get("condition_on_previous_text"),
+                    bool(item.get("use_reference_hotwords", False)),
+                ) == key
+                for item in candidates
+            ):
                 return
 
             candidates.append({
@@ -6726,18 +6751,49 @@ class App(ctk.CTk):
                 "model_name": model,
                 "device": device,
                 "compute_type": compute,
+                "vad_filter": bool(vad_filter),
+                "condition_on_previous_text": condition_on_previous_text,
+                "use_reference_hotwords": bool(use_reference_hotwords),
             })
 
-        add("Draft CPU", "small", "cpu", "int8")
-        add("Recommended CPU", "medium", "cpu", "int8")
-        add("Accurate CPU", "large-v3", "cpu", "int8")
+        add("Draft CPU", "small", "cpu", "int8", vad_filter=True)
+        add("Recommended CPU", "medium", "cpu", "int8", vad_filter=True)
+        add("Accurate CPU", "large-v3", "cpu", "int8", vad_filter=True)
+
+        # Important for overlapping/short speech: VAD can drop interjections.
+        add("Accurate CPU - no VAD", "large-v3", "cpu", "int8", vad_filter=False)
+        add(
+            "Accurate CPU - no VAD + no context carry",
+            "large-v3",
+            "cpu",
+            "int8",
+            vad_filter=False,
+            condition_on_previous_text=False,
+        )
+        add(
+            "Accurate CPU - no VAD + hotwords",
+            "large-v3",
+            "cpu",
+            "int8",
+            vad_filter=False,
+            condition_on_previous_text=False,
+            use_reference_hotwords=True,
+        )
 
         if selected_device == "cuda":
-            add("GPU Accurate", "large-v3", "cuda", "float16")
+            add("GPU Accurate", "large-v3", "cuda", "float16", vad_filter=True)
+            add("GPU Accurate - no VAD", "large-v3", "cuda", "float16", vad_filter=False)
 
-        add("Current Selected", selected_model, selected_device, selected_compute_type)
+        add(
+            "Current Selected",
+            selected_model,
+            selected_device,
+            selected_compute_type,
+            vad_filter=True,
+        )
 
         return candidates
+
 
     def _plain_text_from_segments(self, segments: List[TranscriptSegment]) -> str:
         """Return plain text from transcript segments."""
@@ -7052,6 +7108,16 @@ class App(ctk.CTk):
             lines.append(f"Language: {language}")
             lines.append(f"Language probability: {probability:.2%}" if probability is not None else "Language probability: unknown")
             lines.append(f"Quality score: {score:.2f}" if score is not None else "Quality score: unknown")
+            lines.append(f"VAD filter: {'on' if metadata.get('auto_probe_candidate_vad_filter', True) else 'off'}")
+            lines.append(
+                "Condition on previous text: "
+                + (
+                    "default"
+                    if metadata.get("auto_probe_candidate_condition_on_previous_text") is None
+                    else str(bool(metadata.get("auto_probe_candidate_condition_on_previous_text"))).lower()
+                )
+            )
+            lines.append(f"Hotwords parameter used: {'yes' if metadata.get('auto_probe_candidate_hotwords_used') else 'no'}")
 
             if phrase_hints:
                 preview = ", ".join(str(term) for term in phrase_hints[:20])
@@ -7269,11 +7335,17 @@ class App(ctk.CTk):
                         candidate_model = candidate["model_name"]
                         candidate_device = candidate["device"]
                         candidate_compute = candidate["compute_type"]
+                        candidate_vad_filter = bool(candidate.get("vad_filter", True))
+                        candidate_condition_on_previous_text = candidate.get("condition_on_previous_text")
+                        candidate_hotwords = None
+
+                        if candidate.get("use_reference_hotwords") and auto_probe_reference_glossary_terms:
+                            candidate_hotwords = "; ".join(auto_probe_reference_glossary_terms)
 
                         self.after(
                             0,
                             lambda label=label, candidate_model=candidate_model, candidate_device=candidate_device, candidate_compute=candidate_compute: self.log_message(
-                                f"Auto Probe testing {label}: {candidate_model} ({candidate_device}/{candidate_compute})",
+                                f"Auto Probe testing {label}: {candidate_model} ({candidate_device}/{candidate_compute}), VAD={'on' if candidate_vad_filter else 'off'}",
                                 "info"
                             )
                         )
@@ -7287,10 +7359,17 @@ class App(ctk.CTk):
                                 speaker_name=speaker_name,
                                 language=language_code,
                                 initial_prompt=auto_probe_initial_prompt,
-                                vad_filter=True,
+                                vad_filter=candidate_vad_filter,
                                 beam_size=5,
                                 probe_seconds=auto_probe_seconds,
+                                condition_on_previous_text=candidate_condition_on_previous_text,
+                                hotwords=candidate_hotwords,
                             )
+
+                            candidate_metadata["auto_probe_candidate_label"] = label
+                            candidate_metadata["auto_probe_candidate_vad_filter"] = candidate_vad_filter
+                            candidate_metadata["auto_probe_candidate_condition_on_previous_text"] = candidate_condition_on_previous_text
+                            candidate_metadata["auto_probe_candidate_hotwords_used"] = bool(candidate_hotwords)
 
                             if auto_probe_reference_glossary_terms:
                                 candidate_metadata["auto_probe_reference_glossary_prompt_used"] = True

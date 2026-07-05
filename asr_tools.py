@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import shutil
 import subprocess
 import tempfile
@@ -151,6 +152,8 @@ def transcribe_media_file(
     vad_filter: bool = True,
     beam_size: int = 5,
     probe_seconds: Optional[int] = None,
+    condition_on_previous_text: Optional[bool] = None,
+    hotwords: Optional[str] = None,
 ) -> Tuple[List[TranscriptSegment], Dict[str, Any]]:
     """
     Transcribe a local audio/video file with faster-whisper.
@@ -178,12 +181,35 @@ def transcribe_media_file(
             compute_type=compute_type,
         )
 
+        transcribe_kwargs: Dict[str, Any] = {
+            "language": language,
+            "initial_prompt": initial_prompt,
+            "beam_size": beam_size,
+            "vad_filter": vad_filter,
+        }
+
+        if condition_on_previous_text is not None:
+            transcribe_kwargs["condition_on_previous_text"] = condition_on_previous_text
+
+        if hotwords:
+            transcribe_kwargs["hotwords"] = hotwords
+
+        # faster-whisper versions differ. Only pass options supported by the
+        # installed WhisperModel.transcribe signature.
+        try:
+            supported_args = set(inspect.signature(model.transcribe).parameters)
+            transcribe_kwargs = {
+                key: value
+                for key, value in transcribe_kwargs.items()
+                if key in supported_args
+            }
+        except Exception:
+            transcribe_kwargs.pop("hotwords", None)
+            transcribe_kwargs.pop("condition_on_previous_text", None)
+
         whisper_segments, info = model.transcribe(
             str(transcribe_path),
-            language=language,
-            initial_prompt=initial_prompt,
-            beam_size=beam_size,
-            vad_filter=vad_filter,
+            **transcribe_kwargs,
         )
 
         transcript_segments: List[TranscriptSegment] = []
@@ -246,6 +272,8 @@ def transcribe_media_file(
             "duration_after_vad": getattr(info, "duration_after_vad", None),
             "vad_filter": vad_filter,
             "beam_size": beam_size,
+            "condition_on_previous_text": condition_on_previous_text,
+            "hotwords": hotwords,
             "segment_count": len(transcript_segments),
             "avg_logprob_mean": avg_logprob_mean,
             "compression_ratio_mean": compression_ratio_mean,
