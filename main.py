@@ -6743,6 +6743,97 @@ class App(ctk.CTk):
         """Return plain text from transcript segments."""
         return "\n".join((segment.text or "").strip() for segment in segments if (segment.text or "").strip())
 
+    def _asr_probe_timestamp_to_seconds(self, value: str) -> float:
+        """Parse HH:MM:SS.mmm or MM:SS.mmm timestamp strings."""
+        text = str(value or "").strip()
+
+        if not text:
+            return 0.0
+
+        try:
+            parts = text.split(":")
+
+            if len(parts) == 3:
+                hours = float(parts[0])
+                minutes = float(parts[1])
+                seconds = float(parts[2])
+                return hours * 3600.0 + minutes * 60.0 + seconds
+
+            if len(parts) == 2:
+                minutes = float(parts[0])
+                seconds = float(parts[1])
+                return minutes * 60.0 + seconds
+
+            return float(text)
+        except Exception:
+            return 0.0
+
+    def _reference_text_for_probe(
+        self,
+        reference_segments: List[TranscriptSegment],
+        probe_seconds: int,
+    ) -> str:
+        """Build reference text from existing transcript segments inside probe range."""
+        pieces: List[str] = []
+        limit = max(1.0, float(probe_seconds))
+
+        for segment in reference_segments:
+            start_seconds = self._asr_probe_timestamp_to_seconds(getattr(segment, "start", "0"))
+
+            if start_seconds <= limit:
+                text = (getattr(segment, "text", "") or "").strip()
+
+                if text:
+                    pieces.append(text)
+
+        return " ".join(pieces).strip()
+
+    def _normalise_asr_compare_text(self, text: str) -> List[str]:
+        """Normalize text into comparable words."""
+        import re
+
+        text = str(text or "").lower()
+        text = text.replace("’", "'")
+        text = re.sub(r"[^a-z0-9']+", " ", text)
+        return [word for word in text.split() if word]
+
+    def _levenshtein_distance(self, a: List[str], b: List[str]) -> int:
+        """Return Levenshtein edit distance for two token lists."""
+        if not a:
+            return len(b)
+
+        if not b:
+            return len(a)
+
+        previous = list(range(len(b) + 1))
+
+        for i, token_a in enumerate(a, start=1):
+            current = [i]
+
+            for j, token_b in enumerate(b, start=1):
+                cost = 0 if token_a == token_b else 1
+                current.append(
+                    min(
+                        previous[j] + 1,
+                        current[j - 1] + 1,
+                        previous[j - 1] + cost,
+                    )
+                )
+
+            previous = current
+
+        return previous[-1]
+
+    def _asr_reference_error_rate(self, reference_text: str, candidate_text: str) -> Optional[float]:
+        """Return word error rate against reference text, or None if no reference."""
+        reference_words = self._normalise_asr_compare_text(reference_text)
+        candidate_words = self._normalise_asr_compare_text(candidate_text)
+
+        if not reference_words:
+            return None
+
+        return self._levenshtein_distance(reference_words, candidate_words) / max(1, len(reference_words))
+
     def _show_asr_auto_probe_results(
         self,
         media_file: str,
@@ -6825,13 +6916,38 @@ class App(ctk.CTk):
             compression = metadata.get("compression_ratio_mean")
             no_speech = metadata.get("no_speech_prob_mean")
 
+            reference_scored = bool(metadata.get("reference_scored"))
+            reference_word_error_rate = metadata.get("reference_word_error_rate")
+            reference_word_accuracy = metadata.get("reference_word_accuracy")
+
             lines.append(f"Segments: {len(result.get('segments') or [])}")
             lines.append(f"Language: {language}")
             lines.append(f"Language probability: {probability:.2%}" if probability is not None else "Language probability: unknown")
             lines.append(f"Quality score: {score:.2f}" if score is not None else "Quality score: unknown")
+
+            if reference_scored:
+                lines.append(
+                    f"Reference word accuracy: {reference_word_accuracy:.2%}"
+                    if reference_word_accuracy is not None
+                    else "Reference word accuracy: unknown"
+                )
+                lines.append(
+                    f"Reference word error rate: {reference_word_error_rate:.2%}"
+                    if reference_word_error_rate is not None
+                    else "Reference word error rate: unknown"
+                )
+            else:
+                lines.append("Reference scoring: unavailable")
+
             lines.append(f"Avg logprob: {avg_logprob:.4f}" if avg_logprob is not None else "Avg logprob: unknown")
             lines.append(f"Compression ratio: {compression:.4f}" if compression is not None else "Compression ratio: unknown")
             lines.append(f"No speech probability: {no_speech:.4f}" if no_speech is not None else "No speech probability: unknown")
+
+            if reference_scored and result.get("reference_text"):
+                lines.append("")
+                lines.append("Reference:")
+                lines.append(result.get("reference_text") or "")
+
             lines.append("")
             lines.append("Transcript:")
             lines.append(result.get("text") or "")
@@ -6895,6 +7011,16 @@ class App(ctk.CTk):
             auto_probe_seconds = int(asr_settings.get("auto_probe_seconds") or 0)
         except Exception:
             auto_probe_seconds = 0
+
+        auto_probe_reference_segments: List[TranscriptSegment] = []
+
+        if auto_probe_seconds and self.transcript_segments:
+            current_source = self.last_transcript_source or ""
+
+            # Use an already imported/non-ASR transcript as reference when available.
+            # Avoid scoring against a previous ASR draft unless the user imported it separately.
+            if "Local ASR" not in current_source:
+                auto_probe_reference_segments = list(self.transcript_segments)
 
         if auto_probe_seconds:
             asr_mode_label = f"auto quality probe first {auto_probe_seconds}s"
@@ -6985,6 +7111,24 @@ class App(ctk.CTk):
                                 probe_seconds=auto_probe_seconds,
                             )
 
+                            candidate_text = self._plain_text_from_segments(candidate_segments)
+                            reference_text = self._reference_text_for_probe(
+                                auto_probe_reference_segments,
+                                auto_probe_seconds,
+                            )
+
+                            reference_error_rate = self._asr_reference_error_rate(
+                                reference_text,
+                                candidate_text,
+                            )
+
+                            if reference_error_rate is not None:
+                                candidate_metadata["reference_scored"] = True
+                                candidate_metadata["reference_word_error_rate"] = reference_error_rate
+                                candidate_metadata["reference_word_accuracy"] = max(0.0, 1.0 - reference_error_rate)
+                            else:
+                                candidate_metadata["reference_scored"] = False
+
                             results.append({
                                 "label": label,
                                 "model_name": candidate_model,
@@ -6992,7 +7136,8 @@ class App(ctk.CTk):
                                 "compute_type": candidate_compute,
                                 "segments": candidate_segments,
                                 "metadata": candidate_metadata,
-                                "text": self._plain_text_from_segments(candidate_segments),
+                                "text": candidate_text,
+                                "reference_text": reference_text,
                                 "error": "",
                             })
 
@@ -7016,10 +7161,24 @@ class App(ctk.CTk):
                     if not successful_indexes:
                         raise RuntimeError("All Auto Probe candidates failed.")
 
-                    best_index = max(
-                        successful_indexes,
-                        key=lambda index: (results[index].get("metadata") or {}).get("quality_score", -999999.0)
-                    )
+                    reference_scored_indexes = [
+                        index for index in successful_indexes
+                        if (results[index].get("metadata") or {}).get("reference_scored")
+                    ]
+
+                    if reference_scored_indexes:
+                        best_index = min(
+                            reference_scored_indexes,
+                            key=lambda index: (
+                                (results[index].get("metadata") or {}).get("reference_word_error_rate", 999999.0),
+                                -((results[index].get("metadata") or {}).get("quality_score", -999999.0)),
+                            )
+                        )
+                    else:
+                        best_index = max(
+                            successful_indexes,
+                            key=lambda index: (results[index].get("metadata") or {}).get("quality_score", -999999.0)
+                        )
                     best = results[best_index]
                     best_metadata = dict(best.get("metadata") or {})
                     best_metadata["auto_probe"] = True
@@ -7054,12 +7213,23 @@ class App(ctk.CTk):
                         score = best_metadata.get("quality_score")
                         score_text = f"{score:.2f}" if score is not None else "unknown"
 
-                        self.log_message(
-                            f"Auto Probe complete. Best: {best.get('label')} "
-                            f"{best.get('model_name')} ({best.get('device')}/{best.get('compute_type')}), "
-                            f"score={score_text}",
-                            "success"
-                        )
+                        best_reference_scored = bool(best_metadata.get("reference_scored"))
+                        best_reference_accuracy = best_metadata.get("reference_word_accuracy")
+
+                        if best_reference_scored and best_reference_accuracy is not None:
+                            self.log_message(
+                                f"Auto Probe complete. Best by reference match: {best.get('label')} "
+                                f"{best.get('model_name')} ({best.get('device')}/{best.get('compute_type')}), "
+                                f"reference accuracy={best_reference_accuracy:.2%}, score={score_text}",
+                                "success"
+                            )
+                        else:
+                            self.log_message(
+                                f"Auto Probe complete. Best by confidence score: {best.get('label')} "
+                                f"{best.get('model_name')} ({best.get('device')}/{best.get('compute_type')}), "
+                                f"score={score_text}",
+                                "success"
+                            )
 
                         self._show_asr_auto_probe_results(
                             media_file=media_file,
