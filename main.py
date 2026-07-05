@@ -6779,14 +6779,111 @@ class App(ctk.CTk):
 
         for segment in reference_segments:
             start_seconds = self._asr_probe_timestamp_to_seconds(getattr(segment, "start", "0"))
+            end_seconds = self._asr_probe_timestamp_to_seconds(getattr(segment, "end", "0"))
 
-            if start_seconds <= limit:
-                text = (getattr(segment, "text", "") or "").strip()
+            # Keep scoring fair: do not include a reference line that mostly belongs
+            # outside the probe clip.
+            if start_seconds > limit:
+                continue
 
-                if text:
-                    pieces.append(text)
+            if end_seconds and end_seconds > limit + 0.35:
+                continue
+
+            text = (getattr(segment, "text", "") or "").strip()
+
+            if text:
+                pieces.append(text)
 
         return " ".join(pieces).strip()
+
+
+    def _asr_reference_glossary_terms(
+        self,
+        reference_segments: List[TranscriptSegment],
+        max_terms: int = 80,
+    ) -> List[str]:
+        """Extract likely names/rare terms from a reference transcript."""
+        import re
+
+        stopwords = {
+            "a", "an", "and", "are", "all", "as", "at", "be", "but", "by",
+            "can", "do", "for", "from", "got", "has", "have", "he", "her",
+            "here", "him", "his", "i", "if", "in", "is", "it", "it's", "its",
+            "just", "like", "lot", "more", "not", "of", "oh", "okay", "on",
+            "or", "our", "she", "so", "that", "that's", "the", "there",
+            "this", "to", "uh", "um", "we", "what", "when", "with", "you",
+            "your", "yeah", "yes", "no", "hmm", "mm", "mmm", "speaker",
+            "scene", "cut", "content", "screen", "event", "great",
+        }
+
+        seen = set()
+        terms: List[str] = []
+
+        def add(term: str) -> None:
+            term = re.sub(r"\s+", " ", str(term or "")).strip(" \t\r\n.,:;!?\"“”'")
+
+            if len(term) < 3:
+                return
+
+            key = term.lower()
+
+            if key in seen or key in stopwords:
+                return
+
+            if key.startswith("speaker "):
+                return
+
+            seen.add(key)
+            terms.append(term)
+
+        for segment in reference_segments:
+            speaker = (getattr(segment, "speaker", "") or "").strip()
+
+            if speaker and not speaker.lower().startswith("speaker "):
+                add(speaker)
+
+            text = getattr(segment, "text", "") or ""
+
+            # Multi-word proper nouns, e.g. Nicolas Cage.
+            for phrase in re.findall(r"\b(?:[A-Z][A-Za-z0-9']{2,})(?:\s+[A-Z][A-Za-z0-9']{2,}){1,3}\b", text):
+                add(phrase)
+
+            # Single mixed-case or capitalized terms, e.g. ZoneX, Caltheris, Shadowsmith.
+            for word in re.findall(r"\b[A-Za-z][A-Za-z0-9']{2,}\b", text):
+                key = word.lower()
+
+                if key in stopwords:
+                    continue
+
+                if word[:1].isupper() or any(ch.isupper() for ch in word[1:]):
+                    add(word)
+
+            if len(terms) >= max_terms:
+                break
+
+        return terms[:max_terms]
+
+    def _build_asr_reference_glossary_prompt(
+        self,
+        reference_segments: List[TranscriptSegment],
+        base_prompt: Optional[str],
+    ) -> Tuple[str, List[str]]:
+        """Build an ASR phrase-hint prompt from imported reference transcript."""
+        terms = self._asr_reference_glossary_terms(reference_segments)
+
+        prompt_parts: List[str] = []
+
+        if base_prompt:
+            prompt_parts.append(base_prompt.strip())
+
+        if terms:
+            prompt_parts.append(
+                "Important vocabulary and exact spellings: "
+                + "; ".join(terms)
+                + ". Preserve these names and terms exactly when heard."
+            )
+
+        return "\n".join(part for part in prompt_parts if part).strip(), terms
 
     def _normalise_asr_compare_text(self, text: str) -> List[str]:
         """Normalize text into comparable words."""
@@ -6949,11 +7046,19 @@ class App(ctk.CTk):
             reference_scored = bool(metadata.get("reference_scored"))
             reference_word_error_rate = metadata.get("reference_word_error_rate")
             reference_word_accuracy = metadata.get("reference_word_accuracy")
+            phrase_hints = metadata.get("auto_probe_reference_glossary_terms") or []
 
             lines.append(f"Segments: {len(result.get('segments') or [])}")
             lines.append(f"Language: {language}")
             lines.append(f"Language probability: {probability:.2%}" if probability is not None else "Language probability: unknown")
             lines.append(f"Quality score: {score:.2f}" if score is not None else "Quality score: unknown")
+
+            if phrase_hints:
+                preview = ", ".join(str(term) for term in phrase_hints[:20])
+                suffix = " ..." if len(phrase_hints) > 20 else ""
+                lines.append(f"Reference glossary hints: {preview}{suffix}")
+            else:
+                lines.append("Reference glossary hints: none")
 
             if reference_scored:
                 lines.append(
@@ -7132,6 +7237,25 @@ class App(ctk.CTk):
         def worker() -> None:
             try:
                 if auto_probe_seconds:
+                    auto_probe_initial_prompt = initial_prompt
+                    auto_probe_reference_glossary_terms: List[str] = []
+
+                    if auto_probe_reference_segments:
+                        auto_probe_initial_prompt, auto_probe_reference_glossary_terms = self._build_asr_reference_glossary_prompt(
+                            auto_probe_reference_segments,
+                            initial_prompt,
+                        )
+
+                        if auto_probe_reference_glossary_terms:
+                            glossary_preview = ", ".join(auto_probe_reference_glossary_terms[:14])
+                            self.after(
+                                0,
+                                lambda glossary_preview=glossary_preview: self.log_message(
+                                    f"Auto Probe using reference glossary phrase hints: {glossary_preview}",
+                                    "info"
+                                )
+                            )
+
                     candidates = self._build_asr_auto_probe_candidates(
                         selected_model=model_name,
                         selected_device=device,
@@ -7162,11 +7286,18 @@ class App(ctk.CTk):
                                 compute_type=candidate_compute,
                                 speaker_name=speaker_name,
                                 language=language_code,
-                                initial_prompt=initial_prompt,
+                                initial_prompt=auto_probe_initial_prompt,
                                 vad_filter=True,
                                 beam_size=5,
                                 probe_seconds=auto_probe_seconds,
                             )
+
+                            if auto_probe_reference_glossary_terms:
+                                candidate_metadata["auto_probe_reference_glossary_prompt_used"] = True
+                                candidate_metadata["auto_probe_reference_glossary_terms"] = list(auto_probe_reference_glossary_terms)
+                            else:
+                                candidate_metadata["auto_probe_reference_glossary_prompt_used"] = False
+                                candidate_metadata["auto_probe_reference_glossary_terms"] = []
 
                             candidate_text = self._plain_text_from_segments(candidate_segments)
                             reference_text = self._reference_text_for_probe(
