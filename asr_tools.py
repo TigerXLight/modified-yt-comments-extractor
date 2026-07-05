@@ -73,13 +73,13 @@ def _make_probe_audio_clip(media_path: Path, probe_seconds: int) -> Path:
         "-t",
         str(probe_seconds),
         "-i",
-        str(media_path),
+        media_path.resolve().as_posix(),
         "-vn",
         "-ac",
         "1",
         "-ar",
         "16000",
-        str(tmp_path),
+        tmp_path.resolve().as_posix(),
     ]
 
     result = subprocess.run(

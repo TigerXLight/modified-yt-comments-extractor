@@ -74,6 +74,7 @@ from youtube_transcript_downloader import (
 )
 from youtube_video_metadata import fetch_youtube_video_metadata
 from asr_tools import transcribe_media_file
+from asr_calibration import ensure_asr_calibration_sample, get_asr_calibration_reference_segments
 from asr_defaults import load_asr_defaults, save_asr_defaults
 from asr_settings_dialog import ask_asr_settings
 
@@ -7162,6 +7163,11 @@ class App(ctk.CTk):
             for result in results
         )
 
+        calibration_probe_used = any(
+            bool((result.get("metadata") or {}).get("asr_calibration_probe"))
+            for result in results
+        )
+
         best_failed_reference_gate = False
 
         if 0 <= best_index < len(results):
@@ -7173,7 +7179,11 @@ class App(ctk.CTk):
                 and best_reference_accuracy < self._asr_reference_acceptance_threshold()
             )
 
-        if reference_scoring_used:
+        if calibration_probe_used:
+            lines.append("- ASR calibration self-test used a built-in local reference clip.")
+            lines.append("- The current user transcript was not changed.")
+            lines.append(f"- Passing threshold: {self._asr_reference_acceptance_threshold():.2%} reference word accuracy.")
+        elif reference_scoring_used:
             lines.append("- Reference scoring was used because a transcript was already imported.")
             lines.append(f"- Passing threshold: {self._asr_reference_acceptance_threshold():.2%} reference word accuracy.")
         else:
@@ -7209,6 +7219,263 @@ class App(ctk.CTk):
         except Exception:
             pass
 
+    def _select_best_asr_probe_result(self, results: List[Dict[str, Any]]) -> int:
+        """Select the best ASR probe result by reference score when available."""
+        successful_indexes = [
+            index for index, result in enumerate(results)
+            if not result.get("error") and result.get("segments")
+        ]
+
+        if not successful_indexes:
+            return -1
+
+        reference_scored_indexes = [
+            index for index in successful_indexes
+            if (results[index].get("metadata") or {}).get("reference_scored")
+        ]
+
+        if reference_scored_indexes:
+            return min(
+                reference_scored_indexes,
+                key=lambda index: (
+                    (results[index].get("metadata") or {}).get("reference_word_error_rate", 999999.0),
+                    -((results[index].get("metadata") or {}).get("quality_score", -999999.0)),
+                )
+            )
+
+        return max(
+            successful_indexes,
+            key=lambda index: (results[index].get("metadata") or {}).get("quality_score", -999999.0)
+        )
+
+    def _run_asr_calibration_probe(
+        self,
+        model_name: str,
+        speaker_name: str,
+        language_code: Optional[str],
+        initial_prompt: Optional[str],
+        device: str,
+        compute_type: str,
+        calibration_probe_seconds: int = 15,
+    ) -> None:
+        """Run a short local calibration self-test with a known reference transcript."""
+        calibration_probe_seconds = max(5, int(calibration_probe_seconds or 15))
+        calibration_language = language_code or "en"
+
+        self.transcript_asr_button.configure(state="disabled")
+        self.log_message(
+            f"Starting ASR calibration self-test for language={calibration_language or 'en'} "
+            f"({calibration_probe_seconds}s)",
+            "info"
+        )
+
+        def worker() -> None:
+            try:
+                calibration = ensure_asr_calibration_sample(calibration_language)
+                media_file = calibration["audio_path"]
+                calibration_language_code = calibration["language_code"]
+                reference_segments = get_asr_calibration_reference_segments(calibration_language_code)
+
+                calibration_prompt, glossary_terms = self._build_asr_reference_glossary_prompt(
+                    reference_segments,
+                    initial_prompt,
+                )
+
+                if glossary_terms:
+                    glossary_preview = ", ".join(glossary_terms[:14])
+                    self.after(
+                        0,
+                        lambda glossary_preview=glossary_preview: self.log_message(
+                            f"ASR self-test using calibration glossary hints: {glossary_preview}",
+                            "info",
+                        )
+                    )
+
+                candidates = self._build_asr_auto_probe_candidates(
+                    selected_model=model_name,
+                    selected_device=device,
+                    selected_compute_type=compute_type,
+                )
+
+                results: List[Dict[str, Any]] = []
+
+                for candidate in candidates:
+                    label = candidate["label"]
+                    candidate_model = candidate["model_name"]
+                    candidate_device = candidate["device"]
+                    candidate_compute = candidate["compute_type"]
+                    candidate_vad_filter = bool(candidate.get("vad_filter", True))
+                    candidate_condition_on_previous_text = candidate.get("condition_on_previous_text")
+                    candidate_hotwords = None
+
+                    if candidate.get("use_reference_hotwords") and glossary_terms:
+                        candidate_hotwords = "; ".join(glossary_terms)
+
+                    self.after(
+                        0,
+                        lambda label=label, candidate_model=candidate_model, candidate_device=candidate_device, candidate_compute=candidate_compute, candidate_vad_filter=candidate_vad_filter: self.log_message(
+                            f"ASR self-test candidate {label}: {candidate_model} "
+                            f"({candidate_device}/{candidate_compute}), VAD={'on' if candidate_vad_filter else 'off'}",
+                            "info",
+                        )
+                    )
+
+                    try:
+                        candidate_segments, candidate_metadata = transcribe_media_file(
+                            media_file,
+                            model_name=candidate_model,
+                            device=candidate_device,
+                            compute_type=candidate_compute,
+                            speaker_name=speaker_name,
+                            language=calibration_language_code,
+                            initial_prompt=calibration_prompt,
+                            vad_filter=candidate_vad_filter,
+                            beam_size=5,
+                            probe_seconds=None,
+                            condition_on_previous_text=candidate_condition_on_previous_text,
+                            hotwords=candidate_hotwords,
+                        )
+
+                        candidate_metadata["asr_calibration_probe"] = True
+                        candidate_metadata["asr_calibration_language"] = calibration_language_code
+                        candidate_metadata["auto_probe_candidate_label"] = label
+                        candidate_metadata["auto_probe_candidate_vad_filter"] = candidate_vad_filter
+                        candidate_metadata["auto_probe_candidate_condition_on_previous_text"] = candidate_condition_on_previous_text
+                        candidate_metadata["auto_probe_candidate_hotwords_used"] = bool(candidate_hotwords)
+                        candidate_metadata["auto_probe_reference_glossary_prompt_used"] = bool(glossary_terms)
+                        candidate_metadata["auto_probe_reference_glossary_terms"] = list(glossary_terms)
+
+                        candidate_text = self._plain_text_from_segments(candidate_segments)
+                        reference_text = self._reference_text_for_probe(
+                            reference_segments,
+                            calibration_probe_seconds,
+                        )
+
+                        reference_error_rate = self._asr_reference_error_rate(
+                            reference_text,
+                            candidate_text,
+                        )
+
+                        if reference_error_rate is not None:
+                            candidate_metadata["reference_scored"] = True
+                            candidate_metadata["reference_word_error_rate"] = reference_error_rate
+                            candidate_metadata["reference_word_accuracy"] = max(0.0, 1.0 - reference_error_rate)
+                        else:
+                            candidate_metadata["reference_scored"] = False
+
+                        results.append({
+                            "label": label,
+                            "model_name": candidate_model,
+                            "device": candidate_device,
+                            "compute_type": candidate_compute,
+                            "segments": candidate_segments,
+                            "metadata": candidate_metadata,
+                            "text": candidate_text,
+                            "reference_text": reference_text,
+                            "error": "",
+                        })
+
+                    except Exception as candidate_error:
+                        results.append({
+                            "label": label,
+                            "model_name": candidate_model,
+                            "device": candidate_device,
+                            "compute_type": candidate_compute,
+                            "segments": [],
+                            "metadata": {"asr_calibration_probe": True},
+                            "text": "",
+                            "reference_text": self._reference_text_for_probe(reference_segments, calibration_probe_seconds),
+                            "error": str(candidate_error),
+                        })
+
+                best_index = self._select_best_asr_probe_result(results)
+                threshold = self._asr_reference_acceptance_threshold()
+
+                if best_index < 0 and results:
+                    # No successful candidate. Still show the results window so the
+                    # user can see whether candidates crashed or returned no speech.
+                    best_index = 0
+
+                best = results[best_index] if results else {}
+                best_metadata = best.get("metadata") or {}
+                accuracy = best_metadata.get("reference_word_accuracy")
+
+                def on_success() -> None:
+                    failed_count = 0
+                    empty_count = 0
+
+                    for result in results:
+                        label = result.get("label", "candidate")
+                        error_text = result.get("error") or ""
+                        segments = result.get("segments") or []
+
+                        if error_text:
+                            failed_count += 1
+                            self.log_message(
+                                f"ASR self-test candidate failed: {label}: {error_text}",
+                                "error",
+                            )
+                        elif not segments:
+                            empty_count += 1
+                            self.log_message(
+                                f"ASR self-test candidate returned no transcript segments: {label}",
+                                "warning",
+                            )
+
+                    if not results:
+                        self.log_message("ASR calibration self-test produced no candidate results.", "error")
+                    elif failed_count + empty_count >= len(results):
+                        self.log_message(
+                            f"ASR calibration self-test FAILED: all {len(results)} candidates failed or returned no speech.",
+                            "error",
+                        )
+                    elif accuracy is not None and accuracy >= threshold:
+                        self.log_message(
+                            f"ASR calibration self-test PASSED: {best.get('label')} "
+                            f"{best.get('model_name')} ({best.get('device')}/{best.get('compute_type')}), "
+                            f"reference accuracy={accuracy:.2%}",
+                            "success",
+                        )
+                    elif accuracy is not None:
+                        self.log_message(
+                            f"ASR calibration self-test FAILED: best candidate {best.get('label')} "
+                            f"{best.get('model_name')} ({best.get('device')}/{best.get('compute_type')}), "
+                            f"reference accuracy={accuracy:.2%}, required={threshold:.2%}",
+                            "warning",
+                        )
+                    else:
+                        self.log_message(
+                            "ASR calibration self-test completed without reference accuracy.",
+                            "warning",
+                        )
+
+                    self._show_asr_auto_probe_results(
+                        media_file=media_file,
+                        results=results,
+                        best_index=best_index,
+                        probe_seconds=calibration_probe_seconds,
+                    )
+
+                self.after(0, on_success)
+
+            except Exception as error:
+                logger.exception("ASR calibration self-test failed")
+                error_text = str(error)
+
+                def on_error() -> None:
+                    self.log_message(f"ASR calibration self-test failed: {error_text}", "error")
+                    messagebox.showerror("ASR Calibration Self-Test Error", error_text)
+
+                self.after(0, on_error)
+
+            finally:
+                self.after(
+                    0,
+                    lambda: self.transcript_asr_button.configure(state="normal")
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def local_asr_transcribe_clicked(self) -> None:
         """Transcribe a local audio/video file using faster-whisper."""
         asr_defaults = load_asr_defaults()
@@ -7239,6 +7506,32 @@ class App(ctk.CTk):
             auto_probe_seconds = int(asr_settings.get("auto_probe_seconds") or 0)
         except Exception:
             auto_probe_seconds = 0
+
+        try:
+            calibration_probe_seconds = int(asr_settings.get("calibration_probe_seconds") or 0)
+        except Exception:
+            calibration_probe_seconds = 0
+
+        if calibration_probe_seconds:
+            save_asr_defaults(
+                model_name=model_name,
+                speaker_name=speaker_name,
+                language=language_code or "",
+                initial_prompt=initial_prompt or "",
+                device=device,
+                compute_type=compute_type,
+            )
+
+            self._run_asr_calibration_probe(
+                model_name=model_name,
+                speaker_name=speaker_name,
+                language_code=language_code,
+                initial_prompt=initial_prompt,
+                device=device,
+                compute_type=compute_type,
+                calibration_probe_seconds=calibration_probe_seconds,
+            )
+            return
 
         auto_probe_reference_segments: List[TranscriptSegment] = []
 
