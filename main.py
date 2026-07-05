@@ -1974,6 +1974,21 @@ class App(ctk.CTk):
         )
         self.footer_stats.pack(side="right", padx=(0, 10))
 
+        # Copy button
+        self.copy_log_button = ctk.CTkButton(
+            log_header,
+            text="Copy",
+            width=60,
+            height=28,
+            font=ctk.CTkFont(size=12),
+            fg_color="transparent",
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_muted"],
+            corner_radius=6,
+            command=self.copy_activity_log_to_clipboard
+        )
+        self.copy_log_button.pack(side="right", padx=(0, 6))
+
         # Clear button
         self.clear_log_button = ctk.CTkButton(
             log_header,
@@ -2316,8 +2331,54 @@ class App(ctk.CTk):
 
         return from_date, to_date, None
 
+    def _collect_activity_log_text(self) -> str:
+        """Collect Activity Log text for clipboard copy."""
+        stored_messages = getattr(self, "activity_log_messages", None)
+
+        if stored_messages:
+            return "\n".join(str(message).strip() for message in stored_messages if str(message).strip())
+
+        lines = []
+
+        try:
+            children = self.log_frame.winfo_children()
+        except Exception:
+            children = []
+
+        for child in children:
+            try:
+                text = child.cget("text")
+            except Exception:
+                text = ""
+
+            text = str(text or "").strip()
+
+            if text:
+                lines.append(text)
+
+        return "\n".join(lines).strip()
+
+    def copy_activity_log_to_clipboard(self) -> None:
+        """Copy Activity Log text to clipboard."""
+        text = self._collect_activity_log_text()
+
+        if not text:
+            messagebox.showinfo("Activity Log", "There is no Activity Log text to copy.")
+            return
+
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self.update_idletasks()
+            self.log_message("Activity Log copied to clipboard.", "success")
+        except Exception as error:
+            logger.exception("Copy activity log failed")
+            messagebox.showerror("Copy Failed", f"Could not copy Activity Log:\n\n{error}")
+
     def clear_log(self) -> None:
         """Clear the activity log."""
+        self.activity_log_messages = []
+
         for widget in self.log_frame.winfo_children():
             widget.destroy()
 
@@ -2330,8 +2391,13 @@ class App(ctk.CTk):
 
     def log_message(self, message: str, level: str = "info") -> None:
         """Add a message to the activity log."""
-        color = LOG_COLORS.get(level, COLORS["text_secondary"])
+        if not hasattr(self, "activity_log_messages"):
+            self.activity_log_messages = []
+
         icon = LOG_ICONS.get(level, "→")
+        self.activity_log_messages.append(f"{icon}  {message}")
+
+        color = LOG_COLORS.get(level, COLORS["text_secondary"])
 
         entry = ctk.CTkLabel(
             self.log_frame,
