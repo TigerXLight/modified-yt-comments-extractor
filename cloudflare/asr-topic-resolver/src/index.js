@@ -4,8 +4,26 @@ const STOPWORDS = new Set([
   "watch","shorts","youtube","youtu","http","https","www","com","social","media","community",
   "discord","twitter","twitch","instagram","spotify","listen","music","official","video",
   "started","streaming","details","games","wiki","fandom","page","edit","source","category",
-  "navigation","comments","livechat","imported","situation"
+  "navigation","comments","livechat","imported","situation","search","api","article"
 ]);
+
+const WIKI_APIS = [
+  {
+    name: "Call of Duty Wiki",
+    api: "https://callofduty.fandom.com/api.php",
+    weight: 3
+  },
+  {
+    name: "Zombies Wiki",
+    api: "https://callofduty.fandom.com/api.php",
+    weight: 2
+  },
+  {
+    name: "Wikipedia",
+    api: "https://en.wikipedia.org/w/api.php",
+    weight: 1
+  }
+];
 
 function corsHeaders() {
   return {
@@ -38,7 +56,6 @@ function cleanTerm(raw) {
   const lowered = term.toLowerCase();
   if (STOPWORDS.has(lowered)) return "";
 
-  // Drop likely random YouTube/video IDs unless they have obvious word casing.
   if (/^[A-Za-z0-9_-]{8,}$/.test(term) && !/[a-z][A-Z]/.test(term) && !/[^\x00-\x7F]/.test(term)) {
     return "";
   }
@@ -120,15 +137,23 @@ function extractMeta(htmlText) {
   const metaPatterns = [
     /<meta[^>]+name=["']description["'][^>]+content=["']([\s\S]*?)["']/i,
     /<meta[^>]+property=["']og:title["'][^>]+content=["']([\s\S]*?)["']/i,
-    /<meta[^>]+property=["']og:description["'][^>]+content=["']([\s\S]*?)["']/i
+    /<meta[^>]+property=["']og:description["'][^>]+content=["']([\s\S]*?)["']/i,
+    /"shortDescription"\s*:\s*"((?:\\"|[^"])*)"/i,
+    /"title"\s*:\s*\{"runs"\s*:\s*\[\{"text"\s*:\s*"((?:\\"|[^"])*)"/i
   ];
 
   for (const pattern of metaPatterns) {
     const match = text.match(pattern);
-    if (match && match[1]) parts.push(stripHtml(match[1]));
+    if (match && match[1]) {
+      try {
+        parts.push(JSON.parse(`"${match[1]}"`));
+      } catch (_) {
+        parts.push(stripHtml(match[1]));
+      }
+    }
   }
 
-  return parts.join("\\n");
+  return parts.join("\n");
 }
 
 function extractTerms(text, urls = [], maxTerms = 80) {
@@ -185,74 +210,7 @@ function contextText(context) {
     }
   }
 
-  return parts.join("\\n");
-}
-
-async function braveSearch(query, env) {
-  if (!env.BRAVE_SEARCH_API_KEY) {
-    throw new Error("BRAVE_SEARCH_API_KEY is not configured");
-  }
-
-  const endpoint = new URL("https://api.search.brave.com/res/v1/web/search");
-  endpoint.searchParams.set("q", query);
-  endpoint.searchParams.set("count", "10");
-  endpoint.searchParams.set("text_decorations", "false");
-  endpoint.searchParams.set("safesearch", "moderate");
-
-  const response = await fetch(endpoint.toString(), {
-    headers: {
-      "Accept": "application/json",
-      "X-Subscription-Token": env.BRAVE_SEARCH_API_KEY
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Brave Search failed: ${response.status} ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-function buildQueries(context, localTerms) {
-  const text = contextText(context);
-  const terms = dedupeTerms(localTerms, 20);
-  const seed = terms.slice(0, 8).join(" ");
-
-  const queries = [];
-
-  if (seed) {
-    queries.push(`${seed} glossary`);
-    queries.push(`${seed} wiki`);
-    queries.push(`${seed} fandom`);
-  }
-
-  if (/codzombies|bo7|zombies|call of duty/i.test(text)) {
-    queries.push(`${seed} Call of Duty Zombies wiki`);
-    queries.push(`site:callofduty.fandom.com ${seed}`);
-  }
-
-  if (!queries.length) {
-    queries.push(`${text.slice(0, 120)} glossary`);
-  }
-
-  return [...new Set(queries.map((q) => q.trim()).filter(Boolean))].slice(0, 6);
-}
-
-function resultSource(result) {
-  return {
-    title: result.title || "",
-    url: result.url || "",
-    description: result.description || ""
-  };
-}
-
-function shouldFetchPage(url) {
-  try {
-    const host = new URL(url).hostname.toLowerCase();
-    return host.includes("fandom.com") || host.includes("wikipedia.org") || host.includes("wiki");
-  } catch (_) {
-    return false;
-  }
+  return parts.join("\n");
 }
 
 async function fetchText(url) {
@@ -268,6 +226,145 @@ async function fetchText(url) {
   }
 
   return await response.text();
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "YTCE-ASR-TopicResolver/1.0",
+      "Accept": "application/json"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+
+  return await response.json();
+}
+
+function buildWikiQueries(context, localTerms) {
+  const text = contextText(context);
+  const terms = dedupeTerms(localTerms, 30);
+
+  const quoted = [...text.matchAll(/["'“‘]([^"'”’]{3,80})["'”’]/gu)].map((m) => m[1]);
+  const hashtags = [...text.matchAll(/#([\p{L}\p{N}_-]{3,60})/gu)].map((m) => m[1]);
+
+  const topicSeeds = dedupeTerms([
+    ...quoted,
+    ...hashtags,
+    ...terms,
+    "Black Ops 7 Zombies",
+    "Call of Duty Zombies",
+    "Kowakujō"
+  ], 40);
+
+  const queries = [];
+
+  for (const seed of topicSeeds.slice(0, 12)) {
+    queries.push(seed);
+  }
+
+  if (/bo7|codzombies|zombies|call of duty|black ops/i.test(text)) {
+    queries.push("Black Ops 7 Zombies");
+    queries.push("BO7 Zombies");
+    queries.push("Kowakujō");
+    queries.push("Caltheris");
+    queries.push("Nyxara");
+    queries.push("Shadowsmith");
+  }
+
+  return [...new Set(queries.map((q) => q.trim()).filter(Boolean))].slice(0, 24);
+}
+
+async function mediaWikiSearch(api, query, limit = 8) {
+  const url = new URL(api);
+  url.searchParams.set("action", "query");
+  url.searchParams.set("list", "search");
+  url.searchParams.set("srsearch", query);
+  url.searchParams.set("srlimit", String(limit));
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
+
+  const data = await fetchJson(url.toString());
+  return data?.query?.search || [];
+}
+
+async function mediaWikiParse(api, title) {
+  const url = new URL(api);
+  url.searchParams.set("action", "parse");
+  url.searchParams.set("page", title);
+  url.searchParams.set("prop", "text|links|displaytitle");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
+
+  const data = await fetchJson(url.toString());
+  const parse = data?.parse || {};
+  const htmlText = parse?.text?.["*"] || "";
+  const links = Array.isArray(parse.links) ? parse.links : [];
+
+  return {
+    title: parse.title || title,
+    displaytitle: stripHtml(parse.displaytitle || ""),
+    text: stripHtml(htmlText).slice(0, 40000),
+    links: links.map((item) => item["*"]).filter(Boolean).slice(0, 200)
+  };
+}
+
+async function resolveWikiDatabases(context, localTerms, maxTerms) {
+  const queries = buildWikiQueries(context, localTerms);
+  const corpus = [];
+  const sources = [];
+  const errors = [];
+  const foundTitles = new Set();
+
+  for (const wiki of WIKI_APIS) {
+    for (const query of queries.slice(0, 12)) {
+      try {
+        const results = await mediaWikiSearch(wiki.api, query, 6);
+
+        for (const item of results) {
+          const title = item.title || "";
+          if (!title) continue;
+
+          const key = `${wiki.name}:${title}`;
+          if (foundTitles.has(key)) continue;
+          foundTitles.add(key);
+
+          sources.push({
+            title: `${wiki.name}: ${title}`,
+            url: item.url || "",
+            description: stripHtml(item.snippet || "").slice(0, 300)
+          });
+
+          corpus.push(`${title}\n${stripHtml(item.snippet || "")}`);
+
+          if (foundTitles.size <= 14) {
+            try {
+              const page = await mediaWikiParse(wiki.api, title);
+              corpus.push(`${page.title}\n${page.displaytitle}\n${page.links.join("\n")}\n${page.text}`);
+              sources.push({
+                title: `${wiki.name}: ${page.title}`,
+                url: wiki.api.replace("/api.php", `/wiki/${encodeURIComponent(page.title.replaceAll(" ", "_"))}`),
+                description: page.text.slice(0, 300)
+              });
+            } catch (error) {
+              errors.push(`Wiki parse failed ${wiki.name}/${title}: ${error.message}`);
+            }
+          }
+        }
+      } catch (error) {
+        errors.push(`Wiki search failed ${wiki.name}/${query}: ${error.message}`);
+      }
+    }
+  }
+
+  return {
+    terms: extractTerms(corpus.join("\n"), [], maxTerms),
+    sources,
+    errors,
+    queries
+  };
 }
 
 async function resolve(payload, env) {
@@ -286,7 +383,7 @@ async function resolve(payload, env) {
 
   corpus.push(contextText(context));
 
-  for (const url of uniqueUrls.slice(0, 3)) {
+  for (const url of uniqueUrls.slice(0, 4)) {
     try {
       const page = await fetchText(url);
       const meta = extractMeta(page);
@@ -301,51 +398,22 @@ async function resolve(payload, env) {
 
   const firstPassTerms = dedupeTerms([
     ...(payload.local_terms || []),
-    ...extractTerms(corpus.join("\\n"), uniqueUrls, maxTerms)
+    ...extractTerms(corpus.join("\n"), uniqueUrls, maxTerms)
   ], maxTerms);
 
-  const queries = buildQueries(context, firstPassTerms);
-
-  if (env.BRAVE_SEARCH_API_KEY) {
-    for (const query of queries) {
-      try {
-        const data = await braveSearch(query, env);
-        const results = data?.web?.results || [];
-
-        for (const result of results.slice(0, 8)) {
-          const source = resultSource(result);
-          if (source.url) sources.push(source);
-          corpus.push(`${source.title}\\n${source.description}\\n${source.url}`);
-
-          if (source.url && shouldFetchPage(source.url)) {
-            try {
-              const page = await fetchText(source.url);
-              corpus.push(extractMeta(page));
-              corpus.push(stripHtml(page).slice(0, 25000));
-            } catch (error) {
-              errors.push(`Result page fetch failed for ${source.url}: ${error.message}`);
-            }
-          }
-        }
-      } catch (error) {
-        errors.push(`Brave query failed "${query}": ${error.message}`);
-      }
-    }
-  } else {
-    errors.push("BRAVE_SEARCH_API_KEY is not configured");
-  }
+  const wiki = await resolveWikiDatabases(context, firstPassTerms, maxTerms);
 
   const terms = dedupeTerms([
-    ...extractTerms(corpus.join("\\n"), uniqueUrls, maxTerms),
+    ...wiki.terms,
     ...firstPassTerms
   ], maxTerms);
 
   return {
     terms,
-    sources: sources.slice(0, 20),
-    queries,
-    errors,
-    provider: env.BRAVE_SEARCH_API_KEY ? "brave-search" : "local-only"
+    sources: [...sources, ...wiki.sources].slice(0, 30),
+    queries: wiki.queries,
+    errors: [...errors, ...wiki.errors].slice(0, 20),
+    provider: "free-mediawiki-direct"
   };
 }
 
@@ -386,7 +454,7 @@ export default {
       return json({
         ok: true,
         service: "ytce-asr-topic-resolver",
-        brave_configured: Boolean(env.BRAVE_SEARCH_API_KEY),
+        provider: "free-mediawiki-direct",
         auth_required: Boolean(env.RESOLVER_SHARED_KEY)
       });
     }

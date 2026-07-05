@@ -1,14 +1,21 @@
 # YTCE ASR Topic Resolver
 
-Cloudflare Worker resolver for background ASR glossary discovery.
+Free Cloudflare Worker resolver for background ASR glossary discovery.
+
+This version does not require Brave Search or payment details.
+
+It uses:
+- YouTube/page metadata fetch
+- MediaWiki/Fandom direct APIs
+- Call of Duty Wiki search/parse
+- optional RESOLVER_SHARED_KEY secret
 
 Commands:
 
 1. npm install
 2. npx wrangler login
-3. npx wrangler secret put BRAVE_SEARCH_API_KEY
-4. optional: npx wrangler secret put RESOLVER_SHARED_KEY
-5. npx wrangler deploy
+3. optional: npx wrangler secret put RESOLVER_SHARED_KEY
+4. npx wrangler deploy
 
 Desktop app:
 
