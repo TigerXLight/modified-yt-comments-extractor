@@ -141,7 +141,7 @@ class App(ctk.CTk):
         # Window configuration
         self.title(APP_NAME)
         self.geometry(f"{WINDOW_DEFAULT_WIDTH}x{WINDOW_DEFAULT_HEIGHT}")
-        self.minsize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
+        self.minsize(max(WINDOW_MIN_WIDTH, 1120), max(WINDOW_MIN_HEIGHT, 760))
         self.configure(fg_color=COLORS["bg_dark"])
 
         # Set window icon
@@ -206,6 +206,7 @@ class App(ctk.CTk):
         self.bind_all("[", self._on_visual_sync_minus_shortcut)
         self.bind_all("]", self._on_visual_sync_plus_shortcut)
         self.bind_all("<Control-0>", self._on_visual_sync_reset_shortcut)
+        self._bind_window_size_shortcuts()
 
         # Handle window close
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -691,6 +692,14 @@ class App(ctk.CTk):
             text_color=COLORS["text_muted"]
         )
         shortcuts_label.pack(side="right")
+
+        window_size_label = ctk.CTkLabel(
+            footer_frame,
+            text="  Ctrl+1/2/3: Size  F11: Max",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"]
+        )
+        window_size_label.pack(side="right", padx=(8, 0))
 
     # =========================================================================
     # MAIN CONTENT CREATION
@@ -2238,6 +2247,101 @@ class App(ctk.CTk):
         self.url_status.configure(text=status_msg, text_color=color)
 
     # =========================================================================
+    # WINDOW SIZE HELPERS
+    # =========================================================================
+
+    def _bind_window_size_shortcuts(self) -> None:
+        """Bind robust keyboard shortcuts for safe window size presets."""
+        shortcut_map = {
+            "compact": (
+                "<Control-KeyPress-1>",
+                "<Control-Key-1>",
+                "<Control-KeyPress-KP_1>",
+                "<Control-Key-KP_1>",
+            ),
+            "default": (
+                "<Control-KeyPress-2>",
+                "<Control-Key-2>",
+                "<Control-KeyPress-KP_2>",
+                "<Control-Key-KP_2>",
+            ),
+            "wide": (
+                "<Control-KeyPress-3>",
+                "<Control-Key-3>",
+                "<Control-KeyPress-KP_3>",
+                "<Control-Key-KP_3>",
+            ),
+        }
+
+        for preset, sequences in shortcut_map.items():
+            for sequence in sequences:
+                try:
+                    self.bind_all(
+                        sequence,
+                        lambda event, preset=preset: self._on_window_size_shortcut(event, preset),
+                        add="+",
+                    )
+                except Exception:
+                    pass
+
+        try:
+            self.bind_all("<F11>", self._on_toggle_maximized_shortcut, add="+")
+        except Exception:
+            pass
+
+    def _on_window_size_shortcut(self, event, preset: str) -> str:
+        """Handle Ctrl+1/2/3 size preset shortcuts."""
+        self.apply_window_size_preset(preset)
+        return "break"
+
+    def _on_toggle_maximized_shortcut(self, event=None) -> str:
+        """Handle F11 maximize/restore shortcut."""
+        self.toggle_window_maximized()
+        return "break"
+
+    def apply_window_size_preset(self, preset: str = "default") -> None:
+        """Apply a safe app window size preset without dynamic resize handlers."""
+        presets = {
+            "compact": (1180, 820),
+            "default": (1400, 950),
+            "wide": (1650, 1000),
+        }
+
+        width, height = presets.get(preset, presets["default"])
+
+        try:
+            self.state("normal")
+        except Exception:
+            pass
+
+        try:
+            screen_width = self.winfo_screenwidth()
+            screen_height = self.winfo_screenheight()
+
+            x = max(0, int((screen_width - width) / 2))
+            y = max(0, int((screen_height - height) / 2))
+
+            self.geometry(f"{width}x{height}+{x}+{y}")
+            self.minsize(1120, 760)
+            self.log_message(f"Window size preset applied: {preset}", "muted")
+        except Exception as error:
+            logger.warning(f"Could not apply window size preset: {error}")
+
+    def toggle_window_maximized(self) -> None:
+        """Toggle maximized window state."""
+        try:
+            if self.state() == "zoomed":
+                self.state("normal")
+                self.apply_window_size_preset("default")
+            else:
+                self.state("zoomed")
+        except Exception:
+            try:
+                self.attributes("-zoomed", not bool(self.attributes("-zoomed")))
+            except Exception as error:
+                logger.warning(f"Could not toggle maximized window: {error}")
+
+    # =========================================================================
     # SETTINGS MANAGEMENT
     # =========================================================================
 
@@ -2330,6 +2434,8 @@ class App(ctk.CTk):
             return None, None, result.error_message
 
         return from_date, to_date, None
+
+
 
     def _collect_activity_log_text(self) -> str:
         """Collect Activity Log text for clipboard copy."""
