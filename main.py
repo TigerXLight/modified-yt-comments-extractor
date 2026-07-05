@@ -6706,6 +6706,165 @@ class App(ctk.CTk):
         )
 
 
+    def _build_asr_auto_probe_candidates(
+        self,
+        selected_model: str,
+        selected_device: str,
+        selected_compute_type: str,
+    ) -> List[Dict[str, str]]:
+        """Return ASR candidates to test for Auto Quality Probe."""
+        candidates: List[Dict[str, str]] = []
+
+        def add(label: str, model: str, device: str, compute: str) -> None:
+            key = (model, device, compute)
+
+            if any((item["model_name"], item["device"], item["compute_type"]) == key for item in candidates):
+                return
+
+            candidates.append({
+                "label": label,
+                "model_name": model,
+                "device": device,
+                "compute_type": compute,
+            })
+
+        add("Draft CPU", "small", "cpu", "int8")
+        add("Recommended CPU", "medium", "cpu", "int8")
+        add("Accurate CPU", "large-v3", "cpu", "int8")
+
+        if selected_device == "cuda":
+            add("GPU Accurate", "large-v3", "cuda", "float16")
+
+        add("Current Selected", selected_model, selected_device, selected_compute_type)
+
+        return candidates
+
+    def _plain_text_from_segments(self, segments: List[TranscriptSegment]) -> str:
+        """Return plain text from transcript segments."""
+        return "\n".join((segment.text or "").strip() for segment in segments if (segment.text or "").strip())
+
+    def _show_asr_auto_probe_results(
+        self,
+        media_file: str,
+        results: List[Dict[str, Any]],
+        best_index: int,
+        probe_seconds: int,
+    ) -> None:
+        """Show Auto Probe results in a comparison window."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("ASR Auto Quality Probe Results")
+        dialog.geometry("980x720")
+        dialog.minsize(760, 520)
+        dialog.transient(self)
+
+        try:
+            x = self.winfo_x() + 80
+            y = self.winfo_y() + 60
+            dialog.geometry(f"980x720+{x}+{y}")
+        except Exception:
+            pass
+
+        dialog.grid_columnconfigure(0, weight=1)
+        dialog.grid_rowconfigure(1, weight=1)
+
+        title = ctk.CTkLabel(
+            dialog,
+            text=f"ASR Auto Quality Probe — first {probe_seconds}s of {os.path.basename(media_file)}",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            anchor="w",
+        )
+        title.grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 8))
+
+        textbox = ctk.CTkTextbox(dialog, wrap="word", font=ctk.CTkFont(size=12))
+        textbox.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 12))
+
+        lines: List[str] = []
+
+        if 0 <= best_index < len(results):
+            best = results[best_index]
+            lines.append("SELECTED BEST PROBE")
+            lines.append("=" * 80)
+            lines.append(
+                f"{best.get('label')} — "
+                f"model={best.get('model_name')} / "
+                f"device={best.get('device')} / "
+                f"compute={best.get('compute_type')}"
+            )
+
+            metadata = best.get("metadata") or {}
+            score = metadata.get("quality_score")
+
+            if score is not None:
+                lines.append(f"Probe quality score: {score:.2f}")
+
+            lines.append("")
+
+        lines.append("ALL PROBE RESULTS")
+        lines.append("=" * 80)
+
+        for index, result in enumerate(results, start=1):
+            lines.append("")
+            lines.append("-" * 80)
+            prefix = "BEST: " if index - 1 == best_index else ""
+            lines.append(
+                f"{prefix}{index}. {result.get('label')} — "
+                f"model={result.get('model_name')} / "
+                f"device={result.get('device')} / "
+                f"compute={result.get('compute_type')}"
+            )
+
+            if result.get("error"):
+                lines.append(f"ERROR: {result.get('error')}")
+                continue
+
+            metadata = result.get("metadata") or {}
+            score = metadata.get("quality_score")
+            language = metadata.get("language") or "unknown"
+            probability = metadata.get("language_probability")
+            avg_logprob = metadata.get("avg_logprob_mean")
+            compression = metadata.get("compression_ratio_mean")
+            no_speech = metadata.get("no_speech_prob_mean")
+
+            lines.append(f"Segments: {len(result.get('segments') or [])}")
+            lines.append(f"Language: {language}")
+            lines.append(f"Language probability: {probability:.2%}" if probability is not None else "Language probability: unknown")
+            lines.append(f"Quality score: {score:.2f}" if score is not None else "Quality score: unknown")
+            lines.append(f"Avg logprob: {avg_logprob:.4f}" if avg_logprob is not None else "Avg logprob: unknown")
+            lines.append(f"Compression ratio: {compression:.4f}" if compression is not None else "Compression ratio: unknown")
+            lines.append(f"No speech probability: {no_speech:.4f}" if no_speech is not None else "No speech probability: unknown")
+            lines.append("")
+            lines.append("Transcript:")
+            lines.append(result.get("text") or "")
+
+        lines.append("")
+        lines.append("=" * 80)
+        lines.append("Note:")
+        lines.append("- Auto Probe compares settings without a reference transcript, so the score is a guide, not a proof.")
+        lines.append("- If common words are wrong on clear audio, that method should not be accepted for full subtitles.")
+        lines.append("- The best probe transcript was loaded into the Transcript tab for review.")
+        lines.append("- Run full Local ASR after choosing acceptable settings.")
+
+        textbox.insert("1.0", "\n".join(lines))
+        textbox.configure(state="disabled")
+
+        footer = ctk.CTkFrame(dialog, fg_color="transparent")
+        footer.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 18))
+        footer.grid_columnconfigure(0, weight=1)
+
+        close_button = ctk.CTkButton(
+            footer,
+            text="Close",
+            command=dialog.destroy,
+            width=110,
+        )
+        close_button.grid(row=0, column=1, sticky="e")
+
+        try:
+            dialog.lift()
+            dialog.focus_force()
+        except Exception:
+            pass
+
     def local_asr_transcribe_clicked(self) -> None:
         """Transcribe a local audio/video file using faster-whisper."""
         asr_defaults = load_asr_defaults()
@@ -6732,7 +6891,15 @@ class App(ctk.CTk):
         except Exception:
             probe_seconds = 0
 
-        asr_mode_label = f"probe first {probe_seconds}s" if probe_seconds else "full transcription"
+        try:
+            auto_probe_seconds = int(asr_settings.get("auto_probe_seconds") or 0)
+        except Exception:
+            auto_probe_seconds = 0
+
+        if auto_probe_seconds:
+            asr_mode_label = f"auto quality probe first {auto_probe_seconds}s"
+        else:
+            asr_mode_label = f"probe first {probe_seconds}s" if probe_seconds else "full transcription"
 
         linked_media_file = getattr(self, "linked_transcript_media_path", None)
 
@@ -6781,6 +6948,129 @@ class App(ctk.CTk):
 
         def worker() -> None:
             try:
+                if auto_probe_seconds:
+                    candidates = self._build_asr_auto_probe_candidates(
+                        selected_model=model_name,
+                        selected_device=device,
+                        selected_compute_type=compute_type,
+                    )
+
+                    results: List[Dict[str, Any]] = []
+
+                    for candidate in candidates:
+                        label = candidate["label"]
+                        candidate_model = candidate["model_name"]
+                        candidate_device = candidate["device"]
+                        candidate_compute = candidate["compute_type"]
+
+                        self.after(
+                            0,
+                            lambda label=label, candidate_model=candidate_model, candidate_device=candidate_device, candidate_compute=candidate_compute: self.log_message(
+                                f"Auto Probe testing {label}: {candidate_model} ({candidate_device}/{candidate_compute})",
+                                "info"
+                            )
+                        )
+
+                        try:
+                            candidate_segments, candidate_metadata = transcribe_media_file(
+                                media_file,
+                                model_name=candidate_model,
+                                device=candidate_device,
+                                compute_type=candidate_compute,
+                                speaker_name=speaker_name,
+                                language=language_code,
+                                initial_prompt=initial_prompt,
+                                vad_filter=True,
+                                beam_size=5,
+                                probe_seconds=auto_probe_seconds,
+                            )
+
+                            results.append({
+                                "label": label,
+                                "model_name": candidate_model,
+                                "device": candidate_device,
+                                "compute_type": candidate_compute,
+                                "segments": candidate_segments,
+                                "metadata": candidate_metadata,
+                                "text": self._plain_text_from_segments(candidate_segments),
+                                "error": "",
+                            })
+
+                        except Exception as candidate_error:
+                            results.append({
+                                "label": label,
+                                "model_name": candidate_model,
+                                "device": candidate_device,
+                                "compute_type": candidate_compute,
+                                "segments": [],
+                                "metadata": {},
+                                "text": "",
+                                "error": str(candidate_error),
+                            })
+
+                    successful_indexes = [
+                        index for index, result in enumerate(results)
+                        if not result.get("error") and result.get("segments")
+                    ]
+
+                    if not successful_indexes:
+                        raise RuntimeError("All Auto Probe candidates failed.")
+
+                    best_index = max(
+                        successful_indexes,
+                        key=lambda index: (results[index].get("metadata") or {}).get("quality_score", -999999.0)
+                    )
+                    best = results[best_index]
+                    best_metadata = dict(best.get("metadata") or {})
+                    best_metadata["auto_probe"] = True
+                    best_metadata["auto_probe_seconds"] = auto_probe_seconds
+                    best_metadata["auto_probe_candidate_count"] = len(results)
+
+                    def on_auto_probe_success() -> None:
+                        self.transcript_segments = list(best.get("segments") or [])
+                        self.last_youtube_video_info = None
+                        self.last_asr_metadata = best_metadata
+                        self._set_linked_transcript_media(media_file)
+
+                        self.last_transcript_source = (
+                            f"Local ASR Auto Quality Probe first {auto_probe_seconds}s from "
+                            f"{os.path.basename(media_file)} using best candidate "
+                            f"{best.get('label')} / {best.get('model_name')} "
+                            f"({best.get('device')}/{best.get('compute_type')})"
+                        )
+
+                        self._refresh_transcript_display()
+                        self.evidence_button.configure(state="normal")
+
+                        save_asr_defaults(
+                            model_name=best.get("model_name") or model_name,
+                            speaker_name=speaker_name,
+                            language=language_code or "",
+                            initial_prompt=initial_prompt or "",
+                            device=best.get("device") or device,
+                            compute_type=best.get("compute_type") or compute_type,
+                        )
+
+                        score = best_metadata.get("quality_score")
+                        score_text = f"{score:.2f}" if score is not None else "unknown"
+
+                        self.log_message(
+                            f"Auto Probe complete. Best: {best.get('label')} "
+                            f"{best.get('model_name')} ({best.get('device')}/{best.get('compute_type')}), "
+                            f"score={score_text}",
+                            "success"
+                        )
+
+                        self._show_asr_auto_probe_results(
+                            media_file=media_file,
+                            results=results,
+                            best_index=best_index,
+                            probe_seconds=auto_probe_seconds,
+                        )
+
+                    self.after(0, on_auto_probe_success)
+                    return
+
                 segments, metadata = transcribe_media_file(
                     media_file,
                     model_name=model_name,

@@ -279,6 +279,15 @@ class AsrSettingsDialog(ctk.CTkToplevel):
         check_button.grid(row=0, column=0, sticky="w")
 
         if action_label == "Start ASR":
+            auto_probe_button = ctk.CTkButton(
+                footer,
+                text="Auto Probe 30s",
+                command=lambda: self._accept_auto_probe(30),
+                width=140,
+                fg_color="#6a4a1f",
+            )
+            auto_probe_button.grid(row=0, column=1, padx=(8, 0))
+
             probe_button = ctk.CTkButton(
                 footer,
                 text="Probe 60s",
@@ -286,9 +295,9 @@ class AsrSettingsDialog(ctk.CTkToplevel):
                 width=120,
                 fg_color="#5a5a5a",
             )
-            probe_button.grid(row=0, column=1, padx=(8, 0))
-            cancel_column = 2
-            save_column = 3
+            probe_button.grid(row=0, column=2, padx=(8, 0))
+            cancel_column = 3
+            save_column = 4
             save_text = "Start Full ASR"
         else:
             cancel_column = 1
@@ -570,6 +579,17 @@ class AsrSettingsDialog(ctk.CTkToplevel):
         lines.append("Note: faster-whisper models may download the first time they are used. After that, cached models can be reused.")
 
         self._set_setup_status("\n".join(lines))
+
+    def _accept_auto_probe(self, seconds: int = 30) -> None:
+        result = self._collect()
+
+        if result is None:
+            return
+
+        result["probe_seconds"] = 0
+        result["auto_probe_seconds"] = int(seconds)
+        self.result = result
+        self.destroy()
 
     def _accept_probe(self, seconds: int = 60) -> None:
         result = self._collect()

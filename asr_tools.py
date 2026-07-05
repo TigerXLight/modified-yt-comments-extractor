@@ -103,6 +103,43 @@ def _make_probe_audio_clip(media_path: Path, probe_seconds: int) -> Path:
     return tmp_path
 
 
+def _mean(values: List[float]) -> Optional[float]:
+    values = [float(value) for value in values if value is not None]
+
+    if not values:
+        return None
+
+    return sum(values) / len(values)
+
+
+def _quality_score(
+    avg_logprob_mean: Optional[float],
+    compression_ratio_mean: Optional[float],
+    no_speech_prob_mean: Optional[float],
+    text_chars: int,
+    segment_count: int,
+) -> float:
+    """Return a rough score for comparing probe candidates without a reference transcript."""
+    score = 0.0
+
+    if avg_logprob_mean is not None:
+        score += avg_logprob_mean * 100.0
+
+    if compression_ratio_mean is not None:
+        score -= max(0.0, compression_ratio_mean - 2.4) * 20.0
+
+    if no_speech_prob_mean is not None:
+        score -= no_speech_prob_mean * 20.0
+
+    if segment_count <= 0 or text_chars <= 0:
+        score -= 100.0
+
+    # Tiny reward for producing usable text, but not enough to beat confidence.
+    score += min(text_chars, 600) / 200.0
+
+    return score
+
+
 def transcribe_media_file(
     media_path: str,
     model_name: str = "base",
@@ -119,11 +156,7 @@ def transcribe_media_file(
     Transcribe a local audio/video file with faster-whisper.
 
     If probe_seconds is provided, only the first N seconds are extracted with
-    FFmpeg and transcribed. This is intended for quick quality checks before
-    full transcription.
-
-    This does not perform speaker diarization.
-    All generated segments are assigned to speaker_name.
+    FFmpeg and transcribed. This is intended for quality checks before full ASR.
     """
     path = Path(media_path).expanduser()
 
@@ -154,12 +187,31 @@ def transcribe_media_file(
         )
 
         transcript_segments: List[TranscriptSegment] = []
+        avg_logprobs: List[float] = []
+        compression_ratios: List[float] = []
+        no_speech_probs: List[float] = []
+        text_chars = 0
 
         for segment in whisper_segments:
             text = (segment.text or "").strip()
 
+            avg_logprob = getattr(segment, "avg_logprob", None)
+            compression_ratio = getattr(segment, "compression_ratio", None)
+            no_speech_prob = getattr(segment, "no_speech_prob", None)
+
+            if avg_logprob is not None:
+                avg_logprobs.append(float(avg_logprob))
+
+            if compression_ratio is not None:
+                compression_ratios.append(float(compression_ratio))
+
+            if no_speech_prob is not None:
+                no_speech_probs.append(float(no_speech_prob))
+
             if not text:
                 continue
+
+            text_chars += len(text)
 
             transcript_segments.append(
                 TranscriptSegment(
@@ -169,6 +221,10 @@ def transcribe_media_file(
                     text=text,
                 )
             )
+
+        avg_logprob_mean = _mean(avg_logprobs)
+        compression_ratio_mean = _mean(compression_ratios)
+        no_speech_prob_mean = _mean(no_speech_probs)
 
         metadata: Dict[str, Any] = {
             "source_file": str(path),
@@ -191,6 +247,16 @@ def transcribe_media_file(
             "vad_filter": vad_filter,
             "beam_size": beam_size,
             "segment_count": len(transcript_segments),
+            "avg_logprob_mean": avg_logprob_mean,
+            "compression_ratio_mean": compression_ratio_mean,
+            "no_speech_prob_mean": no_speech_prob_mean,
+            "quality_score": _quality_score(
+                avg_logprob_mean=avg_logprob_mean,
+                compression_ratio_mean=compression_ratio_mean,
+                no_speech_prob_mean=no_speech_prob_mean,
+                text_chars=text_chars,
+                segment_count=len(transcript_segments),
+            ),
         }
 
         return transcript_segments, metadata
