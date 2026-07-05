@@ -1,0 +1,7 @@
+name = "ytce-asr-topic-resolver"
+main = "src/index.js"
+compatibility_date = "2026-07-05"
+
+[vars]
+MAX_TERMS = "80"
+CACHE_SECONDS = "604800"
