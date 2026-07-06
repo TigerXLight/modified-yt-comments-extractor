@@ -6856,91 +6856,147 @@ class App(ctk.CTk):
         return " ".join(pieces).strip()
 
 
-    def _asr_reference_glossary_terms(
-        self,
-        reference_segments: List[TranscriptSegment],
-        max_terms: int = 80,
-    ) -> List[str]:
-        """Extract likely names/rare terms from a reference transcript."""
+
+    def _asr_reference_glossary_terms(self, reference_segments=None):
         import re
 
-        stopwords = {
-            "a", "an", "and", "are", "all", "as", "at", "be", "but", "by",
-            "can", "do", "for", "from", "got", "has", "have", "he", "her",
-            "here", "him", "his", "i", "if", "in", "is", "it", "it's", "its",
-            "just", "like", "lot", "more", "not", "of", "oh", "okay", "on",
-            "or", "our", "she", "so", "that", "that's", "the", "there",
-            "this", "to", "uh", "um", "we", "what", "when", "with", "you",
-            "your", "yeah", "yes", "no", "hmm", "mm", "mmm", "speaker",
-            "scene", "cut", "content", "screen", "event", "great",
+        ignored = {
+            "the", "and", "for", "that", "this", "you", "your", "are", "was", "were",
+            "with", "but", "not", "care", "honest", "great", "content", "there",
+            "think", "when", "screen", "event", "trying", "insinuate", "understand",
+            "blindfold", "saying", "okay", "scene", "cut", "lot", "digest", "more",
+            "need", "like", "what", "have", "cleared", "black", "blacked", "yeah",
+            "all", "hmm", "mm-hmm", "mhm", "shut", "cool", "oh", "uh", "um",
+            "im", "i'm", "ive", "i've", "whats", "what's", "youre", "you're"
         }
 
+        terms = []
         seen = set()
-        terms: List[str] = []
 
-        def add(term: str) -> None:
-            term = re.sub(r"\s+", " ", str(term or "")).strip(" \t\r\n.,:;!?\"“”'")
+        def clean(term):
+            term = (term or "").strip(" .,:;!?()[]{}<>\"'‘’“”")
+            term = re.sub(r"\s+", " ", term).strip()
+            term = re.sub(r"[’']s$", "", term, flags=re.IGNORECASE)
+            term = term.strip(" .,:;!?()[]{}<>\"'‘’“”")
+            return term
 
-            if len(term) < 3:
+        def good(term):
+            term = clean(term)
+
+            if len(term) < 3 or len(term) > 80:
+                return False
+
+            lower = term.lower().replace("’", "'").strip("- ")
+
+            if lower in ignored:
+                return False
+
+            if "youtube" in lower:
+                return False
+
+            if lower.endswith("-"):
+                return False
+
+            # Drop contractions/fillers such as I'm, I've, What's, You're.
+            if "'" in lower or "’" in lower:
+                return False
+
+            # Drop plain common words. Keep only proper-noun-looking terms.
+            has_signal = (
+                term[:1].isupper()
+                or any(ch.isupper() for ch in term[1:])
+                or any(ch.isdigit() for ch in term)
+                or any(ord(ch) > 127 for ch in term)
+            )
+
+            if not has_signal:
+                return False
+
+            # Avoid short all-caps/generic noise.
+            if term.isupper() and len(term) <= 8:
+                return False
+
+            return True
+
+        def add(term):
+            term = clean(term)
+
+            if not good(term):
                 return
 
-            key = term.lower()
+            key = term.lower().replace("’", "'")
 
-            if key in seen or key in stopwords:
-                return
-
-            if key.startswith("speaker "):
+            if key in seen:
                 return
 
             seen.add(key)
             terms.append(term)
 
-        for segment in reference_segments:
-            speaker = (getattr(segment, "speaker", "") or "").strip()
+        def get_value(segment, *keys):
+            if isinstance(segment, dict):
+                for key in keys:
+                    value = segment.get(key)
+                    if value:
+                        return str(value)
+                return ""
 
-            if speaker and not speaker.lower().startswith("speaker "):
-                add(speaker)
+            for key in keys:
+                value = getattr(segment, key, None)
+                if value:
+                    return str(value)
 
-            text = getattr(segment, "text", "") or ""
+            return ""
 
-            # Multi-word proper nouns, e.g. Nicolas Cage.
-            for phrase in re.findall(r"\b(?:[A-Z][A-Za-z0-9']{2,})(?:\s+[A-Z][A-Za-z0-9']{2,}){1,3}\b", text):
+        def collect(value):
+            value = value or ""
+
+            # Multi-word proper nouns first: Nicolas Cage, etc.
+            for phrase in re.findall(r"(?:[A-Z][A-Za-z0-9_-]{2,}\s+){1,4}[A-Z][A-Za-z0-9_-]{2,}", value):
                 add(phrase)
 
-            # Single mixed-case or capitalized terms, e.g. ZoneX, Caltheris, Shadowsmith.
-            for word in re.findall(r"\b[A-Za-z][A-Za-z0-9']{2,}\b", text):
-                key = word.lower()
+            # Single proper nouns / mixed-case names: ZoneX, Caltheris, Nyxara.
+            for token in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ0-9_-]{2,50}(?:[’']s)?", value):
+                add(token)
 
-                if key in stopwords:
-                    continue
+        for segment in list(reference_segments or []):
+            collect(get_value(segment, "speaker", "speaker_name", "name", "label"))
+            collect(get_value(segment, "text", "content", "caption", "line"))
 
-                if word[:1].isupper() or any(ch.isupper() for ch in word[1:]):
-                    add(word)
-
-            if len(terms) >= max_terms:
+            if len(terms) >= 80:
                 break
 
-        return terms[:max_terms]
+        # If a multi-word term exists, remove its component words.
+        multiword_parts = set()
+        for term in terms:
+            if " " in term:
+                for part in term.split():
+                    multiword_parts.add(part.lower())
 
-    def _build_asr_reference_glossary_prompt(
-        self,
-        reference_segments: List[TranscriptSegment],
-        base_prompt: Optional[str],
-    ) -> Tuple[str, List[str]]:
-        """Build an ASR phrase-hint prompt from imported reference transcript."""
+        pruned = []
+        pruned_seen = set()
+
+        for term in terms:
+            key = term.lower()
+
+            if " " not in term and key in multiword_parts:
+                continue
+
+            if key in pruned_seen:
+                continue
+
+            pruned_seen.add(key)
+            pruned.append(term)
+
+        return pruned[:40]
+
+
+    def _build_asr_reference_glossary_prompt(self, reference_segments=None, base_prompt=None):
         terms = self._asr_reference_glossary_terms(reference_segments)
 
-        prompt_parts: List[str] = []
-
-        if base_prompt:
-            prompt_parts.append(base_prompt.strip())
-
-        if terms:
-            # Whisper prompts behave more like prior transcript/context than
-            # instructions. Keep this as glossary-like text to avoid prompt leakage.
-            prompt_parts.append("; ".join(terms))
-
-        return "\n".join(part for part in prompt_parts if part).strip(), terms
+        # Important: do not append glossary lists into initial_prompt.
+        # Faster-whisper can treat prompt text as transcript context and hallucinate it.
+        # The cleaned terms are returned for metadata/scoring and tightly-filtered hotwords only.
+        return base_prompt, terms
 
     def _normalise_asr_compare_text(self, text: str) -> List[str]:
         """Normalize text into comparable words."""
@@ -7248,42 +7304,9 @@ class App(ctk.CTk):
         reference_terms: List[str] = []
 
         try:
-            if self.transcript_segments and self.last_transcript_source != "Local ASR":
-                import re
-
-                seen_terms = set()
-
-                for segment in self.transcript_segments:
-                    values = [getattr(segment, "speaker", ""), getattr(segment, "text", "")]
-
-                    for value in values:
-                        for match in re.findall(r"\\b[A-Za-z][A-Za-z0-9'’_-]{2,50}\\b", value or ""):
-                            has_signal = (
-                                match[:1].isupper()
-                                or any(char.isupper() for char in match[1:])
-                                or any(char.isdigit() for char in match)
-                            )
-
-                            if not has_signal:
-                                continue
-
-                            key = match.lower()
-
-                            if key in seen_terms:
-                                continue
-
-                            seen_terms.add(key)
-                            reference_terms.append(match)
-
-                            if len(reference_terms) >= 60:
-                                break
-
-                        if len(reference_terms) >= 60:
-                            break
-
-                    if len(reference_terms) >= 60:
-                        break
-
+            reference_terms = self._asr_reference_glossary_terms(
+                list(getattr(self, "transcript_segments", []) or [])
+            )
         except Exception:
             reference_terms = []
 
@@ -7698,7 +7721,7 @@ class App(ctk.CTk):
                         auto_probe_topic_errors = list(auto_probe_topic_result.get("errors") or [])
 
                         if auto_probe_topic_result.get("prompt"):
-                            auto_probe_initial_prompt = auto_probe_topic_result.get("prompt")
+                            auto_probe_initial_prompt = initial_prompt
 
                         self.last_asr_topic_glossary = dict(auto_probe_topic_result)
 
@@ -8003,7 +8026,7 @@ class App(ctk.CTk):
                     full_asr_topic_errors = list(full_asr_topic_result.get("errors") or [])
 
                     if full_asr_topic_result.get("prompt"):
-                        full_asr_initial_prompt = full_asr_topic_result.get("prompt")
+                        full_asr_initial_prompt = initial_prompt
 
                     self.last_asr_topic_glossary = dict(full_asr_topic_result)
 
