@@ -6726,6 +6726,7 @@ class App(ctk.CTk):
             vad_filter: bool = True,
             condition_on_previous_text: Optional[bool] = None,
             use_reference_hotwords: bool = False,
+            audio_filter: Optional[str] = None,
         ) -> None:
             key = (
                 model,
@@ -6734,6 +6735,7 @@ class App(ctk.CTk):
                 bool(vad_filter),
                 condition_on_previous_text,
                 bool(use_reference_hotwords),
+                audio_filter or "",
             )
 
             if any(
@@ -6744,6 +6746,7 @@ class App(ctk.CTk):
                     bool(item.get("vad_filter", True)),
                     item.get("condition_on_previous_text"),
                     bool(item.get("use_reference_hotwords", False)),
+                    item.get("audio_filter") or "",
                 ) == key
                 for item in candidates
             ):
@@ -6757,14 +6760,23 @@ class App(ctk.CTk):
                 "vad_filter": bool(vad_filter),
                 "condition_on_previous_text": condition_on_previous_text,
                 "use_reference_hotwords": bool(use_reference_hotwords),
+                "audio_filter": audio_filter or None,
             })
 
         add("Draft CPU", "small", "cpu", "int8", vad_filter=True)
         add("Recommended CPU", "medium", "cpu", "int8", vad_filter=True)
         add("Accurate CPU", "large-v3", "cpu", "int8", vad_filter=True)
 
+        add("Accurate CPU + loudnorm", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="loudnorm")
+        add("Accurate CPU + speech clean", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="speech_clean")
+        add("Accurate CPU + voice EQ", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="voice_eq")
+        add("Accurate CPU + denoise", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="denoise")
+        add("Accurate CPU + denoise+loudnorm", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="denoise_loudnorm")
+
         # Important for overlapping/short speech: VAD can drop interjections.
         add("Accurate CPU - no VAD", "large-v3", "cpu", "int8", vad_filter=False)
+        add("Accurate CPU - no VAD + loudnorm", "large-v3", "cpu", "int8", vad_filter=False, audio_filter="loudnorm")
+        add("Accurate CPU - no VAD + speech clean", "large-v3", "cpu", "int8", vad_filter=False, audio_filter="speech_clean")
         add(
             "Accurate CPU - no VAD + no context carry",
             "large-v3",
@@ -7410,6 +7422,7 @@ class App(ctk.CTk):
                     candidate_compute = candidate["compute_type"]
                     candidate_vad_filter = bool(candidate.get("vad_filter", True))
                     candidate_condition_on_previous_text = candidate.get("condition_on_previous_text")
+                    candidate_audio_filter = candidate.get("audio_filter")
                     candidate_hotwords = None
 
                     if candidate.get("use_reference_hotwords") and glossary_terms:
@@ -7438,6 +7451,7 @@ class App(ctk.CTk):
                             probe_seconds=None,
                             condition_on_previous_text=candidate_condition_on_previous_text,
                             hotwords=candidate_hotwords,
+                            audio_filter=candidate_audio_filter,
                         )
 
                         candidate_metadata["asr_calibration_probe"] = True
@@ -7445,6 +7459,7 @@ class App(ctk.CTk):
                         candidate_metadata["auto_probe_candidate_label"] = label
                         candidate_metadata["auto_probe_candidate_vad_filter"] = candidate_vad_filter
                         candidate_metadata["auto_probe_candidate_condition_on_previous_text"] = candidate_condition_on_previous_text
+                        candidate_metadata["auto_probe_candidate_audio_filter"] = candidate_audio_filter or ""
                         candidate_metadata["auto_probe_candidate_hotwords_used"] = bool(candidate_hotwords)
                         candidate_metadata["auto_probe_reference_glossary_prompt_used"] = bool(glossary_terms)
                         candidate_metadata["auto_probe_reference_glossary_terms"] = list(glossary_terms)
@@ -7800,6 +7815,7 @@ class App(ctk.CTk):
                         candidate_compute = candidate["compute_type"]
                         candidate_vad_filter = bool(candidate.get("vad_filter", True))
                         candidate_condition_on_previous_text = candidate.get("condition_on_previous_text")
+                        candidate_audio_filter = candidate.get("audio_filter")
                         candidate_hotwords = None
 
                         candidate_initial_prompt = auto_probe_initial_prompt
@@ -7830,11 +7846,13 @@ class App(ctk.CTk):
                                 probe_seconds=auto_probe_seconds,
                                 condition_on_previous_text=candidate_condition_on_previous_text,
                                 hotwords=candidate_hotwords,
+                                audio_filter=candidate_audio_filter,
                             )
 
                             candidate_metadata["auto_probe_candidate_label"] = label
                             candidate_metadata["auto_probe_candidate_vad_filter"] = candidate_vad_filter
                             candidate_metadata["auto_probe_candidate_condition_on_previous_text"] = candidate_condition_on_previous_text
+                            candidate_metadata["auto_probe_candidate_audio_filter"] = candidate_audio_filter or ""
                             candidate_metadata["auto_probe_candidate_hotwords_used"] = bool(candidate_hotwords)
                             candidate_metadata["auto_probe_topic_resolver_used"] = bool(auto_probe_topic_terms)
                             candidate_metadata["auto_probe_topic_resolver_terms"] = list(auto_probe_topic_terms)

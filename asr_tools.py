@@ -44,7 +44,22 @@ def _seconds_to_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}.{ms:03d}"
 
 
-def _make_probe_audio_clip(media_path: Path, probe_seconds: int) -> Path:
+
+def _asr_ffmpeg_audio_filter_chain(audio_filter: Optional[str]) -> Optional[str]:
+    """Return a safe FFmpeg audio filter chain for ASR probe preprocessing."""
+    key = (audio_filter or "").strip().lower()
+
+    filters = {
+        "loudnorm": "loudnorm=I=-16:TP=-1.5:LRA=11",
+        "speech_clean": "highpass=f=80,lowpass=f=7800,dynaudnorm=f=150:g=15",
+        "voice_eq": "highpass=f=100,lowpass=f=7600,equalizer=f=3000:t=q:w=1.0:g=3,dynaudnorm=f=150:g=12",
+        "denoise": "afftdn=nf=-25,highpass=f=80,lowpass=f=7800",
+        "denoise_loudnorm": "afftdn=nf=-25,highpass=f=80,lowpass=f=7800,loudnorm=I=-16:TP=-1.5:LRA=11",
+    }
+
+    return filters.get(key)
+
+def _make_probe_audio_clip(media_path: Path, probe_seconds: int, audio_filter: Optional[str] = None) -> Path:
     """Create a temporary WAV containing the first probe_seconds of media."""
     ffmpeg = shutil.which("ffmpeg")
 
@@ -64,6 +79,8 @@ def _make_probe_audio_clip(media_path: Path, probe_seconds: int) -> Path:
     tmp_path = Path(tmp.name)
     tmp.close()
 
+    filter_chain = _asr_ffmpeg_audio_filter_chain(audio_filter)
+
     command = [
         ffmpeg,
         "-y",
@@ -79,8 +96,12 @@ def _make_probe_audio_clip(media_path: Path, probe_seconds: int) -> Path:
         "1",
         "-ar",
         "16000",
-        tmp_path.resolve().as_posix(),
     ]
+
+    if filter_chain:
+        command.extend(["-af", filter_chain])
+
+    command.append(tmp_path.resolve().as_posix())
 
     result = subprocess.run(
         command,
@@ -154,6 +175,7 @@ def transcribe_media_file(
     probe_seconds: Optional[int] = None,
     condition_on_previous_text: Optional[bool] = None,
     hotwords: Optional[str] = None,
+    audio_filter: Optional[str] = None,
 ) -> Tuple[List[TranscriptSegment], Dict[str, Any]]:
     """
     Transcribe a local audio/video file with faster-whisper.
@@ -172,7 +194,7 @@ def transcribe_media_file(
 
     try:
         if is_probe:
-            probe_clip_path = _make_probe_audio_clip(path, int(probe_seconds or 60))
+            probe_clip_path = _make_probe_audio_clip(path, int(probe_seconds or 60), audio_filter=audio_filter)
             transcribe_path = probe_clip_path
 
         model = WhisperModel(
@@ -260,6 +282,7 @@ def transcribe_media_file(
             "transcribed_file": str(transcribe_path),
             "is_probe": is_probe,
             "probe_seconds": int(probe_seconds or 0) if is_probe else 0,
+            "audio_filter": audio_filter or "",
             "model_name": model_name,
             "device": device,
             "compute_type": compute_type,
