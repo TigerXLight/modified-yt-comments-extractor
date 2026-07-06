@@ -6727,6 +6727,7 @@ class App(ctk.CTk):
             condition_on_previous_text: Optional[bool] = None,
             use_reference_hotwords: bool = False,
             audio_filter: Optional[str] = None,
+            beam_size: int = 5,
         ) -> None:
             key = (
                 model,
@@ -6736,6 +6737,7 @@ class App(ctk.CTk):
                 condition_on_previous_text,
                 bool(use_reference_hotwords),
                 audio_filter or "",
+                int(beam_size or 5),
             )
 
             if any(
@@ -6747,6 +6749,7 @@ class App(ctk.CTk):
                     item.get("condition_on_previous_text"),
                     bool(item.get("use_reference_hotwords", False)),
                     item.get("audio_filter") or "",
+                    int(item.get("beam_size") or 5),
                 ) == key
                 for item in candidates
             ):
@@ -6761,11 +6764,14 @@ class App(ctk.CTk):
                 "condition_on_previous_text": condition_on_previous_text,
                 "use_reference_hotwords": bool(use_reference_hotwords),
                 "audio_filter": audio_filter or None,
+                "beam_size": int(beam_size or 5),
             })
 
         add("Draft CPU", "small", "cpu", "int8", vad_filter=True)
         add("Recommended CPU", "medium", "cpu", "int8", vad_filter=True)
         add("Accurate CPU", "large-v3", "cpu", "int8", vad_filter=True)
+        add("Accurate CPU + beam 8", "large-v3", "cpu", "int8", vad_filter=True, beam_size=8)
+        add("Accurate CPU + beam 12", "large-v3", "cpu", "int8", vad_filter=True, beam_size=12)
 
         add("Accurate CPU + loudnorm", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="loudnorm")
         add("Accurate CPU + speech clean", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="speech_clean")
@@ -6775,6 +6781,7 @@ class App(ctk.CTk):
 
         # Important for overlapping/short speech: VAD can drop interjections.
         add("Accurate CPU - no VAD", "large-v3", "cpu", "int8", vad_filter=False)
+        add("Accurate CPU - no VAD + beam 8", "large-v3", "cpu", "int8", vad_filter=False, beam_size=8)
         add("Accurate CPU - no VAD + loudnorm", "large-v3", "cpu", "int8", vad_filter=False, audio_filter="loudnorm")
         add("Accurate CPU - no VAD + speech clean", "large-v3", "cpu", "int8", vad_filter=False, audio_filter="speech_clean")
         add(
@@ -7423,6 +7430,7 @@ class App(ctk.CTk):
                     candidate_vad_filter = bool(candidate.get("vad_filter", True))
                     candidate_condition_on_previous_text = candidate.get("condition_on_previous_text")
                     candidate_audio_filter = candidate.get("audio_filter")
+                    candidate_beam_size = int(candidate.get("beam_size") or 5)
                     candidate_hotwords = None
 
                     if candidate.get("use_reference_hotwords") and glossary_terms:
@@ -7447,7 +7455,7 @@ class App(ctk.CTk):
                             language=calibration_language_code,
                             initial_prompt=calibration_prompt,
                             vad_filter=candidate_vad_filter,
-                            beam_size=5,
+                            beam_size=candidate_beam_size,
                             probe_seconds=None,
                             condition_on_previous_text=candidate_condition_on_previous_text,
                             hotwords=candidate_hotwords,
@@ -7460,6 +7468,7 @@ class App(ctk.CTk):
                         candidate_metadata["auto_probe_candidate_vad_filter"] = candidate_vad_filter
                         candidate_metadata["auto_probe_candidate_condition_on_previous_text"] = candidate_condition_on_previous_text
                         candidate_metadata["auto_probe_candidate_audio_filter"] = candidate_audio_filter or ""
+                        candidate_metadata["auto_probe_candidate_beam_size"] = candidate_beam_size
                         candidate_metadata["auto_probe_candidate_hotwords_used"] = bool(candidate_hotwords)
                         candidate_metadata["auto_probe_reference_glossary_prompt_used"] = bool(glossary_terms)
                         candidate_metadata["auto_probe_reference_glossary_terms"] = list(glossary_terms)
@@ -7594,6 +7603,70 @@ class App(ctk.CTk):
                 )
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _asr_safe_hotword_terms(self, terms: List[str]) -> List[str]:
+        """Keep only ASR-safe proper noun terms for hotwords."""
+        import re
+
+        ignored = {
+            "imported", "situation", "youtube", "kingman youtube",
+            "nicolas", "cage", "what", "yeah", "all", "hmm", "mhm",
+            "mm-hmm", "i'm", "ive", "i've", "you're", "what's"
+        }
+
+        cleaned: List[str] = []
+        seen = set()
+
+        for term in terms or []:
+            value = str(term or "").strip(" .,:;!?()[]{}<>\\\"'‘’“”")
+
+            if not value or len(value) < 3 or len(value) > 80:
+                continue
+
+            lower = value.lower().replace("’", "'")
+
+            if lower in ignored:
+                continue
+
+            if "youtube" in lower:
+                continue
+
+            if re.fullmatch(r"[A-Za-z0-9_-]{8,}", value) and ("_" in value or "-" in value):
+                continue
+
+            has_signal = (
+                value[:1].isupper()
+                or any(ch.isupper() for ch in value[1:])
+                or any(ch.isdigit() for ch in value)
+                or any(ord(ch) > 127 for ch in value)
+            )
+
+            if not has_signal:
+                continue
+
+            key = lower
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            cleaned.append(value)
+
+        multi_parts = set()
+
+        for value in cleaned:
+            if " " in value:
+                for part in value.split():
+                    multi_parts.add(part.lower())
+
+        result: List[str] = []
+
+        for value in cleaned:
+            if " " not in value and value.lower() in multi_parts:
+                continue
+            result.append(value)
+
+        return result[:40]
 
     def local_asr_transcribe_clicked(self) -> None:
         """Transcribe a local audio/video file using faster-whisper."""
@@ -7796,9 +7869,9 @@ class App(ctk.CTk):
                                 )
                             )
 
-                    auto_probe_hotword_terms = list(dict.fromkeys(
+                    auto_probe_hotword_terms = self._asr_safe_hotword_terms(list(dict.fromkeys(
                         list(auto_probe_topic_terms) + list(auto_probe_reference_glossary_terms)
-                    ))
+                    )))
 
                     candidates = self._build_asr_auto_probe_candidates(
                         selected_model=model_name,
@@ -7816,6 +7889,7 @@ class App(ctk.CTk):
                         candidate_vad_filter = bool(candidate.get("vad_filter", True))
                         candidate_condition_on_previous_text = candidate.get("condition_on_previous_text")
                         candidate_audio_filter = candidate.get("audio_filter")
+                        candidate_beam_size = int(candidate.get("beam_size") or 5)
                         candidate_hotwords = None
 
                         candidate_initial_prompt = auto_probe_initial_prompt
@@ -7853,6 +7927,7 @@ class App(ctk.CTk):
                             candidate_metadata["auto_probe_candidate_vad_filter"] = candidate_vad_filter
                             candidate_metadata["auto_probe_candidate_condition_on_previous_text"] = candidate_condition_on_previous_text
                             candidate_metadata["auto_probe_candidate_audio_filter"] = candidate_audio_filter or ""
+                            candidate_metadata["auto_probe_candidate_beam_size"] = candidate_beam_size
                             candidate_metadata["auto_probe_candidate_hotwords_used"] = bool(candidate_hotwords)
                             candidate_metadata["auto_probe_topic_resolver_used"] = bool(auto_probe_topic_terms)
                             candidate_metadata["auto_probe_topic_resolver_terms"] = list(auto_probe_topic_terms)
