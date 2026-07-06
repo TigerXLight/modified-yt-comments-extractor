@@ -6772,6 +6772,8 @@ class App(ctk.CTk):
         add("Accurate CPU", "large-v3", "cpu", "int8", vad_filter=True)
         add("Accurate CPU + beam 8", "large-v3", "cpu", "int8", vad_filter=True, beam_size=8)
         add("Accurate CPU + beam 12", "large-v3", "cpu", "int8", vad_filter=True, beam_size=12)
+        add("Accurate CPU + float32", "large-v3", "cpu", "float32", vad_filter=True)
+        add("Accurate CPU + float32 + beam 8", "large-v3", "cpu", "float32", vad_filter=True, beam_size=8)
 
         add("Accurate CPU + loudnorm", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="loudnorm")
         add("Accurate CPU + speech clean", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="speech_clean")
@@ -6782,6 +6784,8 @@ class App(ctk.CTk):
         # Important for overlapping/short speech: VAD can drop interjections.
         add("Accurate CPU - no VAD", "large-v3", "cpu", "int8", vad_filter=False)
         add("Accurate CPU - no VAD + beam 8", "large-v3", "cpu", "int8", vad_filter=False, beam_size=8)
+        add("Accurate CPU - no VAD + float32", "large-v3", "cpu", "float32", vad_filter=False)
+        add("Accurate CPU - no VAD + float32 + beam 8", "large-v3", "cpu", "float32", vad_filter=False, beam_size=8)
         add("Accurate CPU - no VAD + loudnorm", "large-v3", "cpu", "int8", vad_filter=False, audio_filter="loudnorm")
         add("Accurate CPU - no VAD + speech clean", "large-v3", "cpu", "int8", vad_filter=False, audio_filter="speech_clean")
         add(
@@ -7219,6 +7223,17 @@ class App(ctk.CTk):
             lines.append(f"Avg logprob: {avg_logprob:.4f}" if avg_logprob is not None else "Avg logprob: unknown")
             lines.append(f"Compression ratio: {compression:.4f}" if compression is not None else "Compression ratio: unknown")
             lines.append(f"No speech probability: {no_speech:.4f}" if no_speech is not None else "No speech probability: unknown")
+            elapsed_seconds = metadata.get("elapsed_seconds")
+            speed_x = metadata.get("processing_speed_x_realtime")
+            if elapsed_seconds is not None:
+                try:
+                    elapsed_value = float(elapsed_seconds)
+                    if speed_x is not None:
+                        lines.append(f"Elapsed: {elapsed_value:.2f}s ({float(speed_x):.2f}x realtime)")
+                    else:
+                        lines.append(f"Elapsed: {elapsed_value:.2f}s")
+                except Exception:
+                    pass
 
             if reference_scored and result.get("reference_text"):
                 lines.append("")

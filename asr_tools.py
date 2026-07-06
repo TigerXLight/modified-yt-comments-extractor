@@ -1,4 +1,5 @@
 from __future__ import annotations
+import time
 
 import hashlib
 import inspect
@@ -191,6 +192,7 @@ def transcribe_media_file(
     is_probe = bool(probe_seconds and int(probe_seconds) > 0)
     probe_clip_path: Optional[Path] = None
     transcribe_path = path
+    asr_started_at = time.perf_counter()
 
     try:
         if is_probe:
@@ -274,6 +276,25 @@ def transcribe_media_file(
         compression_ratio_mean = _mean(compression_ratios)
         no_speech_prob_mean = _mean(no_speech_probs)
 
+        elapsed_seconds = max(0.0, time.perf_counter() - asr_started_at)
+        duration_for_speed = None
+
+        try:
+            duration_for_speed = float(getattr(info, "duration", None) or 0.0)
+        except Exception:
+            duration_for_speed = None
+
+        if not duration_for_speed and is_probe:
+            try:
+                duration_for_speed = float(probe_seconds or 0)
+            except Exception:
+                duration_for_speed = None
+
+        realtime_speed = None
+
+        if elapsed_seconds > 0 and duration_for_speed and duration_for_speed > 0:
+            realtime_speed = duration_for_speed / elapsed_seconds
+
         metadata: Dict[str, Any] = {
             "source_file": str(path),
             "source_file_name": path.name,
@@ -308,6 +329,9 @@ def transcribe_media_file(
                 text_chars=text_chars,
                 segment_count=len(transcript_segments),
             ),
+            "elapsed_seconds": elapsed_seconds,
+            "duration_for_speed_seconds": duration_for_speed,
+            "processing_speed_x_realtime": realtime_speed,
         }
 
         return transcript_segments, metadata
