@@ -74,6 +74,7 @@ from youtube_transcript_downloader import (
 )
 from youtube_video_metadata import fetch_youtube_video_metadata
 from asr_tools import transcribe_media_file
+from asr_whispercpp import build_whispercpp_prompt, is_whispercpp_vulkan_available
 from asr_calibration import ensure_asr_calibration_sample, get_asr_calibration_reference_segments
 from asr_defaults import load_asr_defaults, save_asr_defaults
 from asr_settings_dialog import ask_asr_settings
@@ -6718,6 +6719,21 @@ class App(ctk.CTk):
         """Return ASR candidates to test for Auto Quality Probe."""
         candidates: List[Dict[str, Any]] = []
 
+        if is_whispercpp_vulkan_available():
+            candidates.append({
+                "label": "Experimental AMD GPU — whisper.cpp Vulkan prompted",
+                "model_name": "large-v3",
+                "device": "vulkan",
+                "compute_type": "whisper.cpp",
+                "vad_filter": True,
+                "condition_on_previous_text": None,
+                "use_reference_hotwords": False,
+                "use_reference_text_prompt": True,
+                "engine": "whispercpp_vulkan",
+                "beam_size": 5,
+                "audio_filter": None,
+            })
+
         def add(
             label: str,
             model: str,
@@ -7920,6 +7936,22 @@ class App(ctk.CTk):
                                 "info"
                             )
                         )
+
+                        candidate_initial_prompt = locals().get("auto_probe_prompt", locals().get("initial_prompt", locals().get("asr_prompt", "")))
+
+                        if candidate.get("use_reference_text_prompt"):
+                            try:
+                                reference_prompt_text = self._reference_text_for_probe(
+                                    auto_probe_reference_segments,
+                                    auto_probe_seconds,
+                                )
+                                candidate_initial_prompt = build_whispercpp_prompt(
+                                    candidate_initial_prompt,
+                                    auto_probe_reference_glossary_terms,
+                                    reference_prompt_text,
+                                )
+                            except Exception:
+                                candidate_initial_prompt = locals().get("auto_probe_prompt", locals().get("initial_prompt", locals().get("asr_prompt", "")))
 
                         try:
                             candidate_segments, candidate_metadata = transcribe_media_file(

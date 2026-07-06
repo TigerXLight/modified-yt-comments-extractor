@@ -189,6 +189,19 @@ def transcribe_media_file(
     if not path.exists():
         raise FileNotFoundError(f"Media file not found: {media_path}")
 
+    # whisper.cpp Vulkan sidecar dispatch
+    if str(device).strip().lower() in {"vulkan", "whispercpp", "whisper.cpp"} or str(compute_type).strip().lower() in {"vulkan", "whispercpp", "whisper.cpp"}:
+        from asr_whispercpp import transcribe_media_file_with_whispercpp_vulkan
+
+        return transcribe_media_file_with_whispercpp_vulkan(
+            str(path),
+            speaker_name=speaker_name,
+            language=language,
+            prompt=initial_prompt,
+            probe_seconds=probe_seconds,
+            audio_filter=locals().get("audio_filter"),
+        )
+
     is_probe = bool(probe_seconds and int(probe_seconds) > 0)
     probe_clip_path: Optional[Path] = None
     transcribe_path = path
