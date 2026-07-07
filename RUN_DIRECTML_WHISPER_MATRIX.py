@@ -255,20 +255,16 @@ def transcribe_with_directml(model_id: str, cache_dir: Path, audio) -> Dict[str,
         audio,
         sampling_rate=16000,
         return_tensors="pt",
+        return_attention_mask=True,
     )
 
     generate_kwargs = {}
 
-    try:
-        forced_decoder_ids = processor.get_decoder_prompt_ids(
-            language="en",
-            task="transcribe",
-        )
+    if "attention_mask" in inputs:
+        generate_kwargs["attention_mask"] = inputs.attention_mask
 
-        if forced_decoder_ids:
-            generate_kwargs["forced_decoder_ids"] = forced_decoder_ids
-    except Exception:
-        pass
+    # English-only Whisper models should use their default generation config
+    # here, not multilingual language/task prompt IDs.
 
     log(f"Generating transcript with {PROVIDER}: {model_id}")
     generated_ids = model.generate(
@@ -306,6 +302,7 @@ def run_case(model_config: Dict[str, str], audio, reference_text: str) -> Dict[s
                 "ok": True,
                 "wer": wer,
                 "accuracy": accuracy,
+                "candidate_words": len(normalize_text(str(result["transcript"]))),
                 "error": "",
             }
         )
@@ -320,6 +317,7 @@ def run_case(model_config: Dict[str, str], audio, reference_text: str) -> Dict[s
             "elapsed": 0.0,
             "wer": 1.0,
             "accuracy": 0.0,
+            "candidate_words": 0,
             "transcript": "",
             "error": str(exc),
         }
@@ -354,6 +352,7 @@ def build_summary(
             f"ok={result['ok']} | "
             f"accuracy={float(result['accuracy']):.2f}% | "
             f"WER={float(result['wer']) * 100.0:.2f}% | "
+            f"candidate_words={int(result['candidate_words'])} | "
             f"elapsed={float(result['elapsed']):.2f}s | "
             f"cache={result['cache_dir']}"
         )
