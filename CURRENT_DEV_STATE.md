@@ -47,6 +47,26 @@ Decision:
 - It is practical and fast on AMD Vulkan, but not accurate enough for this subtitle workflow.
 - Keep Parakeet models installed for future comparison only.
 
+## 2026-07-07 Local ASR result: DirectML / TorchCodec feasibility
+
+Status:
+- `onnxruntime-directml==1.24.4` is installed locally and ONNX Runtime reports `DmlExecutionProvider`.
+- `optimum-onnx==0.1.0`, `optimum==2.1.0`, and `onnx==1.22.0` are installed locally.
+- DirectML Whisper tiny.en ONNX export, load, and direct `ORTModelForSpeechSeq2Seq.generate()` completed successfully.
+- The tiny.en DirectML probe was fast but scored about 49.46% strict 30s reference word accuracy, so it is only a runtime proof, not a quality verdict.
+- The Transformers pipeline path initially failed because TorchCodec could not load FFmpeg DLLs.
+- TorchCodec import and the Transformers pipeline path work after registering the FFmpeg 7 shared DLL folder before importing TorchCodec-related libraries.
+
+Runtime note:
+- The local FFmpeg 7 shared build used for TorchCodec is `C:\ffmpeg-7-shared\bin`.
+- Experimental DirectML/TorchCodec scripts should call `os.add_dll_directory(r"C:\ffmpeg-7-shared\bin")` before TorchCodec imports, or use `asr_runtime_paths.add_ffmpeg7_shared_dll_directory()`.
+- The helper also supports overriding that folder with `ASR_FFMPEG7_SHARED_BIN`.
+
+Decision:
+- Do not integrate DirectML into the main UI yet.
+- Do not treat tiny.en as representative of final DirectML quality.
+- Next DirectML work should remain an explicit experimental script using direct `AutoProcessor` plus `ORTModelForSpeechSeq2Seq.generate()` with larger models.
+
 Next local-ASR branches:
 1. DirectML feasibility check.
 2. Canary / other offline model feasibility if practical.

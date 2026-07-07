@@ -18,8 +18,8 @@ Current candidates:
 - whisper.cpp Vulkan large-v3-turbo terms-only.
 
 Still to evaluate:
-- ONNX Runtime DirectML if practical on AMD Windows.
-- Parakeet / Canary if a workable local path exists.
+- ONNX Runtime DirectML with larger Whisper ONNX models if practical on AMD Windows.
+- Canary if a workable local path exists.
 - Online transcription providers after local methods are assessed.
 
 Topic resolver:
@@ -43,3 +43,24 @@ Result:
 Decision:
 - Parakeet should not be added to the Auto Quality Probe candidate list for now.
 - It can remain a future experimental engine, but the current project should prioritize stronger ASR methods.
+
+## DirectML / TorchCodec feasibility result - 2026-07-07
+
+Completed:
+- Confirmed local ONNX Runtime DirectML availability through `DmlExecutionProvider`.
+- Confirmed DirectML Whisper tiny.en ONNX export, load, and direct generation through `ORTModelForSpeechSeq2Seq`.
+- Confirmed TorchCodec and the Transformers pipeline path work after registering the FFmpeg 7 shared DLL folder.
+
+Result:
+- DirectML tiny.en direct generation was fast but only reached about 49.46% strict 30s reference word accuracy.
+- The result proves the DirectML runtime path can work locally, but tiny.en is too small to judge final quality for this workflow.
+
+Runtime requirement:
+- TorchCodec needs the FFmpeg 7 shared DLL folder registered before TorchCodec-related imports.
+- Default local folder: `C:\ffmpeg-7-shared\bin`.
+- Optional override: `ASR_FFMPEG7_SHARED_BIN`.
+- `asr_runtime_paths.add_ffmpeg7_shared_dll_directory()` is available for experimental scripts and is not wired into the main app.
+
+Decision:
+- Do not add DirectML to the main UI or Auto Quality Probe yet.
+- Next DirectML test should be an explicit experimental script using direct `AutoProcessor` plus `ORTModelForSpeechSeq2Seq.generate()` with `openai/whisper-base.en` and `openai/whisper-small.en`.
