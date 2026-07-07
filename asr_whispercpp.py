@@ -223,6 +223,13 @@ def _make_wav_for_whispercpp(
     probe_seconds: Optional[int],
     audio_filter: Optional[str] = None,
 ) -> Path:
+    media_path = Path(media_path).expanduser().resolve()
+
+    # Existing WAV files can be passed directly to whisper.cpp.
+    # Do not create a temp copy and do not delete the original later.
+    if media_path.suffix.lower() == ".wav" and not audio_filter:
+        return media_path
+
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("FFmpeg is required for whisper.cpp sidecar ASR.")
@@ -232,7 +239,7 @@ def _make_wav_for_whispercpp(
         suffix=".wav",
         delete=False,
     )
-    tmp_path = Path(tmp.name)
+    tmp_path = Path(tmp.name).resolve()
     tmp.close()
 
     command = [
@@ -370,7 +377,7 @@ def transcribe_media_file_with_whispercpp_vulkan(
     model_name: str = "large-v3",
     extra_flags: Optional[List[str]] = None,
 ) -> Tuple[List[TranscriptSegment], Dict[str, Any]]:
-    source_path = Path(media_path).expanduser()
+    source_path = Path(media_path).expanduser().resolve()
 
     if not source_path.exists():
         raise FileNotFoundError(f"Media file not found: {media_path}")
@@ -523,7 +530,13 @@ def transcribe_media_file_with_whispercpp_vulkan(
     finally:
         if wav_path is not None:
             try:
-                wav_path.unlink(missing_ok=True)
+                source_resolved = Path(source_path).expanduser().resolve()
+                wav_resolved = Path(wav_path).expanduser().resolve()
+
+                # Only delete temporary WAV files created by this helper.
+                # Never delete calibration WAVs or user/source WAV files.
+                if wav_resolved != source_resolved and wav_resolved.name.startswith("ytce_whispercpp_"):
+                    wav_resolved.unlink(missing_ok=True)
             except Exception:
                 pass
 
