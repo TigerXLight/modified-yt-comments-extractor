@@ -180,6 +180,51 @@ Decision:
 - It does not beat the best local whisper.cpp Vulkan run at about 74.19%.
 - It badly misrecognized the key phrase around `Oh, I've completed the Nicolas Cage event`, producing `Fuck. We have Nicolas Cage event`, so it is not acceptable for this workflow.
 
+Speechmatics enhanced custom dictionary manual transcript result:
+- Provider: Speechmatics Batch API on EU1 endpoint.
+- Model/config: enhanced model with custom dictionary / additional vocabulary.
+- Notes:
+  - An older key returned 401 Unauthorized.
+  - A new key worked on EU1.
+  - Initial config failed with HTTP 400 because `remove_disfluencies` is not allowed in the current Speechmatics job config.
+  - Removing `remove_disfluencies` allowed the job to run.
+- Custom dictionary terms / `sounds_like` hints included:
+  - `Kingman`
+  - `ZoneX`
+  - `Shadowsmith`
+  - `Nicolas Cage`
+  - `Freckelston`
+  - `Caltheris`
+  - `Nyxara`
+- Generated files, local only:
+  - `TEMP_SPEECHMATICS_TRANSCRIBE.py`
+  - `candidate_speechmatics_enhanced_vocab.txt`
+  - `candidate_speechmatics_enhanced_vocab.json`
+  - `candidate_speechmatics_enhanced_vocab_job.json`
+- Score from `RUN_TRANSCRIPT_REFERENCE_SCORE.py`:
+  - Candidate: `candidate_speechmatics_enhanced_vocab.txt`.
+  - Reference words: 93.
+  - Candidate words: 71.
+  - WER: 34.41%.
+  - Reference accuracy: 65.59%.
+- Important terms:
+  - `Kingman`: MISSING.
+  - `ZoneX`: MISSING.
+  - `Shadowsmith`: FOUND.
+  - `Nicolas Cage`: FOUND.
+  - `Freckelston`: MISSING.
+  - `Caltheris`: FOUND.
+  - `Nyxara`: MISSING.
+- Transcript preview: `It's a great cut scene, to be honest. I think it's a lot of great content in there. I think there's a lot to digest in that cutscene. Yeah. But like, you know, when, uh, the Shadowsmith is on screen, when she's not, you know, don't care, but I understand the blindfold. That's all I'm saying. Mhm. I played the Nicolas Cage event. I just we need more Caltheris content. MM.`
+
+Decision:
+- Reject Speechmatics enhanced custom dictionary for integration for now.
+- It found `Shadowsmith`, `Nicolas Cage`, and `Caltheris`, but strict reference accuracy was only 65.59%.
+- It does not beat Deepgram at 66.67%.
+- It does not beat AssemblyAI at 70.97%.
+- It does not beat the best local whisper.cpp Vulkan run at about 74.19%.
+- It misrecognized the key phrase around `Oh, I've completed the Nicolas Cage event`, producing `I played the Nicolas Cage event`, so it is not acceptable for this workflow.
+
 ## ASR hardware profile planning
 
 Status:
