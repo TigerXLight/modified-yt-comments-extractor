@@ -43,3 +43,7 @@ python
 .DS_Store
 Thumbs.db
 experimental/
+
+# Local ASR matrix outputs
+WHISPERCPP_MATRIX_SUMMARY.txt
+whispercpp_matrix_out/
