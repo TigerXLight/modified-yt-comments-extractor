@@ -91,3 +91,51 @@ Manual scoring helper:
 - It scores offline or online transcript files against the same strict reference window without adding any provider integration.
 - It writes `TRANSCRIPT_REFERENCE_SCORE_SUMMARY.txt`, which is a local ignored output.
 - No new ASR/provider results are recorded by adding this helper.
+
+AssemblyAI manual API transcript results:
+- Default/no-context:
+  - `speech_model_used`: `universal-3-5-pro`.
+  - Input: `directml_probe_30s.wav`.
+  - Candidate file: `candidate_assemblyai.txt`.
+  - Reference scoring window: strict first 30s.
+  - Reference words: 93.
+  - Candidate words: 74.
+  - WER: 29.03%.
+  - Reference accuracy: 70.97%.
+  - Important terms:
+    - `Shadowsmith`: FOUND.
+    - `Nicolas Cage`: FOUND.
+    - `Caltheris`: MISSING.
+  - Important failures:
+    - `I've cleared the Nicolas Cage event` was rendered as `it's weird, the Nicolas Cage event`.
+    - `Caltheris` was rendered as `Calpheon`.
+- Prompted/keyterms:
+  - `speech_model_used`: `universal-3-5-pro`.
+  - `keyterms_prompt` accepted:
+    - `Kingman`
+    - `ZoneX`
+    - `Shadowsmith`
+    - `Nicolas Cage`
+    - `Freckelston`
+    - `Caltheris`
+    - `Nyxara`
+  - Candidate file: `candidate_assemblyai_prompted.txt`.
+  - Reference scoring window: strict first 30s.
+  - Reference words: 93.
+  - Candidate words: 76.
+  - WER: 29.03%.
+  - Reference accuracy: 70.97%.
+  - Important terms:
+    - `Shadowsmith`: FOUND.
+    - `Nicolas Cage`: FOUND.
+    - `Caltheris`: FOUND.
+  - Important failures:
+    - `I've cleared the Nicolas Cage event` was still rendered as `it's weird, the Nicolas Cage event`.
+    - It added `Cool.` at the start.
+  - Prompting fixed `Caltheris` but did not improve the overall WER/accuracy.
+
+Decision:
+- Reject AssemblyAI Universal-3.5 Pro default and prompted/keyterms results for integration for now.
+- Both are below the 95% acceptance threshold.
+- The prompted/keyterms run still does not beat the best local whisper.cpp Vulkan result on this clip.
+- Keep provider comparison manual until a provider clearly beats the local options.

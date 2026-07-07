@@ -48,6 +48,10 @@ experimental/
 WHISPERCPP_MATRIX_SUMMARY.txt
 TRANSCRIPT_REFERENCE_SCORE_SUMMARY.txt
 whispercpp_matrix_out/
+# Local provider transcript comparison outputs
+candidate_*.txt
+candidate_*.json
+TEMP_*TRANSCRIBE*.py
 # Local ASR scratch outputs
 PARAKEET_HELP.txt
 PARAKEET_*_LOG.txt
