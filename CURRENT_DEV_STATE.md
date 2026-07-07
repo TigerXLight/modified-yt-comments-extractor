@@ -89,6 +89,12 @@ Decision:
 - DirectML is technically viable on AMD Windows, but current base/small ONNX quality is below whisper.cpp Vulkan on this clip.
 - Do not test medium/large DirectML models yet unless explicitly approved later.
 
+Manual scoring helper:
+- `RUN_TRANSCRIPT_REFERENCE_SCORE.py` is available for manual provider-agnostic transcript comparison.
+- It can score future offline or online transcript files against the same strict reference window without integrating any provider into the app.
+- It writes `TRANSCRIPT_REFERENCE_SCORE_SUMMARY.txt`, which is a local ignored output.
+- No new ASR/provider results have been recorded from this helper yet.
+
 Next local-ASR branches:
 1. Canary / other offline model feasibility if practical.
 2. Online transcription comparison if local methods remain below threshold.

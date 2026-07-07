@@ -85,3 +85,9 @@ Decision:
 - Reject DirectML base.en and small.en for Auto Quality Probe for now.
 - DirectML is technically viable on AMD Windows, but current base/small ONNX quality is below whisper.cpp Vulkan on this clip.
 - Do not test medium/large DirectML models yet unless explicitly approved later.
+
+Manual scoring helper:
+- `RUN_TRANSCRIPT_REFERENCE_SCORE.py` exists for manual provider-agnostic transcript comparison.
+- It scores offline or online transcript files against the same strict reference window without adding any provider integration.
+- It writes `TRANSCRIPT_REFERENCE_SCORE_SUMMARY.txt`, which is a local ignored output.
+- No new ASR/provider results are recorded by adding this helper.
