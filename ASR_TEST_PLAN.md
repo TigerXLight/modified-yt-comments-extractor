@@ -18,9 +18,9 @@ Current candidates:
 - whisper.cpp Vulkan large-v3-turbo terms-only.
 
 Still to evaluate:
-- ONNX Runtime DirectML with larger Whisper ONNX models if practical on AMD Windows.
 - Canary if a workable local path exists.
 - Online transcription providers after local methods are assessed.
+- DirectML medium/large are deferred and should only be tested if explicitly approved later.
 
 Topic resolver:
 - Optional background helper for vocabulary/phrase hints.
@@ -69,4 +69,19 @@ Manual runner:
 - `RUN_DIRECTML_WHISPER_MATRIX.py` exists for manual DirectML ONNX comparison only.
 - It tests `openai/whisper-base.en` and `openai/whisper-small.en` on the same strict 30s reference probe.
 - It writes `DIRECTML_WHISPER_MATRIX_SUMMARY.txt`, which is a local ignored output.
-- No DirectML matrix results are recorded here until the runner has been executed manually.
+
+Manual DirectML matrix result:
+- The runner completed after fixing generation config. These are manual matrix results, not final ASR quality results.
+- Provider: `DmlExecutionProvider`.
+- `openai/whisper-small.en`: 58.06% strict 30s reference accuracy, 41.94% WER, 65 candidate words, 11.37s elapsed.
+- `openai/whisper-base.en`: 55.91% strict 30s reference accuracy, 44.09% WER, 63 candidate words, 12.97s elapsed.
+- Important failures:
+  - `Shadowsmith` became `Shousemith` / `chat's missing`.
+  - `Caltheris` became `Kalfirisk` / `Calfare, Wisconsin`.
+  - `I've cleared the Nicolas Cage event` was not recovered correctly.
+  - base.en produced `Miyas`.
+
+Decision:
+- Reject DirectML base.en and small.en for Auto Quality Probe for now.
+- DirectML is technically viable on AMD Windows, but current base/small ONNX quality is below whisper.cpp Vulkan on this clip.
+- Do not test medium/large DirectML models yet unless explicitly approved later.

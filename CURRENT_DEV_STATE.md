@@ -72,9 +72,24 @@ Manual runner:
 - It compares `openai/whisper-base.en` and `openai/whisper-small.en` through ONNX Runtime DirectML on the same 30s reference probe.
 - It is not wired into `main.py`, `asr_tools.py`, the UI, or Auto Quality Probe.
 - It should be run manually from the project venv when DirectML testing is desired.
-- No base.en or small.en DirectML results have been recorded in this file yet.
+
+Manual DirectML matrix result:
+- The runner completed after fixing generation config. These are manual matrix results, not final ASR quality results.
+- Provider: `DmlExecutionProvider`.
+- `openai/whisper-small.en`: 58.06% strict 30s reference accuracy, 41.94% WER, 65 candidate words, 11.37s elapsed.
+- `openai/whisper-base.en`: 55.91% strict 30s reference accuracy, 44.09% WER, 63 candidate words, 12.97s elapsed.
+- Important failures:
+  - `Shadowsmith` became `Shousemith` / `chat's missing`.
+  - `Caltheris` became `Kalfirisk` / `Calfare, Wisconsin`.
+  - `I've cleared the Nicolas Cage event` was not recovered correctly.
+  - base.en produced `Miyas`.
+
+Decision:
+- Reject DirectML base.en and small.en for Auto Quality Probe for now.
+- DirectML is technically viable on AMD Windows, but current base/small ONNX quality is below whisper.cpp Vulkan on this clip.
+- Do not test medium/large DirectML models yet unless explicitly approved later.
 
 Next local-ASR branches:
-1. DirectML feasibility check.
-2. Canary / other offline model feasibility if practical.
-3. Online transcription comparison if local methods remain below threshold.
+1. Canary / other offline model feasibility if practical.
+2. Online transcription comparison if local methods remain below threshold.
+3. DirectML medium/large only if explicitly approved later.
