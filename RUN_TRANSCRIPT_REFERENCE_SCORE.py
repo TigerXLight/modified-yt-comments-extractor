@@ -178,19 +178,50 @@ def read_transcript_text(path: Path, max_seconds: Optional[float] = None) -> str
 
 
 def term_checks(candidate_text: str) -> List[Dict[str, str]]:
-    candidate_normalized = f" {normalized_string(candidate_text)} "
+    candidate_words = normalize_text(candidate_text)
     checks = []
 
     for term in IMPORTANT_TERMS:
-        term_normalized = f" {normalized_string(term)} "
+        term_words = normalize_text(term)
         checks.append(
             {
                 "term": term,
-                "status": "FOUND" if term_normalized in candidate_normalized else "MISSING",
+                "status": "FOUND" if has_term_sequence(candidate_words, term_words) else "MISSING",
             }
         )
 
     return checks
+
+
+def term_word_matches(candidate_word: str, term_word: str, is_final_word: bool) -> bool:
+    if candidate_word == term_word:
+        return True
+
+    return is_final_word and candidate_word == f"{term_word}'s"
+
+
+def has_term_sequence(candidate_words: List[str], term_words: List[str]) -> bool:
+    if not term_words:
+        return False
+
+    if len(candidate_words) < len(term_words):
+        return False
+
+    for start in range(0, len(candidate_words) - len(term_words) + 1):
+        matched = True
+
+        for offset, term_word in enumerate(term_words):
+            candidate_word = candidate_words[start + offset]
+            is_final_word = offset == len(term_words) - 1
+
+            if not term_word_matches(candidate_word, term_word, is_final_word):
+                matched = False
+                break
+
+        if matched:
+            return True
+
+    return False
 
 
 def score_candidate(
