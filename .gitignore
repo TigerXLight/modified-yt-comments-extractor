@@ -54,3 +54,10 @@ parakeet_probe_*.wav
 parakeet_probe_*.txt
 CHECK_ASR_ENGINE_INVENTORY.py
 SCORE_PARAKEET_*.py
+# DirectML / ONNX ASR scratch outputs
+TEST_DIRECTML_*.py
+TEST_TORCHCODEC_*.py
+DIRECTML_*_LOG.txt
+directml_probe_*.wav
+directml_whisper_*_onnx/
+INSTALL_FFMPEG7_SHARED_FOR_TORCHCODEC.py
