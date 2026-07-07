@@ -14,6 +14,8 @@ from transcript_tools import TranscriptSegment
 
 DEFAULT_WHISPERCPP_CLI = r"C:\whisper.cpp\build-vulkan\bin\Release\whisper-cli.exe"
 DEFAULT_WHISPERCPP_MODEL = r"C:\whisper.cpp\ggml-large-v3.bin"
+DEFAULT_WHISPERCPP_ROOT = r"C:\whisper.cpp"
+DEFAULT_WHISPERCPP_TIMEOUT_SECONDS = int(os.environ.get("ASR_WHISPERCPP_TIMEOUT", "120"))
 
 
 def _seconds_to_timestamp(seconds: float) -> str:
@@ -42,12 +44,41 @@ def whispercpp_cli_path() -> Path:
     return Path(os.environ.get("ASR_WHISPERCPP_CLI", DEFAULT_WHISPERCPP_CLI)).expanduser()
 
 
-def whispercpp_model_path() -> Path:
-    return Path(os.environ.get("ASR_WHISPERCPP_MODEL", DEFAULT_WHISPERCPP_MODEL)).expanduser()
+def whispercpp_model_path(model_name: Optional[str] = None) -> Path:
+    requested = (model_name or "large-v3").strip() or "large-v3"
+    env_suffix = (
+        requested.upper()
+        .replace("-", "_")
+        .replace(".", "_")
+        .replace(" ", "_")
+    )
+
+    per_model_env = os.environ.get(f"ASR_WHISPERCPP_MODEL_{env_suffix}")
+    if per_model_env:
+        return Path(per_model_env).expanduser()
+
+    generic_env = os.environ.get("ASR_WHISPERCPP_MODEL")
+    if generic_env and requested in {"", "large-v3", "default"}:
+        return Path(generic_env).expanduser()
+
+    root = Path(os.environ.get("WHISPERCPP_ROOT", DEFAULT_WHISPERCPP_ROOT)).expanduser()
+    candidates = [
+        root / f"ggml-{requested}.bin",
+        root / "models" / f"ggml-{requested}.bin",
+    ]
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    if requested == "large-v3":
+        return Path(os.environ.get("ASR_WHISPERCPP_MODEL", DEFAULT_WHISPERCPP_MODEL)).expanduser()
+
+    return candidates[0]
 
 
-def is_whispercpp_vulkan_available() -> bool:
-    return whispercpp_cli_path().exists() and whispercpp_model_path().exists()
+def is_whispercpp_vulkan_available(model_name: Optional[str] = None) -> bool:
+    return whispercpp_cli_path().exists() and whispercpp_model_path(model_name).exists()
 
 
 def build_whispercpp_prompt(
@@ -341,6 +372,8 @@ def transcribe_media_file_with_whispercpp_vulkan(
     prompt: Optional[str] = None,
     probe_seconds: Optional[int] = None,
     audio_filter: Optional[str] = None,
+    model_name: str = "large-v3",
+    extra_flags: Optional[List[str]] = None,
 ) -> Tuple[List[TranscriptSegment], Dict[str, Any]]:
     source_path = Path(media_path).expanduser()
 
@@ -348,7 +381,8 @@ def transcribe_media_file_with_whispercpp_vulkan(
         raise FileNotFoundError(f"Media file not found: {media_path}")
 
     cli_path = whispercpp_cli_path()
-    model_path = whispercpp_model_path()
+    requested_model_name = (model_name or "large-v3").strip() or "large-v3"
+    model_path = whispercpp_model_path(requested_model_name)
 
     if not cli_path.exists():
         raise FileNotFoundError(f"whisper.cpp CLI not found: {cli_path}")
@@ -389,13 +423,23 @@ def transcribe_media_file_with_whispercpp_vulkan(
             str(output_base),
         ]
 
-        result = subprocess.run(
-            command,
-            cwd=str(cli_path.parent),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        if extra_flags:
+            command += [str(flag) for flag in extra_flags if str(flag).strip()]
+
+        try:
+            result = subprocess.run(
+                command,
+                cwd=str(cli_path.parent),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=DEFAULT_WHISPERCPP_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(
+                f"whisper.cpp Vulkan timed out after {DEFAULT_WHISPERCPP_TIMEOUT_SECONDS}s "
+                f"for model {requested_model_name}."
+            ) from error
 
         elapsed_seconds = max(0.0, time.perf_counter() - started_at)
 
@@ -453,7 +497,7 @@ def transcribe_media_file_with_whispercpp_vulkan(
             "engine": "whisper.cpp Vulkan",
             "source_file": str(source_path),
             "source_file_name": source_path.name,
-            "model_name": model_path.name,
+            "model_name": requested_model_name,
             "device": "vulkan",
             "compute_type": "whisper.cpp",
             "speaker_name": speaker_name,
@@ -474,6 +518,7 @@ def transcribe_media_file_with_whispercpp_vulkan(
             "no_speech_prob_mean": None,
             "whispercpp_cli": str(cli_path),
             "whispercpp_model": str(model_path),
+            "whispercpp_extra_flags": list(extra_flags or []),
             "whispercpp_stdout_tail": stdout_text[-4000:],
             "whispercpp_stderr_tail": stderr_text[-4000:],
         }

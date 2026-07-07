@@ -199,7 +199,8 @@ def transcribe_media_file(
             language=language,
             prompt=initial_prompt,
             probe_seconds=probe_seconds,
-            audio_filter=locals().get("audio_filter"),
+            audio_filter=audio_filter,
+            model_name=model_name,
         )
 
     is_probe = bool(probe_seconds and int(probe_seconds) > 0)

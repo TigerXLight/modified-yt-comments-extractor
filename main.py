@@ -6719,20 +6719,49 @@ class App(ctk.CTk):
         """Return ASR candidates to test for Auto Quality Probe."""
         candidates: List[Dict[str, Any]] = []
 
-        if is_whispercpp_vulkan_available():
+        def add_whispercpp(
+            label: str,
+            model: str,
+            prompt_mode: str,
+        ) -> None:
             candidates.append({
-                "label": "Experimental AMD GPU — whisper.cpp Vulkan prompted",
-                "model_name": "large-v3",
+                "label": label,
+                "model_name": model,
                 "device": "vulkan",
                 "compute_type": "whisper.cpp",
-                "vad_filter": True,
+                "vad_filter": False,
                 "condition_on_previous_text": None,
-                "use_reference_hotwords": False,
-                "use_reference_text_prompt": True,
+                "use_reference_hotwords": prompt_mode == "terms",
+                "use_reference_text_prompt": prompt_mode == "phrases",
+                "whispercpp_prompt_mode": prompt_mode,
                 "engine": "whispercpp_vulkan",
                 "beam_size": 5,
                 "audio_filter": None,
             })
+
+        if is_whispercpp_vulkan_available("large-v3"):
+            add_whispercpp(
+                "AMD GPU — whisper.cpp large-v3 phrase prompt",
+                "large-v3",
+                "phrases",
+            )
+            add_whispercpp(
+                "AMD GPU — whisper.cpp large-v3 unprompted",
+                "large-v3",
+                "none",
+            )
+
+        if is_whispercpp_vulkan_available("large-v3-turbo"):
+            add_whispercpp(
+                "AMD GPU — whisper.cpp large-v3-turbo phrase prompt",
+                "large-v3-turbo",
+                "phrases",
+            )
+            add_whispercpp(
+                "AMD GPU — whisper.cpp large-v3-turbo terms only",
+                "large-v3-turbo",
+                "terms",
+            )
 
         def add(
             label: str,
@@ -7479,9 +7508,21 @@ class App(ctk.CTk):
                     candidate_audio_filter = candidate.get("audio_filter")
                     candidate_beam_size = int(candidate.get("beam_size") or 5)
                     candidate_hotwords = None
+                    candidate_engine = str(candidate.get("engine") or "faster_whisper")
+                    candidate_prompt_mode = str(candidate.get("whispercpp_prompt_mode") or "").strip().lower()
+                    candidate_initial_prompt = calibration_prompt
 
                     if candidate.get("use_reference_hotwords") and glossary_terms:
                         candidate_hotwords = "; ".join(glossary_terms)
+
+                        if candidate_engine == "whispercpp_vulkan":
+                            terms_prompt = "Names and terms that may appear: " + ", ".join(glossary_terms[:30]) + "."
+                            candidate_initial_prompt = " ".join(
+                                part for part in [initial_prompt or "", terms_prompt] if part
+                            ).strip() or None
+
+                    if candidate_engine == "whispercpp_vulkan" and candidate_prompt_mode == "none":
+                        candidate_initial_prompt = None
 
                     self.after(
                         0,
@@ -7500,7 +7541,7 @@ class App(ctk.CTk):
                             compute_type=candidate_compute,
                             speaker_name=speaker_name,
                             language=calibration_language_code,
-                            initial_prompt=calibration_prompt,
+                            initial_prompt=candidate_initial_prompt,
                             vad_filter=candidate_vad_filter,
                             beam_size=candidate_beam_size,
                             probe_seconds=None,
@@ -7938,12 +7979,21 @@ class App(ctk.CTk):
                         candidate_audio_filter = candidate.get("audio_filter")
                         candidate_beam_size = int(candidate.get("beam_size") or 5)
                         candidate_hotwords = None
+                        candidate_engine = str(candidate.get("engine") or "faster_whisper")
+                        candidate_prompt_mode = str(candidate.get("whispercpp_prompt_mode") or "").strip().lower()
 
                         candidate_initial_prompt = auto_probe_initial_prompt
 
                         if candidate.get("use_reference_hotwords") and auto_probe_hotword_terms:
                             candidate_hotwords = "; ".join(auto_probe_hotword_terms)
-                            candidate_initial_prompt = initial_prompt
+
+                            if candidate_engine == "whispercpp_vulkan":
+                                terms_prompt = "Names and terms that may appear: " + ", ".join(auto_probe_hotword_terms[:30]) + "."
+                                candidate_initial_prompt = " ".join(
+                                    part for part in [initial_prompt or "", terms_prompt] if part
+                                ).strip() or None
+                            else:
+                                candidate_initial_prompt = initial_prompt
 
                         self.after(
                             0,
@@ -7953,9 +8003,9 @@ class App(ctk.CTk):
                             )
                         )
 
-                        candidate_initial_prompt = locals().get("auto_probe_prompt", locals().get("initial_prompt", locals().get("asr_prompt", "")))
-
-                        if candidate.get("use_reference_text_prompt"):
+                        if candidate_engine == "whispercpp_vulkan" and candidate_prompt_mode == "none":
+                            candidate_initial_prompt = None
+                        elif candidate.get("use_reference_text_prompt"):
                             try:
                                 reference_prompt_text = self._reference_text_for_probe(
                                     auto_probe_reference_segments,
@@ -7967,7 +8017,7 @@ class App(ctk.CTk):
                                     reference_prompt_text,
                                 )
                             except Exception:
-                                candidate_initial_prompt = locals().get("auto_probe_prompt", locals().get("initial_prompt", locals().get("asr_prompt", "")))
+                                candidate_initial_prompt = initial_prompt
 
                         try:
                             candidate_segments, candidate_metadata = transcribe_media_file(
