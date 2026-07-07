@@ -6716,14 +6716,15 @@ class App(ctk.CTk):
         selected_device: str,
         selected_compute_type: str,
     ) -> List[Dict[str, Any]]:
-        """Return ASR candidates to test for Auto Quality Probe."""
+        """Return ASR candidates to test for Auto Quality Probe.
+
+        Accuracy is priority. The fast default list tests AMD/whisper.cpp Vulkan
+        candidates plus the strongest CPU baseline. Set ASR_AUTO_PROBE_FULL=1
+        to run the larger CPU/faster-whisper matrix.
+        """
         candidates: List[Dict[str, Any]] = []
 
-        def add_whispercpp(
-            label: str,
-            model: str,
-            prompt_mode: str,
-        ) -> None:
+        def add_whispercpp(label: str, model: str, prompt_mode: str) -> None:
             candidates.append({
                 "label": label,
                 "model_name": model,
@@ -6740,28 +6741,12 @@ class App(ctk.CTk):
             })
 
         if is_whispercpp_vulkan_available("large-v3"):
-            add_whispercpp(
-                "AMD GPU — whisper.cpp large-v3 phrase prompt",
-                "large-v3",
-                "phrases",
-            )
-            add_whispercpp(
-                "AMD GPU — whisper.cpp large-v3 unprompted",
-                "large-v3",
-                "none",
-            )
+            add_whispercpp("AMD GPU — whisper.cpp large-v3 phrase prompt", "large-v3", "phrases")
+            add_whispercpp("AMD GPU — whisper.cpp large-v3 unprompted", "large-v3", "none")
 
         if is_whispercpp_vulkan_available("large-v3-turbo"):
-            add_whispercpp(
-                "AMD GPU — whisper.cpp large-v3-turbo phrase prompt",
-                "large-v3-turbo",
-                "phrases",
-            )
-            add_whispercpp(
-                "AMD GPU — whisper.cpp large-v3-turbo terms only",
-                "large-v3-turbo",
-                "terms",
-            )
+            add_whispercpp("AMD GPU — whisper.cpp large-v3-turbo phrase prompt", "large-v3-turbo", "phrases")
+            add_whispercpp("AMD GPU — whisper.cpp large-v3-turbo terms only", "large-v3-turbo", "terms")
 
         def add(
             label: str,
@@ -6808,6 +6793,8 @@ class App(ctk.CTk):
                 "vad_filter": bool(vad_filter),
                 "condition_on_previous_text": condition_on_previous_text,
                 "use_reference_hotwords": bool(use_reference_hotwords),
+                "use_reference_text_prompt": False,
+                "engine": "faster_whisper",
                 "audio_filter": audio_filter or None,
                 "beam_size": int(beam_size or 5),
             })
@@ -6819,58 +6806,31 @@ class App(ctk.CTk):
         add("Accurate CPU + beam 12", "large-v3", "cpu", "int8", vad_filter=True, beam_size=12)
         add("Accurate CPU + float32", "large-v3", "cpu", "float32", vad_filter=True)
         add("Accurate CPU + float32 + beam 8", "large-v3", "cpu", "float32", vad_filter=True, beam_size=8)
-
         add("Accurate CPU + loudnorm", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="loudnorm")
         add("Accurate CPU + speech clean", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="speech_clean")
         add("Accurate CPU + voice EQ", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="voice_eq")
         add("Accurate CPU + denoise", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="denoise")
         add("Accurate CPU + denoise+loudnorm", "large-v3", "cpu", "int8", vad_filter=True, audio_filter="denoise_loudnorm")
-
-        # Important for overlapping/short speech: VAD can drop interjections.
         add("Accurate CPU - no VAD", "large-v3", "cpu", "int8", vad_filter=False)
         add("Accurate CPU - no VAD + beam 8", "large-v3", "cpu", "int8", vad_filter=False, beam_size=8)
         add("Accurate CPU - no VAD + float32", "large-v3", "cpu", "float32", vad_filter=False)
         add("Accurate CPU - no VAD + float32 + beam 8", "large-v3", "cpu", "float32", vad_filter=False, beam_size=8)
         add("Accurate CPU - no VAD + loudnorm", "large-v3", "cpu", "int8", vad_filter=False, audio_filter="loudnorm")
         add("Accurate CPU - no VAD + speech clean", "large-v3", "cpu", "int8", vad_filter=False, audio_filter="speech_clean")
-        add(
-            "Accurate CPU - no VAD + no context carry",
-            "large-v3",
-            "cpu",
-            "int8",
-            vad_filter=False,
-            condition_on_previous_text=False,
-        )
-        add(
-            "Accurate CPU - no VAD + hotwords",
-            "large-v3",
-            "cpu",
-            "int8",
-            vad_filter=False,
-            condition_on_previous_text=False,
-            use_reference_hotwords=True,
-        )
+        add("Accurate CPU - no VAD + no context carry", "large-v3", "cpu", "int8", vad_filter=False, condition_on_previous_text=False)
+        add("Accurate CPU - no VAD + hotwords", "large-v3", "cpu", "int8", vad_filter=False, condition_on_previous_text=False, use_reference_hotwords=True)
 
         if selected_device == "cuda":
             add("GPU Accurate", "large-v3", "cuda", "float16", vad_filter=True)
             add("GPU Accurate - no VAD", "large-v3", "cuda", "float16", vad_filter=False)
 
-        add(
-            "Current Selected",
-            selected_model,
-            selected_device,
-            selected_compute_type,
-            vad_filter=True,
-        )
+        add("Current Selected", selected_model, selected_device, selected_compute_type, vad_filter=True)
 
-        # FAST_AUTO_PROBE_ONLY_VULKAN_AND_ACCURATE_CPU
-        # Default Auto Probe must stay fast. Full matrix is available with ASR_AUTO_PROBE_FULL=1.
         if os.environ.get("ASR_AUTO_PROBE_FULL", "").strip().lower() not in {"1", "true", "yes", "full"}:
             fast_candidates = []
             for candidate in candidates:
-                label = str(candidate.get("label", "")).strip()
-                label_lower = label.lower()
-                if "whisper.cpp vulkan" in label_lower:
+                label_lower = str(candidate.get("label", "")).strip().lower()
+                if "whisper.cpp" in label_lower:
                     fast_candidates.append(candidate)
                     continue
                 if label_lower == "accurate cpu":
@@ -6880,7 +6840,6 @@ class App(ctk.CTk):
                 return fast_candidates
 
         return candidates
-
 
     def _plain_text_from_segments(self, segments: List[TranscriptSegment]) -> str:
         """Return plain text from transcript segments."""
@@ -7523,6 +7482,19 @@ class App(ctk.CTk):
 
                     if candidate_engine == "whispercpp_vulkan" and candidate_prompt_mode == "none":
                         candidate_initial_prompt = None
+                    elif candidate_engine == "whispercpp_vulkan" and candidate.get("use_reference_text_prompt"):
+                        try:
+                            calibration_reference_text = self._reference_text_for_probe(
+                                reference_segments,
+                                calibration_probe_seconds,
+                            )
+                            candidate_initial_prompt = build_whispercpp_prompt(
+                                candidate_initial_prompt,
+                                glossary_terms,
+                                calibration_reference_text,
+                            )
+                        except Exception:
+                            candidate_initial_prompt = calibration_prompt
 
                     self.after(
                         0,
@@ -7981,7 +7953,6 @@ class App(ctk.CTk):
                         candidate_hotwords = None
                         candidate_engine = str(candidate.get("engine") or "faster_whisper")
                         candidate_prompt_mode = str(candidate.get("whispercpp_prompt_mode") or "").strip().lower()
-
                         candidate_initial_prompt = auto_probe_initial_prompt
 
                         if candidate.get("use_reference_hotwords") and auto_probe_hotword_terms:

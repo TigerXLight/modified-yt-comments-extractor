@@ -46,12 +46,7 @@ def whispercpp_cli_path() -> Path:
 
 def whispercpp_model_path(model_name: Optional[str] = None) -> Path:
     requested = (model_name or "large-v3").strip() or "large-v3"
-    env_suffix = (
-        requested.upper()
-        .replace("-", "_")
-        .replace(".", "_")
-        .replace(" ", "_")
-    )
+    env_suffix = requested.upper().replace("-", "_").replace(".", "_").replace(" ", "_")
 
     per_model_env = os.environ.get(f"ASR_WHISPERCPP_MODEL_{env_suffix}")
     if per_model_env:
@@ -380,8 +375,8 @@ def transcribe_media_file_with_whispercpp_vulkan(
     if not source_path.exists():
         raise FileNotFoundError(f"Media file not found: {media_path}")
 
-    cli_path = whispercpp_cli_path()
     requested_model_name = (model_name or "large-v3").strip() or "large-v3"
+    cli_path = whispercpp_cli_path()
     model_path = whispercpp_model_path(requested_model_name)
 
     if not cli_path.exists():
@@ -392,7 +387,6 @@ def transcribe_media_file_with_whispercpp_vulkan(
 
     wav_path: Optional[Path] = None
     output_base = Path(tempfile.mktemp(prefix="ytce_whispercpp_out_"))
-
     started_at = time.perf_counter()
 
     try:
@@ -416,15 +410,14 @@ def transcribe_media_file_with_whispercpp_vulkan(
         if prompt:
             command += ["--prompt", str(prompt)]
 
+        command += list(extra_flags or [])
+
         command += [
             "-otxt",
             "-osrt",
             "-of",
             str(output_base),
         ]
-
-        if extra_flags:
-            command += [str(flag) for flag in extra_flags if str(flag).strip()]
 
         try:
             result = subprocess.run(
@@ -435,11 +428,11 @@ def transcribe_media_file_with_whispercpp_vulkan(
                 check=False,
                 timeout=DEFAULT_WHISPERCPP_TIMEOUT_SECONDS,
             )
-        except subprocess.TimeoutExpired as error:
+        except subprocess.TimeoutExpired as exc:
             raise RuntimeError(
-                f"whisper.cpp Vulkan timed out after {DEFAULT_WHISPERCPP_TIMEOUT_SECONDS}s "
-                f"for model {requested_model_name}."
-            ) from error
+                f"whisper.cpp Vulkan transcription timed out after "
+                f"{DEFAULT_WHISPERCPP_TIMEOUT_SECONDS}s."
+            ) from exc
 
         elapsed_seconds = max(0.0, time.perf_counter() - started_at)
 
@@ -518,6 +511,8 @@ def transcribe_media_file_with_whispercpp_vulkan(
             "no_speech_prob_mean": None,
             "whispercpp_cli": str(cli_path),
             "whispercpp_model": str(model_path),
+            "whispercpp_model_name": requested_model_name,
+            "whispercpp_timeout_seconds": DEFAULT_WHISPERCPP_TIMEOUT_SECONDS,
             "whispercpp_extra_flags": list(extra_flags or []),
             "whispercpp_stdout_tail": stdout_text[-4000:],
             "whispercpp_stderr_tail": stderr_text[-4000:],
@@ -532,12 +527,8 @@ def transcribe_media_file_with_whispercpp_vulkan(
             except Exception:
                 pass
 
-        try:
-            output_base.with_suffix(".txt").unlink(missing_ok=True)
-        except Exception:
-            pass
-
-        try:
-            output_base.with_suffix(".srt").unlink(missing_ok=True)
-        except Exception:
-            pass
+        for suffix in (".txt", ".srt", ".vtt", ".json"):
+            try:
+                output_base.with_suffix(suffix).unlink(missing_ok=True)
+            except Exception:
+                pass

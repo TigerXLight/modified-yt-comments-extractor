@@ -47,6 +47,32 @@ if errorlevel 1 (
 )
 
 echo.
+
+
+echo.
+echo whisper.cpp Vulkan check:
+if exist "C:\whisper.cpp\build-vulkan\bin\Release\whisper-cli.exe" (
+    echo [OK] whisper.cpp CLI found.
+) else (
+    echo [MISSING] whisper.cpp CLI was not found at C:\whisper.cpp\build-vulkan\bin\Release\whisper-cli.exe
+)
+
+if exist "C:\whisper.cpp\ggml-large-v3.bin" (
+    echo [OK] whisper.cpp large-v3 model found.
+) else if exist "C:\whisper.cpp\models\ggml-large-v3.bin" (
+    echo [OK] whisper.cpp large-v3 model found in models folder.
+) else (
+    echo [MISSING] whisper.cpp large-v3 model was not found.
+)
+
+if exist "C:\whisper.cpp\ggml-large-v3-turbo.bin" (
+    echo [OK] whisper.cpp large-v3-turbo model found.
+) else if exist "C:\whisper.cpp\models\ggml-large-v3-turbo.bin" (
+    echo [OK] whisper.cpp large-v3-turbo model found in models folder.
+) else (
+    echo [INFO] whisper.cpp large-v3-turbo model was not found. Turbo candidate will be skipped.
+)
+
 echo If something was just installed, close and reopen the app before testing again.
 echo.
 pause

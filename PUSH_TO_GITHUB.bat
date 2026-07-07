@@ -13,7 +13,7 @@ if "%MSG%"=="" (
     exit /b
 )
 
-git add main.py extractor.py updater.py evidence_exporter.py asr_defaults.py asr_tools.py transcript_tools.py youtube_transcript_downloader.py youtube_video_metadata.py README.md RELEASE_NOTES.md requirements.txt core assets *.bat .gitignore
+git add main.py extractor.py updater.py evidence_exporter.py asr_defaults.py asr_tools.py RUN_WHISPERCPP_MATRIX.py CURRENT_DEV_STATE.md ASR_TEST_PLAN.md asr_topic_resolver.py asr_settings_dialog.py asr_calibration.py asr_quality_policy.py asr_whispercpp.py transcript_tools.py youtube_transcript_downloader.py youtube_video_metadata.py README.md RELEASE_NOTES.md requirements.txt core assets *.bat .gitignore
 git commit -m "%MSG%"
 git push
 
