@@ -143,6 +143,20 @@ Decision:
 - The prompted/keyterms run still does not beat the best local whisper.cpp Vulkan result on this clip.
 - Keep provider comparison manual until a provider clearly beats the local options.
 
+## ASR hardware profile planning
+
+Status:
+- AMD: whisper.cpp Vulkan is the best local path tested so far on AMD RX 5700, but it remains below the 95% strict reference threshold on the real 30s clip.
+- NVIDIA: future profile should be planned around CUDA-capable options such as faster-whisper / CTranslate2 CUDA and/or whisper.cpp CUDA.
+- Intel CPU / iGPU / Arc: future profile should be planned around OpenVINO Whisper, with DirectML as a possible fallback.
+- CPU-only: keep conservative and quality-gated; CPU-only results should stay draft/probe-first unless they pass the strict reference scoring gate.
+
+Planning notes:
+- Hardware acceleration does not guarantee higher accuracy by itself. It mainly enables faster/larger model testing.
+- Any NVIDIA, Intel, or CPU profile must pass the same strict reference scoring gate before being trusted.
+- DirectML base/small are rejected for now; DirectML medium/large remain deferred unless explicitly approved later.
+- Offline ASR is not fully exhausted globally, but the practical AMD paths tested so far are below the project acceptance threshold.
+
 Next local-ASR branches:
 1. Canary / other offline model feasibility if practical.
 2. Online transcription comparison if local methods remain below threshold.
