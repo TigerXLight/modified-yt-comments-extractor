@@ -64,3 +64,9 @@ Runtime requirement:
 Decision:
 - Do not add DirectML to the main UI or Auto Quality Probe yet.
 - Next DirectML test should be an explicit experimental script using direct `AutoProcessor` plus `ORTModelForSpeechSeq2Seq.generate()` with `openai/whisper-base.en` and `openai/whisper-small.en`.
+
+Manual runner:
+- `RUN_DIRECTML_WHISPER_MATRIX.py` exists for manual DirectML ONNX comparison only.
+- It tests `openai/whisper-base.en` and `openai/whisper-small.en` on the same strict 30s reference probe.
+- It writes `DIRECTML_WHISPER_MATRIX_SUMMARY.txt`, which is a local ignored output.
+- No DirectML matrix results are recorded here until the runner has been executed manually.

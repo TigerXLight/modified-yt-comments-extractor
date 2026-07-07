@@ -67,6 +67,13 @@ Decision:
 - Do not treat tiny.en as representative of final DirectML quality.
 - Next DirectML work should remain an explicit experimental script using direct `AutoProcessor` plus `ORTModelForSpeechSeq2Seq.generate()` with larger models.
 
+Manual runner:
+- `RUN_DIRECTML_WHISPER_MATRIX.py` is available for manual local testing only.
+- It compares `openai/whisper-base.en` and `openai/whisper-small.en` through ONNX Runtime DirectML on the same 30s reference probe.
+- It is not wired into `main.py`, `asr_tools.py`, the UI, or Auto Quality Probe.
+- It should be run manually from the project venv when DirectML testing is desired.
+- No base.en or small.en DirectML results have been recorded in this file yet.
+
 Next local-ASR branches:
 1. DirectML feasibility check.
 2. Canary / other offline model feasibility if practical.

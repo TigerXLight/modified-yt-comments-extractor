@@ -58,6 +58,7 @@ SCORE_PARAKEET_*.py
 TEST_DIRECTML_*.py
 TEST_TORCHCODEC_*.py
 DIRECTML_*_LOG.txt
+DIRECTML_*_SUMMARY.txt
 directml_probe_*.wav
 directml_whisper_*_onnx/
 INSTALL_FFMPEG7_SHARED_FOR_TORCHCODEC.py
