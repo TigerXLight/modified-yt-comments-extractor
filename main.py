@@ -6834,6 +6834,22 @@ class App(ctk.CTk):
             vad_filter=True,
         )
 
+        # FAST_AUTO_PROBE_ONLY_VULKAN_AND_ACCURATE_CPU
+        # Default Auto Probe must stay fast. Full matrix is available with ASR_AUTO_PROBE_FULL=1.
+        if os.environ.get("ASR_AUTO_PROBE_FULL", "").strip().lower() not in {"1", "true", "yes", "full"}:
+            fast_candidates = []
+            for candidate in candidates:
+                label = str(candidate.get("label", "")).strip()
+                label_lower = label.lower()
+                if "whisper.cpp vulkan" in label_lower:
+                    fast_candidates.append(candidate)
+                    continue
+                if label_lower == "accurate cpu":
+                    fast_candidates.append(candidate)
+                    continue
+            if fast_candidates:
+                return fast_candidates
+
         return candidates
 
 
