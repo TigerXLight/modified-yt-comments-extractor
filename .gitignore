@@ -47,3 +47,10 @@ experimental/
 # Local ASR matrix outputs
 WHISPERCPP_MATRIX_SUMMARY.txt
 whispercpp_matrix_out/
+# Local ASR scratch outputs
+PARAKEET_HELP.txt
+PARAKEET_*_LOG.txt
+parakeet_probe_*.wav
+parakeet_probe_*.txt
+CHECK_ASR_ENGINE_INVENTORY.py
+SCORE_PARAKEET_*.py

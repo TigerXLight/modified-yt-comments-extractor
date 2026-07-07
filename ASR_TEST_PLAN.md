@@ -27,3 +27,19 @@ Topic resolver:
 - Must be strict-filtered.
 - Must never block ASR.
 - Must never be trusted as ground truth.
+
+## Parakeet local probe result — 2026-07-07
+
+Completed:
+- Tested whisper.cpp `parakeet-cli.exe` on AMD Vulkan.
+- Tested q8_0 and f16 Parakeet TDT 0.6B v3 GGML models.
+- Both ran successfully and very quickly.
+
+Result:
+- q8_0 strict 30s reference accuracy: 49.46%.
+- f16 strict 30s reference accuracy: 47.31%.
+- Both failed on important names and phrases.
+
+Decision:
+- Parakeet should not be added to the Auto Quality Probe candidate list for now.
+- It can remain a future experimental engine, but the current project should prioritize stronger ASR methods.
