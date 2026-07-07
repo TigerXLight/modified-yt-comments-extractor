@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 import array
 import subprocess
@@ -174,6 +175,29 @@ class App(ctk.CTk):
         self.transcript_redo_stack: List[List[TranscriptSegment]] = []
         self.transcript_history_limit: int = 75
         self.transcript_text_edit_phase_segment_index: Optional[int] = None
+        self.transcript_glossary_terms: List[str] = [
+            "Kingman",
+            "ZoneX",
+            "Shadowsmith",
+            "Nicolas Cage",
+            "Freckelston",
+            "Caltheris",
+            "Nyxara",
+        ]
+        self.transcript_qa_known_confusions: List[Tuple[str, str]] = [
+            ("Calpheon", "Caltheris"),
+            ("Cal Ferris", "Caltheris"),
+            ("Calferis", "Caltheris"),
+            ("Calfaris", "Caltheris"),
+            ("Calfare", "Caltheris"),
+            ("Kalfirisk", "Caltheris"),
+            ("Shousemith", "Shadowsmith"),
+            ("Shadomsmith", "Shadowsmith"),
+            ("Shadow Smith", "Shadowsmith"),
+            ("Nicholas Cage", "Nicolas Cage"),
+        ]
+        self.transcript_qa_issues: List[Dict[str, Any]] = []
+        self.transcript_qa_after_id = None
         self.last_transcript_source: Optional[str] = None
         self.last_youtube_video_info: Optional[Dict[str, Any]] = None
         self.last_asr_metadata: Optional[Dict[str, Any]] = None
@@ -1634,6 +1658,45 @@ class App(ctk.CTk):
             lambda *_: self._search_transcript_changed()
         )
 
+        transcript_qa_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
+        transcript_qa_row.pack(fill="x", padx=15, pady=(0, 8))
+
+        transcript_qa_label = ctk.CTkLabel(
+            transcript_qa_row,
+            text="Term QA:",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"]
+        )
+        transcript_qa_label.pack(side="left")
+
+        self.transcript_qa_status_label = ctk.CTkLabel(
+            transcript_qa_row,
+            text="No transcript loaded",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            anchor="w"
+        )
+        self.transcript_qa_status_label.pack(side="left", padx=(10, 0))
+
+        self.transcript_qa_refresh_button = ctk.CTkButton(
+            transcript_qa_row,
+            text="Refresh",
+            command=self._refresh_transcript_qa_panel,
+            width=74,
+            height=28,
+            font=ctk.CTkFont(size=11),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled"
+        )
+        self.transcript_qa_refresh_button.pack(side="right")
+
+        self.transcript_qa_issue_frame = ctk.CTkFrame(
+            self.transcript_card,
+            fg_color="transparent"
+        )
+
         self.transcript_cursor_status_label = ctk.CTkLabel(
             self.transcript_card,
             text="Click inside the transcript to select a segment.",
@@ -1950,6 +2013,15 @@ class App(ctk.CTk):
         transcript_text_widget.bind("<ButtonRelease-1>", self._on_transcript_preview_interaction)
         transcript_text_widget.bind("<KeyPress>", self._on_transcript_preview_key_press)
         transcript_text_widget.bind("<KeyRelease>", self._on_transcript_preview_interaction)
+        transcript_text_widget.bind("<<Paste>>", self._paste_transcript_text_at_cursor)
+        self.transcript_search_entry.bind(
+            "<Return>",
+            lambda _event: (self._jump_to_transcript_search_match(1), "break")[1]
+        )
+        self.transcript_search_entry.bind(
+            "<Shift-Return>",
+            lambda _event: (self._jump_to_transcript_search_match(-1), "break")[1]
+        )
 
         self._refresh_transcript_display()
 
@@ -3279,6 +3351,8 @@ class App(ctk.CTk):
             self.transcript_merge_up_button.configure(state=state)
         if hasattr(self, "transcript_merge_down_button"):
             self.transcript_merge_down_button.configure(state=state)
+        if hasattr(self, "transcript_qa_refresh_button"):
+            self.transcript_qa_refresh_button.configure(state=state)
         self.transcript_clear_button.configure(state=state)
 
     @staticmethod
@@ -3483,6 +3557,7 @@ class App(ctk.CTk):
 
     def _refresh_transcript_display(self) -> None:
         """Refresh transcript preview, stats, and inline editor mapping."""
+        view_state = self._capture_transcript_view_state()
         has_transcript = len(self.transcript_segments) > 0
         state = "normal" if has_transcript else "disabled"
 
@@ -3527,6 +3602,7 @@ class App(ctk.CTk):
                 tag_name.startswith("transcript_speaker_label_")
                 or tag_name.startswith("transcript_segment_text_wrap_")
                 or tag_name.startswith("transcript_segment_click_")
+                or tag_name.startswith("transcript_qa_issue_")
                 or tag_name == "transcript_timestamp"
             ):
                 text_widget.tag_delete(tag_name)
@@ -3550,6 +3626,7 @@ class App(ctk.CTk):
             self.transcript_textbox.configure(state="disabled")
             if hasattr(self, "transcript_search_count_label"):
                 self._update_transcript_search_matches(reset_index=True)
+            self._render_transcript_qa_issues([])
             self._refresh_transcript_timeline()
             return
 
@@ -3770,7 +3847,575 @@ class App(ctk.CTk):
         if hasattr(self, "transcript_search_count_label"):
             self._update_transcript_search_matches(reset_index=True)
 
+        self._restore_transcript_view_state(view_state)
+        self._schedule_transcript_qa_refresh()
         self._refresh_transcript_timeline()
+
+
+    def _capture_transcript_view_state(self) -> Dict[str, Any]:
+        """Capture transcript cursor and scroll before rebuilding the preview."""
+        state: Dict[str, Any] = {
+            "selected_segment_index": getattr(self, "selected_transcript_segment_index", None),
+            "segment_index": None,
+            "char_offset": None,
+            "yview": None,
+        }
+
+        if not hasattr(self, "transcript_textbox"):
+            return state
+
+        text_widget = self._get_transcript_text_widget()
+
+        try:
+            state["yview"] = text_widget.yview()
+        except Exception:
+            pass
+
+        try:
+            text_index = text_widget.index("insert")
+        except Exception:
+            return state
+
+        info = self._get_editable_transcript_text_info(text_index)
+
+        if not info:
+            info = self._get_transcript_segment_at_text_index(text_index)
+
+        if info:
+            segment_index = info.get("segment_index")
+
+            if isinstance(segment_index, int):
+                state["segment_index"] = segment_index
+                state["char_offset"] = self._estimate_text_offset_in_segment(info, text_index)
+
+        return state
+
+    def _restore_transcript_view_state(self, state: Optional[Dict[str, Any]]) -> None:
+        """Restore transcript cursor and scroll after rebuilding the preview."""
+        if not state or not hasattr(self, "transcript_textbox"):
+            return
+
+        selected_index = state.get("selected_segment_index")
+
+        if (
+            isinstance(selected_index, int)
+            and 0 <= selected_index < len(self.transcript_segments)
+        ):
+            self.selected_transcript_segment_index = selected_index
+
+        text_widget = self._get_transcript_text_widget()
+        segment_index = state.get("segment_index")
+        char_offset = state.get("char_offset")
+
+        if isinstance(segment_index, int) and isinstance(char_offset, int):
+            for info in getattr(self, "transcript_display_ranges", []):
+                if info.get("segment_index") != segment_index:
+                    continue
+
+                text_start = info.get("text_start")
+                text_end = info.get("text_end")
+
+                if not text_start or not text_end:
+                    break
+
+                segment_text = self.transcript_segments[segment_index].text or ""
+                char_offset = max(0, min(int(char_offset), len(segment_text)))
+
+                try:
+                    target_index = f"{text_start}+{char_offset}c"
+
+                    if text_widget.compare(target_index, ">", text_end):
+                        target_index = text_end
+
+                    text_widget.mark_set("insert", target_index)
+                except Exception:
+                    pass
+
+                break
+
+        yview = state.get("yview")
+
+        if yview:
+            try:
+                text_widget.yview_moveto(float(yview[0]))
+            except Exception:
+                pass
+
+
+    def _schedule_transcript_qa_refresh(self) -> None:
+        """Debounce transcript QA scans so inline editing stays responsive."""
+        if not hasattr(self, "transcript_qa_status_label"):
+            return
+
+        if getattr(self, "transcript_qa_after_id", None):
+            try:
+                self.after_cancel(self.transcript_qa_after_id)
+            except Exception:
+                pass
+
+        if not self.transcript_segments:
+            self.transcript_qa_after_id = None
+            self._render_transcript_qa_issues([])
+            return
+
+        self.transcript_qa_status_label.configure(
+            text="Checking glossary terms...",
+            text_color=COLORS["text_muted"]
+        )
+        self.transcript_qa_after_id = self.after(250, self._refresh_transcript_qa_panel)
+
+    def _transcript_qa_words(self, text: str) -> List[str]:
+        """Return normalized words for local transcript QA checks."""
+        return [
+            match.group(0).lower()
+            for match in re.finditer(r"[A-Za-z0-9']+", text or "")
+        ]
+
+    def _transcript_qa_word_spans(self, text: str) -> List[Dict[str, Any]]:
+        """Return normalized words with character spans for QA replacements."""
+        return [
+            {
+                "word": match.group(0).lower(),
+                "start": match.start(),
+                "end": match.end(),
+            }
+            for match in re.finditer(r"[A-Za-z0-9']+", text or "")
+        ]
+
+    def _transcript_qa_word_matches(self, candidate_word: str, glossary_word: str, is_final_word: bool) -> bool:
+        if candidate_word == glossary_word:
+            return True
+
+        return is_final_word and candidate_word == f"{glossary_word}'s"
+
+    def _transcript_qa_has_glossary_sequence(self, words: List[str], glossary_words: List[str]) -> bool:
+        if not glossary_words or len(words) < len(glossary_words):
+            return False
+
+        for start in range(0, len(words) - len(glossary_words) + 1):
+            matched = True
+
+            for offset, glossary_word in enumerate(glossary_words):
+                candidate_word = words[start + offset]
+                is_final_word = offset == len(glossary_words) - 1
+
+                if not self._transcript_qa_word_matches(candidate_word, glossary_word, is_final_word):
+                    matched = False
+                    break
+
+            if matched:
+                return True
+
+        return False
+
+    def _transcript_qa_edit_distance(self, left: str, right: str) -> int:
+        if not left:
+            return len(right)
+
+        if not right:
+            return len(left)
+
+        previous = list(range(len(right) + 1))
+
+        for i, left_char in enumerate(left, start=1):
+            current = [i]
+
+            for j, right_char in enumerate(right, start=1):
+                current.append(
+                    min(
+                        previous[j] + 1,
+                        current[j - 1] + 1,
+                        previous[j - 1] + (0 if left_char == right_char else 1),
+                    )
+                )
+
+            previous = current
+
+        return previous[-1]
+
+    def _transcript_qa_find_glossary_issues(self, max_issues: int = 40) -> List[Dict[str, Any]]:
+        """Find likely glossary term mistakes without changing transcript text."""
+        glossary_terms = [
+            term.strip()
+            for term in getattr(self, "transcript_glossary_terms", [])
+            if term and term.strip()
+        ]
+        glossary_word_lists = [
+            (term, self._transcript_qa_words(term))
+            for term in glossary_terms
+        ]
+        known_confusions = [
+            (alias, canonical, self._transcript_qa_words(alias))
+            for alias, canonical in getattr(self, "transcript_qa_known_confusions", [])
+            if alias and canonical
+        ]
+        issues: List[Dict[str, Any]] = []
+        seen = set()
+
+        for segment_index, segment in enumerate(self.transcript_segments):
+            word_spans = self._transcript_qa_word_spans(segment.text or "")
+            words = [item["word"] for item in word_spans]
+
+            if not words:
+                continue
+
+            for alias, canonical, alias_words in known_confusions:
+                if not alias_words or len(words) < len(alias_words):
+                    continue
+
+                for start in range(0, len(words) - len(alias_words) + 1):
+                    window = words[start:start + len(alias_words)]
+                    matched = True
+
+                    for offset, alias_word in enumerate(alias_words):
+                        is_final_word = offset == len(alias_words) - 1
+
+                        if not self._transcript_qa_word_matches(window[offset], alias_word, is_final_word):
+                            matched = False
+                            break
+
+                    if not matched:
+                        continue
+
+                    observed = " ".join(window)
+                    key = (segment_index, observed, canonical)
+
+                    if key in seen:
+                        continue
+
+                    seen.add(key)
+                    issues.append({
+                        "segment_index": segment_index,
+                        "observed": observed,
+                        "suggestion": canonical,
+                        "word_start": start,
+                        "word_count": len(alias_words),
+                        "reason": "known ASR confusion",
+                    })
+
+                    if len(issues) >= max_issues:
+                        return issues
+
+            for term, glossary_words in glossary_word_lists:
+                if not glossary_words:
+                    continue
+
+                if self._transcript_qa_has_glossary_sequence(words, glossary_words):
+                    continue
+
+                if len(glossary_words) > 1:
+                    max_distance = 2
+
+                    for start in range(0, len(words) - len(glossary_words) + 1):
+                        window = words[start:start + len(glossary_words)]
+                        distances = [
+                            self._transcript_qa_edit_distance(
+                                candidate_word.rstrip("'s") if offset == len(glossary_words) - 1 else candidate_word,
+                                glossary_word,
+                            )
+                            for offset, (candidate_word, glossary_word) in enumerate(zip(window, glossary_words))
+                        ]
+
+                        if sum(distances) <= max_distance and any(distance > 0 for distance in distances):
+                            observed = " ".join(window)
+                            key = (segment_index, observed, term)
+
+                            if key in seen:
+                                continue
+
+                            seen.add(key)
+                            issues.append({
+                                "segment_index": segment_index,
+                                "observed": observed,
+                                "suggestion": term,
+                                "word_start": start,
+                                "word_count": len(glossary_words),
+                                "reason": "possible glossary phrase",
+                            })
+
+                            if len(issues) >= max_issues:
+                                return issues
+
+                            break
+
+                    continue
+
+                glossary_word = glossary_words[0]
+
+                if len(glossary_word) < 5:
+                    continue
+
+                max_distance = 1 if len(glossary_word) <= 7 else 2
+
+                for word_index, word in enumerate(words):
+                    if word == glossary_word or word == f"{glossary_word}'s":
+                        continue
+
+                    if abs(len(word) - len(glossary_word)) > max_distance:
+                        continue
+
+                    distance = self._transcript_qa_edit_distance(
+                        word.rstrip("'s"),
+                        glossary_word
+                    )
+
+                    if distance <= max_distance:
+                        key = (segment_index, word, term)
+
+                        if key in seen:
+                            continue
+
+                        seen.add(key)
+                        issues.append({
+                            "segment_index": segment_index,
+                            "observed": word,
+                            "suggestion": term,
+                            "word_start": word_index,
+                            "word_count": 1,
+                            "reason": "possible glossary term",
+                        })
+
+                        if len(issues) >= max_issues:
+                            return issues
+
+                        break
+
+        return issues
+
+    def _refresh_transcript_qa_panel(self) -> None:
+        """Refresh the local transcript QA warning panel."""
+        self.transcript_qa_after_id = None
+        issues = self._transcript_qa_find_glossary_issues()
+        self.transcript_qa_issues = issues
+        self._render_transcript_qa_issues(issues)
+
+    def _render_transcript_qa_issues(self, issues: List[Dict[str, Any]]) -> None:
+        """Render a compact, clickable list of local transcript QA warnings."""
+        if not hasattr(self, "transcript_qa_issue_frame"):
+            return
+
+        text_widget = self._get_transcript_text_widget()
+
+        for tag_name in text_widget.tag_names():
+            tag_name = str(tag_name)
+            if tag_name.startswith("transcript_qa_issue_"):
+                text_widget.tag_delete(tag_name)
+
+        for child in self.transcript_qa_issue_frame.winfo_children():
+            child.destroy()
+
+        if not self.transcript_segments:
+            self.transcript_qa_issue_frame.pack_forget()
+            self.transcript_qa_status_label.configure(
+                text="No transcript loaded",
+                text_color=COLORS["text_muted"]
+            )
+            return
+
+        if not issues:
+            self.transcript_qa_issue_frame.pack_forget()
+            self.transcript_qa_status_label.configure(
+                text="No glossary term warnings",
+                text_color=COLORS["success"]
+            )
+            return
+
+        hidden_count = max(0, len(issues) - 6)
+        suffix = f" (+{hidden_count} more)" if hidden_count else ""
+        self.transcript_qa_status_label.configure(
+            text=f"{len(issues):,} possible glossary term warning(s){suffix}",
+            text_color=COLORS["warning"]
+        )
+
+        try:
+            self.transcript_qa_issue_frame.pack(
+                fill="x",
+                padx=15,
+                pady=(0, 8),
+                before=self.transcript_cursor_status_label
+            )
+        except Exception:
+            self.transcript_qa_issue_frame.pack(fill="x", padx=15, pady=(0, 8))
+
+        for issue_index, issue in enumerate(issues):
+            self._tag_transcript_qa_issue(issue_index, issue)
+
+        for issue_index, issue in enumerate(issues[:6]):
+            segment_index = int(issue.get("segment_index", 0))
+            observed = str(issue.get("observed") or "").strip()
+            suggestion = str(issue.get("suggestion") or "").strip()
+            button_text = f"{segment_index + 1}: {observed} -> {suggestion}"
+
+            issue_button = ctk.CTkButton(
+                self.transcript_qa_issue_frame,
+                text=button_text,
+                command=lambda idx=segment_index: self._jump_to_transcript_qa_issue(idx),
+                width=170,
+                height=26,
+                font=ctk.CTkFont(size=10),
+                fg_color=COLORS["accent_secondary"],
+                hover_color=COLORS["border"],
+                corner_radius=6
+            )
+            issue_button.pack(side="left", padx=(0, 6), pady=(0, 4))
+
+    def _tag_transcript_qa_issue(self, issue_index: int, issue: Dict[str, Any]) -> None:
+        """Apply a simple underline/highlight tag to a suspect transcript term."""
+        segment_index = issue.get("segment_index")
+
+        if not isinstance(segment_index, int):
+            return
+
+        text_widget = self._get_transcript_text_widget()
+
+        for info in getattr(self, "transcript_display_ranges", []):
+            if info.get("segment_index") != segment_index:
+                continue
+
+            text_start = info.get("text_start")
+            text_end = info.get("text_end")
+            observed = str(issue.get("observed") or "").strip()
+
+            if not text_start or not text_end or not observed:
+                return
+
+            try:
+                start_index = text_widget.search(
+                    observed,
+                    text_start,
+                    stopindex=text_end,
+                    nocase=True
+                )
+
+                if not start_index:
+                    return
+
+                end_index = f"{start_index}+{len(observed)}c"
+                tag_name = f"transcript_qa_issue_{issue_index}"
+                text_widget.tag_add(tag_name, start_index, end_index)
+                text_widget.tag_configure(
+                    tag_name,
+                    underline=True,
+                    foreground=COLORS["warning"]
+                )
+                text_widget.tag_bind(
+                    tag_name,
+                    "<Button-3>",
+                    lambda event, idx=issue_index: self._show_transcript_qa_context_menu(event, idx)
+                )
+            except Exception:
+                return
+
+            return
+
+    def _show_transcript_qa_context_menu(self, event, issue_index: int):
+        """Show an explicit correction menu for a suspect glossary term."""
+        if issue_index < 0 or issue_index >= len(getattr(self, "transcript_qa_issues", [])):
+            return "break"
+
+        issue = self.transcript_qa_issues[issue_index]
+        suggestion = str(issue.get("suggestion") or "").strip()
+
+        if not suggestion:
+            return "break"
+
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(
+            label=f"Replace with '{suggestion}'",
+            command=lambda: self._apply_transcript_qa_suggestion(issue_index)
+        )
+        menu.add_separator()
+        menu.add_command(label="Ignore", command=lambda: None)
+
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+        return "break"
+
+    def _apply_transcript_qa_suggestion(self, issue_index: int) -> None:
+        """Apply a user-selected glossary suggestion to one suspect span."""
+        if issue_index < 0 or issue_index >= len(getattr(self, "transcript_qa_issues", [])):
+            return
+
+        issue = self.transcript_qa_issues[issue_index]
+        segment_index = issue.get("segment_index")
+        suggestion = str(issue.get("suggestion") or "").strip()
+        word_start = issue.get("word_start")
+        word_count = issue.get("word_count")
+
+        if (
+            not isinstance(segment_index, int)
+            or not isinstance(word_start, int)
+            or not isinstance(word_count, int)
+            or not suggestion
+            or segment_index < 0
+            or segment_index >= len(self.transcript_segments)
+            or word_count <= 0
+        ):
+            return
+
+        segment = self.transcript_segments[segment_index]
+        text = segment.text or ""
+        word_spans = self._transcript_qa_word_spans(text)
+
+        if word_start < 0 or word_start + word_count > len(word_spans):
+            return
+
+        start_char = int(word_spans[word_start]["start"])
+        end_char = int(word_spans[word_start + word_count - 1]["end"])
+
+        self._end_transcript_text_edit_phase()
+        self._push_transcript_undo_state("term QA correction")
+        segment.text = text[:start_char] + suggestion + text[end_char:]
+        self.selected_transcript_segment_index = segment_index
+        self._refresh_transcript_display()
+        self._place_transcript_cursor_at_segment_offset(segment_index, start_char + len(suggestion))
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=(
+                    f"Applied Term QA suggestion in segment {segment_index + 1:,}. "
+                    "Ctrl+Z undo."
+                ),
+                text_color=COLORS["text_primary"]
+            )
+
+    def _jump_to_transcript_qa_issue(self, segment_index: int) -> None:
+        """Select and scroll to a segment with a transcript QA warning."""
+        if segment_index < 0 or segment_index >= len(self.transcript_segments):
+            return
+
+        self.selected_transcript_segment_index = segment_index
+        self._refresh_transcript_display()
+
+        text_widget = self._get_transcript_text_widget()
+
+        for info in getattr(self, "transcript_display_ranges", []):
+            if info.get("segment_index") != segment_index:
+                continue
+
+            try:
+                target_index = info.get("text_start") or info.get("start")
+                text_widget.mark_set("insert", target_index)
+                text_widget.see(target_index)
+            except Exception:
+                pass
+
+            break
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=(
+                    f"QA selected segment {segment_index + 1:,}/{len(self.transcript_segments):,}. "
+                    "Review warning; no text was changed."
+                ),
+                text_color=COLORS["warning"]
+            )
+
+        if hasattr(self, "_refresh_transcript_timeline"):
+            self._refresh_transcript_timeline()
 
 
     def _transcript_time_to_seconds(self, value: str) -> Optional[float]:
@@ -4057,6 +4702,85 @@ class App(ctk.CTk):
 
         return "break"
 
+    def _paste_transcript_text_at_cursor(self, event=None):
+        """Paste clipboard text into the selected transcript segment model."""
+        if not self.transcript_segments:
+            return "break"
+
+        try:
+            paste_text = self.clipboard_get()
+        except Exception:
+            return "break"
+
+        if not paste_text:
+            return "break"
+
+        text_widget = self._get_transcript_text_widget()
+
+        try:
+            text_index = text_widget.index("insert")
+        except Exception:
+            return "break"
+
+        info = self._get_editable_transcript_text_info(text_index)
+
+        if not info:
+            return "break"
+
+        segment_index = info.get("segment_index")
+
+        if (
+            not isinstance(segment_index, int)
+            or segment_index < 0
+            or segment_index >= len(self.transcript_segments)
+        ):
+            return "break"
+
+        segment = self.transcript_segments[segment_index]
+        original_text = segment.text or ""
+        start_offset = self._estimate_text_offset_in_segment(info, text_index)
+        end_offset = start_offset
+
+        try:
+            selection_ranges = text_widget.tag_ranges("sel")
+        except Exception:
+            selection_ranges = ()
+
+        if len(selection_ranges) >= 2:
+            selection_start = str(selection_ranges[0])
+            selection_end = str(selection_ranges[1])
+            start_info = self._get_editable_transcript_text_info(selection_start)
+            end_info = self._get_editable_transcript_text_info(selection_end)
+
+            if (
+                start_info
+                and end_info
+                and start_info.get("segment_index") == segment_index
+                and end_info.get("segment_index") == segment_index
+            ):
+                start_offset = self._estimate_text_offset_in_segment(info, selection_start)
+                end_offset = self._estimate_text_offset_in_segment(info, selection_end)
+
+        start_offset = max(0, min(start_offset, len(original_text)))
+        end_offset = max(start_offset, min(end_offset, len(original_text)))
+        normalized_paste = paste_text.replace("\r\n", "\n").replace("\r", "\n")
+
+        self._begin_transcript_text_edit_phase(segment_index)
+        segment.text = original_text[:start_offset] + normalized_paste + original_text[end_offset:]
+        self.selected_transcript_segment_index = segment_index
+
+        new_offset = start_offset + len(normalized_paste)
+        self._refresh_transcript_display()
+        self._place_transcript_cursor_at_segment_offset(segment_index, new_offset)
+
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=f"Pasted into segment {segment_index + 1:,}. Ctrl+Z undo, Ctrl+Y redo.",
+                text_color=COLORS["text_primary"]
+            )
+
+        return "break"
+
     def _on_transcript_preview_key_press(self, event=None):
         """Model-based inline editing: edit only segment.text, never the formatted preview."""
         if event is None:
@@ -4078,6 +4802,9 @@ class App(ctk.CTk):
 
             if keysym.lower() in {"c", "a"}:
                 return None
+
+            if keysym.lower() == "v":
+                return self._paste_transcript_text_at_cursor(event)
 
             return "break"
 
