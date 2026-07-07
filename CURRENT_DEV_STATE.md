@@ -143,6 +143,43 @@ Decision:
 - The prompted/keyterms run still does not beat the best local whisper.cpp Vulkan result on this clip.
 - Keep provider comparison manual until a provider clearly beats the local options.
 
+Deepgram Nova-3 keyterms manual transcript result:
+- Provider: Deepgram Nova-3 prerecorded transcription with keyterm prompting.
+- Keyterms used:
+  - `Kingman`
+  - `ZoneX`
+  - `Shadowsmith`
+  - `Nicolas Cage`
+  - `Freckelston`
+  - `Caltheris`
+  - `Nyxara`
+- Generated files, local only:
+  - `TEMP_DEEPGRAM_TRANSCRIBE.py`
+  - `candidate_deepgram_nova3_keyterms.txt`
+  - `candidate_deepgram_nova3_keyterms.json`
+- Score from `RUN_TRANSCRIPT_REFERENCE_SCORE.py` after correcting the reference line to `Oh, I've completed the Nicolas Cage event`:
+  - Candidate: `candidate_deepgram_nova3_keyterms.txt`.
+  - Reference words: 93.
+  - Candidate words: 77.
+  - WER: 33.33%.
+  - Reference accuracy: 66.67%.
+- Important terms:
+  - `Kingman`: MISSING.
+  - `ZoneX`: MISSING.
+  - `Shadowsmith`: FOUND.
+  - `Nicolas Cage`: FOUND.
+  - `Freckelston`: MISSING.
+  - `Caltheris`: FOUND.
+  - `Nyxara`: MISSING.
+- Transcript preview: `It's a great cutscene, to be honest. I I think it's it's a lot of great content there. I think I think there's a there's a lot to digest in that cutscene. Yeah. But, like, you know, when the Shadowsmith is on screen. When she's not, you know, don't care. But I I understand the blindfold. It's all I'm saying. Mhmm. Fuck. We have Nicolas Cage event. Trying to insinuate. I just We need more Caltheris content.`
+
+Decision:
+- Reject Deepgram Nova-3 keyterms for integration for now.
+- It found `Shadowsmith`, `Nicolas Cage`, and `Caltheris`, but strict reference accuracy was only 66.67%.
+- It does not beat AssemblyAI at 70.97%.
+- It does not beat the best local whisper.cpp Vulkan run at about 74.19%.
+- It badly misrecognized the key phrase around `Oh, I've completed the Nicolas Cage event`, producing `Fuck. We have Nicolas Cage event`, so it is not acceptable for this workflow.
+
 ## ASR hardware profile planning
 
 Status:
