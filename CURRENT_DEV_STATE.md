@@ -225,6 +225,71 @@ Decision:
 - It does not beat the best local whisper.cpp Vulkan run at about 74.19%.
 - It misrecognized the key phrase around `Oh, I've completed the Nicolas Cage event`, producing `I played the Nicolas Cage event`, so it is not acceptable for this workflow.
 
+Google Speech-to-Text v1 phrase-hint manual transcript results:
+- Provider: Google Speech-to-Text v1 synchronous recognize.
+- Authentication: API key.
+- Input file: `directml_probe_30s.wav`.
+- WAV info: mono, 16000 Hz, 16-bit PCM.
+- Phrase hints used:
+  - `Kingman`
+  - `ZoneX`
+  - `Shadowsmith`
+  - `Shadowsmith's`
+  - `Nicolas Cage`
+  - `Nicolas Cage event`
+  - `I've completed the Nicolas Cage event`
+  - `Oh I've completed the Nicolas Cage event`
+  - `Freckelston`
+  - `Caltheris`
+  - `Nyxara`
+  - `blindfold`
+- Generated files, local only:
+  - `TEMP_GOOGLE_STT_TRANSCRIBE.py`
+  - `candidate_google_stt_latest_long_phrases.txt`
+  - `candidate_google_stt_latest_long_phrases.json`
+  - `candidate_google_stt_video_enhanced_phrases.txt`
+  - `candidate_google_stt_video_enhanced_phrases.json`
+- Run 1:
+  - Model/config: `latest_long` with phrase hints.
+  - Candidate: `candidate_google_stt_latest_long_phrases.txt`.
+  - Reference words: 93.
+  - Candidate words: 66.
+  - WER: 49.46%.
+  - Reference accuracy: 50.54%.
+  - Important terms:
+    - `Kingman`: MISSING.
+    - `ZoneX`: MISSING.
+    - `Shadowsmith`: MISSING.
+    - `Nicolas Cage`: FOUND.
+    - `Freckelston`: MISSING.
+    - `Caltheris`: MISSING.
+    - `Nyxara`: MISSING.
+  - Transcript preview: `Oh, it's a Great Cuts in me Oz. I think it's a lot of great content there. I mean, that's a lot to digest in that cutting. Yeah. Like, you know, when the child Smith is on screen when she's not, you know, don't care, but I understand the blindfold. So I'm saying. I've played the Nicolas Cage. I just we need more Calvin. Harris content.`
+- Run 2:
+  - Model/config: `video` with `useEnhanced=true` and phrase hints.
+  - Candidate: `candidate_google_stt_video_enhanced_phrases.txt`.
+  - Reference words: 93.
+  - Candidate words: 70.
+  - WER: 38.71%.
+  - Reference accuracy: 61.29%.
+  - Important terms:
+    - `Kingman`: MISSING.
+    - `ZoneX`: MISSING.
+    - `Shadowsmith`: MISSING.
+    - `Nicolas Cage`: MISSING.
+    - `Freckelston`: MISSING.
+    - `Caltheris`: MISSING.
+    - `Nyxara`: MISSING.
+  - Transcript preview: `It's a great cutscene to be honest. I I think it's a long break content there. I think there's a lot to digest in that cut scene. Yeah. So like you know when uh, the Sha Smith's on screen when she's not, you know, don't care. But I I understand the blindfold. That's why I'm saying, mhm. Oh, I believe the Nicholas Cage. I just we need more cerus content.`
+
+Decision:
+- Reject Google Speech-to-Text v1 phrase-hint runs for integration for now.
+- The best Google run was video enhanced at 61.29%, which is below Speechmatics at 65.59%, Deepgram at 66.67%, AssemblyAI at 70.97%, and the best local whisper.cpp Vulkan run at about 74.19%.
+- Google `latest_long` performed worse at 50.54%.
+- Google failed the critical phrase around `Oh, I've completed the Nicolas Cage event`.
+- Google also failed key glossary terms, including `Shadowsmith` and `Caltheris`.
+- Keep Google out of provider integration unless a clearly better Google configuration is tested later.
+
 ## ASR hardware profile planning
 
 Status:
