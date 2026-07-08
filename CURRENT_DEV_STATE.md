@@ -360,6 +360,48 @@ Decision:
 - Azure also failed `Caltheris`, producing `Cal fearless`.
 - Keep Azure out of provider integration unless a clearly better Azure configuration is tested later.
 
+Cohere Transcribe manual transcript result:
+- Provider: Cohere Transcribe API.
+- Model/config: `cohere-transcribe-03-2026`.
+- Endpoint/script used local temp script:
+  - `TEMP_COHERE_TRANSCRIBE.py`
+- Input file:
+  - `directml_probe_30s.wav`
+- Output files, local only:
+  - `candidate_cohere_transcribe_03_2026.txt`
+  - `candidate_cohere_transcribe_03_2026.json`
+- The test was run twice and produced the same transcript preview/output.
+- Score:
+  - Candidate: `candidate_cohere_transcribe_03_2026.txt`.
+  - Reference words: 93.
+  - Candidate words: 74.
+  - WER: 41.94%.
+  - Reference accuracy: 58.06%.
+- Important terms:
+  - `Kingman`: MISSING.
+  - `ZoneX`: MISSING.
+  - `Shadowsmith`: MISSING.
+  - `Nicolas Cage`: MISSING.
+  - `Freckelston`: MISSING.
+  - `Caltheris`: MISSING.
+  - `Nyxara`: MISSING.
+- Transcript preview: `It's a great cutscene, to be honest. I think it's a lot of great content there. I think there's a lot to digest in that cutscene. Yeah. For, like, you know, when the Shouse Mist is on screen. When she's not, you know, don't care. I understand the blindfold. That's what I'm saying. I believe the Nicholas Cage event. I'm just trying to insinuate. I just. We need more Carl Fairis content. Hmm. Yeah.`
+
+Decision:
+- Reject Cohere Transcribe 03-2026 for integration for now.
+- Strict reference accuracy was only 58.06%.
+- Cohere does not beat Google STT video enhanced phrases at 61.29%.
+- Cohere does not beat Azure Speech SDK phrase list at 64.52%.
+- Cohere does not beat Speechmatics at 65.59%.
+- Cohere does not beat Deepgram at 66.67%.
+- Cohere does not beat AssemblyAI at 70.97%.
+- Cohere does not beat the best local whisper.cpp Vulkan run at about 74.19%.
+- Cohere failed the key phrase around `Oh, I've completed the Nicolas Cage event`, producing `I believe the Nicholas Cage event`.
+- Cohere failed `Shadowsmith`, producing `Shouse Mist`.
+- Cohere failed `Caltheris`, producing `Carl Fairis`.
+- Cohere missed all tracked important terms.
+- Keep Cohere out of provider integration unless a clearly better Cohere configuration is tested later.
+
 ## ASR hardware profile planning
 
 Status:
