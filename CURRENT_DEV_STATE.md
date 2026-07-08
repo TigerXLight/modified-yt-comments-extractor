@@ -33,6 +33,8 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Local raw `reference_feature_notes/` files are ignored by git and must remain local reference material only.
 - Evidence/provenance schema skeleton added in `evidence_schema.py`; it is not wired into existing fetch/export behavior yet.
 - Future Total Export, archive, screenshot, and media-source-chain features should use the schema skeleton when implemented.
+- Total Export manifest skeleton added in `total_export_manifest.py`; it is not wired into existing GUI/export behavior yet.
+- Future Total Export should use the manifest to track selected outputs, assets, hashes, provenance, archive results, claim notes, and media source-chain notes.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
