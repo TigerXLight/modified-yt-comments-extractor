@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -24,6 +25,22 @@ def sha256_for_file(path: str) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def manifest_filename(package_id: str) -> str:
+    package_id = (package_id or "").strip()
+    if not package_id:
+        return "manifest.json"
+
+    safe_chars = []
+    for char in package_id:
+        if char.isalnum() or char in {"-", "_"}:
+            safe_chars.append(char)
+        else:
+            safe_chars.append("_")
+
+    safe_package_id = "".join(safe_chars).strip("_") or "manifest"
+    return f"{safe_package_id}_manifest.json"
 
 
 def _value_for_dict(value: Any) -> Any:
@@ -74,3 +91,13 @@ class TotalExportManifest:
 
     def to_dict(self) -> Dict[str, Any]:
         return _value_for_dict(self)
+
+
+def write_manifest_json(manifest: TotalExportManifest, output_path: str) -> str:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(manifest.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return str(path)

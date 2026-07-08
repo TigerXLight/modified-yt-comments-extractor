@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -10,7 +11,13 @@ from evidence_schema import (
     MediaSourceChainNote,
     SourceRole,
 )
-from total_export_manifest import ExportAsset, TotalExportManifest, sha256_for_file
+from total_export_manifest import (
+    ExportAsset,
+    TotalExportManifest,
+    manifest_filename,
+    sha256_for_file,
+    write_manifest_json,
+)
 
 
 def _assert_utc_timestamp(value: str) -> None:
@@ -73,6 +80,18 @@ def run_self_test() -> None:
         assert manifest_dict["claim_notes"][0]["claim_text"]
         assert manifest_dict["media_source_chain_notes"][0]["media_observed_on_url"]
         assert manifest_dict["archive_results"][0]["archive_service"] == "wayback"
+
+        manifest_path = Path(temp_dir) / manifest_filename(manifest.package_id)
+        written_path = write_manifest_json(manifest, str(manifest_path))
+        assert written_path == str(manifest_path)
+        assert manifest_path.is_file()
+
+        loaded_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert loaded_manifest["package_id"] == "test-package"
+        assert loaded_manifest["assets"][0]["sha256"] == expected_hash
+        assert loaded_manifest["provenance_records"][0]["source_url"] == provenance.source_url
+        assert loaded_manifest["claim_notes"][0]["claim_text"] == claim_note.claim_text
+        assert loaded_manifest["media_source_chain_notes"][0]["media_observed_on_url"]
 
 
 if __name__ == "__main__":
