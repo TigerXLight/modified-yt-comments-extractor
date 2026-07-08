@@ -768,7 +768,7 @@ class App(ctk.CTk):
 
         url_label = ctk.CTkLabel(
             url_frame,
-            text="📺 Video URLs",
+            text="Source URLs (YouTube currently supported)",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS["text_primary"]
         )
@@ -786,7 +786,7 @@ class App(ctk.CTk):
         self.url_entry.pack(fill="x")
 
         # Placeholder handling
-        self._url_placeholder = "Paste YouTube URLs here (one per line)...\n\nSupported formats:\n• youtube.com/watch?v=...\n• youtu.be/...\n• youtube.com/shorts/..."
+        self._url_placeholder = "Paste Source URLs here (YouTube currently supported, one per line)...\n\nSupported formats:\n• youtube.com/watch?v=...\n• youtu.be/...\n• youtube.com/shorts/..."
         self.url_entry.insert("1.0", self._url_placeholder)
         self.url_entry.configure(text_color=COLORS["text_muted"])
         self.url_entry.bind("<FocusIn>", self._on_url_focus_in)
@@ -2644,7 +2644,8 @@ class App(ctk.CTk):
         if not valid_urls:
             messagebox.showerror(
                 "Missing URLs",
-                "Please enter at least one valid YouTube video URL.\n\n"
+                "Please enter at least one valid Source URL.\n"
+                "Currently supported: YouTube video URLs.\n\n"
                 "Supported formats:\n"
                 "• youtube.com/watch?v=...\n"
                 "• youtu.be/...\n"
@@ -7172,13 +7173,13 @@ class App(ctk.CTk):
             messagebox.showerror("Transcript Import Error", str(e))
 
     def download_youtube_transcript_clicked(self) -> None:
-        """Download YouTube captions/transcript for the first URL in the Video URLs box."""
+        """Download YouTube captions/transcript for the first URL in the Source URLs box."""
         urls = self._get_current_source_urls()
 
         if not urls:
             messagebox.showwarning(
                 "No YouTube URL",
-                "Paste a YouTube video URL into the Video URLs box first."
+                "Paste a YouTube video URL into the Source URLs box first."
             )
             return
 

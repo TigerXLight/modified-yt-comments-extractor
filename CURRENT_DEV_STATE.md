@@ -23,7 +23,9 @@ Next feature area: YouTube URL ingestion and context/glossary pipeline:
   - Spam separation is off by default and labeled as `Separate flagged spam`; flagged items still export separately when enabled.
   - Date/Newest is now the default sort for new/default settings so newer comments are less likely to be missed.
   - Max comments remains empty/unlimited by default, with UI copy noting that limits count comments + replies.
-- Future generalized ingestion should use "Source URLs" / source adapters terminology, with YouTube as the first adapter, instead of assuming every future source is a YouTube URL.
+- Future generalized ingestion should use "Source URLs" / source adapters terminology, with YouTube as the first/currently supported adapter.
+- Other websites will need site-specific source adapters; do not assume one generic scraper can reliably capture every comments section.
+- Existing YouTube comments/livechat behavior must be preserved while source terminology generalizes.
 - Target pipeline:
   - YouTube URL.
   - Validate/normalize URL.
