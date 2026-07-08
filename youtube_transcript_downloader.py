@@ -1,45 +1,15 @@
 from __future__ import annotations
 
 import html
-import re
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import parse_qs, urlparse
 
 from transcript_tools import TranscriptSegment
+from youtube_url_utils import extract_youtube_video_id
 
 
 def extract_video_id(url_or_id: str) -> str:
     """Extract a YouTube video ID from a URL or return the ID if already provided."""
-    value = url_or_id.strip()
-
-    if not value:
-        raise ValueError("No YouTube URL or video ID provided.")
-
-    # Already looks like a YouTube video ID.
-    if re.fullmatch(r"[A-Za-z0-9_-]{11}", value):
-        return value
-
-    parsed = urlparse(value)
-    host = parsed.netloc.lower().replace("www.", "")
-
-    if host in {"youtu.be"}:
-        video_id = parsed.path.strip("/").split("/")[0]
-        if video_id:
-            return video_id
-
-    if host.endswith("youtube.com") or host.endswith("youtube-nocookie.com"):
-        query = parse_qs(parsed.query)
-
-        if "v" in query and query["v"]:
-            return query["v"][0]
-
-        path_parts = [part for part in parsed.path.split("/") if part]
-
-        if path_parts:
-            if path_parts[0] in {"shorts", "embed", "live"} and len(path_parts) >= 2:
-                return path_parts[1]
-
-    raise ValueError(f"Could not find a YouTube video ID in: {url_or_id}")
+    return extract_youtube_video_id(url_or_id)
 
 
 def _seconds_to_timestamp(seconds: float) -> str:

@@ -16,7 +16,8 @@ Important context:
 - Topic resolver / Common Crawl / Serper / Exa are later background glossary helpers only. They are not ASR engines and must be strict-filtered.
 
 Next feature area: YouTube URL ingestion and context/glossary pipeline:
-- Planning/docs task only; no implementation exists yet from this note.
+- Planning section originated as docs-only; later fetch/glossary/ASR phases are not implemented yet.
+- Phase 1 code step completed: `youtube_url_utils.py` provides network-free YouTube URL validation/normalization and strict 11-character video ID extraction.
 - Target pipeline:
   - YouTube URL.
   - Validate/normalize URL.

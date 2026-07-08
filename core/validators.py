@@ -13,9 +13,8 @@ from typing import List, Optional, Tuple
 from core.constants import (
     API_KEY_MIN_LENGTH,
     API_KEY_PATTERN,
-    VIDEO_ID_PATTERN,
-    YOUTUBE_URL_PATTERNS,
 )
+from youtube_url_utils import extract_youtube_video_id
 
 
 @dataclass
@@ -31,9 +30,6 @@ class ValidationResult:
 class URLValidator:
     """Validates and parses YouTube URLs."""
 
-    # Pre-compile patterns for performance
-    _compiled_patterns = [re.compile(pattern) for pattern in YOUTUBE_URL_PATTERNS]
-
     @classmethod
     def extract_video_id(cls, url: str) -> Optional[str]:
         """
@@ -48,14 +44,10 @@ class URLValidator:
         if not url:
             return None
 
-        url = url.strip()
-
-        for pattern in cls._compiled_patterns:
-            match = pattern.search(url)
-            if match:
-                return match.group(1)
-
-        return None
+        try:
+            return extract_youtube_video_id(url)
+        except ValueError:
+            return None
 
     @classmethod
     def is_valid_youtube_url(cls, url: str) -> bool:

@@ -56,7 +56,7 @@ Provider confidence / architecture notes:
 - DirectML medium/large remain deferred unless explicitly approved later.
 
 YouTube URL ingestion and context/glossary pipeline planning:
-- Planning/docs task only; no implementation exists yet from this note.
+- Phase 1 URL validation/normalization is implemented; later fetch/glossary/ASR phases are not implemented yet.
 - Target pipeline:
   - YouTube URL.
   - Validate/normalize URL.
