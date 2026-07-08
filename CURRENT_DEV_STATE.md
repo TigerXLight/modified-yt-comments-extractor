@@ -402,6 +402,48 @@ Decision:
 - Cohere missed all tracked important terms.
 - Keep Cohere out of provider integration unless a clearly better Cohere configuration is tested later.
 
+AWS Transcribe custom vocabulary manual test status:
+- Provider: AWS Transcribe batch transcription with custom vocabulary.
+- Region attempted: `eu-west-2` / Europe London.
+- IAM user/access key was created for a temporary local test.
+- `AWS_SESSION_TOKEN` was intentionally cleared because normal IAM user access keys do not use a session token.
+- Local temp script:
+  - `TEMP_AWS_TRANSCRIBE_CUSTOM_VOCAB.py`
+- Input file:
+  - `directml_probe_30s.wav`
+- Planned language/config:
+  - `en-GB` with custom vocabulary.
+  - `en-US` with custom vocabulary.
+- Planned local output files:
+  - `candidate_aws_transcribe_custom_vocab_en_gb.txt`
+  - `candidate_aws_transcribe_custom_vocab_en_gb.json`
+  - `candidate_aws_transcribe_custom_vocab_en_us.txt`
+  - `candidate_aws_transcribe_custom_vocab_en_us.json`
+- Observed run result:
+  - S3 setup succeeded:
+    - Temporary bucket was created.
+    - Audio was uploaded to S3.
+    - Vocabulary table was uploaded to S3.
+  - AWS Transcribe failed before any transcription job could run.
+  - Failure occurred on `CreateVocabulary`.
+  - Error:
+    - `SubscriptionRequiredException`
+    - `The AWS Access Key Id needs a subscription for the service`
+  - The AWS Console in Europe London showed the same service-subscription error.
+  - Temporary S3 cleanup succeeded:
+    - Vocabulary object deleted.
+    - Audio object deleted.
+    - Temporary bucket deleted.
+  - No transcript candidate was produced.
+  - No WER/reference-accuracy score was produced.
+
+Decision:
+- Mark AWS Transcribe custom vocabulary as BLOCKED, not rejected.
+- Do not rank AWS against the tested ASR providers because no model-quality result exists.
+- Cause appears to be AWS account/service subscription access under the current free-plan/account state, not local script failure.
+- Do not upgrade to paid AWS solely for this test unless explicitly approved later.
+- Keep AWS Transcribe as a possible future retest only if service access becomes available without unwanted billing risk.
+
 ## ASR hardware profile planning
 
 Status:
