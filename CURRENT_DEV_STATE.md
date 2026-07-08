@@ -31,6 +31,8 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - No new source adapters are implemented, and no metadata/comment/livechat/transcript fetching behavior changed.
 - `SOURCE_EVIDENCE_ROADMAP.md` captures the docs-only roadmap for future source/comment adapters, web evidence capture, archive checks, optional media-download inspiration, capture options, and provenance fields.
 - Local raw `reference_feature_notes/` files are ignored by git and must remain local reference material only.
+- Evidence/provenance schema skeleton added in `evidence_schema.py`; it is not wired into existing fetch/export behavior yet.
+- Future Total Export, archive, screenshot, and media-source-chain features should use the schema skeleton when implemented.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
