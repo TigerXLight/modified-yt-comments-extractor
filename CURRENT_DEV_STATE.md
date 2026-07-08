@@ -26,7 +26,9 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Future generalized ingestion should use "Source URLs" / source adapters terminology, with YouTube as the first/currently supported adapter.
 - Other websites will need site-specific source adapters; do not assume one generic scraper can reliably capture every comments section.
 - Existing YouTube comments/livechat behavior must be preserved while source terminology generalizes.
-- Future source adapter planning is docs-only; no new adapters exist yet beyond the current YouTube path.
+- Source adapter skeleton added: `source_adapters.py` defines `SourceCapabilities`, a `SourceAdapter` protocol, and `YouTubeSourceAdapter`.
+- `YouTubeSourceAdapter` delegates validation, normalization, and source ID extraction to the existing strict `youtube_url_utils.py` helper.
+- No new source adapters are implemented, and no metadata/comment/livechat/transcript fetching behavior changed.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
