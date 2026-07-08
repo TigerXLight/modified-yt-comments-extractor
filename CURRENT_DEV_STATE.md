@@ -22,6 +22,7 @@ Next feature area: YouTube URL ingestion and context/glossary pipeline:
 - Remaining comment-capture review notes:
   - Spam filter default should be reviewed next because full-capture users may treat the main export as complete while flagged spam is split out.
   - Relevance/likes order plus max limits can miss newer comments, so Date/Newest should be considered for full-capture workflows.
+- Future generalized ingestion should use "Source URLs" / source adapters terminology, with YouTube as the first adapter, instead of assuming every future source is a YouTube URL.
 - Target pipeline:
   - YouTube URL.
   - Validate/normalize URL.
