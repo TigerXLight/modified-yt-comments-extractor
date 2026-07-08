@@ -303,3 +303,73 @@ Decision:
 - Google failed the critical phrase around `Oh, I've completed the Nicolas Cage event`.
 - Google also failed key glossary terms, including `Shadowsmith` and `Caltheris`.
 - Keep Google out of provider integration unless a clearly better Google configuration is tested later.
+
+Azure Speech SDK phrase-list manual transcript results:
+- Provider: Azure Speech SDK.
+- Azure Speech resource: UK South.
+- Python SDK installed in venv:
+  - `azure-cognitiveservices-speech` 1.50.0.
+  - `azure-core` 1.41.0.
+- Input file: `directml_probe_30s.wav`.
+- Phrase list used:
+  - `Kingman`
+  - `ZoneX`
+  - `Shadowsmith`
+  - `Shadowsmith's`
+  - `Nicolas Cage`
+  - `Nicolas Cage event`
+  - `I've completed the Nicolas Cage event`
+  - `Oh I've completed the Nicolas Cage event`
+  - `Freckelston`
+  - `Caltheris`
+  - `Nyxara`
+  - `blindfold`
+  - `cut scene`
+- Generated files, local only:
+  - `TEMP_AZURE_SPEECH_TRANSCRIBE.py`
+  - `candidate_azure_speech_en_us_phrases.txt`
+  - `candidate_azure_speech_en_gb_phrases.txt`
+- Run 1:
+  - Model/config: Azure Speech SDK, language=`en-US`, phrase list.
+  - Candidate: `candidate_azure_speech_en_us_phrases.txt`.
+  - Reference words: 93.
+  - Candidate words: 68.
+  - WER: 35.48%.
+  - Reference accuracy: 64.52%.
+  - Important terms:
+    - `Kingman`: MISSING.
+    - `ZoneX`: MISSING.
+    - `Shadowsmith`: FOUND.
+    - `Nicolas Cage`: FOUND.
+    - `Freckelston`: MISSING.
+    - `Caltheris`: MISSING.
+    - `Nyxara`: MISSING.
+  - Transcript preview: `It's a great cut scene. Be honest. I think it's a lot of great content there. I think there's a lot to digest in that cut scene, yeah. Like, you know, when the Shadowsmith is on screen, when she's not, you know, don't care. But I, I understand the blindfold, that's all I'm saying. I believe the Nicolas Cage event. I just we need more Cal fearless content.`
+- Run 2:
+  - Model/config: Azure Speech SDK, language=`en-GB`, phrase list.
+  - Candidate: `candidate_azure_speech_en_gb_phrases.txt`.
+  - Reference words: 93.
+  - Candidate words: 68.
+  - WER: 35.48%.
+  - Reference accuracy: 64.52%.
+  - Important terms:
+    - `Kingman`: MISSING.
+    - `ZoneX`: MISSING.
+    - `Shadowsmith`: FOUND.
+    - `Nicolas Cage`: FOUND.
+    - `Freckelston`: MISSING.
+    - `Caltheris`: MISSING.
+    - `Nyxara`: MISSING.
+  - Transcript preview: `It's a great cut scene. Be honest. I think it's a lot of great content there. I think there's a lot to digest in that cut scene, yeah. Like, you know, when the Shadowsmith is on screen, when she's not, you know, don't care. But I, I understand the blindfold, that's all I'm saying. I believe the Nicolas Cage event. I just we need more Cal fearless content.`
+
+Decision:
+- Reject Azure Speech SDK phrase-list runs for integration for now.
+- `en-US` and `en-GB` produced the same result.
+- Strict reference accuracy was only 64.52%.
+- Azure does not beat Speechmatics at 65.59%.
+- Azure does not beat Deepgram at 66.67%.
+- Azure does not beat AssemblyAI at 70.97%.
+- Azure does not beat the best local whisper.cpp Vulkan run at about 74.19%.
+- Azure failed the key phrase around `Oh, I've completed the Nicolas Cage event`, producing `I believe the Nicolas Cage event`.
+- Azure also failed `Caltheris`, producing `Cal fearless`.
+- Keep Azure out of provider integration unless a clearly better Azure configuration is tested later.
