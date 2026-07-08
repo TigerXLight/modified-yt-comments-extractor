@@ -293,6 +293,162 @@ Planned fields:
 - Consider placing Total Export near the Source URLs/evidence capture controls rather than burying it with quick exports.
 - Archive Check can be default-on inside Total Export; Archive Submit should stay explicit.
 
+## KEYS / Access & Keys Manager
+
+- Replace or supplement the sidebar "API KEY" area with a "KEYS" button.
+- Clicking "KEYS" should open a dedicated Access & Keys window later.
+- Keep the main sidebar less crowded.
+- The current YouTube Data API key should become one credential/access entry in this future window.
+- Do not imply every platform uses an API key.
+- Access may involve API keys, OAuth-style login, app passwords, browser-assisted login/session, dedicated capture browser profiles, manual import, or no credentials.
+
+Planned sections/tabs:
+
+1. ASR providers:
+   - ElevenLabs.
+   - Groq.
+   - OpenAI.
+   - Other optional cloud ASR providers.
+   - Local/offline ASR should remain available without cloud keys.
+2. Video and social video platforms:
+   - YouTube.
+   - Vimeo.
+   - TikTok.
+   - Dailymotion.
+   - Rumble.
+   - PeerTube.
+   - Odysee.
+   - DTube.
+   - Bilibili.
+   - Youku.
+   - Other future video/social video adapters.
+3. Live streaming platforms:
+   - Twitch.
+   - Kick.
+   - YouTube live.
+   - Other future livestream/live-chat adapters.
+4. Creator-owned and independent video hubs:
+   - Nebula.
+   - Floatplane.
+   - Other creator-owned or subscription video hubs.
+5. Short-form and entertainment mobile apps:
+   - TikTok.
+   - Triller.
+   - Clapper.
+   - Other short-form video apps.
+6. Text/microblogging platforms:
+   - X/Twitter.
+   - Threads.
+   - Bluesky.
+   - Mastodon/Fediverse-style text platforms.
+   - Other microblogging adapters.
+7. Image, photography, and visual platforms:
+   - Instagram.
+   - Pixelfed.
+   - Vero.
+   - VSCO.
+   - Glass.
+   - Flickr.
+   - BeReal.
+   - Pinksky.
+   - Locket.
+   - Pinterest.
+   - Lemon8.
+   - Other visual/photo/social discovery adapters.
+8. Community, forums, Q&A, and link aggregators:
+   - Reddit.
+   - Lemmy.
+   - Kbin.
+   - Discuit.
+   - Squabbles.
+   - Tildes.
+   - Hacker News.
+   - Lobsters.
+   - 4chan.
+   - Quora.
+   - Tumblr.
+   - Other forums/community platforms.
+9. News websites:
+   - News sites are too numerous to list exhaustively.
+   - Treat them as site-specific or site-family adapters where possible.
+   - Support browser-assisted capture, comments-only capture, headline/visible preview capture, article text only if selected, full-page screenshot, archive check, and future media evidence.
+   - Access mode should be per URL/page/session, not per whole domain.
+10. Professional, jobs, experts, and portfolio platforms:
+   - LinkedIn.
+   - Wellfound / AngelList-style platforms.
+   - Hired-style platforms.
+   - Teamblind / Blind.
+   - Fishbowl.
+   - Behance.
+   - Dribbble.
+   - GitHub.
+   - ResearchGate.
+   - Lunchclub.
+   - Xing.
+   - Alignable.
+   - Other professional/expert/community adapters.
+11. Workplace, chat, and collaboration platforms:
+   - Microsoft Teams.
+   - Google Chat.
+   - Webex App.
+   - Mattermost.
+   - Rocket.Chat.
+   - Zulip.
+   - Element / Matrix.
+   - Wire.
+   - Guild.
+   - Flock.
+   - Other work/chat/community platforms.
+   - These may require workspace permissions and should not be treated like public-web scraping.
+12. Archive services:
+   - Wayback Machine archive check/settings.
+   - Archive submit/save settings.
+   - archive.ph/archive.today-style services as optional/separate.
+   - Archive Check can be default-on for Total Export later.
+   - Archive Submit should remain explicit/user-selected.
+13. Browser-assisted capture:
+   - Dedicated capture browser profile path.
+   - User-authenticated capture notes.
+   - Do not harvest passwords/cookies.
+   - Existing browser profile use should be advanced/user-approved only where technically safe.
+   - Browser-assisted capture should record access mode and capture method.
+
+Credential safety principles:
+
+- Mask secrets by default.
+- Provide reveal/copy/clear controls only where appropriate.
+- Never write secrets into exports, logs, manifests, screenshots, extracted text, raw sidecars, or evidence packages.
+- Never commit secrets.
+- Prefer environment variables or local user settings initially.
+- Consider OS keyring/encrypted local storage later.
+- Make missing credentials visible per adapter/provider.
+- Adapters should report whether credentials are required, optional, missing, configured, or not needed.
+- Testing a key/connection should be explicit/user-triggered and should not run automatically.
+- Do not run credential tests in background without user action.
+
+Future adapter/provider metadata:
+
+- `display_name`
+- `platform_family`
+- `credential_type`
+- `credentials_required`
+- `credentials_optional`
+- `supports_browser_capture`
+- `supports_manual_import`
+- `setup_hint`
+- `test_connection_supported`
+- Privacy/cost/rate-limit notes if relevant.
+- Access limitations if relevant.
+
+UI wording notes:
+
+- Sidebar button: "KEYS".
+- Window title: "Access & Keys".
+- "KEYS" is preferred over "API KEY" because future access may involve API keys, OAuth-style login, app passwords, browser profile settings, or no credentials.
+- Do not imply every platform uses an API key.
+- Use searchable/filterable platform sections later so the UI does not become too large.
+- Do not list every possible service on the main screen; keep the main screen focused on Source URLs and selected capture options.
+
 ## ASR Note
 
 - There is no known truly infinite free hosted ASR API.
