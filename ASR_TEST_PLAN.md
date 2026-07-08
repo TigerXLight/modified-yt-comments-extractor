@@ -55,11 +55,55 @@ Provider confidence / architecture notes:
 - Offline ASR is not fully exhausted globally, but the practical AMD paths tested so far are below the project acceptance threshold.
 - DirectML medium/large remain deferred unless explicitly approved later.
 
-Topic resolver:
-- Optional background helper for vocabulary/phrase hints.
-- Must be strict-filtered.
-- Must never block ASR.
-- Must never be trusted as ground truth.
+YouTube URL ingestion and context/glossary pipeline planning:
+- Planning/docs task only; no implementation exists yet from this note.
+- Target pipeline:
+  - YouTube URL.
+  - Validate/normalize URL.
+  - Extract video ID.
+  - Fetch metadata where available.
+  - Fetch existing captions/transcripts where available.
+  - Fetch comments/livechat where available and user-selected.
+  - Collect contextual text from metadata/comments/transcripts.
+  - Optionally collect external background context later.
+  - Extract candidate glossary/entities.
+  - Let user review/edit glossary.
+  - Pass glossary/keyterms into ASR providers that support it.
+  - Run ASR as draft.
+  - Run Term QA/glossary checks.
+  - User reviews/accepts/edits final transcript.
+
+Feature principles:
+- Existing captions/transcripts should be preferred when available and acceptable.
+- ASR should be used when no reliable transcript exists or when user requests it.
+- Metadata/comments/context are for glossary discovery and QA, not a replacement for transcription.
+- Metadata/comments/transcripts/external context are only used to propose glossary/entity candidates and QA warnings.
+- External/background context is optional.
+- External/background context must be strict-filtered.
+- External/background context must never block local transcript/ASR work.
+- External/background context must never be trusted as ground truth.
+- No silent auto-correction of transcript terms.
+- User must be able to review/edit glossary before it affects ASR or QA.
+- User review remains required before glossary candidates affect ASR prompts/keyterms or final transcript decisions.
+- Provider-specific glossary support should be optional:
+  - ElevenLabs keyterms.
+  - Deepgram keyterms.
+  - Speechmatics custom dictionary.
+  - Azure phrase list.
+  - AWS custom vocabulary only if future access works.
+  - whisper.cpp prompt/initial prompt.
+- If a provider has no glossary support, glossary still feeds Term QA after transcription.
+- Keep local/offline ASR available for privacy/no-cloud mode.
+- Keep cloud ASR opt-in because of cost/privacy/API-key concerns.
+
+Likely implementation phases:
+1. URL validation and video ID extraction.
+2. Metadata/transcript/comment fetch plumbing.
+3. Context-to-glossary resolver.
+4. Glossary review UI.
+5. Provider keyterm/prompt mapping.
+6. ASR run + Term QA review flow.
+7. Evidence/debug export for transcript decisions.
 
 ## Parakeet local probe result — 2026-07-07
 
