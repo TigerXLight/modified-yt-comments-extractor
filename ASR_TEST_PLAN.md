@@ -99,6 +99,8 @@ Feature principles:
 - If a provider has no glossary support, glossary still feeds Term QA after transcription.
 - Keep local/offline ASR available for privacy/no-cloud mode.
 - Keep cloud ASR opt-in because of cost/privacy/API-key concerns.
+- There is no known truly infinite free hosted ASR API; local/offline ASR remains the only practical unlimited option, while cloud ASR remains quota/cost/API-key dependent.
+- `SOURCE_EVIDENCE_ROADMAP.md` now tracks future source evidence capture, archive, provenance, and adapter planning without changing ASR/provider behavior.
 - Source adapter principles:
   - Full capture is preferred over filtering.
   - Filters should be opt-in/user-controlled.

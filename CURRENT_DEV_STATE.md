@@ -29,6 +29,8 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Source adapter skeleton added: `source_adapters.py` defines `SourceCapabilities`, a `SourceAdapter` protocol, and `YouTubeSourceAdapter`.
 - `YouTubeSourceAdapter` delegates validation, normalization, and source ID extraction to the existing strict `youtube_url_utils.py` helper.
 - No new source adapters are implemented, and no metadata/comment/livechat/transcript fetching behavior changed.
+- `SOURCE_EVIDENCE_ROADMAP.md` captures the docs-only roadmap for future source/comment adapters, web evidence capture, archive checks, optional media-download inspiration, capture options, and provenance fields.
+- Local raw `reference_feature_notes/` files are ignored by git and must remain local reference material only.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
