@@ -10,6 +10,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from googleapiclient.discovery import build
 
+from youtube_url_utils import extract_youtube_video_id
+
 try:
     from googleapiclient.errors import HttpError
 except Exception:  # pragma: no cover - googleapiclient normally provides this
@@ -53,19 +55,10 @@ class YouTubeCommentExtractor:
 
     @staticmethod
     def extract_video_id(url: str) -> str:
-        patterns = [
-            r"(?:v=)([0-9A-Za-z_-]{11})",
-            r"youtu\.be/([0-9A-Za-z_-]{11})",
-            r"embed/([0-9A-Za-z_-]{11})",
-            r"shorts/([0-9A-Za-z_-]{11})",
-            r"/live/([0-9A-Za-z_-]{11})",
-            r"^([0-9A-Za-z_-]{11})$",
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, url)
-            if match:
-                return match.group(1)
-        return ""
+        try:
+            return extract_youtube_video_id(url)
+        except ValueError:
+            return ""
 
     def process_video(
         self,
@@ -315,17 +308,12 @@ class YouTubeCommentExtractor:
             maxResults=YOUTUBE_LIVE_CHAT_PER_PAGE,
         )
 
-        # Live chats are polling-based; this prevents an active stream from looping forever.
-        pages_read = 0
-        max_pages = 1 if max_results is None else 1000
-
-        while request and pages_read < max_pages and not self._cancelled(cancel_event):
+        while request and not self._cancelled(cancel_event):
             try:
                 response = request.execute()
             except Exception as e:
                 self._raise_friendly_error(e)
 
-            pages_read += 1
             for item in response.get("items", []):
                 if self._cancelled(cancel_event) or self._limit_reached(messages, max_results):
                     break
@@ -355,10 +343,8 @@ class YouTubeCommentExtractor:
             if self._limit_reached(messages, max_results):
                 break
             request = self.youtube.liveChatMessages().list_next(request, response)
-            if request and max_results is not None:
+            if request:
                 time.sleep(API_DELAY_BETWEEN_PAGES)
-            else:
-                break
 
         return messages
 

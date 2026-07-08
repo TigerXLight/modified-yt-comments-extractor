@@ -18,6 +18,10 @@ Important context:
 Next feature area: YouTube URL ingestion and context/glossary pipeline:
 - Planning section originated as docs-only; later fetch/glossary/ASR phases are not implemented yet.
 - Phase 1 code step completed: `youtube_url_utils.py` provides network-free YouTube URL validation/normalization and strict 11-character video ID extraction.
+- Comment/livechat maintenance patch completed: `extractor.py` now uses the shared strict YouTube URL/video ID helper, and livechat unlimited pagination no longer stops after one page.
+- Remaining comment-capture review notes:
+  - Spam filter default should be reviewed next because full-capture users may treat the main export as complete while flagged spam is split out.
+  - Relevance/likes order plus max limits can miss newer comments, so Date/Newest should be considered for full-capture workflows.
 - Target pipeline:
   - YouTube URL.
   - Validate/normalize URL.
