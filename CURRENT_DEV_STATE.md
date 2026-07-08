@@ -498,13 +498,35 @@ Decision:
 
 ## ASR hardware profile planning
 
-Status:
-- AMD: whisper.cpp Vulkan is the best local path tested so far on AMD RX 5700, but it remains below the 95% strict reference threshold on the real 30s clip.
-- NVIDIA: future profile should be planned around CUDA-capable options such as faster-whisper / CTranslate2 CUDA and/or whisper.cpp CUDA.
-- Intel CPU / iGPU / Arc: future profile should be planned around OpenVINO Whisper, with DirectML as a possible fallback.
-- CPU-only: keep conservative and quality-gated; CPU-only results should stay draft/probe-first unless they pass the strict reference scoring gate.
+Recommended offline/hardware profiles:
+- AMD Windows, older Radeon such as RX 5700:
+  - Recommended local path: whisper.cpp Vulkan.
+  - Keep local whisper.cpp Vulkan as the best no-cloud/free local baseline.
+  - Best tested local/no-cloud result remains whisper.cpp Vulkan large-v3-turbo with phrase prompt at about 74.19% reference accuracy.
+  - CPU/quantized whisper.cpp is fallback only.
+  - DirectML is experimental/low-return based on local tests.
+  - ROCm/PyTorch is not a reliable Windows path for this RX 5700/RDNA1 setup.
+- NVIDIA Windows/Linux:
+  - Recommended GPU paths:
+    - faster-whisper / CTranslate2 CUDA.
+    - whisper.cpp CUDA.
+  - Advanced Linux/NVIDIA users may test NeMo/Parakeet/Canary-style models separately.
+  - Do not make this the default for the current AMD test machine.
+- Intel CPU / iGPU / Arc:
+  - Recommended path: OpenVINO Whisper / Distil-Whisper-style route.
+  - CPU fallback remains available.
+  - This is a profile for Intel users, not tested on the current AMD RX 5700 machine.
+- CPU-only:
+  - Recommended path: whisper.cpp quantized models.
+  - Use strict draft-only mode.
+  - Expect slower speed and no guarantee of better accuracy.
 
-Planning notes:
+Architecture notes:
+- ElevenLabs Scribe v2 with keyterms is the leading optional cloud integration candidate after the provider confidence pass, at 84.95% reference accuracy.
+- AWS Transcribe custom vocabulary is BLOCKED, not rejected, because no score was produced.
+- Local ASR and cloud ASR should both be treated as draft text unless a strict quality gate passes.
+- Term QA/glossary review remains mandatory for names and lore terms.
+- Keep local whisper.cpp Vulkan as the best free/local fallback.
 - Hardware acceleration does not guarantee higher accuracy by itself. It mainly enables faster/larger model testing.
 - Any NVIDIA, Intel, or CPU profile must pass the same strict reference scoring gate before being trusted.
 - DirectML base/small are rejected for now; DirectML medium/large remain deferred unless explicitly approved later.
@@ -512,5 +534,5 @@ Planning notes:
 
 Next local-ASR branches:
 1. Canary / other offline model feasibility if practical.
-2. Online transcription comparison if local methods remain below threshold.
+2. NVIDIA CUDA and Intel OpenVINO profile testing only on matching hardware.
 3. DirectML medium/large only if explicitly approved later.
