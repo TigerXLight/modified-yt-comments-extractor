@@ -444,6 +444,58 @@ Decision:
 - Do not upgrade to paid AWS solely for this test unless explicitly approved later.
 - Keep AWS Transcribe as a possible future retest only if service access becomes available without unwanted billing risk.
 
+ElevenLabs Scribe v2 keyterms manual transcript result:
+- Provider: ElevenLabs Speech-to-Text API.
+- Model/config: Scribe v2 with keyterms.
+- Local temp script:
+  - `TEMP_ELEVENLABS_SCRIBE_TRANSCRIBE.py`
+- Input file:
+  - `directml_probe_30s.wav`
+- Output files, local only:
+  - `candidate_elevenlabs_scribe_v2_keyterms.txt`
+  - `candidate_elevenlabs_scribe_v2_keyterms.json`
+- API key was cleared from the CMD session after the test.
+- Keyterms used:
+  - `Kingman`
+  - `ZoneX`
+  - `Shadowsmith`
+  - `Shadowsmith's`
+  - `Nicolas Cage`
+  - `Nicolas Cage event`
+  - `completed Nicolas Cage event`
+  - `Oh I've completed`
+  - `Freckelston`
+  - `Caltheris`
+  - `Nyxara`
+  - `blindfold`
+  - `cut scene`
+  - `cutscene`
+- Score:
+  - Candidate: `candidate_elevenlabs_scribe_v2_keyterms.txt`.
+  - Reference words: 93.
+  - Candidate words: 85.
+  - WER: 15.05%.
+  - Reference accuracy: 84.95%.
+- Important terms:
+  - `Kingman`: MISSING.
+  - `ZoneX`: MISSING.
+  - `Shadowsmith`: FOUND.
+  - `Nicolas Cage`: FOUND.
+  - `Freckelston`: MISSING.
+  - `Caltheris`: FOUND.
+  - `Nyxara`: MISSING.
+- Transcript preview: `It's a great cut scene to be honest. I, I think it's a lot of great content in there Gotcha I think, I think there's a, there's a lot to digest in that cut scene, yeah. For like, you know, when, uh, the Shadowsmith's on screen. When she's not, you know, don't care, but- I, I understand the blindfold. That's all I'm saying Mm-hmm. Oh I've completed the Nicolas Cage event Like what you're trying to insinuate I just- We need more Caltheris content`
+
+Decision:
+- Mark ElevenLabs Scribe v2 with keyterms as the new best tested online ASR provider result so far.
+- Reference accuracy was 84.95%, clearly above all previously tested providers and the previous best local whisper.cpp Vulkan run at about 74.19%.
+- ElevenLabs correctly preserved the critical phrase around `Oh I've completed the Nicolas Cage event`.
+- ElevenLabs correctly found `Shadowsmith`, `Nicolas Cage`, and `Caltheris`.
+- ElevenLabs still missed `Kingman`, `ZoneX`, `Freckelston`, and `Nyxara`, so ASR output must still be treated as draft text with Term QA/glossary review.
+- Do not treat ElevenLabs as final truth; treat it as a leading integration candidate subject to cost, quota, API reliability, and user opt-in.
+- Keep local whisper.cpp Vulkan as the best no-cloud/free local baseline.
+- Current architecture decision remains: ASR draft + glossary/context QA + explicit user review.
+
 ## ASR hardware profile planning
 
 Status:
