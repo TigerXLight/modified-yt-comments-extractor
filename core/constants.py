@@ -102,7 +102,7 @@ class SortOption(Enum):
             "Date (Newest)": cls.DATE_NEWEST,
             "Date (Oldest)": cls.DATE_OLDEST,
         }
-        return mapping.get(name, cls.LIKES)
+        return mapping.get(name, cls.DATE_NEWEST)
 
     @property
     def display_name(self) -> str:

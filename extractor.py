@@ -65,9 +65,9 @@ class YouTubeCommentExtractor:
         video_url: str,
         max_results: Optional[int] = None,
         progress_callback: Optional[Callable[[int], None]] = None,
-        filter_spam: bool = True,
+        filter_spam: bool = False,
         min_likes: int = 0,
-        sort_by: str = "relevance",
+        sort_by: str = "time",
         exclude_creator: bool = False,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
@@ -455,7 +455,7 @@ class YouTubeCommentExtractor:
     def apply_local_filters(
         self,
         items: List[Dict[str, Any]],
-        filter_spam: bool = True,
+        filter_spam: bool = False,
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         clean_items: List[Dict[str, Any]] = []
         spam_items: List[Dict[str, Any]] = []

@@ -19,9 +19,10 @@ Next feature area: YouTube URL ingestion and context/glossary pipeline:
 - Planning section originated as docs-only; later fetch/glossary/ASR phases are not implemented yet.
 - Phase 1 code step completed: `youtube_url_utils.py` provides network-free YouTube URL validation/normalization and strict 11-character video ID extraction.
 - Comment/livechat maintenance patch completed: `extractor.py` now uses the shared strict YouTube URL/video ID helper, and livechat unlimited pagination no longer stops after one page.
-- Remaining comment-capture review notes:
-  - Spam filter default should be reviewed next because full-capture users may treat the main export as complete while flagged spam is split out.
-  - Relevance/likes order plus max limits can miss newer comments, so Date/Newest should be considered for full-capture workflows.
+- Comment capture defaults were adjusted for full-capture workflows:
+  - Spam separation is off by default and labeled as `Separate flagged spam`; flagged items still export separately when enabled.
+  - Date/Newest is now the default sort for new/default settings so newer comments are less likely to be missed.
+  - Max comments remains empty/unlimited by default, with UI copy noting that limits count comments + replies.
 - Future generalized ingestion should use "Source URLs" / source adapters terminology, with YouTube as the first adapter, instead of assuming every future source is a YouTube URL.
 - Target pipeline:
   - YouTube URL.

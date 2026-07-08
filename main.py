@@ -433,10 +433,10 @@ class App(ctk.CTk):
         spam_row = ctk.CTkFrame(filters_frame, fg_color="transparent")
         spam_row.pack(fill="x", pady=(0, 8))
 
-        self.spam_filter_var = ctk.BooleanVar(value=True)
+        self.spam_filter_var = ctk.BooleanVar(value=False)
         self.spam_filter_checkbox = ctk.CTkSwitch(
             spam_row,
-            text="Filter Spam",
+            text="Separate flagged spam",
             variable=self.spam_filter_var,
             font=ctk.CTkFont(size=12),
             text_color=COLORS["text_primary"],
@@ -553,7 +553,7 @@ class App(ctk.CTk):
 
         max_comments_hint = ctk.CTkLabel(
             filters_frame,
-            text="Per video, leave empty for all",
+            text="Leave empty for all; limits count comments + replies",
             font=ctk.CTkFont(size=10),
             text_color=COLORS["text_muted"]
         )
@@ -571,7 +571,7 @@ class App(ctk.CTk):
         )
         sort_label.pack(side="left")
 
-        self.sort_var = ctk.StringVar(value="Likes")
+        self.sort_var = ctk.StringVar(value="Date (Newest)")
         self.sort_dropdown = ctk.CTkOptionMenu(
             sort_frame,
             values=["Likes", "Date (Newest)", "Date (Oldest)"],
@@ -2443,7 +2443,7 @@ class App(ctk.CTk):
                 self.max_comments_entry.delete(0, "end")
                 self.max_comments_entry.insert(0, str(settings.max_comments))
 
-            sort_option = SortOption(settings.sort_by) if settings.sort_by else SortOption.LIKES
+            sort_option = SortOption(settings.sort_by) if settings.sort_by else SortOption.DATE_NEWEST
             self.sort_var.set(sort_option.display_name)
 
             # Load filter words

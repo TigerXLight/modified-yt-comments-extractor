@@ -43,7 +43,7 @@ class AppSettings:
     api_key: str = ""
 
     # Filter settings
-    filter_spam: bool = True
+    filter_spam: bool = False
     spam_threshold: float = SpamFilterStrength.MODERATE.value
     exclude_creator: bool = False
     min_likes: int = 0
@@ -55,7 +55,7 @@ class AppSettings:
     whitelist_patterns: str = ""  # Newline-separated patterns to always allow
 
     # Sort settings
-    sort_by: str = SortOption.LIKES.value
+    sort_by: str = SortOption.DATE_NEWEST.value
 
     # Date filter (optional)
     date_from: Optional[str] = None
@@ -98,7 +98,7 @@ class SettingsManager:
         settings = manager.load()
 
         settings.api_key = "new_key"
-        settings.filter_spam = True
+        settings.filter_spam = False
 
         manager.save(settings)
     """
