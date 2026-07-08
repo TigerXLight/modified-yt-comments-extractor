@@ -15,7 +15,7 @@ Important context:
 - Manual matrix result: large-v3 phrase prompt is best quality; large-v3-turbo is faster but weaker on important terms.
 - Topic resolver / Common Crawl / Serper / Exa are later background glossary helpers only. They are not ASR engines and must be strict-filtered.
 
-Next feature area: YouTube URL ingestion and context/glossary pipeline:
+Next feature area: Source URL ingestion and context/glossary pipeline:
 - Planning section originated as docs-only; later fetch/glossary/ASR phases are not implemented yet.
 - Phase 1 code step completed: `youtube_url_utils.py` provides network-free YouTube URL validation/normalization and strict 11-character video ID extraction.
 - Comment/livechat maintenance patch completed: `extractor.py` now uses the shared strict YouTube URL/video ID helper, and livechat unlimited pagination no longer stops after one page.
@@ -26,10 +26,60 @@ Next feature area: YouTube URL ingestion and context/glossary pipeline:
 - Future generalized ingestion should use "Source URLs" / source adapters terminology, with YouTube as the first/currently supported adapter.
 - Other websites will need site-specific source adapters; do not assume one generic scraper can reliably capture every comments section.
 - Existing YouTube comments/livechat behavior must be preserved while source terminology generalizes.
+- Future source adapter planning is docs-only; no new adapters exist yet beyond the current YouTube path.
+- Future source adapter pipeline:
+  - Source URL.
+  - Identify source type.
+  - Route to matching adapter.
+  - Adapter validates/normalizes URL.
+  - Adapter fetches source-specific metadata/comments/livechat/transcripts where supported.
+  - Normalize output into shared comment/transcript/evidence structures.
+  - Export with existing evidence-friendly TXT/JSON structure.
+- Conceptual adapter interface:
+  - `source_name`
+  - `can_handle(url)`
+  - `normalize_url(url)`
+  - `extract_source_id(url)`
+  - `fetch_metadata()`
+  - `fetch_comments()`
+  - `fetch_replies()` if applicable.
+  - `fetch_livechat()` if applicable.
+  - `fetch_transcript_or_captions()` if applicable.
+  - Capability flags:
+    - `supports_comments`
+    - `supports_replies`
+    - `supports_livechat`
+    - `supports_likes`
+    - `supports_timestamps`
+    - `supports_author_channel_ids`
+    - `supports_transcripts`
+- Initial adapters:
+  - YouTube adapter:
+    - Current implemented source.
+    - Comments supported.
+    - Replies supported.
+    - Livechat supported where `activeLiveChatId` exists.
+    - Transcripts/captions partly supported through the existing transcript downloader.
+    - Likes supported for normal comments/replies.
+  - Future adapters:
+    - Reddit.
+    - Generic websites with known comment systems.
+    - Forums.
+    - Other video platforms.
+    - Each needs site-specific rules and should not be assumed trivial.
+- Source adapter principles:
+  - Full capture is preferred over filtering.
+  - Filters should be opt-in/user-controlled.
+  - Source-specific limitations must be visible to the user.
+  - Never silently treat missing comments as proof that no comments exist.
+  - Preserve raw/source metadata where useful for evidence export.
+  - Keep YouTube path stable while generalizing terminology.
+  - Network fetching should remain explicit/user-triggered.
+  - External/background context remains optional, strict-filtered, non-blocking, and not ground truth.
 - Target pipeline:
-  - YouTube URL.
+  - Source URL.
   - Validate/normalize URL.
-  - Extract video ID.
+  - Extract source ID. The current YouTube adapter uses an 11-character video ID.
   - Fetch metadata where available.
   - Fetch existing captions/transcripts where available.
   - Fetch comments/livechat where available and user-selected.
@@ -64,7 +114,7 @@ Next feature area: YouTube URL ingestion and context/glossary pipeline:
   - Keep local/offline ASR available for privacy/no-cloud mode.
   - Keep cloud ASR opt-in because of cost/privacy/API-key concerns.
 - Likely implementation phases:
-  1. URL validation and video ID extraction.
+  1. URL validation and source ID extraction. Current adapter-specific case: YouTube 11-character video ID.
   2. Metadata/transcript/comment fetch plumbing.
   3. Context-to-glossary resolver.
   4. Glossary review UI.

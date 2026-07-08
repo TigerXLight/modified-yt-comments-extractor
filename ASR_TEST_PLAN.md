@@ -55,15 +55,19 @@ Provider confidence / architecture notes:
 - Offline ASR is not fully exhausted globally, but the practical AMD paths tested so far are below the project acceptance threshold.
 - DirectML medium/large remain deferred unless explicitly approved later.
 
-YouTube URL ingestion and context/glossary pipeline planning:
-- Phase 1 URL validation/normalization is implemented; later fetch/glossary/ASR phases are not implemented yet.
+Source URL ingestion and context/glossary pipeline planning:
+- Phase 1 YouTube URL validation/normalization is implemented; later fetch/glossary/ASR phases are not implemented yet.
+- This is docs/planning only for generalized source adapters. No new adapters exist yet beyond the current YouTube path.
+- YouTube is the first/currently supported source, and existing YouTube comments/livechat behavior must be preserved.
+- Other websites will need site-specific source adapters; do not assume one generic scraper can reliably capture every comments section.
 - Target pipeline:
-  - YouTube URL.
-  - Validate/normalize URL.
-  - Extract video ID.
-  - Fetch metadata where available.
-  - Fetch existing captions/transcripts where available.
-  - Fetch comments/livechat where available and user-selected.
+  - Source URL.
+  - Identify source type.
+  - Route to matching adapter.
+  - Adapter validates/normalizes URL.
+  - Adapter fetches source-specific metadata/comments/livechat/transcripts where supported.
+  - Normalize output into shared comment/transcript/evidence structures.
+  - Export with existing evidence-friendly TXT/JSON structure.
   - Collect contextual text from metadata/comments/transcripts.
   - Optionally collect external background context later.
   - Extract candidate glossary/entities.
@@ -95,9 +99,51 @@ Feature principles:
 - If a provider has no glossary support, glossary still feeds Term QA after transcription.
 - Keep local/offline ASR available for privacy/no-cloud mode.
 - Keep cloud ASR opt-in because of cost/privacy/API-key concerns.
+- Source adapter principles:
+  - Full capture is preferred over filtering.
+  - Filters should be opt-in/user-controlled.
+  - Source-specific limitations must be visible to the user.
+  - Never silently treat missing comments as proof that no comments exist.
+  - Preserve raw/source metadata where useful for evidence export.
+  - Keep YouTube path stable while generalizing terminology.
+  - Network fetching should remain explicit/user-triggered.
+
+Conceptual source adapter interface:
+- `source_name`
+- `can_handle(url)`
+- `normalize_url(url)`
+- `extract_source_id(url)`
+- `fetch_metadata()`
+- `fetch_comments()`
+- `fetch_replies()` if applicable.
+- `fetch_livechat()` if applicable.
+- `fetch_transcript_or_captions()` if applicable.
+- Capability flags:
+  - `supports_comments`
+  - `supports_replies`
+  - `supports_livechat`
+  - `supports_likes`
+  - `supports_timestamps`
+  - `supports_author_channel_ids`
+  - `supports_transcripts`
+
+Initial adapter planning:
+- YouTube adapter:
+  - Current implemented source.
+  - Comments supported.
+  - Replies supported.
+  - Livechat supported where `activeLiveChatId` exists.
+  - Transcripts/captions partly supported through the existing transcript downloader.
+  - Likes supported for normal comments/replies.
+- Future adapters:
+  - Reddit.
+  - Generic websites with known comment systems.
+  - Forums.
+  - Other video platforms.
+  - Each needs site-specific rules and should not be assumed trivial.
 
 Likely implementation phases:
-1. URL validation and video ID extraction.
+1. URL validation and source ID extraction. Current adapter-specific case: YouTube 11-character video ID.
 2. Metadata/transcript/comment fetch plumbing.
 3. Context-to-glossary resolver.
 4. Glossary review UI.
