@@ -54,6 +54,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Total Export summary helpers added for human-readable package/plan/validation review text; they are explicit-call only and perform no fetch/capture/network/GUI behavior.
 - Total Export summary-file helper added for explicit package review summaries; it can register the summary as a local manifest asset without fetch/capture/network/GUI behavior.
 - Total Export asset registration now supports duplicate-safe manifest updates for repeated explicit summary/asset registration without fetch/capture/network/GUI behavior.
+- Total Export prepare helper added for explicit source URL -> package shell -> validation -> summary-file preparation; it remains non-wired and performs no fetch/capture/network/GUI behavior.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
