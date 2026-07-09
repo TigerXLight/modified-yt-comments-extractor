@@ -117,6 +117,7 @@ class SettingsManager:
             app_dir = Path(__file__).resolve().parent.parent
             self.settings_file = app_dir / SETTINGS_FILE
         self._use_keyring = KEYRING_AVAILABLE
+        self._last_keyring_error: Optional[str] = None
 
     @property
     def keyring_available(self) -> bool:
@@ -191,6 +192,8 @@ class SettingsManager:
                     return api_key
             except Exception as e:
                 logger.warning(f"Failed to load API key from keyring: {e}")
+                self._last_keyring_error = str(e)
+                self._use_keyring = False
 
         # Fall back to settings file
         if self.settings_file.exists():
@@ -215,10 +218,12 @@ class SettingsManager:
                     KEYRING_API_KEY_NAME,
                     api_key
                 )
+                self._last_keyring_error = None
                 return
             except Exception as e:
                 logger.warning(f"Failed to save API key to keyring: {e}")
-                # Fall through to file storage
+                self._last_keyring_error = str(e)
+                self._use_keyring = False
 
         # If keyring unavailable or failed, it will be saved with other settings
         logger.debug("API key will be stored in settings file (less secure)")
@@ -242,6 +247,8 @@ class SettingsManager:
                 return True
             except Exception as e:
                 logger.error(f"Failed to delete API key from keyring: {e}")
+                self._last_keyring_error = str(e)
+                self._use_keyring = False
                 return False
         return True
 

@@ -83,6 +83,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - `UPSTREAM_V2_1_1_AUDIT.md` records a docs-only upstream/original-creator v2.1.1 parity audit and recommended local/mocked regression tests before porting behavior.
 - Added local upstream v2.1.1 parity regression tests for testable extractor error handling, newest-sort/max-comment mapping, and spam false-positive areas; GUI export/fetch-state and campaign short-praise guards remain deferred pending helper extraction or a later behavior port.
 - Added local upstream v2.1.1 behavior fixes for structured quota/daily-limit API error classification and short-praise campaign false-positive guarding, with local regression coverage and no network/GUI/provider behavior.
+- Added local upstream v2.1.1 safety coverage/fixes for export blocking during active fetch/cancel states and keyring runtime fallback, using mocked/local tests without network, real credentials, or GUI launch.
 - Local Total Export dev output folders are ignored to avoid committing generated package checks.
 - Future source adapter pipeline:
   - Source URL.

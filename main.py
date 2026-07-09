@@ -130,6 +130,13 @@ class FetchState:
         return self.cancel_event.is_set()
 
 
+def is_export_allowed(fetch_state: FetchState, exportable_count: int) -> bool:
+    """Return whether an export can start for the current fetch/data state."""
+    if fetch_state.is_fetching or fetch_state.cancel_requested:
+        return False
+    return exportable_count > 0
+
+
 # =============================================================================
 # MAIN APPLICATION CLASS
 # =============================================================================
@@ -2858,15 +2865,40 @@ class App(ctk.CTk):
         self.cancel_button.pack_forget()
         self.fetch_button.pack(side="left")
 
+    def _guard_export_allowed(
+        self,
+        exportable_count: int,
+        no_data_title: str,
+        no_data_message: str,
+    ) -> bool:
+        """Prevent export hotkeys/buttons from snapshotting incomplete fetch data."""
+        if self.fetch_state.is_fetching or self.fetch_state.cancel_requested:
+            messagebox.showwarning(
+                "Fetch In Progress",
+                "Please wait for the current fetch to finish or cancel before exporting."
+            )
+            self.log_message("Export blocked while fetch is active.", "warning")
+            return False
+
+        if not is_export_allowed(self.fetch_state, exportable_count):
+            messagebox.showwarning(no_data_title, no_data_message)
+            return False
+
+        return True
+
     def export_txt(self) -> None:
         """Export data to a readable TXT file for Notepad."""
         with self._data_lock:
-            if not self.all_comments:
-                messagebox.showwarning("No Data", "No comments to export. Fetch comments first.")
-                return
             metadata = list(self.all_metadata)
             comments = list(self.all_comments)
             spam = list(self.all_spam)
+
+        if not self._guard_export_allowed(
+            len(comments),
+            "No Data",
+            "No comments to export. Fetch comments first."
+        ):
+            return
 
         filename = filedialog.asksaveasfilename(
             defaultextension=".txt",
@@ -2895,12 +2927,16 @@ class App(ctk.CTk):
     def export_csv(self) -> None:
         """Export data to CSV files."""
         with self._data_lock:
-            if not self.all_comments:
-                messagebox.showwarning("No Data", "No comments to export. Fetch comments first.")
-                return
             metadata = list(self.all_metadata)
             comments = list(self.all_comments)
             spam = list(self.all_spam)
+
+        if not self._guard_export_allowed(
+            len(comments),
+            "No Data",
+            "No comments to export. Fetch comments first."
+        ):
+            return
 
         filename = filedialog.asksaveasfilename(
             defaultextension=".csv",
@@ -2938,12 +2974,16 @@ class App(ctk.CTk):
     def export_excel(self) -> None:
         """Export data to Excel file."""
         with self._data_lock:
-            if not self.all_comments:
-                messagebox.showwarning("No Data", "No comments to export. Fetch comments first.")
-                return
             metadata = list(self.all_metadata)
             comments = list(self.all_comments)
             spam = list(self.all_spam)
+
+        if not self._guard_export_allowed(
+            len(comments),
+            "No Data",
+            "No comments to export. Fetch comments first."
+        ):
+            return
 
         filename = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
@@ -3209,11 +3249,12 @@ class App(ctk.CTk):
             comments = list(self.all_comments)
             spam = list(self.all_spam)
 
-        if not comments and not self.attached_screenshots and not self.transcript_segments:
-            messagebox.showwarning(
-                "Nothing to Package",
-                "Fetch comments, attach screenshots, or import a transcript first."
-            )
+        exportable_count = len(comments) + len(self.attached_screenshots) + len(self.transcript_segments)
+        if not self._guard_export_allowed(
+            exportable_count,
+            "Nothing to Package",
+            "Fetch comments, attach screenshots, or import a transcript first."
+        ):
             return
 
         output_parent = filedialog.askdirectory(
