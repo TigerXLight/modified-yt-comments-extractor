@@ -64,6 +64,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Total Export prepare CLI can optionally print local package inventory data without writing/registering inventory reports or performing fetch/capture/network/GUI behavior.
 - Total Export inventory report helper added for explicit local package inventory text reports and duplicate-safe manifest registration without fetch/capture/network/GUI behavior.
 - Total Export prepare helper/CLI can optionally write/register the inventory report file without changing default non-wired fetch/capture/network behavior.
+- Total Export prepare CLI developer examples documented for local-only package-shell usage without fetch/capture/network/GUI behavior.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
