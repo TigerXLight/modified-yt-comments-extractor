@@ -242,6 +242,24 @@ python total_export_prepare_cli.py --build-batch-review-bundles --batch-source-f
 python total_export_prepare_cli.py --build-batch-review-bundles --batch-source-file ".\total_export_dev\sources.txt" --batch-output-folder ".\total_export_dev\batch_output" --capture-option comments --write-batch-folder-report --overwrite-batch-folder-report --json
 ```
 
+## Reconcile Batch Review Bundles
+
+Batch reconciliation mode is local-only and read-only by default. It compares a local UTF-8 source file against expected review-bundle ZIPs and `.sha256` / `.inspection.json` sidecars.
+
+It does not create packages by default, extract ZIPs, fetch, capture, download, transcribe, scrape, inspect source content, or contact archive services.
+
+```cmd
+python total_export_prepare_cli.py --reconcile-batch-review-bundles --batch-source-file ".\total_export_dev\sources.txt" --batch-output-folder ".\total_export_dev\batch_output" --capture-option comments
+```
+
+```cmd
+python total_export_prepare_cli.py --reconcile-batch-review-bundles --batch-source-file ".\total_export_dev\sources.txt" --batch-output-folder ".\total_export_dev\batch_output" --capture-option comments --json
+```
+
+```cmd
+python total_export_prepare_cli.py --reconcile-batch-review-bundles --batch-source-file ".\total_export_dev\sources.txt" --batch-output-folder ".\total_export_dev\batch_output" --write-reconcile-report --reconcile-report-path ".\total_export_dev\batch_output\TOTAL_EXPORT_BATCH_RECONCILE_REPORT.json" --overwrite-reconcile-report --json
+```
+
 ## Verify Review Bundle
 
 Verification mode is local-only and read-only. It verifies an existing ZIP against its `.sha256` and `.inspection.json` sidecars.

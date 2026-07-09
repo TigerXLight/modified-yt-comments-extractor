@@ -31,6 +31,12 @@ from total_export_batch_review_plan import (
     build_total_export_batch_review_plan,
     build_total_export_batch_review_plan_text,
 )
+from total_export_batch_review_reconcile import (
+    batch_review_reconcile_to_dict,
+    build_total_export_batch_review_reconcile,
+    build_total_export_batch_review_reconcile_text,
+    write_total_export_batch_review_reconcile_report,
+)
 from total_export_review_bundle import (
     build_total_export_review_bundle,
     build_total_export_review_bundle_text,
@@ -126,6 +132,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--write-batch-folder-report", action="store_true")
     parser.add_argument("--overwrite-batch-folder-report", action="store_true")
     parser.add_argument("--plan-batch-review-bundles", action="store_true")
+    parser.add_argument("--reconcile-batch-review-bundles", action="store_true")
+    parser.add_argument("--write-reconcile-report", action="store_true")
+    parser.add_argument("--reconcile-report-path", default="")
+    parser.add_argument("--overwrite-reconcile-report", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -506,6 +516,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.verify_review_bundle_folder,
             args.build_batch_review_bundles,
             args.plan_batch_review_bundles,
+            args.reconcile_batch_review_bundles,
         )
     )
     if args.list_metadata and list_mode_count:
@@ -539,6 +550,41 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(batch_review_plan_to_dict(plan_result), indent=2, sort_keys=True))
         else:
             print(build_total_export_batch_review_plan_text(plan_result))
+        return 0
+
+    if args.reconcile_batch_review_bundles:
+        if not args.batch_source_file:
+            parser.error("--batch-source-file is required when --reconcile-batch-review-bundles is used")
+        if not args.batch_output_folder:
+            parser.error("--batch-output-folder is required when --reconcile-batch-review-bundles is used")
+        if (
+            args.write_readme
+            or args.write_plan_report
+            or args.write_inventory_report
+            or args.review_files
+            or args.full_review_files
+            or args.write_batch_folder_report
+        ):
+            parser.error(
+                "--reconcile-batch-review-bundles is local-only and cannot be "
+                "combined with prepare/build/review write flags"
+            )
+        reconcile_result = build_total_export_batch_review_reconcile(
+            batch_source_file=args.batch_source_file,
+            base_folder=args.batch_output_folder,
+            selected_capture_options=args.capture_option,
+            source_label=args.source_label,
+        )
+        if args.write_reconcile_report:
+            reconcile_result = write_total_export_batch_review_reconcile_report(
+                reconcile_result,
+                report_path=args.reconcile_report_path,
+                overwrite=args.overwrite_reconcile_report,
+            )
+        if args.json:
+            print(json.dumps(batch_review_reconcile_to_dict(reconcile_result), indent=2, sort_keys=True))
+        else:
+            print(build_total_export_batch_review_reconcile_text(reconcile_result))
         return 0
 
     if args.build_batch_review_bundles:

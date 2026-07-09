@@ -1811,6 +1811,203 @@ def run_self_test() -> None:
         assert error_code == 2
         assert "cannot be combined with manual prepare/write/review flags" in batch_full_review_error
 
+        exit_code, reconcile_text_output = _run_cli(
+            [
+                "--reconcile-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_output_folder),
+                "--capture-option",
+                "comments",
+            ]
+        )
+        assert exit_code == 0
+        assert "Total Export batch review reconciliation" in reconcile_text_output
+        assert "Row count: 3" in reconcile_text_output
+        assert "Verification passed count: 3" in reconcile_text_output
+        assert "status=verify_passed" in reconcile_text_output
+
+        exit_code, reconcile_json_output = _run_cli(
+            [
+                "--reconcile-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_output_folder),
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_reconcile = json.loads(reconcile_json_output)
+        assert parsed_reconcile["row_count"] == 3
+        assert parsed_reconcile["verification_passed_count"] == 3
+        assert parsed_reconcile["missing_zip_count"] == 0
+        assert parsed_reconcile["missing_sidecar_count"] == 0
+        assert parsed_reconcile["report_written"] is False
+        assert all(item["status"] == "verify_passed" for item in parsed_reconcile["items"])
+
+        reconcile_missing_output = Path(temp_dir) / "reconcile_missing_output"
+        exit_code, reconcile_missing_json_output = _run_cli(
+            [
+                "--reconcile-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(reconcile_missing_output),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_reconcile_missing = json.loads(reconcile_missing_json_output)
+        assert parsed_reconcile_missing["row_count"] == 3
+        assert parsed_reconcile_missing["missing_zip_count"] == 3
+        assert all(item["status"] == "missing_zip" for item in parsed_reconcile_missing["items"])
+        assert reconcile_missing_output.exists() is False
+
+        reconcile_sidecar_source_file = Path(temp_dir) / "reconcile_sidecar_sources_cli.txt"
+        reconcile_sidecar_source_file.write_text(
+            f"https://www.youtube.com/watch?v={VALID_ID}\treconcile sidecar\n",
+            encoding="utf-8",
+        )
+        reconcile_sidecar_output = Path(temp_dir) / "reconcile_sidecar_output"
+        _run_cli(
+            [
+                "--build-batch-review-bundles",
+                "--batch-source-file",
+                str(reconcile_sidecar_source_file),
+                "--batch-output-folder",
+                str(reconcile_sidecar_output),
+                "--capture-option",
+                "comments",
+            ]
+        )
+        missing_sha = reconcile_sidecar_output / "reconcile_sidecar.zip.sha256"
+        assert missing_sha.is_file()
+        missing_sha.unlink()
+        exit_code, reconcile_sidecar_json_output = _run_cli(
+            [
+                "--reconcile-batch-review-bundles",
+                "--batch-source-file",
+                str(reconcile_sidecar_source_file),
+                "--batch-output-folder",
+                str(reconcile_sidecar_output),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_reconcile_sidecar = json.loads(reconcile_sidecar_json_output)
+        assert parsed_reconcile_sidecar["missing_sidecar_count"] == 1
+        assert parsed_reconcile_sidecar["items"][0]["status"] == "missing_sidecars"
+
+        reconcile_report_path = Path(temp_dir) / "reconcile_report.json"
+        exit_code, reconcile_report_json_output = _run_cli(
+            [
+                "--reconcile-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_output_folder),
+                "--write-reconcile-report",
+                "--reconcile-report-path",
+                str(reconcile_report_path),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_reconcile_report = json.loads(reconcile_report_json_output)
+        assert parsed_reconcile_report["report_written"] is True
+        assert Path(parsed_reconcile_report["report_path"]).is_file()
+
+        exit_code, reconcile_report_existing_json_output = _run_cli(
+            [
+                "--reconcile-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_output_folder),
+                "--write-reconcile-report",
+                "--reconcile-report-path",
+                str(reconcile_report_path),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_reconcile_report_existing = json.loads(reconcile_report_existing_json_output)
+        assert parsed_reconcile_report_existing["report_written"] is False
+        assert any("already exists" in error for error in parsed_reconcile_report_existing["errors"])
+
+        exit_code, reconcile_report_overwrite_json_output = _run_cli(
+            [
+                "--reconcile-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_output_folder),
+                "--write-reconcile-report",
+                "--reconcile-report-path",
+                str(reconcile_report_path),
+                "--overwrite-reconcile-report",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        assert json.loads(reconcile_report_overwrite_json_output)["report_written"] is True
+
+        error_code, reconcile_missing_source_error = _run_cli_error(
+            [
+                "--reconcile-batch-review-bundles",
+                "--batch-output-folder",
+                str(Path(temp_dir) / "reconcile_missing_source"),
+            ]
+        )
+        assert error_code == 2
+        assert (
+            "--batch-source-file is required when --reconcile-batch-review-bundles is used"
+            in reconcile_missing_source_error
+        )
+
+        error_code, reconcile_missing_output_error = _run_cli_error(
+            [
+                "--reconcile-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+            ]
+        )
+        assert error_code == 2
+        assert (
+            "--batch-output-folder is required when --reconcile-batch-review-bundles is used"
+            in reconcile_missing_output_error
+        )
+
+        error_code, reconcile_plan_conflict_error = _run_cli_error(
+            [
+                "--reconcile-batch-review-bundles",
+                "--plan-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_output_folder),
+            ]
+        )
+        assert error_code == 2
+        assert "Use only one list/explain mode at a time" in reconcile_plan_conflict_error
+
+        error_code, reconcile_full_review_error = _run_cli_error(
+            [
+                "--reconcile-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_output_folder),
+                "--full-review-files",
+            ]
+        )
+        assert error_code == 2
+        assert "cannot be combined" in reconcile_full_review_error
+
         error_code, bundle_missing_base_error = _run_cli_error(
             [
                 "--build-review-bundle",
