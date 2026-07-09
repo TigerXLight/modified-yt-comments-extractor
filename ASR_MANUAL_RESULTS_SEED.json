@@ -1,0 +1,435 @@
+{
+  "metadata": {
+    "created_date": "2026-07-10",
+    "known_reference_phrase": "Oh, I've completed the Nicolas Cage event.",
+    "name": "ASR manual results seed",
+    "project_key_terms": [
+      "Kingman",
+      "ZoneX",
+      "Shadowsmith",
+      "Nicolas Cage",
+      "Freckelston",
+      "Caltheris",
+      "Nyxara"
+    ],
+    "schema": "asr_comparison_report.manual_seed.v1",
+    "source": "user-supplied/project-local notes",
+    "warning": "Manual records only. No provider calls, transcription, audio, transcripts, endpoints, or API keys are stored here."
+  },
+  "records": [
+    {
+      "clip_name": "directml_probe_30s.wav",
+      "duration_seconds": 30,
+      "engine_type": "cloud",
+      "key_terms_hit": [
+        "Shadowsmith",
+        "Nicolas Cage",
+        "Caltheris"
+      ],
+      "key_terms_missed": [
+        "Kingman",
+        "ZoneX",
+        "Freckelston",
+        "Nyxara"
+      ],
+      "known_phrase_hit": true,
+      "model": "Scribe v2 with keyterms",
+      "notes": "Best tested online ASR provider result so far. Preserved the critical phrase and found Shadowsmith, Nicolas Cage, and Caltheris, but missed Kingman, ZoneX, Freckelston, and Nyxara. Treat as a leading optional cloud integration candidate, not final truth.",
+      "provider": "ElevenLabs",
+      "raw_wer_percent": 15.05,
+      "record_id": "project_elevenlabs_scribe_v2_keyterms",
+      "reference_accuracy_percent": 84.95,
+      "source": "local_test",
+      "status": "candidate"
+    },
+    {
+      "clip_name": "directml_probe_30s.wav",
+      "duration_seconds": 30,
+      "engine_type": "local",
+      "key_terms_hit": [
+        "Nicolas Cage"
+      ],
+      "key_terms_missed": [
+        "Kingman",
+        "ZoneX",
+        "Freckelston",
+        "Nyxara"
+      ],
+      "known_phrase_hit": false,
+      "model": "Vulkan large-v3-turbo phrase prompt",
+      "notes": "Best tested no-cloud/free local fallback currently recorded on the AMD RX 5700 path. Accuracy is approximate from local docs and remains below the 95% acceptance threshold.",
+      "provider": "whisper.cpp",
+      "record_id": "project_whispercpp_vulkan_large_v3_turbo_phrase_prompt",
+      "reference_accuracy_percent": 74.19,
+      "source": "local_test",
+      "status": "candidate"
+    },
+    {
+      "clip_name": "directml_probe_30s.wav",
+      "duration_seconds": 30,
+      "engine_type": "cloud",
+      "key_terms_hit": [
+        "Shadowsmith",
+        "Nicolas Cage"
+      ],
+      "key_terms_missed": [
+        "Caltheris"
+      ],
+      "known_phrase_hit": false,
+      "model": "Universal-3.5 Pro default/no-context",
+      "notes": "Rejected for integration for now. Below the 95% threshold and did not beat the best local whisper.cpp Vulkan result. Rendered the key phrase as 'it's weird, the Nicolas Cage event' and rendered Caltheris as Calpheon.",
+      "provider": "AssemblyAI",
+      "raw_wer_percent": 29.03,
+      "record_id": "project_assemblyai_universal_3_5_pro_default",
+      "reference_accuracy_percent": 70.97,
+      "source": "local_test",
+      "status": "rejected"
+    },
+    {
+      "clip_name": "directml_probe_30s.wav",
+      "duration_seconds": 30,
+      "engine_type": "cloud",
+      "key_terms_hit": [
+        "Shadowsmith",
+        "Nicolas Cage",
+        "Caltheris"
+      ],
+      "key_terms_missed": [
+        "Kingman",
+        "ZoneX",
+        "Freckelston",
+        "Nyxara"
+      ],
+      "known_phrase_hit": false,
+      "model": "Universal-3.5 Pro prompted/keyterms",
+      "notes": "Rejected for integration for now. Prompting fixed Caltheris but did not improve WER/reference accuracy, and the key phrase still failed.",
+      "provider": "AssemblyAI",
+      "raw_wer_percent": 29.03,
+      "record_id": "project_assemblyai_universal_3_5_pro_prompted",
+      "reference_accuracy_percent": 70.97,
+      "source": "local_test",
+      "status": "rejected"
+    },
+    {
+      "clip_name": "directml_probe_30s.wav",
+      "duration_seconds": 30,
+      "engine_type": "cloud",
+      "key_terms_hit": [
+        "Shadowsmith",
+        "Nicolas Cage",
+        "Caltheris"
+      ],
+      "key_terms_missed": [
+        "Kingman",
+        "ZoneX",
+        "Freckelston",
+        "Nyxara"
+      ],
+      "known_phrase_hit": false,
+      "model": "Nova-3 keyterms",
+      "notes": "Rejected for integration for now. Found Shadowsmith, Nicolas Cage, and Caltheris, but strict reference accuracy was only 66.67% and the critical phrase became 'Fuck. We have Nicolas Cage event'.",
+      "provider": "Deepgram",
+      "raw_wer_percent": 33.33,
+      "record_id": "project_deepgram_nova3_keyterms",
+      "reference_accuracy_percent": 66.67,
+      "source": "local_test",
+      "status": "rejected"
+    },
+    {
+      "clip_name": "directml_probe_30s.wav",
+      "duration_seconds": 30,
+      "engine_type": "cloud",
+      "key_terms_hit": [
+        "Shadowsmith",
+        "Nicolas Cage",
+        "Caltheris"
+      ],
+      "key_terms_missed": [
+        "Kingman",
+        "ZoneX",
+        "Freckelston",
+        "Nyxara"
+      ],
+      "known_phrase_hit": false,
+      "model": "Enhanced model with custom dictionary",
+      "notes": "Rejected for integration for now. Found Shadowsmith, Nicolas Cage, and Caltheris, but strict reference accuracy was only 65.59% and the critical phrase became 'I played the Nicolas Cage event'.",
+      "provider": "Speechmatics",
+      "raw_wer_percent": 34.41,
+      "record_id": "project_speechmatics_enhanced_custom_dictionary",
+      "reference_accuracy_percent": 65.59,
+      "source": "local_test",
+      "status": "rejected"
+    },
+    {
+      "clip_name": "directml_probe_30s.wav",
+      "duration_seconds": 30,
+      "engine_type": "cloud",
+      "key_terms_hit": [
+        "Shadowsmith",
+        "Nicolas Cage"
+      ],
+      "key_terms_missed": [
+        "Kingman",
+        "ZoneX",
+        "Freckelston",
+        "Caltheris",
+        "Nyxara"
+      ],
+      "known_phrase_hit": false,
+      "model": "Speech SDK en-US phrase list",
+      "notes": "Rejected for integration for now. The en-US and en-GB phrase-list runs produced the same score; Azure rendered the key phrase as 'I believe the Nicolas Cage event' and Caltheris as 'Cal fearless'.",
+      "provider": "Azure Speech SDK",
+      "raw_wer_percent": 35.48,
+      "record_id": "project_azure_speech_sdk_en_us_phrase_list",
+      "reference_accuracy_percent": 64.52,
+      "source": "local_test",
+      "status": "rejected"
+    },
+    {
+      "clip_name": "directml_probe_30s.wav",
+      "duration_seconds": 30,
+      "engine_type": "cloud",
+      "key_terms_hit": [
+        "Shadowsmith",
+        "Nicolas Cage"
+      ],
+      "key_terms_missed": [
+        "Kingman",
+        "ZoneX",
+        "Freckelston",
+        "Caltheris",
+        "Nyxara"
+      ],
+      "known_phrase_hit": false,
+      "model": "Speech SDK en-GB phrase list",
+      "notes": "Rejected for integration for now. Same result as the en-US phrase-list run.",
+      "provider": "Azure Speech SDK",
+      "raw_wer_percent": 35.48,
+      "record_id": "project_azure_speech_sdk_en_gb_phrase_list",
+      "reference_accuracy_percent": 64.52,
+      "source": "local_test",
+      "status": "rejected"
+    },
+    {
+      "clip_name": "directml_probe_30s.wav",
+      "duration_seconds": 30,
+      "engine_type": "cloud",
+      "key_terms_hit": [],
+      "key_terms_missed": [
+        "Kingman",
+        "ZoneX",
+        "Shadowsmith",
+        "Nicolas Cage",
+        "Freckelston",
+        "Caltheris",
+        "Nyxara"
+      ],
+      "known_phrase_hit": false,
+      "model": "v1 video useEnhanced phrase hints",
+      "notes": "Rejected for integration for now. Best Google v1 phrase-hint run, but it failed the critical phrase and all tracked important terms.",
+      "provider": "Google Speech-to-Text",
+      "raw_wer_percent": 38.71,
+      "record_id": "project_google_stt_video_enhanced_phrases",
+      "reference_accuracy_percent": 61.29,
+      "source": "local_test",
+      "status": "rejected"
+    },
+    {
+      "clip_name": "directml_probe_30s.wav",
+      "duration_seconds": 30,
+      "engine_type": "cloud",
+      "key_terms_hit": [],
+      "key_terms_missed": [
+        "Kingman",
+        "ZoneX",
+        "Shadowsmith",
+        "Nicolas Cage",
+        "Freckelston",
+        "Caltheris",
+        "Nyxara"
+      ],
+      "known_phrase_hit": false,
+      "model": "cohere-transcribe-03-2026",
+      "notes": "Rejected for integration for now. Missed all tracked important terms and rendered the key phrase as 'I believe the Nicholas Cage event'.",
+      "provider": "Cohere",
+      "raw_wer_percent": 41.94,
+      "record_id": "project_cohere_transcribe_03_2026",
+      "reference_accuracy_percent": 58.06,
+      "source": "local_test",
+      "status": "rejected"
+    },
+    {
+      "clip_name": "directml_probe_30s.wav",
+      "duration_seconds": 30,
+      "engine_type": "cloud",
+      "key_terms_hit": [
+        "Nicolas Cage"
+      ],
+      "key_terms_missed": [
+        "Kingman",
+        "ZoneX",
+        "Shadowsmith",
+        "Freckelston",
+        "Caltheris",
+        "Nyxara"
+      ],
+      "known_phrase_hit": false,
+      "model": "v1 latest_long phrase hints",
+      "notes": "Rejected for integration for now. Worse than Google video enhanced and failed the critical phrase plus key glossary terms.",
+      "provider": "Google Speech-to-Text",
+      "raw_wer_percent": 49.46,
+      "record_id": "project_google_stt_latest_long_phrases",
+      "reference_accuracy_percent": 50.54,
+      "source": "local_test",
+      "status": "rejected"
+    },
+    {
+      "clip_name": "directml_probe_30s.wav",
+      "duration_seconds": 30,
+      "engine_type": "cloud",
+      "model": "Batch transcription with custom vocabulary",
+      "notes": "Blocked before any transcription job could run. CreateVocabulary failed in eu-west-2 / Europe London with SubscriptionRequiredException: The AWS Access Key Id needs a subscription for the service. No transcript candidate or score was produced, so AWS is not ranked against tested providers.",
+      "provider": "AWS Transcribe",
+      "record_id": "project_aws_transcribe_custom_vocabulary_blocked",
+      "source": "local_test",
+      "status": "blocked"
+    },
+    {
+      "clip_name": "Voicewriter leaderboard - Overall",
+      "cost_per_hour_usd": 0.36,
+      "engine_type": "cloud",
+      "formatted_wer_percent": 12.2,
+      "model": "Voicewriter raw/formatted WER overall",
+      "notes": "User-supplied external Voicewriter leaderboard note. Raw WER mean 5.4%, std dev 4.6%; formatted WER mean 12.2%, std dev 4.8%. Not locally scored on the project reference clip.",
+      "provider": "GPT-4o Transcribe",
+      "raw_wer_percent": 5.4,
+      "record_id": "external_voicewriter_gpt4o_overall",
+      "source": "external_leaderboard",
+      "status": "needs_review"
+    },
+    {
+      "clip_name": "Voicewriter leaderboard - Clean",
+      "cost_per_hour_usd": 0.36,
+      "engine_type": "cloud",
+      "formatted_wer_percent": 13.5,
+      "model": "Voicewriter raw/formatted WER clean",
+      "notes": "User-supplied external Voicewriter leaderboard note. Raw WER mean 5.5%, std dev 4.9%; formatted WER mean 13.5%, std dev 5.0%. Not locally scored on the project reference clip.",
+      "provider": "GPT-4o Transcribe",
+      "raw_wer_percent": 5.5,
+      "record_id": "external_voicewriter_gpt4o_clean",
+      "source": "external_leaderboard",
+      "status": "needs_review"
+    },
+    {
+      "clip_name": "Voicewriter leaderboard - Noisy",
+      "cost_per_hour_usd": 0.36,
+      "engine_type": "cloud",
+      "formatted_wer_percent": 14.2,
+      "model": "Voicewriter raw/formatted WER noisy",
+      "notes": "User-supplied external Voicewriter leaderboard note. Raw WER mean 5.8%, std dev 4.5%; formatted WER mean 14.2%, std dev 5.0%. Not locally scored on the project reference clip.",
+      "provider": "GPT-4o Transcribe",
+      "raw_wer_percent": 5.8,
+      "record_id": "external_voicewriter_gpt4o_noisy",
+      "source": "external_leaderboard",
+      "status": "needs_review"
+    },
+    {
+      "clip_name": "Voicewriter leaderboard - Accented",
+      "cost_per_hour_usd": 0.22,
+      "engine_type": "cloud",
+      "formatted_wer_percent": 12.4,
+      "model": "Voicewriter raw/formatted WER accented",
+      "notes": "User-supplied external Voicewriter leaderboard note. Raw WER mean 4.0%, std dev 2.5%; formatted WER mean 12.4%, std dev 4.4%. Not locally scored on the project reference clip.",
+      "provider": "Gemini 2.5 Pro",
+      "raw_wer_percent": 4.0,
+      "record_id": "external_voicewriter_gemini_2_5_pro_accented",
+      "source": "external_leaderboard",
+      "status": "needs_review"
+    },
+    {
+      "clip_name": "Voicewriter leaderboard - Specialist",
+      "cost_per_hour_usd": 0.36,
+      "engine_type": "cloud",
+      "formatted_wer_percent": 7.9,
+      "model": "Voicewriter raw/formatted WER specialist",
+      "notes": "User-supplied external Voicewriter leaderboard note. Raw WER mean 5.3%, std dev 6.2%; formatted WER mean 7.9%, std dev 0.8%. Not locally scored on the project reference clip.",
+      "provider": "GPT-4o Transcribe",
+      "raw_wer_percent": 5.3,
+      "record_id": "external_voicewriter_gpt4o_specialist",
+      "source": "external_leaderboard",
+      "status": "needs_review"
+    },
+    {
+      "engine_type": "cloud",
+      "model": "Instagram-adjacent STT observation / SeamlessM4T v2 leads",
+      "notes": "User observed Instagram speech-to-text was fast and mostly correct. Related leads preserved for later research: https://seamless.metademolab.com/demo ; https://www.edenai.co/ ; https://huggingface.co/docs/transformers/en/model_doc/seamless_m4t_v2 . Not locally scored and not integrated.",
+      "provider": "Meta Seamless / Instagram-adjacent",
+      "record_id": "lead_meta_seamless_instagram_adjacent",
+      "source": "user_observation",
+      "status": "candidate"
+    },
+    {
+      "engine_type": "cloud",
+      "model": "VillFlowSTT Groq-backed Windows dictation lead",
+      "notes": "User-supplied Groq/VillFlowSTT lead: https://github.com/SreekarGpalli/VillFlowSTT/releases . Reddit quote describes it as a Windows dictation tool powered by Groq. Not locally scored and not integrated.",
+      "provider": "Groq / VillFlowSTT",
+      "record_id": "lead_groq_villflowstt",
+      "source": "user_observation",
+      "status": "candidate"
+    },
+    {
+      "engine_type": "cloud",
+      "model": "Non-streaming speech-to-text leaderboard lead",
+      "notes": "User-supplied benchmark lead: https://artificialanalysis.ai/speech-to-text/non-streaming . Preserve as a research lead only; verify before product decisions.",
+      "provider": "Artificial Analysis STT leaderboard",
+      "record_id": "lead_artificial_analysis_stt_leaderboard",
+      "source": "external_leaderboard",
+      "status": "needs_review"
+    },
+    {
+      "engine_type": "unknown",
+      "model": "Open ASR leaderboard lead",
+      "notes": "User-supplied benchmark lead: https://huggingface.co/spaces/hf-audio/open_asr_leaderboard . Preserve as a research lead only; verify before product decisions.",
+      "provider": "Hugging Face Open ASR Leaderboard",
+      "record_id": "lead_hugging_face_open_asr_leaderboard",
+      "source": "external_leaderboard",
+      "status": "needs_review"
+    },
+    {
+      "engine_type": "cloud",
+      "model": "Voice evals article lead",
+      "notes": "User-supplied benchmark/reference lead: https://www.braintrust.dev/blog/voice-evals-stt . Preserve as a research lead only; verify before product decisions.",
+      "provider": "Braintrust voice evals",
+      "record_id": "lead_braintrust_voice_evals",
+      "source": "external_leaderboard",
+      "status": "needs_review"
+    },
+    {
+      "engine_type": "unknown",
+      "model": "ASR workflow lead",
+      "notes": "User-supplied lead: https://github.com/Kochava-Studios/witsy . Not locally scored and not integrated.",
+      "provider": "Witsy",
+      "record_id": "lead_witsy",
+      "source": "user_observation",
+      "status": "candidate"
+    },
+    {
+      "engine_type": "cloud",
+      "model": "ASR workflow lead",
+      "notes": "User-supplied lead: https://console.kolwrite.com/ . Not locally scored and not integrated.",
+      "provider": "Kolwrite",
+      "record_id": "lead_kolwrite",
+      "source": "user_observation",
+      "status": "candidate"
+    },
+    {
+      "engine_type": "browser",
+      "model": "WebAssembly/browser streaming leads",
+      "notes": "User-supplied local/offline/browser/STT leads: wasm-speech-streaming, efficient-nlp/wasm-streaming-speech, moshi, and lucky-bai/transformers. Not locally scored and not integrated.",
+      "provider": "WebAssembly/browser streaming STT leads",
+      "record_id": "lead_webassembly_browser_streaming",
+      "source": "user_observation",
+      "status": "candidate"
+    }
+  ]
+}
