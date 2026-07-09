@@ -60,6 +60,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Total Export README/marker helper added for explicit package-folder explanation and duplicate-safe local manifest registration without fetch/capture/network/GUI behavior.
 - Total Export prepare helper/CLI can optionally write/register the README marker file without changing default non-wired fetch/capture/network behavior.
 - Total Export prepare helper/CLI now supports final local manifest validation after summary/README review-file registration without fetch/capture/network/GUI behavior.
+- Total Export inventory helper added for local package file-vs-manifest review without fetch/capture/network/GUI behavior.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
