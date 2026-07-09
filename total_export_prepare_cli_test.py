@@ -933,6 +933,221 @@ def run_self_test() -> None:
         assert parsed_missing_sidecar["zip_status"] == "missing_zip"
         assert any("inspection status" in error for error in parsed_missing_sidecar["errors"])
 
+        exit_code, bundle_output = _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli review bundle",
+                "--capture-option",
+                "comments",
+            ]
+        )
+        assert exit_code == 0
+        assert "Total Export review bundle" in bundle_output
+        assert "ZIP created: yes" in bundle_output
+        assert "ZIP SHA256 sidecar written: yes" in bundle_output
+        bundle_package_folder = str(Path(temp_dir) / "cli_review_bundle")
+        bundle_zip_path = Path(f"{bundle_package_folder}.zip")
+        assert Path(bundle_package_folder).is_dir()
+        assert bundle_zip_path.is_file()
+        assert Path(f"{bundle_zip_path}.sha256").is_file()
+        assert Path(f"{bundle_zip_path}.inspection.json").is_file()
+
+        exit_code, bundle_json_output = _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli review bundle json",
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_bundle = json.loads(bundle_json_output)
+        assert parsed_bundle["zip_created"] is True
+        assert parsed_bundle["zip_sha256"]
+        assert parsed_bundle["package_inspection_status"] == "ok"
+        assert parsed_bundle["zip_inspection_status"] == "ok"
+        assert parsed_bundle["zip_sidecar_sha256_written"] is True
+        assert parsed_bundle["zip_sidecar_json_written"] is True
+        assert Path(parsed_bundle["package_folder"]).is_dir()
+        assert Path(parsed_bundle["zip_path"]).is_file()
+
+        custom_bundle_zip_path = str(Path(temp_dir) / "custom_bundle" / "bundle.zip")
+        exit_code, custom_bundle_json_output = _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli review bundle custom",
+                "--capture-option",
+                "comments",
+                "--bundle-zip-path",
+                custom_bundle_zip_path,
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_custom_bundle = json.loads(custom_bundle_json_output)
+        assert parsed_custom_bundle["zip_created"] is True
+        assert parsed_custom_bundle["zip_path"] == custom_bundle_zip_path
+        assert Path(custom_bundle_zip_path).is_file()
+
+        exit_code, no_sidecar_bundle_json_output = _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli review bundle no sidecars",
+                "--capture-option",
+                "comments",
+                "--no-bundle-sidecars",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_no_sidecar_bundle = json.loads(no_sidecar_bundle_json_output)
+        assert parsed_no_sidecar_bundle["zip_created"] is True
+        assert parsed_no_sidecar_bundle["zip_sidecar_sha256_written"] is False
+        assert parsed_no_sidecar_bundle["zip_sidecar_json_written"] is False
+        assert parsed_no_sidecar_bundle["zip_sidecar_sha256_path"] == ""
+        assert parsed_no_sidecar_bundle["zip_sidecar_json_path"] == ""
+
+        exit_code, existing_bundle_json_output = _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli review bundle",
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_existing_bundle = json.loads(existing_bundle_json_output)
+        assert parsed_existing_bundle["zip_created"] is False
+        assert any("already exists" in error for error in parsed_existing_bundle["errors"])
+
+        exit_code, overwrite_bundle_json_output = _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli review bundle",
+                "--capture-option",
+                "comments",
+                "--overwrite-bundle-zip",
+                "--overwrite-sidecars",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_overwrite_bundle = json.loads(overwrite_bundle_json_output)
+        assert parsed_overwrite_bundle["zip_created"] is True
+        assert parsed_overwrite_bundle["zip_sidecar_sha256_written"] is True
+        assert parsed_overwrite_bundle["zip_sidecar_json_written"] is True
+        assert parsed_overwrite_bundle["errors"] == []
+
+        hashed_bundle_sidecar_path = str(
+            Path(temp_dir) / "cli_review_bundle_hashed.zip.inspection.json"
+        )
+        exit_code, hashed_bundle_json_output = _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli review bundle hashed",
+                "--capture-option",
+                "comments",
+                "--bundle-zip-path",
+                str(Path(temp_dir) / "cli_review_bundle_hashed.zip"),
+                "--include-zip-entries",
+                "--hash-zip-entries",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_hashed_bundle = json.loads(hashed_bundle_json_output)
+        assert parsed_hashed_bundle["zip_sidecar_json_written"] is True
+        hashed_bundle_sidecar_path = parsed_hashed_bundle["zip_sidecar_json_path"] or hashed_bundle_sidecar_path
+        hashed_bundle_sidecar = json.loads(
+            Path(hashed_bundle_sidecar_path).read_text(encoding="utf-8")
+        )
+        assert any(
+            entry["sha256"]
+            for entry in hashed_bundle_sidecar["zip_inspection"]["entries"]
+            if not entry["is_dir"]
+        )
+
+        error_code, bundle_missing_base_error = _run_cli_error(
+            [
+                "--build-review-bundle",
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+            ]
+        )
+        assert error_code == 2
+        assert "--base-folder is required when --build-review-bundle is used" in bundle_missing_base_error
+
+        error_code, bundle_missing_source_error = _run_cli_error(
+            ["--build-review-bundle", "--base-folder", temp_dir]
+        )
+        assert error_code == 2
+        assert "--source-url is required when --build-review-bundle is used" in bundle_missing_source_error
+
+        error_code, bundle_inspect_zip_error = _run_cli_error(
+            [
+                "--build-review-bundle",
+                "--inspect-zip",
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--zip-path",
+                str(default_zip_path),
+            ]
+        )
+        assert error_code == 2
+        assert "Use only one list/explain mode at a time" in bundle_inspect_zip_error
+
+        error_code, bundle_full_review_error = _run_cli_error(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--full-review-files",
+            ]
+        )
+        assert error_code == 2
+        assert "implies full review files" in bundle_full_review_error
+
         error_code, inspect_zip_missing_path_error = _run_cli_error(["--inspect-zip"])
         assert error_code == 2
         assert "--zip-path is required when --inspect-zip is used" in inspect_zip_missing_path_error

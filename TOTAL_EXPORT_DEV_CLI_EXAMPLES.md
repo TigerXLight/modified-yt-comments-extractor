@@ -190,6 +190,26 @@ python total_export_prepare_cli.py --write-zip-sidecars --zip-path ".\total_expo
 python total_export_prepare_cli.py --write-zip-sidecars --zip-path ".\total_export_dev\full_review_files_shortcut.zip" --include-zip-entries --hash-zip-entries --overwrite-sidecars --json
 ```
 
+## Build Review Bundle
+
+Review bundle mode is local-only. It prepares a package shell with full review files, inspects the package, creates a deterministic local ZIP, inspects the ZIP, and writes ZIP sidecars.
+
+It does not fetch, capture, download, transcribe, scrape, or inspect source content. It does not extract ZIPs and is not external archive submit/check behavior.
+
+Use `--overwrite-bundle-zip` and `--overwrite-sidecars` when rebuilding the same bundle. Use `--no-bundle-sidecars` to skip sidecar generation. Use `--bundle-zip-path` for a custom ZIP path.
+
+```cmd
+python total_export_prepare_cli.py --build-review-bundle --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --package-id "review bundle shortcut" --capture-option comments
+```
+
+```cmd
+python total_export_prepare_cli.py --build-review-bundle --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --package-id "review bundle json" --capture-option comments --json
+```
+
+```cmd
+python total_export_prepare_cli.py --build-review-bundle --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --package-id "review bundle overwrite" --capture-option comments --overwrite-bundle-zip --overwrite-sidecars --json
+```
+
 ## No-Registration Example
 
 ```cmd
@@ -209,6 +229,7 @@ python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-u
 - `--zip-package`: Creates a deterministic local ZIP for an existing package folder after local inspection.
 - `--inspect-zip`: Inspects an existing local ZIP without extracting it.
 - `--write-zip-sidecars`: Writes local `.sha256` and `.inspection.json` sidecars for an existing ZIP.
+- `--build-review-bundle`: Prepares full local review files, inspects the package, creates and inspects a ZIP, and optionally writes ZIP sidecars.
 - `--json`: Prints deterministic JSON output instead of plain text.
 - `--no-final-validation`: Skips final local manifest/package validation.
 - `--no-create-asset-folders`: Avoids creating empty asset subfolders.

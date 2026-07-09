@@ -21,6 +21,11 @@ from total_export_package_zip import (
 )
 from total_export_prepare import PreparedTotalExportResult
 from total_export_prepare import prepare_total_export_with_summary
+from total_export_review_bundle import (
+    build_total_export_review_bundle,
+    build_total_export_review_bundle_text,
+    review_bundle_result_to_dict,
+)
 from total_export_zip_inspect import (
     build_total_export_zip_inspection_text,
     inspect_total_export_zip,
@@ -80,6 +85,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--zip-inspection-json-path", default="")
     parser.add_argument("--overwrite-sidecars", action="store_true")
     parser.add_argument("--allow-non-ok-zip-sidecars", action="store_true")
+    parser.add_argument("--build-review-bundle", action="store_true")
+    parser.add_argument("--bundle-zip-path", default="")
+    parser.add_argument("--overwrite-bundle-zip", action="store_true")
+    parser.add_argument("--no-bundle-sidecars", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -455,12 +464,51 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.zip_package,
             args.inspect_zip,
             args.write_zip_sidecars,
+            args.build_review_bundle,
         )
     )
     if args.list_metadata and list_mode_count:
         parser.error("--list-metadata cannot be combined with other list/explain modes")
     if list_mode_count > 1:
         parser.error("Use only one list/explain mode at a time")
+
+    if args.build_review_bundle:
+        if not args.base_folder:
+            parser.error("--base-folder is required when --build-review-bundle is used")
+        if not args.source_url:
+            parser.error("--source-url is required when --build-review-bundle is used")
+        if (
+            args.write_readme
+            or args.write_plan_report
+            or args.write_inventory_report
+            or args.review_files
+            or args.full_review_files
+        ):
+            parser.error(
+                "--build-review-bundle implies full review files and cannot be "
+                "combined with manual prepare/write/review flags"
+            )
+        bundle_result = build_total_export_review_bundle(
+            base_folder=args.base_folder,
+            source_url=args.source_url,
+            source_label=args.source_label,
+            title=args.title,
+            package_id=args.package_id,
+            selected_capture_options=args.capture_option,
+            user_terms=args.term,
+            create_asset_folders=not args.no_create_asset_folders,
+            zip_path=args.bundle_zip_path,
+            overwrite_zip=args.overwrite_bundle_zip,
+            write_sidecars=not args.no_bundle_sidecars,
+            overwrite_sidecars=args.overwrite_sidecars,
+            include_zip_entries=args.include_zip_entries,
+            hash_zip_entries=args.hash_zip_entries,
+        )
+        if args.json:
+            print(json.dumps(review_bundle_result_to_dict(bundle_result), indent=2, sort_keys=True))
+        else:
+            print(build_total_export_review_bundle_text(bundle_result))
+        return 0
 
     if args.inspect_package:
         if not args.package_folder:
