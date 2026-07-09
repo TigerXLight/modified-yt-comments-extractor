@@ -26,6 +26,11 @@ from total_export_zip_inspect import (
     inspect_total_export_zip,
     total_export_zip_inspection_to_dict,
 )
+from total_export_zip_sidecar import (
+    build_total_export_zip_sidecar_text,
+    write_total_export_zip_sidecars,
+    zip_sidecar_result_to_dict,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -70,6 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--inspect-zip", action="store_true")
     parser.add_argument("--include-zip-entries", action="store_true")
     parser.add_argument("--hash-zip-entries", action="store_true")
+    parser.add_argument("--write-zip-sidecars", action="store_true")
+    parser.add_argument("--zip-sha256-path", default="")
+    parser.add_argument("--zip-inspection-json-path", default="")
+    parser.add_argument("--overwrite-sidecars", action="store_true")
+    parser.add_argument("--allow-non-ok-zip-sidecars", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -444,6 +454,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.inspect_package,
             args.zip_package,
             args.inspect_zip,
+            args.write_zip_sidecars,
         )
     )
     if args.list_metadata and list_mode_count:
@@ -525,6 +536,35 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         else:
             print(build_total_export_zip_inspection_text(zip_inspection))
+        return 0
+
+    if args.write_zip_sidecars:
+        if not args.zip_path:
+            parser.error("--zip-path is required when --write-zip-sidecars is used")
+        if (
+            args.write_readme
+            or args.write_plan_report
+            or args.write_inventory_report
+            or args.review_files
+            or args.full_review_files
+        ):
+            parser.error(
+                "--write-zip-sidecars works on existing local ZIPs and cannot be "
+                "combined with prepare/write/review flags"
+            )
+        sidecar_result = write_total_export_zip_sidecars(
+            args.zip_path,
+            sha256_path=args.zip_sha256_path,
+            json_path=args.zip_inspection_json_path,
+            overwrite=args.overwrite_sidecars,
+            require_zip_status_ok=not args.allow_non_ok_zip_sidecars,
+            include_entries=args.include_zip_entries,
+            hash_entries=args.hash_zip_entries,
+        )
+        if args.json:
+            print(json.dumps(zip_sidecar_result_to_dict(sidecar_result), indent=2, sort_keys=True))
+        else:
+            print(build_total_export_zip_sidecar_text(sidecar_result))
         return 0
 
     if args.list_metadata:

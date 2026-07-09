@@ -74,6 +74,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Total Export prepare CLI can inspect existing local package folders in text/JSON without creating files or performing fetch/capture/network/GUI behavior.
 - Total Export prepare CLI can create deterministic local ZIPs for existing inspected package folders without fetch/capture/network/GUI behavior or external archive submission.
 - Total Export prepare CLI can inspect local Total Export ZIP files in text/JSON without extraction, fetch/capture/network/GUI behavior, or external archive access.
+- Total Export prepare CLI can write local `.sha256` and `.inspection.json` sidecars for inspected ZIPs without extraction, fetch/capture/network/GUI behavior, or external archive access.
 - Local Total Export dev output folders are ignored to avoid committing generated package checks.
 - Future source adapter pipeline:
   - Source URL.

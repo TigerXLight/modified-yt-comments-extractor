@@ -172,6 +172,24 @@ python total_export_prepare_cli.py --inspect-zip --zip-path ".\total_export_dev\
 python total_export_prepare_cli.py --inspect-zip --zip-path ".\total_export_dev\full_review_files_shortcut.zip" --include-zip-entries --hash-zip-entries --json
 ```
 
+## Write ZIP Sidecars
+
+ZIP sidecar mode is local-only. It writes `.sha256` and `.inspection.json` files for an existing ZIP, inspects the ZIP before writing sidecars, and does not extract by default.
+
+It does not fetch, capture, download, transcribe, or inspect source content. It is not external archive submit/check behavior. Default paths are `<zip>.sha256` and `<zip>.inspection.json`. Use `--overwrite-sidecars` to replace existing sidecars. Use `--include-zip-entries` and `--hash-zip-entries` to include entry-level hashes in the JSON sidecar.
+
+```cmd
+python total_export_prepare_cli.py --write-zip-sidecars --zip-path ".\total_export_dev\full_review_files_shortcut.zip"
+```
+
+```cmd
+python total_export_prepare_cli.py --write-zip-sidecars --zip-path ".\total_export_dev\full_review_files_shortcut.zip" --overwrite-sidecars --json
+```
+
+```cmd
+python total_export_prepare_cli.py --write-zip-sidecars --zip-path ".\total_export_dev\full_review_files_shortcut.zip" --include-zip-entries --hash-zip-entries --overwrite-sidecars --json
+```
+
 ## No-Registration Example
 
 ```cmd
@@ -190,6 +208,7 @@ python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-u
 - `--full-review-files`: Writes README, source-plan report, and inventory report files, then prints inventory output.
 - `--zip-package`: Creates a deterministic local ZIP for an existing package folder after local inspection.
 - `--inspect-zip`: Inspects an existing local ZIP without extracting it.
+- `--write-zip-sidecars`: Writes local `.sha256` and `.inspection.json` sidecars for an existing ZIP.
 - `--json`: Prints deterministic JSON output instead of plain text.
 - `--no-final-validation`: Skips final local manifest/package validation.
 - `--no-create-asset-folders`: Avoids creating empty asset subfolders.

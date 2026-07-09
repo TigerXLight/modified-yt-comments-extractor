@@ -813,6 +813,100 @@ def run_self_test() -> None:
             if not entry["is_dir"]
         )
 
+        exit_code, sidecar_output = _run_cli(
+            [
+                "--write-zip-sidecars",
+                "--zip-path",
+                str(default_zip_path),
+            ]
+        )
+        assert exit_code == 0
+        assert "Total Export ZIP sidecars" in sidecar_output
+        assert "SHA256 written: yes" in sidecar_output
+        assert "JSON written: yes" in sidecar_output
+        default_sha256_path = Path(f"{default_zip_path}.sha256")
+        default_json_sidecar_path = Path(f"{default_zip_path}.inspection.json")
+        assert default_sha256_path.is_file()
+        assert default_json_sidecar_path.is_file()
+
+        exit_code, sidecar_json_output = _run_cli(
+            [
+                "--write-zip-sidecars",
+                "--zip-path",
+                str(default_zip_path),
+                "--json",
+                "--overwrite-sidecars",
+            ]
+        )
+        assert exit_code == 0
+        parsed_sidecar = json.loads(sidecar_json_output)
+        assert parsed_sidecar["sha256_written"] is True
+        assert parsed_sidecar["json_written"] is True
+        assert parsed_sidecar["zip_sha256"]
+        assert parsed_sidecar["zip_status"] == "ok"
+
+        custom_sha256_path = str(Path(temp_dir) / "custom_cli.sha256")
+        custom_inspection_json_path = str(Path(temp_dir) / "custom_cli.inspection.json")
+        exit_code, custom_sidecar_json_output = _run_cli(
+            [
+                "--write-zip-sidecars",
+                "--zip-path",
+                str(default_zip_path),
+                "--zip-sha256-path",
+                custom_sha256_path,
+                "--zip-inspection-json-path",
+                custom_inspection_json_path,
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_custom_sidecar = json.loads(custom_sidecar_json_output)
+        assert parsed_custom_sidecar["sha256_written"] is True
+        assert parsed_custom_sidecar["json_written"] is True
+        assert parsed_custom_sidecar["sha256_path"] == custom_sha256_path
+        assert parsed_custom_sidecar["json_path"] == custom_inspection_json_path
+        assert Path(custom_sha256_path).is_file()
+        assert Path(custom_inspection_json_path).is_file()
+
+        exit_code, existing_sidecar_json_output = _run_cli(
+            [
+                "--write-zip-sidecars",
+                "--zip-path",
+                str(default_zip_path),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_existing_sidecar = json.loads(existing_sidecar_json_output)
+        assert parsed_existing_sidecar["sha256_written"] is False
+        assert parsed_existing_sidecar["json_written"] is False
+        assert any("already exists" in error for error in parsed_existing_sidecar["errors"])
+
+        hashed_sidecar_json_path = str(Path(temp_dir) / "hashed_entries.inspection.json")
+        exit_code, hashed_sidecar_json_output = _run_cli(
+            [
+                "--write-zip-sidecars",
+                "--zip-path",
+                str(default_zip_path),
+                "--zip-sha256-path",
+                str(Path(temp_dir) / "hashed_entries.sha256"),
+                "--zip-inspection-json-path",
+                hashed_sidecar_json_path,
+                "--include-zip-entries",
+                "--hash-zip-entries",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_hashed_sidecar = json.loads(hashed_sidecar_json_output)
+        assert parsed_hashed_sidecar["json_written"] is True
+        hashed_sidecar = json.loads(Path(hashed_sidecar_json_path).read_text(encoding="utf-8"))
+        assert any(
+            entry["sha256"]
+            for entry in hashed_sidecar["zip_inspection"]["entries"]
+            if not entry["is_dir"]
+        )
+
         exit_code, inspect_missing_zip_json_output = _run_cli(
             [
                 "--inspect-zip",
@@ -824,9 +918,28 @@ def run_self_test() -> None:
         assert exit_code == 0
         assert json.loads(inspect_missing_zip_json_output)["status"] == "missing_zip"
 
+        exit_code, missing_sidecar_json_output = _run_cli(
+            [
+                "--write-zip-sidecars",
+                "--zip-path",
+                str(Path(temp_dir) / "missing_sidecar.zip"),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_missing_sidecar = json.loads(missing_sidecar_json_output)
+        assert parsed_missing_sidecar["sha256_written"] is False
+        assert parsed_missing_sidecar["json_written"] is False
+        assert parsed_missing_sidecar["zip_status"] == "missing_zip"
+        assert any("inspection status" in error for error in parsed_missing_sidecar["errors"])
+
         error_code, inspect_zip_missing_path_error = _run_cli_error(["--inspect-zip"])
         assert error_code == 2
         assert "--zip-path is required when --inspect-zip is used" in inspect_zip_missing_path_error
+
+        error_code, sidecar_missing_path_error = _run_cli_error(["--write-zip-sidecars"])
+        assert error_code == 2
+        assert "--zip-path is required when --write-zip-sidecars is used" in sidecar_missing_path_error
 
         error_code, inspect_zip_zip_package_error = _run_cli_error(
             [
@@ -841,6 +954,17 @@ def run_self_test() -> None:
         assert error_code == 2
         assert "Use only one list/explain mode at a time" in inspect_zip_zip_package_error
 
+        error_code, sidecar_inspect_zip_error = _run_cli_error(
+            [
+                "--write-zip-sidecars",
+                "--inspect-zip",
+                "--zip-path",
+                str(default_zip_path),
+            ]
+        )
+        assert error_code == 2
+        assert "Use only one list/explain mode at a time" in sidecar_inspect_zip_error
+
         error_code, inspect_zip_write_flag_error = _run_cli_error(
             [
                 "--inspect-zip",
@@ -851,6 +975,17 @@ def run_self_test() -> None:
         )
         assert error_code == 2
         assert "read-only" in inspect_zip_write_flag_error
+
+        error_code, sidecar_write_flag_error = _run_cli_error(
+            [
+                "--write-zip-sidecars",
+                "--zip-path",
+                str(default_zip_path),
+                "--full-review-files",
+            ]
+        )
+        assert error_code == 2
+        assert "cannot be combined with prepare/write/review flags" in sidecar_write_flag_error
 
         extra_file = Path(full_review_package_folder) / "extra_local_note.txt"
         extra_file.write_text("local note", encoding="utf-8")
