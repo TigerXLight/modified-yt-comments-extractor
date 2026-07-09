@@ -1,11 +1,28 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from source_capture_plan import SourceCapturePlan
+from total_export_assets import (
+    asset_destination_path,
+    export_asset_for_file,
+    register_asset_in_manifest_file,
+    safe_asset_filename,
+)
+from total_export_manifest import ASSET_TEXT_EXPORT
 from total_export_manifest import TotalExportManifest
 from total_export_validation import ManifestValidationResult
 from total_export_workflow import TotalExportWorkflowResult
+
+
+@dataclass(frozen=True)
+class TotalExportSummaryFileResult:
+    summary_path: str
+    registered: bool = False
+    manifest_path: str = ""
+    asset_path: str = ""
+    warnings: tuple[str, ...] = ()
 
 
 def _format_sequence(values: object) -> str:
@@ -137,3 +154,46 @@ def write_text_summary(text: str, output_path: str) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return str(path)
+
+
+def write_workflow_summary_file(
+    *,
+    workflow_result: TotalExportWorkflowResult,
+    filename: str = "TOTAL_EXPORT_SUMMARY.txt",
+    register_in_manifest: bool = True,
+) -> TotalExportSummaryFileResult:
+    package_result = workflow_result.package_result.package_result
+    package_folder = package_result.package_folder
+    if not package_folder:
+        raise ValueError("Workflow result does not include a package folder.")
+
+    safe_filename = safe_asset_filename(filename)
+    summary_path = asset_destination_path(
+        package_folder=package_folder,
+        asset_type=ASSET_TEXT_EXPORT,
+        filename=safe_filename,
+    )
+    write_text_summary(summarize_total_export_workflow(workflow_result), summary_path)
+
+    if not register_in_manifest:
+        return TotalExportSummaryFileResult(
+            summary_path=summary_path,
+            registered=False,
+            manifest_path=workflow_result.package_result.manifest_path,
+        )
+
+    asset = export_asset_for_file(
+        file_path=summary_path,
+        asset_type=ASSET_TEXT_EXPORT,
+        package_folder=package_folder,
+    )
+    register_asset_in_manifest_file(
+        manifest_path=workflow_result.package_result.manifest_path,
+        asset=asset,
+    )
+    return TotalExportSummaryFileResult(
+        summary_path=summary_path,
+        registered=True,
+        manifest_path=workflow_result.package_result.manifest_path,
+        asset_path=asset.path,
+    )

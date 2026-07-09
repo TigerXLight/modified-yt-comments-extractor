@@ -5,12 +5,14 @@ from capture_options import CAPTURE_ARCHIVE_CHECK, CAPTURE_COMMENTS
 from evidence_schema import EvidenceProvenance
 from source_capture_plan import build_source_capture_plan
 from total_export_manifest import ExportAsset, TotalExportManifest
+from total_export_manifest import read_manifest_json
 from total_export_summary import (
     summarize_manifest_validation,
     summarize_source_capture_plan,
     summarize_total_export_manifest,
     summarize_total_export_workflow,
     write_text_summary,
+    write_workflow_summary_file,
 )
 from total_export_validation import (
     ManifestValidationIssue,
@@ -116,6 +118,43 @@ def run_self_test() -> None:
         written_path = write_text_summary("Summary text with Caltheris.", str(summary_path))
         assert written_path == str(summary_path)
         assert summary_path.read_text(encoding="utf-8") == "Summary text with Caltheris."
+
+        registered_result = write_workflow_summary_file(
+            workflow_result=workflow,
+            filename=" Unsafe Summary: Clip #1?.txt ",
+            register_in_manifest=True,
+        )
+        assert registered_result.registered
+        assert registered_result.manifest_path == workflow.package_result.manifest_path
+        assert registered_result.asset_path == str(Path("metadata") / "Unsafe_Summary_Clip_1_.txt")
+        assert Path(registered_result.summary_path).is_file()
+        registered_text = Path(registered_result.summary_path).read_text(encoding="utf-8")
+        assert "Plan status: ready" in registered_text
+        assert f"Manifest path: {workflow.package_result.manifest_path}" in registered_text
+        assert f"Package folder: {workflow.package_result.package_result.package_folder}" in registered_text
+
+        reloaded_manifest = read_manifest_json(workflow.package_result.manifest_path)
+        assert len(reloaded_manifest.assets) == 1
+        summary_asset = reloaded_manifest.assets[0]
+        assert summary_asset.path == registered_result.asset_path
+        assert summary_asset.sha256
+        assert summary_asset.size_bytes == Path(registered_result.summary_path).stat().st_size
+
+        unregistered_workflow = prepare_total_export_from_source(
+            base_folder=temp_dir,
+            source_url=f"https://www.youtube.com/watch?v={VALID_ID}",
+            selected_capture_options=["comments"],
+            package_id="summary workflow unregistered",
+            create_asset_folders=False,
+        )
+        unregistered_result = write_workflow_summary_file(
+            workflow_result=unregistered_workflow,
+            register_in_manifest=False,
+        )
+        assert not unregistered_result.registered
+        assert Path(unregistered_result.summary_path).is_file()
+        unregistered_manifest = read_manifest_json(unregistered_workflow.package_result.manifest_path)
+        assert unregistered_manifest.assets == []
 
 
 if __name__ == "__main__":
