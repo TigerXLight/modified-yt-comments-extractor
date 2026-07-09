@@ -255,6 +255,61 @@ def run_self_test() -> None:
         )
         assert len(inventory_report_no_register_manifest.assets) == 1
 
+        exit_code, review_files_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli review files",
+                "--capture-option",
+                "comments",
+                "--review-files",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "README path: " in review_files_output
+        assert "Registered README: yes" in review_files_output
+        assert "Inventory report path: " in review_files_output
+        assert "Registered inventory report: yes" in review_files_output
+        assert "Inventory:" in review_files_output
+        assert "Registered asset count: 3" in review_files_output
+        assert "Local file count: 4" in review_files_output
+        review_files_manifest = read_manifest_json(_manifest_path_from_output(review_files_output))
+        assert len(review_files_manifest.assets) == 3
+        assert Path(_inventory_report_path_from_output(review_files_output)).is_file()
+
+        exit_code, review_files_no_register_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli review files no register",
+                "--capture-option",
+                "comments",
+                "--review-files",
+                "--no-register-readme",
+                "--no-register-inventory-report",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "README path: " in review_files_no_register_output
+        assert "Registered README: no" in review_files_no_register_output
+        assert "Inventory report path: " in review_files_no_register_output
+        assert "Registered inventory report: no" in review_files_no_register_output
+        assert "Inventory:" in review_files_no_register_output
+        assert "Registered asset count: 1" in review_files_no_register_output
+        review_files_no_register_manifest = read_manifest_json(
+            _manifest_path_from_output(review_files_no_register_output)
+        )
+        assert len(review_files_no_register_manifest.assets) == 1
+        assert Path(_inventory_report_path_from_output(review_files_no_register_output)).is_file()
+
         exit_code, json_output = _run_cli(
             [
                 "--base-folder",
@@ -499,6 +554,32 @@ def run_self_test() -> None:
             parsed_inventory_report_no_register["manifest_path"]
         )
         assert len(json_inventory_report_no_register_manifest.assets) == 1
+
+        exit_code, json_review_files_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli json review files",
+                "--capture-option",
+                "comments",
+                "--review-files",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_review_files = json.loads(json_review_files_output)
+        assert parsed_review_files["readme_path"]
+        assert parsed_review_files["registered_readme"] is True
+        assert parsed_review_files["inventory_report_path"]
+        assert parsed_review_files["registered_inventory_report"] is True
+        assert parsed_review_files["inventory_ran"] is True
+        assert parsed_review_files["inventory_registered_asset_count"] == 3
+        assert parsed_review_files["inventory_local_file_count"] >= 4
+        json_review_files_manifest = read_manifest_json(parsed_review_files["manifest_path"])
+        assert len(json_review_files_manifest.assets) == 3
 
         exit_code, json_unsupported_output = _run_cli(
             [

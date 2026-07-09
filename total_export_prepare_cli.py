@@ -31,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-create-asset-folders", action="store_true")
     parser.add_argument("--no-final-validation", action="store_true")
     parser.add_argument("--include-inventory", action="store_true")
+    parser.add_argument("--review-files", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -140,6 +141,9 @@ def _print_inventory(inventory: TotalExportPackageInventory) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    write_readme = args.write_readme or args.review_files
+    write_inventory_report = args.write_inventory_report or args.review_files
+    include_inventory = args.include_inventory or args.review_files
     result = prepare_total_export_with_summary(
         base_folder=args.base_folder,
         source_url=args.source_url,
@@ -151,15 +155,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         create_asset_folders=not args.no_create_asset_folders,
         summary_filename=args.summary_filename,
         register_summary_in_manifest=not args.no_register_summary,
-        write_readme=args.write_readme,
+        write_readme=write_readme,
         readme_filename=args.readme_filename,
         register_readme_in_manifest=not args.no_register_readme,
-        write_inventory_report=args.write_inventory_report,
+        write_inventory_report=write_inventory_report,
         inventory_report_filename=args.inventory_report_filename,
         register_inventory_report_in_manifest=not args.no_register_inventory_report,
         validate_final_manifest=not args.no_final_validation,
     )
-    inventory = _build_inventory_if_requested(result, args.include_inventory)
+    inventory = _build_inventory_if_requested(result, include_inventory)
 
     if args.json:
         print(json.dumps(result_to_cli_dict(result, inventory), indent=2, sort_keys=True))
@@ -171,11 +175,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Summary path: {result.summary_file_result.summary_path}")
     print(f"Plan status: {result.workflow_result.plan.status}")
     print(f"Registered summary: {'yes' if result.summary_file_result.registered else 'no'}")
-    if args.write_readme:
+    if write_readme:
         readme_result = result.readme_file_result
         print(f"README path: {readme_result.readme_path if readme_result else ''}")
         print(f"Registered README: {'yes' if readme_result and readme_result.registered else 'no'}")
-    if args.write_inventory_report:
+    if write_inventory_report:
         inventory_report_result = result.inventory_report_file_result
         print(
             "Inventory report path: "
