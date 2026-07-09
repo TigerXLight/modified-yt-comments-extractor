@@ -7,6 +7,7 @@ from typing import Sequence
 
 from capture_options import normalize_capture_option_ids
 from source_capture_plan import SourceCapturePlan
+from source_plan_provenance import manifest_with_plan_provenance
 from total_export_manifest import (
     ASSET_ARCHIVE_RESULT,
     ASSET_CSV_EXPORT,
@@ -169,6 +170,7 @@ def create_total_export_package_from_plan(
         capture_options=list(plan.selected_capture_options),
         notes=_append_note(manifest.notes, note),
     )
+    updated_manifest = manifest_with_plan_provenance(updated_manifest, plan)
     write_manifest_json(updated_manifest, package_result.manifest_path)
 
     return TotalExportPlanPackageResult(

@@ -106,6 +106,10 @@ def run_self_test() -> None:
         plan_manifest = read_manifest_json(plan_result.manifest_path)
         assert plan_manifest.source_urls == [CANONICAL_URL]
         assert plan_manifest.capture_options == [CAPTURE_COMMENTS, CAPTURE_ARCHIVE_CHECK]
+        assert len(plan_manifest.provenance_records) == 1
+        assert plan_manifest.provenance_records[0].source_url == CANONICAL_URL
+        assert plan_manifest.provenance_records[0].adapter_name == "youtube"
+        assert plan_manifest.provenance_records[0].item_id == VALID_ID
         assert "Source Capture Plan status: ready" in plan_manifest.notes
         assert "adapter=YouTube" in plan_manifest.notes
         assert f"source_id={VALID_ID}" in plan_manifest.notes
@@ -126,6 +130,8 @@ def run_self_test() -> None:
         unsupported_manifest = read_manifest_json(unsupported_result.manifest_path)
         assert unsupported_manifest.source_urls == ["https://example.com/article"]
         assert unsupported_manifest.capture_options == [CAPTURE_COMMENTS]
+        assert len(unsupported_manifest.provenance_records) == 1
+        assert unsupported_manifest.provenance_records[0].source_url == "https://example.com/article"
         assert "Source Capture Plan status: unsupported_source" in unsupported_manifest.notes
 
 
