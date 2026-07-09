@@ -749,6 +749,109 @@ def run_self_test() -> None:
         assert parsed_existing_zip["zip_created"] is False
         assert any("already exists" in error for error in parsed_existing_zip["errors"])
 
+        exit_code, inspect_zip_output = _run_cli(
+            [
+                "--inspect-zip",
+                "--zip-path",
+                str(default_zip_path),
+            ]
+        )
+        assert exit_code == 0
+        assert "Total Export ZIP inspection" in inspect_zip_output
+        assert "Status: ok" in inspect_zip_output
+        assert "_manifest.json" in inspect_zip_output
+
+        exit_code, inspect_zip_json_output = _run_cli(
+            [
+                "--inspect-zip",
+                "--zip-path",
+                str(default_zip_path),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_inspect_zip = json.loads(inspect_zip_json_output)
+        assert parsed_inspect_zip["status"] == "ok"
+        assert parsed_inspect_zip["zip_found"] is True
+        assert parsed_inspect_zip["zip_readable"] is True
+        assert parsed_inspect_zip["zip_sha256"]
+        assert any(
+            entry["relative_path"] == "metadata/SOURCE_CAPTURE_PLAN.txt"
+            for entry in parsed_inspect_zip["standard_entries"]
+        )
+
+        exit_code, inspect_zip_entries_json_output = _run_cli(
+            [
+                "--inspect-zip",
+                "--zip-path",
+                str(default_zip_path),
+                "--include-zip-entries",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_zip_entries = json.loads(inspect_zip_entries_json_output)
+        entry_names = [entry["name"] for entry in parsed_zip_entries["entries"]]
+        assert entry_names
+        assert entry_names == sorted(entry_names)
+
+        exit_code, inspect_zip_hash_entries_json_output = _run_cli(
+            [
+                "--inspect-zip",
+                "--zip-path",
+                str(default_zip_path),
+                "--include-zip-entries",
+                "--hash-zip-entries",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_zip_hash_entries = json.loads(inspect_zip_hash_entries_json_output)
+        assert any(
+            entry["sha256"]
+            for entry in parsed_zip_hash_entries["entries"]
+            if not entry["is_dir"]
+        )
+
+        exit_code, inspect_missing_zip_json_output = _run_cli(
+            [
+                "--inspect-zip",
+                "--zip-path",
+                str(Path(temp_dir) / "missing.zip"),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        assert json.loads(inspect_missing_zip_json_output)["status"] == "missing_zip"
+
+        error_code, inspect_zip_missing_path_error = _run_cli_error(["--inspect-zip"])
+        assert error_code == 2
+        assert "--zip-path is required when --inspect-zip is used" in inspect_zip_missing_path_error
+
+        error_code, inspect_zip_zip_package_error = _run_cli_error(
+            [
+                "--inspect-zip",
+                "--zip-package",
+                "--zip-path",
+                str(default_zip_path),
+                "--package-folder",
+                full_review_package_folder,
+            ]
+        )
+        assert error_code == 2
+        assert "Use only one list/explain mode at a time" in inspect_zip_zip_package_error
+
+        error_code, inspect_zip_write_flag_error = _run_cli_error(
+            [
+                "--inspect-zip",
+                "--zip-path",
+                str(default_zip_path),
+                "--full-review-files",
+            ]
+        )
+        assert error_code == 2
+        assert "read-only" in inspect_zip_write_flag_error
+
         extra_file = Path(full_review_package_folder) / "extra_local_note.txt"
         extra_file.write_text("local note", encoding="utf-8")
         exit_code, inspect_extra_json_output = _run_cli(

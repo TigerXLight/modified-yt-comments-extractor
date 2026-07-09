@@ -21,6 +21,11 @@ from total_export_package_zip import (
 )
 from total_export_prepare import PreparedTotalExportResult
 from total_export_prepare import prepare_total_export_with_summary
+from total_export_zip_inspect import (
+    build_total_export_zip_inspection_text,
+    inspect_total_export_zip,
+    total_export_zip_inspection_to_dict,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -62,6 +67,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--zip-path", default="")
     parser.add_argument("--overwrite-zip", action="store_true")
     parser.add_argument("--allow-inspection-warnings", action="store_true")
+    parser.add_argument("--inspect-zip", action="store_true")
+    parser.add_argument("--include-zip-entries", action="store_true")
+    parser.add_argument("--hash-zip-entries", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -435,6 +443,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.explain_plan,
             args.inspect_package,
             args.zip_package,
+            args.inspect_zip,
         )
     )
     if args.list_metadata and list_mode_count:
@@ -488,6 +497,34 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(package_zip_result_to_dict(zip_result), indent=2, sort_keys=True))
         else:
             print(build_total_export_package_zip_text(zip_result))
+        return 0
+
+    if args.inspect_zip:
+        if not args.zip_path:
+            parser.error("--zip-path is required when --inspect-zip is used")
+        if (
+            args.write_readme
+            or args.write_plan_report
+            or args.write_inventory_report
+            or args.review_files
+            or args.full_review_files
+        ):
+            parser.error("--inspect-zip is read-only and cannot be combined with write/review flags")
+        zip_inspection = inspect_total_export_zip(
+            args.zip_path,
+            include_entries=args.include_zip_entries,
+            hash_entries=args.hash_zip_entries,
+        )
+        if args.json:
+            print(
+                json.dumps(
+                    total_export_zip_inspection_to_dict(zip_inspection),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        else:
+            print(build_total_export_zip_inspection_text(zip_inspection))
         return 0
 
     if args.list_metadata:
