@@ -140,6 +140,19 @@ def run_self_test() -> None:
         assert summary_asset.sha256
         assert summary_asset.size_bytes == Path(registered_result.summary_path).stat().st_size
 
+        registered_again = write_workflow_summary_file(
+            workflow_result=workflow,
+            filename=" Unsafe Summary: Clip #1?.txt ",
+            register_in_manifest=True,
+        )
+        assert registered_again.registered
+        assert Path(registered_again.summary_path).is_file()
+        registered_again_text = Path(registered_again.summary_path).read_text(encoding="utf-8")
+        assert "Plan status: ready" in registered_again_text
+        reloaded_again_manifest = read_manifest_json(workflow.package_result.manifest_path)
+        assert len(reloaded_again_manifest.assets) == 1
+        assert reloaded_again_manifest.assets[0].path == registered_result.asset_path
+
         unregistered_workflow = prepare_total_export_from_source(
             base_folder=temp_dir,
             source_url=f"https://www.youtube.com/watch?v={VALID_ID}",

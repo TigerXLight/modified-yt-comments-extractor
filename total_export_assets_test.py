@@ -6,7 +6,9 @@ from total_export_assets import (
     asset_destination_path,
     copy_asset_into_package,
     export_asset_for_file,
+    export_asset_identity,
     manifest_with_asset,
+    manifest_has_asset,
     register_asset_in_manifest_file,
     safe_asset_filename,
 )
@@ -67,6 +69,10 @@ def run_self_test() -> None:
         assert Path(copied.destination_path).read_bytes() == sample_bytes
         assert copied.asset.sha256 == expected_hash
         assert copied.asset.path == str(Path("metadata") / "copied_report.txt")
+        assert export_asset_identity(copied.asset) == (
+            ASSET_TEXT_EXPORT,
+            "metadata/copied_report.txt",
+        )
 
         try:
             copy_asset_into_package(
@@ -102,10 +108,18 @@ def run_self_test() -> None:
         assert manifest.assets == []
         assert len(updated_manifest.assets) == 1
         assert updated_manifest.assets[0] == copied.asset
+        assert manifest_has_asset(updated_manifest, copied.asset)
         assert updated_manifest.package_id == manifest.package_id
         assert updated_manifest.source_urls == manifest.source_urls
         assert updated_manifest.capture_options == manifest.capture_options
         assert updated_manifest.notes == "keep me"
+
+        duplicate_manifest = manifest_with_asset(updated_manifest, copied.asset)
+        assert len(duplicate_manifest.assets) == 2
+
+        deduped_manifest = manifest_with_asset(updated_manifest, copied.asset, dedupe=True)
+        assert len(deduped_manifest.assets) == 1
+        assert deduped_manifest.assets[0] == copied.asset
 
         manifest_path = Path(package_folder) / "manifest.json"
         write_manifest_json(manifest, str(manifest_path))
@@ -119,8 +133,21 @@ def run_self_test() -> None:
         assert registered_manifest.source_urls == manifest.source_urls
         assert registered_manifest.capture_options == manifest.capture_options
 
+        registered_again = register_asset_in_manifest_file(
+            manifest_path=str(manifest_path),
+            asset=copied.asset,
+        )
+        assert len(registered_again.assets) == 1
+
+        registered_duplicate = register_asset_in_manifest_file(
+            manifest_path=str(manifest_path),
+            asset=copied.asset,
+            dedupe=False,
+        )
+        assert len(registered_duplicate.assets) == 2
+
         reloaded_manifest = read_manifest_json(str(manifest_path))
-        assert len(reloaded_manifest.assets) == 1
+        assert len(reloaded_manifest.assets) == 2
         assert reloaded_manifest.assets[0].sha256 == copied.asset.sha256
         assert reloaded_manifest.notes == "keep me"
 

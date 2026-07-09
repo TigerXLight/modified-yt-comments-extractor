@@ -190,6 +190,7 @@ def write_workflow_summary_file(
     register_asset_in_manifest_file(
         manifest_path=workflow_result.package_result.manifest_path,
         asset=asset,
+        dedupe=True,
     )
     return TotalExportSummaryFileResult(
         summary_path=summary_path,

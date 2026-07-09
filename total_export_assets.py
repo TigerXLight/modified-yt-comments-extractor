@@ -75,6 +75,16 @@ def export_asset_for_file(
     )
 
 
+def export_asset_identity(asset: ExportAsset) -> tuple[str, str]:
+    normalized_path = (asset.path or "").replace("\\", "/")
+    return (asset.asset_type or "", normalized_path)
+
+
+def manifest_has_asset(manifest: TotalExportManifest, asset: ExportAsset) -> bool:
+    identity = export_asset_identity(asset)
+    return any(export_asset_identity(existing_asset) == identity for existing_asset in manifest.assets)
+
+
 def copy_asset_into_package(
     *,
     source_path: str,
@@ -114,7 +124,11 @@ def copy_asset_into_package(
 def manifest_with_asset(
     manifest: TotalExportManifest,
     asset: ExportAsset,
+    *,
+    dedupe: bool = False,
 ) -> TotalExportManifest:
+    if dedupe and manifest_has_asset(manifest, asset):
+        return replace(manifest, assets=list(manifest.assets))
     return replace(manifest, assets=list(manifest.assets) + [asset])
 
 
@@ -122,8 +136,9 @@ def register_asset_in_manifest_file(
     *,
     manifest_path: str,
     asset: ExportAsset,
+    dedupe: bool = True,
 ) -> TotalExportManifest:
     manifest = read_manifest_json(manifest_path)
-    updated_manifest = manifest_with_asset(manifest, asset)
+    updated_manifest = manifest_with_asset(manifest, asset, dedupe=dedupe)
     write_manifest_json(updated_manifest, manifest_path)
     return updated_manifest
