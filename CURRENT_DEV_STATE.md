@@ -44,6 +44,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Capture option metadata skeleton added for future Total Export evidence checkboxes; it is not wired into GUI/export behavior and does not perform archive checks, screenshots, scraping, or media downloading.
 - Capture option selection validation added for the Total Export package helper; it remains non-wired and performs no capture/network behavior.
 - Total Export package builder helper added; it creates package folders/manifests only when explicitly called and is not wired into GUI/export/capture behavior.
+- Total Export asset registration helpers added for already-created local files; they are explicit-call only and do not perform capture, scraping, archive checks, screenshots, media downloading, or GUI/export wiring.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
