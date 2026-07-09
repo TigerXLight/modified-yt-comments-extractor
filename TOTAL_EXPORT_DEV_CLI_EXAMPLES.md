@@ -18,6 +18,18 @@ python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-u
 python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz&t=30s" --package-id "json dev package" --capture-option comments --capture-option archive_check --term Caltheris --term Nyxara --json
 ```
 
+## List Capture Options
+
+This mode does not require `--base-folder` or `--source-url`, and it does not create a package.
+
+```cmd
+python total_export_prepare_cli.py --list-capture-options
+```
+
+```cmd
+python total_export_prepare_cli.py --list-capture-options --json
+```
+
 ## Review-File Example
 
 ```cmd

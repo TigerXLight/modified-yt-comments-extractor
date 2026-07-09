@@ -1,4 +1,4 @@
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import json
 from pathlib import Path
@@ -17,6 +17,16 @@ def _run_cli(argv: list[str]) -> tuple[int, str]:
     with redirect_stdout(output):
         exit_code = main(argv)
     return exit_code, output.getvalue()
+
+
+def _run_cli_error(argv: list[str]) -> tuple[int, str]:
+    output = StringIO()
+    try:
+        with redirect_stderr(output):
+            main(argv)
+    except SystemExit as exc:
+        return int(exc.code), output.getvalue()
+    raise AssertionError("Expected argparse SystemExit.")
 
 
 def _manifest_path_from_output(output: str) -> str:
@@ -42,6 +52,37 @@ def _inventory_report_path_from_output(output: str) -> str:
 
 def run_self_test() -> None:
     with TemporaryDirectory() as temp_dir:
+        exit_code, list_output = _run_cli(["--list-capture-options"])
+        assert exit_code == 0
+        assert "Capture options:" in list_output
+        assert "- comments:" in list_output
+        assert "- archive_check:" in list_output
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, list_json_output = _run_cli(["--list-capture-options", "--json"])
+        assert exit_code == 0
+        parsed_options = json.loads(list_json_output)
+        assert set(parsed_options) == {"capture_options"}
+        assert isinstance(parsed_options["capture_options"], list)
+        option_ids = {option["id"] for option in parsed_options["capture_options"]}
+        assert "comments" in option_ids
+        assert "archive_check" in option_ids
+        comments_option = next(
+            option for option in parsed_options["capture_options"] if option["id"] == "comments"
+        )
+        assert comments_option["label"] == "Comments"
+        assert comments_option["description"]
+        assert "package_folder" not in parsed_options
+        assert list(Path(temp_dir).iterdir()) == []
+
+        error_code, missing_both_error = _run_cli_error([])
+        assert error_code == 2
+        assert "--base-folder is required unless --list-capture-options is used" in missing_both_error
+
+        error_code, missing_source_error = _run_cli_error(["--base-folder", temp_dir])
+        assert error_code == 2
+        assert "--source-url is required unless --list-capture-options is used" in missing_source_error
+
         exit_code, output = _run_cli(
             [
                 "--base-folder",

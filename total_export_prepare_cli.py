@@ -4,6 +4,7 @@ import argparse
 import json
 from typing import Sequence
 
+from capture_options import CaptureOptionMetadata, available_capture_options
 from total_export_inventory import TotalExportPackageInventory, build_total_export_inventory
 from total_export_prepare import PreparedTotalExportResult
 from total_export_prepare import prepare_total_export_with_summary
@@ -13,8 +14,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Prepare a local Total Export package shell with a summary file.",
     )
-    parser.add_argument("--base-folder", required=True)
-    parser.add_argument("--source-url", required=True)
+    parser.add_argument("--base-folder")
+    parser.add_argument("--source-url")
     parser.add_argument("--source-label", default="")
     parser.add_argument("--title", default="")
     parser.add_argument("--package-id", default="")
@@ -32,8 +33,45 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-final-validation", action="store_true")
     parser.add_argument("--include-inventory", action="store_true")
     parser.add_argument("--review-files", action="store_true")
+    parser.add_argument("--list-capture-options", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
+
+
+def _capture_option_to_cli_dict(option: CaptureOptionMetadata) -> dict[str, object]:
+    return {
+        "access_mode_hint": option.access_mode_hint,
+        "default_enabled_for_total_export": option.default_enabled_for_total_export,
+        "description": option.description,
+        "evidence_oriented": option.evidence_oriented,
+        "id": option.option_id,
+        "implementation_notes": option.implementation_notes,
+        "label": option.display_name,
+        "requires_user_confirmation": option.requires_user_confirmation,
+        "safety_notes": option.safety_notes,
+        "sends_data_to_external_service": option.sends_data_to_external_service,
+        "stage": option.stage,
+    }
+
+
+def capture_options_to_cli_dict() -> dict[str, object]:
+    return {
+        "capture_options": [
+            _capture_option_to_cli_dict(option)
+            for option in available_capture_options()
+        ]
+    }
+
+
+def print_capture_options() -> None:
+    print("Capture options:")
+    for option in available_capture_options():
+        details = [option.display_name]
+        if option.stage:
+            details.append(f"stage={option.stage}")
+        if option.description:
+            details.append(option.description)
+        print(f"- {option.option_id}: {'; '.join(details)}")
 
 
 def _final_validation_issue_count(result: PreparedTotalExportResult) -> int:
@@ -140,7 +178,20 @@ def _print_inventory(inventory: TotalExportPackageInventory) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.list_capture_options:
+        if args.json:
+            print(json.dumps(capture_options_to_cli_dict(), indent=2, sort_keys=True))
+        else:
+            print_capture_options()
+        return 0
+
+    if not args.base_folder:
+        parser.error("--base-folder is required unless --list-capture-options is used")
+    if not args.source_url:
+        parser.error("--source-url is required unless --list-capture-options is used")
+
     write_readme = args.write_readme or args.review_files
     write_inventory_report = args.write_inventory_report or args.review_files
     include_inventory = args.include_inventory or args.review_files

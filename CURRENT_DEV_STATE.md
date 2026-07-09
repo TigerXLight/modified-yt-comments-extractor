@@ -66,6 +66,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Total Export prepare helper/CLI can optionally write/register the inventory report file without changing default non-wired fetch/capture/network behavior.
 - Total Export prepare CLI developer examples documented for local-only package-shell usage without fetch/capture/network/GUI behavior.
 - Total Export prepare CLI now supports a local-only `--review-files` shortcut for README, inventory report, and inventory output without fetch/capture/network/GUI behavior.
+- Total Export prepare CLI can list supported capture options in text or JSON without preparing packages or performing fetch/capture/network/GUI behavior.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
