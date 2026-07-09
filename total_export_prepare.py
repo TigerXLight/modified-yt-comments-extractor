@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+from total_export_inventory_report import (
+    TotalExportInventoryReportFileResult,
+    write_total_export_inventory_report_file,
+)
 from total_export_readme import TotalExportReadmeFileResult, write_total_export_readme_file
 from total_export_summary import TotalExportSummaryFileResult, write_workflow_summary_file
 from total_export_validation import ManifestValidationResult, validate_manifest_json_file
@@ -14,6 +18,7 @@ class PreparedTotalExportResult:
     workflow_result: TotalExportWorkflowResult
     summary_file_result: TotalExportSummaryFileResult
     readme_file_result: TotalExportReadmeFileResult | None = None
+    inventory_report_file_result: TotalExportInventoryReportFileResult | None = None
     final_validation_result: ManifestValidationResult | None = None
     warnings: tuple[str, ...] = ()
 
@@ -22,12 +27,15 @@ def _combined_warnings(
     workflow_result: TotalExportWorkflowResult,
     summary_file_result: TotalExportSummaryFileResult,
     readme_file_result: TotalExportReadmeFileResult | None = None,
+    inventory_report_file_result: TotalExportInventoryReportFileResult | None = None,
 ) -> tuple[str, ...]:
     warnings: list[str] = []
     seen = set()
     source_warnings = list(workflow_result.warnings) + list(summary_file_result.warnings)
     if readme_file_result:
         source_warnings.extend(readme_file_result.warnings)
+    if inventory_report_file_result:
+        source_warnings.extend(inventory_report_file_result.warnings)
     for warning in source_warnings:
         if not warning or warning in seen:
             continue
@@ -51,6 +59,9 @@ def prepare_total_export_with_summary(
     write_readme: bool = False,
     readme_filename: str = "README_TOTAL_EXPORT.txt",
     register_readme_in_manifest: bool = True,
+    write_inventory_report: bool = False,
+    inventory_report_filename: str = "TOTAL_EXPORT_INVENTORY.txt",
+    register_inventory_report_in_manifest: bool = True,
     validate_final_manifest: bool = True,
 ) -> PreparedTotalExportResult:
     workflow_result = prepare_total_export_from_source(
@@ -75,6 +86,15 @@ def prepare_total_export_with_summary(
             filename=readme_filename,
             register_in_manifest=register_readme_in_manifest,
         )
+    inventory_report_file_result = None
+    if write_inventory_report:
+        package_result = workflow_result.package_result.package_result
+        inventory_report_file_result = write_total_export_inventory_report_file(
+            package_folder=package_result.package_folder,
+            manifest_path=workflow_result.package_result.manifest_path,
+            filename=inventory_report_filename,
+            register_in_manifest=register_inventory_report_in_manifest,
+        )
     final_validation_result = None
     if validate_final_manifest:
         final_validation_result = validate_manifest_json_file(workflow_result.package_result.manifest_path)
@@ -82,6 +102,12 @@ def prepare_total_export_with_summary(
         workflow_result=workflow_result,
         summary_file_result=summary_file_result,
         readme_file_result=readme_file_result,
+        inventory_report_file_result=inventory_report_file_result,
         final_validation_result=final_validation_result,
-        warnings=_combined_warnings(workflow_result, summary_file_result, readme_file_result),
+        warnings=_combined_warnings(
+            workflow_result,
+            summary_file_result,
+            readme_file_result,
+            inventory_report_file_result,
+        ),
     )

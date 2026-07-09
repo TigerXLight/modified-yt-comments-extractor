@@ -25,6 +25,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--write-readme", action="store_true")
     parser.add_argument("--readme-filename", default="README_TOTAL_EXPORT.txt")
     parser.add_argument("--no-register-readme", action="store_true")
+    parser.add_argument("--write-inventory-report", action="store_true")
+    parser.add_argument("--inventory-report-filename", default="TOTAL_EXPORT_INVENTORY.txt")
+    parser.add_argument("--no-register-inventory-report", action="store_true")
     parser.add_argument("--no-create-asset-folders", action="store_true")
     parser.add_argument("--no-final-validation", action="store_true")
     parser.add_argument("--include-inventory", action="store_true")
@@ -82,7 +85,16 @@ def result_to_cli_dict(
         "normalized_url": plan.normalized_url,
         "package_folder": package_result.package_folder,
         "plan_status": plan.status,
+        "inventory_report_path": (
+            result.inventory_report_file_result.report_path
+            if result.inventory_report_file_result
+            else ""
+        ),
         "readme_path": result.readme_file_result.readme_path if result.readme_file_result else "",
+        "registered_inventory_report": bool(
+            result.inventory_report_file_result
+            and result.inventory_report_file_result.registered
+        ),
         "registered_readme": bool(result.readme_file_result and result.readme_file_result.registered),
         "registered_summary": result.summary_file_result.registered,
         "selected_capture_options": list(plan.selected_capture_options),
@@ -142,6 +154,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_readme=args.write_readme,
         readme_filename=args.readme_filename,
         register_readme_in_manifest=not args.no_register_readme,
+        write_inventory_report=args.write_inventory_report,
+        inventory_report_filename=args.inventory_report_filename,
+        register_inventory_report_in_manifest=not args.no_register_inventory_report,
         validate_final_manifest=not args.no_final_validation,
     )
     inventory = _build_inventory_if_requested(result, args.include_inventory)
@@ -160,6 +175,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         readme_result = result.readme_file_result
         print(f"README path: {readme_result.readme_path if readme_result else ''}")
         print(f"Registered README: {'yes' if readme_result and readme_result.registered else 'no'}")
+    if args.write_inventory_report:
+        inventory_report_result = result.inventory_report_file_result
+        print(
+            "Inventory report path: "
+            f"{inventory_report_result.report_path if inventory_report_result else ''}"
+        )
+        print(
+            "Registered inventory report: "
+            f"{'yes' if inventory_report_result and inventory_report_result.registered else 'no'}"
+        )
     if result.final_validation_result is None:
         print("Final validation: skipped")
     elif not result.final_validation_result.issues:

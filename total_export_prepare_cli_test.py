@@ -33,6 +33,13 @@ def _summary_path_from_output(output: str) -> str:
     raise AssertionError("Summary path was not printed.")
 
 
+def _inventory_report_path_from_output(output: str) -> str:
+    for line in output.splitlines():
+        if line.startswith("Inventory report path: "):
+            return line.split(": ", 1)[1]
+    raise AssertionError("Inventory report path was not printed.")
+
+
 def run_self_test() -> None:
     with TemporaryDirectory() as temp_dir:
         exit_code, output = _run_cli(
@@ -67,6 +74,7 @@ def run_self_test() -> None:
         assert "Plan status: ready" in output
         assert "Registered summary: yes" in output
         assert "README path: " not in output
+        assert "Inventory report path: " not in output
         assert "Final validation: ok" in output
         assert "Inventory:" not in output
         assert "Unknown capture options ignored: unknown_option" in output
@@ -198,6 +206,55 @@ def run_self_test() -> None:
         readme_no_register_manifest = read_manifest_json(_manifest_path_from_output(readme_no_register_output))
         assert len(readme_no_register_manifest.assets) == 1
 
+        exit_code, inventory_report_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli inventory report",
+                "--capture-option",
+                "comments",
+                "--write-inventory-report",
+                "--include-inventory",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "Inventory report path: " in inventory_report_output
+        assert "Registered inventory report: yes" in inventory_report_output
+        assert "Inventory:" in inventory_report_output
+        assert "Registered asset count: 2" in inventory_report_output
+        assert "Local file count: 3" in inventory_report_output
+        assert Path(_inventory_report_path_from_output(inventory_report_output)).is_file()
+        inventory_report_manifest = read_manifest_json(_manifest_path_from_output(inventory_report_output))
+        assert len(inventory_report_manifest.assets) == 2
+
+        exit_code, inventory_report_no_register_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli inventory report no register",
+                "--capture-option",
+                "comments",
+                "--write-inventory-report",
+                "--no-register-inventory-report",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "Inventory report path: " in inventory_report_no_register_output
+        assert "Registered inventory report: no" in inventory_report_no_register_output
+        assert Path(_inventory_report_path_from_output(inventory_report_no_register_output)).is_file()
+        inventory_report_no_register_manifest = read_manifest_json(
+            _manifest_path_from_output(inventory_report_no_register_output)
+        )
+        assert len(inventory_report_no_register_manifest.assets) == 1
+
         exit_code, json_output = _run_cli(
             [
                 "--base-folder",
@@ -231,11 +288,13 @@ def run_self_test() -> None:
             "inventory_ran",
             "inventory_registered_asset_count",
             "inventory_unregistered_files",
+            "inventory_report_path",
             "manifest_path",
             "normalized_url",
             "package_folder",
             "plan_status",
             "readme_path",
+            "registered_inventory_report",
             "registered_readme",
             "registered_summary",
             "selected_capture_options",
@@ -257,6 +316,8 @@ def run_self_test() -> None:
         assert parsed["inventory_local_file_count"] == 0
         assert parsed["inventory_unregistered_files"] == []
         assert parsed["inventory_missing_registered_assets"] == []
+        assert parsed["inventory_report_path"] == ""
+        assert parsed["registered_inventory_report"] is False
         assert parsed["registered_summary"] is True
         assert parsed["selected_capture_options"] == ["comments", "archive_check"]
         assert parsed["unknown_capture_options"] == ["unknown_option"]
@@ -387,6 +448,58 @@ def run_self_test() -> None:
         json_readme_no_register_manifest = read_manifest_json(parsed_readme_no_register["manifest_path"])
         assert len(json_readme_no_register_manifest.assets) == 1
 
+        exit_code, json_inventory_report_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli json inventory report",
+                "--capture-option",
+                "comments",
+                "--write-inventory-report",
+                "--include-inventory",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_inventory_report = json.loads(json_inventory_report_output)
+        assert parsed_inventory_report["inventory_report_path"]
+        assert parsed_inventory_report["registered_inventory_report"] is True
+        assert parsed_inventory_report["inventory_ran"] is True
+        assert parsed_inventory_report["inventory_registered_asset_count"] == 2
+        assert parsed_inventory_report["inventory_local_file_count"] >= 3
+        assert Path(parsed_inventory_report["inventory_report_path"]).is_file()
+        json_inventory_report_manifest = read_manifest_json(
+            parsed_inventory_report["manifest_path"]
+        )
+        assert len(json_inventory_report_manifest.assets) == 2
+
+        exit_code, json_inventory_report_no_register_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli json inventory report no register",
+                "--capture-option",
+                "comments",
+                "--write-inventory-report",
+                "--no-register-inventory-report",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_inventory_report_no_register = json.loads(json_inventory_report_no_register_output)
+        assert parsed_inventory_report_no_register["inventory_report_path"]
+        assert parsed_inventory_report_no_register["registered_inventory_report"] is False
+        json_inventory_report_no_register_manifest = read_manifest_json(
+            parsed_inventory_report_no_register["manifest_path"]
+        )
+        assert len(json_inventory_report_no_register_manifest.assets) == 1
+
         exit_code, json_unsupported_output = _run_cli(
             [
                 "--base-folder",
@@ -398,6 +511,7 @@ def run_self_test() -> None:
                 "--capture-option",
                 "comments",
                 "--write-readme",
+                "--write-inventory-report",
                 "--include-inventory",
                 "--no-create-asset-folders",
                 "--json",
@@ -410,10 +524,12 @@ def run_self_test() -> None:
         assert parsed_unsupported["normalized_url"] == ""
         assert parsed_unsupported["readme_path"]
         assert parsed_unsupported["registered_readme"] is True
+        assert parsed_unsupported["inventory_report_path"]
+        assert parsed_unsupported["registered_inventory_report"] is True
         assert parsed_unsupported["final_validation_ran"] is True
         assert parsed_unsupported["final_validation_issue_count"] == 0
         assert parsed_unsupported["inventory_ran"] is True
-        assert parsed_unsupported["inventory_registered_asset_count"] == 2
+        assert parsed_unsupported["inventory_registered_asset_count"] == 3
         assert parsed_unsupported["warnings"] == [
             "No source adapter supports the URL: https://example.com/article",
         ]
