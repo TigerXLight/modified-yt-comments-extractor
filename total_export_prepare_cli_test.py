@@ -1498,6 +1498,135 @@ def run_self_test() -> None:
         assert error_code == 2
         assert "read-only" in folder_verify_full_review_error
 
+        batch_plan_source_file = Path(temp_dir) / "batch_plan_sources_cli.txt"
+        batch_plan_source_file.write_text(
+            "\n".join(
+                [
+                    "# CLI batch review bundle self-test",
+                    "",
+                    f"https://www.youtube.com/watch?v={VALID_ID}",
+                    f"https://www.youtube.com/watch?v={VALID_ID}\tcli batch two",
+                    f"https://www.youtube.com/watch?v={VALID_ID}\tcli batch three\tClip Title",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        batch_plan_output_folder = Path(temp_dir) / "batch_plan_output_cli"
+        exit_code, batch_plan_output = _run_cli(
+            [
+                "--plan-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_plan_source_file),
+                "--batch-output-folder",
+                str(batch_plan_output_folder),
+                "--capture-option",
+                "comments",
+            ]
+        )
+        assert exit_code == 0
+        assert "Total Export batch review plan" in batch_plan_output
+        assert "Row count: 3" in batch_plan_output
+        assert "Ready count: 3" in batch_plan_output
+        assert batch_plan_output_folder.exists() is False
+
+        exit_code, batch_plan_json_output = _run_cli(
+            [
+                "--plan-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_plan_source_file),
+                "--batch-output-folder",
+                str(batch_plan_output_folder),
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_batch_plan = json.loads(batch_plan_json_output)
+        assert parsed_batch_plan["row_count"] == 3
+        assert parsed_batch_plan["ready_count"] == 3
+        assert parsed_batch_plan["error_count"] == 0
+        assert batch_plan_output_folder.exists() is False
+
+        batch_duplicate_source_file = Path(temp_dir) / "batch_plan_duplicates_cli.txt"
+        batch_duplicate_source_file.write_text(
+            "\n".join(
+                [
+                    f"https://www.youtube.com/watch?v={VALID_ID}\tduplicate cli",
+                    f"https://www.youtube.com/watch?v={VALID_ID}\tduplicate cli",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        exit_code, batch_duplicate_json_output = _run_cli(
+            [
+                "--plan-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_duplicate_source_file),
+                "--batch-output-folder",
+                str(Path(temp_dir) / "batch_plan_duplicate_output"),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_batch_duplicates = json.loads(batch_duplicate_json_output)
+        assert parsed_batch_duplicates["duplicate_package_id_count"] == 2
+        assert all(item["duplicate_package_id"] for item in parsed_batch_duplicates["items"])
+
+        error_code, batch_plan_missing_source_error = _run_cli_error(
+            [
+                "--plan-batch-review-bundles",
+                "--batch-output-folder",
+                str(Path(temp_dir) / "batch_plan_missing_source"),
+            ]
+        )
+        assert error_code == 2
+        assert (
+            "--batch-source-file is required when --plan-batch-review-bundles is used"
+            in batch_plan_missing_source_error
+        )
+
+        error_code, batch_plan_missing_output_error = _run_cli_error(
+            [
+                "--plan-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_plan_source_file),
+            ]
+        )
+        assert error_code == 2
+        assert (
+            "--batch-output-folder is required when --plan-batch-review-bundles is used"
+            in batch_plan_missing_output_error
+        )
+
+        error_code, batch_plan_build_conflict_error = _run_cli_error(
+            [
+                "--plan-batch-review-bundles",
+                "--build-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_plan_source_file),
+                "--batch-output-folder",
+                str(Path(temp_dir) / "batch_plan_build_conflict"),
+            ]
+        )
+        assert error_code == 2
+        assert "Use only one list/explain mode at a time" in batch_plan_build_conflict_error
+
+        error_code, batch_plan_full_review_error = _run_cli_error(
+            [
+                "--plan-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_plan_source_file),
+                "--batch-output-folder",
+                str(Path(temp_dir) / "batch_plan_full_review_conflict"),
+                "--full-review-files",
+            ]
+        )
+        assert error_code == 2
+        assert "dry-run mode" in batch_plan_full_review_error
+
         batch_source_file = Path(temp_dir) / "batch_sources_cli.txt"
         batch_source_file.write_text(
             "\n".join(

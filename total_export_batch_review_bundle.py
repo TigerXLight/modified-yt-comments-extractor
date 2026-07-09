@@ -77,7 +77,7 @@ def parse_total_export_batch_rows(
     return tuple(rows)
 
 
-def _fallback_package_id(row: TotalExportBatchReviewBundleRow) -> str:
+def derive_total_export_batch_package_id(row: TotalExportBatchReviewBundleRow) -> str:
     if row.package_id:
         return row.package_id
     return safe_package_id(f"batch_line_{row.line_number}_{row.source_url}")
@@ -172,7 +172,7 @@ def build_total_export_batch_review_bundles(
     warnings: list[str] = []
 
     for row in rows:
-        package_id = _fallback_package_id(row)
+        package_id = derive_total_export_batch_package_id(row)
         if not row.source_url:
             item = _item_from_error(row, package_id, f"Line {row.line_number}: source URL is empty.")
             items.append(item)

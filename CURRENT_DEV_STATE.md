@@ -79,6 +79,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Total Export prepare CLI can verify local review-bundle ZIPs against `.sha256` and `.inspection.json` sidecars without extraction, fetch/capture/network/GUI behavior, or external archive access.
 - Total Export prepare CLI can verify folders of local review-bundle ZIPs against sidecars, optionally writing a local JSON report, without extraction, fetch/capture/network/GUI behavior, or external archive access.
 - Total Export prepare CLI can build local review bundles from a UTF-8 batch source file and optionally verify/report the output folder, without fetch/capture/network/GUI behavior or external archive access.
+- Total Export prepare CLI can dry-run local batch review-bundle inputs, deriving package/ZIP/sidecar paths and detecting duplicate/existing outputs without writing files or using fetch/capture/network/GUI behavior.
 - Local Total Export dev output folders are ignored to avoid committing generated package checks.
 - Future source adapter pipeline:
   - Source URL.
