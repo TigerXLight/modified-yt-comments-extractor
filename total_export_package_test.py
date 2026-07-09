@@ -2,7 +2,19 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from capture_options import CAPTURE_ARCHIVE_CHECK, CAPTURE_COMMENTS
+from source_capture_plan import (
+    PLAN_STATUS_READY,
+    PLAN_STATUS_UNSUPPORTED_SOURCE,
+    build_source_capture_plan,
+)
 from total_export_package import create_total_export_package, ensure_folder
+from total_export_package import create_total_export_package_from_plan
+from total_export_manifest import read_manifest_json
+
+
+VALID_ID = "aB3_dE-9xYz"
+CANONICAL_URL = f"https://www.youtube.com/watch?v={VALID_ID}"
 
 
 def run_self_test() -> None:
@@ -63,6 +75,58 @@ def run_self_test() -> None:
         )
         assert default_manifest["package_id"] == default_result.package_id
         assert default_manifest["capture_options"] == ["comments"]
+
+        plan = build_source_capture_plan(
+            source_url=f"https://youtu.be/{VALID_ID}?t=30s",
+            source_label="Clip",
+            title="Clip Title",
+            selected_capture_options=[
+                "comments",
+                "archive_check",
+                "comments",
+                "unknown_option",
+            ],
+            user_terms=["Caltheris"],
+        )
+        plan_result = create_total_export_package_from_plan(
+            base_folder=temp_dir,
+            plan=plan,
+            package_id="plan package",
+            create_asset_folders=False,
+        )
+        assert plan.status == PLAN_STATUS_READY
+        assert Path(plan_result.package_result.package_folder).is_dir()
+        assert Path(plan_result.manifest_path).is_file()
+        assert plan_result.plan_status == PLAN_STATUS_READY
+        assert plan_result.warnings == (
+            "Unknown capture options ignored: unknown_option",
+            "Duplicate capture options ignored: comments",
+        )
+
+        plan_manifest = read_manifest_json(plan_result.manifest_path)
+        assert plan_manifest.source_urls == [CANONICAL_URL]
+        assert plan_manifest.capture_options == [CAPTURE_COMMENTS, CAPTURE_ARCHIVE_CHECK]
+        assert "Source Capture Plan status: ready" in plan_manifest.notes
+        assert "adapter=YouTube" in plan_manifest.notes
+        assert f"source_id={VALID_ID}" in plan_manifest.notes
+
+        unsupported_plan = build_source_capture_plan(
+            source_url="https://example.com/article",
+            source_label="Example article",
+            selected_capture_options=["comments"],
+        )
+        unsupported_result = create_total_export_package_from_plan(
+            base_folder=temp_dir,
+            plan=unsupported_plan,
+            package_id="unsupported plan",
+            create_asset_folders=False,
+        )
+        assert unsupported_plan.status == PLAN_STATUS_UNSUPPORTED_SOURCE
+        assert unsupported_result.plan_status == PLAN_STATUS_UNSUPPORTED_SOURCE
+        unsupported_manifest = read_manifest_json(unsupported_result.manifest_path)
+        assert unsupported_manifest.source_urls == ["https://example.com/article"]
+        assert unsupported_manifest.capture_options == [CAPTURE_COMMENTS]
+        assert "Source Capture Plan status: unsupported_source" in unsupported_manifest.notes
 
 
 if __name__ == "__main__":
