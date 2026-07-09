@@ -75,13 +75,165 @@ def run_self_test() -> None:
         assert "package_folder" not in parsed_options
         assert list(Path(temp_dir).iterdir()) == []
 
+        exit_code, source_adapter_output = _run_cli(["--list-source-adapters"])
+        assert exit_code == 0
+        assert "Source adapters:" in source_adapter_output
+        assert "- youtube:" in source_adapter_output
+        assert "YouTube" in source_adapter_output
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, source_adapter_json_output = _run_cli(["--list-source-adapters", "--json"])
+        assert exit_code == 0
+        parsed_source_adapters = json.loads(source_adapter_json_output)
+        assert set(parsed_source_adapters) == {"source_adapters"}
+        assert isinstance(parsed_source_adapters["source_adapters"], list)
+        youtube_adapter = next(
+            adapter
+            for adapter in parsed_source_adapters["source_adapters"]
+            if adapter["id"] == "youtube"
+        )
+        assert youtube_adapter["display_name"] == "YouTube"
+        assert youtube_adapter["credential_type"] == "api_key"
+        assert youtube_adapter["capabilities"]["supports_comments"] is True
+        assert "package_folder" not in parsed_source_adapters
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, asr_provider_output = _run_cli(["--list-asr-providers"])
+        assert exit_code == 0
+        assert "ASR providers:" in asr_provider_output
+        assert "Metadata only" in asr_provider_output
+        assert "elevenlabs_scribe" in asr_provider_output
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, asr_provider_json_output = _run_cli(["--list-asr-providers", "--json"])
+        assert exit_code == 0
+        parsed_asr_providers = json.loads(asr_provider_json_output)
+        assert set(parsed_asr_providers) == {"asr_providers"}
+        assert isinstance(parsed_asr_providers["asr_providers"], list)
+        provider_ids = {provider["id"] for provider in parsed_asr_providers["asr_providers"]}
+        assert "elevenlabs_scribe" in provider_ids
+        elevenlabs = next(
+            provider
+            for provider in parsed_asr_providers["asr_providers"]
+            if provider["id"] == "elevenlabs_scribe"
+        )
+        assert elevenlabs["status"] == "candidate"
+        assert elevenlabs["credential_type"] == "api_key"
+        assert "package_folder" not in parsed_asr_providers
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, metadata_output = _run_cli(["--list-metadata"])
+        assert exit_code == 0
+        assert "Capture options:" in metadata_output
+        assert "Source adapters:" in metadata_output
+        assert "ASR providers:" in metadata_output
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, metadata_json_output = _run_cli(["--list-metadata", "--json"])
+        assert exit_code == 0
+        parsed_metadata = json.loads(metadata_json_output)
+        assert set(parsed_metadata) == {
+            "asr_providers",
+            "capture_options",
+            "source_adapters",
+        }
+        assert list(Path(temp_dir).iterdir()) == []
+
+        error_code, combined_mode_error = _run_cli_error(
+            ["--list-capture-options", "--list-source-adapters"]
+        )
+        assert error_code == 2
+        assert "Use only one list/explain mode at a time" in combined_mode_error
+
+        error_code, metadata_combined_error = _run_cli_error(
+            ["--list-metadata", "--list-source-adapters"]
+        )
+        assert error_code == 2
+        assert "--list-metadata cannot be combined" in metadata_combined_error
+
+        exit_code, explain_output = _run_cli(
+            [
+                "--explain-plan",
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}&t=30s",
+                "--source-label",
+                "YouTube clip",
+                "--title",
+                "Clip Title",
+                "--capture-option",
+                "comments",
+                "--capture-option",
+                "comments",
+                "--capture-option",
+                "unknown_option",
+                "--term",
+                "Caltheris",
+            ]
+        )
+        assert exit_code == 0
+        assert "Plan:" in explain_output
+        assert "Plan status: ready" in explain_output
+        assert f"Normalized URL: {CANONICAL_URL}" in explain_output
+        assert "Selected capture options: comments" in explain_output
+        assert "Unknown capture options: unknown_option" in explain_output
+        assert "Duplicate capture options: comments" in explain_output
+        assert "- Caltheris" in explain_output
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, explain_json_output = _run_cli(
+            [
+                "--explain-plan",
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}&t=30s",
+                "--source-label",
+                "YouTube clip",
+                "--title",
+                "Clip Title",
+                "--capture-option",
+                "comments",
+                "--term",
+                "Caltheris",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_explain = json.loads(explain_json_output)
+        assert parsed_explain["plan_status"] == "ready"
+        assert parsed_explain["normalized_url"] == CANONICAL_URL
+        assert parsed_explain["adapter_name"] == "youtube"
+        assert parsed_explain["adapter_display_name"] == "YouTube"
+        assert parsed_explain["selected_capture_options"] == ["comments"]
+        assert parsed_explain["source_label"] == "YouTube clip"
+        assert parsed_explain["title"] == "Clip Title"
+        assert parsed_explain["user_terms"] == ["Caltheris"]
+        assert "package_folder" not in parsed_explain
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, explain_unsupported_output = _run_cli(
+            [
+                "--explain-plan",
+                "--source-url",
+                "https://example.com/article",
+                "--capture-option",
+                "comments",
+            ]
+        )
+        assert exit_code == 0
+        assert "Plan status: unsupported_source" in explain_unsupported_output
+        assert "No source adapter supports the URL: https://example.com/article" in explain_unsupported_output
+        assert list(Path(temp_dir).iterdir()) == []
+
+        error_code, explain_missing_source_error = _run_cli_error(["--explain-plan"])
+        assert error_code == 2
+        assert "--source-url is required when --explain-plan is used" in explain_missing_source_error
+
         error_code, missing_both_error = _run_cli_error([])
         assert error_code == 2
-        assert "--base-folder is required unless --list-capture-options is used" in missing_both_error
+        assert "--base-folder is required unless a list/explain mode is used" in missing_both_error
 
         error_code, missing_source_error = _run_cli_error(["--base-folder", temp_dir])
         assert error_code == 2
-        assert "--source-url is required unless --list-capture-options is used" in missing_source_error
+        assert "--source-url is required unless a list mode is used" in missing_source_error
 
         exit_code, output = _run_cli(
             [

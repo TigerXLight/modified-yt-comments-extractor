@@ -30,6 +30,54 @@ python total_export_prepare_cli.py --list-capture-options
 python total_export_prepare_cli.py --list-capture-options --json
 ```
 
+## List Source Adapters
+
+This mode is metadata-only. It does not require `--base-folder` or `--source-url`, does not fetch source content, and does not create a package.
+
+```cmd
+python total_export_prepare_cli.py --list-source-adapters
+```
+
+```cmd
+python total_export_prepare_cli.py --list-source-adapters --json
+```
+
+## List ASR Providers
+
+This mode is metadata-only. It does not call ASR providers, perform transcription, or create a package.
+
+```cmd
+python total_export_prepare_cli.py --list-asr-providers
+```
+
+```cmd
+python total_export_prepare_cli.py --list-asr-providers --json
+```
+
+## List All Metadata
+
+This mode lists capture options, source adapters, and ASR providers without creating a package.
+
+```cmd
+python total_export_prepare_cli.py --list-metadata
+```
+
+```cmd
+python total_export_prepare_cli.py --list-metadata --json
+```
+
+## Explain Source Plan
+
+Explain mode requires `--source-url`, but it does not require `--base-folder` and does not create a package.
+
+```cmd
+python total_export_prepare_cli.py --explain-plan --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --source-label "YouTube clip" --title "Clip Title" --capture-option comments --term Caltheris
+```
+
+```cmd
+python total_export_prepare_cli.py --explain-plan --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --capture-option comments --term Caltheris --json
+```
+
 ## Review-File Example
 
 ```cmd

@@ -67,6 +67,8 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Total Export prepare CLI developer examples documented for local-only package-shell usage without fetch/capture/network/GUI behavior.
 - Total Export prepare CLI now supports a local-only `--review-files` shortcut for README, inventory report, and inventory output without fetch/capture/network/GUI behavior.
 - Total Export prepare CLI can list supported capture options in text or JSON without preparing packages or performing fetch/capture/network/GUI behavior.
+- Total Export prepare CLI can list source adapter and ASR provider metadata in text/JSON without package creation or fetch/capture/network/GUI behavior.
+- Total Export prepare CLI can explain source capture plans without package creation or fetch/capture/network/GUI behavior.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
