@@ -687,6 +687,68 @@ def run_self_test() -> None:
         assert parsed_explicit_inspect["manifest_path"] == full_review_manifest_path
         assert parsed_explicit_inspect["status"] == "ok"
 
+        exit_code, zip_output = _run_cli(
+            [
+                "--zip-package",
+                "--package-folder",
+                full_review_package_folder,
+            ]
+        )
+        assert exit_code == 0
+        assert "Total Export package ZIP" in zip_output
+        assert "ZIP created: yes" in zip_output
+        assert "ZIP SHA-256: " in zip_output
+        default_zip_path = Path(f"{full_review_package_folder}.zip")
+        assert default_zip_path.is_file()
+
+        exit_code, zip_json_output = _run_cli(
+            [
+                "--zip-package",
+                "--package-folder",
+                full_review_package_folder,
+                "--json",
+                "--overwrite-zip",
+            ]
+        )
+        assert exit_code == 0
+        parsed_zip = json.loads(zip_json_output)
+        assert parsed_zip["zip_created"] is True
+        assert parsed_zip["zip_path"]
+        assert parsed_zip["zip_sha256"]
+        assert parsed_zip["zipped_file_count"] >= 5
+        assert parsed_zip["inspection_status"] == "ok"
+        assert Path(parsed_zip["zip_path"]).is_file()
+
+        custom_zip_path = str(Path(temp_dir) / "custom_cli_package.zip")
+        exit_code, custom_zip_json_output = _run_cli(
+            [
+                "--zip-package",
+                "--package-folder",
+                full_review_package_folder,
+                "--zip-path",
+                custom_zip_path,
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_custom_zip = json.loads(custom_zip_json_output)
+        assert parsed_custom_zip["zip_created"] is True
+        assert parsed_custom_zip["zip_path"] == custom_zip_path
+        assert Path(custom_zip_path).is_file()
+
+        exit_code, existing_zip_json_output = _run_cli(
+            [
+                "--zip-package",
+                "--package-folder",
+                full_review_package_folder,
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_existing_zip = json.loads(existing_zip_json_output)
+        assert parsed_existing_zip["zip_created"] is False
+        assert any("already exists" in error for error in parsed_existing_zip["errors"])
+
         extra_file = Path(full_review_package_folder) / "extra_local_note.txt"
         extra_file.write_text("local note", encoding="utf-8")
         exit_code, inspect_extra_json_output = _run_cli(
@@ -721,6 +783,22 @@ def run_self_test() -> None:
             "ASSET_FILE_MISSING" in error
             for error in parsed_missing_asset_inspect["validation_errors"]
         )
+
+        exit_code, invalid_zip_json_output = _run_cli(
+            [
+                "--zip-package",
+                "--package-folder",
+                full_review_package_folder,
+                "--zip-path",
+                str(Path(temp_dir) / "invalid_package.zip"),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_invalid_zip = json.loads(invalid_zip_json_output)
+        assert parsed_invalid_zip["zip_created"] is False
+        assert parsed_invalid_zip["inspection_status"] == "invalid_manifest"
+        assert any("inspection status" in error for error in parsed_invalid_zip["errors"])
 
         exit_code, inspect_missing_package_output = _run_cli(
             [
@@ -788,6 +866,32 @@ def run_self_test() -> None:
         )
         assert error_code == 2
         assert "read-only" in inspect_write_flag_error
+
+        error_code, zip_missing_folder_error = _run_cli_error(["--zip-package"])
+        assert error_code == 2
+        assert "--package-folder is required when --zip-package is used" in zip_missing_folder_error
+
+        error_code, zip_inspect_error = _run_cli_error(
+            [
+                "--zip-package",
+                "--inspect-package",
+                "--package-folder",
+                full_review_package_folder,
+            ]
+        )
+        assert error_code == 2
+        assert "Use only one list/explain mode at a time" in zip_inspect_error
+
+        error_code, zip_write_flag_error = _run_cli_error(
+            [
+                "--zip-package",
+                "--package-folder",
+                full_review_package_folder,
+                "--full-review-files",
+            ]
+        )
+        assert error_code == 2
+        assert "cannot be combined with prepare/write/review flags" in zip_write_flag_error
 
         exit_code, full_review_no_plan_register_output = _run_cli(
             [

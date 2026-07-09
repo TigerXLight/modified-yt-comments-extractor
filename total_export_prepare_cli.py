@@ -14,6 +14,11 @@ from total_export_package_inspect import (
     inspect_total_export_package,
     package_inspection_to_dict,
 )
+from total_export_package_zip import (
+    build_total_export_package_zip_text,
+    create_total_export_package_zip,
+    package_zip_result_to_dict,
+)
 from total_export_prepare import PreparedTotalExportResult
 from total_export_prepare import prepare_total_export_with_summary
 
@@ -53,6 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--list-metadata", action="store_true")
     parser.add_argument("--explain-plan", action="store_true")
     parser.add_argument("--inspect-package", action="store_true")
+    parser.add_argument("--zip-package", action="store_true")
+    parser.add_argument("--zip-path", default="")
+    parser.add_argument("--overwrite-zip", action="store_true")
+    parser.add_argument("--allow-inspection-warnings", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -425,6 +434,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.list_asr_providers,
             args.explain_plan,
             args.inspect_package,
+            args.zip_package,
         )
     )
     if args.list_metadata and list_mode_count:
@@ -451,6 +461,33 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(package_inspection_to_dict(inspection), indent=2, sort_keys=True))
         else:
             print(build_total_export_package_inspection_text(inspection))
+        return 0
+
+    if args.zip_package:
+        if not args.package_folder:
+            parser.error("--package-folder is required when --zip-package is used")
+        if (
+            args.write_readme
+            or args.write_plan_report
+            or args.write_inventory_report
+            or args.review_files
+            or args.full_review_files
+        ):
+            parser.error(
+                "--zip-package packages existing local packages and cannot be "
+                "combined with prepare/write/review flags"
+            )
+        zip_result = create_total_export_package_zip(
+            package_folder=args.package_folder,
+            manifest_path=args.manifest_path,
+            zip_path=args.zip_path,
+            overwrite=args.overwrite_zip,
+            allow_inspection_warnings=args.allow_inspection_warnings,
+        )
+        if args.json:
+            print(json.dumps(package_zip_result_to_dict(zip_result), indent=2, sort_keys=True))
+        else:
+            print(build_total_export_package_zip_text(zip_result))
         return 0
 
     if args.list_metadata:

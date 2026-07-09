@@ -136,6 +136,24 @@ python total_export_prepare_cli.py --inspect-package --package-folder ".\total_e
 python total_export_prepare_cli.py --inspect-package --package-folder ".\total_export_dev\full_review_files_shortcut" --manifest-path ".\total_export_dev\full_review_files_shortcut\full_review_files_shortcut_manifest.json" --json
 ```
 
+## Zip Existing Package
+
+ZIP mode is local-only. It packages an existing prepared package folder, runs local inspection before zipping, and does not fetch, capture, download, transcribe, or inspect source content.
+
+This is not external archive submit/check behavior. The default ZIP path is a sibling `.zip` next to the package folder. Use `--overwrite-zip` to replace an existing ZIP, or `--zip-path` to choose a custom output path.
+
+```cmd
+python total_export_prepare_cli.py --zip-package --package-folder ".\total_export_dev\full_review_files_shortcut"
+```
+
+```cmd
+python total_export_prepare_cli.py --zip-package --package-folder ".\total_export_dev\full_review_files_shortcut" --json
+```
+
+```cmd
+python total_export_prepare_cli.py --zip-package --package-folder ".\total_export_dev\full_review_files_shortcut" --zip-path ".\total_export_dev\full_review_files_shortcut.zip" --overwrite-zip --json
+```
+
 ## No-Registration Example
 
 ```cmd
@@ -152,6 +170,7 @@ python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-u
 - `--include-inventory`: Prints local file-vs-manifest inventory data.
 - `--review-files`: Writes README and inventory report files, then prints inventory output.
 - `--full-review-files`: Writes README, source-plan report, and inventory report files, then prints inventory output.
+- `--zip-package`: Creates a deterministic local ZIP for an existing package folder after local inspection.
 - `--json`: Prints deterministic JSON output instead of plain text.
 - `--no-final-validation`: Skips final local manifest/package validation.
 - `--no-create-asset-folders`: Avoids creating empty asset subfolders.
