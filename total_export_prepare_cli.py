@@ -21,6 +21,11 @@ from total_export_package_zip import (
 )
 from total_export_prepare import PreparedTotalExportResult
 from total_export_prepare import prepare_total_export_with_summary
+from total_export_batch_review_bundle import (
+    batch_review_bundle_result_to_dict,
+    build_total_export_batch_review_bundle_text,
+    build_total_export_batch_review_bundles,
+)
 from total_export_review_bundle import (
     build_total_export_review_bundle,
     build_total_export_review_bundle_text,
@@ -108,6 +113,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--write-review-bundle-folder-report", action="store_true")
     parser.add_argument("--review-bundle-folder-report-path", default="")
     parser.add_argument("--overwrite-review-bundle-folder-report", action="store_true")
+    parser.add_argument("--build-batch-review-bundles", action="store_true")
+    parser.add_argument("--batch-source-file", default="")
+    parser.add_argument("--batch-output-folder", default="")
+    parser.add_argument("--batch-stop-on-error", action="store_true")
+    parser.add_argument("--no-batch-folder-verification", action="store_true")
+    parser.add_argument("--write-batch-folder-report", action="store_true")
+    parser.add_argument("--overwrite-batch-folder-report", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -486,12 +498,51 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.build_review_bundle,
             args.verify_review_bundle,
             args.verify_review_bundle_folder,
+            args.build_batch_review_bundles,
         )
     )
     if args.list_metadata and list_mode_count:
         parser.error("--list-metadata cannot be combined with other list/explain modes")
     if list_mode_count > 1:
         parser.error("Use only one list/explain mode at a time")
+
+    if args.build_batch_review_bundles:
+        if not args.batch_source_file:
+            parser.error("--batch-source-file is required when --build-batch-review-bundles is used")
+        if not args.batch_output_folder:
+            parser.error("--batch-output-folder is required when --build-batch-review-bundles is used")
+        if (
+            args.write_readme
+            or args.write_plan_report
+            or args.write_inventory_report
+            or args.review_files
+            or args.full_review_files
+        ):
+            parser.error(
+                "--build-batch-review-bundles uses review-bundle output and cannot be "
+                "combined with manual prepare/write/review flags"
+            )
+        batch_result = build_total_export_batch_review_bundles(
+            batch_source_file=args.batch_source_file,
+            base_folder=args.batch_output_folder,
+            selected_capture_options=args.capture_option,
+            user_terms=args.term,
+            source_label=args.source_label,
+            create_asset_folders=not args.no_create_asset_folders,
+            overwrite_zip=args.overwrite_bundle_zip,
+            overwrite_sidecars=args.overwrite_sidecars,
+            continue_on_error=not args.batch_stop_on_error,
+            verify_folder_after=not args.no_batch_folder_verification,
+            write_folder_report=args.write_batch_folder_report,
+            overwrite_folder_report=args.overwrite_batch_folder_report,
+            include_zip_entries=args.include_zip_entries,
+            hash_zip_entries=args.hash_zip_entries,
+        )
+        if args.json:
+            print(json.dumps(batch_review_bundle_result_to_dict(batch_result), indent=2, sort_keys=True))
+        else:
+            print(build_total_export_batch_review_bundle_text(batch_result))
+        return 0
 
     if args.build_review_bundle:
         if not args.base_folder:

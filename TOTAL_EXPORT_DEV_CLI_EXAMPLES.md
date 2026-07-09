@@ -210,6 +210,24 @@ python total_export_prepare_cli.py --build-review-bundle --base-folder ".\total_
 python total_export_prepare_cli.py --build-review-bundle --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --package-id "review bundle overwrite" --capture-option comments --overwrite-bundle-zip --overwrite-sidecars --json
 ```
 
+## Build Batch Review Bundles
+
+Batch review-bundle mode is local-only. It reads a local UTF-8 text file of source URLs, builds local review bundles, and optionally verifies the output folder.
+
+It does not fetch, capture, download, transcribe, scrape, or inspect source content. It does not extract ZIPs and is not external archive behavior.
+
+```cmd
+python total_export_prepare_cli.py --build-batch-review-bundles --batch-source-file ".\total_export_dev\sources.txt" --batch-output-folder ".\total_export_dev\batch_output" --capture-option comments
+```
+
+```cmd
+python total_export_prepare_cli.py --build-batch-review-bundles --batch-source-file ".\total_export_dev\sources.txt" --batch-output-folder ".\total_export_dev\batch_output" --capture-option comments --overwrite-bundle-zip --overwrite-sidecars --json
+```
+
+```cmd
+python total_export_prepare_cli.py --build-batch-review-bundles --batch-source-file ".\total_export_dev\sources.txt" --batch-output-folder ".\total_export_dev\batch_output" --capture-option comments --write-batch-folder-report --overwrite-batch-folder-report --json
+```
+
 ## Verify Review Bundle
 
 Verification mode is local-only and read-only. It verifies an existing ZIP against its `.sha256` and `.inspection.json` sidecars.
@@ -268,6 +286,7 @@ python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-u
 - `--inspect-zip`: Inspects an existing local ZIP without extracting it.
 - `--write-zip-sidecars`: Writes local `.sha256` and `.inspection.json` sidecars for an existing ZIP.
 - `--build-review-bundle`: Prepares full local review files, inspects the package, creates and inspects a ZIP, and optionally writes ZIP sidecars.
+- `--build-batch-review-bundles`: Builds local review bundles from a local UTF-8 batch source file and can verify/report the output folder.
 - `--verify-review-bundle`: Verifies an existing review bundle ZIP against local `.sha256` and `.inspection.json` sidecars without extracting it.
 - `--verify-review-bundle-folder`: Verifies discovered local review bundle ZIPs in a folder against default sidecars, optionally recursively or with a local JSON report.
 - `--json`: Prints deterministic JSON output instead of plain text.

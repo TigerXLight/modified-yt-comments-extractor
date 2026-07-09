@@ -1498,6 +1498,190 @@ def run_self_test() -> None:
         assert error_code == 2
         assert "read-only" in folder_verify_full_review_error
 
+        batch_source_file = Path(temp_dir) / "batch_sources_cli.txt"
+        batch_source_file.write_text(
+            "\n".join(
+                [
+                    "# CLI batch review bundle self-test",
+                    "",
+                    f"https://www.youtube.com/watch?v={VALID_ID}",
+                    f"https://www.youtube.com/watch?v={VALID_ID}\tcli batch two",
+                    f"https://www.youtube.com/watch?v={VALID_ID}\tcli batch three\tClip Title",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        batch_output_folder = Path(temp_dir) / "batch_output_cli"
+        exit_code, batch_output = _run_cli(
+            [
+                "--build-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_output_folder),
+                "--capture-option",
+                "comments",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "Total Export batch review bundles" in batch_output
+        assert "Row count: 3" in batch_output
+        assert "Success count: 3" in batch_output
+        assert "Failed count: 0" in batch_output
+
+        batch_json_output_folder = Path(temp_dir) / "batch_output_cli_json"
+        exit_code, batch_json_output = _run_cli(
+            [
+                "--build-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_json_output_folder),
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_batch = json.loads(batch_json_output)
+        assert parsed_batch["row_count"] == 3
+        assert parsed_batch["success_count"] == 3
+        assert parsed_batch["failed_count"] == 0
+        assert parsed_batch["folder_verification_ran"] is True
+        assert parsed_batch["folder_verification_verified_count"] == 3
+
+        exit_code, batch_existing_json_output = _run_cli(
+            [
+                "--build-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_output_folder),
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_batch_existing = json.loads(batch_existing_json_output)
+        assert parsed_batch_existing["success_count"] == 0
+        assert parsed_batch_existing["failed_count"] == 3
+        assert any(item["errors"] for item in parsed_batch_existing["items"])
+
+        exit_code, batch_stop_json_output = _run_cli(
+            [
+                "--build-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_output_folder),
+                "--capture-option",
+                "comments",
+                "--batch-stop-on-error",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_batch_stop = json.loads(batch_stop_json_output)
+        assert parsed_batch_stop["row_count"] == 3
+        assert len(parsed_batch_stop["items"]) == 1
+        assert parsed_batch_stop["failed_count"] == 1
+        assert parsed_batch_stop["warnings"]
+
+        exit_code, batch_overwrite_json_output = _run_cli(
+            [
+                "--build-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_output_folder),
+                "--capture-option",
+                "comments",
+                "--overwrite-bundle-zip",
+                "--overwrite-sidecars",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_batch_overwrite = json.loads(batch_overwrite_json_output)
+        assert parsed_batch_overwrite["success_count"] == 3
+        assert parsed_batch_overwrite["failed_count"] == 0
+
+        batch_report_folder = Path(temp_dir) / "batch_output_cli_report"
+        exit_code, batch_report_json_output = _run_cli(
+            [
+                "--build-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(batch_report_folder),
+                "--capture-option",
+                "comments",
+                "--write-batch-folder-report",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_batch_report = json.loads(batch_report_json_output)
+        assert parsed_batch_report["folder_verification_report_written"] is True
+        assert Path(parsed_batch_report["folder_verification_report_path"]).is_file()
+
+        error_code, batch_missing_source_error = _run_cli_error(
+            [
+                "--build-batch-review-bundles",
+                "--batch-output-folder",
+                str(Path(temp_dir) / "batch_missing_source"),
+            ]
+        )
+        assert error_code == 2
+        assert (
+            "--batch-source-file is required when --build-batch-review-bundles is used"
+            in batch_missing_source_error
+        )
+
+        error_code, batch_missing_output_error = _run_cli_error(
+            [
+                "--build-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+            ]
+        )
+        assert error_code == 2
+        assert (
+            "--batch-output-folder is required when --build-batch-review-bundles is used"
+            in batch_missing_output_error
+        )
+
+        error_code, batch_folder_verify_error = _run_cli_error(
+            [
+                "--build-batch-review-bundles",
+                "--verify-review-bundle-folder",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(Path(temp_dir) / "batch_conflict"),
+                "--review-bundle-folder",
+                str(folder_verify_dir),
+            ]
+        )
+        assert error_code == 2
+        assert "Use only one list/explain mode at a time" in batch_folder_verify_error
+
+        error_code, batch_full_review_error = _run_cli_error(
+            [
+                "--build-batch-review-bundles",
+                "--batch-source-file",
+                str(batch_source_file),
+                "--batch-output-folder",
+                str(Path(temp_dir) / "batch_full_review_conflict"),
+                "--full-review-files",
+            ]
+        )
+        assert error_code == 2
+        assert "cannot be combined with manual prepare/write/review flags" in batch_full_review_error
+
         error_code, bundle_missing_base_error = _run_cli_error(
             [
                 "--build-review-bundle",
