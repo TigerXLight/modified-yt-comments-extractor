@@ -15,12 +15,21 @@ def run_self_test() -> None:
             base_folder=temp_dir,
             source_label="YouTube",
             package_id=" My Package: Clip #1! ",
-            selected_capture_options=("comments", "archive_check"),
+            selected_capture_options=(
+                " comments ",
+                "archive_check",
+                "comments",
+                "unknown_option",
+            ),
             create_asset_folders=True,
         )
         assert unsafe_result.package_id == "My_Package_Clip_1"
         assert Path(unsafe_result.package_folder).is_dir()
         assert Path(unsafe_result.manifest_path).is_file()
+        assert unsafe_result.warnings == (
+            "Unknown capture options ignored: unknown_option",
+            "Duplicate capture options ignored: comments",
+        )
 
         for subfolder in ["metadata", "page_capture", "media"]:
             assert (Path(unsafe_result.package_folder) / subfolder).is_dir()
@@ -44,6 +53,7 @@ def run_self_test() -> None:
         assert Path(default_result.package_folder).is_dir()
         assert Path(default_result.manifest_path).is_file()
         assert default_result.created_folders == (default_result.package_folder,)
+        assert default_result.warnings == ()
 
         for subfolder in ["metadata", "page_capture", "media"]:
             assert not (Path(default_result.package_folder) / subfolder).exists()

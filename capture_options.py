@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Sequence
 
 
 CAPTURE_POSTS = "posts"
@@ -44,6 +44,14 @@ class CaptureOptionMetadata:
     evidence_oriented: bool = True
     safety_notes: str = ""
     implementation_notes: str = ""
+
+
+@dataclass(frozen=True)
+class CaptureOptionSelection:
+    selected_option_ids: tuple[str, ...] = ()
+    unknown_option_ids: tuple[str, ...] = ()
+    duplicate_option_ids: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
 
 CAPTURE_OPTION_METADATA = (
@@ -206,3 +214,58 @@ def capture_options_requiring_confirmation() -> tuple[CaptureOptionMetadata, ...
     return tuple(
         option for option in CAPTURE_OPTION_METADATA if option.requires_user_confirmation
     )
+
+
+def normalize_capture_option_ids(
+    option_ids: Sequence[str],
+    *,
+    allow_unknown: bool = False,
+) -> CaptureOptionSelection:
+    known_ids = {option.option_id for option in CAPTURE_OPTION_METADATA}
+    selected_option_ids = []
+    unknown_option_ids = []
+    duplicate_option_ids = []
+    warnings = []
+    seen = set()
+    seen_duplicates = set()
+
+    for option_id in option_ids:
+        normalized = (option_id or "").strip()
+        if not normalized:
+            continue
+
+        if normalized in seen:
+            if normalized not in seen_duplicates:
+                seen_duplicates.add(normalized)
+                duplicate_option_ids.append(normalized)
+            continue
+        seen.add(normalized)
+
+        is_known = normalized in known_ids
+        if not is_known:
+            unknown_option_ids.append(normalized)
+            if not allow_unknown:
+                continue
+
+        selected_option_ids.append(normalized)
+
+    if unknown_option_ids:
+        joined_unknown = ", ".join(unknown_option_ids)
+        if allow_unknown:
+            warnings.append(f"Unknown capture options preserved: {joined_unknown}")
+        else:
+            warnings.append(f"Unknown capture options ignored: {joined_unknown}")
+    if duplicate_option_ids:
+        joined_duplicates = ", ".join(duplicate_option_ids)
+        warnings.append(f"Duplicate capture options ignored: {joined_duplicates}")
+
+    return CaptureOptionSelection(
+        selected_option_ids=tuple(selected_option_ids),
+        unknown_option_ids=tuple(unknown_option_ids),
+        duplicate_option_ids=tuple(duplicate_option_ids),
+        warnings=tuple(warnings),
+    )
+
+
+def default_total_export_capture_selection() -> CaptureOptionSelection:
+    return normalize_capture_option_ids(default_total_export_capture_option_ids())

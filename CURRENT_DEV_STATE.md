@@ -42,6 +42,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Context/glossary skeleton added for future background topic resolver, ASR phrase prompts, and Term QA; it is not wired into ASR, GUI, network, or exports.
 - ASR provider metadata skeleton added for future Access & Keys UI; it records non-secret benchmark/status notes only and does not test keys, store credentials, call providers, or change ASR behavior.
 - Capture option metadata skeleton added for future Total Export evidence checkboxes; it is not wired into GUI/export behavior and does not perform archive checks, screenshots, scraping, or media downloading.
+- Capture option selection validation added for the Total Export package helper; it remains non-wired and performs no capture/network behavior.
 - Total Export package builder helper added; it creates package folders/manifests only when explicitly called and is not wired into GUI/export/capture behavior.
 - Future source adapter pipeline:
   - Source URL.

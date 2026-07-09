@@ -8,9 +8,11 @@ from capture_options import (
     CAPTURE_VIDEO_MEDIA_EVIDENCE,
     available_capture_options,
     capture_options_requiring_confirmation,
+    default_total_export_capture_selection,
     default_total_export_capture_option_ids,
     future_only_capture_option_ids,
     get_capture_option,
+    normalize_capture_option_ids,
 )
 
 
@@ -57,6 +59,36 @@ def run_self_test() -> None:
     assert CAPTURE_ARCHIVE_CHECK not in confirmation_ids
 
     assert get_capture_option("unknown_option") is None
+
+    normalized = normalize_capture_option_ids(
+        [
+            " comments ",
+            "",
+            "archive_check",
+            "comments",
+            "unknown_option",
+            " archive_check ",
+            "new_option",
+        ]
+    )
+    assert normalized.selected_option_ids == (CAPTURE_COMMENTS, CAPTURE_ARCHIVE_CHECK)
+    assert normalized.unknown_option_ids == ("unknown_option", "new_option")
+    assert normalized.duplicate_option_ids == (CAPTURE_COMMENTS, CAPTURE_ARCHIVE_CHECK)
+    assert normalized.warnings == (
+        "Unknown capture options ignored: unknown_option, new_option",
+        "Duplicate capture options ignored: comments, archive_check",
+    )
+
+    preserved = normalize_capture_option_ids(["comments", "unknown_option"], allow_unknown=True)
+    assert preserved.selected_option_ids == (CAPTURE_COMMENTS, "unknown_option")
+    assert preserved.unknown_option_ids == ("unknown_option",)
+    assert preserved.warnings == ("Unknown capture options preserved: unknown_option",)
+
+    default_selection = default_total_export_capture_selection()
+    assert default_selection.selected_option_ids == default_total_export_capture_option_ids()
+    assert default_selection.unknown_option_ids == ()
+    assert default_selection.duplicate_option_ids == ()
+    assert default_selection.warnings == ()
 
 
 if __name__ == "__main__":

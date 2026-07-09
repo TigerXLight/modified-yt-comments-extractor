@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
+from capture_options import normalize_capture_option_ids
 from total_export_manifest import (
     ASSET_ARCHIVE_RESULT,
     ASSET_CSV_EXPORT,
@@ -48,6 +49,7 @@ class TotalExportPackageResult:
     package_folder: str
     manifest_path: str
     created_folders: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
 
 def ensure_folder(path: str) -> str:
@@ -77,6 +79,7 @@ def create_total_export_package(
 ) -> TotalExportPackageResult:
     resolved_package_id = safe_package_id(package_id) if package_id else default_package_id(source_label)
     package_folder = default_package_folder(base_folder, resolved_package_id)
+    capture_selection = normalize_capture_option_ids(selected_capture_options)
 
     created_folders = [ensure_folder(package_folder)]
     if create_asset_folders:
@@ -86,7 +89,7 @@ def create_total_export_package(
     manifest = TotalExportManifest(
         package_id=resolved_package_id,
         output_folder=package_folder,
-        capture_options=list(selected_capture_options),
+        capture_options=list(capture_selection.selected_option_ids),
         notes=f"Source label: {source_label}" if source_label else "",
     )
     manifest_path = str(Path(package_folder) / manifest_filename(resolved_package_id))
@@ -97,4 +100,5 @@ def create_total_export_package(
         package_folder=package_folder,
         manifest_path=manifest_path,
         created_folders=tuple(created_folders),
+        warnings=capture_selection.warnings,
     )
