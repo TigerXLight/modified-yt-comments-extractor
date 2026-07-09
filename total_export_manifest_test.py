@@ -12,9 +12,24 @@ from evidence_schema import (
     SourceRole,
 )
 from total_export_manifest import (
+    ASSET_ARCHIVE_RESULT,
+    ASSET_CSV_EXPORT,
+    ASSET_EXCEL_EXPORT,
+    ASSET_EXTRACTED_TEXT,
+    ASSET_HTML_SNAPSHOT,
+    ASSET_JSON_EXPORT,
+    ASSET_MANIFEST,
+    ASSET_MEDIA,
+    ASSET_RAW_SIDECAR,
+    ASSET_SCREENSHOT,
+    ASSET_TEXT_EXPORT,
     ExportAsset,
     TotalExportManifest,
+    asset_subfolder,
+    default_package_folder,
+    default_package_id,
     manifest_filename,
+    safe_package_id,
     sha256_for_file,
     write_manifest_json,
 )
@@ -27,6 +42,34 @@ def _assert_utc_timestamp(value: str) -> None:
 
 def run_self_test() -> None:
     with TemporaryDirectory() as temp_dir:
+        assert safe_package_id(" YouTube Export: Clip #1 ") == "YouTube_Export_Clip_1"
+        assert safe_package_id("a__b!!c") == "a_b_c"
+        assert safe_package_id("") == "total_export"
+
+        package_id = default_package_id("youtube")
+        assert package_id.startswith("total_export_youtube_")
+        assert package_id.endswith("Z")
+        assert default_package_id().startswith("total_export_")
+
+        package_folder = default_package_folder(temp_dir, "My Package!")
+        assert package_folder == str(Path(temp_dir) / "My_Package")
+        assert not Path(package_folder).exists()
+
+        for asset_type in [
+            ASSET_TEXT_EXPORT,
+            ASSET_CSV_EXPORT,
+            ASSET_EXCEL_EXPORT,
+            ASSET_JSON_EXPORT,
+            ASSET_MANIFEST,
+            ASSET_ARCHIVE_RESULT,
+            ASSET_RAW_SIDECAR,
+        ]:
+            assert asset_subfolder(asset_type) == "metadata"
+        for asset_type in [ASSET_SCREENSHOT, ASSET_HTML_SNAPSHOT, ASSET_EXTRACTED_TEXT]:
+            assert asset_subfolder(asset_type) == "page_capture"
+        assert asset_subfolder(ASSET_MEDIA) == "media"
+        assert asset_subfolder("unknown") == "assets"
+
         asset_path = Path(temp_dir) / "sample.txt"
         sample_bytes = b"sample evidence\n"
         asset_path.write_bytes(sample_bytes)

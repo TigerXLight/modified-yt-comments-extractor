@@ -37,6 +37,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Total Export manifest skeleton added in `total_export_manifest.py`; it is not wired into existing GUI/export behavior yet.
 - Future Total Export should use the manifest to track selected outputs, assets, hashes, provenance, archive results, claim notes, and media source-chain notes.
 - Total Export manifest JSON writer helper added; it remains explicit-call only and is not wired into existing GUI/export behavior yet.
+- Total Export package naming and asset-type helper skeleton added; it does not create folders and is not wired into existing GUI/export behavior yet.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.

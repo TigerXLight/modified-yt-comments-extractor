@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -13,6 +14,19 @@ from evidence_schema import (
     MediaSourceChainNote,
     utc_now_iso,
 )
+
+
+ASSET_TEXT_EXPORT = "text_export"
+ASSET_CSV_EXPORT = "csv_export"
+ASSET_EXCEL_EXPORT = "excel_export"
+ASSET_JSON_EXPORT = "json_export"
+ASSET_MANIFEST = "manifest"
+ASSET_SCREENSHOT = "screenshot"
+ASSET_HTML_SNAPSHOT = "html_snapshot"
+ASSET_EXTRACTED_TEXT = "extracted_text"
+ASSET_ARCHIVE_RESULT = "archive_result"
+ASSET_MEDIA = "media"
+ASSET_RAW_SIDECAR = "raw_sidecar"
 
 
 def sha256_for_file(path: str) -> str:
@@ -27,20 +41,46 @@ def sha256_for_file(path: str) -> str:
     return digest.hexdigest()
 
 
+def safe_package_id(value: str) -> str:
+    safe_value = re.sub(r"[^A-Za-z0-9_-]+", "_", (value or "").strip())
+    safe_value = re.sub(r"_+", "_", safe_value).strip("_")
+    return safe_value or "total_export"
+
+
+def default_package_id(source_label: str = "") -> str:
+    timestamp = utc_now_iso().replace("-", "").replace(":", "")
+    if source_label:
+        return safe_package_id(f"total_export_{safe_package_id(source_label)}_{timestamp}")
+    return safe_package_id(f"total_export_{timestamp}")
+
+
+def default_package_folder(base_folder: str, package_id: str) -> str:
+    return str(Path(base_folder) / safe_package_id(package_id))
+
+
+def asset_subfolder(asset_type: str) -> str:
+    if asset_type in {
+        ASSET_TEXT_EXPORT,
+        ASSET_CSV_EXPORT,
+        ASSET_EXCEL_EXPORT,
+        ASSET_JSON_EXPORT,
+        ASSET_MANIFEST,
+        ASSET_ARCHIVE_RESULT,
+        ASSET_RAW_SIDECAR,
+    }:
+        return "metadata"
+    if asset_type in {ASSET_SCREENSHOT, ASSET_HTML_SNAPSHOT, ASSET_EXTRACTED_TEXT}:
+        return "page_capture"
+    if asset_type == ASSET_MEDIA:
+        return "media"
+    return "assets"
+
+
 def manifest_filename(package_id: str) -> str:
-    package_id = (package_id or "").strip()
+    package_id = safe_package_id(package_id)
     if not package_id:
         return "manifest.json"
-
-    safe_chars = []
-    for char in package_id:
-        if char.isalnum() or char in {"-", "_"}:
-            safe_chars.append(char)
-        else:
-            safe_chars.append("_")
-
-    safe_package_id = "".join(safe_chars).strip("_") or "manifest"
-    return f"{safe_package_id}_manifest.json"
+    return f"{package_id}_manifest.json"
 
 
 def _value_for_dict(value: Any) -> Any:
