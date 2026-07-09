@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import MISSING, asdict, dataclass, field, fields, is_dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List
@@ -99,6 +99,20 @@ def _value_for_dict(value: Any) -> Any:
     return value
 
 
+def _dataclass_from_dict(dataclass_type: Any, data: Dict[str, Any]) -> Any:
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected dict for {dataclass_type.__name__}.")
+
+    values = {}
+    for dataclass_field in fields(dataclass_type):
+        field_name = dataclass_field.name
+        if field_name in data:
+            values[field_name] = data[field_name]
+        elif dataclass_field.default is MISSING and dataclass_field.default_factory is MISSING:
+            raise ValueError(f"Missing required field {field_name!r} for {dataclass_type.__name__}.")
+    return dataclass_type(**values)
+
+
 @dataclass
 class ExportAsset:
     asset_type: str = ""
@@ -131,6 +145,37 @@ class TotalExportManifest:
 
     def to_dict(self) -> Dict[str, Any]:
         return _value_for_dict(self)
+
+
+def export_asset_from_dict(data: Dict[str, Any]) -> ExportAsset:
+    return _dataclass_from_dict(ExportAsset, data)
+
+
+def total_export_manifest_from_dict(data: Dict[str, Any]) -> TotalExportManifest:
+    values = dict(data)
+    values["assets"] = [
+        export_asset_from_dict(asset_data)
+        for asset_data in values.get("assets", [])
+    ]
+    values["provenance_records"] = [
+        _dataclass_from_dict(EvidenceProvenance, provenance_data)
+        for provenance_data in values.get("provenance_records", [])
+    ]
+    values["claim_notes"] = [
+        _dataclass_from_dict(ClaimEvidenceNote, claim_data)
+        for claim_data in values.get("claim_notes", [])
+    ]
+    values["media_source_chain_notes"] = [
+        _dataclass_from_dict(MediaSourceChainNote, media_data)
+        for media_data in values.get("media_source_chain_notes", [])
+    ]
+    return _dataclass_from_dict(TotalExportManifest, values)
+
+
+def read_manifest_json(path: str) -> TotalExportManifest:
+    with Path(path).open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    return total_export_manifest_from_dict(data)
 
 
 def write_manifest_json(manifest: TotalExportManifest, output_path: str) -> str:

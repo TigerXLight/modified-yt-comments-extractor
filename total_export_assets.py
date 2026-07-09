@@ -10,7 +10,9 @@ from total_export_manifest import (
     ExportAsset,
     TotalExportManifest,
     asset_subfolder,
+    read_manifest_json,
     sha256_for_file,
+    write_manifest_json,
 )
 
 
@@ -114,3 +116,14 @@ def manifest_with_asset(
     asset: ExportAsset,
 ) -> TotalExportManifest:
     return replace(manifest, assets=list(manifest.assets) + [asset])
+
+
+def register_asset_in_manifest_file(
+    *,
+    manifest_path: str,
+    asset: ExportAsset,
+) -> TotalExportManifest:
+    manifest = read_manifest_json(manifest_path)
+    updated_manifest = manifest_with_asset(manifest, asset)
+    write_manifest_json(updated_manifest, manifest_path)
+    return updated_manifest

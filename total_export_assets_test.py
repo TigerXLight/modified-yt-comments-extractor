@@ -7,12 +7,15 @@ from total_export_assets import (
     copy_asset_into_package,
     export_asset_for_file,
     manifest_with_asset,
+    register_asset_in_manifest_file,
     safe_asset_filename,
 )
 from total_export_manifest import (
     ASSET_MEDIA,
     ASSET_TEXT_EXPORT,
     TotalExportManifest,
+    read_manifest_json,
+    write_manifest_json,
 )
 
 
@@ -103,6 +106,23 @@ def run_self_test() -> None:
         assert updated_manifest.source_urls == manifest.source_urls
         assert updated_manifest.capture_options == manifest.capture_options
         assert updated_manifest.notes == "keep me"
+
+        manifest_path = Path(package_folder) / "manifest.json"
+        write_manifest_json(manifest, str(manifest_path))
+        registered_manifest = register_asset_in_manifest_file(
+            manifest_path=str(manifest_path),
+            asset=copied.asset,
+        )
+        assert len(registered_manifest.assets) == 1
+        assert registered_manifest.assets[0] == copied.asset
+        assert registered_manifest.package_id == manifest.package_id
+        assert registered_manifest.source_urls == manifest.source_urls
+        assert registered_manifest.capture_options == manifest.capture_options
+
+        reloaded_manifest = read_manifest_json(str(manifest_path))
+        assert len(reloaded_manifest.assets) == 1
+        assert reloaded_manifest.assets[0].sha256 == copied.asset.sha256
+        assert reloaded_manifest.notes == "keep me"
 
 
 if __name__ == "__main__":

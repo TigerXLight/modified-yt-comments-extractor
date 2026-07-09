@@ -29,6 +29,7 @@ from total_export_manifest import (
     default_package_folder,
     default_package_id,
     manifest_filename,
+    read_manifest_json,
     safe_package_id,
     sha256_for_file,
     write_manifest_json,
@@ -135,6 +136,28 @@ def run_self_test() -> None:
         assert loaded_manifest["provenance_records"][0]["source_url"] == provenance.source_url
         assert loaded_manifest["claim_notes"][0]["claim_text"] == claim_note.claim_text
         assert loaded_manifest["media_source_chain_notes"][0]["media_observed_on_url"]
+
+        loaded_manifest["unknown_extra_key"] = "ignored"
+        loaded_manifest["assets"][0]["unknown_asset_key"] = "ignored"
+        manifest_path.write_text(
+            json.dumps(loaded_manifest, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        round_trip_manifest = read_manifest_json(str(manifest_path))
+        assert round_trip_manifest.package_id == "test-package"
+        assert round_trip_manifest.source_urls == [provenance.source_url]
+        assert round_trip_manifest.output_folder == temp_dir
+        assert round_trip_manifest.capture_options == ["Comments", "Archive check"]
+        assert round_trip_manifest.notes == "Self-test manifest only."
+        assert len(round_trip_manifest.assets) == 1
+        assert isinstance(round_trip_manifest.assets[0], ExportAsset)
+        assert round_trip_manifest.assets[0].asset_type == "text"
+        assert round_trip_manifest.assets[0].sha256 == expected_hash
+        assert round_trip_manifest.assets[0].size_bytes == len(sample_bytes)
+        assert round_trip_manifest.provenance_records[0].source_url == provenance.source_url
+        assert round_trip_manifest.claim_notes[0].claim_text == claim_note.claim_text
+        assert round_trip_manifest.media_source_chain_notes[0].media_observed_on_url
 
 
 if __name__ == "__main__":
