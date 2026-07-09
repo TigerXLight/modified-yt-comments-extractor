@@ -118,6 +118,24 @@ Neither review shortcut fetches or captures content.
 python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --package-id "full review files shortcut" --capture-option comments --full-review-files
 ```
 
+## Inspect Existing Package
+
+Inspection is local-only and read-only. It does not fetch, capture, download, transcribe, or inspect source content. It does not create package files.
+
+Use it after a prepare run to inspect manifest discovery, manifest validation, local inventory, and standard review files.
+
+```cmd
+python total_export_prepare_cli.py --inspect-package --package-folder ".\total_export_dev\full_review_files_shortcut"
+```
+
+```cmd
+python total_export_prepare_cli.py --inspect-package --package-folder ".\total_export_dev\full_review_files_shortcut" --json
+```
+
+```cmd
+python total_export_prepare_cli.py --inspect-package --package-folder ".\total_export_dev\full_review_files_shortcut" --manifest-path ".\total_export_dev\full_review_files_shortcut\full_review_files_shortcut_manifest.json" --json
+```
+
 ## No-Registration Example
 
 ```cmd

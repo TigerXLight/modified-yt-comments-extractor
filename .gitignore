@@ -45,6 +45,10 @@ Thumbs.db
 experimental/
 reference_feature_notes/
 
+# Local Total Export CLI/dev output
+/total_export_dev/
+/total_export_dev_check/
+
 # Local ASR matrix outputs
 WHISPERCPP_MATRIX_SUMMARY.txt
 TRANSCRIPT_REFERENCE_SCORE_SUMMARY.txt

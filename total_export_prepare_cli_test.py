@@ -36,6 +36,13 @@ def _manifest_path_from_output(output: str) -> str:
     raise AssertionError("Manifest path was not printed.")
 
 
+def _package_folder_from_output(output: str) -> str:
+    for line in output.splitlines():
+        if line.startswith("Package folder: "):
+            return line.split(": ", 1)[1]
+    raise AssertionError("Package folder was not printed.")
+
+
 def _summary_path_from_output(output: str) -> str:
     for line in output.splitlines():
         if line.startswith("Summary path: "):
@@ -628,6 +635,159 @@ def run_self_test() -> None:
         )
         assert len(full_review_files_manifest.assets) == 4
         assert Path(_plan_report_path_from_output(full_review_files_output)).is_file()
+
+        full_review_package_folder = _package_folder_from_output(full_review_files_output)
+        full_review_manifest_path = _manifest_path_from_output(full_review_files_output)
+        exit_code, inspect_output = _run_cli(
+            [
+                "--inspect-package",
+                "--package-folder",
+                full_review_package_folder,
+            ]
+        )
+        assert exit_code == 0
+        assert "Total Export package inspection" in inspect_output
+        assert "Status: ok" in inspect_output
+        assert "Manifest valid: yes" in inspect_output
+        assert "source_plan_report: metadata/SOURCE_CAPTURE_PLAN.txt" in inspect_output
+        assert "Registered assets: 4" in inspect_output
+
+        exit_code, inspect_json_output = _run_cli(
+            [
+                "--inspect-package",
+                "--package-folder",
+                full_review_package_folder,
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_inspect = json.loads(inspect_json_output)
+        assert parsed_inspect["status"] == "ok"
+        assert parsed_inspect["manifest_found"] is True
+        assert parsed_inspect["manifest_valid"] is True
+        assert parsed_inspect["inventory_ran"] is True
+        assert parsed_inspect["inventory_registered_asset_count"] == 4
+        assert any(
+            item["relative_path"] == "metadata/SOURCE_CAPTURE_PLAN.txt"
+            for item in parsed_inspect["standard_files"]
+        )
+
+        exit_code, inspect_explicit_manifest_json_output = _run_cli(
+            [
+                "--inspect-package",
+                "--package-folder",
+                full_review_package_folder,
+                "--manifest-path",
+                full_review_manifest_path,
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_explicit_inspect = json.loads(inspect_explicit_manifest_json_output)
+        assert parsed_explicit_inspect["manifest_path"] == full_review_manifest_path
+        assert parsed_explicit_inspect["status"] == "ok"
+
+        extra_file = Path(full_review_package_folder) / "extra_local_note.txt"
+        extra_file.write_text("local note", encoding="utf-8")
+        exit_code, inspect_extra_json_output = _run_cli(
+            [
+                "--inspect-package",
+                "--package-folder",
+                full_review_package_folder,
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_extra_inspect = json.loads(inspect_extra_json_output)
+        assert "extra_local_note.txt" in parsed_extra_inspect["inventory_unregistered_files"]
+
+        plan_report_path = Path(full_review_package_folder) / "metadata" / "SOURCE_CAPTURE_PLAN.txt"
+        plan_report_path.unlink()
+        exit_code, inspect_missing_asset_json_output = _run_cli(
+            [
+                "--inspect-package",
+                "--package-folder",
+                full_review_package_folder,
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_missing_asset_inspect = json.loads(inspect_missing_asset_json_output)
+        assert parsed_missing_asset_inspect["status"] == "invalid_manifest"
+        assert "metadata/SOURCE_CAPTURE_PLAN.txt" in parsed_missing_asset_inspect[
+            "inventory_missing_registered_assets"
+        ]
+        assert any(
+            "ASSET_FILE_MISSING" in error
+            for error in parsed_missing_asset_inspect["validation_errors"]
+        )
+
+        exit_code, inspect_missing_package_output = _run_cli(
+            [
+                "--inspect-package",
+                "--package-folder",
+                str(Path(temp_dir) / "missing_package"),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        assert json.loads(inspect_missing_package_output)["status"] == "missing_package_folder"
+
+        empty_package = Path(temp_dir) / "empty_package"
+        empty_package.mkdir()
+        exit_code, inspect_missing_manifest_output = _run_cli(
+            [
+                "--inspect-package",
+                "--package-folder",
+                str(empty_package),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        assert json.loads(inspect_missing_manifest_output)["status"] == "missing_manifest"
+
+        multiple_package = Path(temp_dir) / "multiple_manifest_package"
+        multiple_package.mkdir()
+        (multiple_package / "a_manifest.json").write_text("{}", encoding="utf-8")
+        (multiple_package / "b_manifest.json").write_text("{}", encoding="utf-8")
+        exit_code, inspect_multiple_manifest_output = _run_cli(
+            [
+                "--inspect-package",
+                "--package-folder",
+                str(multiple_package),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        assert json.loads(inspect_multiple_manifest_output)["status"] == "multiple_manifests"
+
+        error_code, inspect_missing_folder_error = _run_cli_error(["--inspect-package"])
+        assert error_code == 2
+        assert "--package-folder is required when --inspect-package is used" in inspect_missing_folder_error
+
+        error_code, inspect_explain_error = _run_cli_error(
+            [
+                "--inspect-package",
+                "--package-folder",
+                full_review_package_folder,
+                "--explain-plan",
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+            ]
+        )
+        assert error_code == 2
+        assert "Use only one list/explain mode at a time" in inspect_explain_error
+
+        error_code, inspect_write_flag_error = _run_cli_error(
+            [
+                "--inspect-package",
+                "--package-folder",
+                full_review_package_folder,
+                "--full-review-files",
+            ]
+        )
+        assert error_code == 2
+        assert "read-only" in inspect_write_flag_error
 
         exit_code, full_review_no_plan_register_output = _run_cli(
             [

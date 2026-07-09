@@ -9,6 +9,11 @@ from capture_options import CaptureOptionMetadata, available_capture_options
 from source_adapters import AVAILABLE_SOURCE_ADAPTERS, SourceAdapter
 from source_capture_plan import SourceCapturePlan, build_source_capture_plan
 from total_export_inventory import TotalExportPackageInventory, build_total_export_inventory
+from total_export_package_inspect import (
+    build_total_export_package_inspection_text,
+    inspect_total_export_package,
+    package_inspection_to_dict,
+)
 from total_export_prepare import PreparedTotalExportResult
 from total_export_prepare import prepare_total_export_with_summary
 
@@ -19,6 +24,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--base-folder")
     parser.add_argument("--source-url")
+    parser.add_argument("--package-folder")
+    parser.add_argument("--manifest-path", default="")
     parser.add_argument("--source-label", default="")
     parser.add_argument("--title", default="")
     parser.add_argument("--package-id", default="")
@@ -45,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--list-asr-providers", action="store_true")
     parser.add_argument("--list-metadata", action="store_true")
     parser.add_argument("--explain-plan", action="store_true")
+    parser.add_argument("--inspect-package", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -416,12 +424,34 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.list_source_adapters,
             args.list_asr_providers,
             args.explain_plan,
+            args.inspect_package,
         )
     )
     if args.list_metadata and list_mode_count:
         parser.error("--list-metadata cannot be combined with other list/explain modes")
     if list_mode_count > 1:
         parser.error("Use only one list/explain mode at a time")
+
+    if args.inspect_package:
+        if not args.package_folder:
+            parser.error("--package-folder is required when --inspect-package is used")
+        if (
+            args.write_readme
+            or args.write_plan_report
+            or args.write_inventory_report
+            or args.review_files
+            or args.full_review_files
+        ):
+            parser.error("--inspect-package is read-only and cannot be combined with write/review flags")
+        inspection = inspect_total_export_package(
+            package_folder=args.package_folder,
+            manifest_path=args.manifest_path,
+        )
+        if args.json:
+            print(json.dumps(package_inspection_to_dict(inspection), indent=2, sort_keys=True))
+        else:
+            print(build_total_export_package_inspection_text(inspection))
+        return 0
 
     if args.list_metadata:
         if args.json:

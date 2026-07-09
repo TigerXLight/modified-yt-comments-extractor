@@ -71,6 +71,8 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Total Export prepare CLI can explain source capture plans without package creation or fetch/capture/network/GUI behavior.
 - Total Export prepare helper/CLI can optionally write/register a local source-plan report without fetch/capture/network/GUI behavior.
 - Total Export prepare CLI supports `--full-review-files` for README, source-plan report, inventory report, and inventory output without changing default behavior.
+- Total Export prepare CLI can inspect existing local package folders in text/JSON without creating files or performing fetch/capture/network/GUI behavior.
+- Local Total Export dev output folders are ignored to avoid committing generated package checks.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
