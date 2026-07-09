@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 from typing import Sequence
 
+from total_export_prepare import PreparedTotalExportResult
 from total_export_prepare import prepare_total_export_with_summary
 
 
@@ -20,7 +22,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--summary-filename", default="TOTAL_EXPORT_SUMMARY.txt")
     parser.add_argument("--no-register-summary", action="store_true")
     parser.add_argument("--no-create-asset-folders", action="store_true")
+    parser.add_argument("--json", action="store_true")
     return parser
+
+
+def result_to_cli_dict(result: PreparedTotalExportResult) -> dict[str, object]:
+    plan = result.workflow_result.plan
+    package_result = result.workflow_result.package_result.package_result
+    return {
+        "duplicate_capture_options": list(plan.duplicate_capture_options),
+        "manifest_path": result.workflow_result.package_result.manifest_path,
+        "normalized_url": plan.normalized_url,
+        "package_folder": package_result.package_folder,
+        "plan_status": plan.status,
+        "registered_summary": result.summary_file_result.registered,
+        "selected_capture_options": list(plan.selected_capture_options),
+        "source_url": plan.source_url,
+        "summary_path": result.summary_file_result.summary_path,
+        "unknown_capture_options": list(plan.unknown_capture_options),
+        "warnings": list(result.warnings),
+    }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -37,6 +58,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         summary_filename=args.summary_filename,
         register_summary_in_manifest=not args.no_register_summary,
     )
+
+    if args.json:
+        print(json.dumps(result_to_cli_dict(result), indent=2, sort_keys=True))
+        return 0
 
     package_result = result.workflow_result.package_result.package_result
     print(f"Package folder: {package_result.package_folder}")

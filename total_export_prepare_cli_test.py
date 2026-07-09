@@ -1,5 +1,6 @@
 from contextlib import redirect_stdout
 from io import StringIO
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -113,6 +114,97 @@ def run_self_test() -> None:
         assert "Plan status: unsupported_source" in unsupported_output
         assert "No source adapter supports the URL: https://example.com/article" in unsupported_output
         assert Path(_summary_path_from_output(unsupported_output)).is_file()
+
+        exit_code, json_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}&t=30s",
+                "--package-id",
+                "cli json",
+                "--capture-option",
+                "comments",
+                "--capture-option",
+                "archive_check",
+                "--capture-option",
+                "comments",
+                "--capture-option",
+                "unknown_option",
+                "--no-create-asset-folders",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed = json.loads(json_output)
+        assert set(parsed) == {
+            "duplicate_capture_options",
+            "manifest_path",
+            "normalized_url",
+            "package_folder",
+            "plan_status",
+            "registered_summary",
+            "selected_capture_options",
+            "source_url",
+            "summary_path",
+            "unknown_capture_options",
+            "warnings",
+        }
+        assert parsed["plan_status"] == "ready"
+        assert parsed["normalized_url"] == CANONICAL_URL
+        assert parsed["registered_summary"] is True
+        assert parsed["selected_capture_options"] == ["comments", "archive_check"]
+        assert parsed["unknown_capture_options"] == ["unknown_option"]
+        assert parsed["duplicate_capture_options"] == ["comments"]
+        assert parsed["warnings"] == [
+            "Unknown capture options ignored: unknown_option",
+            "Duplicate capture options ignored: comments",
+        ]
+        assert Path(parsed["summary_path"]).is_file()
+
+        exit_code, json_no_register_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli json no register",
+                "--capture-option",
+                "comments",
+                "--no-register-summary",
+                "--no-create-asset-folders",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_no_register = json.loads(json_no_register_output)
+        assert parsed_no_register["registered_summary"] is False
+        json_no_register_manifest = read_manifest_json(parsed_no_register["manifest_path"])
+        assert json_no_register_manifest.assets == []
+
+        exit_code, json_unsupported_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                "https://example.com/article",
+                "--package-id",
+                "cli json unsupported",
+                "--capture-option",
+                "comments",
+                "--no-create-asset-folders",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_unsupported = json.loads(json_unsupported_output)
+        assert parsed_unsupported["plan_status"] == "unsupported_source"
+        assert parsed_unsupported["source_url"] == "https://example.com/article"
+        assert parsed_unsupported["normalized_url"] == ""
+        assert parsed_unsupported["warnings"] == [
+            "No source adapter supports the URL: https://example.com/article",
+        ]
 
 
 if __name__ == "__main__":
