@@ -49,6 +49,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Source Capture Plan helper added for future Total Export/source evidence workflows; it validates source adapters, capture option selections, and context hints without fetching/capture/network/GUI behavior.
 - Total Export package-from-plan helper added; it creates package manifests from Source Capture Plans only when explicitly called and performs no fetch/capture/network/GUI behavior.
 - Source Capture Plan provenance helpers added; Total Export package-from-plan manifests now include explicit provenance records without fetch/capture/network/GUI behavior.
+- Total Export manifest validation helpers added for local package/asset consistency checks; they are explicit-call only and perform no fetch/capture/network/GUI behavior.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
