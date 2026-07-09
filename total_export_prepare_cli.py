@@ -4,6 +4,7 @@ import argparse
 import json
 from typing import Sequence
 
+from total_export_inventory import TotalExportPackageInventory, build_total_export_inventory
 from total_export_prepare import PreparedTotalExportResult
 from total_export_prepare import prepare_total_export_with_summary
 
@@ -26,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-register-readme", action="store_true")
     parser.add_argument("--no-create-asset-folders", action="store_true")
     parser.add_argument("--no-final-validation", action="store_true")
+    parser.add_argument("--include-inventory", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -46,10 +48,31 @@ def _final_validation_messages(result: PreparedTotalExportResult, level: str) ->
     ]
 
 
-def result_to_cli_dict(result: PreparedTotalExportResult) -> dict[str, object]:
+def _inventory_cli_fields(inventory: TotalExportPackageInventory | None) -> dict[str, object]:
+    if inventory is None:
+        return {
+            "inventory_local_file_count": 0,
+            "inventory_missing_registered_assets": [],
+            "inventory_ran": False,
+            "inventory_registered_asset_count": 0,
+            "inventory_unregistered_files": [],
+        }
+    return {
+        "inventory_local_file_count": inventory.local_file_count,
+        "inventory_missing_registered_assets": list(inventory.missing_registered_assets),
+        "inventory_ran": True,
+        "inventory_registered_asset_count": inventory.registered_asset_count,
+        "inventory_unregistered_files": list(inventory.unregistered_files),
+    }
+
+
+def result_to_cli_dict(
+    result: PreparedTotalExportResult,
+    inventory: TotalExportPackageInventory | None = None,
+) -> dict[str, object]:
     plan = result.workflow_result.plan
     package_result = result.workflow_result.package_result.package_result
-    return {
+    cli_dict = {
         "duplicate_capture_options": list(plan.duplicate_capture_options),
         "final_validation_errors": _final_validation_messages(result, "error"),
         "final_validation_issue_count": _final_validation_issue_count(result),
@@ -68,6 +91,39 @@ def result_to_cli_dict(result: PreparedTotalExportResult) -> dict[str, object]:
         "unknown_capture_options": list(plan.unknown_capture_options),
         "warnings": list(result.warnings),
     }
+    cli_dict.update(_inventory_cli_fields(inventory))
+    return cli_dict
+
+
+def _build_inventory_if_requested(
+    result: PreparedTotalExportResult,
+    include_inventory: bool,
+) -> TotalExportPackageInventory | None:
+    if not include_inventory:
+        return None
+    package_result = result.workflow_result.package_result.package_result
+    return build_total_export_inventory(
+        package_folder=package_result.package_folder,
+        manifest_path=result.workflow_result.package_result.manifest_path,
+    )
+
+
+def _print_inventory(inventory: TotalExportPackageInventory) -> None:
+    print("Inventory:")
+    print(f"Registered asset count: {inventory.registered_asset_count}")
+    print(f"Local file count: {inventory.local_file_count}")
+    print("Unregistered files:")
+    if inventory.unregistered_files:
+        for path in inventory.unregistered_files:
+            print(f"- {path}")
+    else:
+        print("- (none)")
+    print("Missing registered assets:")
+    if inventory.missing_registered_assets:
+        for path in inventory.missing_registered_assets:
+            print(f"- {path}")
+    else:
+        print("- (none)")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -88,9 +144,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         register_readme_in_manifest=not args.no_register_readme,
         validate_final_manifest=not args.no_final_validation,
     )
+    inventory = _build_inventory_if_requested(result, args.include_inventory)
 
     if args.json:
-        print(json.dumps(result_to_cli_dict(result), indent=2, sort_keys=True))
+        print(json.dumps(result_to_cli_dict(result, inventory), indent=2, sort_keys=True))
         return 0
 
     package_result = result.workflow_result.package_result.package_result
@@ -115,6 +172,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"- {warning}")
     else:
         print("- (none)")
+    if inventory:
+        _print_inventory(inventory)
     return 0
 
 

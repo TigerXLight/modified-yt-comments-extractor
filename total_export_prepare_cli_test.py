@@ -68,6 +68,7 @@ def run_self_test() -> None:
         assert "Registered summary: yes" in output
         assert "README path: " not in output
         assert "Final validation: ok" in output
+        assert "Inventory:" not in output
         assert "Unknown capture options ignored: unknown_option" in output
         assert "Duplicate capture options ignored: comments" in output
 
@@ -115,6 +116,28 @@ def run_self_test() -> None:
         )
         assert exit_code == 0
         assert "Final validation: skipped" in no_final_output
+
+        exit_code, inventory_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli inventory",
+                "--capture-option",
+                "comments",
+                "--include-inventory",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "Inventory:" in inventory_output
+        assert "Registered asset count: 1" in inventory_output
+        assert "Local file count: 2" in inventory_output
+        assert "Unregistered files:" in inventory_output
+        assert "_manifest.json" in inventory_output or "manifest.json" in inventory_output
+        assert "Missing registered assets:" in inventory_output
 
         exit_code, unsupported_output = _run_cli(
             [
@@ -203,6 +226,11 @@ def run_self_test() -> None:
             "final_validation_issue_count",
             "final_validation_ran",
             "final_validation_warnings",
+            "inventory_local_file_count",
+            "inventory_missing_registered_assets",
+            "inventory_ran",
+            "inventory_registered_asset_count",
+            "inventory_unregistered_files",
             "manifest_path",
             "normalized_url",
             "package_folder",
@@ -224,6 +252,11 @@ def run_self_test() -> None:
         assert parsed["final_validation_issue_count"] == 0
         assert parsed["final_validation_errors"] == []
         assert parsed["final_validation_warnings"] == []
+        assert parsed["inventory_ran"] is False
+        assert parsed["inventory_registered_asset_count"] == 0
+        assert parsed["inventory_local_file_count"] == 0
+        assert parsed["inventory_unregistered_files"] == []
+        assert parsed["inventory_missing_registered_assets"] == []
         assert parsed["registered_summary"] is True
         assert parsed["selected_capture_options"] == ["comments", "archive_check"]
         assert parsed["unknown_capture_options"] == ["unknown_option"]
@@ -280,6 +313,31 @@ def run_self_test() -> None:
         assert parsed_no_final["final_validation_errors"] == []
         assert parsed_no_final["final_validation_warnings"] == []
 
+        exit_code, json_inventory_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli json inventory",
+                "--capture-option",
+                "comments",
+                "--include-inventory",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_inventory = json.loads(json_inventory_output)
+        assert parsed_inventory["inventory_ran"] is True
+        assert parsed_inventory["inventory_registered_asset_count"] == 1
+        assert parsed_inventory["inventory_local_file_count"] >= 2
+        assert any(
+            path.endswith("_manifest.json") or path == "manifest.json"
+            for path in parsed_inventory["inventory_unregistered_files"]
+        )
+        assert parsed_inventory["inventory_missing_registered_assets"] == []
+
         exit_code, json_readme_output = _run_cli(
             [
                 "--base-folder",
@@ -291,6 +349,7 @@ def run_self_test() -> None:
                 "--capture-option",
                 "comments",
                 "--write-readme",
+                "--include-inventory",
                 "--json",
             ]
         )
@@ -300,6 +359,8 @@ def run_self_test() -> None:
         assert parsed_readme["registered_readme"] is True
         assert parsed_readme["final_validation_ran"] is True
         assert parsed_readme["final_validation_issue_count"] == 0
+        assert parsed_readme["inventory_ran"] is True
+        assert parsed_readme["inventory_registered_asset_count"] == 2
         assert Path(parsed_readme["readme_path"]).is_file()
         json_readme_manifest = read_manifest_json(parsed_readme["manifest_path"])
         assert len(json_readme_manifest.assets) == 2
@@ -337,6 +398,7 @@ def run_self_test() -> None:
                 "--capture-option",
                 "comments",
                 "--write-readme",
+                "--include-inventory",
                 "--no-create-asset-folders",
                 "--json",
             ]
@@ -350,6 +412,8 @@ def run_self_test() -> None:
         assert parsed_unsupported["registered_readme"] is True
         assert parsed_unsupported["final_validation_ran"] is True
         assert parsed_unsupported["final_validation_issue_count"] == 0
+        assert parsed_unsupported["inventory_ran"] is True
+        assert parsed_unsupported["inventory_registered_asset_count"] == 2
         assert parsed_unsupported["warnings"] == [
             "No source adapter supports the URL: https://example.com/article",
         ]
