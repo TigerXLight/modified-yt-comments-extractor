@@ -67,6 +67,7 @@ def run_self_test() -> None:
         assert "Plan status: ready" in output
         assert "Registered summary: yes" in output
         assert "README path: " not in output
+        assert "Final validation: ok" in output
         assert "Unknown capture options ignored: unknown_option" in output
         assert "Duplicate capture options ignored: comments" in output
 
@@ -97,6 +98,23 @@ def run_self_test() -> None:
         no_register_manifest = read_manifest_json(_manifest_path_from_output(no_register_output))
         assert no_register_manifest.assets == []
         assert Path(_summary_path_from_output(no_register_output)).is_file()
+
+        exit_code, no_final_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli no final",
+                "--capture-option",
+                "comments",
+                "--no-final-validation",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "Final validation: skipped" in no_final_output
 
         exit_code, unsupported_output = _run_cli(
             [
@@ -181,6 +199,10 @@ def run_self_test() -> None:
         parsed = json.loads(json_output)
         assert set(parsed) == {
             "duplicate_capture_options",
+            "final_validation_errors",
+            "final_validation_issue_count",
+            "final_validation_ran",
+            "final_validation_warnings",
             "manifest_path",
             "normalized_url",
             "package_folder",
@@ -198,6 +220,10 @@ def run_self_test() -> None:
         assert parsed["normalized_url"] == CANONICAL_URL
         assert parsed["readme_path"] == ""
         assert parsed["registered_readme"] is False
+        assert parsed["final_validation_ran"] is True
+        assert parsed["final_validation_issue_count"] == 0
+        assert parsed["final_validation_errors"] == []
+        assert parsed["final_validation_warnings"] == []
         assert parsed["registered_summary"] is True
         assert parsed["selected_capture_options"] == ["comments", "archive_check"]
         assert parsed["unknown_capture_options"] == ["unknown_option"]
@@ -228,8 +254,31 @@ def run_self_test() -> None:
         assert parsed_no_register["registered_summary"] is False
         assert parsed_no_register["readme_path"] == ""
         assert parsed_no_register["registered_readme"] is False
+        assert parsed_no_register["final_validation_ran"] is True
+        assert parsed_no_register["final_validation_issue_count"] == 0
         json_no_register_manifest = read_manifest_json(parsed_no_register["manifest_path"])
         assert json_no_register_manifest.assets == []
+
+        exit_code, json_no_final_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli json no final",
+                "--capture-option",
+                "comments",
+                "--no-final-validation",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_no_final = json.loads(json_no_final_output)
+        assert parsed_no_final["final_validation_ran"] is False
+        assert parsed_no_final["final_validation_issue_count"] == 0
+        assert parsed_no_final["final_validation_errors"] == []
+        assert parsed_no_final["final_validation_warnings"] == []
 
         exit_code, json_readme_output = _run_cli(
             [
@@ -249,6 +298,8 @@ def run_self_test() -> None:
         parsed_readme = json.loads(json_readme_output)
         assert parsed_readme["readme_path"]
         assert parsed_readme["registered_readme"] is True
+        assert parsed_readme["final_validation_ran"] is True
+        assert parsed_readme["final_validation_issue_count"] == 0
         assert Path(parsed_readme["readme_path"]).is_file()
         json_readme_manifest = read_manifest_json(parsed_readme["manifest_path"])
         assert len(json_readme_manifest.assets) == 2
@@ -297,6 +348,8 @@ def run_self_test() -> None:
         assert parsed_unsupported["normalized_url"] == ""
         assert parsed_unsupported["readme_path"]
         assert parsed_unsupported["registered_readme"] is True
+        assert parsed_unsupported["final_validation_ran"] is True
+        assert parsed_unsupported["final_validation_issue_count"] == 0
         assert parsed_unsupported["warnings"] == [
             "No source adapter supports the URL: https://example.com/article",
         ]

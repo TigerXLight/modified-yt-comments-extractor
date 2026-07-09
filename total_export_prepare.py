@@ -5,6 +5,7 @@ from typing import Sequence
 
 from total_export_readme import TotalExportReadmeFileResult, write_total_export_readme_file
 from total_export_summary import TotalExportSummaryFileResult, write_workflow_summary_file
+from total_export_validation import ManifestValidationResult, validate_manifest_json_file
 from total_export_workflow import TotalExportWorkflowResult, prepare_total_export_from_source
 
 
@@ -13,6 +14,7 @@ class PreparedTotalExportResult:
     workflow_result: TotalExportWorkflowResult
     summary_file_result: TotalExportSummaryFileResult
     readme_file_result: TotalExportReadmeFileResult | None = None
+    final_validation_result: ManifestValidationResult | None = None
     warnings: tuple[str, ...] = ()
 
 
@@ -49,6 +51,7 @@ def prepare_total_export_with_summary(
     write_readme: bool = False,
     readme_filename: str = "README_TOTAL_EXPORT.txt",
     register_readme_in_manifest: bool = True,
+    validate_final_manifest: bool = True,
 ) -> PreparedTotalExportResult:
     workflow_result = prepare_total_export_from_source(
         base_folder=base_folder,
@@ -72,9 +75,13 @@ def prepare_total_export_with_summary(
             filename=readme_filename,
             register_in_manifest=register_readme_in_manifest,
         )
+    final_validation_result = None
+    if validate_final_manifest:
+        final_validation_result = validate_manifest_json_file(workflow_result.package_result.manifest_path)
     return PreparedTotalExportResult(
         workflow_result=workflow_result,
         summary_file_result=summary_file_result,
         readme_file_result=readme_file_result,
+        final_validation_result=final_validation_result,
         warnings=_combined_warnings(workflow_result, summary_file_result, readme_file_result),
     )

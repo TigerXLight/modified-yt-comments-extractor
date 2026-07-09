@@ -38,6 +38,8 @@ def run_self_test() -> None:
         assert Path(prepared.summary_file_result.summary_path).is_file()
         assert prepared.summary_file_result.registered
         assert prepared.readme_file_result is None
+        assert prepared.final_validation_result is not None
+        assert prepared.final_validation_result.issues == ()
         assert prepared.warnings == (
             "Unknown capture options ignored: unknown_option",
             "Duplicate capture options ignored: comments",
@@ -69,6 +71,8 @@ def run_self_test() -> None:
         assert with_readme.readme_file_result is not None
         assert Path(with_readme.readme_file_result.readme_path).is_file()
         assert with_readme.readme_file_result.registered
+        assert with_readme.final_validation_result is not None
+        assert with_readme.final_validation_result.issues == ()
         readme_manifest = read_manifest_json(with_readme.workflow_result.package_result.manifest_path)
         assert len(readme_manifest.assets) == 2
 
@@ -98,6 +102,16 @@ def run_self_test() -> None:
         )
         assert len(readme_unregistered_manifest.assets) == 1
 
+        skipped_validation = prepare_total_export_with_summary(
+            base_folder=temp_dir,
+            source_url=f"https://www.youtube.com/watch?v={VALID_ID}",
+            selected_capture_options=["comments"],
+            package_id="prepared skipped validation",
+            create_asset_folders=False,
+            validate_final_manifest=False,
+        )
+        assert skipped_validation.final_validation_result is None
+
         unregistered = prepare_total_export_with_summary(
             base_folder=temp_dir,
             source_url=f"https://www.youtube.com/watch?v={VALID_ID}",
@@ -124,6 +138,8 @@ def run_self_test() -> None:
         assert Path(unsupported.workflow_result.package_result.package_result.package_folder).is_dir()
         assert Path(unsupported.summary_file_result.summary_path).is_file()
         assert unsupported.readme_file_result is not None
+        assert unsupported.final_validation_result is not None
+        assert unsupported.final_validation_result.issues == ()
         unsupported_text = Path(unsupported.summary_file_result.summary_path).read_text(encoding="utf-8")
         assert "Plan status: unsupported_source" in unsupported_text
         unsupported_readme = Path(unsupported.readme_file_result.readme_path).read_text(encoding="utf-8")
