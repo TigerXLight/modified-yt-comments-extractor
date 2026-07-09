@@ -7,6 +7,11 @@ from total_export_inventory_report import (
     TotalExportInventoryReportFileResult,
     write_total_export_inventory_report_file,
 )
+from total_export_plan_report import (
+    DEFAULT_PLAN_REPORT_FILENAME,
+    TotalExportPlanReportFileResult,
+    write_total_export_plan_report_file,
+)
 from total_export_readme import TotalExportReadmeFileResult, write_total_export_readme_file
 from total_export_summary import TotalExportSummaryFileResult, write_workflow_summary_file
 from total_export_validation import ManifestValidationResult, validate_manifest_json_file
@@ -18,6 +23,7 @@ class PreparedTotalExportResult:
     workflow_result: TotalExportWorkflowResult
     summary_file_result: TotalExportSummaryFileResult
     readme_file_result: TotalExportReadmeFileResult | None = None
+    plan_report_file_result: TotalExportPlanReportFileResult | None = None
     inventory_report_file_result: TotalExportInventoryReportFileResult | None = None
     final_validation_result: ManifestValidationResult | None = None
     warnings: tuple[str, ...] = ()
@@ -27,6 +33,7 @@ def _combined_warnings(
     workflow_result: TotalExportWorkflowResult,
     summary_file_result: TotalExportSummaryFileResult,
     readme_file_result: TotalExportReadmeFileResult | None = None,
+    plan_report_file_result: TotalExportPlanReportFileResult | None = None,
     inventory_report_file_result: TotalExportInventoryReportFileResult | None = None,
 ) -> tuple[str, ...]:
     warnings: list[str] = []
@@ -34,6 +41,8 @@ def _combined_warnings(
     source_warnings = list(workflow_result.warnings) + list(summary_file_result.warnings)
     if readme_file_result:
         source_warnings.extend(readme_file_result.warnings)
+    if plan_report_file_result:
+        source_warnings.extend(plan_report_file_result.warnings)
     if inventory_report_file_result:
         source_warnings.extend(inventory_report_file_result.warnings)
     for warning in source_warnings:
@@ -59,6 +68,9 @@ def prepare_total_export_with_summary(
     write_readme: bool = False,
     readme_filename: str = "README_TOTAL_EXPORT.txt",
     register_readme_in_manifest: bool = True,
+    write_plan_report: bool = False,
+    plan_report_filename: str = DEFAULT_PLAN_REPORT_FILENAME,
+    register_plan_report_in_manifest: bool = True,
     write_inventory_report: bool = False,
     inventory_report_filename: str = "TOTAL_EXPORT_INVENTORY.txt",
     register_inventory_report_in_manifest: bool = True,
@@ -86,6 +98,13 @@ def prepare_total_export_with_summary(
             filename=readme_filename,
             register_in_manifest=register_readme_in_manifest,
         )
+    plan_report_file_result = None
+    if write_plan_report:
+        plan_report_file_result = write_total_export_plan_report_file(
+            workflow_result=workflow_result,
+            filename=plan_report_filename,
+            register_in_manifest=register_plan_report_in_manifest,
+        )
     inventory_report_file_result = None
     if write_inventory_report:
         package_result = workflow_result.package_result.package_result
@@ -102,12 +121,14 @@ def prepare_total_export_with_summary(
         workflow_result=workflow_result,
         summary_file_result=summary_file_result,
         readme_file_result=readme_file_result,
+        plan_report_file_result=plan_report_file_result,
         inventory_report_file_result=inventory_report_file_result,
         final_validation_result=final_validation_result,
         warnings=_combined_warnings(
             workflow_result,
             summary_file_result,
             readme_file_result,
+            plan_report_file_result,
             inventory_report_file_result,
         ),
     )

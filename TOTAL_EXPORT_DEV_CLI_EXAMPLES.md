@@ -84,12 +84,38 @@ python total_export_prepare_cli.py --explain-plan --source-url "https://www.yout
 python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --package-id "review files package" --capture-option comments --write-readme --write-inventory-report --include-inventory
 ```
 
+## Source-Plan Report Example
+
+The source-plan report is local metadata explaining the intended capture plan only. It is not proof of actual captured content.
+
+```cmd
+python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --package-id "plan report package" --capture-option comments --write-plan-report
+```
+
+```cmd
+python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --package-id "custom plan report package" --capture-option comments --write-plan-report --plan-report-filename "Custom Source Plan.txt"
+```
+
+```cmd
+python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --package-id "unregistered plan report package" --capture-option comments --write-plan-report --no-register-plan-report
+```
+
 ## Review-File Shortcut
 
 `--review-files` is equivalent to enabling `--write-readme`, `--write-inventory-report`, and `--include-inventory`.
 
 ```cmd
 python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --package-id "review files shortcut" --capture-option comments --review-files
+```
+
+## Full Review-File Shortcut
+
+`--full-review-files` is equivalent to enabling `--write-readme`, `--write-plan-report`, `--write-inventory-report`, and `--include-inventory`.
+
+Neither review shortcut fetches or captures content.
+
+```cmd
+python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --package-id "full review files shortcut" --capture-option comments --full-review-files
 ```
 
 ## No-Registration Example
@@ -103,8 +129,11 @@ python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-u
 - `--capture-option`: Adds a planned capture option such as `comments` or `archive_check`.
 - `--term`: Adds a user glossary/context term for the source capture plan.
 - `--write-readme`: Writes `README_TOTAL_EXPORT.txt`.
+- `--write-plan-report`: Writes `SOURCE_CAPTURE_PLAN.txt`.
 - `--write-inventory-report`: Writes `TOTAL_EXPORT_INVENTORY.txt`.
 - `--include-inventory`: Prints local file-vs-manifest inventory data.
+- `--review-files`: Writes README and inventory report files, then prints inventory output.
+- `--full-review-files`: Writes README, source-plan report, and inventory report files, then prints inventory output.
 - `--json`: Prints deterministic JSON output instead of plain text.
 - `--no-final-validation`: Skips final local manifest/package validation.
 - `--no-create-asset-folders`: Avoids creating empty asset subfolders.
@@ -114,6 +143,7 @@ python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-u
 - Manifest JSON, named from the package ID.
 - `TOTAL_EXPORT_SUMMARY.txt`.
 - `README_TOTAL_EXPORT.txt`, when requested.
+- `SOURCE_CAPTURE_PLAN.txt`, when requested.
 - `TOTAL_EXPORT_INVENTORY.txt`, when requested.
 
 ## Expected Behavior

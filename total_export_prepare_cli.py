@@ -29,6 +29,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--write-readme", action="store_true")
     parser.add_argument("--readme-filename", default="README_TOTAL_EXPORT.txt")
     parser.add_argument("--no-register-readme", action="store_true")
+    parser.add_argument("--write-plan-report", action="store_true")
+    parser.add_argument("--plan-report-filename", default="SOURCE_CAPTURE_PLAN.txt")
+    parser.add_argument("--no-register-plan-report", action="store_true")
     parser.add_argument("--write-inventory-report", action="store_true")
     parser.add_argument("--inventory-report-filename", default="TOTAL_EXPORT_INVENTORY.txt")
     parser.add_argument("--no-register-inventory-report", action="store_true")
@@ -36,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-final-validation", action="store_true")
     parser.add_argument("--include-inventory", action="store_true")
     parser.add_argument("--review-files", action="store_true")
+    parser.add_argument("--full-review-files", action="store_true")
     parser.add_argument("--list-capture-options", action="store_true")
     parser.add_argument("--list-source-adapters", action="store_true")
     parser.add_argument("--list-asr-providers", action="store_true")
@@ -340,12 +344,21 @@ def result_to_cli_dict(
         "normalized_url": plan.normalized_url,
         "package_folder": package_result.package_folder,
         "plan_status": plan.status,
+        "plan_report_path": (
+            result.plan_report_file_result.report_path
+            if result.plan_report_file_result
+            else ""
+        ),
         "inventory_report_path": (
             result.inventory_report_file_result.report_path
             if result.inventory_report_file_result
             else ""
         ),
         "readme_path": result.readme_file_result.readme_path if result.readme_file_result else "",
+        "registered_plan_report": bool(
+            result.plan_report_file_result
+            and result.plan_report_file_result.registered
+        ),
         "registered_inventory_report": bool(
             result.inventory_report_file_result
             and result.inventory_report_file_result.registered
@@ -455,9 +468,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.source_url:
         parser.error("--source-url is required unless a list mode is used")
 
-    write_readme = args.write_readme or args.review_files
-    write_inventory_report = args.write_inventory_report or args.review_files
-    include_inventory = args.include_inventory or args.review_files
+    write_readme = args.write_readme or args.review_files or args.full_review_files
+    write_plan_report = args.write_plan_report or args.full_review_files
+    write_inventory_report = (
+        args.write_inventory_report or args.review_files or args.full_review_files
+    )
+    include_inventory = args.include_inventory or args.review_files or args.full_review_files
     result = prepare_total_export_with_summary(
         base_folder=args.base_folder,
         source_url=args.source_url,
@@ -472,6 +488,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_readme=write_readme,
         readme_filename=args.readme_filename,
         register_readme_in_manifest=not args.no_register_readme,
+        write_plan_report=write_plan_report,
+        plan_report_filename=args.plan_report_filename,
+        register_plan_report_in_manifest=not args.no_register_plan_report,
         write_inventory_report=write_inventory_report,
         inventory_report_filename=args.inventory_report_filename,
         register_inventory_report_in_manifest=not args.no_register_inventory_report,
@@ -493,6 +512,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         readme_result = result.readme_file_result
         print(f"README path: {readme_result.readme_path if readme_result else ''}")
         print(f"Registered README: {'yes' if readme_result and readme_result.registered else 'no'}")
+    if write_plan_report:
+        plan_report_result = result.plan_report_file_result
+        print(f"Plan report path: {plan_report_result.report_path if plan_report_result else ''}")
+        print(
+            "Registered plan report: "
+            f"{'yes' if plan_report_result and plan_report_result.registered else 'no'}"
+        )
     if write_inventory_report:
         inventory_report_result = result.inventory_report_file_result
         print(

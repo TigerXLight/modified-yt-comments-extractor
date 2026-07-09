@@ -6,6 +6,7 @@ from source_capture_plan import PLAN_STATUS_READY, PLAN_STATUS_UNSUPPORTED_SOURC
 from total_export_manifest import read_manifest_json
 from total_export_prepare import prepare_total_export_with_summary
 from total_export_inventory_report import write_total_export_inventory_report_file
+from total_export_plan_report import write_total_export_plan_report_file
 from total_export_readme import write_total_export_readme_file
 from total_export_summary import write_workflow_summary_file
 
@@ -39,6 +40,7 @@ def run_self_test() -> None:
         assert Path(prepared.summary_file_result.summary_path).is_file()
         assert prepared.summary_file_result.registered
         assert prepared.readme_file_result is None
+        assert prepared.plan_report_file_result is None
         assert prepared.inventory_report_file_result is None
         assert prepared.final_validation_result is not None
         assert prepared.final_validation_result.issues == ()
@@ -77,6 +79,42 @@ def run_self_test() -> None:
         assert with_readme.final_validation_result.issues == ()
         readme_manifest = read_manifest_json(with_readme.workflow_result.package_result.manifest_path)
         assert len(readme_manifest.assets) == 2
+
+        with_plan_report = prepare_total_export_with_summary(
+            base_folder=temp_dir,
+            source_url=f"https://www.youtube.com/watch?v={VALID_ID}",
+            source_label="YouTube clip",
+            title="Clip Title",
+            selected_capture_options=["comments"],
+            user_terms=["Caltheris"],
+            package_id="prepared plan report",
+            create_asset_folders=False,
+            write_plan_report=True,
+        )
+        assert with_plan_report.plan_report_file_result is not None
+        assert Path(with_plan_report.plan_report_file_result.report_path).is_file()
+        assert with_plan_report.plan_report_file_result.registered
+        assert with_plan_report.final_validation_result is not None
+        assert with_plan_report.final_validation_result.issues == ()
+        plan_report_text = Path(with_plan_report.plan_report_file_result.report_path).read_text(
+            encoding="utf-8"
+        )
+        assert "Total Export Source Capture Plan" in plan_report_text
+        assert "Title: Clip Title" in plan_report_text
+        assert "- Caltheris" in plan_report_text
+        plan_report_manifest = read_manifest_json(
+            with_plan_report.workflow_result.package_result.manifest_path
+        )
+        assert len(plan_report_manifest.assets) == 2
+
+        repeated_plan_report = write_total_export_plan_report_file(
+            workflow_result=with_plan_report.workflow_result,
+        )
+        assert repeated_plan_report.registered
+        plan_report_repeat_manifest = read_manifest_json(
+            with_plan_report.workflow_result.package_result.manifest_path
+        )
+        assert len(plan_report_repeat_manifest.assets) == 2
 
         with_inventory_report = prepare_total_export_with_summary(
             base_folder=temp_dir,
@@ -136,6 +174,36 @@ def run_self_test() -> None:
         )
         assert len(readme_unregistered_manifest.assets) == 1
 
+        plan_report_unregistered = prepare_total_export_with_summary(
+            base_folder=temp_dir,
+            source_url=f"https://www.youtube.com/watch?v={VALID_ID}",
+            selected_capture_options=["comments"],
+            package_id="prepared plan report unregistered",
+            create_asset_folders=False,
+            write_plan_report=True,
+            register_plan_report_in_manifest=False,
+        )
+        assert plan_report_unregistered.plan_report_file_result is not None
+        assert Path(plan_report_unregistered.plan_report_file_result.report_path).is_file()
+        assert not plan_report_unregistered.plan_report_file_result.registered
+        plan_report_unregistered_manifest = read_manifest_json(
+            plan_report_unregistered.workflow_result.package_result.manifest_path
+        )
+        assert len(plan_report_unregistered_manifest.assets) == 1
+
+        custom_plan_report = prepare_total_export_with_summary(
+            base_folder=temp_dir,
+            source_url=f"https://www.youtube.com/watch?v={VALID_ID}",
+            selected_capture_options=["comments"],
+            package_id="prepared custom plan report",
+            create_asset_folders=False,
+            write_plan_report=True,
+            plan_report_filename="Custom Source Plan.txt",
+            register_plan_report_in_manifest=False,
+        )
+        assert custom_plan_report.plan_report_file_result is not None
+        assert Path(custom_plan_report.plan_report_file_result.report_path).name == "Custom_Source_Plan.txt"
+
         inventory_report_unregistered = prepare_total_export_with_summary(
             base_folder=temp_dir,
             source_url=f"https://www.youtube.com/watch?v={VALID_ID}",
@@ -176,6 +244,24 @@ def run_self_test() -> None:
         unregistered_manifest = read_manifest_json(unregistered.workflow_result.package_result.manifest_path)
         assert unregistered_manifest.assets == []
 
+        full_review = prepare_total_export_with_summary(
+            base_folder=temp_dir,
+            source_url=f"https://www.youtube.com/watch?v={VALID_ID}",
+            selected_capture_options=["comments"],
+            package_id="prepared full review",
+            create_asset_folders=False,
+            write_readme=True,
+            write_plan_report=True,
+            write_inventory_report=True,
+        )
+        assert full_review.readme_file_result is not None
+        assert full_review.plan_report_file_result is not None
+        assert full_review.inventory_report_file_result is not None
+        full_review_manifest = read_manifest_json(full_review.workflow_result.package_result.manifest_path)
+        assert len(full_review_manifest.assets) == 4
+        assert full_review.final_validation_result is not None
+        assert full_review.final_validation_result.issues == ()
+
         unsupported = prepare_total_export_with_summary(
             base_folder=temp_dir,
             source_url="https://example.com/article",
@@ -184,12 +270,14 @@ def run_self_test() -> None:
             package_id="prepared unsupported",
             create_asset_folders=False,
             write_readme=True,
+            write_plan_report=True,
             write_inventory_report=True,
         )
         assert unsupported.workflow_result.plan.status == PLAN_STATUS_UNSUPPORTED_SOURCE
         assert Path(unsupported.workflow_result.package_result.package_result.package_folder).is_dir()
         assert Path(unsupported.summary_file_result.summary_path).is_file()
         assert unsupported.readme_file_result is not None
+        assert unsupported.plan_report_file_result is not None
         assert unsupported.inventory_report_file_result is not None
         assert unsupported.final_validation_result is not None
         assert unsupported.final_validation_result.issues == ()
@@ -197,6 +285,10 @@ def run_self_test() -> None:
         assert "Plan status: unsupported_source" in unsupported_text
         unsupported_readme = Path(unsupported.readme_file_result.readme_path).read_text(encoding="utf-8")
         assert "Plan status: unsupported_source" in unsupported_readme
+        unsupported_plan_report = Path(unsupported.plan_report_file_result.report_path).read_text(
+            encoding="utf-8"
+        )
+        assert "Plan status: unsupported_source" in unsupported_plan_report
         unsupported_inventory_report = Path(
             unsupported.inventory_report_file_result.report_path
         ).read_text(encoding="utf-8")

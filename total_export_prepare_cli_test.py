@@ -50,6 +50,13 @@ def _inventory_report_path_from_output(output: str) -> str:
     raise AssertionError("Inventory report path was not printed.")
 
 
+def _plan_report_path_from_output(output: str) -> str:
+    for line in output.splitlines():
+        if line.startswith("Plan report path: "):
+            return line.split(": ", 1)[1]
+    raise AssertionError("Plan report path was not printed.")
+
+
 def run_self_test() -> None:
     with TemporaryDirectory() as temp_dir:
         exit_code, list_output = _run_cli(["--list-capture-options"])
@@ -73,6 +80,13 @@ def run_self_test() -> None:
         assert comments_option["label"] == "Comments"
         assert comments_option["description"]
         assert "package_folder" not in parsed_options
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, list_with_write_flags_output = _run_cli(
+            ["--list-capture-options", "--write-plan-report", "--full-review-files"]
+        )
+        assert exit_code == 0
+        assert "Capture options:" in list_with_write_flags_output
         assert list(Path(temp_dir).iterdir()) == []
 
         exit_code, source_adapter_output = _run_cli(["--list-source-adapters"])
@@ -180,6 +194,21 @@ def run_self_test() -> None:
         assert "- Caltheris" in explain_output
         assert list(Path(temp_dir).iterdir()) == []
 
+        exit_code, explain_with_write_flags_output = _run_cli(
+            [
+                "--explain-plan",
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--capture-option",
+                "comments",
+                "--write-plan-report",
+                "--full-review-files",
+            ]
+        )
+        assert exit_code == 0
+        assert "Plan:" in explain_with_write_flags_output
+        assert list(Path(temp_dir).iterdir()) == []
+
         exit_code, explain_json_output = _run_cli(
             [
                 "--explain-plan",
@@ -267,6 +296,7 @@ def run_self_test() -> None:
         assert "Plan status: ready" in output
         assert "Registered summary: yes" in output
         assert "README path: " not in output
+        assert "Plan report path: " not in output
         assert "Inventory report path: " not in output
         assert "Final validation: ok" in output
         assert "Inventory:" not in output
@@ -399,6 +429,71 @@ def run_self_test() -> None:
         readme_no_register_manifest = read_manifest_json(_manifest_path_from_output(readme_no_register_output))
         assert len(readme_no_register_manifest.assets) == 1
 
+        exit_code, plan_report_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli plan report",
+                "--capture-option",
+                "comments",
+                "--write-plan-report",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "Plan report path: " in plan_report_output
+        assert "Registered plan report: yes" in plan_report_output
+        assert Path(_plan_report_path_from_output(plan_report_output)).is_file()
+        plan_report_manifest = read_manifest_json(_manifest_path_from_output(plan_report_output))
+        assert len(plan_report_manifest.assets) == 2
+
+        exit_code, plan_report_no_register_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli plan report no register",
+                "--capture-option",
+                "comments",
+                "--write-plan-report",
+                "--no-register-plan-report",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "Plan report path: " in plan_report_no_register_output
+        assert "Registered plan report: no" in plan_report_no_register_output
+        assert Path(_plan_report_path_from_output(plan_report_no_register_output)).is_file()
+        plan_report_no_register_manifest = read_manifest_json(
+            _manifest_path_from_output(plan_report_no_register_output)
+        )
+        assert len(plan_report_no_register_manifest.assets) == 1
+
+        exit_code, custom_plan_report_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli custom plan report",
+                "--capture-option",
+                "comments",
+                "--write-plan-report",
+                "--plan-report-filename",
+                "Custom Source Plan.txt",
+                "--no-register-plan-report",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert Path(_plan_report_path_from_output(custom_plan_report_output)).name == "Custom_Source_Plan.txt"
+
         exit_code, inventory_report_output = _run_cli(
             [
                 "--base-folder",
@@ -465,6 +560,7 @@ def run_self_test() -> None:
         assert exit_code == 0
         assert "README path: " in review_files_output
         assert "Registered README: yes" in review_files_output
+        assert "Plan report path: " not in review_files_output
         assert "Inventory report path: " in review_files_output
         assert "Registered inventory report: yes" in review_files_output
         assert "Inventory:" in review_files_output
@@ -502,6 +598,60 @@ def run_self_test() -> None:
         )
         assert len(review_files_no_register_manifest.assets) == 1
         assert Path(_inventory_report_path_from_output(review_files_no_register_output)).is_file()
+
+        exit_code, full_review_files_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli full review files",
+                "--capture-option",
+                "comments",
+                "--full-review-files",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "README path: " in full_review_files_output
+        assert "Registered README: yes" in full_review_files_output
+        assert "Plan report path: " in full_review_files_output
+        assert "Registered plan report: yes" in full_review_files_output
+        assert "Inventory report path: " in full_review_files_output
+        assert "Registered inventory report: yes" in full_review_files_output
+        assert "Inventory:" in full_review_files_output
+        assert "Registered asset count: 4" in full_review_files_output
+        assert "Local file count: 5" in full_review_files_output
+        full_review_files_manifest = read_manifest_json(
+            _manifest_path_from_output(full_review_files_output)
+        )
+        assert len(full_review_files_manifest.assets) == 4
+        assert Path(_plan_report_path_from_output(full_review_files_output)).is_file()
+
+        exit_code, full_review_no_plan_register_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli full review no plan register",
+                "--capture-option",
+                "comments",
+                "--full-review-files",
+                "--no-register-plan-report",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "Registered plan report: no" in full_review_no_plan_register_output
+        assert "Registered asset count: 3" in full_review_no_plan_register_output
+        full_review_no_plan_register_manifest = read_manifest_json(
+            _manifest_path_from_output(full_review_no_plan_register_output)
+        )
+        assert len(full_review_no_plan_register_manifest.assets) == 3
+        assert Path(_plan_report_path_from_output(full_review_no_plan_register_output)).is_file()
 
         exit_code, json_output = _run_cli(
             [
@@ -541,8 +691,10 @@ def run_self_test() -> None:
             "normalized_url",
             "package_folder",
             "plan_status",
+            "plan_report_path",
             "readme_path",
             "registered_inventory_report",
+            "registered_plan_report",
             "registered_readme",
             "registered_summary",
             "selected_capture_options",
@@ -566,6 +718,8 @@ def run_self_test() -> None:
         assert parsed["inventory_missing_registered_assets"] == []
         assert parsed["inventory_report_path"] == ""
         assert parsed["registered_inventory_report"] is False
+        assert parsed["plan_report_path"] == ""
+        assert parsed["registered_plan_report"] is False
         assert parsed["registered_summary"] is True
         assert parsed["selected_capture_options"] == ["comments", "archive_check"]
         assert parsed["unknown_capture_options"] == ["unknown_option"]
@@ -696,6 +850,52 @@ def run_self_test() -> None:
         json_readme_no_register_manifest = read_manifest_json(parsed_readme_no_register["manifest_path"])
         assert len(json_readme_no_register_manifest.assets) == 1
 
+        exit_code, json_plan_report_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli json plan report",
+                "--capture-option",
+                "comments",
+                "--write-plan-report",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_plan_report = json.loads(json_plan_report_output)
+        assert parsed_plan_report["plan_report_path"]
+        assert parsed_plan_report["registered_plan_report"] is True
+        assert Path(parsed_plan_report["plan_report_path"]).is_file()
+        json_plan_report_manifest = read_manifest_json(parsed_plan_report["manifest_path"])
+        assert len(json_plan_report_manifest.assets) == 2
+
+        exit_code, json_plan_report_no_register_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli json plan report no register",
+                "--capture-option",
+                "comments",
+                "--write-plan-report",
+                "--no-register-plan-report",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_plan_report_no_register = json.loads(json_plan_report_no_register_output)
+        assert parsed_plan_report_no_register["plan_report_path"]
+        assert parsed_plan_report_no_register["registered_plan_report"] is False
+        json_plan_report_no_register_manifest = read_manifest_json(
+            parsed_plan_report_no_register["manifest_path"]
+        )
+        assert len(json_plan_report_no_register_manifest.assets) == 1
+
         exit_code, json_inventory_report_output = _run_cli(
             [
                 "--base-folder",
@@ -766,6 +966,8 @@ def run_self_test() -> None:
         parsed_review_files = json.loads(json_review_files_output)
         assert parsed_review_files["readme_path"]
         assert parsed_review_files["registered_readme"] is True
+        assert parsed_review_files["plan_report_path"] == ""
+        assert parsed_review_files["registered_plan_report"] is False
         assert parsed_review_files["inventory_report_path"]
         assert parsed_review_files["registered_inventory_report"] is True
         assert parsed_review_files["inventory_ran"] is True
@@ -773,6 +975,36 @@ def run_self_test() -> None:
         assert parsed_review_files["inventory_local_file_count"] >= 4
         json_review_files_manifest = read_manifest_json(parsed_review_files["manifest_path"])
         assert len(json_review_files_manifest.assets) == 3
+
+        exit_code, json_full_review_files_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli json full review files",
+                "--capture-option",
+                "comments",
+                "--full-review-files",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_full_review_files = json.loads(json_full_review_files_output)
+        assert parsed_full_review_files["readme_path"]
+        assert parsed_full_review_files["registered_readme"] is True
+        assert parsed_full_review_files["plan_report_path"]
+        assert parsed_full_review_files["registered_plan_report"] is True
+        assert parsed_full_review_files["inventory_report_path"]
+        assert parsed_full_review_files["registered_inventory_report"] is True
+        assert parsed_full_review_files["inventory_ran"] is True
+        assert parsed_full_review_files["inventory_registered_asset_count"] == 4
+        assert parsed_full_review_files["inventory_local_file_count"] >= 5
+        json_full_review_files_manifest = read_manifest_json(
+            parsed_full_review_files["manifest_path"]
+        )
+        assert len(json_full_review_files_manifest.assets) == 4
 
         exit_code, json_unsupported_output = _run_cli(
             [
