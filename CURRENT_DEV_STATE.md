@@ -41,6 +41,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Total Export package naming and asset-type helper skeleton added; it does not create folders and is not wired into existing GUI/export behavior yet.
 - Context/glossary skeleton added for future background topic resolver, ASR phrase prompts, and Term QA; it is not wired into ASR, GUI, network, or exports.
 - ASR provider metadata skeleton added for future Access & Keys UI; it records non-secret benchmark/status notes only and does not test keys, store credentials, call providers, or change ASR behavior.
+- `ASR_PROVIDER_LEADERBOARD_NOTES.md` records user-supplied ASR/STT leaderboard, Meta Seamless/Instagram-adjacent, Groq/VillFlowSTT, Witsy, Kolwrite, WebAssembly streaming, and benchmark leads for later local comparison planning; no provider calls or ASR integration are implemented.
 - Capture option metadata skeleton added for future Total Export evidence checkboxes; it is not wired into GUI/export behavior and does not perform archive checks, screenshots, scraping, or media downloading.
 - Capture option selection validation added for the Total Export package helper; it remains non-wired and performs no capture/network behavior.
 - Total Export package builder helper added; it creates package folders/manifests only when explicitly called and is not wired into GUI/export/capture behavior.
