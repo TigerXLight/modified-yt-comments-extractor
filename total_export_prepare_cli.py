@@ -31,6 +31,11 @@ from total_export_review_bundle_verify import (
     review_bundle_verification_to_dict,
     verify_total_export_review_bundle,
 )
+from total_export_review_bundle_folder_verify import (
+    build_total_export_review_bundle_folder_verification_text,
+    review_bundle_folder_verification_to_dict,
+    verify_total_export_review_bundle_folder,
+)
 from total_export_zip_inspect import (
     build_total_export_zip_inspection_text,
     inspect_total_export_zip,
@@ -97,6 +102,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verify-review-bundle", action="store_true")
     parser.add_argument("--review-bundle-sha256-path", default="")
     parser.add_argument("--review-bundle-inspection-json-path", default="")
+    parser.add_argument("--verify-review-bundle-folder", action="store_true")
+    parser.add_argument("--review-bundle-folder", default="")
+    parser.add_argument("--recursive-review-bundles", action="store_true")
+    parser.add_argument("--write-review-bundle-folder-report", action="store_true")
+    parser.add_argument("--review-bundle-folder-report-path", default="")
+    parser.add_argument("--overwrite-review-bundle-folder-report", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -474,6 +485,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.write_zip_sidecars,
             args.build_review_bundle,
             args.verify_review_bundle,
+            args.verify_review_bundle_folder,
         )
     )
     if args.list_metadata and list_mode_count:
@@ -544,6 +556,43 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(review_bundle_verification_to_dict(verification), indent=2, sort_keys=True))
         else:
             print(build_total_export_review_bundle_verification_text(verification))
+        return 0
+
+    if args.verify_review_bundle_folder:
+        if not args.review_bundle_folder:
+            parser.error(
+                "--review-bundle-folder is required when --verify-review-bundle-folder is used"
+            )
+        if (
+            args.write_readme
+            or args.write_plan_report
+            or args.write_inventory_report
+            or args.review_files
+            or args.full_review_files
+        ):
+            parser.error(
+                "--verify-review-bundle-folder is read-only and works on existing "
+                "local ZIP/sidecar files; it cannot be combined with prepare/write/review flags"
+            )
+        folder_verification = verify_total_export_review_bundle_folder(
+            folder_path=args.review_bundle_folder,
+            recursive=args.recursive_review_bundles,
+            include_zip_entries=args.include_zip_entries,
+            hash_zip_entries=args.hash_zip_entries,
+            write_report=args.write_review_bundle_folder_report,
+            report_path=args.review_bundle_folder_report_path,
+            overwrite_report=args.overwrite_review_bundle_folder_report,
+        )
+        if args.json:
+            print(
+                json.dumps(
+                    review_bundle_folder_verification_to_dict(folder_verification),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        else:
+            print(build_total_export_review_bundle_folder_verification_text(folder_verification))
         return 0
 
     if args.inspect_package:

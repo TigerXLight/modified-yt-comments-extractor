@@ -1266,6 +1266,238 @@ def run_self_test() -> None:
         assert error_code == 2
         assert "read-only" in verify_full_review_error
 
+        folder_verify_dir = Path(temp_dir) / "folder_verify_cli"
+        exit_code, folder_bundle_one_output = _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                str(folder_verify_dir),
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "folder cli one",
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_folder_bundle_one = json.loads(folder_bundle_one_output)
+        exit_code, folder_bundle_two_output = _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                str(folder_verify_dir),
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "folder cli two",
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_folder_bundle_two = json.loads(folder_bundle_two_output)
+        assert Path(parsed_folder_bundle_one["zip_path"]).is_file()
+        assert Path(parsed_folder_bundle_two["zip_path"]).is_file()
+
+        exit_code, folder_verify_output = _run_cli(
+            [
+                "--verify-review-bundle-folder",
+                "--review-bundle-folder",
+                str(folder_verify_dir),
+            ]
+        )
+        assert exit_code == 0
+        assert "Total Export review bundle folder verification" in folder_verify_output
+        assert "ZIP count: 2" in folder_verify_output
+        assert "Verified count: 2" in folder_verify_output
+
+        exit_code, folder_verify_json_output = _run_cli(
+            [
+                "--verify-review-bundle-folder",
+                "--review-bundle-folder",
+                str(folder_verify_dir),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_folder_verify = json.loads(folder_verify_json_output)
+        assert parsed_folder_verify["zip_count"] == 2
+        assert parsed_folder_verify["verified_count"] == 2
+        assert parsed_folder_verify["failed_count"] == 0
+
+        exit_code, missing_folder_verify_json_output = _run_cli(
+            [
+                "--verify-review-bundle-folder",
+                "--review-bundle-folder",
+                str(Path(temp_dir) / "missing_folder_verify"),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_missing_folder_verify = json.loads(missing_folder_verify_json_output)
+        assert parsed_missing_folder_verify["zip_count"] == 0
+        assert parsed_missing_folder_verify["errors"]
+
+        missing_sidecar_folder = Path(temp_dir) / "folder_verify_missing_sidecar"
+        exit_code, missing_sidecar_bundle_output = _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                str(missing_sidecar_folder),
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "folder cli missing sidecar",
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_missing_sidecar_bundle = json.loads(missing_sidecar_bundle_output)
+        Path(parsed_missing_sidecar_bundle["zip_sidecar_sha256_path"]).unlink()
+        exit_code, missing_sidecar_folder_json_output = _run_cli(
+            [
+                "--verify-review-bundle-folder",
+                "--review-bundle-folder",
+                str(missing_sidecar_folder),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_missing_sidecar_folder = json.loads(missing_sidecar_folder_json_output)
+        assert parsed_missing_sidecar_folder["missing_sidecar_count"] == 1
+        assert parsed_missing_sidecar_folder["failed_count"] == 1
+
+        recursive_folder = Path(temp_dir) / "folder_verify_recursive"
+        _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                str(recursive_folder),
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "folder cli recursive direct",
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )
+        nested_recursive_folder = recursive_folder / "nested"
+        _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                str(nested_recursive_folder),
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "folder cli recursive nested",
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )
+        exit_code, non_recursive_json_output = _run_cli(
+            [
+                "--verify-review-bundle-folder",
+                "--review-bundle-folder",
+                str(recursive_folder),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        assert json.loads(non_recursive_json_output)["zip_count"] == 1
+        exit_code, recursive_json_output = _run_cli(
+            [
+                "--verify-review-bundle-folder",
+                "--review-bundle-folder",
+                str(recursive_folder),
+                "--recursive-review-bundles",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        assert json.loads(recursive_json_output)["zip_count"] == 2
+
+        exit_code, report_json_output = _run_cli(
+            [
+                "--verify-review-bundle-folder",
+                "--review-bundle-folder",
+                str(folder_verify_dir),
+                "--write-review-bundle-folder-report",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_report = json.loads(report_json_output)
+        assert parsed_report["report_written"] is True
+        assert Path(parsed_report["report_path"]).is_file()
+
+        exit_code, existing_report_json_output = _run_cli(
+            [
+                "--verify-review-bundle-folder",
+                "--review-bundle-folder",
+                str(folder_verify_dir),
+                "--write-review-bundle-folder-report",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_existing_report = json.loads(existing_report_json_output)
+        assert parsed_existing_report["report_written"] is False
+        assert parsed_existing_report["errors"]
+
+        exit_code, overwrite_report_json_output = _run_cli(
+            [
+                "--verify-review-bundle-folder",
+                "--review-bundle-folder",
+                str(folder_verify_dir),
+                "--write-review-bundle-folder-report",
+                "--overwrite-review-bundle-folder-report",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        assert json.loads(overwrite_report_json_output)["report_written"] is True
+
+        error_code, folder_verify_missing_folder_arg_error = _run_cli_error(
+            ["--verify-review-bundle-folder"]
+        )
+        assert error_code == 2
+        assert (
+            "--review-bundle-folder is required when --verify-review-bundle-folder is used"
+            in folder_verify_missing_folder_arg_error
+        )
+
+        error_code, folder_verify_single_verify_error = _run_cli_error(
+            [
+                "--verify-review-bundle-folder",
+                "--verify-review-bundle",
+                "--review-bundle-folder",
+                str(folder_verify_dir),
+                "--zip-path",
+                str(bundle_zip_path),
+            ]
+        )
+        assert error_code == 2
+        assert "Use only one list/explain mode at a time" in folder_verify_single_verify_error
+
+        error_code, folder_verify_full_review_error = _run_cli_error(
+            [
+                "--verify-review-bundle-folder",
+                "--review-bundle-folder",
+                str(folder_verify_dir),
+                "--full-review-files",
+            ]
+        )
+        assert error_code == 2
+        assert "read-only" in folder_verify_full_review_error
+
         error_code, bundle_missing_base_error = _run_cli_error(
             [
                 "--build-review-bundle",

@@ -230,6 +230,24 @@ python total_export_prepare_cli.py --verify-review-bundle --zip-path ".\total_ex
 python total_export_prepare_cli.py --verify-review-bundle --zip-path ".\total_export_dev\review_bundle_shortcut.zip" --review-bundle-sha256-path ".\total_export_dev\review_bundle_shortcut.zip.sha256" --review-bundle-inspection-json-path ".\total_export_dev\review_bundle_shortcut.zip.inspection.json" --json
 ```
 
+## Verify Review Bundle Folder
+
+Folder verification mode is local-only and read-only. It discovers `.zip` files in a folder and verifies each one against default sidecars next to the ZIP.
+
+It does not extract ZIPs, fetch, capture, download, transcribe, scrape, or inspect source content. It is not external archive behavior.
+
+```cmd
+python total_export_prepare_cli.py --verify-review-bundle-folder --review-bundle-folder ".\total_export_dev"
+```
+
+```cmd
+python total_export_prepare_cli.py --verify-review-bundle-folder --review-bundle-folder ".\total_export_dev" --recursive-review-bundles --json
+```
+
+```cmd
+python total_export_prepare_cli.py --verify-review-bundle-folder --review-bundle-folder ".\total_export_dev" --write-review-bundle-folder-report --overwrite-review-bundle-folder-report --json
+```
+
 ## No-Registration Example
 
 ```cmd
@@ -251,6 +269,7 @@ python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-u
 - `--write-zip-sidecars`: Writes local `.sha256` and `.inspection.json` sidecars for an existing ZIP.
 - `--build-review-bundle`: Prepares full local review files, inspects the package, creates and inspects a ZIP, and optionally writes ZIP sidecars.
 - `--verify-review-bundle`: Verifies an existing review bundle ZIP against local `.sha256` and `.inspection.json` sidecars without extracting it.
+- `--verify-review-bundle-folder`: Verifies discovered local review bundle ZIPs in a folder against default sidecars, optionally recursively or with a local JSON report.
 - `--json`: Prints deterministic JSON output instead of plain text.
 - `--no-final-validation`: Skips final local manifest/package validation.
 - `--no-create-asset-folders`: Avoids creating empty asset subfolders.
