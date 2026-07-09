@@ -62,6 +62,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Total Export prepare helper/CLI now supports final local manifest validation after summary/README review-file registration without fetch/capture/network/GUI behavior.
 - Total Export inventory helper added for local package file-vs-manifest review without fetch/capture/network/GUI behavior.
 - Total Export prepare CLI can optionally print local package inventory data without writing/registering inventory reports or performing fetch/capture/network/GUI behavior.
+- Total Export inventory report helper added for explicit local package inventory text reports and duplicate-safe manifest registration without fetch/capture/network/GUI behavior.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.
