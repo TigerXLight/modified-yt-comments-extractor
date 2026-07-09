@@ -5,6 +5,7 @@ from capture_options import CAPTURE_ARCHIVE_CHECK, CAPTURE_COMMENTS
 from source_capture_plan import PLAN_STATUS_READY, PLAN_STATUS_UNSUPPORTED_SOURCE
 from total_export_manifest import read_manifest_json
 from total_export_prepare import prepare_total_export_with_summary
+from total_export_readme import write_total_export_readme_file
 from total_export_summary import write_workflow_summary_file
 
 
@@ -36,6 +37,7 @@ def run_self_test() -> None:
         assert Path(workflow.package_result.manifest_path).is_file()
         assert Path(prepared.summary_file_result.summary_path).is_file()
         assert prepared.summary_file_result.registered
+        assert prepared.readme_file_result is None
         assert prepared.warnings == (
             "Unknown capture options ignored: unknown_option",
             "Duplicate capture options ignored: comments",
@@ -55,6 +57,46 @@ def run_self_test() -> None:
         assert repeated_summary.registered
         repeated_manifest = read_manifest_json(workflow.package_result.manifest_path)
         assert len(repeated_manifest.assets) == 1
+
+        with_readme = prepare_total_export_with_summary(
+            base_folder=temp_dir,
+            source_url=f"https://www.youtube.com/watch?v={VALID_ID}",
+            selected_capture_options=["comments"],
+            package_id="prepared readme",
+            create_asset_folders=False,
+            write_readme=True,
+        )
+        assert with_readme.readme_file_result is not None
+        assert Path(with_readme.readme_file_result.readme_path).is_file()
+        assert with_readme.readme_file_result.registered
+        readme_manifest = read_manifest_json(with_readme.workflow_result.package_result.manifest_path)
+        assert len(readme_manifest.assets) == 2
+
+        repeated_readme = write_total_export_readme_file(
+            workflow_result=with_readme.workflow_result,
+            filename="README_TOTAL_EXPORT.txt",
+            register_in_manifest=True,
+        )
+        assert repeated_readme.registered
+        readme_repeat_manifest = read_manifest_json(with_readme.workflow_result.package_result.manifest_path)
+        assert len(readme_repeat_manifest.assets) == 2
+
+        readme_unregistered = prepare_total_export_with_summary(
+            base_folder=temp_dir,
+            source_url=f"https://www.youtube.com/watch?v={VALID_ID}",
+            selected_capture_options=["comments"],
+            package_id="prepared readme unregistered",
+            create_asset_folders=False,
+            write_readme=True,
+            register_readme_in_manifest=False,
+        )
+        assert readme_unregistered.readme_file_result is not None
+        assert Path(readme_unregistered.readme_file_result.readme_path).is_file()
+        assert not readme_unregistered.readme_file_result.registered
+        readme_unregistered_manifest = read_manifest_json(
+            readme_unregistered.workflow_result.package_result.manifest_path
+        )
+        assert len(readme_unregistered_manifest.assets) == 1
 
         unregistered = prepare_total_export_with_summary(
             base_folder=temp_dir,
@@ -76,12 +118,16 @@ def run_self_test() -> None:
             selected_capture_options=["comments"],
             package_id="prepared unsupported",
             create_asset_folders=False,
+            write_readme=True,
         )
         assert unsupported.workflow_result.plan.status == PLAN_STATUS_UNSUPPORTED_SOURCE
         assert Path(unsupported.workflow_result.package_result.package_result.package_folder).is_dir()
         assert Path(unsupported.summary_file_result.summary_path).is_file()
+        assert unsupported.readme_file_result is not None
         unsupported_text = Path(unsupported.summary_file_result.summary_path).read_text(encoding="utf-8")
         assert "Plan status: unsupported_source" in unsupported_text
+        unsupported_readme = Path(unsupported.readme_file_result.readme_path).read_text(encoding="utf-8")
+        assert "Plan status: unsupported_source" in unsupported_readme
         assert unsupported.warnings == (
             "No source adapter supports the URL: https://example.com/article",
         )

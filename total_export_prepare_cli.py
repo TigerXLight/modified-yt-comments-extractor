@@ -21,6 +21,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--term", action="append", default=[])
     parser.add_argument("--summary-filename", default="TOTAL_EXPORT_SUMMARY.txt")
     parser.add_argument("--no-register-summary", action="store_true")
+    parser.add_argument("--write-readme", action="store_true")
+    parser.add_argument("--readme-filename", default="README_TOTAL_EXPORT.txt")
+    parser.add_argument("--no-register-readme", action="store_true")
     parser.add_argument("--no-create-asset-folders", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
@@ -35,6 +38,8 @@ def result_to_cli_dict(result: PreparedTotalExportResult) -> dict[str, object]:
         "normalized_url": plan.normalized_url,
         "package_folder": package_result.package_folder,
         "plan_status": plan.status,
+        "readme_path": result.readme_file_result.readme_path if result.readme_file_result else "",
+        "registered_readme": bool(result.readme_file_result and result.readme_file_result.registered),
         "registered_summary": result.summary_file_result.registered,
         "selected_capture_options": list(plan.selected_capture_options),
         "source_url": plan.source_url,
@@ -57,6 +62,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         create_asset_folders=not args.no_create_asset_folders,
         summary_filename=args.summary_filename,
         register_summary_in_manifest=not args.no_register_summary,
+        write_readme=args.write_readme,
+        readme_filename=args.readme_filename,
+        register_readme_in_manifest=not args.no_register_readme,
     )
 
     if args.json:
@@ -69,6 +77,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Summary path: {result.summary_file_result.summary_path}")
     print(f"Plan status: {result.workflow_result.plan.status}")
     print(f"Registered summary: {'yes' if result.summary_file_result.registered else 'no'}")
+    if args.write_readme:
+        readme_result = result.readme_file_result
+        print(f"README path: {readme_result.readme_path if readme_result else ''}")
+        print(f"Registered README: {'yes' if readme_result and readme_result.registered else 'no'}")
     print("Warnings:")
     if result.warnings:
         for warning in result.warnings:

@@ -58,6 +58,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Total Export prepare CLI added for explicit local package-shell testing; it remains non-wired and performs no fetch/capture/network/GUI behavior.
 - Total Export prepare CLI now supports deterministic JSON output for local/dev scripting without fetch/capture/network/GUI behavior.
 - Total Export README/marker helper added for explicit package-folder explanation and duplicate-safe local manifest registration without fetch/capture/network/GUI behavior.
+- Total Export prepare helper/CLI can optionally write/register the README marker file without changing default non-wired fetch/capture/network behavior.
 - Future source adapter pipeline:
   - Source URL.
   - Identify source type.

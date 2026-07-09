@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+from total_export_readme import TotalExportReadmeFileResult, write_total_export_readme_file
 from total_export_summary import TotalExportSummaryFileResult, write_workflow_summary_file
 from total_export_workflow import TotalExportWorkflowResult, prepare_total_export_from_source
 
@@ -11,16 +12,21 @@ from total_export_workflow import TotalExportWorkflowResult, prepare_total_expor
 class PreparedTotalExportResult:
     workflow_result: TotalExportWorkflowResult
     summary_file_result: TotalExportSummaryFileResult
+    readme_file_result: TotalExportReadmeFileResult | None = None
     warnings: tuple[str, ...] = ()
 
 
 def _combined_warnings(
     workflow_result: TotalExportWorkflowResult,
     summary_file_result: TotalExportSummaryFileResult,
+    readme_file_result: TotalExportReadmeFileResult | None = None,
 ) -> tuple[str, ...]:
     warnings: list[str] = []
     seen = set()
-    for warning in list(workflow_result.warnings) + list(summary_file_result.warnings):
+    source_warnings = list(workflow_result.warnings) + list(summary_file_result.warnings)
+    if readme_file_result:
+        source_warnings.extend(readme_file_result.warnings)
+    for warning in source_warnings:
         if not warning or warning in seen:
             continue
         seen.add(warning)
@@ -40,6 +46,9 @@ def prepare_total_export_with_summary(
     create_asset_folders: bool = True,
     summary_filename: str = "TOTAL_EXPORT_SUMMARY.txt",
     register_summary_in_manifest: bool = True,
+    write_readme: bool = False,
+    readme_filename: str = "README_TOTAL_EXPORT.txt",
+    register_readme_in_manifest: bool = True,
 ) -> PreparedTotalExportResult:
     workflow_result = prepare_total_export_from_source(
         base_folder=base_folder,
@@ -56,8 +65,16 @@ def prepare_total_export_with_summary(
         filename=summary_filename,
         register_in_manifest=register_summary_in_manifest,
     )
+    readme_file_result = None
+    if write_readme:
+        readme_file_result = write_total_export_readme_file(
+            workflow_result=workflow_result,
+            filename=readme_filename,
+            register_in_manifest=register_readme_in_manifest,
+        )
     return PreparedTotalExportResult(
         workflow_result=workflow_result,
         summary_file_result=summary_file_result,
-        warnings=_combined_warnings(workflow_result, summary_file_result),
+        readme_file_result=readme_file_result,
+        warnings=_combined_warnings(workflow_result, summary_file_result, readme_file_result),
     )
