@@ -1,0 +1,120 @@
+from contextlib import redirect_stdout
+from io import StringIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from total_export_manifest import read_manifest_json
+from total_export_prepare_cli import main
+
+
+VALID_ID = "aB3_dE-9xYz"
+CANONICAL_URL = f"https://www.youtube.com/watch?v={VALID_ID}"
+
+
+def _run_cli(argv: list[str]) -> tuple[int, str]:
+    output = StringIO()
+    with redirect_stdout(output):
+        exit_code = main(argv)
+    return exit_code, output.getvalue()
+
+
+def _manifest_path_from_output(output: str) -> str:
+    for line in output.splitlines():
+        if line.startswith("Manifest path: "):
+            return line.split(": ", 1)[1]
+    raise AssertionError("Manifest path was not printed.")
+
+
+def _summary_path_from_output(output: str) -> str:
+    for line in output.splitlines():
+        if line.startswith("Summary path: "):
+            return line.split(": ", 1)[1]
+    raise AssertionError("Summary path was not printed.")
+
+
+def run_self_test() -> None:
+    with TemporaryDirectory() as temp_dir:
+        exit_code, output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}&t=30s",
+                "--source-label",
+                "YouTube clip",
+                "--title",
+                "Clip Title",
+                "--package-id",
+                "cli package",
+                "--capture-option",
+                "comments",
+                "--capture-option",
+                "archive_check",
+                "--capture-option",
+                "comments",
+                "--capture-option",
+                "unknown_option",
+                "--term",
+                "Caltheris",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "Package folder: " in output
+        assert "Manifest path: " in output
+        assert "Summary path: " in output
+        assert "Plan status: ready" in output
+        assert "Registered summary: yes" in output
+        assert "Unknown capture options ignored: unknown_option" in output
+        assert "Duplicate capture options ignored: comments" in output
+
+        manifest_path = _manifest_path_from_output(output)
+        summary_path = _summary_path_from_output(output)
+        assert Path(summary_path).is_file()
+        manifest = read_manifest_json(manifest_path)
+        assert manifest.source_urls == [CANONICAL_URL]
+        assert manifest.capture_options == ["comments", "archive_check"]
+        assert len(manifest.assets) == 1
+
+        exit_code, no_register_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli no register",
+                "--capture-option",
+                "comments",
+                "--no-register-summary",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "Registered summary: no" in no_register_output
+        no_register_manifest = read_manifest_json(_manifest_path_from_output(no_register_output))
+        assert no_register_manifest.assets == []
+        assert Path(_summary_path_from_output(no_register_output)).is_file()
+
+        exit_code, unsupported_output = _run_cli(
+            [
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                "https://example.com/article",
+                "--package-id",
+                "cli unsupported",
+                "--capture-option",
+                "comments",
+                "--no-create-asset-folders",
+            ]
+        )
+        assert exit_code == 0
+        assert "Plan status: unsupported_source" in unsupported_output
+        assert "No source adapter supports the URL: https://example.com/article" in unsupported_output
+        assert Path(_summary_path_from_output(unsupported_output)).is_file()
+
+
+if __name__ == "__main__":
+    run_self_test()
+    print("Total Export prepare CLI self-test passed.")
