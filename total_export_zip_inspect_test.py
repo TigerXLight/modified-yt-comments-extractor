@@ -46,6 +46,15 @@ def _write_zip(path: Path, entries: list[tuple[str, bytes]]) -> None:
             zip_file.writestr(name, data)
 
 
+def _write_zip_with_backslash_name(path: Path) -> None:
+    forward_name = b"bad/path.txt"
+    backslash_name = b"bad\\path.txt"
+    _write_zip(path, [(forward_name.decode("ascii"), b"bad")])
+    data = path.read_bytes()
+    assert forward_name in data
+    path.write_bytes(data.replace(forward_name, backslash_name))
+
+
 def run_self_test() -> None:
     with TemporaryDirectory() as temp_dir:
         zip_path = _prepare_zip(temp_dir)
@@ -123,7 +132,8 @@ def run_self_test() -> None:
         assert "../evil.txt" in unsafe.unsafe_entries
 
         backslash_path = Path(temp_dir) / "backslash.zip"
-        _write_zip(backslash_path, [("bad\\path.txt", b"bad")])
+        _write_zip_with_backslash_name(backslash_path)
+        assert b"bad\\path.txt" in backslash_path.read_bytes()
         backslash = inspect_total_export_zip(str(backslash_path))
         assert backslash.status == ZIP_INSPECTION_STATUS_UNSAFE_ENTRIES
         assert "bad\\path.txt" in backslash.unsafe_entries

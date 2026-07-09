@@ -26,6 +26,9 @@ STANDARD_REVIEW_ENTRY_PATHS = (
     ("inventory_report", "metadata/TOTAL_EXPORT_INVENTORY.txt"),
 )
 
+CENTRAL_DIRECTORY_SIGNATURE = b"PK\x01\x02"
+END_OF_CENTRAL_DIRECTORY_SIGNATURE = b"PK\x05\x06"
+
 
 @dataclass(frozen=True)
 class TotalExportZipEntryInspection:
@@ -88,6 +91,44 @@ def _is_unsafe_entry_name(name: str) -> bool:
     if any(part in {"", ".."} for part in parts):
         return True
     return False
+
+
+def _read_uint16(data: bytes, offset: int) -> int:
+    return int.from_bytes(data[offset:offset + 2], "little")
+
+
+def _read_uint32(data: bytes, offset: int) -> int:
+    return int.from_bytes(data[offset:offset + 4], "little")
+
+
+def _raw_central_directory_names(path: Path) -> tuple[str, ...]:
+    data = path.read_bytes()
+    eocd_offset = data.rfind(END_OF_CENTRAL_DIRECTORY_SIGNATURE)
+    if eocd_offset < 0 or eocd_offset + 22 > len(data):
+        return ()
+
+    central_directory_size = _read_uint32(data, eocd_offset + 12)
+    central_directory_offset = _read_uint32(data, eocd_offset + 16)
+    end_offset = min(central_directory_offset + central_directory_size, len(data))
+    offset = central_directory_offset
+    names = []
+
+    while offset + 46 <= end_offset:
+        if data[offset:offset + 4] != CENTRAL_DIRECTORY_SIGNATURE:
+            break
+        general_purpose_flag = _read_uint16(data, offset + 8)
+        filename_length = _read_uint16(data, offset + 28)
+        extra_length = _read_uint16(data, offset + 30)
+        comment_length = _read_uint16(data, offset + 32)
+        filename_start = offset + 46
+        filename_end = filename_start + filename_length
+        if filename_end > len(data):
+            break
+        filename_bytes = data[filename_start:filename_end]
+        encoding = "utf-8" if general_purpose_flag & 0x800 else "cp437"
+        names.append(filename_bytes.decode(encoding, errors="replace"))
+        offset = filename_end + extra_length + comment_length
+    return tuple(names)
 
 
 def _top_level_names(names: tuple[str, ...]) -> tuple[str, ...]:
@@ -199,6 +240,7 @@ def inspect_total_export_zip(
         with ZipFile(path, "r") as zip_file:
             infos = zip_file.infolist()
             names = tuple(info.filename for info in infos)
+            raw_names = _raw_central_directory_names(path) or names
             sorted_names = tuple(sorted(names))
             file_names = tuple(name for name in sorted_names if not _is_directory_name(name))
             directory_names = tuple(name for name in sorted_names if _is_directory_name(name))
@@ -207,9 +249,11 @@ def inspect_total_export_zip(
             top_level_name = top_levels[0] if single_top_level_folder else ""
             manifests = _manifest_entries(sorted_names)
             duplicate_entries = tuple(
-                sorted(name for name, count in Counter(names).items() if count > 1)
+                sorted(name for name, count in Counter(raw_names).items() if count > 1)
             )
-            unsafe_entries = tuple(sorted(name for name in names if _is_unsafe_entry_name(name)))
+            unsafe_entries = tuple(
+                sorted(name for name in raw_names if _is_unsafe_entry_name(name))
+            )
             standard_entries = _standard_entries(
                 names=sorted_names,
                 top_level_name=top_level_name,
