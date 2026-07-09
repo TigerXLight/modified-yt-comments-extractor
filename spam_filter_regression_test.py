@@ -75,18 +75,20 @@ def test_obvious_scam_examples_still_trigger() -> None:
 
 
 def test_campaign_detector_still_catches_long_duplicate_promotions() -> None:
+    for repeated_short_praise in [
+        "Love this!",
+        "Great video",
+        "Loved this",
+        "Thanks!",
+    ]:
+        assert detect_spam_campaigns([repeated_short_praise] * 5) == set()
+
     comments = [
         "Telegram investment guaranteed returns contact me now",
         "Telegram investment guaranteed returns contact me now",
         "Telegram investment guaranteed returns contact me now",
     ]
     assert detect_spam_campaigns(comments) == {0, 1, 2}
-
-    # Deferred upstream parity gap:
-    # The current campaign detector exact-groups all repeated normalized text,
-    # including very short praise. The upstream-style minimum normalized length
-    # guard should be added as a later behavior port before asserting that
-    # repeated "Love this!" comments are never campaign-marked.
 
 
 def run_self_test() -> None:

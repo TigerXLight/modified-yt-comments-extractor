@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import csv
+import json
 import re
 import time
 from datetime import datetime
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from googleapiclient.discovery import build
 
@@ -34,6 +35,101 @@ class VideoNotFoundError(Exception):
 
 class QuotaExceededError(Exception):
     pass
+
+
+API_ERROR_QUOTA = "quota"
+API_ERROR_COMMENTS_DISABLED = "comments_disabled"
+API_ERROR_NOT_FOUND = "not_found"
+API_ERROR_OTHER = "other"
+
+_QUOTA_REASON_KEYS = {
+    "quotaexceeded",
+    "dailylimitexceeded",
+    "dailylimitexceededunreg",
+    "ratelimitexceeded",
+    "userratelimitexceeded",
+}
+
+
+def _normalized_error_token(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _decode_error_bytes(value: Any) -> str:
+    if isinstance(value, bytes):
+        for encoding in ("utf-8", "cp437", "latin-1"):
+            try:
+                return value.decode(encoding)
+            except Exception:
+                continue
+        return value.decode("utf-8", errors="replace")
+    return str(value or "")
+
+
+def _collect_json_reason_tokens(value: Any, tokens: Set[str]) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if str(key).lower() in {"reason", "message", "status"}:
+                token = _normalized_error_token(item)
+                if token:
+                    tokens.add(token)
+            _collect_json_reason_tokens(item, tokens)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_json_reason_tokens(item, tokens)
+
+
+def _extract_error_texts(error: Any) -> List[str]:
+    texts: List[str] = []
+
+    for value in [
+        error,
+        getattr(error, "content", ""),
+        getattr(error, "reason", ""),
+    ]:
+        text = _decode_error_bytes(value).strip()
+        if text and text not in texts:
+            texts.append(text)
+
+    resp = getattr(error, "resp", None)
+    if resp is not None:
+        for value in [
+            getattr(resp, "reason", ""),
+            getattr(resp, "status", ""),
+        ]:
+            text = _decode_error_bytes(value).strip()
+            if text and text not in texts:
+                texts.append(text)
+
+    return texts
+
+
+def classify_youtube_api_error(error: Any) -> str:
+    """Classify a local YouTube API error without making API calls."""
+    texts = _extract_error_texts(error)
+    lowered = "\n".join(texts).lower()
+    normalized = _normalized_error_token(lowered)
+
+    reason_tokens: Set[str] = set()
+    for text in texts:
+        stripped = text.strip()
+        if not stripped:
+            continue
+        for candidate in [stripped, stripped.strip("'\"")]:
+            try:
+                _collect_json_reason_tokens(json.loads(candidate), reason_tokens)
+            except Exception:
+                pass
+
+    if reason_tokens & _QUOTA_REASON_KEYS:
+        return API_ERROR_QUOTA
+    if "quota" in lowered or any(key in normalized for key in _QUOTA_REASON_KEYS):
+        return API_ERROR_QUOTA
+    if "commentsdisabled" in normalized or "comments disabled" in lowered or "disabled" in lowered:
+        return API_ERROR_COMMENTS_DISABLED
+    if "notfound" in normalized or "video not found" in lowered:
+        return API_ERROR_NOT_FOUND
+    return API_ERROR_OTHER
 
 
 class YouTubeCommentExtractor:
@@ -652,11 +748,11 @@ class YouTubeCommentExtractor:
                     f.write("-" * 70 + "\n\n")
 
     def _raise_friendly_error(self, error: Exception) -> None:
-        error_text = str(error).lower()
-        if "quota" in error_text:
+        classification = classify_youtube_api_error(error)
+        if classification == API_ERROR_QUOTA:
             raise QuotaExceededError("API quota exceeded.") from error
-        if "commentsdisabled" in error_text or "comments disabled" in error_text or "disabled" in error_text:
+        if classification == API_ERROR_COMMENTS_DISABLED:
             raise CommentsDisabledError("Comments are disabled for this video.") from error
-        if "notfound" in error_text or "video not found" in error_text:
+        if classification == API_ERROR_NOT_FOUND:
             raise VideoNotFoundError("The requested video could not be found.") from error
         raise RuntimeError(f"API Error: {error}") from error

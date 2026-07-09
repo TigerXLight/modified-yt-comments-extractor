@@ -1,8 +1,13 @@
 from extractor import (
+    API_ERROR_COMMENTS_DISABLED,
+    API_ERROR_NOT_FOUND,
+    API_ERROR_OTHER,
+    API_ERROR_QUOTA,
     CommentsDisabledError,
     QuotaExceededError,
     VideoNotFoundError,
     YouTubeCommentExtractor,
+    classify_youtube_api_error,
 )
 
 
@@ -24,12 +29,30 @@ def _assert_error_type(message: str, expected_type: type[Exception]) -> None:
 
 
 def run_self_test() -> None:
+    assert classify_youtube_api_error("quotaExceeded") == API_ERROR_QUOTA
+    assert classify_youtube_api_error("quotaexceeded") == API_ERROR_QUOTA
+    assert classify_youtube_api_error("dailyLimitExceeded") == API_ERROR_QUOTA
+    assert classify_youtube_api_error(
+        '{"error":{"errors":[{"reason":"dailyLimitExceeded"}],"code":403}}'
+    ) == API_ERROR_QUOTA
+    assert classify_youtube_api_error("commentsDisabled") == API_ERROR_COMMENTS_DISABLED
+    assert classify_youtube_api_error('{"error":{"errors":[{"reason":"notFound"}]}}') == API_ERROR_NOT_FOUND
+    assert classify_youtube_api_error('{"error":{"errors":[{"reason":"forbidden"}]}}') == API_ERROR_OTHER
+
     _assert_error_type(
         '{"error":{"errors":[{"reason":"quotaExceeded"}],"code":403}}',
         QuotaExceededError,
     )
     _assert_error_type(
         "HttpError 403: QUOTAEXCEEDED for this project",
+        QuotaExceededError,
+    )
+    _assert_error_type(
+        "dailyLimitExceeded",
+        QuotaExceededError,
+    )
+    _assert_error_type(
+        '{"error":{"errors":[{"reason":"dailyLimitExceeded"}],"code":403}}',
         QuotaExceededError,
     )
     _assert_error_type(
@@ -46,12 +69,6 @@ def run_self_test() -> None:
     )
     assert isinstance(generic_forbidden, RuntimeError)
     assert not isinstance(generic_forbidden, QuotaExceededError)
-
-    # Deferred upstream parity gap:
-    # `dailyLimitExceeded` does not contain the literal word "quota", so the current
-    # string-based classifier does not promise quota handling for that reason yet.
-    # A future behavior port should add a typed/JSON error-reason helper before
-    # asserting that dailyLimitExceeded maps to QuotaExceededError.
 
 
 if __name__ == "__main__":

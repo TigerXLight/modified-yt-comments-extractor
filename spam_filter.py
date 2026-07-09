@@ -110,6 +110,8 @@ SPAM_EMOJI: FrozenSet[str] = frozenset({
     '⚠️', '🔴', '❗', '‼️', '❕',
 })
 
+CAMPAIGN_MIN_NORMALIZED_LENGTH = 30
+
 
 def normalize_text(text: str) -> str:
     """
@@ -1275,7 +1277,7 @@ def detect_spam_campaigns(
     # Phase 1: exact-duplicate grouping (O(n))
     exact_groups: Dict[str, List[int]] = {}
     for i, norm in enumerate(normalized):
-        if not norm:
+        if len(norm) < CAMPAIGN_MIN_NORMALIZED_LENGTH:
             continue
         exact_groups.setdefault(norm, []).append(i)
 
