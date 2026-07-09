@@ -1,4 +1,10 @@
-from source_adapters import YOUTUBE_SOURCE_ADAPTER, find_source_adapter
+from source_adapters import (
+    AVAILABLE_SOURCE_ADAPTERS,
+    CREDENTIAL_API_KEY,
+    PLATFORM_VIDEO_SOCIAL,
+    YOUTUBE_SOURCE_ADAPTER,
+    find_source_adapter,
+)
 
 
 VALID_ID = "aB3_dE-9xYz"
@@ -43,6 +49,21 @@ def run_self_test() -> None:
     assert capabilities.supports_timestamps
     assert capabilities.supports_author_channel_ids
     assert capabilities.supports_transcripts
+
+    metadata = YOUTUBE_SOURCE_ADAPTER.metadata
+    assert metadata.display_name == "YouTube"
+    assert metadata.platform_family == PLATFORM_VIDEO_SOCIAL
+    assert metadata.credential_type == CREDENTIAL_API_KEY
+    assert metadata.credentials_required
+    assert not metadata.credentials_optional
+    assert not metadata.supports_browser_capture
+    assert not metadata.supports_manual_import
+    assert "YouTube Data API key" in metadata.setup_hint
+    assert not metadata.test_connection_supported
+    assert "quota" in metadata.cost_or_rate_limit_notes.lower()
+    assert "elsewhere" in metadata.access_limitations
+
+    assert AVAILABLE_SOURCE_ADAPTERS == (YOUTUBE_SOURCE_ADAPTER,)
 
 
 if __name__ == "__main__":
