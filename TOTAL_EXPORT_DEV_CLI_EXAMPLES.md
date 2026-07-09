@@ -210,6 +210,26 @@ python total_export_prepare_cli.py --build-review-bundle --base-folder ".\total_
 python total_export_prepare_cli.py --build-review-bundle --base-folder ".\total_export_dev" --source-url "https://www.youtube.com/watch?v=aB3_dE-9xYz" --package-id "review bundle overwrite" --capture-option comments --overwrite-bundle-zip --overwrite-sidecars --json
 ```
 
+## Verify Review Bundle
+
+Verification mode is local-only and read-only. It verifies an existing ZIP against its `.sha256` and `.inspection.json` sidecars.
+
+It does not extract ZIPs, fetch, capture, download, transcribe, scrape, or inspect source content. It is not external archive submit/check behavior.
+
+Default sidecar paths are `<zip>.sha256` and `<zip>.inspection.json`. Use custom path flags if sidecars are stored elsewhere.
+
+```cmd
+python total_export_prepare_cli.py --verify-review-bundle --zip-path ".\total_export_dev\review_bundle_shortcut.zip"
+```
+
+```cmd
+python total_export_prepare_cli.py --verify-review-bundle --zip-path ".\total_export_dev\review_bundle_shortcut.zip" --json
+```
+
+```cmd
+python total_export_prepare_cli.py --verify-review-bundle --zip-path ".\total_export_dev\review_bundle_shortcut.zip" --review-bundle-sha256-path ".\total_export_dev\review_bundle_shortcut.zip.sha256" --review-bundle-inspection-json-path ".\total_export_dev\review_bundle_shortcut.zip.inspection.json" --json
+```
+
 ## No-Registration Example
 
 ```cmd
@@ -230,6 +250,7 @@ python total_export_prepare_cli.py --base-folder ".\total_export_dev" --source-u
 - `--inspect-zip`: Inspects an existing local ZIP without extracting it.
 - `--write-zip-sidecars`: Writes local `.sha256` and `.inspection.json` sidecars for an existing ZIP.
 - `--build-review-bundle`: Prepares full local review files, inspects the package, creates and inspects a ZIP, and optionally writes ZIP sidecars.
+- `--verify-review-bundle`: Verifies an existing review bundle ZIP against local `.sha256` and `.inspection.json` sidecars without extracting it.
 - `--json`: Prints deterministic JSON output instead of plain text.
 - `--no-final-validation`: Skips final local manifest/package validation.
 - `--no-create-asset-folders`: Avoids creating empty asset subfolders.

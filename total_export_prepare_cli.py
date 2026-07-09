@@ -26,6 +26,11 @@ from total_export_review_bundle import (
     build_total_export_review_bundle_text,
     review_bundle_result_to_dict,
 )
+from total_export_review_bundle_verify import (
+    build_total_export_review_bundle_verification_text,
+    review_bundle_verification_to_dict,
+    verify_total_export_review_bundle,
+)
 from total_export_zip_inspect import (
     build_total_export_zip_inspection_text,
     inspect_total_export_zip,
@@ -89,6 +94,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bundle-zip-path", default="")
     parser.add_argument("--overwrite-bundle-zip", action="store_true")
     parser.add_argument("--no-bundle-sidecars", action="store_true")
+    parser.add_argument("--verify-review-bundle", action="store_true")
+    parser.add_argument("--review-bundle-sha256-path", default="")
+    parser.add_argument("--review-bundle-inspection-json-path", default="")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -465,6 +473,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.inspect_zip,
             args.write_zip_sidecars,
             args.build_review_bundle,
+            args.verify_review_bundle,
         )
     )
     if args.list_metadata and list_mode_count:
@@ -508,6 +517,33 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(review_bundle_result_to_dict(bundle_result), indent=2, sort_keys=True))
         else:
             print(build_total_export_review_bundle_text(bundle_result))
+        return 0
+
+    if args.verify_review_bundle:
+        if not args.zip_path:
+            parser.error("--zip-path is required when --verify-review-bundle is used")
+        if (
+            args.write_readme
+            or args.write_plan_report
+            or args.write_inventory_report
+            or args.review_files
+            or args.full_review_files
+        ):
+            parser.error(
+                "--verify-review-bundle is read-only and works on existing local "
+                "ZIP/sidecar files; it cannot be combined with prepare/write/review flags"
+            )
+        verification = verify_total_export_review_bundle(
+            args.zip_path,
+            sha256_path=args.review_bundle_sha256_path,
+            inspection_json_path=args.review_bundle_inspection_json_path,
+            include_zip_entries=args.include_zip_entries,
+            hash_zip_entries=args.hash_zip_entries,
+        )
+        if args.json:
+            print(json.dumps(review_bundle_verification_to_dict(verification), indent=2, sort_keys=True))
+        else:
+            print(build_total_export_review_bundle_verification_text(verification))
         return 0
 
     if args.inspect_package:

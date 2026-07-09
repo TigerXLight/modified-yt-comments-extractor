@@ -1104,6 +1104,168 @@ def run_self_test() -> None:
             if not entry["is_dir"]
         )
 
+        exit_code, verify_bundle_output = _run_cli(
+            [
+                "--verify-review-bundle",
+                "--zip-path",
+                str(bundle_zip_path),
+            ]
+        )
+        assert exit_code == 0
+        assert "Total Export review bundle verification" in verify_bundle_output
+        assert "Status: verified" in verify_bundle_output
+        assert "Hash matches SHA256 sidecar: yes" in verify_bundle_output
+
+        exit_code, verify_bundle_json_output = _run_cli(
+            [
+                "--verify-review-bundle",
+                "--zip-path",
+                str(bundle_zip_path),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_verify_bundle = json.loads(verify_bundle_json_output)
+        assert parsed_verify_bundle["status"] == "verified"
+        assert parsed_verify_bundle["sha256_sidecar_valid"] is True
+        assert parsed_verify_bundle["inspection_json_valid"] is True
+        assert parsed_verify_bundle["hash_matches_sha256_sidecar"] is True
+        assert parsed_verify_bundle["hash_matches_inspection_json"] is True
+
+        custom_verify_sha_path = Path(temp_dir) / "custom_verify.sha256"
+        custom_verify_json_path = Path(temp_dir) / "custom_verify.inspection.json"
+        custom_verify_sha_path.write_text(
+            Path(f"{bundle_zip_path}.sha256").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        custom_verify_json_path.write_text(
+            Path(f"{bundle_zip_path}.inspection.json").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        exit_code, custom_verify_json_output = _run_cli(
+            [
+                "--verify-review-bundle",
+                "--zip-path",
+                str(bundle_zip_path),
+                "--review-bundle-sha256-path",
+                str(custom_verify_sha_path),
+                "--review-bundle-inspection-json-path",
+                str(custom_verify_json_path),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        assert json.loads(custom_verify_json_output)["status"] == "verified"
+
+        exit_code, verify_missing_zip_output = _run_cli(
+            [
+                "--verify-review-bundle",
+                "--zip-path",
+                str(Path(temp_dir) / "missing_review_bundle.zip"),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        assert json.loads(verify_missing_zip_output)["status"] == "missing_zip"
+
+        tamper_bundle_json_output = _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli verify tamper sha",
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )[1]
+        parsed_tamper_bundle = json.loads(tamper_bundle_json_output)
+        Path(parsed_tamper_bundle["zip_sidecar_sha256_path"]).write_text(
+            f"{'0' * 64}  {Path(parsed_tamper_bundle['zip_path']).name}\n",
+            encoding="utf-8",
+        )
+        exit_code, verify_tamper_sha_output = _run_cli(
+            [
+                "--verify-review-bundle",
+                "--zip-path",
+                parsed_tamper_bundle["zip_path"],
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_verify_tamper_sha = json.loads(verify_tamper_sha_output)
+        assert parsed_verify_tamper_sha["status"] == "mismatch"
+        assert parsed_verify_tamper_sha["hash_matches_sha256_sidecar"] is False
+
+        tamper_json_bundle_output = _run_cli(
+            [
+                "--build-review-bundle",
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+                "--package-id",
+                "cli verify tamper json",
+                "--capture-option",
+                "comments",
+                "--json",
+            ]
+        )[1]
+        parsed_json_tamper_bundle = json.loads(tamper_json_bundle_output)
+        tampered_json = json.loads(
+            Path(parsed_json_tamper_bundle["zip_sidecar_json_path"]).read_text(encoding="utf-8")
+        )
+        tampered_json["zip_inspection"]["zip_sha256"] = "0" * 64
+        Path(parsed_json_tamper_bundle["zip_sidecar_json_path"]).write_text(
+            json.dumps(tampered_json, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        exit_code, verify_tamper_json_output = _run_cli(
+            [
+                "--verify-review-bundle",
+                "--zip-path",
+                parsed_json_tamper_bundle["zip_path"],
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_verify_tamper_json = json.loads(verify_tamper_json_output)
+        assert parsed_verify_tamper_json["status"] == "mismatch"
+        assert parsed_verify_tamper_json["hash_matches_inspection_json"] is False
+
+        error_code, verify_missing_path_error = _run_cli_error(["--verify-review-bundle"])
+        assert error_code == 2
+        assert "--zip-path is required when --verify-review-bundle is used" in verify_missing_path_error
+
+        error_code, verify_build_bundle_error = _run_cli_error(
+            [
+                "--verify-review-bundle",
+                "--build-review-bundle",
+                "--zip-path",
+                str(bundle_zip_path),
+                "--base-folder",
+                temp_dir,
+                "--source-url",
+                f"https://www.youtube.com/watch?v={VALID_ID}",
+            ]
+        )
+        assert error_code == 2
+        assert "Use only one list/explain mode at a time" in verify_build_bundle_error
+
+        error_code, verify_full_review_error = _run_cli_error(
+            [
+                "--verify-review-bundle",
+                "--zip-path",
+                str(bundle_zip_path),
+                "--full-review-files",
+            ]
+        )
+        assert error_code == 2
+        assert "read-only" in verify_full_review_error
+
         error_code, bundle_missing_base_error = _run_cli_error(
             [
                 "--build-review-bundle",
