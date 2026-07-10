@@ -331,6 +331,68 @@ def run_self_test() -> None:
         ]
         assert parsed_preservation_plan["capture_methods"][0]["display_name"] == "Scrollable-container screenshot"
         assert parsed_preservation_plan["warnings"] == []
+        assert parsed_preservation_plan["evidence_bundle"] is None
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, evidence_preservation_output = _run_cli(
+            [
+                "--explain-preservation-plan",
+                "--source-url",
+                "https://www.telegraph.co.uk/news/example/",
+                "--preservation-backend",
+                "manual_local_files",
+                "--preservation-format",
+                "html",
+                "--media-preservation-choice",
+                "select",
+                "--capture-method",
+                "scrollable_container_screenshot",
+                "--evidence-bundle-status",
+                "manual_supplied",
+                "--evidence-item",
+                "screenshot:png:scrollable_container_screenshot",
+                "--preservation-notes",
+                "Local backup plan.",
+            ]
+        )
+        assert exit_code == 0
+        assert "Evidence bundle:" in evidence_preservation_output
+        assert "status: manual_supplied" in evidence_preservation_output
+        assert "item screenshot: format=png" in evidence_preservation_output
+        assert "scrollable_container_screenshot" in evidence_preservation_output
+        assert "focused or selected" in evidence_preservation_output
+        assert "no file open" in evidence_preservation_output
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, evidence_preservation_json_output = _run_cli(
+            [
+                "--explain-preservation-plan",
+                "--source-url",
+                "https://www.telegraph.co.uk/news/example/",
+                "--preservation-backend",
+                "manual_local_files",
+                "--preservation-format",
+                "html",
+                "--media-preservation-choice",
+                "select",
+                "--capture-method",
+                "scrollable_container_screenshot",
+                "--evidence-bundle-status",
+                "manual_supplied",
+                "--evidence-item",
+                "screenshot:png:scrollable_container_screenshot",
+                "--preservation-notes",
+                "Local backup plan.",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_evidence_preservation = json.loads(evidence_preservation_json_output)
+        assert parsed_evidence_preservation["evidence_bundle"]["status"] == "manual_supplied"
+        assert parsed_evidence_preservation["evidence_bundle"]["items"][0]["artifact_id"] == "screenshot"
+        assert parsed_evidence_preservation["evidence_bundle"]["items"][0]["artifact_format"] == "png"
+        assert parsed_evidence_preservation["evidence_bundle"]["items"][0]["capture_method_id"] == "scrollable_container_screenshot"
+        assert "no file open" in parsed_evidence_preservation["evidence_bundle"]["scope"]
         assert list(Path(temp_dir).iterdir()) == []
 
         error_code, invalid_capture_method_error = _run_cli_error(

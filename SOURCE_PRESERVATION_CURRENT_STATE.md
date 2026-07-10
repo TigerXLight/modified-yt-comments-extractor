@@ -177,3 +177,7 @@ These checks use local files and temporary directories only. They must not be re
 - Preserve explicit write behavior: CLIs print by default and write only when an output path is supplied; overwrites require an explicit flag.
 - Treat unknown or missing metadata as uncertainty, not evidence of absence.
 - Do not commit until the user approves the reviewed diff and checks.
+
+## Preservation Evidence Bundles In Plans
+
+Preservation evidence bundle metadata is integrated into preservation plan and Total Export prepare reporting. It can describe artifact IDs, formats, capture-method IDs, notes, and limitations without proving files exist or opening, scanning, hashing, creating, uploading, downloading, capturing, scraping, or fetching anything.

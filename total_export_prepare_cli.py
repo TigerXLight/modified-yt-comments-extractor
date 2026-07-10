@@ -1,3 +1,4 @@
+# Evidence bundle integration: Total Export prepare CLI flags.
 from __future__ import annotations
 
 import argparse
@@ -71,6 +72,11 @@ from preservation_backend_plan import (
     build_preservation_backend_plan,
     preservation_backend_plan_to_dict,
 )
+from preservation_evidence_bundle import (
+    BUNDLE_STATUSES,
+    build_preservation_evidence_bundle,
+    build_preservation_evidence_item,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -102,6 +108,28 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
     )
     parser.add_argument("--preservation-notes", default="")
+    parser.add_argument(
+        "--evidence-bundle-status",
+        choices=BUNDLE_STATUSES,
+        default="",
+        help="Optional metadata-only evidence bundle status for preservation-plan explanations.",
+    )
+    parser.add_argument(
+        "--evidence-bundle-label",
+        default="",
+        help="Optional metadata-only evidence bundle label for preservation-plan explanations.",
+    )
+    parser.add_argument(
+        "--evidence-item",
+        action="append",
+        default=[],
+        help="Repeatable metadata-only artifact_id:artifact_format[:capture_method_id] evidence item.",
+    )
+    parser.add_argument(
+        "--evidence-notes",
+        default="",
+        help="Optional metadata-only evidence bundle notes.",
+    )
     parser.add_argument("--summary-filename", default="TOTAL_EXPORT_SUMMARY.txt")
     parser.add_argument("--no-register-summary", action="store_true")
     parser.add_argument("--write-readme", action="store_true")
@@ -462,6 +490,41 @@ def print_preservation_backend_options() -> None:
     print("Media preservation metadata does not discover or download media; all must be explicit.")
 
 
+
+
+def _parse_preservation_evidence_item(value: str):
+    parts = [part.strip() for part in str(value or "").split(":")]
+    if len(parts) not in (2, 3) or not parts[0] or not parts[1]:
+        raise ValueError(
+            "evidence item must use artifact_id:artifact_format[:capture_method_id]"
+        )
+    return build_preservation_evidence_item(
+        artifact_id=parts[0],
+        artifact_format=parts[1],
+        capture_method_id=parts[2] if len(parts) == 3 else "",
+    )
+
+
+def _build_cli_evidence_bundle(
+    *,
+    source_url: str = "",
+    bundle_label: str = "",
+    status: str = "",
+    notes: str = "",
+    item_values: Sequence[str] = (),
+):
+    if not (status or bundle_label or notes or item_values):
+        return None
+    items = tuple(_parse_preservation_evidence_item(value) for value in item_values)
+    return build_preservation_evidence_bundle(
+        source_url=source_url or "",
+        bundle_label=bundle_label or "",
+        status=status or "planned",
+        notes=notes or "",
+        items=items,
+    )
+
+
 def print_explain_preservation_plan(plan) -> None:
     print("Preservation plan:")
     print(f"Status: {plan.status}")
@@ -492,6 +555,23 @@ def print_explain_preservation_plan(plan) -> None:
             print(f"- {warning}")
     else:
         print("- (none)")
+    print("Evidence bundle:")
+    evidence_bundle = preservation_backend_plan_to_dict(plan)["evidence_bundle"]
+    if evidence_bundle is None:
+        print("- (none specified; no evidence files are opened, scanned, hashed, created, uploaded, captured, downloaded, scraped, or fetched)")
+    else:
+        print(f"- status: {evidence_bundle['status']}")
+        print(f"- source_url: {evidence_bundle['source_url'] or '(none)'}")
+        print(f"- bundle_label: {evidence_bundle['bundle_label'] or '(none)'}")
+        print(f"- item_count: {len(evidence_bundle['items'])}")
+        print(f"- scope: {evidence_bundle['scope']}")
+        for item in evidence_bundle["items"]:
+            print(
+                f"- item {item['artifact_id']}: format={item['artifact_format']}; "
+                f"capture_method={item['capture_method_id'] or 'none'}; "
+                f"limitations={item['limitations'] or 'none recorded'}; "
+                "execution=metadata only"
+            )
     print("Capture method limitations:")
     selected_methods = preservation_backend_plan_to_dict(plan)["capture_methods"]
     if selected_methods:
@@ -640,6 +720,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.explain_preservation_plan:
+        try:
+            evidence_bundle = _build_cli_evidence_bundle(
+                source_url=args.source_url or "",
+                bundle_label=args.evidence_bundle_label,
+                status=args.evidence_bundle_status,
+                notes=args.evidence_notes,
+                item_values=args.evidence_item,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
         plan = build_preservation_backend_plan(
             source_url=args.source_url,
             selected_backend_ids=args.preservation_backend,
@@ -647,6 +737,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             selected_capture_method_ids=args.capture_method,
             media_preservation_choice=args.media_preservation_choice,
             notes=args.preservation_notes,
+            evidence_bundle=evidence_bundle,
         )
         if args.json:
             print(

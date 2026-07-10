@@ -248,3 +248,7 @@ Expected result: all listed local self-tests pass and the working tree is clean 
    - no site fetching until separately approved with mocked/local tests.
 3. GUI/runtime integration:
    - deferred until separately approved.
+
+## Preservation Evidence Bundle Plan Integration
+
+Preservation plans may include evidence bundle metadata for manual/planned/external artifacts. Path hints are descriptive labels only. The helpers do not open, scan, hash, create, upload, download, capture, scrape, or fetch files/URLs.

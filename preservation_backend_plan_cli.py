@@ -1,3 +1,4 @@
+# Evidence bundle integration: preservation backend CLI flags.
 from __future__ import annotations
 
 import argparse
@@ -11,6 +12,11 @@ from preservation_backend_plan import (
     REPORT_FORMATS,
     build_preservation_backend_plan,
     render_preservation_backend_plan,
+)
+from preservation_evidence_bundle import (
+    BUNDLE_STATUSES,
+    build_preservation_evidence_bundle,
+    build_preservation_evidence_item,
 )
 
 
@@ -49,6 +55,7 @@ def _build_plan_from_input(
     data: dict[str, Any],
     *,
     capture_method_ids: Sequence[str] | None = None,
+    evidence_bundle=None,
 ):
     return build_preservation_backend_plan(
         source_url=_optional_string(data, "source_url"),
@@ -63,6 +70,7 @@ def _build_plan_from_input(
             data, "media_preservation_choice"
         ),
         notes=_optional_string(data, "notes"),
+        evidence_bundle=evidence_bundle,
     )
 
 
@@ -72,6 +80,39 @@ def write_report_output(output_path: str, text: str, *, overwrite: bool = False)
         raise FileExistsError(f"output path already exists: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def _parse_preservation_evidence_item(value: str):
+    parts = [part.strip() for part in str(value or "").split(":")]
+    if len(parts) not in (2, 3) or not parts[0] or not parts[1]:
+        raise ValueError(
+            "evidence item must use artifact_id:artifact_format[:capture_method_id]"
+        )
+    return build_preservation_evidence_item(
+        artifact_id=parts[0],
+        artifact_format=parts[1],
+        capture_method_id=parts[2] if len(parts) == 3 else "",
+    )
+
+
+def _build_cli_evidence_bundle(
+    *,
+    source_url: str = "",
+    bundle_label: str = "",
+    status: str = "",
+    notes: str = "",
+    item_values: Sequence[str] = (),
+):
+    if not (status or bundle_label or notes or item_values):
+        return None
+    items = tuple(_parse_preservation_evidence_item(value) for value in item_values)
+    return build_preservation_evidence_bundle(
+        source_url=source_url or "",
+        bundle_label=bundle_label or "",
+        status=status or "planned",
+        notes=notes or "",
+        items=items,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -100,6 +141,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional repeatable capture-method ID to include as planning metadata.",
     )
     parser.add_argument(
+        "--evidence-bundle-status",
+        choices=BUNDLE_STATUSES,
+        default="",
+        help="Optional metadata-only evidence bundle status.",
+    )
+    parser.add_argument(
+        "--evidence-bundle-label",
+        default="",
+        help="Optional metadata-only evidence bundle label.",
+    )
+    parser.add_argument(
+        "--evidence-item",
+        action="append",
+        default=[],
+        help="Repeatable metadata-only artifact_id:artifact_format[:capture_method_id] evidence item.",
+    )
+    parser.add_argument(
+        "--evidence-notes",
+        default="",
+        help="Optional metadata-only evidence bundle notes.",
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Allow replacing an existing output file.",
@@ -113,9 +176,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         data = _read_input(args.input) if args.input else {}
+        evidence_bundle = _build_cli_evidence_bundle(
+            source_url=_optional_string(data, "source_url") if data else "",
+            bundle_label=args.evidence_bundle_label,
+            status=args.evidence_bundle_status,
+            notes=args.evidence_notes,
+            item_values=args.evidence_item,
+        )
         plan = _build_plan_from_input(
             data,
             capture_method_ids=args.capture_method,
+            evidence_bundle=evidence_bundle,
         )
         rendered = render_preservation_backend_plan(
             plan,

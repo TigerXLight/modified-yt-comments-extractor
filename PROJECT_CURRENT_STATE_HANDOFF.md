@@ -282,3 +282,7 @@ Do not add provider/API/network calls to these verification chains.
 - Do not expose or record secrets in docs, logs, manifests, reports, screenshots, or test fixtures.
 - Do not modify mature YouTube comment/live-chat/export behavior during unrelated milestones.
 - Do not commit before the user has reviewed the patch and local checks.
+
+## Preservation Evidence Bundle Plan Integration
+
+Evidence bundle metadata can now be included in preservation plan reporting and Total Export prepare preservation explanations. This records planned/manual/external artifact IDs, formats, capture-method links, and limitations as local metadata only; it does not inspect files or perform capture/network behavior.

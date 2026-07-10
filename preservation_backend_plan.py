@@ -1,3 +1,4 @@
+# Evidence bundle integration: metadata-only preservation plan field.
 from __future__ import annotations
 
 import json
@@ -72,6 +73,7 @@ class PreservationBackendPlan:
     status: str
     warnings: tuple[str, ...]
     notes: str = ""
+    evidence_bundle: Any | None = None
     scope: str = (
         "local preservation backend planning only; no fetch, capture, network, archive, "
         "browser, scraping, credential, ArchiveBox execution, media download, or GUI behavior"
@@ -247,6 +249,7 @@ def build_preservation_backend_plan(
     selected_capture_method_ids: Sequence[str] = (),
     media_preservation_choice: str = MEDIA_PRESERVATION_CHOICE_NONE,
     notes: str = "",
+    evidence_bundle: Any | None = None,
 ) -> PreservationBackendPlan:
     selected_backends, unknown_backends, duplicate_backends = _normalize_selection(
         selected_backend_ids,
@@ -319,12 +322,16 @@ def build_preservation_backend_plan(
         status=status,
         warnings=tuple(warnings),
         notes=notes.strip(),
+        evidence_bundle=evidence_bundle,
     )
 
 
 def preservation_backend_plan_to_dict(
     plan: PreservationBackendPlan,
 ) -> dict[str, Any]:
+    # Evidence bundle integration: metadata-only preservation plan field.
+    from preservation_evidence_bundle import preservation_evidence_bundle_to_dict
+
     selected_capture_methods = [
         method
         for method_id in plan.selected_capture_method_ids
@@ -366,6 +373,11 @@ def preservation_backend_plan_to_dict(
             plan.duplicate_capture_method_ids
         ),
         "duplicate_format_ids": list(plan.duplicate_format_ids),
+        "evidence_bundle": (
+            preservation_evidence_bundle_to_dict(plan.evidence_bundle)
+            if plan.evidence_bundle is not None
+            else None
+        ),
         "capture_methods": [
             capture_method_metadata_to_dict(method)
             for method in selected_capture_methods
@@ -404,6 +416,16 @@ def build_preservation_backend_plan_markdown(plan: PreservationBackendPlan) -> s
     if plan.warnings:
         lines.append("- Warnings:")
         lines.extend(f"  - {warning}" for warning in plan.warnings)
+
+    lines.extend(["", "## Evidence Bundle", ""])
+    if plan.evidence_bundle is None:
+        lines.append("No evidence bundle is specified. No evidence files are opened, scanned, hashed, created, uploaded, captured, downloaded, scraped, or fetched.")
+        lines.append("")
+    else:
+        from preservation_evidence_bundle import build_preservation_evidence_bundle_markdown
+
+        lines.append(build_preservation_evidence_bundle_markdown(plan.evidence_bundle))
+        lines.append("")
 
     lines.extend(["", "## Selected Capture Methods", ""])
     if not plan.selected_capture_method_ids:
@@ -472,6 +494,15 @@ def build_preservation_backend_plan_text(plan: PreservationBackendPlan) -> str:
         lines.append(f"notes: {plan.notes}")
     if plan.warnings:
         lines.append(f"warnings: {'; '.join(plan.warnings)}")
+
+    lines.append("")
+    lines.append("evidence_bundle:")
+    if plan.evidence_bundle is None:
+        lines.append("- none specified; no evidence files are opened, scanned, hashed, created, uploaded, captured, downloaded, scraped, or fetched")
+    else:
+        from preservation_evidence_bundle import build_preservation_evidence_bundle_text
+
+        lines.extend(build_preservation_evidence_bundle_text(plan.evidence_bundle).splitlines())
 
     lines.append("")
     lines.append("selected_capture_methods:")
