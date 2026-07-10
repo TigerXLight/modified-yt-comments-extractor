@@ -98,6 +98,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Added a local-only bundle index reconciliation CLI for comparing JSON/text expected ZIP lists with local bundle index results and rendering text, Markdown, or JSON without ZIP extraction, network, archive checks, downloads, or GUI integration.
 - Added `SOURCE_PRESERVATION_CURRENT_STATE.md` as a docs-only handoff/index for local preservation helpers, CLIs, tests, boundaries, and safe next milestones.
 - Added a local-only preservation metadata seed JSON and tests for manual archive/local media records and preservation-plan reporting without archive checks, downloads, network, scraping, transcription, or GUI integration.
+- Added a local-only preservation metadata seed report generator for Markdown, text, or JSON with explicit-output-only writes and no network, archive, download, provider, ZIP extraction, or GUI behavior.
 - `UPSTREAM_V2_1_1_AUDIT.md` records a docs-only upstream/original-creator v2.1.1 parity audit and recommended local/mocked regression tests before porting behavior.
 - Added local upstream v2.1.1 parity regression tests for testable extractor error handling, newest-sort/max-comment mapping, and spam false-positive areas; GUI export/fetch-state and campaign short-praise guards remain deferred pending helper extraction or a later behavior port.
 - Added local upstream v2.1.1 behavior fixes for structured quota/daily-limit API error classification and short-praise campaign false-positive guarding, with local regression coverage and no network/GUI/provider behavior.

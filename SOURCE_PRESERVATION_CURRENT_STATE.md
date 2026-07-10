@@ -38,6 +38,7 @@ Missing metadata, missing local files, and missing expected bundles are follow-u
 | Preservation plan | `PRESERVATION_PLAN_REPORT.md` | `total_export_preservation_plan.py` | `total_export_preservation_plan_test.py` | Compares source URLs with manual archive and local media records to identify manual follow-up. | In-memory/local records only; recommendations do not trigger capture or checks. |
 | Preservation plan CLI | `PRESERVATION_PLAN_REPORT.md` | `total_export_preservation_plan_cli.py` | `total_export_preservation_plan_cli_test.py` | Loads local preservation JSON and renders text, Markdown, or JSON plans. | Writes only with explicit `--output`; no archive, download, or network behavior. |
 | Preservation metadata seed | `PRESERVATION_METADATA_SEED.md` | `PRESERVATION_METADATA_SEED.json` | `preservation_metadata_seed_test.py` | Supplies deterministic manual archive/local media examples for report checks. | Example data only; fake paths, hashes, and URLs are not verified evidence. |
+| Preservation metadata seed report | `PRESERVATION_METADATA_SEED.md` | `preservation_metadata_seed_report.py` | `preservation_metadata_seed_report_test.py` | Loads the checked-in seed through existing builders and renders Markdown, text, or JSON. | Explicit-output-only local reporting; fake paths are not inspected or hashed. |
 | Bundle index | `TOTAL_EXPORT_BUNDLE_INDEX.md` | `total_export_bundle_index.py` | `total_export_bundle_index_test.py` | Indexes local ZIP paths and sibling SHA-256/inspection sidecar state. | No ZIP extraction or internal ZIP reads; local files and sidecars only. |
 | Bundle index CLI | `TOTAL_EXPORT_BUNDLE_INDEX.md` | `total_export_bundle_index_cli.py` | `total_export_bundle_index_cli_test.py` | Scans a local folder and renders bundle index text, Markdown, or JSON. | Writes only with explicit `--output`; no network or archive-service access. |
 | Bundle index reconciliation | `TOTAL_EXPORT_BUNDLE_INDEX_RECONCILIATION.md` | `total_export_bundle_index_reconcile.py` | `total_export_bundle_index_reconcile_test.py` | Compares expected ZIP paths with an in-memory bundle index and reports missing, unexpected, or needs-review bundles. | Path/index comparison only; no extraction, fetching, or external validation. |
@@ -51,6 +52,7 @@ The broader phase boundaries and possible later work remain in `SOURCE_PRESERVAT
 | --- | --- | --- | --- | --- | --- |
 | `total_export_local_media_verify_cli.py` | `--input`, `--format`, `--no-compute-hash`, `--output`, `--overwrite` | Local JSON object/list of media records | Text, Markdown, JSON | Stdout by default; file only with `--output`; overwrite requires `--overwrite`. | Metadata/local-file verification only; no network, download, archive, provider, or GUI behavior. |
 | `total_export_preservation_plan_cli.py` | `--input`, `--format`, `--output`, `--overwrite` | Local JSON with source URLs, archive records, and media records | Text, Markdown, JSON | Stdout by default; file only with `--output`; overwrite requires `--overwrite`. | Local planning only; no archive checks, source fetch, download, provider, or GUI behavior. |
+| `preservation_metadata_seed_report.py` | `--input`, `--format`, `--output`, `--overwrite` | Local seed-shaped JSON; defaults to `PRESERVATION_METADATA_SEED.json` | Markdown, text, JSON | Stdout by default; file only with `--output`; overwrite requires `--overwrite`. | Example-report generation only; no path inspection, network, archive, provider, ZIP extraction, or GUI behavior. |
 | `total_export_bundle_index_cli.py` | `--root`, `--format`, `--recursive`, `--no-compute-hash`, `--output`, `--overwrite` | Existing local folder containing ZIPs and sibling sidecars | Text, Markdown, JSON | Stdout by default; file only with `--output`; overwrite requires `--overwrite`. | No ZIP extraction, network, archive, provider, or GUI behavior. |
 | `total_export_bundle_index_reconcile_cli.py` | `--root`, `--expected`, `--format`, `--recursive`, `--no-compute-hash`, `--output`, `--overwrite` | Local bundle folder plus JSON object/list or comment-aware text expected list | Text, Markdown, JSON | Stdout by default; file only with `--output`; overwrite requires `--overwrite`. | No ZIP extraction, network, download, archive, provider, or GUI behavior. |
 
@@ -67,6 +69,7 @@ There are currently no separate CLIs for creating manual archive records or loca
 | `total_export_preservation_plan_test.py` | Source matching, archive/media presence, follow-up counts/actions, URL normalization, and deterministic output. |
 | `total_export_preservation_plan_cli_test.py` | Local JSON parsing, all output formats, explicit output, overwrite protection, and invalid input. |
 | `preservation_metadata_seed_test.py` | Seed shape and compatibility with archive/media records and preservation-plan rendering. |
+| `preservation_metadata_seed_report_test.py` | Default seed loading, all output formats, explicit output, overwrite protection, and invalid input. |
 | `total_export_bundle_index_test.py` | Complete/missing/mismatched/unreadable sidecars, recursive indexing, hashing, and reports. |
 | `total_export_bundle_index_cli_test.py` | Local folder indexing, recursive/hash modes, all output formats, explicit output, and overwrite protection. |
 | `total_export_bundle_index_reconcile_test.py` | Present, missing, unexpected, and sidecar-needs-review expected bundle states. |
@@ -109,8 +112,9 @@ All listed tests are script-style local self-tests. Their temporary files are cr
 4. Added current-state local media verification and a text/Markdown/JSON CLI.
 5. Added preservation-plan reporting and a text/Markdown/JSON CLI.
 6. Added deterministic preservation metadata seed data and compatibility tests.
-7. Added local bundle indexing and a text/Markdown/JSON CLI.
-8. Added expected-bundle reconciliation and a text/Markdown/JSON CLI.
+7. Added a deterministic Markdown/text/JSON seed report generator with explicit-output-only writes.
+8. Added local bundle indexing and a text/Markdown/JSON CLI.
+9. Added expected-bundle reconciliation and a text/Markdown/JSON CLI.
 
 None of these milestones introduced source acquisition, external verification, archive-service access, or GUI integration.
 
@@ -128,10 +132,9 @@ None of these milestones introduced source acquisition, external verification, a
 
 ## Recommended Next Safe Milestones
 
-1. Render `PRESERVATION_METADATA_SEED.json` to an explicitly selected Markdown report artifact, with no implicit writes or network behavior.
+1. Design a manual local evidence-package manifest that references existing helper outputs without downloading, extracting ZIPs, checking archives, or calling providers.
 2. Perform docs-only bundle/preservation index polish if names or boundaries drift.
-3. Design a manual local evidence-package manifest that references existing helper outputs without downloading, extracting ZIPs, checking archives, or calling providers.
-4. Keep any networked archive, downloader, capture, or provider work deferred until separately approved with explicit opt-in and mocked/local tests.
+3. Keep any networked archive, downloader, capture, or provider work deferred until separately approved with explicit opt-in and mocked/local tests.
 
 ## Verify The Local Preservation Stack
 
