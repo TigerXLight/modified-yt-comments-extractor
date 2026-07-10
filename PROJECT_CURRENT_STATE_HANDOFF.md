@@ -98,6 +98,7 @@ These tools do not call providers, run transcription, fetch media, or store cred
 The repository now has a broad local Total Export foundation:
 
 - Source URL validation and a YouTube source-adapter metadata skeleton.
+- `SOURCE_CONTEXT_GLOSSARY_CURRENT_STATE.md` records the current local source/context/glossary helper stack, verification commands, boundaries, and safe next milestones.
 - Capture-option metadata and deterministic selection validation.
 - Source capture plans and local provenance records.
 - Package IDs/folders, manifest read/write/round-trip, asset registration, and duplicate-safe updates.
@@ -175,6 +176,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | `TOTAL_EXPORT_BUNDLE_INDEX_RECONCILIATION.md` | Expected bundle reconciliation semantics and CLI. |
 | `SOURCE_PRESERVATION_CURRENT_STATE.md` | Detailed local preservation/evidence handoff and test index. |
 | `SOURCE_PRESERVATION_ROADMAP.md` | Preservation phase boundaries and deferred behavior. |
+| `SOURCE_CONTEXT_GLOSSARY_CURRENT_STATE.md` | Current local source URL, adapter, capture plan, provenance, and context/glossary helper/test index. |
 | `PRESERVATION_METADATA_SEED.md` | Local preservation fixture and report-generator usage. |
 | `EVIDENCE_PACKAGE_MANIFEST.md` | Local evidence manifest helper and CLI semantics. |
 | `UPSTREAM_V2_1_1_AUDIT.md` | Historical upstream parity audit and recommended regression areas. |
