@@ -43,6 +43,7 @@ Current helpers validate, normalize, classify, and assemble local metadata only.
 | YouTube URL parsing | `youtube_url_utils.py`, `youtube_url_utils_test.py` | Strict local YouTube video-ID extraction/normalization. |
 | Source adapter metadata | `source_adapters.py`, `source_adapters_test.py`, `source_adapters_registry_test.py` | Local adapter capability metadata, YouTube URL support, metadata-only News Website known-host URL support, `source_name` registry helpers, and name lookup. |
 | Source adapter capability report | `source_adapter_capability_report.py`, `source_adapter_capability_report_test.py`, `source_adapter_capability_report_cli.py`, `source_adapter_capability_report_cli_test.py` | Local registered-adapter capability/credential/privacy/setup report rendering. |
+| Source adapter gap analysis | `source_adapter_gap_analysis.py`, `source_adapter_gap_analysis_test.py`, `source_adapter_gap_analysis_cli.py`, `source_adapter_gap_analysis_cli_test.py` | Local current-vs-future adapter and preservation backend gap analysis. |
 | Context/glossary skeleton | `context_glossary.py`, `context_glossary_test.py` | Local glossary normalization, deduplication, user-term handling, and context hint resolution. |
 | Context glossary CLI | `context_glossary_cli.py`, `context_glossary_cli_test.py` | Explicit-output-only CLI for manually supplied context/glossary JSON normalization and reporting. |
 | Source capture planning | `source_capture_plan.py`, `source_capture_plan_test.py` | Local source URL + adapter + capture option + context hint plan assembly. |
@@ -99,6 +100,19 @@ Only local planning and metadata layers exist here. Fetching, capture, ASR use, 
 - External/background context must never be trusted as ground truth.
 - The user must be able to review/edit glossary terms before they affect ASR prompts, provider keyterms, QA checks, or final transcript decisions.
 - If a provider has no glossary/keyterm support, glossary terms can still feed Term QA after transcription.
+
+## Source Adapter Gap Analysis CLI Usage
+
+`source_adapter_gap_analysis_cli.py` renders a local adapter and preservation gap analysis comparing the current adapter inventory with future platform/backend categories.
+
+```cmd
+python source_adapter_gap_analysis_cli.py
+python source_adapter_gap_analysis_cli.py --format text
+python source_adapter_gap_analysis_cli.py --format json
+python source_adapter_gap_analysis_cli.py --output SOURCE_ADAPTER_GAP_ANALYSIS.md --overwrite
+```
+
+The CLI prints to stdout by default, writes only when `--output` is explicitly supplied, and preserves existing files unless `--overwrite` is used. It does not fetch/capture/download anything, call providers/network/archive services, test credentials, scrape pages, run ArchiveBox, capture screenshots, or wire into the GUI.
 
 ## Source Adapter Capability Report CLI Usage
 
@@ -167,7 +181,7 @@ The CLI prints to stdout by default, writes only when `--output` is explicitly s
 Run from Windows CMD with the project virtual environment active:
 
 ```cmd
-python -m py_compile source_adapters.py source_adapters_test.py source_adapters_registry_test.py source_adapter_capability_report.py source_adapter_capability_report_test.py source_adapter_capability_report_cli.py source_adapter_capability_report_cli_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py & python source_adapters_test.py & python source_adapters_registry_test.py & python source_adapter_capability_report_test.py & python source_adapter_capability_report_cli_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & git diff --check & git status --short
+python -m py_compile source_adapters.py source_adapters_test.py source_adapters_registry_test.py source_adapter_capability_report.py source_adapter_capability_report_test.py source_adapter_capability_report_cli.py source_adapter_capability_report_cli_test.py source_adapter_gap_analysis.py source_adapter_gap_analysis_test.py source_adapter_gap_analysis_cli.py source_adapter_gap_analysis_cli_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py & python source_adapters_test.py & python source_adapters_registry_test.py & python source_adapter_capability_report_test.py & python source_adapter_capability_report_cli_test.py & python source_adapter_gap_analysis_test.py & python source_adapter_gap_analysis_cli_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & git diff --check & git status --short
 ```
 
 Expected result: all listed local self-tests pass and the working tree is clean after committed changes.
