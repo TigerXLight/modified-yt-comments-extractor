@@ -44,6 +44,7 @@ Current helpers validate, normalize, classify, and assemble local metadata only.
 | Source adapter metadata | `source_adapters.py`, `source_adapters_test.py`, `source_adapters_registry_test.py` | Local adapter capability metadata, YouTube URL support, metadata-only News Website known-host URL support, `source_name` registry helpers, and name lookup. |
 | Source adapter capability report | `source_adapter_capability_report.py`, `source_adapter_capability_report_test.py`, `source_adapter_capability_report_cli.py`, `source_adapter_capability_report_cli_test.py` | Local registered-adapter capability/credential/privacy/setup report rendering. |
 | Source adapter gap analysis | `source_adapter_gap_analysis.py`, `source_adapter_gap_analysis_test.py`, `source_adapter_gap_analysis_cli.py`, `source_adapter_gap_analysis_cli_test.py` | Local current-vs-future adapter and preservation backend gap analysis. |
+| Capture method metadata | `capture_method_metadata.py`, `capture_method_metadata_test.py` | Local metadata catalog for visible/full-page/container/stitched screenshots, selected/raw HTML, and manual evidence bundles; no capture execution. |
 | Context/glossary skeleton | `context_glossary.py`, `context_glossary_test.py` | Local glossary normalization, deduplication, user-term handling, and context hint resolution. |
 | Context glossary CLI | `context_glossary_cli.py`, `context_glossary_cli_test.py` | Explicit-output-only CLI for manually supplied context/glossary JSON normalization and reporting. |
 | Source capture planning | `source_capture_plan.py`, `source_capture_plan_test.py` | Local source URL + adapter + capture option + context hint plan assembly. |
@@ -116,6 +117,8 @@ Future preservation/capture metadata should distinguish:
 - manually supplied evidence bundle.
 
 Manual tools such as Print Edit WE, FireShot, GoFullPage, browser DevTools, or saved-page HTML can be useful evidence sources, but their outputs should be recorded with capture limitations. Do not treat any one visual/DOM capture method as a universal social-comment extractor. Future automation should be site-specific or site-family-specific, opt-in, and tested locally/mocked before any fetch/capture/browser behavior is added.
+
+`capture_method_metadata.py` now formalizes these seven methods as local metadata with output kinds, current manual-only status, future-automation candidacy, limitations, and recommended next steps. It does not fetch, browse, capture screenshots, scrape, download, or wire into the GUI.
 
 Future webpage media preservation should also record whether media capture is `all` or `select`: `all` means every discovered image/video/media asset is intended for preservation, while `select` means the user chooses individual assets. Media download must remain opt-in and must not default to downloading everything from a webpage.
 
