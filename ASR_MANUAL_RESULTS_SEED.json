@@ -19,7 +19,7 @@
     "term_qa_required": true,
     "accepted_status_policy": "Reserved for a future provider/model with project-specific scoring at or above the strict gate plus Term QA and explicit user review.",
     "candidate_status_policy": "Promising or useful for retesting/fallback, but not accepted and not final truth.",
-    "blocked_status_policy": "No comparable quality score was produced; do not rank blocked rows as quality-rejected.",
+    "blocked_status_policy": "No comparable quality score was produced; blocked rows are not quality-rejected and must not be ranked as quality-rejected.",
     "external_lead_policy": "External leaderboard and user-observation rows are research leads unless separately scored on the project reference clip.",
     "leading_project_candidate": "ElevenLabs / Scribe v2 with keyterms at 84.95% project reference accuracy; candidate only.",
     "leading_local_candidate": "whisper.cpp / Vulkan large-v3-turbo phrase prompt at 74.19% project reference accuracy; local/offline fallback only.",
