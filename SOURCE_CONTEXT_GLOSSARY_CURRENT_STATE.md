@@ -99,8 +99,6 @@ Only local planning and metadata layers exist here. Fetching, capture, ASR use, 
 - The user must be able to review/edit glossary terms before they affect ASR prompts, provider keyterms, QA checks, or final transcript decisions.
 - If a provider has no glossary/keyterm support, glossary terms can still feed Term QA after transcription.
 
-## Verification
-## Source Capture Plan CLI Usage
 ## Context Glossary CLI Usage
 
 `context_glossary_cli.py` reads a manually supplied JSON object and renders normalized context hints, deduped glossary terms, and phrase-prompt terms as Markdown, text, or JSON.
@@ -125,6 +123,7 @@ python context_glossary_cli.py --input context_glossary_input.json --output CONT
 
 The CLI prints to stdout by default, writes only when `--output` is explicitly supplied, and preserves existing files unless `--overwrite` is used. It does not fetch/capture/download anything, call providers/network services, or feed ASR prompts/keyterms.
 
+## Source Capture Plan CLI Usage
 
 `source_capture_plan_cli.py` reads a manually supplied JSON object and renders a local Source Capture Plan as Markdown, text, or JSON.
 
@@ -149,6 +148,7 @@ python source_capture_plan_cli.py --input source_capture_plan_input.json --outpu
 
 The CLI prints to stdout by default, writes only when `--output` is explicitly supplied, and preserves existing files unless `--overwrite` is used. It does not fetch/capture/download anything or call providers/network services.
 
+## Verification
 
 Run from Windows CMD with the project virtual environment active:
 
