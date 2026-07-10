@@ -49,8 +49,32 @@ The helper provides:
 - Expected, present, missing, unexpected, and follow-up counts.
 - Deterministic dictionary, plain-text, and Markdown representations.
 
+## Local CLI Usage
+
+`total_export_bundle_index_reconcile_cli.py` reads a local expected bundle list, builds a local bundle index from a selected root folder, reconciles the two, and renders text, Markdown, or JSON.
+
+Example commands:
+
+```cmd
+python total_export_bundle_index_reconcile_cli.py --root path\to\bundles --expected EXPECTED_BUNDLES.json
+python total_export_bundle_index_reconcile_cli.py --root path\to\bundles --expected EXPECTED_BUNDLES.txt
+python total_export_bundle_index_reconcile_cli.py --root path\to\bundles --expected EXPECTED_BUNDLES.json --format markdown
+python total_export_bundle_index_reconcile_cli.py --root path\to\bundles --expected EXPECTED_BUNDLES.json --format json
+python total_export_bundle_index_reconcile_cli.py --root path\to\bundles --expected EXPECTED_BUNDLES.json --recursive
+python total_export_bundle_index_reconcile_cli.py --root path\to\bundles --expected EXPECTED_BUNDLES.json --no-compute-hash
+python total_export_bundle_index_reconcile_cli.py --root path\to\bundles --expected EXPECTED_BUNDLES.json --format markdown --output TOTAL_EXPORT_BUNDLE_INDEX_RECONCILE_REPORT.md --overwrite
+```
+
+JSON input may be an object containing an `expected_bundles` list or a bare list. Entries may be path strings or objects with `expected_zip_path` and optional `package_id`, `source_url`, and `notes`. Text input ignores blank lines and lines beginning with `#`; each remaining line is an expected ZIP path.
+
+`--recursive` includes ZIP files in nested folders. `--no-compute-hash` skips local ZIP hash computation and leaves relevant sidecar comparisons needing review.
+
+The CLI writes a file only when `--output` is explicitly supplied. Existing output files are preserved unless `--overwrite` is also supplied.
+
+The CLI does not extract ZIP files, read files inside ZIPs, fetch sources, download media, scrape pages, capture screenshots, check or submit archive URLs, transcribe media, call providers or APIs, store credentials, or wire into the GUI.
+
 ## Future Integration
 
-A reconciliation CLI may be considered only in a separately approved milestone. This helper currently performs in-memory/local reporting only and does not write reports automatically.
+Further integration should remain a separately approved milestone. The helper and CLI currently perform local reporting only and do not write reports unless the CLI receives an explicit `--output` path.
 
 Any future integration must preserve the no-extraction, no-network, no-download, no-archive-check, no-provider-call, and no-GUI boundary unless a later behavior change is explicitly approved.
