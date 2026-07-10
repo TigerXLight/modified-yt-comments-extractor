@@ -122,6 +122,8 @@ Manual tools such as Print Edit WE, FireShot, GoFullPage, browser DevTools, or s
 
 Preservation backend plans now also record media preservation intent as `none`, `select`, or explicit `all`. This local metadata neither discovers nor downloads media; any future automation must remain opt-in, site-specific, and locally/mocked tested.
 
+The same preservation plan reports can now include multiple selected IDs from `capture_method_metadata.py`, with display names and limitations. Selection remains metadata only: no screenshot, DOM capture, scrolling, scraping, browser execution, or download occurs, and nested scrollable containers remain a known evidence limitation.
+
 Future webpage media preservation should also record whether media capture is `all` or `select`: `all` means every discovered image/video/media asset is intended for preservation, while `select` means the user chooses individual assets. Media download must remain opt-in and must not default to downloading everything from a webpage.
 
 ## Preservation Backend Plan CLI Usage

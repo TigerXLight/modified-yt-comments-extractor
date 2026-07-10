@@ -15,6 +15,16 @@ def _run_cli(argv: list[str]):
     return code, stdout.getvalue(), stderr.getvalue()
 
 
+def _run_cli_error(argv: list[str]) -> tuple[int, str]:
+    stderr = io.StringIO()
+    try:
+        with redirect_stderr(stderr):
+            main(argv)
+    except SystemExit as exc:
+        return int(exc.code), stderr.getvalue()
+    raise AssertionError("Expected argparse SystemExit.")
+
+
 def _write_json(path: Path, data) -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
 
@@ -29,6 +39,7 @@ def run_self_test() -> None:
     assert "ArchiveBox-style self-hosted store" in markdown
     assert "does not fetch URLs" in markdown
     assert "Media preservation choice: none" in markdown
+    assert "No capture method is selected or specified" in markdown
 
     code, text, stderr = _run_cli(["--format", "text"])
     assert code == 0
@@ -68,6 +79,10 @@ def run_self_test() -> None:
                 ],
                 "selected_format_ids": ["html", "pdf", "warc", "html"],
                 "media_preservation_choice": "select",
+                "selected_capture_method_ids": [
+                    "visible_screenshot",
+                    "scrollable_container_screenshot",
+                ],
                 "notes": "User wants backup metadata only.",
             },
         )
@@ -88,6 +103,35 @@ def run_self_test() -> None:
         assert parsed_plan["duplicate_backend_ids"] == ["manual_local_files"]
         assert parsed_plan["duplicate_format_ids"] == ["html"]
         assert parsed_plan["media_preservation_choice"] == "select"
+        assert parsed_plan["selected_capture_method_ids"] == [
+            "visible_screenshot",
+            "scrollable_container_screenshot",
+        ]
+        assert parsed_plan["capture_methods"][1]["display_name"] == "Scrollable-container screenshot"
+
+        code, direct_capture_json, stderr = _run_cli(
+            [
+                "--capture-method",
+                "raw_saved_html",
+                "--capture-method",
+                "manual_evidence_bundle",
+                "--format",
+                "json",
+            ]
+        )
+        assert code == 0
+        assert stderr == ""
+        parsed_direct = json.loads(direct_capture_json)
+        assert parsed_direct["selected_capture_method_ids"] == [
+            "raw_saved_html",
+            "manual_evidence_bundle",
+        ]
+
+        error_code, error_output = _run_cli_error(
+            ["--capture-method", "unknown_capture"]
+        )
+        assert error_code == 2
+        assert "invalid choice" in error_output
 
         output_path = root / "PRESERVATION_BACKEND_PLAN.md"
         output_args = ["--input", str(input_path), "--output", str(output_path)]

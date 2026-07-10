@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Sequence
 
+from capture_method_metadata import available_capture_methods
 from preservation_backend_plan import (
     REPORT_FORMATS,
     build_preservation_backend_plan,
@@ -44,11 +45,20 @@ def _optional_string_list(data: dict[str, Any], key: str) -> list[str]:
     return value
 
 
-def _build_plan_from_input(data: dict[str, Any]):
+def _build_plan_from_input(
+    data: dict[str, Any],
+    *,
+    capture_method_ids: Sequence[str] | None = None,
+):
     return build_preservation_backend_plan(
         source_url=_optional_string(data, "source_url"),
         selected_backend_ids=_optional_string_list(data, "selected_backend_ids"),
         selected_format_ids=_optional_string_list(data, "selected_format_ids"),
+        selected_capture_method_ids=(
+            list(capture_method_ids)
+            if capture_method_ids is not None
+            else _optional_string_list(data, "selected_capture_method_ids")
+        ),
         media_preservation_choice=_optional_string(
             data, "media_preservation_choice"
         ),
@@ -81,6 +91,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output", default="", help="Optional output path.")
     parser.add_argument(
+        "--capture-method",
+        action="append",
+        choices=tuple(
+            method.method_id for method in available_capture_methods()
+        ),
+        default=None,
+        help="Optional repeatable capture-method ID to include as planning metadata.",
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Allow replacing an existing output file.",
@@ -94,7 +113,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         data = _read_input(args.input) if args.input else {}
-        plan = _build_plan_from_input(data)
+        plan = _build_plan_from_input(
+            data,
+            capture_method_ids=args.capture_method,
+        )
         rendered = render_preservation_backend_plan(
             plan,
             output_format=args.format,

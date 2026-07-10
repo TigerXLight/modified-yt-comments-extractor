@@ -62,6 +62,7 @@ from total_export_zip_sidecar import (
     write_total_export_zip_sidecars,
     zip_sidecar_result_to_dict,
 )
+from capture_method_metadata import available_capture_methods
 from preservation_backend_plan import (
     BACKEND_OPTIONS,
     FORMAT_OPTIONS,
@@ -87,6 +88,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--term", action="append", default=[])
     parser.add_argument("--preservation-backend", action="append", default=[])
     parser.add_argument("--preservation-format", action="append", default=[])
+    parser.add_argument(
+        "--capture-method",
+        action="append",
+        choices=tuple(
+            method.method_id for method in available_capture_methods()
+        ),
+        default=[],
+    )
     parser.add_argument(
         "--media-preservation-choice",
         choices=MEDIA_PRESERVATION_CHOICES,
@@ -459,11 +468,23 @@ def print_explain_preservation_plan(plan) -> None:
     print(f"Source URL: {plan.source_url or '(none)'}")
     print(f"Selected backends: {', '.join(plan.selected_backend_ids) or '(none)'}")
     print(f"Selected formats: {', '.join(plan.selected_format_ids) or '(none)'}")
+    print(
+        "Selected capture methods: "
+        f"{', '.join(plan.selected_capture_method_ids) or '(none specified)'}"
+    )
     print(f"Media preservation choice: {plan.media_preservation_choice}")
     print(f"Unknown backends: {', '.join(plan.unknown_backend_ids) or '(none)'}")
     print(f"Unknown formats: {', '.join(plan.unknown_format_ids) or '(none)'}")
     print(f"Duplicate backends: {', '.join(plan.duplicate_backend_ids) or '(none)'}")
     print(f"Duplicate formats: {', '.join(plan.duplicate_format_ids) or '(none)'}")
+    print(
+        "Unknown capture methods: "
+        f"{', '.join(plan.unknown_capture_method_ids) or '(none)'}"
+    )
+    print(
+        "Duplicate capture methods: "
+        f"{', '.join(plan.duplicate_capture_method_ids) or '(none)'}"
+    )
     print(f"Notes: {plan.notes or '(none)'}")
     print("Warnings:")
     if plan.warnings:
@@ -471,6 +492,16 @@ def print_explain_preservation_plan(plan) -> None:
             print(f"- {warning}")
     else:
         print("- (none)")
+    print("Capture method limitations:")
+    selected_methods = preservation_backend_plan_to_dict(plan)["capture_methods"]
+    if selected_methods:
+        for method in selected_methods:
+            print(
+                f"- {method['method_id']} ({method['display_name']}): "
+                f"{method['limitations']}"
+            )
+    else:
+        print("- (none specified; no capture is executed)")
     print("Scope: local planning only; no fetch/capture/network/archive/browser/scraping/credential/ArchiveBox execution/media download/GUI behavior is performed.")
 
 
@@ -613,6 +644,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             source_url=args.source_url,
             selected_backend_ids=args.preservation_backend,
             selected_format_ids=args.preservation_format,
+            selected_capture_method_ids=args.capture_method,
             media_preservation_choice=args.media_preservation_choice,
             notes=args.preservation_notes,
         )

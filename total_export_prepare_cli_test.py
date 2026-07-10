@@ -277,6 +277,12 @@ def run_self_test() -> None:
                 "unknown_format",
                 "--media-preservation-choice",
                 "select",
+                "--capture-method",
+                "visible_screenshot",
+                "--capture-method",
+                "scrollable_container_screenshot",
+                "--capture-method",
+                "visible_screenshot",
                 "--preservation-notes",
                 "Local backup plan.",
             ]
@@ -287,6 +293,10 @@ def run_self_test() -> None:
         assert "Selected backends: manual_local_files, archivebox_self_hosted" in preservation_explain_output
         assert "Selected formats: html, warc" in preservation_explain_output
         assert "Media preservation choice: select" in preservation_explain_output
+        assert "Selected capture methods: visible_screenshot, scrollable_container_screenshot" in preservation_explain_output
+        assert "Unknown capture methods: (none)" in preservation_explain_output
+        assert "Duplicate capture methods: visible_screenshot" in preservation_explain_output
+        assert "Scrollable-container screenshot" in preservation_explain_output
         assert "Unknown formats: unknown_format" in preservation_explain_output
         assert "Duplicate backends: manual_local_files" in preservation_explain_output
         assert "ArchiveBox execution" in preservation_explain_output
@@ -305,6 +315,8 @@ def run_self_test() -> None:
                 "json",
                 "--media-preservation-choice",
                 "all",
+                "--capture-method",
+                "scrollable_container_screenshot",
                 "--json",
             ]
         )
@@ -314,7 +326,22 @@ def run_self_test() -> None:
         assert parsed_preservation_plan["selected_backend_ids"] == ["manual_local_files"]
         assert parsed_preservation_plan["selected_format_ids"] == ["html", "json"]
         assert parsed_preservation_plan["media_preservation_choice"] == "all"
+        assert parsed_preservation_plan["selected_capture_method_ids"] == [
+            "scrollable_container_screenshot"
+        ]
+        assert parsed_preservation_plan["capture_methods"][0]["display_name"] == "Scrollable-container screenshot"
         assert parsed_preservation_plan["warnings"] == []
+        assert list(Path(temp_dir).iterdir()) == []
+
+        error_code, invalid_capture_method_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--capture-method",
+                "unknown_capture",
+            ]
+        )
+        assert error_code == 2
+        assert "invalid choice" in invalid_capture_method_error
         assert list(Path(temp_dir).iterdir()) == []
 
         error_code, invalid_media_choice_error = _run_cli_error(

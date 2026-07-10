@@ -4,6 +4,12 @@ import json
 from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
 
+from capture_method_metadata import (
+    available_capture_methods,
+    capture_method_by_id,
+    capture_method_metadata_to_dict,
+)
+
 
 REPORT_FORMATS = ("markdown", "text", "json")
 
@@ -59,6 +65,9 @@ class PreservationBackendPlan:
     unknown_format_ids: tuple[str, ...]
     duplicate_backend_ids: tuple[str, ...]
     duplicate_format_ids: tuple[str, ...]
+    selected_capture_method_ids: tuple[str, ...]
+    unknown_capture_method_ids: tuple[str, ...]
+    duplicate_capture_method_ids: tuple[str, ...]
     media_preservation_choice: str
     status: str
     warnings: tuple[str, ...]
@@ -187,6 +196,10 @@ def _known_format_ids() -> set[str]:
     return {option.format_id for option in FORMAT_OPTIONS}
 
 
+def _known_capture_method_ids() -> set[str]:
+    return {method.method_id for method in available_capture_methods()}
+
+
 def normalize_media_preservation_choice(value: str = "") -> str:
     normalized = str(value or "").strip().lower()
     if not normalized:
@@ -231,6 +244,7 @@ def build_preservation_backend_plan(
     source_url: str = "",
     selected_backend_ids: Sequence[str] = (),
     selected_format_ids: Sequence[str] = (),
+    selected_capture_method_ids: Sequence[str] = (),
     media_preservation_choice: str = MEDIA_PRESERVATION_CHOICE_NONE,
     notes: str = "",
 ) -> PreservationBackendPlan:
@@ -241,6 +255,12 @@ def build_preservation_backend_plan(
     selected_formats, unknown_formats, duplicate_formats = _normalize_selection(
         selected_format_ids,
         known_ids=_known_format_ids(),
+    )
+    selected_capture_methods, unknown_capture_methods, duplicate_capture_methods = (
+        _normalize_selection(
+            selected_capture_method_ids,
+            known_ids=_known_capture_method_ids(),
+        )
     )
     normalized_media_choice = normalize_media_preservation_choice(
         media_preservation_choice
@@ -263,6 +283,16 @@ def build_preservation_backend_plan(
         warnings.append(
             f"Duplicate preservation formats ignored: {', '.join(duplicate_formats)}"
         )
+    if unknown_capture_methods:
+        warnings.append(
+            "Unknown capture methods ignored: "
+            f"{', '.join(unknown_capture_methods)}"
+        )
+    if duplicate_capture_methods:
+        warnings.append(
+            "Duplicate capture methods ignored: "
+            f"{', '.join(duplicate_capture_methods)}"
+        )
     if not selected_backends:
         warnings.append("No preservation backend selected.")
     if not selected_formats:
@@ -282,6 +312,9 @@ def build_preservation_backend_plan(
         unknown_format_ids=unknown_formats,
         duplicate_backend_ids=duplicate_backends,
         duplicate_format_ids=duplicate_formats,
+        selected_capture_method_ids=selected_capture_methods,
+        unknown_capture_method_ids=unknown_capture_methods,
+        duplicate_capture_method_ids=duplicate_capture_methods,
         media_preservation_choice=normalized_media_choice,
         status=status,
         warnings=tuple(warnings),
@@ -292,6 +325,11 @@ def build_preservation_backend_plan(
 def preservation_backend_plan_to_dict(
     plan: PreservationBackendPlan,
 ) -> dict[str, Any]:
+    selected_capture_methods = [
+        method
+        for method_id in plan.selected_capture_method_ids
+        if (method := capture_method_by_id(method_id)) is not None
+    ]
     return {
         "available_backends": [
             {
@@ -324,15 +362,24 @@ def preservation_backend_plan_to_dict(
             for option in MEDIA_PRESERVATION_CHOICE_OPTIONS
         ],
         "duplicate_backend_ids": list(plan.duplicate_backend_ids),
+        "duplicate_capture_method_ids": list(
+            plan.duplicate_capture_method_ids
+        ),
         "duplicate_format_ids": list(plan.duplicate_format_ids),
+        "capture_methods": [
+            capture_method_metadata_to_dict(method)
+            for method in selected_capture_methods
+        ],
         "notes": plan.notes,
         "media_preservation_choice": plan.media_preservation_choice,
         "scope": plan.scope,
         "selected_backend_ids": list(plan.selected_backend_ids),
+        "selected_capture_method_ids": list(plan.selected_capture_method_ids),
         "selected_format_ids": list(plan.selected_format_ids),
         "source_url": plan.source_url,
         "status": plan.status,
         "unknown_backend_ids": list(plan.unknown_backend_ids),
+        "unknown_capture_method_ids": list(plan.unknown_capture_method_ids),
         "unknown_format_ids": list(plan.unknown_format_ids),
         "warnings": list(plan.warnings),
     }
@@ -348,6 +395,7 @@ def build_preservation_backend_plan_markdown(plan: PreservationBackendPlan) -> s
         f"- Source URL: {plan.source_url or '(not supplied)'}",
         f"- Selected backends: {', '.join(plan.selected_backend_ids) or 'none'}",
         f"- Selected formats: {', '.join(plan.selected_format_ids) or 'none'}",
+        f"- Selected capture methods: {', '.join(plan.selected_capture_method_ids) or 'none specified'}",
         f"- Media preservation choice: {plan.media_preservation_choice}",
         "- Media preservation choices are `none`, `select`, or `all`; this is opt-in planning metadata only, this report does not discover or download media, and `all` must be explicit.",
     ]
@@ -356,6 +404,25 @@ def build_preservation_backend_plan_markdown(plan: PreservationBackendPlan) -> s
     if plan.warnings:
         lines.append("- Warnings:")
         lines.extend(f"  - {warning}" for warning in plan.warnings)
+
+    lines.extend(["", "## Selected Capture Methods", ""])
+    if not plan.selected_capture_method_ids:
+        lines.append("No capture method is selected or specified. No capture is executed.")
+        lines.append("")
+    for method_id in plan.selected_capture_method_ids:
+        method = capture_method_by_id(method_id)
+        if method is None:
+            continue
+        lines.extend(
+            [
+                f"### {method.display_name}",
+                "",
+                f"- Method ID: {method.method_id}",
+                f"- Limitations: {method.limitations}",
+                "- Execution: metadata only; this plan does not run screenshots, DOM capture, scrolling, browsers, scraping, or downloads.",
+                "",
+            ]
+        )
 
     lines.extend(["", "## Available Backends", ""])
     for option in BACKEND_OPTIONS:
@@ -397,6 +464,7 @@ def build_preservation_backend_plan_text(plan: PreservationBackendPlan) -> str:
         f"source_url: {plan.source_url or '(not supplied)'}",
         f"selected_backend_ids: {', '.join(plan.selected_backend_ids) or 'none'}",
         f"selected_format_ids: {', '.join(plan.selected_format_ids) or 'none'}",
+        f"selected_capture_method_ids: {', '.join(plan.selected_capture_method_ids) or 'none specified'}",
         f"media_preservation_choice: {plan.media_preservation_choice}",
         "media_preservation_note: choices are none, select, or all; opt-in planning metadata only; no media discovery or download; all must be explicit",
     ]
@@ -404,6 +472,17 @@ def build_preservation_backend_plan_text(plan: PreservationBackendPlan) -> str:
         lines.append(f"notes: {plan.notes}")
     if plan.warnings:
         lines.append(f"warnings: {'; '.join(plan.warnings)}")
+
+    lines.append("")
+    lines.append("selected_capture_methods:")
+    if not plan.selected_capture_method_ids:
+        lines.append("- none specified; no capture is executed")
+    for method_id in plan.selected_capture_method_ids:
+        method = capture_method_by_id(method_id)
+        if method is not None:
+            lines.append(
+                f"- {method.method_id}: {method.display_name}; limitations={method.limitations}; execution=metadata only"
+            )
 
     lines.append("")
     lines.append("available_backends:")
