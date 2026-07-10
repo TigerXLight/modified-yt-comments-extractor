@@ -44,6 +44,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - `ASR_PROVIDER_LEADERBOARD_NOTES.md` records user-supplied ASR/STT leaderboard, Meta Seamless/Instagram-adjacent, Groq/VillFlowSTT, Witsy, Kolwrite, WebAssembly streaming, and benchmark leads for later local comparison planning; no provider calls or ASR integration are implemented.
 - Added a local-only ASR comparison report skeleton for manually recording provider/model WER, cost, latency, reference accuracy, and keyterm hit/miss results without provider calls or ASR integration.
 - Added local-only ASR manual results seed records for known project ASR results and external/user-supplied leaderboard leads, using the comparison report format without provider calls or transcription behavior.
+- Added a local-only ASR comparison report CLI for rendering manual ASR result records as text, Markdown, or JSON without provider calls, transcription, network, or GUI integration.
 - Capture option metadata skeleton added for future Total Export evidence checkboxes; it is not wired into GUI/export behavior and does not perform archive checks, screenshots, scraping, or media downloading.
 - Capture option selection validation added for the Total Export package helper; it remains non-wired and performs no capture/network behavior.
 - Total Export package builder helper added; it creates package folders/manifests only when explicitly called and is not wired into GUI/export/capture behavior.

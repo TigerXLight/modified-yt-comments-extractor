@@ -25,6 +25,14 @@ ASR_STATUS_UNKNOWN = "unknown"
 
 PROJECT_REFERENCE_PHRASE = "Oh, I've completed the Nicolas Cage event."
 
+ASR_COMPARISON_METRICS = (
+    "reference_accuracy_percent",
+    "raw_wer_percent",
+    "formatted_wer_percent",
+    "cost_per_hour_usd",
+    "latency_seconds",
+)
+
 
 @dataclass(frozen=True)
 class ASRComparisonRecord:
@@ -208,7 +216,12 @@ def rank_asr_records(
     records: Sequence[ASRComparisonRecord],
     metric: str = "reference_accuracy_percent",
 ) -> tuple[ASRComparisonRecord, ...]:
-    lower_is_better = metric in {"raw_wer_percent", "formatted_wer_percent"}
+    lower_is_better = metric in {
+        "raw_wer_percent",
+        "formatted_wer_percent",
+        "cost_per_hour_usd",
+        "latency_seconds",
+    }
 
     def sort_key(record: ASRComparisonRecord) -> tuple[object, ...]:
         value = _metric_value(record, metric)
@@ -227,6 +240,17 @@ def rank_asr_records(
     return tuple(sorted(records, key=sort_key))
 
 
+def metric_label(metric: str) -> str:
+    labels = {
+        "reference_accuracy_percent": "project reference accuracy",
+        "raw_wer_percent": "raw WER",
+        "formatted_wer_percent": "formatted WER",
+        "cost_per_hour_usd": "cost per audio hour",
+        "latency_seconds": "latency",
+    }
+    return labels.get(metric, metric)
+
+
 def _format_percent(value: Optional[float]) -> str:
     return "(unknown)" if value is None else f"{value:.2f}%"
 
@@ -243,13 +267,16 @@ def _yes_no_unknown(value: Optional[bool]) -> str:
     return "unknown"
 
 
-def build_asr_comparison_text(records: Sequence[ASRComparisonRecord]) -> str:
-    ranked = rank_asr_records(records)
+def build_asr_comparison_text(
+    records: Sequence[ASRComparisonRecord],
+    metric: str = "reference_accuracy_percent",
+) -> str:
+    ranked = rank_asr_records(records, metric=metric)
     lines = [
         "ASR comparison report",
         "Scope: local/manual reporting only; no provider calls or transcription are performed.",
         f"Record count: {len(records)}",
-        "Ranked by project reference accuracy:",
+        f"Ranked by {metric_label(metric)}:",
     ]
     if not ranked:
         lines.append("- (none)")
@@ -277,12 +304,17 @@ def build_asr_comparison_text(records: Sequence[ASRComparisonRecord]) -> str:
     return "\n".join(lines)
 
 
-def build_asr_comparison_markdown(records: Sequence[ASRComparisonRecord]) -> str:
-    ranked = rank_asr_records(records)
+def build_asr_comparison_markdown(
+    records: Sequence[ASRComparisonRecord],
+    metric: str = "reference_accuracy_percent",
+) -> str:
+    ranked = rank_asr_records(records, metric=metric)
     lines = [
         "# ASR Comparison Report",
         "",
         "Local/manual reporting only. This report format does not call providers or run transcription.",
+        "",
+        f"Ranked by {metric_label(metric)}.",
         "",
         "| Provider | Model | Status | Source | Reference accuracy | Raw WER | Formatted WER | Keyterms | Known phrase | Cost/hr | Latency |",
         "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | ---: |",

@@ -103,6 +103,23 @@ ASR output remains draft text unless strict quality gates and Term QA/glossary r
 
 Even the current leading cloud candidate, ElevenLabs Scribe v2 with keyterms at 84.95% strict reference accuracy, missed `Kingman`, `ZoneX`, `Freckelston`, and `Nyxara`. Manual review remains required.
 
+## Local CLI
+
+`asr_comparison_report_cli.py` renders manually entered JSON records as text, Markdown, or JSON.
+
+Examples:
+
+```cmd
+python asr_comparison_report_cli.py --input ASR_MANUAL_RESULTS_SEED.json
+python asr_comparison_report_cli.py --input ASR_MANUAL_RESULTS_SEED.json --format markdown
+python asr_comparison_report_cli.py --input ASR_MANUAL_RESULTS_SEED.json --format json
+python asr_comparison_report_cli.py --input ASR_MANUAL_RESULTS_SEED.json --format markdown --output ASR_MANUAL_RESULTS_REPORT.md --overwrite
+```
+
+Supported ranking metrics are `reference_accuracy_percent`, `raw_wer_percent`, `formatted_wer_percent`, `cost_per_hour_usd`, and `latency_seconds`.
+
+The CLI is local-only. It reads manually entered JSON records and writes a file only when `--output` is provided. It does not call providers, run transcription, fetch media, store credentials, or wire any ASR provider into the app.
+
 ## Future Use
 
 Future milestones may add:
