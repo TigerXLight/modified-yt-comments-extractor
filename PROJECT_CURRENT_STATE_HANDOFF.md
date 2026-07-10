@@ -86,6 +86,7 @@ DirectML base/small are rejected for Auto Quality Probe for now. DirectML medium
 - `asr_comparison_report_cli.py`: reads manually entered JSON, renders text/Markdown/JSON, and writes only with explicit `--output`.
 - `ASR_MANUAL_RESULTS_SEED.json`: local seed for known project results, blocked status, rejected results, and external leads.
 - `ASR_PROVIDER_LEADERBOARD_NOTES.md`: user-supplied external research leads; not independent verification.
+- `asr_decision_summary.py`: local/manual decision summary for threshold, status counts, leading scored/local results, blocked items, external leads, and safe next-action guidance.
 
 These tools do not call providers, run transcription, fetch media, or store credentials.
 
@@ -163,6 +164,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | `ASR_PROVIDER_LEADERBOARD_NOTES.md` | External/user-supplied ASR research leads and local snapshot. |
 | `ASR_COMPARISON_REPORT_FORMAT.md` | Local ASR comparison schema, statuses, ranking, and CLI usage. |
 | `ASR_MANUAL_RESULTS_SEED.md` | Scope and policy for checked-in manual ASR result records. |
+| `ASR_DECISION_SUMMARY.md` | Local/manual ASR threshold and provider-status decision summary semantics. |
 | `TOTAL_EXPORT_DEV_CLI_EXAMPLES.md` | CMD-friendly Total Export developer CLI examples. |
 | `TOTAL_EXPORT_BUNDLE_INDEX.md` | Local ZIP/sidecar index semantics and CLI. |
 | `TOTAL_EXPORT_BUNDLE_INDEX_RECONCILIATION.md` | Expected bundle reconciliation semantics and CLI. |
@@ -176,7 +178,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 
 | Area | Helpers/CLIs | Primary tests |
 | --- | --- | --- |
-| ASR comparison | `asr_comparison_report.py`, `asr_comparison_report_cli.py` | `asr_comparison_report_test.py`, `asr_comparison_report_cli_test.py`, `asr_manual_results_seed_test.py` |
+| ASR comparison/decision | `asr_comparison_report.py`, `asr_comparison_report_cli.py`, `asr_decision_summary.py` | `asr_comparison_report_test.py`, `asr_comparison_report_cli_test.py`, `asr_manual_results_seed_test.py`, `asr_decision_summary_test.py` |
 | Total Export package shell | `total_export_prepare_cli.py`, manifest/package/workflow/validation/summary/inventory modules | `total_export_prepare_cli_test.py` and focused `total_export_*_test.py` files |
 | Review bundles and ZIPs | `total_export_review_bundle.py`, verification/folder verification, `total_export_zip_inspect.py`, `total_export_zip_sidecar.py` | Review-bundle, ZIP-inspection, sidecar, folder, and batch tests |
 | Bundle index/reconciliation | `total_export_bundle_index.py`, both local CLIs, `total_export_bundle_index_reconcile.py` | Bundle index/reconciliation helper and CLI tests |
@@ -240,7 +242,7 @@ Do not add provider/API/network calls to these verification chains.
 ## Safe Next Milestones
 
 1. Perform docs-only bundle/preservation index polish if names or boundaries drift.
-2. Polish local ASR comparison report formatting or seed metadata without provider calls.
+2. Add a local-only ASR term coverage/gap summary over manual records, or polish comparison/decision report formatting without provider calls.
 3. Review whether this phase has reached a useful stopping point and create an external session handoff for the user.
 4. Keep any future networked provider/archive/downloader/capture behavior deferred until explicitly approved, opt-in, and covered by local/mocked tests.
 

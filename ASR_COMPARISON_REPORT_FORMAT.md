@@ -120,12 +120,20 @@ Supported ranking metrics are `reference_accuracy_percent`, `raw_wer_percent`, `
 
 The CLI is local-only. It reads manually entered JSON records and writes a file only when `--output` is provided. It does not call providers, run transcription, fetch media, store credentials, or wire any ASR provider into the app.
 
+## Decision Summary
+
+`asr_decision_summary.py` provides a local/manual-data-only decision layer over existing comparison records. It summarizes the 95% project gate, status counts, leading project-scored and local/offline results, blocked items, external leads, below-threshold candidates, warnings, and safe next-action guidance.
+
+See `ASR_DECISION_SUMMARY.md` for status semantics and current seed interpretation. The helper writes no files and does not call providers, run transcription, fetch/download media, use network APIs, store credentials, or wire into the GUI.
+
+Any future decision-summary CLI should remain a separate approved milestone with explicit-output-only writes.
+
 ## Future Use
 
 Future milestones may add:
 
-- A seed file with manually recorded project results.
-- A local CLI/report writer for the comparison table.
-- Import/export of JSON result rows.
+- An explicit-output-only CLI for the decision summary.
+- A local term coverage/gap summary over manual comparison records.
+- Additional local/manual seed or report-format improvements.
 
 Those future steps should remain local-only unless provider integrations are explicitly approved later.
