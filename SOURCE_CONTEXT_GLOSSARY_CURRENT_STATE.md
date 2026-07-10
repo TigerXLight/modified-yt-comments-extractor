@@ -255,3 +255,6 @@ Preservation plans may include evidence bundle metadata for manual/planned/exter
 
 
 Evidence bundle item details can record role, origin, path hint labels, and notes in preservation plan reporting. Path hints are descriptive only and are not opened, scanned, hashed, or validated.
+
+
+The preservation evidence bundle CLI can record item role, origin, path hint labels, and notes. These remain metadata strings only and do not trigger file inspection or capture behavior.

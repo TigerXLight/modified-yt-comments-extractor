@@ -29,12 +29,24 @@ def run_self_test() -> None:
         "manual_supplied",
         "--item",
         "screenshot:png:scrollable_container_screenshot",
+        "--item-role",
+        "screenshot=primary",
+        "--item-origin",
+        "screenshot=manual",
+        "--item-path-hint",
+        r"screenshot=captures\comments.png",
+        "--item-notes",
+        "screenshot=CLI supplied screenshot; path hint only.",
     ]
     code, text, error = _run_cli([*args, "--format", "text"])
     assert code == 0
     assert error == ""
     assert "status: manual_supplied" in text
     assert "screenshot: format=png" in text
+    assert "role=primary" in text
+    assert "origin=manual" in text
+    assert r"path_hint=captures\comments.png" in text
+    assert "notes=CLI supplied screenshot; path hint only." in text
     assert "focused or selected" in text
     assert "execution=metadata only" in text
 
@@ -47,6 +59,10 @@ def run_self_test() -> None:
     assert parsed["items"][0]["artifact_id"] == "screenshot"
     assert parsed["items"][0]["artifact_format"] == "png"
     assert parsed["items"][0]["capture_method_id"] == "scrollable_container_screenshot"
+    assert parsed["items"][0]["artifact_role"] == "primary"
+    assert parsed["items"][0]["origin"] == "manual"
+    assert parsed["items"][0]["path_hint"] == r"captures\comments.png"
+    assert parsed["items"][0]["notes"] == "CLI supplied screenshot; path hint only."
     assert "no file open" in parsed["scope"]
 
     code, output, error = _run_cli(["--item", "bad:exe"])
@@ -58,6 +74,13 @@ def run_self_test() -> None:
     assert code == 1
     assert output == ""
     assert "invalid capture method ID" in error
+
+    code, output, error = _run_cli(
+        ["--item", "screenshot:png", "--item-role", "missing=primary"]
+    )
+    assert code == 1
+    assert output == ""
+    assert "unknown artifact IDs" in error
 
     code, output, error = _run_cli(
         ["--item", "same:png", "--item", "same:html"]

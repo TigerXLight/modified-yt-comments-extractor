@@ -755,3 +755,5 @@ Next local-ASR branches:
 - Preservation evidence bundle metadata is now integrated into preservation plan reporting and Total Export prepare preservation explanations; it remains descriptive only and does not open, scan, hash, validate, create, upload, download, capture, scrape, or fetch evidence files/URLs.
 
 - Evidence bundle plan reporting now exposes metadata-only item details for artifact role, origin, path hint labels, and item notes; path hints are not opened or checked.
+
+- The standalone preservation evidence bundle CLI now accepts item role, origin, path hint label, and notes metadata; path hints remain labels only and are not opened or checked.

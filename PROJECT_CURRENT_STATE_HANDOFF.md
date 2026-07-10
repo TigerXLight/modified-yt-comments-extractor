@@ -289,3 +289,6 @@ Evidence bundle metadata can now be included in preservation plan reporting and 
 
 
 Evidence bundle plan integration now supports item-level role, origin, path hint, and notes metadata. These fields remain labels/metadata only and do not inspect paths or evidence files.
+
+
+The standalone preservation evidence bundle CLI now supports item-level role, origin, path hint, and notes metadata, matching the preservation-plan integration while remaining stdout/local metadata only.

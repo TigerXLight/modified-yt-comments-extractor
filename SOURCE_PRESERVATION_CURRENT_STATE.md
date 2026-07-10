@@ -184,3 +184,6 @@ Preservation evidence bundle metadata is integrated into preservation plan and T
 
 
 Evidence bundle plan metadata now includes item roles, origins, path hint labels, and item notes for preservation explanations. These details remain local descriptive metadata only and do not prove file existence or trigger file/capture/network operations.
+
+
+Standalone preservation evidence bundle reporting now supports item roles, origins, path hint labels, and item notes. Path hints are not opened, scanned, hashed, validated, or treated as proof that files exist.
