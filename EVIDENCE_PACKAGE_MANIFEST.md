@@ -65,6 +65,24 @@ The helper provides deterministic dictionary, plain-text, and Markdown represent
 
 No report is written automatically.
 
+## Local CLI Usage
+
+`total_export_evidence_manifest_cli.py` reads a local JSON object, builds the existing in-memory evidence manifest, and renders Markdown, text, or JSON.
+
+```cmd
+python total_export_evidence_manifest_cli.py --input EVIDENCE_MANIFEST_INPUT.json
+python total_export_evidence_manifest_cli.py --input EVIDENCE_MANIFEST_INPUT.json --format text
+python total_export_evidence_manifest_cli.py --input EVIDENCE_MANIFEST_INPUT.json --format json
+python total_export_evidence_manifest_cli.py --input EVIDENCE_MANIFEST_INPUT.json --output EVIDENCE_MANIFEST_REPORT.md
+python total_export_evidence_manifest_cli.py --input EVIDENCE_MANIFEST_INPUT.json --output EVIDENCE_MANIFEST_REPORT.md --overwrite
+```
+
+The input may include `source_urls`, `manual_archive_records`, `local_media_records`, `local_media_verification_items`, `bundle_reconciliation_items`, and `unexpected_bundle_reconciliation_items`. Local media paths are parsed with filesystem inspection and hashing disabled. Bundle items are reconstructed from supplied metadata only.
+
+The CLI prints to stdout by default. It writes a file only when `--output` is explicitly supplied, and it preserves an existing output unless `--overwrite` is also supplied.
+
+The CLI does not copy files, build packages, create or extract ZIPs, inspect ZIP internals, download or fetch sources, call network/API/archive services, scrape pages, capture screenshots, transcribe media, call providers, store credentials, or wire into the GUI.
+
 ## Future Integration
 
-A CLI or package-builder integration requires a separate approved milestone. Any future CLI should preserve explicit-output-only writes. Package copying/building, ZIP extraction, downloads, archive checks, network/provider calls, and GUI integration remain out of scope unless explicitly approved later.
+Package-builder integration requires a separate approved milestone. Package copying/building, ZIP creation/extraction, downloads, archive checks, network/provider calls, and GUI integration remain out of scope unless explicitly approved later.
