@@ -112,6 +112,7 @@ The repository now has a broad local Total Export foundation:
 - Media preservation note: future webpage media capture should expose an explicit `all` versus `select` choice so users can decide whether to download every discovered image/video/media asset or only chosen assets; it must be opt-in and never default to downloading all media.
 - Preservation backend plans now record local-only media intent as `none`, `select`, or explicit `all`; this metadata performs no discovery/download and does not authorize capture automation.
 - Preservation backend plans now also represent multiple selected manual/planned capture methods from `capture_method_metadata.py`, including known nested-container limitations, without executing capture or browser behavior.
+- `preservation_evidence_bundle.py` and its CLI describe planned, manually supplied, or external evidence artifacts and capture-method limitations without touching files or performing capture/network/browser/archive behavior.
 - Capture-option metadata and deterministic selection validation.
 - Source capture plans and local provenance records.
 - Package IDs/folders, manifest read/write/round-trip, asset registration, and duplicate-safe updates.
