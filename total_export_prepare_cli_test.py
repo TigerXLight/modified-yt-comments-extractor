@@ -120,6 +120,39 @@ def run_self_test() -> None:
         assert list(Path(temp_dir).iterdir()) == []
 
         exit_code, asr_provider_output = _run_cli(["--list-asr-providers"])
+        exit_code, preservation_output = _run_cli(["--list-preservation-backends"])
+        assert exit_code == 0
+        assert "Preservation backends:" in preservation_output
+        assert "manual_local_files" in preservation_output
+        assert "archivebox_self_hosted" in preservation_output
+        assert "Preservation formats:" in preservation_output
+        assert "warc" in preservation_output
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, preservation_json_output = _run_cli(
+            ["--list-preservation-backends", "--json"]
+        )
+        assert exit_code == 0
+        parsed_preservation = json.loads(preservation_json_output)
+        assert set(parsed_preservation) == {
+            "preservation_backends",
+            "preservation_formats",
+        }
+        assert any(
+            item["backend_id"] == "manual_local_files"
+            for item in parsed_preservation["preservation_backends"]
+        )
+        assert any(
+            item["backend_id"] == "archivebox_self_hosted"
+            for item in parsed_preservation["preservation_backends"]
+        )
+        assert any(
+            item["format_id"] == "warc"
+            for item in parsed_preservation["preservation_formats"]
+        )
+        assert "package_folder" not in parsed_preservation
+        assert list(Path(temp_dir).iterdir()) == []
+
         assert exit_code == 0
         assert "ASR providers:" in asr_provider_output
         assert "Metadata only" in asr_provider_output
@@ -172,6 +205,12 @@ def run_self_test() -> None:
         assert error_code == 2
         assert "--list-metadata cannot be combined" in metadata_combined_error
 
+        error_code, preservation_combined_error = _run_cli_error(
+            ["--list-preservation-backends", "--list-source-adapters"]
+        )
+        assert error_code == 2
+        assert "Use only one list/explain mode at a time" in preservation_combined_error
+
         exit_code, explain_output = _run_cli(
             [
                 "--explain-plan",
@@ -217,6 +256,59 @@ def run_self_test() -> None:
         assert list(Path(temp_dir).iterdir()) == []
 
         exit_code, explain_json_output = _run_cli(
+        exit_code, preservation_explain_output = _run_cli(
+            [
+                "--explain-preservation-plan",
+                "--source-url",
+                "https://www.telegraph.co.uk/news/example/",
+                "--preservation-backend",
+                "manual_local_files",
+                "--preservation-backend",
+                "archivebox_self_hosted",
+                "--preservation-backend",
+                "manual_local_files",
+                "--preservation-format",
+                "html",
+                "--preservation-format",
+                "warc",
+                "--preservation-format",
+                "unknown_format",
+                "--preservation-notes",
+                "Local backup plan.",
+            ]
+        )
+        assert exit_code == 0
+        assert "Preservation plan:" in preservation_explain_output
+        assert "Status: ready" in preservation_explain_output
+        assert "Selected backends: manual_local_files, archivebox_self_hosted" in preservation_explain_output
+        assert "Selected formats: html, warc" in preservation_explain_output
+        assert "Unknown formats: unknown_format" in preservation_explain_output
+        assert "Duplicate backends: manual_local_files" in preservation_explain_output
+        assert "ArchiveBox execution" in preservation_explain_output
+        assert list(Path(temp_dir).iterdir()) == []
+
+        exit_code, preservation_explain_json_output = _run_cli(
+            [
+                "--explain-preservation-plan",
+                "--source-url",
+                "https://www.telegraph.co.uk/news/example/",
+                "--preservation-backend",
+                "manual_local_files",
+                "--preservation-format",
+                "html",
+                "--preservation-format",
+                "json",
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_preservation_plan = json.loads(preservation_explain_json_output)
+        assert parsed_preservation_plan["status"] == "ready"
+        assert parsed_preservation_plan["selected_backend_ids"] == ["manual_local_files"]
+        assert parsed_preservation_plan["selected_format_ids"] == ["html", "json"]
+        assert parsed_preservation_plan["warnings"] == []
+        assert list(Path(temp_dir).iterdir()) == []
+
             [
                 "--explain-plan",
                 "--source-url",

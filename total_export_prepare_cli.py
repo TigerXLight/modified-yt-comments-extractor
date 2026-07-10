@@ -62,6 +62,12 @@ from total_export_zip_sidecar import (
     write_total_export_zip_sidecars,
     zip_sidecar_result_to_dict,
 )
+from preservation_backend_plan import (
+    BACKEND_OPTIONS,
+    FORMAT_OPTIONS,
+    build_preservation_backend_plan,
+    preservation_backend_plan_to_dict,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -77,6 +83,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--package-id", default="")
     parser.add_argument("--capture-option", action="append", default=[])
     parser.add_argument("--term", action="append", default=[])
+    parser.add_argument("--preservation-backend", action="append", default=[])
+    parser.add_argument("--preservation-format", action="append", default=[])
+    parser.add_argument("--preservation-notes", default="")
     parser.add_argument("--summary-filename", default="TOTAL_EXPORT_SUMMARY.txt")
     parser.add_argument("--no-register-summary", action="store_true")
     parser.add_argument("--write-readme", action="store_true")
@@ -96,8 +105,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--list-capture-options", action="store_true")
     parser.add_argument("--list-source-adapters", action="store_true")
     parser.add_argument("--list-asr-providers", action="store_true")
+    parser.add_argument("--list-preservation-backends", action="store_true")
     parser.add_argument("--list-metadata", action="store_true")
     parser.add_argument("--explain-plan", action="store_true")
+    parser.add_argument("--explain-preservation-plan", action="store_true")
     parser.add_argument("--inspect-package", action="store_true")
     parser.add_argument("--zip-package", action="store_true")
     parser.add_argument("--zip-path", default="")
@@ -401,6 +412,52 @@ def _final_validation_messages(result: PreparedTotalExportResult, level: str) ->
     ]
 
 
+def preservation_options_to_cli_dict() -> dict:
+    empty_plan = build_preservation_backend_plan()
+    data = preservation_backend_plan_to_dict(empty_plan)
+    return {
+        "preservation_backends": data["available_backends"],
+        "preservation_formats": data["available_formats"],
+    }
+
+
+def print_preservation_backend_options() -> None:
+    print("Preservation backends:")
+    for option in BACKEND_OPTIONS:
+        print(
+            f"- {option.backend_id}: {option.display_name}; "
+            f"status={option.status}; execution_supported={option.execution_supported}"
+        )
+    print("Preservation formats:")
+    for option in FORMAT_OPTIONS:
+        print(
+            f"- {option.format_id}: {option.display_name}; "
+            f"extensions={', '.join(option.file_extensions)}"
+        )
+
+
+def print_explain_preservation_plan(plan) -> None:
+    print("Preservation plan:")
+    print(f"Status: {plan.status}")
+    print(f"Source URL: {plan.source_url or '(none)'}")
+    print(f"Selected backends: {', '.join(plan.selected_backend_ids) or '(none)'}")
+    print(f"Selected formats: {', '.join(plan.selected_format_ids) or '(none)'}")
+    print(f"Unknown backends: {', '.join(plan.unknown_backend_ids) or '(none)'}")
+    print(f"Unknown formats: {', '.join(plan.unknown_format_ids) or '(none)'}")
+    print(f"Duplicate backends: {', '.join(plan.duplicate_backend_ids) or '(none)'}")
+    print(f"Duplicate formats: {', '.join(plan.duplicate_format_ids) or '(none)'}")
+    print(f"Notes: {plan.notes or '(none)'}")
+    print("Warnings:")
+    if plan.warnings:
+        for warning in plan.warnings:
+            print(f"- {warning}")
+    else:
+        print("- (none)")
+    print("Scope: local planning only; no fetch/capture/network/archive/browser/scraping/credential/ArchiveBox execution/media download/GUI behavior is performed.")
+
+
+
+
 def _inventory_cli_fields(inventory: TotalExportPackageInventory | None) -> dict[str, object]:
     if inventory is None:
         return {
@@ -506,7 +563,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.list_capture_options,
             args.list_source_adapters,
             args.list_asr_providers,
+            args.list_preservation_backends,
             args.explain_plan,
+            args.explain_preservation_plan,
             args.inspect_package,
             args.zip_package,
             args.inspect_zip,
@@ -523,6 +582,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--list-metadata cannot be combined with other list/explain modes")
     if list_mode_count > 1:
         parser.error("Use only one list/explain mode at a time")
+
+    if args.list_preservation_backends:
+        if args.json:
+            print(json.dumps(preservation_options_to_cli_dict(), indent=2, sort_keys=True))
+        else:
+            print_preservation_backend_options()
+        return 0
+
+    if args.explain_preservation_plan:
+        plan = build_preservation_backend_plan(
+            source_url=args.source_url,
+            selected_backend_ids=args.preservation_backend,
+            selected_format_ids=args.preservation_format,
+            notes=args.preservation_notes,
+        )
+        if args.json:
+            print(
+                json.dumps(
+                    preservation_backend_plan_to_dict(plan),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        else:
+            print_explain_preservation_plan(plan)
+        return 0
 
     if args.plan_batch_review_bundles:
         if not args.batch_source_file:

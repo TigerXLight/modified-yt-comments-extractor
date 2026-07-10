@@ -106,6 +106,7 @@ The repository now has a broad local Total Export foundation:
 - `NewsWebsiteSourceAdapter`: metadata-only known-host news website URL-recognition skeleton for Telegraph/MSN-style sources; no fetching, scraping, capture, archive checks, downloads, access bypass, or GUI wiring.
 - `source_adapter_gap_analysis.py` and CLI: local-only gap analysis over current adapters and future platform/preservation categories, including Substack/newsletter, review platforms, ExportComments-style social categories, and ArchiveBox-style preservation backends.
 - `preservation_backend_plan.py` and CLI: local-only preservation backend planning for manual local files, ArchiveBox-style self-hosted stores, and desired formats such as HTML, PDF, PNG, TXT, JSON, WARC, media, and SQLite metadata; no ArchiveBox execution, fetch/capture/network/archive calls, scraping, credential work, or GUI wiring.
+- `total_export_prepare_cli.py`: local-only preservation metadata listing and preservation-plan explanation modes for the same backend/format metadata; no package creation is required for those modes.
 - Capture-option metadata and deterministic selection validation.
 - Source capture plans and local provenance records.
 - Package IDs/folders, manifest read/write/round-trip, asset registration, and duplicate-safe updates.
