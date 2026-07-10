@@ -133,10 +133,11 @@ def build_local_media_record(
     hash_algorithm: str = HASH_ALGORITHM_SHA256,
     status: str = "",
     compute_hash: bool = False,
+    inspect_local_file: bool = True,
 ) -> LocalMediaRecord:
     cleaned_path = _clean_string(local_media_path)
     path = Path(cleaned_path) if cleaned_path else Path()
-    exists = path.is_file() if cleaned_path else False
+    exists = path.is_file() if cleaned_path and inspect_local_file else False
     if exists_at_registration is not None:
         exists = bool(exists_at_registration)
 
@@ -145,11 +146,11 @@ def build_local_media_record(
         filename = path.name
 
     size_bytes = int(local_file_size_bytes or 0)
-    if path.is_file():
+    if inspect_local_file and path.is_file():
         size_bytes = path.stat().st_size
 
     file_hash = _clean_string(local_file_sha256)
-    if compute_hash and path.is_file():
+    if compute_hash and inspect_local_file and path.is_file():
         file_hash = sha256_file(str(path))
 
     selected_media_type = _clean_string(media_type) or detect_local_media_type(filename or cleaned_path)

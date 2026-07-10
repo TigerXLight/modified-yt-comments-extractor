@@ -48,3 +48,21 @@ Local media statuses are local filesystem/user-entered notes. A status such as `
 ## Future Integration
 
 Future CLI/report integration can be considered only after a separate approval. Any future integration must preserve the local-only boundary unless explicit network/archive/download/capture behavior is approved later.
+
+## Local CLI Usage
+
+`total_export_preservation_plan_cli.py` renders user-supplied local JSON metadata as text, Markdown, or JSON.
+
+Example commands:
+
+```cmd
+python total_export_preservation_plan_cli.py --input PRESERVATION_PLAN_INPUT.json
+python total_export_preservation_plan_cli.py --input PRESERVATION_PLAN_INPUT.json --format text
+python total_export_preservation_plan_cli.py --input PRESERVATION_PLAN_INPUT.json --format markdown
+python total_export_preservation_plan_cli.py --input PRESERVATION_PLAN_INPUT.json --format json
+python total_export_preservation_plan_cli.py --input PRESERVATION_PLAN_INPUT.json --format markdown --output PRESERVATION_PLAN_REPORT_OUTPUT.md --overwrite
+```
+
+The CLI writes a file only when `--output` is explicitly provided. Existing output files are preserved unless `--overwrite` is passed.
+
+The CLI reads local JSON only. It does not check archive services, submit archive URLs, download media, fetch sources, scrape pages, capture screenshots, transcribe, call providers, store credentials, or wire into the GUI.

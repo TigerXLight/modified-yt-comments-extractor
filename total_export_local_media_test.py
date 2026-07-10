@@ -64,6 +64,19 @@ def run_self_test() -> None:
         assert record.exists_at_registration is True
         assert record.status == LOCAL_MEDIA_STATUS_REGISTERED
 
+        metadata_only = build_local_media_record(
+            source_url="https://example.com/metadata-only",
+            local_media_path=str(media_path),
+            local_file_size_bytes=999,
+            local_file_sha256="provided-hash",
+            exists_at_registration=False,
+            status=LOCAL_MEDIA_STATUS_REGISTERED,
+            inspect_local_file=False,
+        )
+        assert metadata_only.local_file_size_bytes == 999
+        assert metadata_only.local_file_sha256 == "provided-hash"
+        assert metadata_only.exists_at_registration is False
+
         missing_path = Path(temp_dir) / "missing_audio.wav"
         missing = build_local_media_record(
             source_url="https://example.com/story",
