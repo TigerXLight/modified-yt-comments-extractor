@@ -170,7 +170,7 @@ Run from Windows CMD with the project virtual environment active:
 python -m py_compile source_adapters.py source_adapters_test.py source_adapters_registry_test.py source_adapter_capability_report.py source_adapter_capability_report_test.py source_adapter_capability_report_cli.py source_adapter_capability_report_cli_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py & python source_adapters_test.py & python source_adapters_registry_test.py & python source_adapter_capability_report_test.py & python source_adapter_capability_report_cli_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & git diff --check & git status --short
 ```
 
-Expected result: all five local self-tests pass and the working tree is clean after committed changes.
+Expected result: all listed local self-tests pass and the working tree is clean after committed changes.
 
 ## Safe Next Milestones
 
