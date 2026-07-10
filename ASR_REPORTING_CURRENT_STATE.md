@@ -66,6 +66,10 @@ The checked-in manual seed currently represents:
 
 These are manual reporting facts, not provider integrations.
 
+## Provider Status Notes
+
+`ASR_PROVIDER_STATUS_NOTES.md` clarifies provider/model status semantics for the current manual reporting stack. It keeps `accepted` reserved for future project-gated evidence, keeps AWS Transcribe custom vocabulary as `blocked` rather than quality-rejected, and keeps ElevenLabs Scribe v2 with keyterms as a below-threshold `candidate` rather than accepted.
+
 ## CLI Usage
 
 Comparison report:
@@ -113,17 +117,13 @@ git diff --check & git status --short
 
 ## Safe Next Milestones
 
-1. Docs-only ASR provider notes cleanup:
-   - clarify accepted/candidate/rejected/blocked/external-lead semantics,
-   - keep AWS blocked, not rejected,
-   - keep ElevenLabs as candidate, not accepted.
-2. Manual seed metadata polish:
+1. Manual seed metadata polish:
    - add clearer local/manual notes if needed,
    - keep no provider calls or transcripts.
-3. Optional combined ASR report CLI:
+2. Optional combined ASR report CLI:
    - render comparison, decision, and term coverage together,
    - explicit-output-only,
    - no provider calls or runtime integration.
-4. Stop and prepare a new cross-project handoff if the session becomes slow.
+3. Stop and prepare a new cross-project handoff if the session becomes slow.
 
 Do not start networked ASR/provider/downloader/archive behavior unless separately approved later with explicit opt-in and local/mocked tests.

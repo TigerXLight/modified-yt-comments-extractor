@@ -163,6 +163,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | `CURRENT_DEV_STATE.md` | Detailed cumulative project state and decisions. |
 | `ASR_TEST_PLAN.md` | ASR acceptance policy, hardware paths, manual provider results, and decisions. |
 | `ASR_PROVIDER_LEADERBOARD_NOTES.md` | External/user-supplied ASR research leads and local snapshot. |
+| `ASR_PROVIDER_STATUS_NOTES.md` | Local/manual accepted/candidate/rejected/blocked/needs-review semantics and current provider status handling. |
 | `ASR_COMPARISON_REPORT_FORMAT.md` | Local ASR comparison schema, statuses, ranking, and CLI usage. |
 | `ASR_REPORTING_CURRENT_STATE.md` | Current local ASR reporting helper/CLI/test index and safe next milestones. |
 | `ASR_MANUAL_RESULTS_SEED.md` | Scope and policy for checked-in manual ASR result records. |
