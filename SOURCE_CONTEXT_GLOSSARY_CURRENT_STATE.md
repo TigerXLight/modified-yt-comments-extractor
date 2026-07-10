@@ -41,7 +41,7 @@ Current helpers validate, normalize, classify, and assemble local metadata only.
 | Area | Files | Purpose |
 | --- | --- | --- |
 | YouTube URL parsing | `youtube_url_utils.py`, `youtube_url_utils_test.py` | Strict local YouTube video-ID extraction/normalization. |
-| Source adapter metadata | `source_adapters.py`, `source_adapters_test.py`, `source_adapters_registry_test.py` | Local adapter capability metadata, `source_name` registry helpers, name lookup, and URL support checks. |
+| Source adapter metadata | `source_adapters.py`, `source_adapters_test.py`, `source_adapters_registry_test.py` | Local adapter capability metadata, YouTube URL support, metadata-only News Website known-host URL support, `source_name` registry helpers, and name lookup. |
 | Source adapter capability report | `source_adapter_capability_report.py`, `source_adapter_capability_report_test.py`, `source_adapter_capability_report_cli.py`, `source_adapter_capability_report_cli_test.py` | Local registered-adapter capability/credential/privacy/setup report rendering. |
 | Context/glossary skeleton | `context_glossary.py`, `context_glossary_test.py` | Local glossary normalization, deduplication, user-term handling, and context hint resolution. |
 | Context glossary CLI | `context_glossary_cli.py`, `context_glossary_cli_test.py` | Explicit-output-only CLI for manually supplied context/glossary JSON normalization and reporting. |
@@ -177,7 +177,7 @@ Expected result: all five local self-tests pass and the working tree is clean af
 1. Source/context/glossary documentation alignment:
    - remove stale wording that says skeletons do not exist if helper files now exist,
    - keep no fetch/capture/network/GUI behavior.
-2. New source adapters:
+2. Future source adapters:
    - only as metadata/capability skeletons first,
    - no generic scraper,
    - no site fetching until separately approved with mocked/local tests.

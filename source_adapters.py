@@ -6,6 +6,38 @@ from typing import Optional, Protocol, Sequence
 from youtube_url_utils import extract_youtube_video_id, normalize_youtube_url
 
 
+from urllib.parse import urlsplit, urlunsplit
+
+
+NEWS_WEBSITE_HOST_SUFFIXES = ("telegraph.co.uk", "msn.com")
+
+
+def _normalize_basic_url(url: str) -> str:
+    parsed = urlsplit((url or "").strip())
+    if parsed.scheme.lower() not in ("http", "https"):
+        raise ValueError("source URL must use http or https")
+    host = (parsed.netloc or "").lower()
+    if not host:
+        raise ValueError("source URL must include a host")
+    path = parsed.path or "/"
+    return urlunsplit(("https", host, path, "", ""))
+
+
+def _host_matches_suffix(host: str, suffix: str) -> bool:
+    normalized_host = host.lower()
+    normalized_suffix = suffix.lower()
+    return normalized_host == normalized_suffix or normalized_host.endswith(
+        f".{normalized_suffix}"
+    )
+
+
+def _is_supported_news_website_host(host: str) -> bool:
+    return any(
+        _host_matches_suffix(host, suffix)
+        for suffix in NEWS_WEBSITE_HOST_SUFFIXES
+    )
+
+
 CREDENTIAL_NONE = "none"
 CREDENTIAL_API_KEY = "api_key"
 CREDENTIAL_OAUTH = "oauth"
@@ -111,8 +143,67 @@ class YouTubeSourceAdapter:
         return extract_youtube_video_id(url)
 
 
+
+class NewsWebsiteSourceAdapter:
+    source_name = "news_website"
+    capabilities = SourceCapabilities(
+        supports_timestamps=True,
+    )
+    metadata = SourceAdapterMetadata(
+        display_name="News Website",
+        platform_family=PLATFORM_NEWS_WEBSITE,
+        credential_type=CREDENTIAL_NONE,
+        credentials_required=False,
+        credentials_optional=False,
+        supports_browser_capture=False,
+        supports_manual_import=True,
+        setup_hint=(
+            "Metadata-only Telegraph/MSN-style news website adapter skeleton. "
+            "Future capture must remain site-specific or site-family-specific."
+        ),
+        test_connection_supported=False,
+        privacy_notes=(
+            "No request is made by this adapter skeleton; future browser/API capture may expose "
+            "article access patterns to the target website or archive service."
+        ),
+        cost_or_rate_limit_notes=(
+            "No cost or rate limits are used by this adapter skeleton because it performs no network calls."
+        ),
+        access_limitations=(
+            "This adapter is a metadata/URL-recognition skeleton only for known news website host suffixes. "
+            "It does not fetch pages, scrape comments, capture screenshots, inspect archives, "
+            "download media, bypass access controls, or integrate with the GUI."
+        ),
+    )
+
+    def can_handle(self, url: str) -> bool:
+        try:
+            parsed = urlsplit((url or "").strip())
+            if parsed.scheme.lower() not in ("http", "https"):
+                return False
+            return _is_supported_news_website_host(parsed.netloc)
+        except ValueError:
+            return False
+
+    def normalize_url(self, url: str) -> str:
+        normalized = _normalize_basic_url(url)
+        parsed = urlsplit(normalized)
+        if not _is_supported_news_website_host(parsed.netloc):
+            raise ValueError(f"unsupported news website host: {parsed.netloc}")
+        return normalized
+
+    def extract_source_id(self, url: str) -> str:
+        normalized = self.normalize_url(url)
+        parsed = urlsplit(normalized)
+        return f"{parsed.netloc}{parsed.path}"
+
+
 YOUTUBE_SOURCE_ADAPTER = YouTubeSourceAdapter()
-AVAILABLE_SOURCE_ADAPTERS: Sequence[SourceAdapter] = (YOUTUBE_SOURCE_ADAPTER,)
+NEWS_WEBSITE_SOURCE_ADAPTER = NewsWebsiteSourceAdapter()
+AVAILABLE_SOURCE_ADAPTERS: Sequence[SourceAdapter] = (
+    YOUTUBE_SOURCE_ADAPTER,
+    NEWS_WEBSITE_SOURCE_ADAPTER,
+)
 
 
 def source_adapter_names(

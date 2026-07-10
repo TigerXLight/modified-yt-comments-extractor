@@ -97,12 +97,13 @@ These tools do not call providers, run transcription, fetch media, or store cred
 
 The repository now has a broad local Total Export foundation:
 
-- Source URL validation and a YouTube source-adapter metadata skeleton.
+- Source URL validation plus YouTube and metadata-only News Website source-adapter skeletons.
 - `SOURCE_CONTEXT_GLOSSARY_CURRENT_STATE.md` records the current local source/context/glossary helper stack, verification commands, boundaries, and safe next milestones.
 - `source_capture_plan_cli.py`: explicit-output-only local Source Capture Plan inspection CLI for manually supplied source URL/context/glossary JSON.
 - `context_glossary_cli.py`: explicit-output-only local context/glossary inspection CLI for manually supplied source label, source URL, title, and user terms.
 - `source_adapters.py`: local source adapter registry helpers use `source_name` for names/listing/lookup; adapters do not expose a `.name` attribute.
 - `source_adapter_capability_report.py` and CLI: local registered-adapter capability/credential/privacy/setup metadata reports without fetch/capture/network/archive/provider/credential-test/scraping/GUI behavior.
+- `NewsWebsiteSourceAdapter`: metadata-only known-host news website URL-recognition skeleton for Telegraph/MSN-style sources; no fetching, scraping, capture, archive checks, downloads, access bypass, or GUI wiring.
 - Capture-option metadata and deterministic selection validation.
 - Source capture plans and local provenance records.
 - Package IDs/folders, manifest read/write/round-trip, asset registration, and duplicate-safe updates.

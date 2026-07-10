@@ -7,9 +7,6 @@ from tempfile import TemporaryDirectory
 from source_capture_plan_cli import main
 
 
-VALID_ID = "dQw4w9WgXcQ"
-
-
 def _run_cli(argv: list[str]):
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -29,14 +26,14 @@ def run_self_test() -> None:
         _write_json(
             input_path,
             {
-                "source_url": f"https://www.youtube.com/watch?v={VALID_ID}&t=30s",
+                "source_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30s",
                 "source_label": "YouTube clip",
                 "title": "Nicolas Cage ZoneX trailer",
                 "selected_capture_options": [
                     "comments",
                     "archive_check",
-                    "comments",
                     "unknown_option",
+                    "comments",
                 ],
                 "user_terms": ["Nyxara", "Freckelston", "Nyxara"],
             },
@@ -46,14 +43,15 @@ def run_self_test() -> None:
         assert code == 0
         assert stderr == ""
         assert "# Source Capture Plan" in markdown
-        assert "Local/manual planning only" in markdown
+        assert "Local planning metadata only" in markdown
         assert "Status: ready" in markdown
-        assert f"Source ID: {VALID_ID}" in markdown
-        assert "Adapter: YouTube" in markdown
-        assert "unknown_option" in markdown
+        assert "Adapter: YouTube (`youtube`)" in markdown
+        assert "Selected capture options: comments, archive_check" in markdown
+        assert "Unknown capture options: unknown_option" in markdown
+        assert "Duplicate capture options: comments" in markdown
         assert "Nyxara" in markdown
         assert "Freckelston" in markdown
-        assert "does not fetch URLs" in markdown
+        assert "No fetch/capture/network actions are performed" in markdown
 
         code, text, stderr = _run_cli(
             ["--input", str(input_path), "--format", "text"]
@@ -61,10 +59,9 @@ def run_self_test() -> None:
         assert code == 0
         assert stderr == ""
         assert "Source capture plan" in text
-        assert "Status: ready" in text
-        assert "Selected capture options:" in text
-        assert "Context / glossary:" in text
-        assert "Glossary term count: 2" in text
+        assert "status: ready" in text
+        assert "adapter: YouTube (youtube)" in text
+        assert "selected_capture_options: comments, archive_check" in text
 
         code, json_output, stderr = _run_cli(
             ["--input", str(input_path), "--format", "json"]
@@ -74,33 +71,40 @@ def run_self_test() -> None:
         parsed = json.loads(json_output)
         assert list(parsed) == sorted(parsed)
         assert parsed["status"] == "ready"
-        assert parsed["source_id"] == VALID_ID
         assert parsed["adapter_name"] == "youtube"
-        assert "unknown_option" in parsed["unknown_capture_options"]
-        assert "comments" in parsed["duplicate_capture_options"]
+        assert parsed["selected_capture_options"] == ["comments", "archive_check"]
+        assert parsed["unknown_capture_options"] == ["unknown_option"]
+        assert parsed["duplicate_capture_options"] == ["comments"]
         assert parsed["context_result"]["glossary_terms"][0]["text"] == "Nyxara"
+        assert "No fetch/capture/network actions" in parsed["scope"]
 
-        unsupported_input = root / "unsupported.json"
+        news_input = root / "news_plan.json"
         _write_json(
-            unsupported_input,
+            news_input,
             {
-                "source_url": "https://example.com/article",
-                "source_label": "Article",
-                "title": "Example Title",
-                "selected_capture_options": ["comments"],
-                "user_terms": ["ExampleTerm"],
+                "source_url": "https://www.msn.com/en-gb/news/world/example-story/ar-AA123456?ocid=feeds",
+                "source_label": "MSN article",
+                "title": "Example news article",
+                "selected_capture_options": ["visible_page_text"],
+                "user_terms": ["Reporter Name"],
             },
         )
-        code, unsupported_json, stderr = _run_cli(
-            ["--input", str(unsupported_input), "--format", "json"]
+        code, news_json, stderr = _run_cli(
+            ["--input", str(news_input), "--format", "json"]
         )
         assert code == 0
         assert stderr == ""
-        parsed_unsupported = json.loads(unsupported_json)
-        assert parsed_unsupported["status"] == "unsupported_source"
-        assert parsed_unsupported["normalized_url"] == ""
-        assert parsed_unsupported["context_result"]["glossary_terms"][0]["text"] == "ExampleTerm"
-        assert "No source adapter supports the URL" in parsed_unsupported["warnings"][0]
+        parsed_news = json.loads(news_json)
+        assert parsed_news["status"] == "ready"
+        assert parsed_news["adapter_name"] == "news_website"
+        assert parsed_news["adapter_display_name"] == "News Website"
+        assert parsed_news["normalized_url"] == (
+            "https://www.msn.com/en-gb/news/world/example-story/ar-AA123456"
+        )
+        assert parsed_news["source_id"] == (
+            "www.msn.com/en-gb/news/world/example-story/ar-AA123456"
+        )
+        assert parsed_news["selected_capture_options"] == ["visible_page_text"]
 
         output_path = root / "SOURCE_CAPTURE_PLAN.md"
         output_args = ["--input", str(input_path), "--output", str(output_path)]
@@ -108,9 +112,7 @@ def run_self_test() -> None:
         assert code == 0
         assert stdout == ""
         assert stderr == ""
-        assert output_path.read_text(encoding="utf-8").startswith(
-            "# Source Capture Plan"
-        )
+        assert output_path.read_text(encoding="utf-8").startswith("# Source Capture Plan")
 
         code, stdout, stderr = _run_cli(output_args)
         assert code == 1
@@ -145,17 +147,17 @@ def run_self_test() -> None:
         assert "input JSON must be an object" in stderr
 
         missing_url = root / "missing_url.json"
-        _write_json(missing_url, {"title": "Missing URL"})
+        _write_json(missing_url, {"source_label": "missing"})
         code, stdout, stderr = _run_cli(["--input", str(missing_url)])
         assert code == 1
         assert stdout == ""
-        assert "input JSON must include source_url" in stderr
+        assert "source_url is required" in stderr
 
         bad_options = root / "bad_options.json"
         _write_json(
             bad_options,
             {
-                "source_url": f"https://www.youtube.com/watch?v={VALID_ID}",
+                "source_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
                 "selected_capture_options": "comments",
             },
         )
@@ -168,7 +170,7 @@ def run_self_test() -> None:
         _write_json(
             bad_terms,
             {
-                "source_url": f"https://www.youtube.com/watch?v={VALID_ID}",
+                "source_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
                 "user_terms": "Nyxara",
             },
         )

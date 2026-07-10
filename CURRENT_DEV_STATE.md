@@ -28,7 +28,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Existing YouTube comments/livechat behavior must be preserved while source terminology generalizes.
 - Source adapter skeleton added: `source_adapters.py` defines `SourceCapabilities`, a `SourceAdapter` protocol, and `YouTubeSourceAdapter`.
 - `YouTubeSourceAdapter` delegates validation, normalization, and source ID extraction to the existing strict `youtube_url_utils.py` helper.
-- No new source adapters are implemented, and no metadata/comment/livechat/transcript fetching behavior changed.
+- A metadata-only News Website source adapter skeleton is implemented for URL recognition/normalization only; no metadata/comment/livechat/transcript/page fetching behavior changed.
 - Source adapter metadata skeleton added for future Access & Keys UI; no credential storage, key testing, UI, or behavior changes were added.
 - `SOURCE_EVIDENCE_ROADMAP.md` captures the docs-only roadmap for future source/comment adapters, web evidence capture, archive checks, optional media-download inspiration, capture options, and provenance fields.
 - `SOURCE_EVIDENCE_ROADMAP.md` also plans a future "KEYS" / "Access & Keys" manager so credentials/access settings can scale beyond the current sidebar API key field.
@@ -58,6 +58,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Added an explicit-output-only context/glossary CLI for manually supplied source label, source URL, title, and user terms, rendering normalized hints and deduped glossary candidates as text, Markdown, or JSON without fetch/capture/network/provider/GUI behavior.
 - Added source adapter registry helpers for adapter `source_name` listing/name lookup plus regression coverage that adapters do not expose a misleading `.name` attribute.
 - Added a local-only source adapter capability report helper and explicit-output-only CLI for registered adapter metadata, rendering text, Markdown, or JSON without fetch/capture/network/archive/provider/credential-test/scraping/GUI behavior.
+- Added a metadata-only News Website source adapter skeleton for known Telegraph/MSN-style host suffixes; it performs URL recognition/normalization only and does not fetch, scrape, capture, archive-check, download, bypass access controls, or wire into the GUI.
 - Total Export manifest validation helpers added for local package/asset consistency checks; they are explicit-call only and perform no fetch/capture/network/GUI behavior.
 - Total Export workflow helper added for explicit source URL -> plan -> package -> validation preparation; it remains non-wired and performs no fetch/capture/network/GUI behavior.
 - Total Export summary helpers added for human-readable package/plan/validation review text; they are explicit-call only and perform no fetch/capture/network/GUI behavior.

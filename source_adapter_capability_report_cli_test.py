@@ -21,6 +21,7 @@ def run_self_test() -> None:
     assert stderr == ""
     assert "# Source Adapter Capability Report" in markdown
     assert "Adapter ID: youtube" in markdown
+    assert "Adapter ID: news_website" in markdown
     assert "does not fetch URLs" in markdown
 
     code, text, stderr = _run_cli(["--format", "text"])
@@ -28,15 +29,20 @@ def run_self_test() -> None:
     assert stderr == ""
     assert "Source adapter capability report" in text
     assert "youtube (YouTube)" in text
+    assert "news_website (News Website)" in text
     assert "no fetch/capture/network" in text
 
     code, json_output, stderr = _run_cli(["--format", "json"])
     assert code == 0
     assert stderr == ""
     parsed = json.loads(json_output)
-    assert parsed["adapter_count"] == 1
-    assert parsed["source_adapters"][0]["adapter_id"] == "youtube"
+    assert parsed["adapter_count"] == 2
+    assert [item["adapter_id"] for item in parsed["source_adapters"]] == [
+        "youtube",
+        "news_website",
+    ]
     assert parsed["source_adapters"][0]["credential_type"] == "api_key"
+    assert parsed["source_adapters"][1]["credential_type"] == "none"
 
     code, filtered_json, stderr = _run_cli(
         ["--adapter", " YouTube ", "--adapter", "youtube", "--format", "json"]
@@ -46,6 +52,15 @@ def run_self_test() -> None:
     parsed_filtered = json.loads(filtered_json)
     assert parsed_filtered["adapter_count"] == 1
     assert parsed_filtered["source_adapters"][0]["adapter_id"] == "youtube"
+
+    code, news_json, stderr = _run_cli(
+        ["--adapter", "news_website", "--format", "json"]
+    )
+    assert code == 0
+    assert stderr == ""
+    parsed_news = json.loads(news_json)
+    assert parsed_news["adapter_count"] == 1
+    assert parsed_news["source_adapters"][0]["adapter_id"] == "news_website"
 
     code, stdout, stderr = _run_cli(["--adapter", "missing"])
     assert code == 1
