@@ -124,9 +124,7 @@ The CLI is local-only. It reads manually entered JSON records and writes a file 
 
 `asr_decision_summary.py` provides a local/manual-data-only decision layer over existing comparison records. It summarizes the 95% project gate, status counts, leading project-scored and local/offline results, blocked items, external leads, below-threshold candidates, warnings, and safe next-action guidance.
 
-See `ASR_DECISION_SUMMARY.md` for status semantics and current seed interpretation. The helper writes no files and does not call providers, run transcription, fetch/download media, use network APIs, store credentials, or wire into the GUI.
-
-Any future decision-summary CLI should remain a separate approved milestone with explicit-output-only writes.
+See `ASR_DECISION_SUMMARY.md` for status semantics, current seed interpretation, and CLI usage. The helper writes no files; `asr_decision_summary_cli.py` writes only when `--output` is supplied. Neither the helper nor CLI calls providers, runs transcription, fetches/downloads media, uses network APIs, stores credentials, inspects ZIPs, or wires into the GUI.
 
 ## Term Coverage Summary
 

@@ -12,7 +12,7 @@ It reports the current strict threshold, status counts, best project-scored and 
 
 The helper consumes in-memory comparison records only. It does not load media, run ASR, call providers, transcribe, fetch URLs, download files, use network/API/archive services, scrape pages, capture screenshots, store credentials, inspect ZIPs, or wire into the GUI.
 
-The helper writes no files and creates no generated report artifacts. A future CLI requires separate approval and must preserve explicit-output-only behavior.
+The helper writes no files and creates no generated report artifacts. The CLI writes only when `--output` is explicitly supplied and preserves existing files unless `--overwrite` is used.
 
 ## Strict Threshold
 
@@ -50,6 +50,22 @@ ASR output therefore remains draft text with Term QA/glossary review and explici
 - `build_asr_decision_summary_markdown()`
 
 Dictionary output has deterministic keys suitable for a future local-only CLI or report writer.
+
+## Local CLI Usage
+
+`asr_decision_summary_cli.py` reads manually entered ASR comparison JSON records, builds the local decision summary, and renders Markdown, text, or JSON.
+
+```cmd
+python asr_decision_summary_cli.py --input ASR_MANUAL_RESULTS_SEED.json
+python asr_decision_summary_cli.py --input ASR_MANUAL_RESULTS_SEED.json --format text
+python asr_decision_summary_cli.py --input ASR_MANUAL_RESULTS_SEED.json --format json
+python asr_decision_summary_cli.py --input ASR_MANUAL_RESULTS_SEED.json --output ASR_DECISION_SUMMARY_REPORT.md
+python asr_decision_summary_cli.py --input ASR_MANUAL_RESULTS_SEED.json --output ASR_DECISION_SUMMARY_REPORT.md --overwrite
+```
+
+The CLI supports the checked-in seed object shape with a `records` list and a bare list of record objects. It prints to stdout by default, writes a file only with `--output`, and refuses to overwrite existing output unless `--overwrite` is supplied.
+
+The CLI does not run ASR, call providers, transcribe media, fetch/download sources, use network/API/archive services, scrape pages, capture screenshots, store credentials, inspect ZIPs, or wire into the GUI.
 
 ## Related Term Coverage Summary
 
