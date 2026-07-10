@@ -1,3 +1,4 @@
+# Evidence item spec parsing helper reuse.
 # Evidence bundle item detail flags integration.
 # Evidence bundle integration: preservation backend CLI flags.
 from __future__ import annotations
@@ -17,7 +18,7 @@ from preservation_backend_plan import (
 from preservation_evidence_bundle import (
     BUNDLE_STATUSES,
     build_preservation_evidence_bundle,
-    build_preservation_evidence_item,
+    build_preservation_evidence_items_from_specs,
 )
 
 
@@ -83,68 +84,6 @@ def write_report_output(output_path: str, text: str, *, overwrite: bool = False)
     path.write_text(text, encoding="utf-8")
 
 
-def _parse_evidence_key_value_specs(values: Sequence[str], *, field_name: str) -> dict[str, str]:
-    mapping: dict[str, str] = {}
-    for value in values:
-        text = str(value or "").strip()
-        if not text or "=" not in text:
-            raise ValueError(f"{field_name} must use artifact_id=value")
-        artifact_id, metadata_value = text.split("=", 1)
-        normalized_id = artifact_id.strip()
-        if not normalized_id:
-            raise ValueError(f"{field_name} artifact_id must not be empty")
-        if normalized_id in mapping:
-            raise ValueError(f"duplicate {field_name} metadata for artifact ID: {normalized_id}")
-        mapping[normalized_id] = metadata_value.strip()
-    return mapping
-
-
-def _validate_evidence_detail_ids(
-    *,
-    artifact_ids: set[str],
-    detail_maps: dict[str, dict[str, str]],
-) -> None:
-    unknown: list[str] = []
-    for field_name, mapping in detail_maps.items():
-        for artifact_id in mapping:
-            if artifact_id not in artifact_ids:
-                unknown.append(f"{field_name}:{artifact_id}")
-    if unknown:
-        raise ValueError(
-            "evidence item detail metadata references unknown artifact IDs: "
-            + ", ".join(sorted(unknown))
-        )
-
-
-def _parse_preservation_evidence_item(
-    value: str,
-    *,
-    item_roles: dict[str, str] | None = None,
-    item_origins: dict[str, str] | None = None,
-    item_path_hints: dict[str, str] | None = None,
-    item_notes: dict[str, str] | None = None,
-):
-    parts = [part.strip() for part in str(value or "").split(":")]
-    if len(parts) not in (2, 3) or not parts[0] or not parts[1]:
-        raise ValueError(
-            "evidence item must use artifact_id:artifact_format[:capture_method_id]"
-        )
-    artifact_id = parts[0]
-    item_roles = item_roles or {}
-    item_origins = item_origins or {}
-    item_path_hints = item_path_hints or {}
-    item_notes = item_notes or {}
-    return build_preservation_evidence_item(
-        artifact_id=artifact_id,
-        artifact_format=parts[1],
-        capture_method_id=parts[2] if len(parts) == 3 else "",
-        artifact_role=item_roles.get(artifact_id, "supporting"),
-        origin=item_origins.get(artifact_id, "unknown"),
-        path_hint=item_path_hints.get(artifact_id, ""),
-        notes=item_notes.get(artifact_id, ""),
-    )
-
-
 def _build_cli_evidence_bundle(
     *,
     source_url: str = "",
@@ -169,47 +108,12 @@ def _build_cli_evidence_bundle(
     ):
         return None
 
-    item_roles = _parse_evidence_key_value_specs(
-        item_role_values,
-        field_name="evidence item role",
-    )
-    item_origins = _parse_evidence_key_value_specs(
-        item_origin_values,
-        field_name="evidence item origin",
-    )
-    item_path_hints = _parse_evidence_key_value_specs(
-        item_path_hint_values,
-        field_name="evidence item path hint",
-    )
-    item_notes = _parse_evidence_key_value_specs(
-        item_note_values,
-        field_name="evidence item note",
-    )
-
-    artifact_ids = {
-        str(value or "").split(":", 1)[0].strip()
-        for value in item_values
-        if str(value or "").split(":", 1)[0].strip()
-    }
-    _validate_evidence_detail_ids(
-        artifact_ids=artifact_ids,
-        detail_maps={
-            "role": item_roles,
-            "origin": item_origins,
-            "path_hint": item_path_hints,
-            "note": item_notes,
-        },
-    )
-
-    items = tuple(
-        _parse_preservation_evidence_item(
-            value,
-            item_roles=item_roles,
-            item_origins=item_origins,
-            item_path_hints=item_path_hints,
-            item_notes=item_notes,
-        )
-        for value in item_values
+    items = build_preservation_evidence_items_from_specs(
+        item_values,
+        item_role_specs=item_role_values,
+        item_origin_specs=item_origin_values,
+        item_path_hint_specs=item_path_hint_values,
+        item_note_specs=item_note_values,
     )
     return build_preservation_evidence_bundle(
         source_url=source_url or "",
@@ -218,7 +122,6 @@ def _build_cli_evidence_bundle(
         notes=notes or "",
         items=items,
     )
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(

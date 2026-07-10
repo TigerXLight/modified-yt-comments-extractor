@@ -1,3 +1,4 @@
+# Evidence item spec parsing helper reuse.
 # Evidence bundle CLI item detail flags.
 from __future__ import annotations
 
@@ -9,117 +10,19 @@ from preservation_evidence_bundle import (
     BUNDLE_STATUSES,
     REPORT_FORMATS,
     build_preservation_evidence_bundle,
-    build_preservation_evidence_item,
+    build_preservation_evidence_items_from_specs,
     render_preservation_evidence_bundle,
 )
 
 
-def _parse_key_value_specs(values: Sequence[str], *, field_name: str) -> dict[str, str]:
-    mapping: dict[str, str] = {}
-    for value in values:
-        text = str(value or "").strip()
-        if not text or "=" not in text:
-            raise ValueError(f"{field_name} must use artifact_id=value")
-        artifact_id, metadata_value = text.split("=", 1)
-        normalized_id = artifact_id.strip()
-        if not normalized_id:
-            raise ValueError(f"{field_name} artifact_id must not be empty")
-        if normalized_id in mapping:
-            raise ValueError(f"duplicate {field_name} metadata for artifact ID: {normalized_id}")
-        mapping[normalized_id] = metadata_value.strip()
-    return mapping
-
-
-def _validate_detail_ids(
-    *,
-    artifact_ids: set[str],
-    detail_maps: dict[str, dict[str, str]],
-) -> None:
-    unknown: list[str] = []
-    for field_name, mapping in detail_maps.items():
-        for artifact_id in mapping:
-            if artifact_id not in artifact_ids:
-                unknown.append(f"{field_name}:{artifact_id}")
-    if unknown:
-        raise ValueError(
-            "item detail metadata references unknown artifact IDs: "
-            + ", ".join(sorted(unknown))
-        )
-
-
-def _parse_item(
-    value: str,
-    *,
-    item_roles: dict[str, str] | None = None,
-    item_origins: dict[str, str] | None = None,
-    item_path_hints: dict[str, str] | None = None,
-    item_notes: dict[str, str] | None = None,
-):
-    parts = [part.strip() for part in str(value or "").split(":")]
-    if len(parts) not in (2, 3) or not parts[0] or not parts[1]:
-        raise ValueError(
-            "item must use artifact_id:artifact_format[:capture_method_id]"
-        )
-    artifact_id = parts[0]
-    item_roles = item_roles or {}
-    item_origins = item_origins or {}
-    item_path_hints = item_path_hints or {}
-    item_notes = item_notes or {}
-    return build_preservation_evidence_item(
-        artifact_id=artifact_id,
-        artifact_format=parts[1],
-        capture_method_id=parts[2] if len(parts) == 3 else "",
-        artifact_role=item_roles.get(artifact_id, "supporting"),
-        origin=item_origins.get(artifact_id, "unknown"),
-        path_hint=item_path_hints.get(artifact_id, ""),
-        notes=item_notes.get(artifact_id, ""),
-    )
-
-
 def _parse_items_with_details(args) -> tuple:
-    item_roles = _parse_key_value_specs(
-        args.item_role,
-        field_name="item role",
+    return build_preservation_evidence_items_from_specs(
+        args.item,
+        item_role_specs=args.item_role,
+        item_origin_specs=args.item_origin,
+        item_path_hint_specs=args.item_path_hint,
+        item_note_specs=args.item_notes,
     )
-    item_origins = _parse_key_value_specs(
-        args.item_origin,
-        field_name="item origin",
-    )
-    item_path_hints = _parse_key_value_specs(
-        args.item_path_hint,
-        field_name="item path hint",
-    )
-    item_notes = _parse_key_value_specs(
-        args.item_notes,
-        field_name="item notes",
-    )
-
-    artifact_ids = {
-        str(value or "").split(":", 1)[0].strip()
-        for value in args.item
-        if str(value or "").split(":", 1)[0].strip()
-    }
-    _validate_detail_ids(
-        artifact_ids=artifact_ids,
-        detail_maps={
-            "role": item_roles,
-            "origin": item_origins,
-            "path_hint": item_path_hints,
-            "notes": item_notes,
-        },
-    )
-
-    return tuple(
-        _parse_item(
-            value,
-            item_roles=item_roles,
-            item_origins=item_origins,
-            item_path_hints=item_path_hints,
-            item_notes=item_notes,
-        )
-        for value in args.item
-    )
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(

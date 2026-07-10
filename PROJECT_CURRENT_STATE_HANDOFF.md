@@ -292,3 +292,6 @@ Evidence bundle plan integration now supports item-level role, origin, path hint
 
 
 The standalone preservation evidence bundle CLI now supports item-level role, origin, path hint, and notes metadata, matching the preservation-plan integration while remaining stdout/local metadata only.
+
+
+Evidence item detail parsing/validation is centralized in `preservation_evidence_bundle.py` and reused by all current evidence bundle CLI entry points. This is a local metadata refactor only.

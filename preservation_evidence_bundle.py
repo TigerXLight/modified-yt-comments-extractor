@@ -1,3 +1,4 @@
+# Evidence item spec parsing helpers.
 # Evidence item notes rendering repair.
 from __future__ import annotations
 
@@ -75,6 +76,97 @@ def _normalize_catalog_value(
 
 def available_artifact_formats() -> tuple[str, ...]:
     return tuple(option.format_id for option in FORMAT_OPTIONS)
+
+
+
+def parse_evidence_item_detail_specs(
+    values: Sequence[str],
+    *,
+    field_name: str,
+) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for value in values:
+        text = str(value or "").strip()
+        if not text or "=" not in text:
+            raise ValueError(f"{field_name} must use artifact_id=value")
+        artifact_id, metadata_value = text.split("=", 1)
+        normalized_id = artifact_id.strip()
+        if not normalized_id:
+            raise ValueError(f"{field_name} artifact_id must not be empty")
+        if normalized_id in mapping:
+            raise ValueError(
+                f"duplicate {field_name} metadata for artifact ID: {normalized_id}"
+            )
+        mapping[normalized_id] = metadata_value.strip()
+    return mapping
+
+
+def _parse_evidence_item_spec(
+    value: str,
+) -> tuple[str, str, str]:
+    parts = [part.strip() for part in str(value or "").split(":")]
+    if len(parts) not in (2, 3) or not parts[0] or not parts[1]:
+        raise ValueError(
+            "item must use artifact_id:artifact_format[:capture_method_id]"
+        )
+    return parts[0], parts[1], parts[2] if len(parts) == 3 else ""
+
+
+def build_preservation_evidence_items_from_specs(
+    item_specs: Sequence[str],
+    *,
+    item_role_specs: Sequence[str] = (),
+    item_origin_specs: Sequence[str] = (),
+    item_path_hint_specs: Sequence[str] = (),
+    item_note_specs: Sequence[str] = (),
+) -> tuple[PreservationEvidenceItem, ...]:
+    item_roles = parse_evidence_item_detail_specs(
+        item_role_specs,
+        field_name="item role",
+    )
+    item_origins = parse_evidence_item_detail_specs(
+        item_origin_specs,
+        field_name="item origin",
+    )
+    item_path_hints = parse_evidence_item_detail_specs(
+        item_path_hint_specs,
+        field_name="item path hint",
+    )
+    item_notes = parse_evidence_item_detail_specs(
+        item_note_specs,
+        field_name="item notes",
+    )
+
+    parsed_items = tuple(_parse_evidence_item_spec(value) for value in item_specs)
+    artifact_ids = {artifact_id for artifact_id, _artifact_format, _capture_method_id in parsed_items}
+    unknown_details: list[str] = []
+    for field_name, mapping in (
+        ("role", item_roles),
+        ("origin", item_origins),
+        ("path_hint", item_path_hints),
+        ("notes", item_notes),
+    ):
+        for artifact_id in mapping:
+            if artifact_id not in artifact_ids:
+                unknown_details.append(f"{field_name}:{artifact_id}")
+    if unknown_details:
+        raise ValueError(
+            "item detail metadata references unknown artifact IDs: "
+            + ", ".join(sorted(unknown_details))
+        )
+
+    return tuple(
+        build_preservation_evidence_item(
+            artifact_id=artifact_id,
+            artifact_format=artifact_format,
+            capture_method_id=capture_method_id,
+            artifact_role=item_roles.get(artifact_id, "supporting"),
+            origin=item_origins.get(artifact_id, "unknown"),
+            path_hint=item_path_hints.get(artifact_id, ""),
+            notes=item_notes.get(artifact_id, ""),
+        )
+        for artifact_id, artifact_format, capture_method_id in parsed_items
+    )
 
 
 def build_preservation_evidence_item(

@@ -258,3 +258,6 @@ Evidence bundle item details can record role, origin, path hint labels, and note
 
 
 The preservation evidence bundle CLI can record item role, origin, path hint labels, and notes. These remain metadata strings only and do not trigger file inspection or capture behavior.
+
+
+Evidence item detail parsing now uses shared preservation evidence bundle helpers across the local CLI entry points, keeping role/origin/path-hint/notes validation consistent without file or network operations.

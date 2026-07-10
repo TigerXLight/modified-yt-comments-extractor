@@ -757,3 +757,5 @@ Next local-ASR branches:
 - Evidence bundle plan reporting now exposes metadata-only item details for artifact role, origin, path hint labels, and item notes; path hints are not opened or checked.
 
 - The standalone preservation evidence bundle CLI now accepts item role, origin, path hint label, and notes metadata; path hints remain labels only and are not opened or checked.
+
+- Evidence item spec parsing is centralized in the preservation evidence bundle model and reused by the standalone CLI, preservation backend CLI, and Total Export prepare CLI to keep detail validation consistent.

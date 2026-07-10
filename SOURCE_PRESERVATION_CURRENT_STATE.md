@@ -187,3 +187,6 @@ Evidence bundle plan metadata now includes item roles, origins, path hint labels
 
 
 Standalone preservation evidence bundle reporting now supports item roles, origins, path hint labels, and item notes. Path hints are not opened, scanned, hashed, validated, or treated as proof that files exist.
+
+
+Evidence item spec parsing and item-detail validation are centralized in the preservation evidence bundle model and reused by related CLIs. The refactor changes metadata parsing only and does not add file inspection or capture behavior.
