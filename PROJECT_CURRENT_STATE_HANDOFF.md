@@ -88,6 +88,7 @@ DirectML base/small are rejected for Auto Quality Probe for now. DirectML medium
 - `ASR_PROVIDER_LEADERBOARD_NOTES.md`: user-supplied external research leads; not independent verification.
 - `asr_decision_summary.py` and `asr_decision_summary_cli.py`: local/manual decision summary for threshold, status counts, leading scored/local results, blocked items, external leads, and safe next-action guidance with Markdown/text/JSON rendering.
 - `asr_term_coverage_summary.py` and `asr_term_coverage_summary_cli.py`: local/manual key-term hit/miss and provider-gap summary with Markdown/text/JSON rendering; no provider calls, transcription, downloads, network, credentials, or GUI behavior.
+- `asr_combined_report_cli.py`: local/manual combined comparison, decision, and term coverage report renderer with explicit-output-only writes.
 
 These tools do not call providers, run transcription, fetch media, or store credentials.
 
@@ -181,7 +182,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 
 | Area | Helpers/CLIs | Primary tests |
 | --- | --- | --- |
-| ASR comparison/decision/terms | `asr_comparison_report.py`, `asr_comparison_report_cli.py`, `asr_decision_summary.py`, `asr_decision_summary_cli.py`, `asr_term_coverage_summary.py`, `asr_term_coverage_summary_cli.py` | `asr_comparison_report_test.py`, `asr_comparison_report_cli_test.py`, `asr_manual_results_seed_test.py`, `asr_decision_summary_test.py`, `asr_decision_summary_cli_test.py`, `asr_term_coverage_summary_test.py`, `asr_term_coverage_summary_cli_test.py` |
+| ASR comparison/decision/terms | `asr_comparison_report.py`, `asr_comparison_report_cli.py`, `asr_decision_summary.py`, `asr_decision_summary_cli.py`, `asr_term_coverage_summary.py`, `asr_term_coverage_summary_cli.py`, `asr_combined_report_cli.py` | `asr_comparison_report_test.py`, `asr_comparison_report_cli_test.py`, `asr_manual_results_seed_test.py`, `asr_decision_summary_test.py`, `asr_decision_summary_cli_test.py`, `asr_term_coverage_summary_test.py`, `asr_term_coverage_summary_cli_test.py`, `asr_combined_report_cli_test.py` |
 | Total Export package shell | `total_export_prepare_cli.py`, manifest/package/workflow/validation/summary/inventory modules | `total_export_prepare_cli_test.py` and focused `total_export_*_test.py` files |
 | Review bundles and ZIPs | `total_export_review_bundle.py`, verification/folder verification, `total_export_zip_inspect.py`, `total_export_zip_sidecar.py` | Review-bundle, ZIP-inspection, sidecar, folder, and batch tests |
 | Bundle index/reconciliation | `total_export_bundle_index.py`, both local CLIs, `total_export_bundle_index_reconcile.py` | Bundle index/reconciliation helper and CLI tests |

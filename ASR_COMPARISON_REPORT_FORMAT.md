@@ -124,6 +124,8 @@ Supported ranking metrics are `reference_accuracy_percent`, `raw_wer_percent`, `
 
 The CLI is local-only. It reads manually entered JSON records and writes a file only when `--output` is provided. It does not call providers, run transcription, fetch media, store credentials, or wire any ASR provider into the app.
 
+`asr_combined_report_cli.py` renders comparison, decision summary, and term coverage sections together from the same local/manual input. It also writes only with explicit `--output` and does not call providers, run transcription, fetch media, store credentials, inspect ZIPs, or wire into the GUI.
+
 ## Decision Summary
 
 `asr_decision_summary.py` provides a local/manual-data-only decision layer over existing comparison records. It summarizes the 95% project gate, status counts, leading project-scored and local/offline results, blocked items, external leads, below-threshold candidates, warnings, and safe next-action guidance.
