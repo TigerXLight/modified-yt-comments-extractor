@@ -36,3 +36,24 @@ Verification describes current local filesystem state only. A missing local file
 ## Future Use
 
 Future CLI or Total Export review flows can call this helper explicitly to re-check locally registered media records before building evidence bundles. Any such integration should remain opt-in and should keep verification separate from downloading, archive checks, ASR, browser automation, and source fetching.
+
+## Local CLI Usage
+
+`total_export_local_media_verify_cli.py` renders user-supplied local media registration JSON records as text, Markdown, or JSON.
+
+Example commands:
+
+```cmd
+python total_export_local_media_verify_cli.py --input LOCAL_MEDIA_RECORDS.json
+python total_export_local_media_verify_cli.py --input LOCAL_MEDIA_RECORDS.json --format text
+python total_export_local_media_verify_cli.py --input LOCAL_MEDIA_RECORDS.json --format markdown
+python total_export_local_media_verify_cli.py --input LOCAL_MEDIA_RECORDS.json --format json
+python total_export_local_media_verify_cli.py --input LOCAL_MEDIA_RECORDS.json --no-compute-hash
+python total_export_local_media_verify_cli.py --input LOCAL_MEDIA_RECORDS.json --format markdown --output LOCAL_MEDIA_VERIFICATION_REPORT_OUTPUT.md --overwrite
+```
+
+The CLI reads local JSON only. It writes a file only when `--output` is explicitly provided, and existing files are preserved unless `--overwrite` is passed.
+
+`--no-compute-hash` skips SHA-256 computation. Verification still checks only explicitly supplied local file paths from the input records.
+
+The CLI does not download media, fetch sources, scrape pages, capture screenshots, check or submit archives, transcribe, call providers, call network/API services, store credentials, or wire into the GUI.
