@@ -57,6 +57,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Added an explicit-output-only Source Capture Plan inspection CLI for manually supplied source URL/context/glossary JSON, rendering text, Markdown, or JSON without fetch/capture/network/provider/GUI behavior.
 - Added an explicit-output-only context/glossary CLI for manually supplied source label, source URL, title, and user terms, rendering normalized hints and deduped glossary candidates as text, Markdown, or JSON without fetch/capture/network/provider/GUI behavior.
 - Added source adapter registry helpers for adapter `source_name` listing/name lookup plus regression coverage that adapters do not expose a misleading `.name` attribute.
+- Added a local-only source adapter capability report helper and explicit-output-only CLI for registered adapter metadata, rendering text, Markdown, or JSON without fetch/capture/network/archive/provider/credential-test/scraping/GUI behavior.
 - Total Export manifest validation helpers added for local package/asset consistency checks; they are explicit-call only and perform no fetch/capture/network/GUI behavior.
 - Total Export workflow helper added for explicit source URL -> plan -> package -> validation preparation; it remains non-wired and performs no fetch/capture/network/GUI behavior.
 - Total Export summary helpers added for human-readable package/plan/validation review text; they are explicit-call only and perform no fetch/capture/network/GUI behavior.
