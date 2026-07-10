@@ -72,6 +72,16 @@ def run_self_test() -> None:
     else:
         raise AssertionError("Expected duplicate item detail rejection.")
 
+    try:
+        build_preservation_evidence_items_from_specs(
+            ("screenshot:png",),
+            item_role_specs=("screenshot-primary",),
+        )
+    except ValueError as exc:
+        assert "item role must use artifact_id=value" in str(exc)
+    else:
+        raise AssertionError("Expected malformed item detail rejection.")
+
     html = build_preservation_evidence_item(
         artifact_id="saved_html",
         artifact_format="html",

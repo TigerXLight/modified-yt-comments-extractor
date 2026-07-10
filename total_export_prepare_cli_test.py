@@ -442,6 +442,54 @@ def run_self_test() -> None:
         assert "invalid choice" in invalid_media_choice_error
         assert list(Path(temp_dir).iterdir()) == []
 
+        # prepare CLI detail specs should reject malformed values before rendering
+        error_code, malformed_detail_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--evidence-bundle-status",
+                "manual_supplied",
+                "--evidence-item",
+                "screenshot:png",
+                "--evidence-item-role",
+                "screenshot-primary",
+            ]
+        )
+        assert error_code == 2
+        assert "item role must use artifact_id=value" in malformed_detail_error
+        assert list(Path(temp_dir).iterdir()) == []
+
+        error_code, unknown_detail_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--evidence-bundle-status",
+                "manual_supplied",
+                "--evidence-item",
+                "screenshot:png",
+                "--evidence-item-role",
+                "missing=primary",
+            ]
+        )
+        assert error_code == 2
+        assert "unknown artifact IDs" in unknown_detail_error
+        assert list(Path(temp_dir).iterdir()) == []
+
+        error_code, duplicate_detail_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--evidence-bundle-status",
+                "manual_supplied",
+                "--evidence-item",
+                "screenshot:png",
+                "--evidence-item-role",
+                "screenshot=primary",
+                "--evidence-item-role",
+                "screenshot=supporting",
+            ]
+        )
+        assert error_code == 2
+        assert "duplicate item role metadata" in duplicate_detail_error
+        assert list(Path(temp_dir).iterdir()) == []
+
         exit_code, explain_json_output = _run_cli(
             [
                 "--explain-plan",

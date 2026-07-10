@@ -295,3 +295,6 @@ The standalone preservation evidence bundle CLI now supports item-level role, or
 
 
 Evidence item detail parsing/validation is centralized in `preservation_evidence_bundle.py` and reused by all current evidence bundle CLI entry points. This is a local metadata refactor only.
+
+
+Evidence item detail parsing now has focused regression coverage for malformed `artifact_id=value` specs, duplicate detail entries, and detail metadata that references unknown artifact IDs across the helper and CLI entry points.

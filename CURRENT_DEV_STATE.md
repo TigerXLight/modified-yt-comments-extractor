@@ -759,3 +759,5 @@ Next local-ASR branches:
 - The standalone preservation evidence bundle CLI now accepts item role, origin, path hint label, and notes metadata; path hints remain labels only and are not opened or checked.
 
 - Evidence item spec parsing is centralized in the preservation evidence bundle model and reused by the standalone CLI, preservation backend CLI, and Total Export prepare CLI to keep detail validation consistent.
+
+- Added regression coverage that rejects malformed, duplicate, or unknown evidence item detail specs across the shared helper and CLI entry points.

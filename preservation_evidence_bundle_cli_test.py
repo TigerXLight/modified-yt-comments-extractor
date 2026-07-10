@@ -83,6 +83,27 @@ def run_self_test() -> None:
     assert "unknown artifact IDs" in error
 
     code, output, error = _run_cli(
+        ["--item", "screenshot:png", "--item-role", "screenshot-primary"]
+    )
+    assert code == 1
+    assert output == ""
+    assert "item role must use artifact_id=value" in error
+
+    code, output, error = _run_cli(
+        [
+            "--item",
+            "screenshot:png",
+            "--item-role",
+            "screenshot=primary",
+            "--item-role",
+            "screenshot=supporting",
+        ]
+    )
+    assert code == 1
+    assert output == ""
+    assert "duplicate item role metadata" in error
+
+    code, output, error = _run_cli(
         ["--item", "same:png", "--item", "same:html"]
     )
     assert code == 1

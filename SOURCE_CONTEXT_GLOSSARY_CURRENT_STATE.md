@@ -261,3 +261,6 @@ The preservation evidence bundle CLI can record item role, origin, path hint lab
 
 
 Evidence item detail parsing now uses shared preservation evidence bundle helpers across the local CLI entry points, keeping role/origin/path-hint/notes validation consistent without file or network operations.
+
+
+Evidence item detail metadata now has local regression checks for malformed specs, duplicate details, and unknown artifact IDs across the shared helper and CLI entry points.

@@ -190,3 +190,6 @@ Standalone preservation evidence bundle reporting now supports item roles, origi
 
 
 Evidence item spec parsing and item-detail validation are centralized in the preservation evidence bundle model and reused by related CLIs. The refactor changes metadata parsing only and does not add file inspection or capture behavior.
+
+
+Evidence item detail validation is covered by local regression tests for malformed `artifact_id=value` specs, duplicate item details, and unknown item IDs. These checks remain metadata-only and do not inspect files.

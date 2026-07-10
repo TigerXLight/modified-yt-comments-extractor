@@ -201,4 +201,49 @@ def run_self_test() -> None:
 
 if __name__ == "__main__":
     run_self_test()
+    # backend detail specs should reject malformed values before rendering
+    code, output, error = _run_cli(
+        [
+            "--evidence-bundle-status",
+            "manual_supplied",
+            "--evidence-item",
+            "screenshot:png",
+            "--evidence-item-role",
+            "screenshot-primary",
+        ]
+    )
+    assert code == 1
+    assert output == ""
+    assert "item role must use artifact_id=value" in error
+
+    code, output, error = _run_cli(
+        [
+            "--evidence-bundle-status",
+            "manual_supplied",
+            "--evidence-item",
+            "screenshot:png",
+            "--evidence-item-role",
+            "missing=primary",
+        ]
+    )
+    assert code == 1
+    assert output == ""
+    assert "unknown artifact IDs" in error
+
+    code, output, error = _run_cli(
+        [
+            "--evidence-bundle-status",
+            "manual_supplied",
+            "--evidence-item",
+            "screenshot:png",
+            "--evidence-item-role",
+            "screenshot=primary",
+            "--evidence-item-role",
+            "screenshot=supporting",
+        ]
+    )
+    assert code == 1
+    assert output == ""
+    assert "duplicate item role metadata" in error
+
     print("Preservation backend plan CLI self-test passed.")
