@@ -14,7 +14,22 @@
     ],
     "schema": "asr_comparison_report.manual_seed.v1",
     "source": "user-supplied/project-local notes",
-    "warning": "Manual records only. No provider calls, transcription, audio, transcripts, endpoints, or API keys are stored here."
+    "warning": "Manual records only. No provider calls, transcription, audio, transcripts, endpoints, or API keys are stored here.",
+    "quality_gate_percent": 95.0,
+    "term_qa_required": true,
+    "accepted_status_policy": "Reserved for a future provider/model with project-specific scoring at or above the strict gate plus Term QA and explicit user review.",
+    "candidate_status_policy": "Promising or useful for retesting/fallback, but not accepted and not final truth.",
+    "blocked_status_policy": "No comparable quality score was produced; do not rank blocked rows as quality-rejected.",
+    "external_lead_policy": "External leaderboard and user-observation rows are research leads unless separately scored on the project reference clip.",
+    "leading_project_candidate": "ElevenLabs / Scribe v2 with keyterms at 84.95% project reference accuracy; candidate only.",
+    "leading_local_candidate": "whisper.cpp / Vulkan large-v3-turbo phrase prompt at 74.19% project reference accuracy; local/offline fallback only.",
+    "blocked_provider_note": "AWS Transcribe custom vocabulary is blocked by access/subscription state in the current seed, not quality-rejected.",
+    "reporting_tools": [
+      "asr_comparison_report_cli.py",
+      "asr_decision_summary_cli.py",
+      "asr_term_coverage_summary_cli.py",
+      "asr_combined_report_cli.py"
+    ]
   },
   "records": [
     {

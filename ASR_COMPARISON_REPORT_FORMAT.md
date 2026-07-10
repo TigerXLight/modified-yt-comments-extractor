@@ -66,6 +66,8 @@ Manual records can include:
 
 Records are intentionally tolerant of missing fields because many external leaderboard leads do not provide project-specific accuracy, keyterm checks, or phrase checks.
 
+`ASR_MANUAL_RESULTS_SEED.json` metadata may also include descriptive local policy fields such as the 95% gate, Term QA requirement, status-policy notes, leading candidate labels, blocked-provider notes, and reporting CLI names. These metadata fields are documentation for local reporting and do not call providers or change runtime behavior.
+
 ## Raw WER vs Formatted WER
 
 Raw WER and formatted WER must be recorded separately when both are available.

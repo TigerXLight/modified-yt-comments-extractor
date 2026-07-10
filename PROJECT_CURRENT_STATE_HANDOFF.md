@@ -84,7 +84,7 @@ DirectML base/small are rejected for Auto Quality Probe for now. DirectML medium
 
 - `asr_comparison_report.py`: local/manual comparison records, deterministic ranking, text, Markdown, and JSON-ready output.
 - `asr_comparison_report_cli.py`: reads manually entered JSON, renders text/Markdown/JSON, and writes only with explicit `--output`.
-- `ASR_MANUAL_RESULTS_SEED.json`: local seed for known project results, blocked status, rejected results, and external leads.
+- `ASR_MANUAL_RESULTS_SEED.json`: local seed for known project results, blocked status, rejected results, external leads, and descriptive manual reporting/status metadata.
 - `ASR_PROVIDER_LEADERBOARD_NOTES.md`: user-supplied external research leads; not independent verification.
 - `asr_decision_summary.py` and `asr_decision_summary_cli.py`: local/manual decision summary for threshold, status counts, leading scored/local results, blocked items, external leads, and safe next-action guidance with Markdown/text/JSON rendering.
 - `asr_term_coverage_summary.py` and `asr_term_coverage_summary_cli.py`: local/manual key-term hit/miss and provider-gap summary with Markdown/text/JSON rendering; no provider calls, transcription, downloads, network, credentials, or GUI behavior.

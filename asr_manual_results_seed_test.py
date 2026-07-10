@@ -52,6 +52,16 @@ def run_self_test() -> None:
     assert metadata["name"] == "ASR manual results seed"
     assert "No provider calls" in metadata["warning"]
     assert tuple(metadata["project_key_terms"]) == default_asr_key_terms()
+    assert metadata["quality_gate_percent"] == 95.0
+    assert metadata["term_qa_required"] is True
+    assert "future provider/model" in metadata["accepted_status_policy"]
+    assert "not accepted" in metadata["candidate_status_policy"]
+    assert "not quality-rejected" in metadata["blocked_status_policy"]
+    assert "research leads" in metadata["external_lead_policy"]
+    assert "ElevenLabs" in metadata["leading_project_candidate"]
+    assert "whisper.cpp" in metadata["leading_local_candidate"]
+    assert "AWS Transcribe" in metadata["blocked_provider_note"]
+    assert "asr_combined_report_cli.py" in metadata["reporting_tools"]
 
     rows = seed["records"]
     assert isinstance(rows, list)
