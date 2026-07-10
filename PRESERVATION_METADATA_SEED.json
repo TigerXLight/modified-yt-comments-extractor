@@ -1,0 +1,77 @@
+{
+  "metadata": {
+    "created_for": "manual/local examples only",
+    "local_only": true,
+    "notes": [
+      "Example seed data only.",
+      "No archive checks, downloads, fetching, scraping, screenshots, transcription, provider calls, or GUI integration are performed.",
+      "Fake local paths must not be treated as existing files."
+    ],
+    "schema": "local_preservation_metadata_seed",
+    "version": 1
+  },
+  "source_urls": [
+    "https://www.youtube.com/watch?v=aB3_dE-9xYz",
+    "https://example.com/story-with-archive-only",
+    "https://example.com/story-with-media-only",
+    "https://example.com/story-manual-archive-not-found",
+    "https://example.com/story-missing-local-file"
+  ],
+  "manual_archive_records": [
+    {
+      "archive_notes": "Example only; user-supplied archive URL.",
+      "archive_status": "manually_supplied",
+      "archive_url": "https://web.archive.org/web/20260710000000/https://www.youtube.com/watch?v=aB3_dE-9xYz",
+      "entered_at_utc": "2026-07-10T10:00:00Z",
+      "source_url": "https://youtu.be/aB3_dE-9xYz?t=30"
+    },
+    {
+      "archive_notes": "Example only; user-supplied archive URL for non-YouTube source.",
+      "archive_status": "manually_supplied",
+      "archive_url": "https://archive.ph/example01",
+      "entered_at_utc": "2026-07-10T10:02:00Z",
+      "source_url": "https://example.com/story-with-archive-only"
+    },
+    {
+      "archive_notes": "Example only; local note that a user manually checked and did not find an archive. Absence is not proof.",
+      "archive_status": "manually_checked_not_found",
+      "entered_at_utc": "2026-07-10T10:04:00Z",
+      "source_url": "https://example.com/story-manual-archive-not-found"
+    }
+  ],
+  "local_media_records": [
+    {
+      "exists_at_registration": true,
+      "local_file_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "local_file_size_bytes": 12345,
+      "local_media_path": "T:/example/local-file.mp4",
+      "media_notes": "Example metadata only; do not stat/read this path.",
+      "package_id": "example-package",
+      "registered_at_utc": "2026-07-10T10:01:00Z",
+      "source_url": "https://www.youtube.com/watch?v=aB3_dE-9xYz",
+      "status": "registered"
+    },
+    {
+      "exists_at_registration": true,
+      "local_file_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "local_file_size_bytes": 23456,
+      "local_media_path": "T:/example/story-with-media-only.mp4",
+      "media_notes": "Example metadata only; do not stat/read this path.",
+      "package_id": "media-only-example",
+      "registered_at_utc": "2026-07-10T10:03:00Z",
+      "source_url": "https://example.com/story-with-media-only",
+      "status": "registered"
+    },
+    {
+      "exists_at_registration": false,
+      "local_file_sha256": "",
+      "local_file_size_bytes": 0,
+      "local_media_path": "T:/example/missing-local-file.mp4",
+      "media_notes": "Example missing local file status only; do not stat/read this path.",
+      "package_id": "missing-file-example",
+      "registered_at_utc": "2026-07-10T10:05:00Z",
+      "source_url": "https://example.com/story-missing-local-file",
+      "status": "missing_local_file"
+    }
+  ]
+}
