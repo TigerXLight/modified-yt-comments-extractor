@@ -10,6 +10,8 @@ It does not implement behavior. It does not add downloads, archive service check
 
 The purpose is to preserve phase boundaries for later work so future source preservation features stay explicit, testable, and opt-in.
 
+See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the checkpointed index of implemented local-only preservation helpers, CLIs, tests, and current safe next milestones.
+
 ## Current Implemented Baseline
 
 The current repo already has local-only Total Export foundations:
