@@ -101,6 +101,30 @@ Only local planning and metadata layers exist here. Fetching, capture, ASR use, 
 - The user must be able to review/edit glossary terms before they affect ASR prompts, provider keyterms, QA checks, or final transcript decisions.
 - If a provider has no glossary/keyterm support, glossary terms can still feed Term QA after transcription.
 
+## Preservation Backend Plan CLI Usage
+
+`preservation_backend_plan_cli.py` renders a local preservation backend plan for manually supplied source URLs, backend choices, and desired output formats.
+
+```cmd
+python preservation_backend_plan_cli.py
+python preservation_backend_plan_cli.py --format text
+python preservation_backend_plan_cli.py --format json
+python preservation_backend_plan_cli.py --input preservation_plan.json --output PRESERVATION_BACKEND_PLAN.md --overwrite
+```
+
+Example input JSON:
+
+```json
+{
+  "source_url": "https://www.telegraph.co.uk/news/example/",
+  "selected_backend_ids": ["manual_local_files", "archivebox_self_hosted"],
+  "selected_format_ids": ["html", "pdf", "warc", "json"],
+  "notes": "User wants a local backup plan."
+}
+```
+
+The CLI prints to stdout by default, writes only when `--output` is explicitly supplied, and preserves existing files unless `--overwrite` is used. It does not fetch/capture/download anything, call providers/network/archive services, test credentials, scrape pages, run ArchiveBox, capture screenshots, or wire into the GUI.
+
 ## Source Adapter Gap Analysis CLI Usage
 
 `source_adapter_gap_analysis_cli.py` renders a local adapter and preservation gap analysis comparing the current adapter inventory with future platform/backend categories.

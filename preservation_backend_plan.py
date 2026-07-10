@@ -1,0 +1,363 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any, Iterable, Sequence
+
+
+REPORT_FORMATS = ("markdown", "text", "json")
+
+PLAN_STATUS_READY = "ready"
+PLAN_STATUS_NEEDS_SELECTION = "needs_selection"
+
+BACKEND_STATUS_MANUAL = "manual_import"
+BACKEND_STATUS_FUTURE = "future_backend"
+
+
+@dataclass(frozen=True)
+class PreservationBackendOption:
+    backend_id: str
+    display_name: str
+    status: str
+    execution_supported: bool
+    local_only: bool
+    notes: str
+    recommended_next_step: str
+
+
+@dataclass(frozen=True)
+class PreservationFormatOption:
+    format_id: str
+    display_name: str
+    file_extensions: tuple[str, ...]
+    notes: str
+
+
+@dataclass(frozen=True)
+class PreservationBackendPlan:
+    source_url: str
+    selected_backend_ids: tuple[str, ...]
+    selected_format_ids: tuple[str, ...]
+    unknown_backend_ids: tuple[str, ...]
+    unknown_format_ids: tuple[str, ...]
+    duplicate_backend_ids: tuple[str, ...]
+    duplicate_format_ids: tuple[str, ...]
+    status: str
+    warnings: tuple[str, ...]
+    notes: str = ""
+    scope: str = (
+        "local preservation backend planning only; no fetch, capture, network, archive, "
+        "browser, scraping, credential, ArchiveBox execution, media download, or GUI behavior"
+    )
+
+
+BACKEND_OPTIONS: tuple[PreservationBackendOption, ...] = (
+    PreservationBackendOption(
+        backend_id="manual_local_files",
+        display_name="Manual local files",
+        status=BACKEND_STATUS_MANUAL,
+        execution_supported=False,
+        local_only=True,
+        notes=(
+            "User supplies already-created local files such as HTML, PDF, PNG, TXT, JSON, WARC, "
+            "media files, or metadata exports for manifest registration later."
+        ),
+        recommended_next_step="Register only user-supplied local files; do not capture or fetch them here.",
+    ),
+    PreservationBackendOption(
+        backend_id="archivebox_self_hosted",
+        display_name="ArchiveBox-style self-hosted store",
+        status=BACKEND_STATUS_FUTURE,
+        execution_supported=False,
+        local_only=True,
+        notes=(
+            "Future backend category for user-controlled ArchiveBox-style preservation outputs. "
+            "This helper records intent only and does not run ArchiveBox."
+        ),
+        recommended_next_step=(
+            "Start with manual import of already-created ArchiveBox outputs before considering any execution integration."
+        ),
+    ),
+)
+
+
+FORMAT_OPTIONS: tuple[PreservationFormatOption, ...] = (
+    PreservationFormatOption(
+        format_id="html",
+        display_name="HTML snapshot",
+        file_extensions=(".html", ".htm"),
+        notes="Local HTML or rendered-page export supplied by the user or future approved backend.",
+    ),
+    PreservationFormatOption(
+        format_id="pdf",
+        display_name="PDF snapshot",
+        file_extensions=(".pdf",),
+        notes="Local PDF export supplied by the user or future approved backend.",
+    ),
+    PreservationFormatOption(
+        format_id="png",
+        display_name="PNG screenshot",
+        file_extensions=(".png",),
+        notes="Local image/screenshot file only; this helper does not capture screenshots.",
+    ),
+    PreservationFormatOption(
+        format_id="txt",
+        display_name="Text/article extraction",
+        file_extensions=(".txt",),
+        notes="Local text extraction or notes supplied by the user or future approved backend.",
+    ),
+    PreservationFormatOption(
+        format_id="json",
+        display_name="JSON metadata/export",
+        file_extensions=(".json",),
+        notes="Local structured metadata/export file.",
+    ),
+    PreservationFormatOption(
+        format_id="warc",
+        display_name="WARC archive",
+        file_extensions=(".warc", ".warc.gz"),
+        notes="Local WARC file supplied by the user or future approved backend.",
+    ),
+    PreservationFormatOption(
+        format_id="media",
+        display_name="Media file",
+        file_extensions=(".mp4", ".webm", ".m4a", ".mp3", ".mov"),
+        notes="Local media file only; this helper does not download media.",
+    ),
+    PreservationFormatOption(
+        format_id="sqlite",
+        display_name="SQLite metadata",
+        file_extensions=(".sqlite", ".sqlite3", ".db"),
+        notes="Local database/metadata store supplied by the user or future approved backend.",
+    ),
+)
+
+
+def _known_backend_ids() -> set[str]:
+    return {option.backend_id for option in BACKEND_OPTIONS}
+
+
+def _known_format_ids() -> set[str]:
+    return {option.format_id for option in FORMAT_OPTIONS}
+
+
+def _normalize_selection(
+    values: Iterable[str],
+    *,
+    known_ids: set[str],
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    selected: list[str] = []
+    unknown: list[str] = []
+    duplicates: list[str] = []
+    seen: set[str] = set()
+
+    for value in values:
+        normalized = str(value).strip().lower()
+        if not normalized:
+            continue
+        if normalized in seen:
+            if normalized not in duplicates:
+                duplicates.append(normalized)
+            continue
+        seen.add(normalized)
+        if normalized not in known_ids:
+            unknown.append(normalized)
+            continue
+        selected.append(normalized)
+
+    return tuple(selected), tuple(unknown), tuple(duplicates)
+
+
+def build_preservation_backend_plan(
+    *,
+    source_url: str = "",
+    selected_backend_ids: Sequence[str] = (),
+    selected_format_ids: Sequence[str] = (),
+    notes: str = "",
+) -> PreservationBackendPlan:
+    selected_backends, unknown_backends, duplicate_backends = _normalize_selection(
+        selected_backend_ids,
+        known_ids=_known_backend_ids(),
+    )
+    selected_formats, unknown_formats, duplicate_formats = _normalize_selection(
+        selected_format_ids,
+        known_ids=_known_format_ids(),
+    )
+
+    warnings: list[str] = []
+    if unknown_backends:
+        warnings.append(
+            f"Unknown preservation backends ignored: {', '.join(unknown_backends)}"
+        )
+    if unknown_formats:
+        warnings.append(
+            f"Unknown preservation formats ignored: {', '.join(unknown_formats)}"
+        )
+    if duplicate_backends:
+        warnings.append(
+            f"Duplicate preservation backends ignored: {', '.join(duplicate_backends)}"
+        )
+    if duplicate_formats:
+        warnings.append(
+            f"Duplicate preservation formats ignored: {', '.join(duplicate_formats)}"
+        )
+    if not selected_backends:
+        warnings.append("No preservation backend selected.")
+    if not selected_formats:
+        warnings.append("No preservation formats selected.")
+
+    status = (
+        PLAN_STATUS_READY
+        if selected_backends and selected_formats
+        else PLAN_STATUS_NEEDS_SELECTION
+    )
+
+    return PreservationBackendPlan(
+        source_url=source_url.strip(),
+        selected_backend_ids=selected_backends,
+        selected_format_ids=selected_formats,
+        unknown_backend_ids=unknown_backends,
+        unknown_format_ids=unknown_formats,
+        duplicate_backend_ids=duplicate_backends,
+        duplicate_format_ids=duplicate_formats,
+        status=status,
+        warnings=tuple(warnings),
+        notes=notes.strip(),
+    )
+
+
+def preservation_backend_plan_to_dict(
+    plan: PreservationBackendPlan,
+) -> dict[str, Any]:
+    return {
+        "available_backends": [
+            {
+                "backend_id": option.backend_id,
+                "display_name": option.display_name,
+                "execution_supported": option.execution_supported,
+                "local_only": option.local_only,
+                "notes": option.notes,
+                "recommended_next_step": option.recommended_next_step,
+                "status": option.status,
+            }
+            for option in BACKEND_OPTIONS
+        ],
+        "available_formats": [
+            {
+                "display_name": option.display_name,
+                "file_extensions": list(option.file_extensions),
+                "format_id": option.format_id,
+                "notes": option.notes,
+            }
+            for option in FORMAT_OPTIONS
+        ],
+        "duplicate_backend_ids": list(plan.duplicate_backend_ids),
+        "duplicate_format_ids": list(plan.duplicate_format_ids),
+        "notes": plan.notes,
+        "scope": plan.scope,
+        "selected_backend_ids": list(plan.selected_backend_ids),
+        "selected_format_ids": list(plan.selected_format_ids),
+        "source_url": plan.source_url,
+        "status": plan.status,
+        "unknown_backend_ids": list(plan.unknown_backend_ids),
+        "unknown_format_ids": list(plan.unknown_format_ids),
+        "warnings": list(plan.warnings),
+    }
+
+
+def build_preservation_backend_plan_markdown(plan: PreservationBackendPlan) -> str:
+    lines = [
+        "# Preservation Backend Plan",
+        "",
+        "Local planning report only. This report does not fetch URLs, run ArchiveBox, submit/check archives, scrape pages, capture screenshots, download media, store credentials, call providers/network services, or wire into the GUI.",
+        "",
+        f"- Status: {plan.status}",
+        f"- Source URL: {plan.source_url or '(not supplied)'}",
+        f"- Selected backends: {', '.join(plan.selected_backend_ids) or 'none'}",
+        f"- Selected formats: {', '.join(plan.selected_format_ids) or 'none'}",
+    ]
+    if plan.notes:
+        lines.append(f"- Notes: {plan.notes}")
+    if plan.warnings:
+        lines.append("- Warnings:")
+        lines.extend(f"  - {warning}" for warning in plan.warnings)
+
+    lines.extend(["", "## Available Backends", ""])
+    for option in BACKEND_OPTIONS:
+        lines.extend(
+            [
+                f"### {option.display_name}",
+                "",
+                f"- Backend ID: {option.backend_id}",
+                f"- Status: {option.status}",
+                f"- Execution supported: {'yes' if option.execution_supported else 'no'}",
+                f"- Local only: {'yes' if option.local_only else 'no'}",
+                f"- Notes: {option.notes}",
+                f"- Recommended next step: {option.recommended_next_step}",
+                "",
+            ]
+        )
+
+    lines.extend(["## Available Formats", ""])
+    for option in FORMAT_OPTIONS:
+        lines.extend(
+            [
+                f"### {option.display_name}",
+                "",
+                f"- Format ID: {option.format_id}",
+                f"- File extensions: {', '.join(option.file_extensions)}",
+                f"- Notes: {option.notes}",
+                "",
+            ]
+        )
+
+    return "\n".join(lines).rstrip()
+
+
+def build_preservation_backend_plan_text(plan: PreservationBackendPlan) -> str:
+    lines = [
+        "Preservation backend plan",
+        "Scope: local planning only; no fetch/capture/network/archive/browser/scraping/credential/ArchiveBox execution/media download/GUI behavior is performed.",
+        f"status: {plan.status}",
+        f"source_url: {plan.source_url or '(not supplied)'}",
+        f"selected_backend_ids: {', '.join(plan.selected_backend_ids) or 'none'}",
+        f"selected_format_ids: {', '.join(plan.selected_format_ids) or 'none'}",
+    ]
+    if plan.notes:
+        lines.append(f"notes: {plan.notes}")
+    if plan.warnings:
+        lines.append(f"warnings: {'; '.join(plan.warnings)}")
+
+    lines.append("")
+    lines.append("available_backends:")
+    for option in BACKEND_OPTIONS:
+        lines.append(
+            f"- {option.backend_id}: {option.display_name}; status={option.status}; execution_supported={option.execution_supported}"
+        )
+
+    lines.append("")
+    lines.append("available_formats:")
+    for option in FORMAT_OPTIONS:
+        lines.append(
+            f"- {option.format_id}: {option.display_name}; extensions={', '.join(option.file_extensions)}"
+        )
+
+    return "\n".join(lines)
+
+
+def render_preservation_backend_plan(
+    plan: PreservationBackendPlan,
+    *,
+    output_format: str,
+) -> str:
+    if output_format == "markdown":
+        return build_preservation_backend_plan_markdown(plan)
+    if output_format == "text":
+        return build_preservation_backend_plan_text(plan)
+    if output_format == "json":
+        return json.dumps(
+            preservation_backend_plan_to_dict(plan),
+            indent=2,
+            sort_keys=True,
+        )
+    raise ValueError(f"unsupported output format: {output_format}")
