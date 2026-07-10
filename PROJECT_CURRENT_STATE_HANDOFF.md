@@ -99,6 +99,7 @@ The repository now has a broad local Total Export foundation:
 
 - Source URL validation and a YouTube source-adapter metadata skeleton.
 - `SOURCE_CONTEXT_GLOSSARY_CURRENT_STATE.md` records the current local source/context/glossary helper stack, verification commands, boundaries, and safe next milestones.
+- `source_capture_plan_cli.py`: explicit-output-only local Source Capture Plan inspection CLI for manually supplied source URL/context/glossary JSON.
 - Capture-option metadata and deterministic selection validation.
 - Source capture plans and local provenance records.
 - Package IDs/folders, manifest read/write/round-trip, asset registration, and duplicate-safe updates.
@@ -186,6 +187,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | Area | Helpers/CLIs | Primary tests |
 | --- | --- | --- |
 | ASR comparison/decision/terms | `asr_comparison_report.py`, `asr_comparison_report_cli.py`, `asr_decision_summary.py`, `asr_decision_summary_cli.py`, `asr_term_coverage_summary.py`, `asr_term_coverage_summary_cli.py`, `asr_combined_report_cli.py` | `asr_comparison_report_test.py`, `asr_comparison_report_cli_test.py`, `asr_manual_results_seed_test.py`, `asr_decision_summary_test.py`, `asr_decision_summary_cli_test.py`, `asr_term_coverage_summary_test.py`, `asr_term_coverage_summary_cli_test.py`, `asr_combined_report_cli_test.py` |
+| Source/context/glossary | `youtube_url_utils.py`, `source_adapters.py`, `source_capture_plan.py`, `source_capture_plan_cli.py`, `source_plan_provenance.py`, `context_glossary.py` | `youtube_url_utils_test.py`, `source_adapters_test.py`, `source_capture_plan_test.py`, `source_capture_plan_cli_test.py`, `source_plan_provenance_test.py`, `context_glossary_test.py` |
 | Total Export package shell | `total_export_prepare_cli.py`, manifest/package/workflow/validation/summary/inventory modules | `total_export_prepare_cli_test.py` and focused `total_export_*_test.py` files |
 | Review bundles and ZIPs | `total_export_review_bundle.py`, verification/folder verification, `total_export_zip_inspect.py`, `total_export_zip_sidecar.py` | Review-bundle, ZIP-inspection, sidecar, folder, and batch tests |
 | Bundle index/reconciliation | `total_export_bundle_index.py`, both local CLIs, `total_export_bundle_index_reconcile.py` | Bundle index/reconciliation helper and CLI tests |
