@@ -49,6 +49,9 @@ def _build_plan_from_input(data: dict[str, Any]):
         source_url=_optional_string(data, "source_url"),
         selected_backend_ids=_optional_string_list(data, "selected_backend_ids"),
         selected_format_ids=_optional_string_list(data, "selected_format_ids"),
+        media_preservation_choice=_optional_string(
+            data, "media_preservation_choice"
+        ),
         notes=_optional_string(data, "notes"),
     )
 

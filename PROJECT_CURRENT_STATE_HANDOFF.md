@@ -110,6 +110,7 @@ The repository now has a broad local Total Export foundation:
 - Visual preservation note: Facebook/social comment modals may use nested scroll containers, so Page Up/Page Down or full-page screenshot tools can capture only the visible container viewport unless the container itself is focused/scrolled. Future capture metadata should distinguish visible screenshot, full-page screenshot, scrollable-container screenshot, stitched/multi-image capture, selected-DOM/print-cleaned HTML, raw saved HTML, and manual evidence bundles.
 - `capture_method_metadata.py`: local metadata catalog for those seven manual capture/evidence methods, with output kinds, limitations, and future-automation candidacy only; it performs no capture or browser behavior.
 - Media preservation note: future webpage media capture should expose an explicit `all` versus `select` choice so users can decide whether to download every discovered image/video/media asset or only chosen assets; it must be opt-in and never default to downloading all media.
+- Preservation backend plans now record local-only media intent as `none`, `select`, or explicit `all`; this metadata performs no discovery/download and does not authorize capture automation.
 - Capture-option metadata and deterministic selection validation.
 - Source capture plans and local provenance records.
 - Package IDs/folders, manifest read/write/round-trip, asset registration, and duplicate-safe updates.

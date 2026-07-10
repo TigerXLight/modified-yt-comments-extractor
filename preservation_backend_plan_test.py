@@ -3,11 +3,15 @@ import json
 from preservation_backend_plan import (
     BACKEND_STATUS_FUTURE,
     BACKEND_STATUS_MANUAL,
+    MEDIA_PRESERVATION_CHOICE_ALL,
+    MEDIA_PRESERVATION_CHOICE_NONE,
+    MEDIA_PRESERVATION_CHOICE_SELECT,
     PLAN_STATUS_NEEDS_SELECTION,
     PLAN_STATUS_READY,
     build_preservation_backend_plan,
     build_preservation_backend_plan_markdown,
     build_preservation_backend_plan_text,
+    normalize_media_preservation_choice,
     preservation_backend_plan_to_dict,
     render_preservation_backend_plan,
 )
@@ -23,6 +27,7 @@ def run_self_test() -> None:
             "unknown_backend",
         ],
         selected_format_ids=["html", "pdf", "warc", "html", "unknown_format"],
+        media_preservation_choice=" select ",
         notes="User wants a local backup plan.",
     )
 
@@ -37,6 +42,7 @@ def run_self_test() -> None:
     assert plan.unknown_format_ids == ("unknown_format",)
     assert plan.duplicate_backend_ids == ("manual_local_files",)
     assert plan.duplicate_format_ids == ("html",)
+    assert plan.media_preservation_choice == MEDIA_PRESERVATION_CHOICE_SELECT
     assert "Unknown preservation backends ignored: unknown_backend" in plan.warnings
     assert "Unknown preservation formats ignored: unknown_format" in plan.warnings
     assert "Duplicate preservation backends ignored: manual_local_files" in plan.warnings
@@ -51,6 +57,14 @@ def run_self_test() -> None:
         "archivebox_self_hosted",
     ]
     assert data["selected_format_ids"] == ["html", "pdf", "warc"]
+    assert data["media_preservation_choice"] == MEDIA_PRESERVATION_CHOICE_SELECT
+    choices = {
+        item["choice_id"]: item
+        for item in data["available_media_preservation_choices"]
+    }
+    assert set(choices) == {"none", "select", "all"}
+    assert choices["none"]["explicit_opt_in"] is False
+    assert choices["all"]["explicit_opt_in"] is True
     backends = {item["backend_id"]: item for item in data["available_backends"]}
     assert backends["manual_local_files"]["status"] == BACKEND_STATUS_MANUAL
     assert backends["archivebox_self_hosted"]["status"] == BACKEND_STATUS_FUTURE
@@ -67,23 +81,40 @@ def run_self_test() -> None:
     assert "does not fetch URLs" in markdown
     assert "run ArchiveBox" in markdown
     assert "Available Formats" in markdown
+    assert "Media preservation choice: select" in markdown
+    assert "choices are `none`, `select`, or `all`" in markdown
+    assert "does not discover or download media" in markdown
 
     text = build_preservation_backend_plan_text(plan)
     assert "Preservation backend plan" in text
     assert "archivebox_self_hosted" in text
     assert "no fetch/capture/network" in text
+    assert "media_preservation_choice: select" in text
+    assert "choices are none, select, or all" in text
 
     rendered_json = render_preservation_backend_plan(plan, output_format="json")
     parsed = json.loads(rendered_json)
     assert parsed["selected_format_ids"] == ["html", "pdf", "warc"]
+    assert parsed["media_preservation_choice"] == "select"
 
     assert render_preservation_backend_plan(plan, output_format="markdown") == markdown
     assert render_preservation_backend_plan(plan, output_format="text") == text
 
     empty = build_preservation_backend_plan()
+    assert empty.media_preservation_choice == MEDIA_PRESERVATION_CHOICE_NONE
     assert empty.status == PLAN_STATUS_NEEDS_SELECTION
     assert "No preservation backend selected." in empty.warnings
     assert "No preservation formats selected." in empty.warnings
+
+    explicit_all = build_preservation_backend_plan(media_preservation_choice="all")
+    assert explicit_all.media_preservation_choice == MEDIA_PRESERVATION_CHOICE_ALL
+    assert normalize_media_preservation_choice("SELECT") == MEDIA_PRESERVATION_CHOICE_SELECT
+    try:
+        normalize_media_preservation_choice("everything")
+    except ValueError as exc:
+        assert "expected one of none, select, all" in str(exc)
+    else:
+        raise AssertionError("unknown media preservation choice should fail")
 
     try:
         render_preservation_backend_plan(plan, output_format="html")

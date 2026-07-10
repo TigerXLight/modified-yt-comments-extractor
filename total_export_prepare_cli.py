@@ -65,6 +65,8 @@ from total_export_zip_sidecar import (
 from preservation_backend_plan import (
     BACKEND_OPTIONS,
     FORMAT_OPTIONS,
+    MEDIA_PRESERVATION_CHOICES,
+    MEDIA_PRESERVATION_CHOICE_OPTIONS,
     build_preservation_backend_plan,
     preservation_backend_plan_to_dict,
 )
@@ -85,6 +87,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--term", action="append", default=[])
     parser.add_argument("--preservation-backend", action="append", default=[])
     parser.add_argument("--preservation-format", action="append", default=[])
+    parser.add_argument(
+        "--media-preservation-choice",
+        choices=MEDIA_PRESERVATION_CHOICES,
+        default="none",
+    )
     parser.add_argument("--preservation-notes", default="")
     parser.add_argument("--summary-filename", default="TOTAL_EXPORT_SUMMARY.txt")
     parser.add_argument("--no-register-summary", action="store_true")
@@ -418,6 +425,9 @@ def preservation_options_to_cli_dict() -> dict:
     return {
         "preservation_backends": data["available_backends"],
         "preservation_formats": data["available_formats"],
+        "media_preservation_choices": data[
+            "available_media_preservation_choices"
+        ],
     }
 
 
@@ -434,6 +444,13 @@ def print_preservation_backend_options() -> None:
             f"- {option.format_id}: {option.display_name}; "
             f"extensions={', '.join(option.file_extensions)}"
         )
+    print("Media preservation choices:")
+    for option in MEDIA_PRESERVATION_CHOICE_OPTIONS:
+        print(
+            f"- {option.choice_id}: {option.display_name}; "
+            f"explicit_opt_in={option.explicit_opt_in}"
+        )
+    print("Media preservation metadata does not discover or download media; all must be explicit.")
 
 
 def print_explain_preservation_plan(plan) -> None:
@@ -442,6 +459,7 @@ def print_explain_preservation_plan(plan) -> None:
     print(f"Source URL: {plan.source_url or '(none)'}")
     print(f"Selected backends: {', '.join(plan.selected_backend_ids) or '(none)'}")
     print(f"Selected formats: {', '.join(plan.selected_format_ids) or '(none)'}")
+    print(f"Media preservation choice: {plan.media_preservation_choice}")
     print(f"Unknown backends: {', '.join(plan.unknown_backend_ids) or '(none)'}")
     print(f"Unknown formats: {', '.join(plan.unknown_format_ids) or '(none)'}")
     print(f"Duplicate backends: {', '.join(plan.duplicate_backend_ids) or '(none)'}")
@@ -595,6 +613,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             source_url=args.source_url,
             selected_backend_ids=args.preservation_backend,
             selected_format_ids=args.preservation_format,
+            media_preservation_choice=args.media_preservation_choice,
             notes=args.preservation_notes,
         )
         if args.json:

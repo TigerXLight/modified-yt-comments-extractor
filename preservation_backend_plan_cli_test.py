@@ -28,6 +28,7 @@ def run_self_test() -> None:
     assert "Manual local files" in markdown
     assert "ArchiveBox-style self-hosted store" in markdown
     assert "does not fetch URLs" in markdown
+    assert "Media preservation choice: none" in markdown
 
     code, text, stderr = _run_cli(["--format", "text"])
     assert code == 0
@@ -36,6 +37,7 @@ def run_self_test() -> None:
     assert "manual_local_files" in text
     assert "archivebox_self_hosted" in text
     assert "no fetch/capture/network" in text
+    assert "media_preservation_choice: none" in text
 
     code, json_output, stderr = _run_cli(["--format", "json"])
     assert code == 0
@@ -44,6 +46,7 @@ def run_self_test() -> None:
     assert parsed["status"] == "needs_selection"
     assert parsed["selected_backend_ids"] == []
     assert parsed["selected_format_ids"] == []
+    assert parsed["media_preservation_choice"] == "none"
     assert any(
         item["backend_id"] == "archivebox_self_hosted"
         for item in parsed["available_backends"]
@@ -64,6 +67,7 @@ def run_self_test() -> None:
                     "unknown_backend",
                 ],
                 "selected_format_ids": ["html", "pdf", "warc", "html"],
+                "media_preservation_choice": "select",
                 "notes": "User wants backup metadata only.",
             },
         )
@@ -83,6 +87,7 @@ def run_self_test() -> None:
         assert parsed_plan["unknown_backend_ids"] == ["unknown_backend"]
         assert parsed_plan["duplicate_backend_ids"] == ["manual_local_files"]
         assert parsed_plan["duplicate_format_ids"] == ["html"]
+        assert parsed_plan["media_preservation_choice"] == "select"
 
         output_path = root / "PRESERVATION_BACKEND_PLAN.md"
         output_args = ["--input", str(input_path), "--output", str(output_path)]
@@ -141,6 +146,13 @@ def run_self_test() -> None:
         assert code == 1
         assert stdout == ""
         assert "selected_format_ids must be a list of strings" in stderr
+
+        bad_media_choice = root / "bad_media_choice.json"
+        _write_json(bad_media_choice, {"media_preservation_choice": "everything"})
+        code, stdout, stderr = _run_cli(["--input", str(bad_media_choice)])
+        assert code == 1
+        assert stdout == ""
+        assert "expected one of none, select, all" in stderr
 
 
 if __name__ == "__main__":

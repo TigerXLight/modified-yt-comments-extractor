@@ -13,6 +13,15 @@ PLAN_STATUS_NEEDS_SELECTION = "needs_selection"
 BACKEND_STATUS_MANUAL = "manual_import"
 BACKEND_STATUS_FUTURE = "future_backend"
 
+MEDIA_PRESERVATION_CHOICE_NONE = "none"
+MEDIA_PRESERVATION_CHOICE_SELECT = "select"
+MEDIA_PRESERVATION_CHOICE_ALL = "all"
+MEDIA_PRESERVATION_CHOICES = (
+    MEDIA_PRESERVATION_CHOICE_NONE,
+    MEDIA_PRESERVATION_CHOICE_SELECT,
+    MEDIA_PRESERVATION_CHOICE_ALL,
+)
+
 
 @dataclass(frozen=True)
 class PreservationBackendOption:
@@ -34,6 +43,14 @@ class PreservationFormatOption:
 
 
 @dataclass(frozen=True)
+class MediaPreservationChoice:
+    choice_id: str
+    display_name: str
+    explicit_opt_in: bool
+    notes: str
+
+
+@dataclass(frozen=True)
 class PreservationBackendPlan:
     source_url: str
     selected_backend_ids: tuple[str, ...]
@@ -42,6 +59,7 @@ class PreservationBackendPlan:
     unknown_format_ids: tuple[str, ...]
     duplicate_backend_ids: tuple[str, ...]
     duplicate_format_ids: tuple[str, ...]
+    media_preservation_choice: str
     status: str
     warnings: tuple[str, ...]
     notes: str = ""
@@ -133,12 +151,52 @@ FORMAT_OPTIONS: tuple[PreservationFormatOption, ...] = (
 )
 
 
+MEDIA_PRESERVATION_CHOICE_OPTIONS: tuple[MediaPreservationChoice, ...] = (
+    MediaPreservationChoice(
+        choice_id=MEDIA_PRESERVATION_CHOICE_NONE,
+        display_name="No media preservation",
+        explicit_opt_in=False,
+        notes="No media asset preservation is requested or planned.",
+    ),
+    MediaPreservationChoice(
+        choice_id=MEDIA_PRESERVATION_CHOICE_SELECT,
+        display_name="Select media assets",
+        explicit_opt_in=True,
+        notes=(
+            "The user intends to choose specific discovered or supplied media assets. "
+            "This metadata does not discover or download them."
+        ),
+    ),
+    MediaPreservationChoice(
+        choice_id=MEDIA_PRESERVATION_CHOICE_ALL,
+        display_name="All media assets",
+        explicit_opt_in=True,
+        notes=(
+            "The user explicitly intends to preserve all discovered or supplied media assets. "
+            "This must never be inferred or used as the default."
+        ),
+    ),
+)
+
+
 def _known_backend_ids() -> set[str]:
     return {option.backend_id for option in BACKEND_OPTIONS}
 
 
 def _known_format_ids() -> set[str]:
     return {option.format_id for option in FORMAT_OPTIONS}
+
+
+def normalize_media_preservation_choice(value: str = "") -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return MEDIA_PRESERVATION_CHOICE_NONE
+    if normalized not in MEDIA_PRESERVATION_CHOICES:
+        raise ValueError(
+            "unknown media preservation choice: "
+            f"{normalized}; expected one of {', '.join(MEDIA_PRESERVATION_CHOICES)}"
+        )
+    return normalized
 
 
 def _normalize_selection(
@@ -173,6 +231,7 @@ def build_preservation_backend_plan(
     source_url: str = "",
     selected_backend_ids: Sequence[str] = (),
     selected_format_ids: Sequence[str] = (),
+    media_preservation_choice: str = MEDIA_PRESERVATION_CHOICE_NONE,
     notes: str = "",
 ) -> PreservationBackendPlan:
     selected_backends, unknown_backends, duplicate_backends = _normalize_selection(
@@ -182,6 +241,9 @@ def build_preservation_backend_plan(
     selected_formats, unknown_formats, duplicate_formats = _normalize_selection(
         selected_format_ids,
         known_ids=_known_format_ids(),
+    )
+    normalized_media_choice = normalize_media_preservation_choice(
+        media_preservation_choice
     )
 
     warnings: list[str] = []
@@ -220,6 +282,7 @@ def build_preservation_backend_plan(
         unknown_format_ids=unknown_formats,
         duplicate_backend_ids=duplicate_backends,
         duplicate_format_ids=duplicate_formats,
+        media_preservation_choice=normalized_media_choice,
         status=status,
         warnings=tuple(warnings),
         notes=notes.strip(),
@@ -251,9 +314,19 @@ def preservation_backend_plan_to_dict(
             }
             for option in FORMAT_OPTIONS
         ],
+        "available_media_preservation_choices": [
+            {
+                "choice_id": option.choice_id,
+                "display_name": option.display_name,
+                "explicit_opt_in": option.explicit_opt_in,
+                "notes": option.notes,
+            }
+            for option in MEDIA_PRESERVATION_CHOICE_OPTIONS
+        ],
         "duplicate_backend_ids": list(plan.duplicate_backend_ids),
         "duplicate_format_ids": list(plan.duplicate_format_ids),
         "notes": plan.notes,
+        "media_preservation_choice": plan.media_preservation_choice,
         "scope": plan.scope,
         "selected_backend_ids": list(plan.selected_backend_ids),
         "selected_format_ids": list(plan.selected_format_ids),
@@ -275,6 +348,8 @@ def build_preservation_backend_plan_markdown(plan: PreservationBackendPlan) -> s
         f"- Source URL: {plan.source_url or '(not supplied)'}",
         f"- Selected backends: {', '.join(plan.selected_backend_ids) or 'none'}",
         f"- Selected formats: {', '.join(plan.selected_format_ids) or 'none'}",
+        f"- Media preservation choice: {plan.media_preservation_choice}",
+        "- Media preservation choices are `none`, `select`, or `all`; this is opt-in planning metadata only, this report does not discover or download media, and `all` must be explicit.",
     ]
     if plan.notes:
         lines.append(f"- Notes: {plan.notes}")
@@ -322,6 +397,8 @@ def build_preservation_backend_plan_text(plan: PreservationBackendPlan) -> str:
         f"source_url: {plan.source_url or '(not supplied)'}",
         f"selected_backend_ids: {', '.join(plan.selected_backend_ids) or 'none'}",
         f"selected_format_ids: {', '.join(plan.selected_format_ids) or 'none'}",
+        f"media_preservation_choice: {plan.media_preservation_choice}",
+        "media_preservation_note: choices are none, select, or all; opt-in planning metadata only; no media discovery or download; all must be explicit",
     ]
     if plan.notes:
         lines.append(f"notes: {plan.notes}")

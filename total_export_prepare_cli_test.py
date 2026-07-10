@@ -127,6 +127,8 @@ def run_self_test() -> None:
         assert "archivebox_self_hosted" in preservation_output
         assert "Preservation formats:" in preservation_output
         assert "warc" in preservation_output
+        assert "Media preservation choices:" in preservation_output
+        assert "all must be explicit" in preservation_output
         assert list(Path(temp_dir).iterdir()) == []
 
         exit_code, preservation_json_output = _run_cli(
@@ -135,6 +137,7 @@ def run_self_test() -> None:
         assert exit_code == 0
         parsed_preservation = json.loads(preservation_json_output)
         assert set(parsed_preservation) == {
+            "media_preservation_choices",
             "preservation_backends",
             "preservation_formats",
         }
@@ -272,6 +275,8 @@ def run_self_test() -> None:
                 "warc",
                 "--preservation-format",
                 "unknown_format",
+                "--media-preservation-choice",
+                "select",
                 "--preservation-notes",
                 "Local backup plan.",
             ]
@@ -281,6 +286,7 @@ def run_self_test() -> None:
         assert "Status: ready" in preservation_explain_output
         assert "Selected backends: manual_local_files, archivebox_self_hosted" in preservation_explain_output
         assert "Selected formats: html, warc" in preservation_explain_output
+        assert "Media preservation choice: select" in preservation_explain_output
         assert "Unknown formats: unknown_format" in preservation_explain_output
         assert "Duplicate backends: manual_local_files" in preservation_explain_output
         assert "ArchiveBox execution" in preservation_explain_output
@@ -297,6 +303,8 @@ def run_self_test() -> None:
                 "html",
                 "--preservation-format",
                 "json",
+                "--media-preservation-choice",
+                "all",
                 "--json",
             ]
         )
@@ -305,7 +313,19 @@ def run_self_test() -> None:
         assert parsed_preservation_plan["status"] == "ready"
         assert parsed_preservation_plan["selected_backend_ids"] == ["manual_local_files"]
         assert parsed_preservation_plan["selected_format_ids"] == ["html", "json"]
+        assert parsed_preservation_plan["media_preservation_choice"] == "all"
         assert parsed_preservation_plan["warnings"] == []
+        assert list(Path(temp_dir).iterdir()) == []
+
+        error_code, invalid_media_choice_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--media-preservation-choice",
+                "everything",
+            ]
+        )
+        assert error_code == 2
+        assert "invalid choice" in invalid_media_choice_error
         assert list(Path(temp_dir).iterdir()) == []
 
         exit_code, explain_json_output = _run_cli(
