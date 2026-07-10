@@ -65,3 +65,25 @@ Inspection sidecars are parsed as local JSON only. The helper reads summary fiel
 - No ZIP extraction is performed.
 - No downloads, source fetching, scraping, screenshots, archive checks/submission, transcription, provider calls, credential storage, or GUI behavior are performed.
 - Future CLI integration should be a separate approved milestone and must remain local-only unless explicit behavior changes are approved later.
+
+## Local CLI Usage
+
+`total_export_bundle_index_cli.py` renders a local bundle index as text, Markdown, or JSON.
+
+Example commands:
+
+```cmd
+python total_export_bundle_index_cli.py --root path\to\bundles
+python total_export_bundle_index_cli.py --root path\to\bundles --format text
+python total_export_bundle_index_cli.py --root path\to\bundles --format markdown
+python total_export_bundle_index_cli.py --root path\to\bundles --format json
+python total_export_bundle_index_cli.py --root path\to\bundles --recursive
+python total_export_bundle_index_cli.py --root path\to\bundles --no-compute-hash
+python total_export_bundle_index_cli.py --root path\to\bundles --format markdown --output TOTAL_EXPORT_BUNDLE_INDEX_REPORT.md --overwrite
+```
+
+The CLI scans a local root folder only. `--recursive` includes nested folders. `--no-compute-hash` avoids computing local ZIP SHA-256 values and marks hash comparison as needing review where relevant.
+
+The CLI writes a file only when `--output` is explicitly provided. Existing output files are preserved unless `--overwrite` is passed.
+
+The CLI does not extract ZIP files, fetch sources, check or submit archive URLs, download media, scrape pages, capture screenshots, transcribe, call providers, store credentials, or wire into the GUI.
