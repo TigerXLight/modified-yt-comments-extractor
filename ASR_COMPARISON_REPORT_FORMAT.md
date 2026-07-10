@@ -132,9 +132,7 @@ Any future decision-summary CLI should remain a separate approved milestone with
 
 `asr_term_coverage_summary.py` provides a local/manual-data-only term coverage layer over existing comparison records. It summarizes explicitly recorded key-term hits and misses, consistently missed terms, mixed terms, known-phrase performance, blocked-row exclusions, external-lead limitations, and provider/model-specific gaps.
 
-See `ASR_TERM_COVERAGE_SUMMARY.md` for inclusion rules and current seed interpretation. The helper writes no files and does not call providers, run transcription, fetch/download media, use network APIs, store credentials, inspect ZIPs, or wire into the GUI.
-
-Any future term-coverage CLI should remain a separate approved milestone with explicit-output-only writes.
+See `ASR_TERM_COVERAGE_SUMMARY.md` for inclusion rules, current seed interpretation, and CLI usage. The helper writes no files; `asr_term_coverage_summary_cli.py` writes only when `--output` is supplied. Neither the helper nor CLI calls providers, runs transcription, fetches/downloads media, uses network APIs, stores credentials, inspects ZIPs, or wires into the GUI.
 
 ## Future Use
 
