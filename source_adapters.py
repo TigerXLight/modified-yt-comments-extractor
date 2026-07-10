@@ -115,6 +115,26 @@ YOUTUBE_SOURCE_ADAPTER = YouTubeSourceAdapter()
 AVAILABLE_SOURCE_ADAPTERS: Sequence[SourceAdapter] = (YOUTUBE_SOURCE_ADAPTER,)
 
 
+def source_adapter_names(
+    adapters: Sequence[SourceAdapter] = AVAILABLE_SOURCE_ADAPTERS,
+) -> tuple[str, ...]:
+    return tuple(adapter.source_name for adapter in adapters)
+
+
+def find_source_adapter_by_name(
+    source_name: str,
+    adapters: Sequence[SourceAdapter] = AVAILABLE_SOURCE_ADAPTERS,
+) -> SourceAdapter | None:
+    normalized_source_name = (source_name or "").strip().lower()
+    if not normalized_source_name:
+        return None
+    for adapter in adapters:
+        if adapter.source_name.lower() == normalized_source_name:
+            return adapter
+    return None
+
+
+
 def find_source_adapter(url: str) -> Optional[SourceAdapter]:
     for adapter in AVAILABLE_SOURCE_ADAPTERS:
         if adapter.can_handle(url):

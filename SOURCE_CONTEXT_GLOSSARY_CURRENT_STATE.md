@@ -41,7 +41,7 @@ Current helpers validate, normalize, classify, and assemble local metadata only.
 | Area | Files | Purpose |
 | --- | --- | --- |
 | YouTube URL parsing | `youtube_url_utils.py`, `youtube_url_utils_test.py` | Strict local YouTube video-ID extraction/normalization. |
-| Source adapter metadata | `source_adapters.py`, `source_adapters_test.py` | Local adapter capability metadata and URL support checks. |
+| Source adapter metadata | `source_adapters.py`, `source_adapters_test.py`, `source_adapters_registry_test.py` | Local adapter capability metadata, `source_name` registry helpers, name lookup, and URL support checks. |
 | Context/glossary skeleton | `context_glossary.py`, `context_glossary_test.py` | Local glossary normalization, deduplication, user-term handling, and context hint resolution. |
 | Context glossary CLI | `context_glossary_cli.py`, `context_glossary_cli_test.py` | Explicit-output-only CLI for manually supplied context/glossary JSON normalization and reporting. |
 | Source capture planning | `source_capture_plan.py`, `source_capture_plan_test.py` | Local source URL + adapter + capture option + context hint plan assembly. |
@@ -153,7 +153,7 @@ The CLI prints to stdout by default, writes only when `--output` is explicitly s
 Run from Windows CMD with the project virtual environment active:
 
 ```cmd
-python -m py_compile source_adapters.py source_adapters_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py & python source_adapters_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & git diff --check & git status --short
+python -m py_compile source_adapters.py source_adapters_test.py source_adapters_registry_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py & python source_adapters_test.py & python source_adapters_registry_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & git diff --check & git status --short
 ```
 
 Expected result: all five local self-tests pass and the working tree is clean after committed changes.
