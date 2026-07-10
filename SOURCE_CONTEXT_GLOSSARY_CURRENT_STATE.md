@@ -100,7 +100,6 @@ Only local planning and metadata layers exist here. Fetching, capture, ASR use, 
 - The user must be able to review/edit glossary terms before they affect ASR prompts, provider keyterms, QA checks, or final transcript decisions.
 - If a provider has no glossary/keyterm support, glossary terms can still feed Term QA after transcription.
 
-## Context Glossary CLI Usage
 ## Source Adapter Capability Report CLI Usage
 
 `source_adapter_capability_report_cli.py` renders local source adapter metadata from the registered adapter list as Markdown, text, or JSON.
@@ -114,6 +113,7 @@ python source_adapter_capability_report_cli.py --adapter youtube --output SOURCE
 
 The CLI prints to stdout by default, writes only when `--output` is explicitly supplied, and preserves existing files unless `--overwrite` is used. It does not fetch/capture/download anything, call providers/network/archive services, test credentials, scrape pages, capture screenshots, or wire into the GUI.
 
+## Context Glossary CLI Usage
 
 `context_glossary_cli.py` reads a manually supplied JSON object and renders normalized context hints, deduped glossary terms, and phrase-prompt terms as Markdown, text, or JSON.
 
