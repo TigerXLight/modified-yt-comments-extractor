@@ -157,9 +157,12 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
     - Livechat supported where `activeLiveChatId` exists.
     - Transcripts/captions partly supported through the existing transcript downloader.
     - Likes supported for normal comments/replies.
+  - News Website adapter:
+    - Metadata-only known-host URL recognition/normalization for Telegraph/MSN-style news websites.
+    - No fetching, scraping, archive checks, screenshots, media downloading, access bypass, credential storage, or GUI wiring.
   - Future adapters:
     - Reddit.
-    - Generic websites with known comment systems.
+    - Additional site-specific or site-family website adapters.
     - Forums.
     - Other video platforms.
     - Each needs site-specific rules and should not be assumed trivial.
@@ -170,6 +173,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
   - Never silently treat missing comments as proof that no comments exist.
   - Preserve raw/source metadata where useful for evidence export.
   - Keep YouTube path stable while generalizing terminology.
+  - New adapters should start as metadata-only, site-specific or site-family skeletons before any capture/fetch behavior.
   - Network fetching should remain explicit/user-triggered.
   - External/background context remains optional, strict-filtered, non-blocking, and not ground truth.
 - Target pipeline:

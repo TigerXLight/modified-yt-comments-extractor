@@ -259,7 +259,7 @@ Do not add provider/API/network calls to these verification chains.
 1. Perform docs-only bundle/preservation index polish if names or boundaries drift.
 2. Add a local-only ASR term coverage/gap summary over manual records, or polish comparison/decision report formatting without provider calls.
 3. Review whether this phase has reached a useful stopping point and create an external session handoff for the user.
-4. Keep any future networked provider/archive/downloader/capture behavior deferred until explicitly approved, opt-in, and covered by local/mocked tests.
+4. Keep any future networked provider/archive/downloader/capture behavior deferred until explicitly approved, opt-in, and covered by local/mocked tests. Any additional adapters should start as metadata-only, site-specific or site-family skeletons.
 
 ## Do-Not-Do List
 
