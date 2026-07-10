@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 
-Checkpoint: `5ed8a69 Add local evidence manifest CLI`
+Checkpoint: `b59a052 Fix ASR manual seed metadata test`
 
 Branch: `v2.6.0-asr-engines`
 
@@ -14,9 +14,9 @@ It records the state needed for a future session to resume safely. It does not i
 
 ## Repository And Workflow Snapshot
 
-- The working tree was clean when this handoff milestone started.
+- The working tree was clean when this handoff milestone started. Reconfirm with `git status --short` before applying any new patch.
 - Current branch: `v2.6.0-asr-engines`.
-- Current checkpoint: `5ed8a69 Add local evidence manifest CLI`.
+- Current checkpoint: `b59a052 Fix ASR manual seed metadata test`.
 - The user performs final local checks, commits, and pushes after reviewing each patch.
 - Codex should not commit unless the user explicitly changes that instruction.
 - Keep one milestone per patch.
@@ -89,6 +89,7 @@ DirectML base/small are rejected for Auto Quality Probe for now. DirectML medium
 - `asr_decision_summary.py` and `asr_decision_summary_cli.py`: local/manual decision summary for threshold, status counts, leading scored/local results, blocked items, external leads, and safe next-action guidance with Markdown/text/JSON rendering.
 - `asr_term_coverage_summary.py` and `asr_term_coverage_summary_cli.py`: local/manual key-term hit/miss and provider-gap summary with Markdown/text/JSON rendering; no provider calls, transcription, downloads, network, credentials, or GUI behavior.
 - `asr_combined_report_cli.py`: local/manual combined comparison, decision, and term coverage report renderer with explicit-output-only writes.
+- `ASR_MANUAL_RESULTS_SEED.json` metadata was corrected after `975238e` by `b59a052` so `asr_manual_results_seed_test.py` passes; the blocked-status policy now explicitly includes `not quality-rejected`.
 
 These tools do not call providers, run transcription, fetch media, or store credentials.
 
@@ -194,18 +195,20 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 
 ## Latest Known Commit Chain
 
-```text
-5ed8a69 Add local evidence manifest CLI
-bb25760 Add local evidence package manifest helper
-e5fcbf2 Add preservation metadata seed report generator
-dcf7f2e Add source preservation current-state handoff
-44f660a Add bundle index reconciliation CLI
-747fd98 Add bundle index reconciliation helper
-3f5b495 Add local media verification CLI
-3ae74be Add local media verification report
-56bc09e Add preservation metadata seed
-4c3a4ba Add Total Export bundle index CLI
 ```
+b59a052 Fix ASR manual seed metadata test
+975238e Polish ASR manual seed metadata
+7821f7f Add combined ASR report CLI
+7ff20d0 Add ASR provider status notes
+39fe85b Add ASR reporting current-state handoff
+a1d9d36 Add ASR decision summary CLI
+2af464a Add ASR term coverage summary CLI
+f30c7d5 Add ASR term coverage summary report
+6cede20 Add ASR decision summary report
+a5cfe85 Add cross-project current-state handoff
+5ed8a69 Add local evidence manifest CLI
+```
+
 
 ## Local Verification Commands
 

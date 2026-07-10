@@ -4,9 +4,14 @@ Date: 2026-07-10
 
 Branch: `v2.6.0-asr-engines`
 
-Latest expected checkpoint when this document was added:
+Latest expected checkpoint after ASR reporting/metadata cleanup:
 
 ```text
+b59a052 Fix ASR manual seed metadata test
+975238e Polish ASR manual seed metadata
+7821f7f Add combined ASR report CLI
+7ff20d0 Add ASR provider status notes
+39fe85b Add ASR reporting current-state handoff
 a1d9d36 Add ASR decision summary CLI
 2af464a Add ASR term coverage summary CLI
 f30c7d5 Add ASR term coverage summary report
@@ -70,6 +75,8 @@ These are manual reporting facts, not provider integrations.
 ## Manual Seed Metadata
 
 `ASR_MANUAL_RESULTS_SEED.json` metadata now records the strict 95% gate, Term QA requirement, accepted/candidate/blocked/external-lead policy summaries, current leading project/local candidates, the AWS blocked note, and the local reporting CLIs. The metadata is descriptive only and does not change scoring, provider status, or runtime behavior.
+
+The follow-up fix commit `b59a052` corrected the blocked-status metadata wording so `asr_manual_results_seed_test.py` passes and blocked rows are explicitly described as `not quality-rejected`.
 
 ## Provider Status Notes
 
