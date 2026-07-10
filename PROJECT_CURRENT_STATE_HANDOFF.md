@@ -87,6 +87,7 @@ DirectML base/small are rejected for Auto Quality Probe for now. DirectML medium
 - `ASR_MANUAL_RESULTS_SEED.json`: local seed for known project results, blocked status, rejected results, and external leads.
 - `ASR_PROVIDER_LEADERBOARD_NOTES.md`: user-supplied external research leads; not independent verification.
 - `asr_decision_summary.py`: local/manual decision summary for threshold, status counts, leading scored/local results, blocked items, external leads, and safe next-action guidance.
+- `asr_term_coverage_summary.py`: local/manual key-term hit/miss and provider-gap summary; no provider calls, transcription, downloads, network, credentials, or GUI behavior.
 
 These tools do not call providers, run transcription, fetch media, or store credentials.
 

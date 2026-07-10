@@ -51,6 +51,12 @@ ASR output therefore remains draft text with Term QA/glossary review and explici
 
 Dictionary output has deterministic keys suitable for a future local-only CLI or report writer.
 
+## Related Term Coverage Summary
+
+The decision summary and term coverage summary answer different local questions. `asr_decision_summary.py` summarizes provider/model status, ranking, and safe next-action guidance. `asr_term_coverage_summary.py` summarizes manually recorded glossary/key-term hits, misses, known-phrase performance, and provider gaps.
+
+Term coverage can guide retesting and manual review, but it does not by itself accept a provider or override the 95% project gate.
+
 ## Safety Notes
 
 - Do not infer provider acceptance from leaderboard placement.
