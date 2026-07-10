@@ -1,3 +1,4 @@
+# Backend CLI invalid detail assertions live inside run_self_test.
 import io
 import json
 from contextlib import redirect_stderr, redirect_stdout
@@ -198,9 +199,6 @@ def run_self_test() -> None:
         assert stdout == ""
         assert "expected one of none, select, all" in stderr
 
-
-if __name__ == "__main__":
-    run_self_test()
     # backend detail specs should reject malformed values before rendering
     code, output, error = _run_cli(
         [
@@ -246,4 +244,8 @@ if __name__ == "__main__":
     assert output == ""
     assert "duplicate item role metadata" in error
 
+
+
+if __name__ == "__main__":
+    run_self_test()
     print("Preservation backend plan CLI self-test passed.")
