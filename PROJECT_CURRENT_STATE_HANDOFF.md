@@ -164,6 +164,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | `ASR_TEST_PLAN.md` | ASR acceptance policy, hardware paths, manual provider results, and decisions. |
 | `ASR_PROVIDER_LEADERBOARD_NOTES.md` | External/user-supplied ASR research leads and local snapshot. |
 | `ASR_COMPARISON_REPORT_FORMAT.md` | Local ASR comparison schema, statuses, ranking, and CLI usage. |
+| `ASR_REPORTING_CURRENT_STATE.md` | Current local ASR reporting helper/CLI/test index and safe next milestones. |
 | `ASR_MANUAL_RESULTS_SEED.md` | Scope and policy for checked-in manual ASR result records. |
 | `ASR_DECISION_SUMMARY.md` | Local/manual ASR threshold and provider-status decision summary semantics. |
 | `TOTAL_EXPORT_DEV_CLI_EXAMPLES.md` | CMD-friendly Total Export developer CLI examples. |

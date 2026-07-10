@@ -8,6 +8,8 @@ This document describes the local-only ASR comparison report skeleton in `asr_co
 
 The format is for manually recording provider/model results from local tests, external leaderboard notes, or user observations. It does not call providers, run transcription, fetch media, store credentials, or wire any ASR provider into the app.
 
+See `ASR_REPORTING_CURRENT_STATE.md` for the current local ASR reporting helper/CLI/test index and safe next milestones.
+
 ## Purpose
 
 External ASR leaderboards can highlight useful candidates, but the project still needs project-specific comparison records because the reference clips contain important names, lore terms, and a known phrase that plain WER may not protect.
