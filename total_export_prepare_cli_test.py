@@ -255,7 +255,6 @@ def run_self_test() -> None:
         assert "Plan:" in explain_with_write_flags_output
         assert list(Path(temp_dir).iterdir()) == []
 
-        exit_code, explain_json_output = _run_cli(
         exit_code, preservation_explain_output = _run_cli(
             [
                 "--explain-preservation-plan",
@@ -309,6 +308,7 @@ def run_self_test() -> None:
         assert parsed_preservation_plan["warnings"] == []
         assert list(Path(temp_dir).iterdir()) == []
 
+        exit_code, explain_json_output = _run_cli(
             [
                 "--explain-plan",
                 "--source-url",

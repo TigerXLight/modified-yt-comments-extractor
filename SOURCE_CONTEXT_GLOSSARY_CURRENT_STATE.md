@@ -101,6 +101,24 @@ Only local planning and metadata layers exist here. Fetching, capture, ASR use, 
 - The user must be able to review/edit glossary terms before they affect ASR prompts, provider keyterms, QA checks, or final transcript decisions.
 - If a provider has no glossary/keyterm support, glossary terms can still feed Term QA after transcription.
 
+## Scrollable Container Capture Notes
+
+Social platforms can display comments inside nested scrollable containers or modals. A browser page screenshot or Page Up/Page Down workflow may only capture the visible portion of the comments container, not the full comment thread.
+
+Future preservation/capture metadata should distinguish:
+
+- visible screenshot only,
+- full-page screenshot,
+- scrollable-container screenshot,
+- stitched/multi-image capture,
+- selected-DOM or print-cleaned HTML,
+- raw saved HTML,
+- manually supplied evidence bundle.
+
+Manual tools such as Print Edit WE, FireShot, GoFullPage, browser DevTools, or saved-page HTML can be useful evidence sources, but their outputs should be recorded with capture limitations. Do not treat any one visual/DOM capture method as a universal social-comment extractor. Future automation should be site-specific or site-family-specific, opt-in, and tested locally/mocked before any fetch/capture/browser behavior is added.
+
+Future webpage media preservation should also record whether media capture is `all` or `select`: `all` means every discovered image/video/media asset is intended for preservation, while `select` means the user chooses individual assets. Media download must remain opt-in and must not default to downloading everything from a webpage.
+
 ## Preservation Backend Plan CLI Usage
 
 `preservation_backend_plan_cli.py` renders a local preservation backend plan for manually supplied source URLs, backend choices, and desired output formats.
