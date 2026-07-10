@@ -55,6 +55,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Source Capture Plan provenance helpers added; Total Export package-from-plan manifests now include explicit provenance records without fetch/capture/network/GUI behavior.
 - Added `SOURCE_CONTEXT_GLOSSARY_CURRENT_STATE.md` as a docs-only handoff/index for local source URL, source adapter, capture plan, provenance, and context/glossary helpers, tests, boundaries, and safe next milestones.
 - Added an explicit-output-only Source Capture Plan inspection CLI for manually supplied source URL/context/glossary JSON, rendering text, Markdown, or JSON without fetch/capture/network/provider/GUI behavior.
+- Added an explicit-output-only context/glossary CLI for manually supplied source label, source URL, title, and user terms, rendering normalized hints and deduped glossary candidates as text, Markdown, or JSON without fetch/capture/network/provider/GUI behavior.
 - Total Export manifest validation helpers added for local package/asset consistency checks; they are explicit-call only and perform no fetch/capture/network/GUI behavior.
 - Total Export workflow helper added for explicit source URL -> plan -> package -> validation preparation; it remains non-wired and performs no fetch/capture/network/GUI behavior.
 - Total Export summary helpers added for human-readable package/plan/validation review text; they are explicit-call only and perform no fetch/capture/network/GUI behavior.

@@ -43,6 +43,7 @@ Current helpers validate, normalize, classify, and assemble local metadata only.
 | YouTube URL parsing | `youtube_url_utils.py`, `youtube_url_utils_test.py` | Strict local YouTube video-ID extraction/normalization. |
 | Source adapter metadata | `source_adapters.py`, `source_adapters_test.py` | Local adapter capability metadata and URL support checks. |
 | Context/glossary skeleton | `context_glossary.py`, `context_glossary_test.py` | Local glossary normalization, deduplication, user-term handling, and context hint resolution. |
+| Context glossary CLI | `context_glossary_cli.py`, `context_glossary_cli_test.py` | Explicit-output-only CLI for manually supplied context/glossary JSON normalization and reporting. |
 | Source capture planning | `source_capture_plan.py`, `source_capture_plan_test.py` | Local source URL + adapter + capture option + context hint plan assembly. |
 | Source capture plan CLI | `source_capture_plan_cli.py`, `source_capture_plan_cli_test.py` | Explicit-output-only inspection CLI for manually supplied source URL/context/glossary JSON. |
 | Source plan provenance | `source_plan_provenance.py`, `source_plan_provenance_test.py` | Local provenance records derived from Source Capture Plans without fetch/capture behavior. |
@@ -100,6 +101,30 @@ Only local planning and metadata layers exist here. Fetching, capture, ASR use, 
 
 ## Verification
 ## Source Capture Plan CLI Usage
+## Context Glossary CLI Usage
+
+`context_glossary_cli.py` reads a manually supplied JSON object and renders normalized context hints, deduped glossary terms, and phrase-prompt terms as Markdown, text, or JSON.
+
+Example input shape:
+
+```json
+{
+  "source_label": "YouTube clip",
+  "source_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  "title": "Example title",
+  "user_terms": ["Nyxara", "Freckelston"]
+}
+```
+
+```cmd
+python context_glossary_cli.py --input context_glossary_input.json
+python context_glossary_cli.py --input context_glossary_input.json --format text
+python context_glossary_cli.py --input context_glossary_input.json --format json
+python context_glossary_cli.py --input context_glossary_input.json --output CONTEXT_GLOSSARY_REPORT.md --overwrite
+```
+
+The CLI prints to stdout by default, writes only when `--output` is explicitly supplied, and preserves existing files unless `--overwrite` is used. It does not fetch/capture/download anything, call providers/network services, or feed ASR prompts/keyterms.
+
 
 `source_capture_plan_cli.py` reads a manually supplied JSON object and renders a local Source Capture Plan as Markdown, text, or JSON.
 
@@ -128,7 +153,7 @@ The CLI prints to stdout by default, writes only when `--output` is explicitly s
 Run from Windows CMD with the project virtual environment active:
 
 ```cmd
-python -m py_compile source_adapters.py source_adapters_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py youtube_url_utils.py youtube_url_utils_test.py & python source_adapters_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python youtube_url_utils_test.py & git diff --check & git status --short
+python -m py_compile source_adapters.py source_adapters_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py & python source_adapters_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & git diff --check & git status --short
 ```
 
 Expected result: all five local self-tests pass and the working tree is clean after committed changes.
@@ -138,14 +163,9 @@ Expected result: all five local self-tests pass and the working tree is clean af
 1. Source/context/glossary documentation alignment:
    - remove stale wording that says skeletons do not exist if helper files now exist,
    - keep no fetch/capture/network/GUI behavior.
-2. Local-only context glossary report CLI:
-   - read user-entered context hints and glossary terms,
-   - render normalized/deduped glossary candidates,
-   - explicit-output-only,
-   - no provider prompt/keyterm integration.
-3. New source adapters:
+2. New source adapters:
    - only as metadata/capability skeletons first,
    - no generic scraper,
    - no site fetching until separately approved with mocked/local tests.
-4. GUI/runtime integration:
+3. GUI/runtime integration:
    - deferred until separately approved.
