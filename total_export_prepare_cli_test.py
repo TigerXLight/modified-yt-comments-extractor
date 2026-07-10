@@ -351,6 +351,14 @@ def run_self_test() -> None:
                 "manual_supplied",
                 "--evidence-item",
                 "screenshot:png:scrollable_container_screenshot",
+                "--evidence-item-role",
+                "screenshot=primary",
+                "--evidence-item-origin",
+                "screenshot=manual",
+                "--evidence-item-path-hint",
+                r"screenshot=captures\comments.png",
+                "--evidence-item-notes",
+                "screenshot=User supplied screenshot; path hint only.",
                 "--preservation-notes",
                 "Local backup plan.",
             ]
@@ -359,6 +367,11 @@ def run_self_test() -> None:
         assert "Evidence bundle:" in evidence_preservation_output
         assert "status: manual_supplied" in evidence_preservation_output
         assert "item screenshot: format=png" in evidence_preservation_output
+        assert "role=primary" in evidence_preservation_output
+        assert "origin=manual" in evidence_preservation_output
+        assert r"path_hint=captures\comments.png" in evidence_preservation_output
+        assert "User supplied screenshot; path hint only." in evidence_preservation_output
+        assert "label only; not opened or checked" in evidence_preservation_output
         assert "scrollable_container_screenshot" in evidence_preservation_output
         assert "focused or selected" in evidence_preservation_output
         assert "no file open" in evidence_preservation_output
@@ -381,6 +394,14 @@ def run_self_test() -> None:
                 "manual_supplied",
                 "--evidence-item",
                 "screenshot:png:scrollable_container_screenshot",
+                "--evidence-item-role",
+                "screenshot=primary",
+                "--evidence-item-origin",
+                "screenshot=manual",
+                "--evidence-item-path-hint",
+                r"screenshot=captures\comments.png",
+                "--evidence-item-notes",
+                "screenshot=User supplied screenshot; path hint only.",
                 "--preservation-notes",
                 "Local backup plan.",
                 "--json",
@@ -392,6 +413,10 @@ def run_self_test() -> None:
         assert parsed_evidence_preservation["evidence_bundle"]["items"][0]["artifact_id"] == "screenshot"
         assert parsed_evidence_preservation["evidence_bundle"]["items"][0]["artifact_format"] == "png"
         assert parsed_evidence_preservation["evidence_bundle"]["items"][0]["capture_method_id"] == "scrollable_container_screenshot"
+        assert parsed_evidence_preservation["evidence_bundle"]["items"][0]["artifact_role"] == "primary"
+        assert parsed_evidence_preservation["evidence_bundle"]["items"][0]["origin"] == "manual"
+        assert parsed_evidence_preservation["evidence_bundle"]["items"][0]["path_hint"] == r"captures\comments.png"
+        assert parsed_evidence_preservation["evidence_bundle"]["items"][0]["notes"] == "User supplied screenshot; path hint only."
         assert "no file open" in parsed_evidence_preservation["evidence_bundle"]["scope"]
         assert list(Path(temp_dir).iterdir()) == []
 

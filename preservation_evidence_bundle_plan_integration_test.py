@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 
+import preservation_backend_plan_cli
 import total_export_prepare_cli
 from preservation_backend_plan import (
     build_preservation_backend_plan,
@@ -19,6 +20,13 @@ def _run_total_export_prepare_cli(*args: str) -> tuple[int, str]:
     stdout = io.StringIO()
     with contextlib.redirect_stdout(stdout):
         code = total_export_prepare_cli.main(list(args))
+    return int(code or 0), stdout.getvalue()
+
+
+def _run_preservation_backend_plan_cli(*args: str) -> tuple[int, str]:
+    stdout = io.StringIO()
+    with contextlib.redirect_stdout(stdout):
+        code = preservation_backend_plan_cli.main(list(args))
     return int(code or 0), stdout.getvalue()
 
 
@@ -64,6 +72,14 @@ def run_self_test() -> None:
         "manual_supplied",
         "--evidence-item",
         "screenshot:png:scrollable_container_screenshot",
+        "--evidence-item-role",
+        "screenshot=primary",
+        "--evidence-item-origin",
+        "screenshot=manual",
+        "--evidence-item-path-hint",
+        r"screenshot=captures\comments.png",
+        "--evidence-item-notes",
+        "screenshot=User supplied screenshot; path hint only.",
         "--preservation-notes",
         "Local backup plan.",
     )
@@ -74,6 +90,11 @@ def run_self_test() -> None:
     assert "Evidence bundle:" in output
     assert "status: manual_supplied" in output
     assert "item screenshot: format=png" in output
+    assert "role=primary" in output
+    assert "origin=manual" in output
+    assert r"path_hint=captures\comments.png" in output
+    assert "User supplied screenshot; path hint only." in output
+    assert "label only; not opened or checked" in output
     assert "scrollable_container_screenshot" in output
     assert "focused or selected" in output
     assert "no file open" in output
@@ -95,6 +116,14 @@ def run_self_test() -> None:
         "manual_supplied",
         "--evidence-item",
         "screenshot:png:scrollable_container_screenshot",
+        "--evidence-item-role",
+        "screenshot=primary",
+        "--evidence-item-origin",
+        "screenshot=manual",
+        "--evidence-item-path-hint",
+        r"screenshot=captures\comments.png",
+        "--evidence-item-notes",
+        "screenshot=User supplied screenshot; path hint only.",
         "--preservation-notes",
         "Local backup plan.",
     )
@@ -104,7 +133,36 @@ def run_self_test() -> None:
     assert payload["evidence_bundle"]["items"][0]["artifact_id"] == "screenshot"
     assert payload["evidence_bundle"]["items"][0]["artifact_format"] == "png"
     assert payload["evidence_bundle"]["items"][0]["capture_method_id"] == "scrollable_container_screenshot"
+    assert payload["evidence_bundle"]["items"][0]["artifact_role"] == "primary"
+    assert payload["evidence_bundle"]["items"][0]["origin"] == "manual"
+    assert payload["evidence_bundle"]["items"][0]["path_hint"] == r"captures\comments.png"
+    assert payload["evidence_bundle"]["items"][0]["notes"] == "User supplied screenshot; path hint only."
     assert "no file open" in payload["evidence_bundle"]["scope"]
+
+    # backend CLI accepts item detail flags too
+    code, backend_output = _run_preservation_backend_plan_cli(
+        "--format",
+        "text",
+        "--evidence-bundle-status",
+        "manual_supplied",
+        "--evidence-item",
+        "screenshot:png:scrollable_container_screenshot",
+        "--evidence-item-role",
+        "screenshot=primary",
+        "--evidence-item-origin",
+        "screenshot=manual",
+        "--evidence-item-path-hint",
+        r"screenshot=captures\comments.png",
+        "--evidence-item-notes",
+        "screenshot=User supplied screenshot; path hint only.",
+    )
+    assert code == 0
+    assert "status: manual_supplied" in backend_output
+    assert "screenshot: format=png" in backend_output
+    assert "role=primary" in backend_output
+    assert "origin=manual" in backend_output
+    assert r"captures\comments.png" in backend_output
+    assert "User supplied screenshot; path hint only." in backend_output
 
     print("Preservation evidence bundle plan integration self-test passed.")
 

@@ -1,3 +1,4 @@
+# Evidence item notes rendering repair.
 from __future__ import annotations
 
 import json
@@ -248,6 +249,7 @@ def build_preservation_evidence_bundle_markdown(
                 f"- Role: {item.artifact_role}",
                 f"- Origin: {item.origin}",
                 f"- Path hint: {item.path_hint or 'none'}",
+                f"- Notes: {item.notes or 'none'}",
                 f"- Limitations: {item.limitations or 'none recorded'}",
                 "- Execution: metadata only; this item does not prove file existence, completeness, or capture execution.",
                 "",
@@ -281,6 +283,7 @@ def build_preservation_evidence_bundle_text(
             f"- {item.artifact_id}: format={item.artifact_format}; "
             f"capture_method={item.capture_method_id or 'none'}; role={item.artifact_role}; "
             f"origin={item.origin}; path_hint={item.path_hint or 'none'}; "
+            f"notes={item.notes or 'none'}; "
             f"limitations={item.limitations or 'none recorded'}; execution=metadata only"
         )
     return "\n".join(lines)

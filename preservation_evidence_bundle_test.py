@@ -73,10 +73,12 @@ def run_self_test() -> None:
     assert "# Preservation Evidence Bundle Metadata" in markdown
     assert "Scrollable" not in markdown
     assert "focused or selected" in markdown
+    assert "- Notes: User-supplied path hint only." in markdown
     assert "does not prove file existence" in markdown
 
     text = build_preservation_evidence_bundle_text(bundle)
     assert "screenshot: format=png" in text
+    assert "notes=User-supplied path hint only." in text
     assert "execution=metadata only" in text
 
     parsed = json.loads(render_preservation_evidence_bundle(bundle, output_format="json"))

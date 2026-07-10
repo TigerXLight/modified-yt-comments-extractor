@@ -286,3 +286,6 @@ Do not add provider/API/network calls to these verification chains.
 ## Preservation Evidence Bundle Plan Integration
 
 Evidence bundle metadata can now be included in preservation plan reporting and Total Export prepare preservation explanations. This records planned/manual/external artifact IDs, formats, capture-method links, and limitations as local metadata only; it does not inspect files or perform capture/network behavior.
+
+
+Evidence bundle plan integration now supports item-level role, origin, path hint, and notes metadata. These fields remain labels/metadata only and do not inspect paths or evidence files.

@@ -753,3 +753,5 @@ Next local-ASR branches:
 3. DirectML medium/large only if explicitly approved later.
 
 - Preservation evidence bundle metadata is now integrated into preservation plan reporting and Total Export prepare preservation explanations; it remains descriptive only and does not open, scan, hash, validate, create, upload, download, capture, scrape, or fetch evidence files/URLs.
+
+- Evidence bundle plan reporting now exposes metadata-only item details for artifact role, origin, path hint labels, and item notes; path hints are not opened or checked.

@@ -181,3 +181,6 @@ These checks use local files and temporary directories only. They must not be re
 ## Preservation Evidence Bundles In Plans
 
 Preservation evidence bundle metadata is integrated into preservation plan and Total Export prepare reporting. It can describe artifact IDs, formats, capture-method IDs, notes, and limitations without proving files exist or opening, scanning, hashing, creating, uploading, downloading, capturing, scraping, or fetching anything.
+
+
+Evidence bundle plan metadata now includes item roles, origins, path hint labels, and item notes for preservation explanations. These details remain local descriptive metadata only and do not prove file existence or trigger file/capture/network operations.

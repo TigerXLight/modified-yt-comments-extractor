@@ -252,3 +252,6 @@ Expected result: all listed local self-tests pass and the working tree is clean 
 ## Preservation Evidence Bundle Plan Integration
 
 Preservation plans may include evidence bundle metadata for manual/planned/external artifacts. Path hints are descriptive labels only. The helpers do not open, scan, hash, create, upload, download, capture, scrape, or fetch files/URLs.
+
+
+Evidence bundle item details can record role, origin, path hint labels, and notes in preservation plan reporting. Path hints are descriptive only and are not opened, scanned, hashed, or validated.
