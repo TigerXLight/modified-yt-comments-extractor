@@ -325,3 +325,6 @@ Preservation backend plan CLI input JSON coverage now includes nested evidence b
 
 
 Total Export `--evidence-bundle-input` coverage now includes nested item-list validation, item object validation, invalid capture-method IDs, and duplicate artifact IDs at the CLI level.
+
+
+Standalone evidence bundle CLI `--input` coverage now includes nested item-list validation, item object validation, invalid capture-method IDs, and duplicate artifact IDs.

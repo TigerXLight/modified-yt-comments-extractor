@@ -119,6 +119,63 @@ def run_self_test() -> None:
         assert output == ""
         assert "input JSON must be an object" in error
 
+        bad_input_items_path = Path(temp_dir) / "bad_input_items.json"
+        bad_input_items_path.write_text(
+            json.dumps({"items": "screenshot"}),
+            encoding="utf-8",
+        )
+        code, output, error = _run_cli(["--input", str(bad_input_items_path)])
+        assert code == 1
+        assert output == ""
+        assert "evidence_bundle.items must be a list" in error
+
+        bad_input_item_path = Path(temp_dir) / "bad_input_item.json"
+        bad_input_item_path.write_text(
+            json.dumps({"items": ["screenshot"]}),
+            encoding="utf-8",
+        )
+        code, output, error = _run_cli(["--input", str(bad_input_item_path)])
+        assert code == 1
+        assert output == ""
+        assert "evidence bundle item must be an object" in error
+
+        bad_input_capture_method_path = Path(temp_dir) / "bad_input_capture_method.json"
+        bad_input_capture_method_path.write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "artifact_id": "screenshot",
+                            "artifact_format": "png",
+                            "capture_method_id": "unknown_capture",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        code, output, error = _run_cli(["--input", str(bad_input_capture_method_path)])
+        assert code == 1
+        assert output == ""
+        assert "invalid capture method ID" in error
+
+        duplicate_input_item_path = Path(temp_dir) / "duplicate_input_item.json"
+        duplicate_input_item_path.write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {"artifact_id": "screenshot", "artifact_format": "png"},
+                        {"artifact_id": "screenshot", "artifact_format": "html"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        code, output, error = _run_cli(["--input", str(duplicate_input_item_path)])
+        assert code == 1
+        assert output == ""
+        assert "duplicate artifact IDs: screenshot" in error
+
         missing_input_path = Path(temp_dir) / "missing_bundle.json"
         code, output, error = _run_cli(["--input", str(missing_input_path)])
         assert code == 1

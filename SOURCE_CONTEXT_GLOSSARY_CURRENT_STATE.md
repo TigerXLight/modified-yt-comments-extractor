@@ -291,3 +291,6 @@ Preservation backend plan JSON input now verifies malformed nested evidence bund
 
 
 Total Export evidence bundle input now rejects malformed nested local metadata through CLI tests before any preservation-plan reporting occurs.
+
+
+Standalone evidence bundle CLI JSON input now rejects malformed nested local metadata before rendering, without inspecting path hints or evidence files.
