@@ -398,3 +398,5 @@ Evidence bundle regression runner behavior tests now lock down unknown-option ar
 Evidence bundle regression runner behavior tests now centralize final list/help no-run assertions while preserving the full targeted-selection and malformed-argument coverage.
 
 Evidence bundle scope invariant tests now share clean local command and no-temp-path assertions while preserving metadata-only archive, download, screenshot, hash, file-open, and validation boundaries.
+
+Evidence bundle JSON input validation tests now reinforce descriptive-only semantics by proving supplied upload and hash state cannot propagate through helper, standalone, backend-plan, or Total Export evidence output.

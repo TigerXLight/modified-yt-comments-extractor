@@ -213,6 +213,7 @@ def run_self_test() -> None:
                     "source_url": "https://www.telegraph.co.uk/news/example/",
                     "bundle_label": "Input evidence",
                     "status": "manual_supplied",
+                    "uploaded": True,
                     "items": [
                         {
                             "artifact_id": "screenshot",
@@ -222,6 +223,7 @@ def run_self_test() -> None:
                             "origin": "manual",
                             "path_hint": r"captures\comments.png",
                             "notes": "Input JSON path hint only.",
+                            "sha256": "not-computed",
                         }
                     ],
                 },
@@ -236,6 +238,7 @@ def run_self_test() -> None:
         assert parsed["source_url"] == "https://www.telegraph.co.uk/news/example/"
         assert parsed["evidence_bundle"]["status"] == "manual_supplied"
         assert parsed["evidence_bundle"]["bundle_label"] == "Input evidence"
+        assert "uploaded" not in parsed["evidence_bundle"]
         assert parsed["evidence_bundle"]["items"][0]["artifact_id"] == "screenshot"
         assert parsed["evidence_bundle"]["items"][0]["artifact_format"] == "png"
         assert parsed["evidence_bundle"]["items"][0]["capture_method_id"] == "scrollable_container_screenshot"
@@ -243,6 +246,7 @@ def run_self_test() -> None:
         assert parsed["evidence_bundle"]["items"][0]["origin"] == "manual"
         assert parsed["evidence_bundle"]["items"][0]["path_hint"] == r"captures\comments.png"
         assert parsed["evidence_bundle"]["items"][0]["notes"] == "Input JSON path hint only."
+        assert "sha256" not in parsed["evidence_bundle"]["items"][0]
         assert "no file open" in parsed["evidence_bundle"]["scope"]
 
         bad_input_path = Path(temp_dir) / "bad_plan_with_evidence_bundle.json"

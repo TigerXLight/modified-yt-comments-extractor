@@ -469,3 +469,5 @@ Evidence bundle regression runner behavior coverage now includes unknown option 
 Evidence bundle regression runner behavior coverage now has a final cleanup pass that centralizes list/help non-execution checks and keeps the recursion guard visible.
 
 Evidence bundle scope invariant coverage now includes a batched cleanup pass for clean local command output, descriptive-only evidence metadata, and no temporary-path leakage.
+
+Evidence bundle JSON input validation coverage now verifies operational file-state keys are discarded across helper and CLI metadata input paths before rendered or structured evidence output.

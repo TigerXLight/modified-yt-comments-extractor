@@ -75,6 +75,7 @@ def run_self_test() -> None:
                     "source_url": "https://www.telegraph.co.uk/news/example/",
                     "bundle_label": "Input evidence",
                     "status": "manual_supplied",
+                    "uploaded": True,
                     "items": [
                         {
                             "artifact_id": "screenshot",
@@ -84,6 +85,7 @@ def run_self_test() -> None:
                             "origin": "manual",
                             "path_hint": r"captures\comments.png",
                             "notes": "Input JSON path hint only.",
+                            "sha256": "not-computed",
                         }
                     ],
                 }
@@ -98,11 +100,13 @@ def run_self_test() -> None:
         parsed = json.loads(json_output)
         assert parsed["bundle_label"] == "Input evidence"
         assert parsed["status"] == "manual_supplied"
+        assert "uploaded" not in parsed
         assert parsed["items"][0]["artifact_id"] == "screenshot"
         assert parsed["items"][0]["artifact_role"] == "primary"
         assert parsed["items"][0]["origin"] == "manual"
         assert parsed["items"][0]["path_hint"] == r"captures\comments.png"
         assert parsed["items"][0]["notes"] == "Input JSON path hint only."
+        assert "sha256" not in parsed["items"][0]
         assert "no file open" in parsed["scope"]
 
         code, output, error = _run_cli(

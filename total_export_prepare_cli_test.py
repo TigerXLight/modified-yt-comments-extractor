@@ -497,6 +497,7 @@ def run_self_test() -> None:
                     "source_url": "https://www.telegraph.co.uk/news/example/",
                     "bundle_label": "Input evidence",
                     "status": "manual_supplied",
+                    "uploaded": True,
                     "items": [
                         {
                             "artifact_id": "screenshot",
@@ -506,6 +507,7 @@ def run_self_test() -> None:
                             "origin": "manual",
                             "path_hint": r"captures\comments.png",
                             "notes": "Total Export JSON input path hint only.",
+                            "sha256": "not-computed",
                         }
                     ],
                 }
@@ -533,6 +535,8 @@ def run_self_test() -> None:
         assert "origin=manual" in input_bundle_output
         assert r"path_hint=captures\comments.png" in input_bundle_output
         assert "Total Export JSON input path hint only." in input_bundle_output
+        assert "uploaded" not in input_bundle_output
+        assert "sha256" not in input_bundle_output
         assert "not opened or checked" in input_bundle_output
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 
@@ -554,11 +558,16 @@ def run_self_test() -> None:
         parsed_input_bundle_plan = json.loads(input_bundle_json_output)
         assert parsed_input_bundle_plan["evidence_bundle"]["bundle_label"] == "Input evidence"
         assert parsed_input_bundle_plan["evidence_bundle"]["status"] == "manual_supplied"
+        assert "uploaded" not in parsed_input_bundle_plan["evidence_bundle"]
         assert parsed_input_bundle_plan["evidence_bundle"]["items"][0]["artifact_id"] == "screenshot"
         assert parsed_input_bundle_plan["evidence_bundle"]["items"][0]["artifact_role"] == "primary"
         assert parsed_input_bundle_plan["evidence_bundle"]["items"][0]["origin"] == "manual"
         assert parsed_input_bundle_plan["evidence_bundle"]["items"][0]["path_hint"] == r"captures\comments.png"
         assert parsed_input_bundle_plan["evidence_bundle"]["items"][0]["notes"] == "Total Export JSON input path hint only."
+        assert (
+            "sha256"
+            not in parsed_input_bundle_plan["evidence_bundle"]["items"][0]
+        )
         assert "no file open" in parsed_input_bundle_plan["evidence_bundle"]["scope"]
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 

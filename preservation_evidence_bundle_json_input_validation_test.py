@@ -23,6 +23,7 @@ def run_self_test() -> None:
             "bundle_label": "Input evidence",
             "status": "manual_supplied",
             "notes": "Metadata only.",
+            "uploaded": True,
             "items": [
                 {
                     "artifact_id": "screenshot",
@@ -32,6 +33,7 @@ def run_self_test() -> None:
                     "origin": "manual",
                     "path_hint": r"captures\comments.png",
                     "notes": "JSON input path hint only.",
+                    "sha256": "not-computed",
                 }
             ],
         }
@@ -40,6 +42,7 @@ def run_self_test() -> None:
     assert data["source_url"] == "https://www.telegraph.co.uk/news/example/"
     assert data["bundle_label"] == "Input evidence"
     assert data["status"] == "manual_supplied"
+    assert "uploaded" not in data
     assert data["items"][0]["artifact_id"] == "screenshot"
     assert data["items"][0]["artifact_format"] == "png"
     assert data["items"][0]["capture_method_id"] == "scrollable_container_screenshot"
@@ -47,6 +50,7 @@ def run_self_test() -> None:
     assert data["items"][0]["origin"] == "manual"
     assert data["items"][0]["path_hint"] == r"captures\comments.png"
     assert data["items"][0]["notes"] == "JSON input path hint only."
+    assert "sha256" not in data["items"][0]
     assert "no file open" in data["scope"]
 
     none_normalized_bundle = build_preservation_evidence_bundle_from_dict(
