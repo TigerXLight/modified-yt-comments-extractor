@@ -831,3 +831,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now runs negative rejection checks for every key in the forbidden file-state key set, not just a representative subset.
 
 - Evidence bundle local-only scope invariant coverage now also asserts CLI outputs do not leak the temporary JSON input filenames.
+
+- The evidence bundle regression runner behavior test now verifies unknown-label errors list every expected regression label.

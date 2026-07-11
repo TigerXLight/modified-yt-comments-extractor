@@ -104,6 +104,9 @@ def run_self_test() -> None:
     assert unknown_result.returncode == 2
     assert unknown_result.stdout == ""
     assert "unknown regression test label(s): missing regression group" in unknown_result.stderr
+    assert "expected one of" in unknown_result.stderr
+    for expected_label in EXPECTED_LABELS:
+        assert expected_label in unknown_result.stderr
 
     mixed_unknown_result = _run_runner(
         "--only",

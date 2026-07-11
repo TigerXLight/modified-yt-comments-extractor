@@ -403,3 +403,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now asserts JSON/text/Markdown CLI outputs do not leak the temporary input filenames (`evidence_bundle.json` or `backend_plan.json`) in addition to temp directory paths.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now verifies unknown-label errors include the `expected one of` choices and every current regression label.

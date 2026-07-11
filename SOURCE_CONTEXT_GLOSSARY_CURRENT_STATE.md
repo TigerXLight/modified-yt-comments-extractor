@@ -369,3 +369,6 @@ Evidence bundle local-only scope invariants now exercise the full forbidden file
 
 
 Evidence bundle local-only scope invariants now check CLI outputs do not leak temporary JSON input filenames, keeping rendered metadata detached from test input files.
+
+
+Evidence bundle regression runner behavior coverage now checks unknown-label diagnostics include all expected regression labels.

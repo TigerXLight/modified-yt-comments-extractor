@@ -298,3 +298,6 @@ Evidence bundle local-only scope invariant testing now rejects every configured 
 
 
 Evidence bundle local-only scope invariant testing now verifies standalone, backend-plan, and Total Export CLI outputs do not leak temporary JSON input filenames.
+
+
+Evidence bundle regression runner behavior tests now assert unknown-label diagnostics list every valid regression label.
