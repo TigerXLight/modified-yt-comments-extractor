@@ -396,3 +396,5 @@ Evidence bundle regression runner behavior tests now require exact `--only` labe
 Evidence bundle regression runner behavior tests now lock down unknown-option argparse failure, suffix-only label rejection, and list/help precedence over unknown targeted selections without executing regression groups.
 
 Evidence bundle regression runner behavior tests now centralize final list/help no-run assertions while preserving the full targeted-selection and malformed-argument coverage.
+
+Evidence bundle scope invariant tests now share clean local command and no-temp-path assertions while preserving metadata-only archive, download, screenshot, hash, file-open, and validation boundaries.

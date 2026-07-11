@@ -467,3 +467,5 @@ Evidence bundle regression runner behavior coverage now verifies partial `--only
 Evidence bundle regression runner behavior coverage now includes unknown option rejection, suffix-only exact-match rejection, and non-executing list/help behavior when unknown `--only` labels are supplied.
 
 Evidence bundle regression runner behavior coverage now has a final cleanup pass that centralizes list/help non-execution checks and keeps the recursion guard visible.
+
+Evidence bundle scope invariant coverage now includes a batched cleanup pass for clean local command output, descriptive-only evidence metadata, and no temporary-path leakage.

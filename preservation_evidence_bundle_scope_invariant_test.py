@@ -156,6 +156,15 @@ def _assert_no_temp_path_leak(output: str, temp_dir: str) -> None:
         assert temp_string not in output, output
 
 
+def _assert_clean_local_command(
+    result: subprocess.CompletedProcess[str],
+    temp_dir: str,
+) -> None:
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == "", result.stderr
+    _assert_no_temp_path_leak(result.stdout, temp_dir)
+
+
 def _assert_rejects_temp_path_leak(output: str, temp_dir: str) -> None:
     try:
         _assert_no_temp_path_leak(output, temp_dir)
@@ -200,9 +209,7 @@ def run_self_test() -> None:
             "--format",
             "json",
         )
-        assert standalone_result.returncode == 0, standalone_result.stderr
-        assert standalone_result.stderr == "", standalone_result.stderr
-        _assert_no_temp_path_leak(standalone_result.stdout, temp_dir)
+        _assert_clean_local_command(standalone_result, temp_dir)
         standalone_bundle = json.loads(standalone_result.stdout)
         _assert_local_only_bundle(standalone_bundle)
 
@@ -213,9 +220,7 @@ def run_self_test() -> None:
             "--format",
             "text",
         )
-        assert standalone_text_result.returncode == 0, standalone_text_result.stderr
-        assert standalone_text_result.stderr == "", standalone_text_result.stderr
-        _assert_no_temp_path_leak(standalone_text_result.stdout, temp_dir)
+        _assert_clean_local_command(standalone_text_result, temp_dir)
         _assert_local_only_text(standalone_text_result.stdout)
 
         standalone_markdown_result = _run_command(
@@ -225,9 +230,7 @@ def run_self_test() -> None:
             "--format",
             "markdown",
         )
-        assert standalone_markdown_result.returncode == 0, standalone_markdown_result.stderr
-        assert standalone_markdown_result.stderr == "", standalone_markdown_result.stderr
-        _assert_no_temp_path_leak(standalone_markdown_result.stdout, temp_dir)
+        _assert_clean_local_command(standalone_markdown_result, temp_dir)
         _assert_local_only_text(standalone_markdown_result.stdout)
 
         backend_input_path = Path(temp_dir) / "backend_plan.json"
@@ -249,9 +252,7 @@ def run_self_test() -> None:
             "--format",
             "json",
         )
-        assert backend_plan_result.returncode == 0, backend_plan_result.stderr
-        assert backend_plan_result.stderr == "", backend_plan_result.stderr
-        _assert_no_temp_path_leak(backend_plan_result.stdout, temp_dir)
+        _assert_clean_local_command(backend_plan_result, temp_dir)
         backend_plan = json.loads(backend_plan_result.stdout)
         backend_bundle = backend_plan.get("evidence_bundle")
         assert isinstance(backend_bundle, dict), backend_plan
@@ -264,9 +265,7 @@ def run_self_test() -> None:
             "--format",
             "text",
         )
-        assert backend_plan_text_result.returncode == 0, backend_plan_text_result.stderr
-        assert backend_plan_text_result.stderr == "", backend_plan_text_result.stderr
-        _assert_no_temp_path_leak(backend_plan_text_result.stdout, temp_dir)
+        _assert_clean_local_command(backend_plan_text_result, temp_dir)
         _assert_local_only_text(backend_plan_text_result.stdout)
 
         backend_plan_markdown_result = _run_command(
@@ -276,9 +275,7 @@ def run_self_test() -> None:
             "--format",
             "markdown",
         )
-        assert backend_plan_markdown_result.returncode == 0, backend_plan_markdown_result.stderr
-        assert backend_plan_markdown_result.stderr == "", backend_plan_markdown_result.stderr
-        _assert_no_temp_path_leak(backend_plan_markdown_result.stdout, temp_dir)
+        _assert_clean_local_command(backend_plan_markdown_result, temp_dir)
         _assert_local_only_text(backend_plan_markdown_result.stdout)
 
         total_export_result = _run_command(
@@ -294,9 +291,7 @@ def run_self_test() -> None:
             str(input_path),
             "--json",
         )
-        assert total_export_result.returncode == 0, total_export_result.stderr
-        assert total_export_result.stderr == "", total_export_result.stderr
-        _assert_no_temp_path_leak(total_export_result.stdout, temp_dir)
+        _assert_clean_local_command(total_export_result, temp_dir)
         total_export_plan = json.loads(total_export_result.stdout)
         _assert_local_only_bundle(total_export_plan["evidence_bundle"])
 
@@ -312,9 +307,7 @@ def run_self_test() -> None:
             "--evidence-bundle-input",
             str(input_path),
         )
-        assert total_export_text_result.returncode == 0, total_export_text_result.stderr
-        assert total_export_text_result.stderr == "", total_export_text_result.stderr
-        _assert_no_temp_path_leak(total_export_text_result.stdout, temp_dir)
+        _assert_clean_local_command(total_export_text_result, temp_dir)
         _assert_local_only_text(total_export_text_result.stdout)
 
         temp_file_names = sorted(path.name for path in Path(temp_dir).iterdir())

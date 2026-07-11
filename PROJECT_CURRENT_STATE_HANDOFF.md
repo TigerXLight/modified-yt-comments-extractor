@@ -501,3 +501,5 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 `preservation_evidence_bundle_regression_runner_test.py` now covers final aggregate runner CLI edges for unknown options, suffix-only labels, and `--list`/`--help` combined with unknown `--only` labels, preserving diagnostic-only or non-executing behavior as appropriate.
 
 `preservation_evidence_bundle_regression_runner_test.py` now completes a final runner-behavior cleanup by sharing list/help non-execution assertions while retaining the existing no-unfiltered-aggregate-run recursion guard.
+
+`preservation_evidence_bundle_scope_invariant_test.py` now has a batched local-only scope cleanup that shares successful-command, clean-stderr, and no-temp-path checks while preserving the rule that evidence metadata never operates on user evidence files.
