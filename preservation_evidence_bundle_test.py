@@ -6,6 +6,7 @@ from preservation_evidence_bundle import (
     build_preservation_evidence_bundle,
     build_preservation_evidence_bundle_markdown,
     build_preservation_evidence_bundle_text,
+    build_preservation_evidence_bundle_from_dict,
     build_preservation_evidence_item,
     build_preservation_evidence_items_from_specs,
     preservation_evidence_bundle_to_dict,
@@ -102,6 +103,39 @@ def run_self_test() -> None:
     assert bundle.status == BUNDLE_STATUS_MANUAL_SUPPLIED
     assert bundle.source_url == "https://www.telegraph.co.uk/news/example/"
     assert bundle.warnings == ()
+
+    bundle_from_dict = build_preservation_evidence_bundle_from_dict(
+        {
+            "source_url": " https://www.telegraph.co.uk/news/example/ ",
+            "bundle_label": "Manual preservation evidence",
+            "status": "manual_supplied",
+            "notes": "Metadata only.",
+            "items": [
+                {
+                    "artifact_id": "screenshot",
+                    "artifact_format": "png",
+                    "capture_method_id": "scrollable_container_screenshot",
+                    "artifact_role": "primary",
+                    "origin": "manual",
+                    "path_hint": r"captures\comments.png",
+                    "notes": "JSON input path hint only.",
+                }
+            ],
+        }
+    )
+    assert bundle_from_dict.status == BUNDLE_STATUS_MANUAL_SUPPLIED
+    assert bundle_from_dict.items[0].artifact_id == "screenshot"
+    assert bundle_from_dict.items[0].artifact_role == "primary"
+    assert bundle_from_dict.items[0].origin == "manual"
+    assert bundle_from_dict.items[0].path_hint == r"captures\comments.png"
+    assert bundle_from_dict.items[0].notes == "JSON input path hint only."
+
+    try:
+        build_preservation_evidence_bundle_from_dict({"items": {}})
+    except ValueError as exc:
+        assert "evidence_bundle.items must be a list" in str(exc)
+    else:
+        raise AssertionError("Expected invalid evidence bundle items rejection.")
 
     data = preservation_evidence_bundle_to_dict(bundle)
     assert data["status"] == "manual_supplied"

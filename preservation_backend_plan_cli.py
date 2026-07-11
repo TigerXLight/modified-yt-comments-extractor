@@ -1,3 +1,4 @@
+# Evidence bundle JSON input support.
 # Evidence item spec parsing helper reuse.
 # Evidence bundle item detail flags integration.
 # Evidence bundle integration: preservation backend CLI flags.
@@ -18,6 +19,7 @@ from preservation_backend_plan import (
 from preservation_evidence_bundle import (
     BUNDLE_STATUSES,
     build_preservation_evidence_bundle,
+    build_preservation_evidence_bundle_from_dict,
     build_preservation_evidence_items_from_specs,
 )
 
@@ -53,12 +55,23 @@ def _optional_string_list(data: dict[str, Any], key: str) -> list[str]:
     return value
 
 
+def _optional_evidence_bundle_from_input(data: dict[str, Any]):
+    value = data.get("evidence_bundle")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("evidence_bundle must be an object")
+    return build_preservation_evidence_bundle_from_dict(value)
+
+
 def _build_plan_from_input(
     data: dict[str, Any],
     *,
     capture_method_ids: Sequence[str] | None = None,
     evidence_bundle=None,
 ):
+    if evidence_bundle is None:
+        evidence_bundle = _optional_evidence_bundle_from_input(data)
     return build_preservation_backend_plan(
         source_url=_optional_string(data, "source_url"),
         selected_backend_ids=_optional_string_list(data, "selected_backend_ids"),

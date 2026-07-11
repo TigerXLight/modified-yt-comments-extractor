@@ -1,3 +1,4 @@
+# Evidence bundle JSON input helpers.
 # Evidence item spec parsing helpers.
 # Evidence item notes rendering repair.
 from __future__ import annotations
@@ -268,6 +269,67 @@ def build_preservation_evidence_bundle(
         notes=str(notes or "").strip(),
         warnings=tuple(warnings),
         items=item_tuple,
+    )
+
+
+
+def _string_from_mapping(
+    data: dict[str, Any],
+    key: str,
+    *,
+    required: bool = False,
+) -> str:
+    value = data.get(key, "")
+    if value is None:
+        value = ""
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a string")
+    normalized = value.strip()
+    if required and not normalized:
+        raise ValueError(f"{key} must not be empty")
+    return normalized
+
+
+def build_preservation_evidence_item_from_dict(
+    data: dict[str, Any],
+) -> PreservationEvidenceItem:
+    if not isinstance(data, dict):
+        raise ValueError("evidence bundle item must be an object")
+    return build_preservation_evidence_item(
+        artifact_id=_string_from_mapping(data, "artifact_id", required=True),
+        artifact_format=_string_from_mapping(data, "artifact_format", required=True),
+        capture_method_id=_string_from_mapping(data, "capture_method_id"),
+        artifact_role=_string_from_mapping(data, "artifact_role") or "supporting",
+        origin=_string_from_mapping(data, "origin") or "unknown",
+        path_hint=_string_from_mapping(data, "path_hint"),
+        notes=_string_from_mapping(data, "notes"),
+        limitations=_string_from_mapping(data, "limitations"),
+    )
+
+
+def build_preservation_evidence_bundle_from_dict(
+    data: dict[str, Any],
+) -> PreservationEvidenceBundle:
+    if not isinstance(data, dict):
+        raise ValueError("evidence_bundle must be an object")
+
+    items_value = data.get("items", [])
+    if items_value is None:
+        items_value = []
+    if not isinstance(items_value, list):
+        raise ValueError("evidence_bundle.items must be a list")
+
+    return build_preservation_evidence_bundle(
+        source_url=_string_from_mapping(data, "source_url"),
+        source_id=_string_from_mapping(data, "source_id"),
+        source_name=_string_from_mapping(data, "source_name"),
+        bundle_label=_string_from_mapping(data, "bundle_label"),
+        status=_string_from_mapping(data, "status") or BUNDLE_STATUS_PLANNED,
+        notes=_string_from_mapping(data, "notes"),
+        items=tuple(
+            build_preservation_evidence_item_from_dict(item)
+            for item in items_value
+        ),
     )
 
 
