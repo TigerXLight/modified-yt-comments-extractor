@@ -465,3 +465,5 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 `preservation_evidence_bundle_regression_runner_test.py` now asserts `evidence bundle regression runner behavior` remains the final canonical label and that all-non-self targeted coverage exactly equals `EXPECTED_LABELS[:-1]`, preventing accidental recursive self-selection changes.
 
 `preservation_evidence_bundle_regression_runner_test.py` now verifies repeated unknown `--only` labels fail cleanly together: stdout stays empty, no success output leaks, both missing labels are named, and valid expected choices remain listed.
+
+`preservation_evidence_bundle_regression_runner_test.py` now centralizes the aggregate success banner and self-recursive runner behavior label as constants and documents why broad coverage uses targeted non-self selection rather than a no-filter aggregate runner call.

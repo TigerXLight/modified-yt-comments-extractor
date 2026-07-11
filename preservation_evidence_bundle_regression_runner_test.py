@@ -2,6 +2,9 @@ import subprocess
 import sys
 
 
+SUCCESS_BANNER = "Preservation evidence bundle regression self-test passed."
+RUNNER_BEHAVIOR_LABEL = "evidence bundle regression runner behavior"
+
 EXPECTED_LABELS = (
     "evidence bundle model/rendering",
     "evidence bundle JSON helper validation",
@@ -9,7 +12,7 @@ EXPECTED_LABELS = (
     "standalone evidence bundle CLI",
     "preservation backend plan CLI integration",
     "Total Export prepare CLI integration",
-    "evidence bundle regression runner behavior",
+    RUNNER_BEHAVIOR_LABEL,
 )
 
 
@@ -42,12 +45,12 @@ def _passed_labels(stdout: str) -> tuple[str, ...]:
 
 
 def _assert_success_banner_once(result: subprocess.CompletedProcess[str]) -> None:
-    assert result.stdout.count('Preservation evidence bundle regression self-test passed.') == 1, result.stdout
+    assert result.stdout.count(SUCCESS_BANNER) == 1, result.stdout
 
 
 def _assert_no_success_output(result: subprocess.CompletedProcess[str]) -> None:
     assert result.stdout == "", result.stdout
-    assert 'Preservation evidence bundle regression self-test passed.' not in result.stderr, result.stderr
+    assert SUCCESS_BANNER not in result.stderr, result.stderr
     assert ": passed" not in result.stderr, result.stderr
 
 
@@ -57,19 +60,19 @@ def run_self_test() -> None:
     assert _listed_labels(list_result.stdout) == EXPECTED_LABELS
     _assert_list_output_shape(list_result.stdout)
     assert len(set(EXPECTED_LABELS)) == len(EXPECTED_LABELS)
-    assert EXPECTED_LABELS[-1] == 'evidence bundle regression runner behavior'
+    assert EXPECTED_LABELS[-1] == RUNNER_BEHAVIOR_LABEL
     assert len(set(_listed_labels(list_result.stdout))) == len(EXPECTED_LABELS)
     assert list_result.stderr == ""
     assert _passed_labels(list_result.stdout) == ()
     assert "passed" not in list_result.stdout
-    assert "Preservation evidence bundle regression self-test passed." not in list_result.stdout
+    assert SUCCESS_BANNER not in list_result.stdout
 
     only_result = _run_runner("--only", "evidence bundle JSON helper validation")
     assert only_result.returncode == 0, only_result.stderr
     assert "evidence bundle JSON helper validation: passed" in only_result.stdout
     assert "standalone evidence bundle CLI: passed" not in only_result.stdout
-    assert "evidence bundle regression runner behavior: passed" not in only_result.stdout
-    assert "Preservation evidence bundle regression self-test passed." in only_result.stdout
+    assert f"{RUNNER_BEHAVIOR_LABEL}: passed" not in only_result.stdout
+    assert SUCCESS_BANNER in only_result.stdout
     _assert_success_banner_once(only_result)
     assert _passed_labels(only_result.stdout) == ('evidence bundle JSON helper validation',)
     assert only_result.stderr == ""
@@ -79,8 +82,8 @@ def run_self_test() -> None:
     assert "evidence bundle local-only scope invariants: passed" in scope_only_result.stdout
     assert "evidence bundle JSON helper validation: passed" not in scope_only_result.stdout
     assert "standalone evidence bundle CLI: passed" not in scope_only_result.stdout
-    assert "evidence bundle regression runner behavior: passed" not in scope_only_result.stdout
-    assert "Preservation evidence bundle regression self-test passed." in scope_only_result.stdout
+    assert f"{RUNNER_BEHAVIOR_LABEL}: passed" not in scope_only_result.stdout
+    assert SUCCESS_BANNER in scope_only_result.stdout
     _assert_success_banner_once(scope_only_result)
     assert _passed_labels(scope_only_result.stdout) == ('evidence bundle local-only scope invariants',)
     assert scope_only_result.stderr == ""
@@ -95,8 +98,8 @@ def run_self_test() -> None:
     assert "evidence bundle JSON helper validation: passed" in multi_only_result.stdout
     assert "evidence bundle local-only scope invariants: passed" in multi_only_result.stdout
     assert "standalone evidence bundle CLI: passed" not in multi_only_result.stdout
-    assert "evidence bundle regression runner behavior: passed" not in multi_only_result.stdout
-    assert "Preservation evidence bundle regression self-test passed." in multi_only_result.stdout
+    assert f"{RUNNER_BEHAVIOR_LABEL}: passed" not in multi_only_result.stdout
+    assert SUCCESS_BANNER in multi_only_result.stdout
     _assert_success_banner_once(multi_only_result)
     assert _passed_labels(multi_only_result.stdout) == ('evidence bundle JSON helper validation', 'evidence bundle local-only scope invariants')
     assert multi_only_result.stderr == ""
@@ -112,7 +115,7 @@ def run_self_test() -> None:
         "evidence bundle JSON helper validation: passed"
     ) == 1
     assert "standalone evidence bundle CLI: passed" not in duplicate_only_result.stdout
-    assert "Preservation evidence bundle regression self-test passed." in duplicate_only_result.stdout
+    assert SUCCESS_BANNER in duplicate_only_result.stdout
     _assert_success_banner_once(duplicate_only_result)
     assert _passed_labels(duplicate_only_result.stdout) == ('evidence bundle JSON helper validation',)
     assert duplicate_only_result.stderr == ""
@@ -128,14 +131,16 @@ def run_self_test() -> None:
         "evidence bundle JSON helper validation",
         "evidence bundle local-only scope invariants",
     )
-    assert "Preservation evidence bundle regression self-test passed." in reverse_order_result.stdout
+    assert SUCCESS_BANNER in reverse_order_result.stdout
     _assert_success_banner_once(reverse_order_result)
     assert _passed_labels(reverse_order_result.stdout) == ('evidence bundle JSON helper validation', 'evidence bundle local-only scope invariants')
     assert reverse_order_result.stderr == ""
 
+    # Do not call the aggregate runner without --only here: that would recursively
+    # select this runner-behavior test group.
     non_self_labels = tuple(
         label for label in EXPECTED_LABELS
-        if label != 'evidence bundle regression runner behavior'
+        if label != RUNNER_BEHAVIOR_LABEL
     )
     assert non_self_labels == EXPECTED_LABELS[:-1]
     non_self_args = tuple(
@@ -145,8 +150,8 @@ def run_self_test() -> None:
     )
     non_self_result = _run_runner(*non_self_args)
     assert non_self_result.returncode == 0, non_self_result.stderr
-    assert "evidence bundle regression runner behavior: passed" not in non_self_result.stdout
-    assert "Preservation evidence bundle regression self-test passed." in non_self_result.stdout
+    assert f"{RUNNER_BEHAVIOR_LABEL}: passed" not in non_self_result.stdout
+    assert SUCCESS_BANNER in non_self_result.stdout
     _assert_success_banner_once(non_self_result)
     assert _passed_labels(non_self_result.stdout) == non_self_labels
     assert non_self_result.stderr == ""
