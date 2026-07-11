@@ -254,6 +254,9 @@ def run_self_test() -> None:
     unknown_result = _run_runner("--only", "missing regression group")
     _assert_unknown_label_failure(unknown_result, "missing regression group")
 
+    partial_label_result = _run_runner("--only", "evidence bundle")
+    _assert_unknown_label_failure(partial_label_result, "evidence bundle")
+
     multiple_unknown_result = _run_runner(
         *_only_args(
             "missing regression group",

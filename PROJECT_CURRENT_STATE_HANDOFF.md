@@ -495,3 +495,5 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 `preservation_evidence_bundle_regression_runner_test.py` now covers `--list` combined with `--only`, asserting the runner still prints the canonical list and emits no regression pass output.
 
 `preservation_evidence_bundle_regression_runner_test.py` now covers `--help` combined with `--only` and `--list`, asserting argparse help remains diagnostic-only and emits no regression pass output.
+
+`preservation_evidence_bundle_regression_runner_test.py` now covers partial `--only` label text, asserting substring/fuzzy matches are rejected as unknown labels before any regression group runs.
