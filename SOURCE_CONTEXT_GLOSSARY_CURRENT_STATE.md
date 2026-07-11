@@ -327,3 +327,6 @@ The aggregate evidence bundle regression runner now includes its own behavior te
 
 
 Evidence bundle local-only scope invariants now cover text and JSON output surfaces, checking path hints remain descriptive and no-open/scan/hash/upload/capture/network wording remains visible.
+
+
+Evidence bundle local-only scope invariants now cover Markdown output for the standalone evidence bundle and backend preservation-plan CLIs, keeping path hints descriptive and local-only.

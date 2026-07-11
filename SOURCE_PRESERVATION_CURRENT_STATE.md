@@ -256,3 +256,6 @@ Full evidence bundle regression runs now include the runner behavior test group.
 
 
 Evidence bundle local-only scope invariant testing now covers both text and JSON outputs across standalone evidence bundle CLI, preservation backend plan CLI, and Total Export preservation-plan explanations.
+
+
+Evidence bundle local-only scope invariant testing now includes Markdown output for standalone evidence bundle CLI and preservation backend plan CLI, in addition to text and JSON outputs.

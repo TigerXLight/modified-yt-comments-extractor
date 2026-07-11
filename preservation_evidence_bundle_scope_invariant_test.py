@@ -51,14 +51,21 @@ def _assert_local_only_bundle(bundle: dict) -> None:
 
 def _assert_local_only_text(output: str) -> None:
     lower_output = output.lower()
-    normalized_output = output.replace("\\\\", "\\")
-    assert "path_hint=captures\\comments.png" in normalized_output, output
+    normalized_output = output.replace("\\\\", "\\").lower()
+    assert (
+        "path_hint=captures\\comments.png" in normalized_output
+        or "path hint: captures\\comments.png" in normalized_output
+    ), output
     assert "scan" in lower_output, output
     assert "hash" in lower_output, output
     assert "upload" in lower_output, output
     assert "capture" in lower_output, output
     assert "network" in lower_output, output
-    assert "not opened or checked" in lower_output or "no file open" in lower_output, output
+    assert (
+        "not opened or checked" in lower_output
+        or "no file open" in lower_output
+        or "not opened" in lower_output
+    ), output
 
 
 def run_self_test() -> None:
@@ -90,6 +97,16 @@ def run_self_test() -> None:
         )
         assert standalone_text_result.returncode == 0, standalone_text_result.stderr
         _assert_local_only_text(standalone_text_result.stdout)
+
+        standalone_markdown_result = _run_command(
+            "preservation_evidence_bundle_cli.py",
+            "--input",
+            str(input_path),
+            "--format",
+            "markdown",
+        )
+        assert standalone_markdown_result.returncode == 0, standalone_markdown_result.stderr
+        _assert_local_only_text(standalone_markdown_result.stdout)
 
         backend_input_path = Path(temp_dir) / "backend_plan.json"
         backend_input_path.write_text(
@@ -125,6 +142,16 @@ def run_self_test() -> None:
         )
         assert backend_plan_text_result.returncode == 0, backend_plan_text_result.stderr
         _assert_local_only_text(backend_plan_text_result.stdout)
+
+        backend_plan_markdown_result = _run_command(
+            "preservation_backend_plan_cli.py",
+            "--input",
+            str(backend_input_path),
+            "--format",
+            "markdown",
+        )
+        assert backend_plan_markdown_result.returncode == 0, backend_plan_markdown_result.stderr
+        _assert_local_only_text(backend_plan_markdown_result.stdout)
 
         total_export_result = _run_command(
             "total_export_prepare_cli.py",

@@ -361,3 +361,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now checks text output and JSON output for local-only evidence scope wording and path hints across standalone evidence bundle CLI, preservation backend plan CLI, and Total Export preservation-plan explanations.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now checks Markdown output for standalone evidence bundle CLI and preservation backend plan CLI local-only scope wording and path hints, alongside existing text and JSON checks.
