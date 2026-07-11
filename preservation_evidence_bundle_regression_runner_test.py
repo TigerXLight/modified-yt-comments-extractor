@@ -58,6 +58,7 @@ def run_self_test() -> None:
     assert len(set(EXPECTED_LABELS)) == len(EXPECTED_LABELS)
     assert len(set(_listed_labels(list_result.stdout))) == len(EXPECTED_LABELS)
     assert list_result.stderr == ""
+    assert _passed_labels(list_result.stdout) == ()
     assert "passed" not in list_result.stdout
     assert "Preservation evidence bundle regression self-test passed." not in list_result.stdout
 

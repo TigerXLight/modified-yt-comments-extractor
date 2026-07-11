@@ -451,3 +451,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now asserts `--list` output shape exactly matches one raw `LABEL` line for each canonical regression label, with no headers, bullets, or extra lines.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now explicitly parses `--list` output with `_passed_labels(...)` and asserts it yields an empty tuple, reinforcing that list mode never emits pass-result lines.

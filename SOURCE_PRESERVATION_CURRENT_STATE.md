@@ -346,3 +346,6 @@ Evidence bundle regression runner behavior tests now assert unknown-label failur
 
 
 Evidence bundle regression runner behavior tests now assert `--list` output is exactly the canonical raw label list and nothing else.
+
+
+Evidence bundle regression runner behavior tests now assert `--list` output parses to no passed regression labels.

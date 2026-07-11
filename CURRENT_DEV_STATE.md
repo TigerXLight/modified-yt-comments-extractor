@@ -863,3 +863,5 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now asserts unknown-label failures emit no success banner or passed-output lines.
 
 - The evidence bundle regression runner behavior test now asserts `--list` output is exactly one raw label line per canonical regression label.
+
+- The evidence bundle regression runner behavior test now explicitly asserts `--list` output parses to zero `: passed` labels.

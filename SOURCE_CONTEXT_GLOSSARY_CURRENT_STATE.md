@@ -417,3 +417,6 @@ Evidence bundle regression runner behavior coverage now verifies failure diagnos
 
 
 Evidence bundle regression runner behavior coverage now pins list-mode output shape to one raw label line per canonical regression label.
+
+
+Evidence bundle regression runner behavior coverage now explicitly verifies list-mode output has zero parsed `: passed` labels.
