@@ -412,3 +412,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now asserts evidence items keep `execution=metadata only` semantics when present in structured outputs and in rendered text/Markdown output surfaces.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now rejects parent-traversal path hints in addition to URL, drive-qualified, root-relative, and absolute examples, keeping evidence hints relative and non-resolving.

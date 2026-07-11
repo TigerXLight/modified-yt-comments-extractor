@@ -307,3 +307,6 @@ Evidence bundle local-only scope invariant testing now checks text/Markdown outp
 
 
 Evidence bundle local-only scope invariant testing now asserts `metadata only` execution semantics when present in structured outputs and in rendered evidence bundle outputs.
+
+
+Evidence bundle local-only scope invariant testing now includes parent-traversal path-hint rejection for both Windows-style and POSIX-style examples.

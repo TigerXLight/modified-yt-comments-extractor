@@ -85,6 +85,8 @@ def _assert_descriptive_path_hint(path_hint: str) -> None:
     assert ":" not in path_hint, path_hint
     assert not path_hint.startswith(("/", "\\")), path_hint
     assert not Path(path_hint).is_absolute(), path_hint
+    normalized_parts = path_hint.replace("\\", "/").split("/")
+    assert ".." not in normalized_parts, path_hint
 
 
 def _assert_rejects_path_hint(path_hint: str) -> None:
@@ -163,6 +165,8 @@ def run_self_test() -> None:
     _assert_rejects_path_hint(r"C:\captures\comments.png")
     _assert_rejects_path_hint(r"\captures\comments.png")
     _assert_rejects_path_hint("/tmp/captures/comments.png")
+    _assert_rejects_path_hint(r"..\captures\comments.png")
+    _assert_rejects_path_hint("../captures/comments.png")
 
     for forbidden_key in sorted(FORBIDDEN_FILE_STATE_KEYS):
         _assert_rejects_file_state_key(forbidden_key)

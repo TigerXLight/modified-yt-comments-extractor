@@ -378,3 +378,6 @@ Evidence bundle local-only scope invariants now reject rendered file-state field
 
 
 Evidence bundle local-only scope invariants now check metadata-only execution wording when present in structured outputs and in rendered outputs so evidence items remain descriptive rather than executable artifacts.
+
+
+Evidence bundle local-only scope invariants now reject parent-traversal path hints, so descriptive evidence hints cannot point outside their labeled relative context.
