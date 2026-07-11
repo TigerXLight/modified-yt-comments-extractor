@@ -14,6 +14,14 @@ def _run_cli(argv: list[str]):
         code = main(argv)
     return code, stdout.getvalue(), stderr.getvalue()
 
+def _assert_cli_failure(argv: list[str], expected_error: str) -> str:
+    code, stdout, stderr = _run_cli(argv)
+    assert code == 1
+    assert stdout == ""
+    assert expected_error in stderr
+    return stderr
+
+
 
 def _write_json(path: Path, data) -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -135,10 +143,7 @@ def run_self_test() -> None:
         assert stderr == ""
         assert output_path.read_text(encoding="utf-8").startswith("# Source Capture Plan")
 
-        code, stdout, stderr = _run_cli(output_args)
-        assert code == 1
-        assert stdout == ""
-        assert "output path already exists" in stderr
+        _assert_cli_failure(output_args, 'output path already exists')
 
         output_path.write_text("old\n", encoding="utf-8")
         code, stdout, stderr = _run_cli([*output_args, "--overwrite"])
@@ -148,31 +153,19 @@ def run_self_test() -> None:
         assert "Source Capture Plan" in output_path.read_text(encoding="utf-8")
 
         missing_input = root / "missing.json"
-        code, stdout, stderr = _run_cli(["--input", str(missing_input)])
-        assert code == 1
-        assert stdout == ""
-        assert "input file not found" in stderr
+        _assert_cli_failure(["--input", str(missing_input)], 'input file not found')
 
         invalid_input = root / "invalid.json"
         invalid_input.write_text("{not json\n", encoding="utf-8")
-        code, stdout, stderr = _run_cli(["--input", str(invalid_input)])
-        assert code == 1
-        assert stdout == ""
-        assert "invalid JSON" in stderr
+        _assert_cli_failure(["--input", str(invalid_input)], 'invalid JSON')
 
         list_input = root / "list.json"
         _write_json(list_input, [])
-        code, stdout, stderr = _run_cli(["--input", str(list_input)])
-        assert code == 1
-        assert stdout == ""
-        assert "input JSON must be an object" in stderr
+        _assert_cli_failure(["--input", str(list_input)], 'input JSON must be an object')
 
         missing_url = root / "missing_url.json"
         _write_json(missing_url, {"source_label": "missing"})
-        code, stdout, stderr = _run_cli(["--input", str(missing_url)])
-        assert code == 1
-        assert stdout == ""
-        assert "source_url" in stderr
+        stderr = _assert_cli_failure(["--input", str(missing_url)], 'source_url')
         assert "required" in stderr or "include" in stderr
 
         bad_options = root / "bad_options.json"
@@ -183,10 +176,7 @@ def run_self_test() -> None:
                 "selected_capture_options": "comments",
             },
         )
-        code, stdout, stderr = _run_cli(["--input", str(bad_options)])
-        assert code == 1
-        assert stdout == ""
-        assert "selected_capture_options must be a list of strings" in stderr
+        _assert_cli_failure(["--input", str(bad_options)], 'selected_capture_options must be a list of strings')
 
         bad_terms = root / "bad_terms.json"
         _write_json(
@@ -196,10 +186,7 @@ def run_self_test() -> None:
                 "user_terms": "Nyxara",
             },
         )
-        code, stdout, stderr = _run_cli(["--input", str(bad_terms)])
-        assert code == 1
-        assert stdout == ""
-        assert "user_terms must be a list of strings" in stderr
+        _assert_cli_failure(["--input", str(bad_terms)], 'user_terms must be a list of strings')
 
 
 if __name__ == "__main__":

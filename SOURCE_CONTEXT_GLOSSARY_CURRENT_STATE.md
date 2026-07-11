@@ -479,3 +479,5 @@ Preservation backend plan CLI coverage now includes a batched cleanup pass for c
 Total Export prepare CLI coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and descriptive-only export/evidence plan semantics.
 
 Preservation planning CLI/report coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and local-only preservation metadata semantics.
+
+Source capture/context CLI coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and local-only, non-fetch context/glossary semantics.

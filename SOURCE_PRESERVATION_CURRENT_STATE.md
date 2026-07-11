@@ -408,3 +408,5 @@ Preservation backend plan CLI tests now share invalid-command result checks whil
 Total Export prepare CLI tests now share invalid-command result checks while preserving metadata-only ArchiveBox, archive, download, screenshot, hash, file-open, validation, and temp-output boundaries.
 
 Preservation planning CLI/report tests now share invalid-command result checks while preserving metadata-only archive, download, network/API, file-open, validation, and temp-output boundaries.
+
+Source capture/context CLI tests now share invalid-command result checks while preserving metadata-only source planning, glossary, network/API, fetch, browser, validation, and temp-output boundaries.
