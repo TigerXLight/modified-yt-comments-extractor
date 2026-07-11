@@ -14,6 +14,7 @@ from total_export_zip_inspect import (
     ZIP_INSPECTION_STATUS_MULTIPLE_MANIFESTS,
     ZIP_INSPECTION_STATUS_OK,
     ZIP_INSPECTION_STATUS_UNSAFE_ENTRIES,
+    TotalExportZipInspectionResult,
     build_total_export_zip_inspection_text,
     inspect_total_export_zip,
     total_export_zip_inspection_to_dict,
@@ -55,11 +56,18 @@ def _write_zip_with_backslash_name(path: Path) -> None:
     path.write_bytes(data.replace(forward_name, backslash_name))
 
 
+def _assert_zip_status(
+    result: TotalExportZipInspectionResult,
+    expected_status: str,
+) -> None:
+    assert result.status == expected_status
+
+
 def run_self_test() -> None:
     with TemporaryDirectory() as temp_dir:
         zip_path = _prepare_zip(temp_dir)
         result = inspect_total_export_zip(zip_path)
-        assert result.status == ZIP_INSPECTION_STATUS_OK
+        _assert_zip_status(result, ZIP_INSPECTION_STATUS_OK)
         assert result.zip_found
         assert result.zip_readable
         assert result.zip_sha256
@@ -109,13 +117,13 @@ def run_self_test() -> None:
         )
 
         missing = inspect_total_export_zip(str(Path(temp_dir) / "missing.zip"))
-        assert missing.status == ZIP_INSPECTION_STATUS_MISSING_ZIP
+        _assert_zip_status(missing, ZIP_INSPECTION_STATUS_MISSING_ZIP)
         assert not missing.zip_found
 
         invalid_path = Path(temp_dir) / "invalid.zip"
         invalid_path.write_text("not a zip", encoding="utf-8")
         invalid = inspect_total_export_zip(str(invalid_path))
-        assert invalid.status == ZIP_INSPECTION_STATUS_INVALID_ZIP
+        _assert_zip_status(invalid, ZIP_INSPECTION_STATUS_INVALID_ZIP)
         assert invalid.zip_found
         assert not invalid.zip_readable
 
@@ -123,19 +131,19 @@ def run_self_test() -> None:
         with ZipFile(empty_path, "w"):
             pass
         empty = inspect_total_export_zip(str(empty_path))
-        assert empty.status == ZIP_INSPECTION_STATUS_EMPTY_ZIP
+        _assert_zip_status(empty, ZIP_INSPECTION_STATUS_EMPTY_ZIP)
 
         unsafe_path = Path(temp_dir) / "unsafe.zip"
         _write_zip(unsafe_path, [("../evil.txt", b"bad")])
         unsafe = inspect_total_export_zip(str(unsafe_path))
-        assert unsafe.status == ZIP_INSPECTION_STATUS_UNSAFE_ENTRIES
+        _assert_zip_status(unsafe, ZIP_INSPECTION_STATUS_UNSAFE_ENTRIES)
         assert "../evil.txt" in unsafe.unsafe_entries
 
         backslash_path = Path(temp_dir) / "backslash.zip"
         _write_zip_with_backslash_name(backslash_path)
         assert b"bad\\path.txt" in backslash_path.read_bytes()
         backslash = inspect_total_export_zip(str(backslash_path))
-        assert backslash.status == ZIP_INSPECTION_STATUS_UNSAFE_ENTRIES
+        _assert_zip_status(backslash, ZIP_INSPECTION_STATUS_UNSAFE_ENTRIES)
         assert "bad\\path.txt" in backslash.unsafe_entries
 
         duplicate_path = Path(temp_dir) / "duplicate.zip"
@@ -161,12 +169,15 @@ def run_self_test() -> None:
             ],
         )
         multiple_manifest = inspect_total_export_zip(str(multiple_manifest_path))
-        assert multiple_manifest.status == ZIP_INSPECTION_STATUS_MULTIPLE_MANIFESTS
+        _assert_zip_status(
+            multiple_manifest,
+            ZIP_INSPECTION_STATUS_MULTIPLE_MANIFESTS,
+        )
 
         no_manifest_path = Path(temp_dir) / "no_manifest.zip"
         _write_zip(no_manifest_path, [("package/file.txt", b"hello")])
         no_manifest = inspect_total_export_zip(str(no_manifest_path))
-        assert no_manifest.status == ZIP_INSPECTION_STATUS_MISSING_MANIFEST
+        _assert_zip_status(no_manifest, ZIP_INSPECTION_STATUS_MISSING_MANIFEST)
 
         entries = inspect_total_export_zip(zip_path, include_entries=True)
         entry_names = [entry.name for entry in entries.entries]

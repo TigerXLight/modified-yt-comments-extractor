@@ -531,3 +531,5 @@ Evidence bundle JSON input validation now has a batched helper/CLI audit proving
 `total_export_batch_review_plan_test.py` now centralizes repeated row/error count assertions while preserving ready, duplicate, warning, existing-output, item, and path diagnostics.
 
 `total_export_package_zip_test.py` now centralizes successful and failed ZIP result-state assertions while preserving path, hash, size, file-count, archive-entry, inspection-status, and exact diagnostic checks.
+
+`total_export_zip_inspect_test.py` now centralizes ZIP inspection status assertions while preserving found/readable flags, traversal and backslash safety, duplicate entries, manifest diagnostics, entry ordering, and hash coverage.
