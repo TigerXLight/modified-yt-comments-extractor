@@ -293,6 +293,124 @@ Planned fields:
 - Consider placing Total Export near the Source URLs/evidence capture controls rather than burying it with quick exports.
 - Archive Check can be default-on inside Total Export; Archive Submit should stay explicit.
 
+## Future Public Media Download / Evidence Capture Policy
+
+- Future media evidence planning may include explicit, user-selected download or capture of open public media for purposes such as academic analysis, archiving, journalism/current-events reference, criticism/review, transformation, accessibility, and preservation.
+- This is a future capability target, not current behavior. The current roadmap does not implement media downloading, discovery, capture execution, browser automation, scraping, archive submission, or source fetching.
+- Publicly accessible media should not be treated as automatically unrestricted for later redistribution. Preserve access mode, source URL, capture purpose, author/publisher credit, visible license/usage notes where available, and any user-entered rights/context notes.
+- Do not build bypass/circumvention features for DRM, private access controls, paywalls, login restrictions, meters, anti-copy controls, or site protections.
+- Future media capture should remain opt-in and source-aware, with clear choices for:
+  - no media capture
+  - selected media only
+  - all discovered public media on a source
+  - a defined count/amount of media items
+  - user-supplied local media registration
+- Media evidence outputs should record what was selected, what was skipped, why it was skipped if known, when it was captured or registered, and the local path/hash where applicable.
+
+## Future Behavior / Activity Log And Research Metrics
+
+- The app should eventually support a local behavior/activity log for evidence-project actions, separate from source evidence itself.
+- The log should help reconstruct what the user did inside the app, for example:
+  - source URL added
+  - source URL normalized or rejected
+  - media item added
+  - transcript/subtitle file added or edited
+  - reference text attached
+  - ASR provider/engine result imported or scored
+  - Total Export package created or updated
+  - archive URL manually added
+  - database category suggested, accepted, rejected, or changed
+- Log entries should include timestamps and stable item/session IDs so later review can compare what was visited, documented, captured, edited, exported, or reclassified.
+- The log may later support aggregate research metrics such as frequently documented sites, source platforms, topic categories, date buckets, outlet names, capture types, or user-defined classification dimensions.
+- Demographic or identity-category metrics must follow the database taxonomy safeguards: do not infer sensitive classifications from weak clues, keep unknown/not identified valid, and preserve the source/evidence basis for any classification.
+- The behavior log should not store secrets, API keys, cookies, passwords, private session tokens, or hidden browser credentials.
+- Transcript or subtitle edit logging should prefer version IDs, timestamps, file hashes, and optional user notes rather than silently exposing unrelated private text.
+- The user should be able to review, export, clear, or disable future local activity logging where appropriate.
+- This is planning-only and does not add tracking, analytics, telemetry, file watching, network access, or GUI behavior now.
+
+Planned behavior/activity fields:
+
+- `activity_id`
+- `session_id`
+- `activity_type`
+- `actor_type`
+- `actor_label`
+- `item_id`
+- `source_url`
+- `local_path`
+- `linked_item_ids`
+- `before_state_hash`
+- `after_state_hash`
+- `changed_fields`
+- `activity_time_utc`
+- `user_note`
+- `evidence_basis`
+- `export_package_id`
+- `database_root`
+- `category_path`
+- `privacy_level`
+
+## Future Compression / External Archive Tool Guidance
+
+- Total Export already plans local packages and deterministic ZIP-style packaging, but larger website archives and ArchiveBox-style stores may need stronger compression or user-selected external packaging tools.
+- Future UI may provide prompts or guidance for third-party compression tools such as 7-Zip, WinRAR, WinZip, or platform-native archive utilities, especially for large local website archives, media bundles, and ArchiveBox-style exports.
+- External compression should be explicit and user-triggered. Do not silently install, run, or depend on third-party compression software.
+- Record compression provenance where useful, including tool name, tool version if available, archive format, compression settings, input folder/package ID, output path, output size, and checksum.
+- Compression should preserve manifests, sidecars, source evidence, and reclassification/activity history rather than flattening evidence context.
+- This is planning-only and does not add dependencies, compression execution, ArchiveBox execution, or GUI behavior now.
+
+Planned compression fields:
+
+- `compression_tool`
+- `compression_tool_version`
+- `archive_format`
+- `compression_settings`
+- `input_package_or_folder`
+- `output_archive_path`
+- `output_size_bytes`
+- `output_hash`
+- `compressed_at_utc`
+- `compression_notes`
+
+## Future Source Crediting / Witness And Access-Actor Accounting
+
+- Source crediting should distinguish the source/publisher, article author, quoted or named witnesses, agencies, embedded media sources, the software user, and the capture session.
+- A news article author is the credited author of that article/report and can be cited for the authored framing/reporting in that article. The author is not automatically the primary/original source for every claim inside the article.
+- Named witnesses, quoted participants, authorities, family statements, agencies, embedded posts, and media credits inside an article should be represented as separate claim/source-role entries where relevant.
+- Per article or source, the app should eventually support counting accountable witnesses or accountable source actors only when the evidence basis is explicit enough, for example named author, named witness, named official, visible account, linked source, or manually documented source note.
+- Anonymous viewers, unverifiable social viewers, likes, reactions, and generic comment counts should not be treated as accountable witnesses.
+- On YouTube and similar platforms, comments can be attributed to visible account/channel authors where available, but most viewers are not individually verifiable people and should not be counted as accountable witnesses merely because the video has views.
+- The software user is an access/capture actor: the person who supplied the URL, imported the file, captured the screenshot, added an archive URL, or created the export. The user is not automatically a primary source for the underlying event unless they separately provide their own authored statement or evidence.
+- Each accountable source actor or witness entry should preserve scope: what they authored, observed, claimed, repeated, translated, framed, captured, or manually supplied.
+- Access/capture proof should preserve the date/time the page or source was accessed and the evidence that it was accessible then, such as screenshot path, archive URL, HTML/text snapshot path, local file hash, manifest entry, or manual source note.
+- Source crediting should work per claim and per media item, not only per page.
+
+Planned source-credit/witness fields:
+
+- `source_actor_id`
+- `source_actor_type`
+- `source_actor_display_name`
+- `source_actor_role`
+- `account_or_profile_url`
+- `article_author_name`
+- `publisher_name`
+- `agency_or_wire_credit`
+- `quoted_witness_name`
+- `quoted_witness_role`
+- `claim_id`
+- `claim_scope`
+- `source_role`
+- `source_status`
+- `access_actor`
+- `captured_by_user`
+- `accessed_at_utc`
+- `captured_at_utc`
+- `access_proof_type`
+- `access_proof_path_or_url`
+- `evidence_hash`
+- `witness_count_basis`
+- `verification_notes`
+
 ## Future Add Media / Evidence Item Queue
 
 - The current Add Media flow should evolve into a short selectable media/evidence item queue at the left or right of the workspace.
