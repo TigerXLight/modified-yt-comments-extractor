@@ -881,3 +881,4 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now covers malformed `--only` usage with no label value, ensuring argparse rejects it before any regression output appears.
 - The evidence bundle regression runner behavior test now covers blank or whitespace-only `--only` labels, ensuring validation rejects them before any regression output appears.
 - The evidence bundle regression runner behavior test now shares malformed `--only` argument assertions through a helper while keeping blank-label validation diagnostic-only.
+- The evidence bundle regression runner behavior test now covers unexpected positional arguments, ensuring argparse rejects them before any regression output appears.

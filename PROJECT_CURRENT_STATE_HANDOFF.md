@@ -483,3 +483,5 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 `preservation_evidence_bundle_regression_runner_test.py` now covers blank/whitespace-only `--only` labels and asserts diagnostic-only failure output before any regression group can run.
 
 `preservation_evidence_bundle_regression_runner_test.py` now centralizes malformed bare `--only` assertion checks in a helper, preserving diagnostic-only failure behavior for malformed and blank targeted selections.
+
+`preservation_evidence_bundle_regression_runner_test.py` now covers unexpected positional runner arguments and asserts diagnostic-only argparse failure before any regression group can run.

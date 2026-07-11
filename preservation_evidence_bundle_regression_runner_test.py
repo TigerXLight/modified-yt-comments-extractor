@@ -195,6 +195,13 @@ def run_self_test() -> None:
     missing_only_value_result = _run_runner("--only")
     _assert_only_argument_failure(missing_only_value_result)
 
+    unexpected_arg_result = _run_runner("unexpected-positional")
+    assert unexpected_arg_result.returncode == 2
+    _assert_no_success_output(unexpected_arg_result)
+    assert "unexpected-positional" in unexpected_arg_result.stderr
+    unexpected_arg_error = unexpected_arg_result.stderr.lower()
+    assert "unrecognized" in unexpected_arg_error or "argument" in unexpected_arg_error
+
     blank_label_result = _run_runner("--only", "   ")
     _assert_unknown_label_failure(blank_label_result)
 
