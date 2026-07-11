@@ -40,6 +40,8 @@ def run_self_test() -> None:
     assert list_result.returncode == 0, list_result.stderr
     assert _listed_labels(list_result.stdout) == EXPECTED_LABELS
     assert list_result.stderr == ""
+    assert "passed" not in list_result.stdout
+    assert "Preservation evidence bundle regression self-test passed." not in list_result.stdout
 
     only_result = _run_runner("--only", "evidence bundle JSON helper validation")
     assert only_result.returncode == 0, only_result.stderr

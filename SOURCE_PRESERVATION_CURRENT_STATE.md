@@ -316,3 +316,6 @@ Evidence bundle local-only scope invariant testing now includes embedded parent-
 
 
 Evidence bundle regression runner behavior tests now assert mixed known/unknown `--only` diagnostics list every valid regression label.
+
+
+Evidence bundle regression runner behavior tests now assert `--list` remains listing-only and does not emit regression pass output.

@@ -387,3 +387,6 @@ Evidence bundle local-only scope invariants now reject embedded parent-traversal
 
 
 Evidence bundle regression runner behavior coverage now checks mixed known/unknown selection errors include all expected regression labels.
+
+
+Evidence bundle regression runner behavior coverage now checks `--list` does not run regression groups or emit pass output.

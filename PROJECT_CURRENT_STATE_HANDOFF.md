@@ -421,3 +421,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now verifies mixed known/unknown `--only` failures include the `expected one of` choices and every current regression label, matching the single-unknown diagnostic coverage.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now verifies `--list` is listing-only by rejecting pass banners and per-test `passed` output in list mode.
