@@ -406,3 +406,5 @@ Standalone evidence bundle CLI tests now share invalid-command result checks whi
 Preservation backend plan CLI tests now share invalid-command result checks while preserving metadata-only ArchiveBox, archive, download, screenshot, hash, file-open, validation, and temp-output boundaries.
 
 Total Export prepare CLI tests now share invalid-command result checks while preserving metadata-only ArchiveBox, archive, download, screenshot, hash, file-open, validation, and temp-output boundaries.
+
+Preservation planning CLI/report tests now share invalid-command result checks while preserving metadata-only archive, download, network/API, file-open, validation, and temp-output boundaries.

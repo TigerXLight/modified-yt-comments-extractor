@@ -895,3 +895,4 @@ Next local-ASR branches:
 - The standalone evidence bundle CLI tests now include a batched cleanup pass that shares invalid-command result assertions while preserving descriptive, non-operational metadata output coverage.
 - The preservation backend plan CLI integration tests now include a batched cleanup pass that shares invalid-command assertions while preserving descriptive, non-operational plan coverage.
 - The Total Export prepare CLI integration tests now include a batched cleanup pass that shares invalid-command assertions while preserving descriptive, non-operational export/evidence plan coverage.
+- The preservation planning CLI/report tests now include a batched cleanup pass that shares invalid-command assertions while preserving local-only preservation metadata/report semantics.

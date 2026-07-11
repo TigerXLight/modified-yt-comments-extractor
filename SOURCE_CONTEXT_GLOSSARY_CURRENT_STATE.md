@@ -477,3 +477,5 @@ Standalone evidence bundle CLI coverage now includes a batched cleanup pass for 
 Preservation backend plan CLI coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and descriptive-only preservation/evidence plan semantics.
 
 Total Export prepare CLI coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and descriptive-only export/evidence plan semantics.
+
+Preservation planning CLI/report coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and local-only preservation metadata semantics.

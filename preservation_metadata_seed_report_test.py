@@ -20,6 +20,13 @@ def _run_cli(argv: list[str]):
         code = main(argv)
     return code, stdout.getvalue(), stderr.getvalue()
 
+def _assert_cli_failure(argv: list[str], expected_error: str) -> None:
+    code, stdout, stderr = _run_cli(argv)
+    assert code == 1
+    assert stdout == ""
+    assert expected_error in stderr
+
+
 
 def run_self_test() -> None:
     seed = load_preservation_metadata_seed(DEFAULT_SEED_PATH)
@@ -89,10 +96,7 @@ def run_self_test() -> None:
             "# Preservation Metadata Seed Report"
         )
 
-        code, stdout, stderr = _run_cli(output_args)
-        assert code == 1
-        assert stdout == ""
-        assert "Output file already exists" in stderr
+        _assert_cli_failure(output_args, 'Output file already exists')
 
         output_path.write_text("old\n", encoding="utf-8")
         code, stdout, stderr = _run_cli([*output_args, "--overwrite"])
@@ -102,17 +106,11 @@ def run_self_test() -> None:
         assert "# Preservation Metadata Seed Report" in output_path.read_text(encoding="utf-8")
 
         missing_path = root / "missing.json"
-        code, stdout, stderr = _run_cli(["--input", str(missing_path)])
-        assert code == 1
-        assert stdout == ""
-        assert "does not exist" in stderr
+        _assert_cli_failure(['--input', str(missing_path)], 'does not exist')
 
         invalid_path = root / "invalid.json"
         invalid_path.write_text("{not json\n", encoding="utf-8")
-        code, stdout, stderr = _run_cli(["--input", str(invalid_path)])
-        assert code == 1
-        assert stdout == ""
-        assert "Invalid seed JSON input" in stderr
+        _assert_cli_failure(['--input', str(invalid_path)], 'Invalid seed JSON input')
 
 
 if __name__ == "__main__":

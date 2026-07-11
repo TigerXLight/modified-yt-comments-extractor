@@ -65,6 +65,13 @@ def _run_cli(argv: list[str]):
         code = main(argv)
     return code, stdout.getvalue(), stderr.getvalue()
 
+def _assert_cli_failure(argv: list[str], expected_error: str) -> None:
+    code, stdout, stderr = _run_cli(argv)
+    assert code == 1
+    assert stdout == ""
+    assert expected_error in stderr
+
+
 
 def run_self_test() -> None:
     with TemporaryDirectory() as temp_dir:
@@ -116,12 +123,7 @@ def run_self_test() -> None:
         assert stderr == ""
         assert output_path.read_text(encoding="utf-8").startswith("# Local Preservation Plan Report")
 
-        code, stdout, stderr = _run_cli(
-            ["--input", str(input_path), "--format", "markdown", "--output", str(output_path)]
-        )
-        assert code == 1
-        assert stdout == ""
-        assert "Output file already exists" in stderr
+        _assert_cli_failure(['--input', str(input_path), '--format', 'markdown', '--output', str(output_path)], 'Output file already exists')
 
         output_path.write_text("old\n", encoding="utf-8")
         code, stdout, stderr = _run_cli(
@@ -140,17 +142,11 @@ def run_self_test() -> None:
         assert stderr == ""
         assert "# Local Preservation Plan Report" in output_path.read_text(encoding="utf-8")
 
-        code, stdout, stderr = _run_cli(["--input", str(root / "missing.json")])
-        assert code == 1
-        assert stdout == ""
-        assert "Input file does not exist" in stderr
+        _assert_cli_failure(['--input', str(root / 'missing.json')], 'Input file does not exist')
 
         invalid_path = root / "invalid.json"
         invalid_path.write_text("{not json\n", encoding="utf-8")
-        code, stdout, stderr = _run_cli(["--input", str(invalid_path)])
-        assert code == 1
-        assert stdout == ""
-        assert "Invalid JSON input" in stderr
+        _assert_cli_failure(['--input', str(invalid_path)], 'Invalid JSON input')
 
         inferred_path = root / "inferred.json"
         inferred_data = {

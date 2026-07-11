@@ -511,3 +511,5 @@ Evidence bundle JSON input validation now has a batched helper/CLI audit proving
 `preservation_backend_plan_cli_test.py` now has a batched backend-plan CLI cleanup that centralizes failed-command assertions while preserving metadata-only preservation planning and backend/evidence non-operation boundaries.
 
 `total_export_prepare_cli_test.py` now has a batched Total Export CLI cleanup that centralizes failed-command assertions while preserving metadata-only export preparation and backend/evidence non-operation boundaries.
+
+`total_export_preservation_plan_cli_test.py` and `preservation_metadata_seed_report_test.py` now share invalid-command assertion helpers for preservation planning CLI/report coverage while preserving local-only, non-network semantics.
