@@ -349,3 +349,6 @@ Evidence bundle regression runner behavior tests now assert `--list` output is e
 
 
 Evidence bundle regression runner behavior tests now assert `--list` output parses to no passed regression labels.
+
+
+Evidence bundle regression runner behavior tests now make list-mode output shape strict enough to reject blank lines while preserving the standard trailing newline.

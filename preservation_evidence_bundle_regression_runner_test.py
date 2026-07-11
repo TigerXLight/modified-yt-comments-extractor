@@ -27,8 +27,9 @@ def _listed_labels(stdout: str) -> tuple[str, ...]:
 
 
 def _assert_list_output_shape(output: str) -> None:
-    lines = tuple(line for line in output.splitlines() if line.strip())
+    lines = tuple(output.splitlines())
     assert lines == EXPECTED_LABELS, output
+    assert output.endswith("\n"), output
 
 
 def _passed_labels(stdout: str) -> tuple[str, ...]:

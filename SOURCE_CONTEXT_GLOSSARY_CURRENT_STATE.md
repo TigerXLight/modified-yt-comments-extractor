@@ -420,3 +420,6 @@ Evidence bundle regression runner behavior coverage now pins list-mode output sh
 
 
 Evidence bundle regression runner behavior coverage now explicitly verifies list-mode output has zero parsed `: passed` labels.
+
+
+Evidence bundle regression runner behavior coverage now treats blank list-mode lines as output-shape failures and requires a trailing newline.

@@ -454,3 +454,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now explicitly parses `--list` output with `_passed_labels(...)` and asserts it yields an empty tuple, reinforcing that list mode never emits pass-result lines.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now tightens `--list` output shape by comparing all split lines directly to `EXPECTED_LABELS`, so blank lines fail, and by requiring the normal trailing newline.
