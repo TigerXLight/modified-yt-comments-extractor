@@ -439,3 +439,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now guards against duplicate regression labels by checking both the canonical `EXPECTED_LABELS` tuple and parsed `--list` output.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now asserts successful targeted runner subprocesses emit the aggregate success banner exactly once, preventing duplicate or missing completion banners.

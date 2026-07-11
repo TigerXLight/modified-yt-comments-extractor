@@ -334,3 +334,6 @@ Evidence bundle regression runner behavior tests now assert multi-target and rev
 
 
 Evidence bundle regression runner behavior tests now assert the canonical regression label list and `--list` output remain duplicate-free.
+
+
+Evidence bundle regression runner behavior tests now assert successful targeted subprocess runs produce one and only one success banner.

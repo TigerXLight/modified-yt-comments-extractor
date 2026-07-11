@@ -405,3 +405,6 @@ Evidence bundle regression runner behavior coverage now pins exact passed-label 
 
 
 Evidence bundle regression runner behavior coverage now rejects duplicate regression labels in the expected label set and list-mode output.
+
+
+Evidence bundle regression runner behavior coverage now verifies successful targeted runs emit exactly one aggregate success banner.

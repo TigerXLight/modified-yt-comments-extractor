@@ -35,6 +35,10 @@ def _passed_labels(stdout: str) -> tuple[str, ...]:
     )
 
 
+def _assert_success_banner_once(result: subprocess.CompletedProcess[str]) -> None:
+    assert result.stdout.count('Preservation evidence bundle regression self-test passed.') == 1, result.stdout
+
+
 def run_self_test() -> None:
     list_result = _run_runner("--list")
     assert list_result.returncode == 0, list_result.stderr
