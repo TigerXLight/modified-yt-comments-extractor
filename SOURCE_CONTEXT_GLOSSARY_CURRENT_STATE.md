@@ -491,3 +491,5 @@ Total Export review bundle verification coverage now includes a batched cleanup 
 Total Export review bundle folder verification coverage now includes a batched cleanup pass for shared folder count assertions and local-only ZIP sidecar diagnostics.
 
 Total Export batch review bundle coverage now shares deterministic row/success/failure count checks across its main batch-result scenarios.
+
+Total Export batch review reconciliation coverage now shares deterministic single-item status checks across its primary local result scenarios.

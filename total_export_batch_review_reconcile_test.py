@@ -7,6 +7,7 @@ from total_export_batch_review_reconcile import (
     BATCH_RECONCILE_STATUS_MISSING_SIDECARS,
     BATCH_RECONCILE_STATUS_MISSING_ZIP,
     BATCH_RECONCILE_STATUS_VERIFY_PASSED,
+    TotalExportBatchReviewReconcileResult,
     batch_review_reconcile_to_dict,
     build_total_export_batch_review_reconcile,
     build_total_export_batch_review_reconcile_text,
@@ -21,6 +22,15 @@ CANONICAL_URL = f"https://www.youtube.com/watch?v={VALID_ID}"
 
 def _write_batch(path: Path, rows: list[str]) -> None:
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+def _assert_single_item_status(
+    result: TotalExportBatchReviewReconcileResult,
+    expected_status: str,
+) -> None:
+    assert result.row_count == 1
+    assert len(result.items) == 1
+    assert result.items[0].status == expected_status
 
 
 def run_self_test() -> None:
@@ -43,9 +53,8 @@ def run_self_test() -> None:
             base_folder=str(output_folder),
             selected_capture_options=["comments"],
         )
-        assert no_outputs.row_count == 1
+        _assert_single_item_status(no_outputs, BATCH_RECONCILE_STATUS_MISSING_ZIP)
         assert no_outputs.missing_zip_count == 1
-        assert no_outputs.items[0].status == BATCH_RECONCILE_STATUS_MISSING_ZIP
         assert no_outputs.items[0].zip_exists is False
         assert output_folder.exists() is False
 
@@ -71,9 +80,8 @@ def run_self_test() -> None:
             batch_source_file=str(empty_file),
             base_folder=str(root / "empty_output"),
         )
-        assert empty.row_count == 1
+        _assert_single_item_status(empty, BATCH_RECONCILE_STATUS_ERROR)
         assert empty.error_count == 1
-        assert empty.items[0].status == BATCH_RECONCILE_STATUS_ERROR
 
         unsupported_file = root / "unsupported.txt"
         _write_batch(unsupported_file, ["https://example.com/article\tunsupported package"])
@@ -101,10 +109,9 @@ def run_self_test() -> None:
             base_folder=str(built_output),
             selected_capture_options=["comments"],
         )
-        assert built.row_count == 1
+        _assert_single_item_status(built, BATCH_RECONCILE_STATUS_VERIFY_PASSED)
         assert built.complete_count == 1
         assert built.verification_passed_count == 1
-        assert built.items[0].status == BATCH_RECONCILE_STATUS_VERIFY_PASSED
         assert built.items[0].verification_status == "verified"
         assert built.items[0].verification
         assert built.items[0].zip_path == bundle.zip_path
@@ -124,8 +131,11 @@ def run_self_test() -> None:
             batch_source_file=str(missing_sidecar_file),
             base_folder=str(missing_sidecar_output),
         )
+        _assert_single_item_status(
+            missing_sidecar,
+            BATCH_RECONCILE_STATUS_MISSING_SIDECARS,
+        )
         assert missing_sidecar.missing_sidecar_count == 1
-        assert missing_sidecar.items[0].status == BATCH_RECONCILE_STATUS_MISSING_SIDECARS
         assert missing_sidecar.items[0].zip_exists is True
         assert missing_sidecar.items[0].sha256_sidecar_exists is False
 

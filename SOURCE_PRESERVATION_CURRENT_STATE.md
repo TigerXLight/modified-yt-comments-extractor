@@ -420,3 +420,5 @@ Total Export review bundle verification tests now share status checks while pres
 Total Export review bundle folder verification tests now share folder count checks while preserving metadata-only ZIP sidecar, no-extraction, recursion, report-output, network/API, download, archive, validation, mismatch, and missing-sidecar boundaries.
 
 Total Export batch review bundle tests now centralize repeated result-count assertions while retaining local ZIP, sidecar, folder-verification, and unsupported-source coverage.
+
+Total Export batch review reconciliation tests now centralize single-item status assertions while retaining local ZIP, sidecar, verification, report, warning, and no-network behavior.
