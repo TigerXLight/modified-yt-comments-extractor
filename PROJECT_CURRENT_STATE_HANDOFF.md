@@ -499,3 +499,5 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 `preservation_evidence_bundle_regression_runner_test.py` now covers partial `--only` label text, asserting substring/fuzzy matches are rejected as unknown labels before any regression group runs.
 
 `preservation_evidence_bundle_regression_runner_test.py` now covers final aggregate runner CLI edges for unknown options, suffix-only labels, and `--list`/`--help` combined with unknown `--only` labels, preserving diagnostic-only or non-executing behavior as appropriate.
+
+`preservation_evidence_bundle_regression_runner_test.py` now completes a final runner-behavior cleanup by sharing list/help non-execution assertions while retaining the existing no-unfiltered-aggregate-run recursion guard.

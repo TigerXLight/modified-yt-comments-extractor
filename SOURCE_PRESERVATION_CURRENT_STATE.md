@@ -394,3 +394,5 @@ Evidence bundle regression runner behavior tests now cover `--help` combined wit
 Evidence bundle regression runner behavior tests now require exact `--only` label matching and reject partial label text before regression execution.
 
 Evidence bundle regression runner behavior tests now lock down unknown-option argparse failure, suffix-only label rejection, and list/help precedence over unknown targeted selections without executing regression groups.
+
+Evidence bundle regression runner behavior tests now centralize final list/help no-run assertions while preserving the full targeted-selection and malformed-argument coverage.

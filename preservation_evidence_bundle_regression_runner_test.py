@@ -79,6 +79,14 @@ def _assert_no_regression_output(stdout: str) -> None:
     assert SUCCESS_BANNER not in stdout
 
 
+def _assert_list_result(result: subprocess.CompletedProcess[str]) -> None:
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert _listed_labels(result.stdout) == EXPECTED_LABELS
+    _assert_list_output_shape(result.stdout)
+    _assert_no_regression_output(result.stdout)
+
+
 def _assert_help_result(result: subprocess.CompletedProcess[str]) -> None:
     assert result.returncode == 0
     assert result.stderr == ""
@@ -122,25 +130,17 @@ def run_self_test() -> None:
     assert _only_args("a", "b") == ("--only", "a", "--only", "b")
 
     list_result = _run_runner("--list")
-    assert list_result.returncode == 0, list_result.stderr
-    assert _listed_labels(list_result.stdout) == EXPECTED_LABELS
-    _assert_list_output_shape(list_result.stdout)
+    _assert_list_result(list_result)
     assert len(set(EXPECTED_LABELS)) == len(EXPECTED_LABELS)
     assert EXPECTED_LABELS[-1] == RUNNER_BEHAVIOR_LABEL
     assert len(set(_listed_labels(list_result.stdout))) == len(EXPECTED_LABELS)
-    assert list_result.stderr == ""
-    _assert_no_regression_output(list_result.stdout)
     assert "passed" not in list_result.stdout
 
     list_with_only_result = _run_runner(
         "--list",
         *_only_args("evidence bundle JSON helper validation"),
     )
-    assert list_with_only_result.returncode == 0
-    assert list_with_only_result.stderr == ""
-    assert _listed_labels(list_with_only_result.stdout) == EXPECTED_LABELS
-    _assert_list_output_shape(list_with_only_result.stdout)
-    _assert_no_regression_output(list_with_only_result.stdout)
+    _assert_list_result(list_with_only_result)
     assert (
         "evidence bundle JSON helper validation: passed"
         not in list_with_only_result.stdout
@@ -150,11 +150,7 @@ def run_self_test() -> None:
         "--list",
         *_only_args("missing regression group"),
     )
-    assert list_with_unknown_only_result.returncode == 0
-    assert list_with_unknown_only_result.stderr == ""
-    assert _listed_labels(list_with_unknown_only_result.stdout) == EXPECTED_LABELS
-    _assert_list_output_shape(list_with_unknown_only_result.stdout)
-    _assert_no_regression_output(list_with_unknown_only_result.stdout)
+    _assert_list_result(list_with_unknown_only_result)
     assert "missing regression group: passed" not in list_with_unknown_only_result.stdout
 
     help_result = _run_runner("--help")
