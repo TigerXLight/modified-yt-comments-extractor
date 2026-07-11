@@ -309,3 +309,6 @@ Evidence bundle regression coverage can now be listed or selectively run through
 
 
 The aggregate evidence bundle regression runner now has a focused local test for listing, targeted execution, and unknown label validation.
+
+
+Evidence bundle local-only scope invariants now have a dedicated regression test covering no-open plus scan/hash/upload/capture/network wording and descriptive path hints.

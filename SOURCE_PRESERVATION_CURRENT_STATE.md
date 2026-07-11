@@ -238,3 +238,6 @@ The local aggregate preservation evidence bundle regression runner now supports 
 
 
 Evidence bundle regression runner argument behavior is covered by a focused local test for `--list`, `--only`, and unknown-label errors.
+
+
+Evidence bundle local-only scope invariants are now covered across model serialization, standalone CLI JSON output, and Total Export preservation-plan JSON output, including no-open plus scan/hash/upload/capture/network wording.

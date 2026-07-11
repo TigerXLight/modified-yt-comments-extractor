@@ -791,3 +791,5 @@ Next local-ASR branches:
 - The aggregate preservation evidence bundle regression runner now supports `--list` and repeatable `--only LABEL` for targeted local checks.
 
 - Added a focused regression runner behavior test covering `--list`, targeted `--only`, and unknown label errors for the evidence bundle aggregate runner.
+
+- Added evidence bundle local-only scope invariant coverage across the model, standalone evidence bundle CLI JSON output, and Total Export preservation-plan JSON output.
