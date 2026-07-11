@@ -382,3 +382,5 @@ Evidence bundle regression runner behavior tests now centralize malformed bare `
 Evidence bundle regression runner behavior tests now cover unexpected positional arguments and require diagnostic-only argparse failure before any regression execution.
 
 Evidence bundle regression runner behavior tests now centralize argparse-style malformed argument assertions for bare `--only` and unexpected positional failures.
+
+Evidence bundle regression runner behavior tests now cover `--help` output and require documented `--list`/`--only` options with no regression execution output.

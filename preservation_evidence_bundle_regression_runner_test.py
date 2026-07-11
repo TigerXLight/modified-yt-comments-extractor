@@ -118,6 +118,16 @@ def run_self_test() -> None:
     assert "passed" not in list_result.stdout
     assert SUCCESS_BANNER not in list_result.stdout
 
+    help_result = _run_runner("--help")
+    assert help_result.returncode == 0
+    assert help_result.stderr == ""
+    assert "usage:" in help_result.stdout.lower()
+    assert "--list" in help_result.stdout
+    assert "--only" in help_result.stdout
+    assert _passed_labels(help_result.stdout) == ()
+    assert ": passed" not in help_result.stdout
+    assert SUCCESS_BANNER not in help_result.stdout
+
     only_result = _run_runner("--only", "evidence bundle JSON helper validation")
     assert "evidence bundle JSON helper validation: passed" in only_result.stdout
     assert "standalone evidence bundle CLI: passed" not in only_result.stdout
