@@ -827,3 +827,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now includes negative path-hint assertions for URL, drive-qualified, root-relative, and absolute examples.
 
 - Evidence bundle local-only scope invariant coverage now includes negative assertions proving representative forbidden file-state keys are rejected.
+
+- Evidence bundle local-only scope invariant coverage now runs negative rejection checks for every key in the forbidden file-state key set, not just a representative subset.

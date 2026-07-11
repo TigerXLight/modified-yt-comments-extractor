@@ -363,3 +363,6 @@ Evidence bundle local-only scope invariants now include negative examples for pa
 
 
 Evidence bundle local-only scope invariants now include negative file-state key examples, proving representative measured/opened/uploaded/validated state fields are rejected.
+
+
+Evidence bundle local-only scope invariants now exercise the full forbidden file-state key set in negative tests, keeping the helper and forbidden-key list synchronized.

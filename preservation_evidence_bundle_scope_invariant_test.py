@@ -145,16 +145,7 @@ def run_self_test() -> None:
     _assert_rejects_path_hint(r"\captures\comments.png")
     _assert_rejects_path_hint("/tmp/captures/comments.png")
 
-    for forbidden_key in (
-        "captured",
-        "exists",
-        "hash",
-        "opened",
-        "sha256",
-        "size_bytes",
-        "uploaded",
-        "validated",
-    ):
+    for forbidden_key in sorted(FORBIDDEN_FILE_STATE_KEYS):
         _assert_rejects_file_state_key(forbidden_key)
 
     with tempfile.TemporaryDirectory() as temp_dir:

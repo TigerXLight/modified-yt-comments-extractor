@@ -397,3 +397,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now includes negative checks proving representative forbidden file-state keys such as captured, exists, hash, opened, sha256, size_bytes, uploaded, and validated are rejected.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now iterates over the full `FORBIDDEN_FILE_STATE_KEYS` set for negative checks, so every forbidden file-state key must be rejected by the invariant helper.

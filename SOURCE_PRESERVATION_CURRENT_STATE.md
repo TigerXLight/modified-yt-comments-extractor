@@ -292,3 +292,6 @@ Evidence bundle local-only scope invariant testing now includes negative path-hi
 
 
 Evidence bundle local-only scope invariant testing now includes negative assertions for representative forbidden file-state keys to keep evidence metadata descriptive only.
+
+
+Evidence bundle local-only scope invariant testing now rejects every configured forbidden file-state key through explicit negative test iteration.
