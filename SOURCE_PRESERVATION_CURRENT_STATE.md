@@ -241,3 +241,6 @@ Evidence bundle regression runner argument behavior is covered by a focused loca
 
 
 Evidence bundle local-only scope invariants are now covered across model serialization, standalone CLI JSON output, and Total Export preservation-plan JSON output, including no-open plus scan/hash/upload/capture/network wording.
+
+
+Evidence bundle regression runner behavior tests now explicitly cover targeted execution of the local-only scope invariant group with `--only`.

@@ -793,3 +793,5 @@ Next local-ASR branches:
 - Added a focused regression runner behavior test covering `--list`, targeted `--only`, and unknown label errors for the evidence bundle aggregate runner.
 
 - Added evidence bundle local-only scope invariant coverage across the model, standalone evidence bundle CLI JSON output, and Total Export preservation-plan JSON output.
+
+- The evidence bundle regression runner behavior test now explicitly covers targeted `--only` execution for the local-only scope invariant group.

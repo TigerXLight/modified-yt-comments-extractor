@@ -312,3 +312,6 @@ The aggregate evidence bundle regression runner now has a focused local test for
 
 
 Evidence bundle local-only scope invariants now have a dedicated regression test covering no-open plus scan/hash/upload/capture/network wording and descriptive path hints.
+
+
+The aggregate evidence bundle regression runner test now explicitly covers targeted execution of the local-only scope invariant group.

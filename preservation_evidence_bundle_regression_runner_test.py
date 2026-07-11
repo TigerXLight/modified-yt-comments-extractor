@@ -52,6 +52,14 @@ def run_self_test() -> None:
     assert "Preservation evidence bundle regression self-test passed." in only_result.stdout
     assert only_result.stderr == ""
 
+    scope_only_result = _run_runner("--only", "evidence bundle local-only scope invariants")
+    assert scope_only_result.returncode == 0, scope_only_result.stderr
+    assert "evidence bundle local-only scope invariants: passed" in scope_only_result.stdout
+    assert "evidence bundle JSON helper validation: passed" not in scope_only_result.stdout
+    assert "standalone evidence bundle CLI: passed" not in scope_only_result.stdout
+    assert "Preservation evidence bundle regression self-test passed." in scope_only_result.stdout
+    assert scope_only_result.stderr == ""
+
     unknown_result = _run_runner("--only", "missing regression group")
     assert unknown_result.returncode == 2
     assert unknown_result.stdout == ""

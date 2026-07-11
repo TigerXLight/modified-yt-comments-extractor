@@ -346,3 +346,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` runner now suppo
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now verifies local-only scope wording and path-hint preservation across model serialization, standalone evidence bundle CLI JSON output, and Total Export preservation-plan JSON output. The aggregate regression runner includes this group.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now explicitly verifies targeted `--only "evidence bundle local-only scope invariants"` execution.
