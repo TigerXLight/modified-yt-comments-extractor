@@ -876,3 +876,4 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now asserts broad non-self targeted arguments exclude the self-recursive runner label and contain one `--only` switch per selected label.
 - The evidence bundle regression runner behavior test now uses a shared helper for repeatable `--only` argument tuples while keeping targeted subprocess coverage local and non-recursive.
 - The evidence bundle regression runner behavior test now shares successful targeted-result assertions through a helper while preserving exact passed-label and success-banner checks.
+- The evidence bundle regression runner behavior test now shares unknown-label failure assertions through a helper while preserving diagnostic-only output checks.

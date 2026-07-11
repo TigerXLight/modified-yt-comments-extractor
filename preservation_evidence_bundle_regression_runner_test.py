@@ -73,6 +73,20 @@ def _assert_no_success_output(result: subprocess.CompletedProcess[str]) -> None:
     assert ": passed" not in result.stderr, result.stderr
 
 
+def _assert_unknown_label_failure(
+    result: subprocess.CompletedProcess[str],
+    *missing_labels: str,
+) -> None:
+    assert result.returncode == 2
+    _assert_no_success_output(result)
+    assert "unknown regression test label(s):" in result.stderr
+    for missing_label in missing_labels:
+        assert missing_label in result.stderr
+    assert "expected one of" in result.stderr
+    for expected_label in EXPECTED_LABELS:
+        assert expected_label in result.stderr
+
+
 def run_self_test() -> None:
     assert _only_args("a", "b") == ("--only", "a", "--only", "b")
 
@@ -169,13 +183,7 @@ def run_self_test() -> None:
     _assert_success_result(non_self_result, non_self_labels)
 
     unknown_result = _run_runner("--only", "missing regression group")
-    assert unknown_result.returncode == 2
-    assert unknown_result.stdout == ""
-    _assert_no_success_output(unknown_result)
-    assert "unknown regression test label(s): missing regression group" in unknown_result.stderr
-    assert "expected one of" in unknown_result.stderr
-    for expected_label in EXPECTED_LABELS:
-        assert expected_label in unknown_result.stderr
+    _assert_unknown_label_failure(unknown_result, "missing regression group")
 
     multiple_unknown_result = _run_runner(
         *_only_args(
@@ -183,15 +191,11 @@ def run_self_test() -> None:
             "missing second regression group",
         )
     )
-    assert multiple_unknown_result.returncode == 2
-    assert multiple_unknown_result.stdout == ""
-    _assert_no_success_output(multiple_unknown_result)
-    assert "unknown regression test label(s):" in multiple_unknown_result.stderr
-    assert "missing regression group" in multiple_unknown_result.stderr
-    assert "missing second regression group" in multiple_unknown_result.stderr
-    assert "expected one of" in multiple_unknown_result.stderr
-    for expected_label in EXPECTED_LABELS:
-        assert expected_label in multiple_unknown_result.stderr
+    _assert_unknown_label_failure(
+        multiple_unknown_result,
+        "missing regression group",
+        "missing second regression group",
+    )
 
     mixed_unknown_result = _run_runner(
         *_only_args(
@@ -199,11 +203,7 @@ def run_self_test() -> None:
             "missing regression group",
         )
     )
-    assert mixed_unknown_result.returncode == 2
-    assert mixed_unknown_result.stdout == ""
-    _assert_no_success_output(mixed_unknown_result)
-    assert "unknown regression test label(s): missing regression group" in mixed_unknown_result.stderr
-    assert "expected one of" in mixed_unknown_result.stderr
+    _assert_unknown_label_failure(mixed_unknown_result, "missing regression group")
     assert "evidence bundle JSON helper validation" in mixed_unknown_result.stderr
 
 

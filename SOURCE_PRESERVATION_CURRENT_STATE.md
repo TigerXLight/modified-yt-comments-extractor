@@ -368,3 +368,5 @@ Evidence bundle regression runner behavior tests now guard the constructed broad
 Evidence bundle regression runner behavior tests now use one helper for repeatable targeted `--only` arguments while retaining the explicit no-filter recursion boundary.
 
 Evidence bundle regression runner behavior tests now use one helper for successful targeted subprocess results, preserving exact labels, one aggregate banner, zero stderr, and successful return codes.
+
+Evidence bundle regression runner behavior tests now use one helper for unknown-label failures, preserving diagnostic-only output, every missing label, and the complete valid-choice list.
