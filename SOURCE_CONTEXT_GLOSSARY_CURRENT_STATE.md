@@ -285,3 +285,6 @@ Total Export evidence bundle JSON input is checked in JSON preservation-plan out
 
 
 Evidence bundle JSON helper validation now has standalone coverage for malformed local metadata while keeping path hints descriptive only.
+
+
+Preservation backend plan JSON input now verifies malformed nested evidence bundle metadata is rejected before reporting, without inspecting path hints or evidence files.

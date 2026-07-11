@@ -319,3 +319,6 @@ Total Export evidence bundle input coverage now verifies both text output and `-
 
 
 Preservation evidence bundle JSON helper validation is now covered by a focused self-test for malformed items, non-string fields, invalid catalog values, duplicate IDs, and invalid capture-method IDs.
+
+
+Preservation backend plan CLI input JSON coverage now includes nested evidence bundle item-list validation, item object validation, invalid capture-method IDs, and duplicate artifact IDs.

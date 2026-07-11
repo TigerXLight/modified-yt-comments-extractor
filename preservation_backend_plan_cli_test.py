@@ -257,6 +257,71 @@ def run_self_test() -> None:
         assert stdout == ""
         assert "evidence_bundle must be an object" in stderr
 
+        bad_items_path = Path(temp_dir) / "bad_plan_with_evidence_bundle_items_string.json"
+        _write_json(
+            bad_items_path,
+            {
+                "evidence_bundle": {
+                    "items": "screenshot",
+                },
+            },
+        )
+        code, stdout, stderr = _run_cli(["--input", str(bad_items_path)])
+        assert code == 1
+        assert stdout == ""
+        assert "evidence_bundle.items must be a list" in stderr
+
+        bad_item_object_path = Path(temp_dir) / "bad_plan_with_evidence_bundle_item_object.json"
+        _write_json(
+            bad_item_object_path,
+            {
+                "evidence_bundle": {
+                    "items": ["screenshot"],
+                },
+            },
+        )
+        code, stdout, stderr = _run_cli(["--input", str(bad_item_object_path)])
+        assert code == 1
+        assert stdout == ""
+        assert "evidence bundle item must be an object" in stderr
+
+        bad_capture_method_path = Path(temp_dir) / "bad_plan_with_evidence_bundle_capture_method.json"
+        _write_json(
+            bad_capture_method_path,
+            {
+                "evidence_bundle": {
+                    "items": [
+                        {
+                            "artifact_id": "screenshot",
+                            "artifact_format": "png",
+                            "capture_method_id": "unknown_capture",
+                        }
+                    ],
+                },
+            },
+        )
+        code, stdout, stderr = _run_cli(["--input", str(bad_capture_method_path)])
+        assert code == 1
+        assert stdout == ""
+        assert "invalid capture method ID" in stderr
+
+        duplicate_item_path = Path(temp_dir) / "bad_plan_with_evidence_bundle_duplicate_item.json"
+        _write_json(
+            duplicate_item_path,
+            {
+                "evidence_bundle": {
+                    "items": [
+                        {"artifact_id": "screenshot", "artifact_format": "png"},
+                        {"artifact_id": "screenshot", "artifact_format": "html"},
+                    ],
+                },
+            },
+        )
+        code, stdout, stderr = _run_cli(["--input", str(duplicate_item_path)])
+        assert code == 1
+        assert stdout == ""
+        assert "duplicate artifact IDs: screenshot" in stderr
+
     # backend detail specs should reject malformed values before rendering
     code, output, error = _run_cli(
         [
