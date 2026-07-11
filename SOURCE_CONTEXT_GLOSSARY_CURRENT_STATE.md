@@ -267,3 +267,6 @@ Evidence item detail metadata now has local regression checks for malformed spec
 
 
 Preservation backend plan input JSON can include evidence bundle metadata for local reporting. The evidence bundle fields remain descriptive metadata and do not cause source fetching, file opening, capture, or network behavior.
+
+
+Standalone preservation evidence bundle CLI can render explicit local JSON bundle metadata through `--input`; evidence path hints remain descriptive strings and do not trigger file inspection or capture behavior.

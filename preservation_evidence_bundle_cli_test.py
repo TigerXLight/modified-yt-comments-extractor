@@ -1,6 +1,9 @@
+# Evidence bundle CLI JSON input tests.
 import io
 import json
 from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from preservation_evidence_bundle_cli import main
 
@@ -64,6 +67,58 @@ def run_self_test() -> None:
     assert parsed["items"][0]["path_hint"] == r"captures\comments.png"
     assert parsed["items"][0]["notes"] == "CLI supplied screenshot; path hint only."
     assert "no file open" in parsed["scope"]
+
+    with TemporaryDirectory() as temp_dir:
+        input_path = Path(temp_dir) / "evidence_bundle.json"
+        input_path.write_text(
+            json.dumps(
+                {
+                    "source_url": "https://www.telegraph.co.uk/news/example/",
+                    "bundle_label": "Input evidence",
+                    "status": "manual_supplied",
+                    "items": [
+                        {
+                            "artifact_id": "screenshot",
+                            "artifact_format": "png",
+                            "capture_method_id": "scrollable_container_screenshot",
+                            "artifact_role": "primary",
+                            "origin": "manual",
+                            "path_hint": r"captures\comments.png",
+                            "notes": "Input JSON path hint only.",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        code, json_output, error = _run_cli(
+            ["--input", str(input_path), "--format", "json"]
+        )
+        assert code == 0
+        assert error == ""
+        parsed = json.loads(json_output)
+        assert parsed["bundle_label"] == "Input evidence"
+        assert parsed["status"] == "manual_supplied"
+        assert parsed["items"][0]["artifact_id"] == "screenshot"
+        assert parsed["items"][0]["artifact_role"] == "primary"
+        assert parsed["items"][0]["origin"] == "manual"
+        assert parsed["items"][0]["path_hint"] == r"captures\comments.png"
+        assert parsed["items"][0]["notes"] == "Input JSON path hint only."
+        assert "no file open" in parsed["scope"]
+
+        code, output, error = _run_cli(
+            ["--input", str(input_path), "--item", "screenshot:png"]
+        )
+        assert code == 1
+        assert output == ""
+        assert "--input cannot be combined" in error
+
+        bad_input_path = Path(temp_dir) / "bad_bundle.json"
+        bad_input_path.write_text("[]", encoding="utf-8")
+        code, output, error = _run_cli(["--input", str(bad_input_path)])
+        assert code == 1
+        assert output == ""
+        assert "input JSON must be an object" in error
 
     code, output, error = _run_cli(["--item", "bad:exe"])
     assert code == 1

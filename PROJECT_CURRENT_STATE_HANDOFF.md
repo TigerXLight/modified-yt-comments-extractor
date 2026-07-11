@@ -301,3 +301,6 @@ Evidence item detail parsing now has focused regression coverage for malformed `
 
 
 Preservation backend plan JSON input may include an `evidence_bundle` object with metadata-only items, roles, origins, path hints, notes, and capture-method IDs. The CLI still only reads the explicit JSON input file and does not inspect referenced evidence paths.
+
+
+Standalone preservation evidence bundle CLI supports `--input` for explicit local JSON bundle metadata. It rejects combining input JSON with metadata override flags and does not inspect referenced path hints.

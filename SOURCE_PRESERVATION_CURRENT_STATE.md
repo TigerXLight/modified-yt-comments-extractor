@@ -196,3 +196,6 @@ Evidence item detail validation is covered by local regression tests for malform
 
 
 Preservation backend plan CLI input JSON supports an `evidence_bundle` object. This parses local metadata only and treats path hints as labels rather than files to open, scan, hash, or validate.
+
+
+Standalone preservation evidence bundle CLI now supports explicit local JSON input for evidence bundle metadata. This reads the JSON file only and treats path hints inside the JSON as labels, not files to open or validate.
