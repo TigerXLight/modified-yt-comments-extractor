@@ -491,3 +491,5 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 `preservation_evidence_bundle_regression_runner_test.py` now covers aggregate runner `--help` output, asserting argparse help lists `--list` and `--only` while emitting no regression pass lines or success banner.
 
 `preservation_evidence_bundle_regression_runner_test.py` now centralizes no-regression-output checks for `--list` and `--help`, preserving exact list/help assertions while ensuring neither mode emits pass lines or the aggregate success banner.
+
+`preservation_evidence_bundle_regression_runner_test.py` now covers `--list` combined with `--only`, asserting the runner still prints the canonical list and emits no regression pass output.

@@ -123,6 +123,20 @@ def run_self_test() -> None:
     _assert_no_regression_output(list_result.stdout)
     assert "passed" not in list_result.stdout
 
+    list_with_only_result = _run_runner(
+        "--list",
+        *_only_args("evidence bundle JSON helper validation"),
+    )
+    assert list_with_only_result.returncode == 0
+    assert list_with_only_result.stderr == ""
+    assert _listed_labels(list_with_only_result.stdout) == EXPECTED_LABELS
+    _assert_list_output_shape(list_with_only_result.stdout)
+    _assert_no_regression_output(list_with_only_result.stdout)
+    assert (
+        "evidence bundle JSON helper validation: passed"
+        not in list_with_only_result.stdout
+    )
+
     help_result = _run_runner("--help")
     assert help_result.returncode == 0
     assert help_result.stderr == ""
