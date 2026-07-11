@@ -867,3 +867,5 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now explicitly asserts `--list` output parses to zero `: passed` labels.
 
 - The evidence bundle regression runner behavior test now treats blank `--list` output lines as failures and requires a normal trailing newline.
+
+- The evidence bundle regression runner behavior test now covers selecting every regression label except the runner behavior group itself, avoiding recursion while approximating full selection output.

@@ -132,6 +132,23 @@ def run_self_test() -> None:
     assert _passed_labels(reverse_order_result.stdout) == ('evidence bundle JSON helper validation', 'evidence bundle local-only scope invariants')
     assert reverse_order_result.stderr == ""
 
+    non_self_labels = tuple(
+        label for label in EXPECTED_LABELS
+        if label != 'evidence bundle regression runner behavior'
+    )
+    non_self_args = tuple(
+        argument
+        for label in non_self_labels
+        for argument in ("--only", label)
+    )
+    non_self_result = _run_runner(*non_self_args)
+    assert non_self_result.returncode == 0, non_self_result.stderr
+    assert "evidence bundle regression runner behavior: passed" not in non_self_result.stdout
+    assert "Preservation evidence bundle regression self-test passed." in non_self_result.stdout
+    _assert_success_banner_once(non_self_result)
+    assert _passed_labels(non_self_result.stdout) == non_self_labels
+    assert non_self_result.stderr == ""
+
     unknown_result = _run_runner("--only", "missing regression group")
     assert unknown_result.returncode == 2
     assert unknown_result.stdout == ""

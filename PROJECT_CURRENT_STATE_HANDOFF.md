@@ -457,3 +457,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now tightens `--list` output shape by comparing all split lines directly to `EXPECTED_LABELS`, so blank lines fail, and by requiring the normal trailing newline.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now verifies a repeatable `--only` invocation containing every label except `evidence bundle regression runner behavior`, proving canonical output for the non-self suite without recursively invoking the runner behavior test.

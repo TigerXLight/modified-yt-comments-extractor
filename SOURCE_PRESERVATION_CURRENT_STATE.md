@@ -352,3 +352,6 @@ Evidence bundle regression runner behavior tests now assert `--list` output pars
 
 
 Evidence bundle regression runner behavior tests now make list-mode output shape strict enough to reject blank lines while preserving the standard trailing newline.
+
+
+Evidence bundle regression runner behavior tests now cover an all-non-self targeted run, preserving broad runner coverage while avoiding recursive full-run execution.

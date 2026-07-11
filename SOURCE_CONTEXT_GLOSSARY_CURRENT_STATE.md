@@ -423,3 +423,6 @@ Evidence bundle regression runner behavior coverage now explicitly verifies list
 
 
 Evidence bundle regression runner behavior coverage now treats blank list-mode lines as output-shape failures and requires a trailing newline.
+
+
+Evidence bundle regression runner behavior coverage now exercises all non-self regression labels in one targeted invocation to validate canonical output without recursive self-selection.
