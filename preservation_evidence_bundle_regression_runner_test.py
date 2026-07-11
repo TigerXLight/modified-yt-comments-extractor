@@ -74,6 +74,7 @@ def run_self_test() -> None:
     assert "standalone evidence bundle CLI: passed" not in multi_only_result.stdout
     assert "evidence bundle regression runner behavior: passed" not in multi_only_result.stdout
     assert "Preservation evidence bundle regression self-test passed." in multi_only_result.stdout
+    assert _passed_labels(multi_only_result.stdout) == ('evidence bundle JSON helper validation', 'evidence bundle local-only scope invariants')
     assert multi_only_result.stderr == ""
 
     duplicate_only_result = _run_runner(
@@ -103,6 +104,7 @@ def run_self_test() -> None:
         "evidence bundle local-only scope invariants",
     )
     assert "Preservation evidence bundle regression self-test passed." in reverse_order_result.stdout
+    assert _passed_labels(reverse_order_result.stdout) == ('evidence bundle JSON helper validation', 'evidence bundle local-only scope invariants')
     assert reverse_order_result.stderr == ""
 
     unknown_result = _run_runner("--only", "missing regression group")

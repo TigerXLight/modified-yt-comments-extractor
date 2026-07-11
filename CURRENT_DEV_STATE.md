@@ -851,3 +851,5 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now verifies targeted `--only` runs emit exactly the selected passed labels and no extra regression pass lines.
 
 - The evidence bundle regression runner behavior test now pins exact passed-label output for both single targeted and duplicate targeted `--only` runs.
+
+- The evidence bundle regression runner behavior test now pins exact passed-label order for multi-target and reverse-order `--only` selections.

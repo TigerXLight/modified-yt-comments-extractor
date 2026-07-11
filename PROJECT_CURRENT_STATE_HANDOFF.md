@@ -433,3 +433,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now keeps exact passed-label assertions beside the matching targeted run checks and also asserts duplicate `--only` selections emit one canonical passed label.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now asserts multi-target and reverse-order `--only` runs emit exactly the canonical passed-label pair, preventing extra output and preserving runner ordering.

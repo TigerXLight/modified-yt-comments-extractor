@@ -399,3 +399,6 @@ Evidence bundle regression runner behavior coverage now verifies targeted `--onl
 
 
 Evidence bundle regression runner behavior coverage now pins exact passed-label output for single and duplicate targeted selections.
+
+
+Evidence bundle regression runner behavior coverage now pins exact passed-label output for multi-target and reverse-order selections.

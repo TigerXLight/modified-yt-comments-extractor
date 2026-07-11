@@ -328,3 +328,6 @@ Evidence bundle regression runner behavior tests now assert targeted `--only` ru
 
 
 Evidence bundle regression runner behavior tests now assert duplicate targeted `--only` selections emit exactly one canonical passed label, matching the single targeted case.
+
+
+Evidence bundle regression runner behavior tests now assert multi-target and reverse-order `--only` selections emit exactly the canonical selected labels.
