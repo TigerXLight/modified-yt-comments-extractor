@@ -349,3 +349,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` runner now suppo
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now explicitly verifies targeted `--only "evidence bundle local-only scope invariants"` execution.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now verifies repeatable `--only` selections so targeted multi-group evidence-bundle regression runs are covered.

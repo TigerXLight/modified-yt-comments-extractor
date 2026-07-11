@@ -244,3 +244,6 @@ Evidence bundle local-only scope invariants are now covered across model seriali
 
 
 Evidence bundle regression runner behavior tests now explicitly cover targeted execution of the local-only scope invariant group with `--only`.
+
+
+Evidence bundle regression runner behavior tests now cover repeatable `--only` selections for targeted multi-group local regression runs.

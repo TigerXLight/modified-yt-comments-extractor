@@ -315,3 +315,6 @@ Evidence bundle local-only scope invariants now have a dedicated regression test
 
 
 The aggregate evidence bundle regression runner test now explicitly covers targeted execution of the local-only scope invariant group.
+
+
+The aggregate evidence bundle regression runner test now covers repeatable `--only` usage for targeted multi-group execution.
