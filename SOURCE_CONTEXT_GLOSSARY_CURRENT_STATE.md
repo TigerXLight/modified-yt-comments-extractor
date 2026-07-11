@@ -435,3 +435,5 @@ Evidence bundle regression runner behavior coverage now checks multiple unknown 
 Evidence bundle regression runner behavior coverage now centralizes the aggregate success banner and self-recursive label constants and documents why broad coverage remains a targeted non-self run.
 
 Evidence bundle regression runner behavior coverage now verifies broad non-self arguments exclude the recursive runner label, include every intended non-self label, and contain one `--only` switch per selection.
+
+Evidence bundle regression runner behavior coverage now shares deterministic repeatable `--only` tuple construction across multi-label, non-self, duplicate, and unknown-label subprocess checks.

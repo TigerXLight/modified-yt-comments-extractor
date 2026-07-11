@@ -469,3 +469,5 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 `preservation_evidence_bundle_regression_runner_test.py` now centralizes the aggregate success banner and self-recursive runner behavior label as constants and documents why broad coverage uses targeted non-self selection rather than a no-filter aggregate runner call.
 
 `preservation_evidence_bundle_regression_runner_test.py` now verifies the broad non-self targeted argument list excludes `RUNNER_BEHAVIOR_LABEL` while containing each non-self label with one `--only` switch per selection.
+
+`preservation_evidence_bundle_regression_runner_test.py` now centralizes repeatable `--only` argument tuple construction in a helper, preserving deterministic targeted subprocess coverage without no-filter recursive runner calls.

@@ -29,6 +29,14 @@ def _listed_labels(stdout: str) -> tuple[str, ...]:
     return tuple(line.strip() for line in stdout.splitlines() if line.strip())
 
 
+def _only_args(*labels: str) -> tuple[str, ...]:
+    return tuple(
+        argument
+        for label in labels
+        for argument in ("--only", label)
+    )
+
+
 def _assert_list_output_shape(output: str) -> None:
     lines = tuple(output.splitlines())
     assert lines == EXPECTED_LABELS, output
@@ -55,6 +63,8 @@ def _assert_no_success_output(result: subprocess.CompletedProcess[str]) -> None:
 
 
 def run_self_test() -> None:
+    assert _only_args("a", "b") == ("--only", "a", "--only", "b")
+
     list_result = _run_runner("--list")
     assert list_result.returncode == 0, list_result.stderr
     assert _listed_labels(list_result.stdout) == EXPECTED_LABELS
@@ -89,10 +99,10 @@ def run_self_test() -> None:
     assert scope_only_result.stderr == ""
 
     multi_only_result = _run_runner(
-        "--only",
-        "evidence bundle JSON helper validation",
-        "--only",
-        "evidence bundle local-only scope invariants",
+        *_only_args(
+            "evidence bundle JSON helper validation",
+            "evidence bundle local-only scope invariants",
+        )
     )
     assert multi_only_result.returncode == 0, multi_only_result.stderr
     assert "evidence bundle JSON helper validation: passed" in multi_only_result.stdout
@@ -105,10 +115,10 @@ def run_self_test() -> None:
     assert multi_only_result.stderr == ""
 
     duplicate_only_result = _run_runner(
-        "--only",
-        "evidence bundle JSON helper validation",
-        "--only",
-        "evidence bundle JSON helper validation",
+        *_only_args(
+            "evidence bundle JSON helper validation",
+            "evidence bundle JSON helper validation",
+        )
     )
     assert duplicate_only_result.returncode == 0, duplicate_only_result.stderr
     assert duplicate_only_result.stdout.count(
@@ -121,10 +131,10 @@ def run_self_test() -> None:
     assert duplicate_only_result.stderr == ""
 
     reverse_order_result = _run_runner(
-        "--only",
-        "evidence bundle local-only scope invariants",
-        "--only",
-        "evidence bundle JSON helper validation",
+        *_only_args(
+            "evidence bundle local-only scope invariants",
+            "evidence bundle JSON helper validation",
+        )
     )
     assert reverse_order_result.returncode == 0, reverse_order_result.stderr
     assert _passed_labels(reverse_order_result.stdout) == (
@@ -143,11 +153,7 @@ def run_self_test() -> None:
         if label != RUNNER_BEHAVIOR_LABEL
     )
     assert non_self_labels == EXPECTED_LABELS[:-1]
-    non_self_args = tuple(
-        argument
-        for label in non_self_labels
-        for argument in ("--only", label)
-    )
+    non_self_args = _only_args(*non_self_labels)
     assert RUNNER_BEHAVIOR_LABEL not in non_self_labels
     assert RUNNER_BEHAVIOR_LABEL not in non_self_args
     for expected_label in non_self_labels:
@@ -171,10 +177,10 @@ def run_self_test() -> None:
         assert expected_label in unknown_result.stderr
 
     multiple_unknown_result = _run_runner(
-        "--only",
-        "missing regression group",
-        "--only",
-        "missing second regression group",
+        *_only_args(
+            "missing regression group",
+            "missing second regression group",
+        )
     )
     assert multiple_unknown_result.returncode == 2
     assert multiple_unknown_result.stdout == ""
@@ -187,10 +193,10 @@ def run_self_test() -> None:
         assert expected_label in multiple_unknown_result.stderr
 
     mixed_unknown_result = _run_runner(
-        "--only",
-        "evidence bundle JSON helper validation",
-        "--only",
-        "missing regression group",
+        *_only_args(
+            "evidence bundle JSON helper validation",
+            "missing regression group",
+        )
     )
     assert mixed_unknown_result.returncode == 2
     assert mixed_unknown_result.stdout == ""
