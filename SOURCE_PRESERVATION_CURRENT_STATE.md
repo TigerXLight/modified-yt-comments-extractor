@@ -428,3 +428,5 @@ Total Export batch review plan tests now centralize row/error count assertions w
 Total Export package ZIP tests now centralize result-state assertions while retaining local-only path safety, hash, size, entry ordering, inspection, no-extraction, and diagnostic coverage.
 
 Total Export ZIP inspection tests now centralize status assertions while retaining no-extraction traversal safety, raw backslash detection, duplicate, manifest, entry-order, and hash coverage.
+
+Total Export package inspection tests now centralize status assertions while retaining manifest discovery, local validation/inventory, standard review-file, and missing-asset coverage.

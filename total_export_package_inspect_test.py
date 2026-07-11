@@ -7,6 +7,7 @@ from total_export_package_inspect import (
     INSPECTION_STATUS_MISSING_PACKAGE_FOLDER,
     INSPECTION_STATUS_MULTIPLE_MANIFESTS,
     INSPECTION_STATUS_OK,
+    TotalExportPackageInspectionResult,
     build_total_export_package_inspection_text,
     discover_total_export_manifest,
     inspect_total_export_package,
@@ -16,6 +17,13 @@ from total_export_prepare import prepare_total_export_with_summary
 
 
 VALID_ID = "aB3_dE-9xYz"
+
+
+def _assert_inspection_status(
+    result: TotalExportPackageInspectionResult,
+    expected_status: str,
+) -> None:
+    assert result.status == expected_status
 
 
 def run_self_test() -> None:
@@ -38,7 +46,7 @@ def run_self_test() -> None:
         assert candidates == (manifest_path,)
 
         result = inspect_total_export_package(package_folder=package_folder)
-        assert result.status == INSPECTION_STATUS_OK
+        _assert_inspection_status(result, INSPECTION_STATUS_OK)
         assert result.manifest_found
         assert result.manifest_readable
         assert result.manifest_valid
@@ -62,7 +70,7 @@ def run_self_test() -> None:
             package_folder=package_folder,
             manifest_path=manifest_path,
         )
-        assert explicit.status == INSPECTION_STATUS_OK
+        _assert_inspection_status(explicit, INSPECTION_STATUS_OK)
         assert explicit.manifest_path == manifest_path
 
         as_dict = package_inspection_to_dict(result)
@@ -92,25 +100,28 @@ def run_self_test() -> None:
         missing_asset_path.unlink()
         missing_asset = inspect_total_export_package(package_folder=package_folder)
         assert "metadata/SOURCE_CAPTURE_PLAN.txt" in missing_asset.inventory_missing_registered_assets
-        assert missing_asset.status == INSPECTION_STATUS_INVALID_MANIFEST
+        _assert_inspection_status(missing_asset, INSPECTION_STATUS_INVALID_MANIFEST)
         assert any("ASSET_FILE_MISSING" in error for error in missing_asset.validation_errors)
 
         missing_package = inspect_total_export_package(
             package_folder=str(Path(temp_dir) / "missing_package")
         )
-        assert missing_package.status == INSPECTION_STATUS_MISSING_PACKAGE_FOLDER
+        _assert_inspection_status(
+            missing_package,
+            INSPECTION_STATUS_MISSING_PACKAGE_FOLDER,
+        )
 
         empty_folder = Path(temp_dir) / "empty_package"
         empty_folder.mkdir()
         missing_manifest = inspect_total_export_package(package_folder=str(empty_folder))
-        assert missing_manifest.status == INSPECTION_STATUS_MISSING_MANIFEST
+        _assert_inspection_status(missing_manifest, INSPECTION_STATUS_MISSING_MANIFEST)
 
         multiple_folder = Path(temp_dir) / "multiple_manifests"
         multiple_folder.mkdir()
         (multiple_folder / "a_manifest.json").write_text("{}", encoding="utf-8")
         (multiple_folder / "b_manifest.json").write_text("{}", encoding="utf-8")
         multiple = inspect_total_export_package(package_folder=str(multiple_folder))
-        assert multiple.status == INSPECTION_STATUS_MULTIPLE_MANIFESTS
+        _assert_inspection_status(multiple, INSPECTION_STATUS_MULTIPLE_MANIFESTS)
         assert "Multiple manifest candidates" in multiple.warnings[0]
 
 

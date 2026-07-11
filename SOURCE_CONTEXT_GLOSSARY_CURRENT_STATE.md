@@ -499,3 +499,5 @@ Total Export batch review plan coverage now shares deterministic row/error count
 Total Export package ZIP coverage now shares deterministic created/failure result checks while preserving local archive metadata and inspection diagnostics.
 
 Total Export ZIP inspection coverage now shares deterministic status checks across valid and malformed local ZIP fixture scenarios.
+
+Total Export package inspection coverage now shares deterministic status checks across valid and missing/invalid local package fixture scenarios.
