@@ -331,3 +331,6 @@ Standalone evidence bundle CLI `--input` coverage now includes nested item-list 
 
 
 An aggregate `preservation_evidence_bundle_regression_test.py` runner now executes the evidence bundle model, JSON helper validation, standalone CLI, backend plan CLI, and Total Export prepare CLI regression tests together.
+
+
+Evidence bundle JSON helper validation now covers non-string source metadata fields and non-string item metadata fields such as capture method, path hint, notes, and limitations.

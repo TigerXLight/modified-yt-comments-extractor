@@ -64,6 +64,58 @@ def run_self_test() -> None:
         "artifact_format must not be empty",
     )
     _expect_value_error({"bundle_label": 123}, "bundle_label must be a string")
+    _expect_value_error({"source_url": 123}, "source_url must be a string")
+    _expect_value_error({"source_id": 123}, "source_id must be a string")
+    _expect_value_error({"source_name": 123}, "source_name must be a string")
+    _expect_value_error({"notes": 123}, "notes must be a string")
+    _expect_value_error(
+        {
+            "items": [
+                {
+                    "artifact_id": "screenshot",
+                    "artifact_format": "png",
+                    "capture_method_id": 123,
+                }
+            ]
+        },
+        "capture_method_id must be a string",
+    )
+    _expect_value_error(
+        {
+            "items": [
+                {
+                    "artifact_id": "screenshot",
+                    "artifact_format": "png",
+                    "path_hint": 123,
+                }
+            ]
+        },
+        "path_hint must be a string",
+    )
+    _expect_value_error(
+        {
+            "items": [
+                {
+                    "artifact_id": "screenshot",
+                    "artifact_format": "png",
+                    "notes": 123,
+                }
+            ]
+        },
+        "notes must be a string",
+    )
+    _expect_value_error(
+        {
+            "items": [
+                {
+                    "artifact_id": "screenshot",
+                    "artifact_format": "png",
+                    "limitations": 123,
+                }
+            ]
+        },
+        "limitations must be a string",
+    )
     _expect_value_error({"status": "complete"}, "invalid bundle status")
     _expect_value_error(
         {"items": [{"artifact_id": "screenshot", "artifact_format": "exe"}]},

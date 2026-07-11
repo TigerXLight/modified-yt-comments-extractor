@@ -783,3 +783,5 @@ Next local-ASR branches:
 - Standalone evidence bundle CLI JSON input now has regression coverage for malformed nested item metadata, invalid capture-method IDs, and duplicate artifact IDs.
 
 - Added an aggregate preservation evidence bundle regression runner covering the model, JSON helper validation, standalone CLI, backend plan CLI integration, and Total Export prepare CLI integration.
+
+- Evidence bundle JSON helper validation now includes explicit string-field type checks for source metadata and item-level capture method, path hint, notes, and limitations fields.

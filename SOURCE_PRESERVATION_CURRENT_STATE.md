@@ -226,3 +226,6 @@ Standalone evidence bundle CLI JSON input validation now covers malformed nested
 
 
 A local aggregate preservation evidence bundle regression runner now covers model/rendering behavior, JSON helper validation, standalone CLI input, backend plan CLI integration, and Total Export prepare CLI integration.
+
+
+Evidence bundle JSON helper validation now explicitly covers string-field typing for source metadata and item metadata fields, including path hints and limitations. These checks remain local metadata validation only.

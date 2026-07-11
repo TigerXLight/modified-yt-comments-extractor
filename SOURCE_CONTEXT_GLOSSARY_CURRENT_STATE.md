@@ -297,3 +297,6 @@ Standalone evidence bundle CLI JSON input now rejects malformed nested local met
 
 
 Evidence bundle regression coverage can now be run through a single aggregate local test runner spanning model, JSON helper, standalone CLI, backend plan CLI, and Total Export prepare CLI checks.
+
+
+Evidence bundle JSON helper tests now verify that source and item metadata fields stay typed as strings, preserving path hints as descriptive labels only.
