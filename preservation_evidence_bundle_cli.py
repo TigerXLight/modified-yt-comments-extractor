@@ -1,3 +1,4 @@
+# Evidence bundle CLI input main repair.
 # Evidence bundle CLI JSON input support.
 # Evidence item spec parsing helper reuse.
 # Evidence bundle CLI item detail flags.
@@ -127,18 +128,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        items = _parse_items_with_details(args)
-        bundle = build_preservation_evidence_bundle(
-            source_url=args.source_url,
-            source_id=args.source_id,
-            source_name=args.source_name,
-            bundle_label=args.bundle_label,
-            status=args.status,
-            notes=args.notes,
-            items=items,
-        )
+        if args.input:
+            _disallow_input_overrides(args)
+            bundle = build_preservation_evidence_bundle_from_dict(
+                _read_input_json(args.input)
+            )
+        else:
+            items = _parse_items_with_details(args)
+            bundle = build_preservation_evidence_bundle(
+                source_url=args.source_url,
+                source_id=args.source_id,
+                source_name=args.source_name,
+                bundle_label=args.bundle_label,
+                status=args.status,
+                notes=args.notes,
+                items=items,
+            )
         print(render_preservation_evidence_bundle(bundle, output_format=args.format))
-    except ValueError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0
