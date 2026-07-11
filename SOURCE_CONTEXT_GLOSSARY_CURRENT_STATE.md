@@ -1,18 +1,18 @@
 # Source Context / Glossary Current State
 
-Date: 2026-07-10
+Date: 2026-07-12
 
 Branch: `v2.6.0-asr-engines`
 
-Latest known checkpoint when this document was added:
+Latest known checkpoint:
 
 ```text
-35c6829 Refresh project handoff checkpoint
+e63def4 Add evidence database taxonomy schema skeleton
 ```
 
 ## Purpose
 
-This document is the local current-state handoff for the source URL, source adapter, source capture plan, provenance, and context/glossary skeleton.
+This document is the local current-state handoff for the source URL, source adapter, source capture plan, provenance, context/glossary, evidence queue, Access & Keys metadata, and evidence database taxonomy skeletons.
 
 It records what exists now, what is intentionally not implemented, how to verify the local helpers, and what safe future milestones look like.
 
@@ -31,6 +31,9 @@ They must not:
 - capture screenshots,
 - store credentials, cookies, tokens, or sessions,
 - inspect or extract ZIPs,
+- persist or background-process evidence queue items,
+- test/store credentials or integrate OAuth/browser profiles,
+- scan database roots, classify evidence automatically, infer sensitive traits, or move files,
 - wire into the GUI,
 - change runtime extractor/export/ASR behavior.
 
@@ -50,6 +53,9 @@ Current helpers validate, normalize, classify, and assemble local metadata only.
 | Source capture planning | `source_capture_plan.py`, `source_capture_plan_test.py` | Local source URL + adapter + capture option + context hint plan assembly. |
 | Source capture plan CLI | `source_capture_plan_cli.py`, `source_capture_plan_cli_test.py` | Explicit-output-only inspection CLI for manually supplied source URL/context/glossary JSON. |
 | Source plan provenance | `source_plan_provenance.py`, `source_plan_provenance_test.py` | Local provenance records derived from Source Capture Plans without fetch/capture behavior. |
+| Evidence item queue schema | `evidence_item_queue.py`, `evidence_item_queue_test.py` | Immutable local queue-item/link/ASR-pairing metadata with explicit roles, lifecycle states, and Total Export include/exclude intent; no persistence, file operations, GUI, capture, ASR, archive, or export wiring. |
+| Access & Keys metadata schema | `access_keys_metadata.py`, `access_keys_metadata_test.py` | Non-secret access/credential/test-status and provider/source/archive/browser-assisted-capture metadata with deterministic reports; no secret fields, credential tests, OAuth, provider calls, archive calls, or GUI wiring. |
+| Evidence database taxonomy schema | `evidence_database_taxonomy.py`, `evidence_database_taxonomy_test.py` | Read-only root/taxonomy/dimension/dry-run/history metadata with unknown-state and sensitive-classification safeguards; no scanning, automatic classification, persistence, reclassification execution, or file movement. |
 
 ## Current Verified State
 
@@ -76,6 +82,14 @@ Local verification passed for:
 - Context glossary self-test.
 - YouTube URL utility self-test.
 
+The later source-evidence skeleton milestones also passed their focused and adjacent local regression chains at these checkpoints:
+
+- `7af8eea`: `evidence_item_queue_test.py`.
+- `66871b6`: `access_keys_metadata_test.py`.
+- `e63def4`: `evidence_database_taxonomy_test.py`.
+
+The generated schemas were reviewed as standalone data/reporting foundations only. No source fetching, credential testing, database scanning, file movement, GUI, or runtime behavior was added.
+
 ## Pipeline Position
 
 The planned pipeline remains:
@@ -89,7 +103,7 @@ The planned pipeline remains:
 7. Optional future provider-specific keyterms.
 8. Term QA after transcription.
 
-Only local planning and metadata layers exist here. Fetching, capture, ASR use, provider keyterms, and GUI integration are not implemented by this layer.
+Only local planning and metadata layers exist here. The evidence queue can now describe links among source URLs, local media, reference text, transcript/subtitle candidates, ASR results, archive/snapshot records, packages, and taxonomy suggestions, but it is not persisted or wired into this pipeline. Access status and taxonomy review records are likewise descriptive schemas only. Fetching, capture, ASR use, provider keyterms, credential tests, database scanning, file movement, persistence, and GUI integration are not implemented by this layer.
 
 ## Context / Glossary Policy
 
@@ -232,22 +246,22 @@ The CLI prints to stdout by default, writes only when `--output` is explicitly s
 Run from Windows CMD with the project virtual environment active:
 
 ```cmd
-python -m py_compile source_adapters.py source_adapters_test.py source_adapters_registry_test.py source_adapter_capability_report.py source_adapter_capability_report_test.py source_adapter_capability_report_cli.py source_adapter_capability_report_cli_test.py source_adapter_gap_analysis.py source_adapter_gap_analysis_test.py source_adapter_gap_analysis_cli.py source_adapter_gap_analysis_cli_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py & python source_adapters_test.py & python source_adapters_registry_test.py & python source_adapter_capability_report_test.py & python source_adapter_capability_report_cli_test.py & python source_adapter_gap_analysis_test.py & python source_adapter_gap_analysis_cli_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & git diff --check & git status --short
+python -m py_compile source_adapters.py source_adapters_test.py source_adapters_registry_test.py source_adapter_capability_report.py source_adapter_capability_report_test.py source_adapter_capability_report_cli.py source_adapter_capability_report_cli_test.py source_adapter_gap_analysis.py source_adapter_gap_analysis_test.py source_adapter_gap_analysis_cli.py source_adapter_gap_analysis_cli_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python source_adapters_test.py & python source_adapters_registry_test.py & python source_adapter_capability_report_test.py & python source_adapter_capability_report_cli_test.py & python source_adapter_gap_analysis_test.py & python source_adapter_gap_analysis_cli_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py & git diff --check & git status --short
 ```
 
 Expected result: all listed local self-tests pass and the working tree is clean after committed changes.
 
 ## Safe Next Milestones
 
-1. Source/context/glossary documentation alignment:
-   - remove stale wording that says skeletons do not exist if helper files now exist,
-   - keep no fetch/capture/network/GUI behavior.
-2. Future source adapters:
-   - only as metadata/capability skeletons first,
-   - no generic scraper,
-   - no site fetching until separately approved with mocked/local tests.
-3. GUI/runtime integration:
-   - deferred until separately approved.
+1. Broader documentation alignment:
+   - reconcile `CURRENT_DEV_STATE.md` and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` with the implemented queue, Access & Keys metadata, and taxonomy schema checkpoints if separately approved,
+   - continue distinguishing schema/test foundations from UI, persistence, scanning, credential, and runtime gaps.
+2. Local-only compatibility/reporting:
+   - consider explicit transforms or reports across queue, adapter, access-status, taxonomy, provenance, and Total Export metadata,
+   - no persistence, background jobs, file operations, external calls, or GUI wiring.
+3. Future source adapters and runtime integration:
+   - adapters should remain metadata/capability skeletons first, not a generic scraper,
+   - site fetching, credential testing, database scanning, file movement, and GUI/runtime integration remain deferred until separately approved with local/mocked tests.
 
 ## Preservation Evidence Bundle Plan Integration
 

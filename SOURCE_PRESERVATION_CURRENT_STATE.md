@@ -1,12 +1,12 @@
 # Source Preservation Current State
 
-Date: 2026-07-10
+Date: 2026-07-12
 
-Checkpoint: `44f660a Add bundle index reconciliation CLI`
+Checkpoint: `e63def4 Add evidence database taxonomy schema skeleton`
 
 ## Purpose
 
-This document is the handoff/index for the current local-only source-preservation work. It maps the implemented metadata models, report helpers, CLIs, tests, and documentation so a future session can resume without reconstructing the full project history.
+This document is the handoff/index for the current local-only source-preservation work and its related source-evidence schema foundations. It maps the implemented metadata models, report helpers, CLIs, tests, and documentation so a future session can resume without reconstructing the full project history.
 
 This is a state document, not an implementation. The preservation stack remains separate from the GUI and existing YouTube comment/live-chat, ASR, and Total Export runtime flows.
 
@@ -21,7 +21,9 @@ The current preservation helpers may read explicitly selected local metadata/fil
 - Check or submit URLs to Internet Archive, archive.ph/archive.today, or another archive service.
 - Scrape pages, automate browsers, or capture screenshots.
 - Transcribe media or call ASR providers.
-- Store credentials, secrets, cookies, or browser sessions.
+- Store or test credentials, secrets, cookies, tokens, or browser sessions.
+- Persist/background-process evidence queue items or treat queue status as an instruction to delete/move files.
+- Scan database roots, classify evidence automatically, infer sensitive traits, execute reclassification, or move files.
 - Bypass login, paywall, private-content, anti-copy, or DRM controls.
 - Wire preservation behavior into the GUI.
 
@@ -46,6 +48,9 @@ Missing metadata, missing local files, and missing expected bundles are follow-u
 | Bundle index CLI | `TOTAL_EXPORT_BUNDLE_INDEX.md` | `total_export_bundle_index_cli.py` | `total_export_bundle_index_cli_test.py` | Scans a local folder and renders bundle index text, Markdown, or JSON. | Writes only with explicit `--output`; no network or archive-service access. |
 | Bundle index reconciliation | `TOTAL_EXPORT_BUNDLE_INDEX_RECONCILIATION.md` | `total_export_bundle_index_reconcile.py` | `total_export_bundle_index_reconcile_test.py` | Compares expected ZIP paths with an in-memory bundle index and reports missing, unexpected, or needs-review bundles. | Path/index comparison only; no extraction, fetching, or external validation. |
 | Bundle index reconciliation CLI | `TOTAL_EXPORT_BUNDLE_INDEX_RECONCILIATION.md` | `total_export_bundle_index_reconcile_cli.py` | `total_export_bundle_index_reconcile_cli_test.py` | Loads JSON/text expected lists, builds a local index, reconciles it, and renders text, Markdown, or JSON. | Writes only with explicit `--output`; no extraction, network, or provider behavior. |
+| Evidence item queue schema | `EVIDENCE_ITEM_QUEUE_UI_SPEC.md` | `evidence_item_queue.py` | `evidence_item_queue_test.py` | Describes evidence workspace items, links, ASR pairings, lifecycle states, and explicit Total Export inclusion/exclusion. | In-memory immutable metadata only; no persistence, file checks/deletion, capture, ASR, archive, GUI, or export wiring. |
+| Access & Keys metadata schema | `ACCESS_KEYS_MANAGER_SPEC.md` | `access_keys_metadata.py` | `access_keys_metadata_test.py` | Describes non-secret provider/source/archive/browser-assisted access, credential, and user-triggered test-result status metadata. | No secret-bearing fields, credential storage/testing, OAuth, external calls, browser integration, or GUI wiring. |
+| Evidence database taxonomy schema | `EVIDENCE_DATABASE_TAXONOMY_SPEC.md` | `evidence_database_taxonomy.py` | `evidence_database_taxonomy_test.py` | Describes read-only database roots, user-defined taxonomy dimensions, dry-run review suggestions, safeguards, and history. | Paths are labels only; no scanning, automatic classification, persistence, reclassification execution, or file movement. |
 
 The broader phase boundaries and possible later work remain in `SOURCE_PRESERVATION_ROADMAP.md`. General Total Export package-shell developer commands remain in `TOTAL_EXPORT_DEV_CLI_EXAMPLES.md`.
 
@@ -81,6 +86,9 @@ There are currently no separate CLIs for creating manual archive records or loca
 | `total_export_bundle_index_reconcile_test.py` | Present, missing, unexpected, and sidecar-needs-review expected bundle states. |
 | `total_export_bundle_index_reconcile_cli_test.py` | JSON object/list and text expected inputs, recursive/hash modes, all output formats, explicit output, and invalid input. |
 | `youtube_url_utils_test.py` | Pure-local YouTube URL/video-ID normalization used by preservation source matching. |
+| `evidence_item_queue_test.py` | Exact queue roles/statuses, inert local paths, ASR pairing, export inclusion/exclusion, link origins, and deterministic aggregate serialization. |
+| `access_keys_metadata_test.py` | Exact access/credential/test statuses, safe provider/source/archive/browser metadata, renderers, and absence of secret-bearing/active-test behavior. |
+| `evidence_database_taxonomy_test.py` | Unknown-state preservation, arbitrary dimensions, dry-run/review/history records, sensitive-classification safeguards, alias suggestions, and absence of scanning/movement execution. |
 
 All listed tests are script-style local self-tests. Their temporary files are created under `TemporaryDirectory`; they do not require network access.
 
@@ -110,6 +118,18 @@ All listed tests are script-style local self-tests. Their temporary files are cr
 
 `BundleIndexReconciliationResult` compares `ExpectedBundleEntry` paths with a supplied local bundle index. It distinguishes `present`, `missing_expected_zip`, `present_needs_review`, and `unexpected_zip`. Missing and unexpected paths require manual review but do not establish deletion or invalidity.
 
+### Evidence Item Queue Schema
+
+`EvidenceItemQueue` groups immutable `EvidenceQueueItem`, `EvidenceItemLink`, and `ASRPairingMetadata` records. Queue roles and statuses are descriptive workspace metadata. `total_export_include` defaults to false, and `REMOVED_FROM_WORKING_SET` does not delete or modify a file.
+
+### Access & Keys Metadata Schema
+
+`AccessKeysCatalog` groups non-secret `AccessEntryMetadata` and `ConnectionTestMetadata` records for ASR providers, source adapters, archive services, and browser-assisted capture. Test/status records describe user-triggered outcomes only; the module does not store credentials or execute a test.
+
+### Evidence Database Taxonomy Schema
+
+`EvidenceDatabaseTaxonomy` groups database-root registration, user-defined taxonomy mappings/dimensions, evidence item metadata, dry-run suggestions/reports, alias normalization, review status, sensitive-classification safeguards, and reclassification history. All path values are labels; no database scan or file change occurs.
+
 ## Completed Milestones
 
 1. Documented local-only preservation phases and hard boundaries.
@@ -123,8 +143,11 @@ All listed tests are script-style local self-tests. Their temporary files are cr
 9. Added expected-bundle reconciliation and a text/Markdown/JSON CLI.
 10. Added a manual local evidence manifest helper for deterministic metadata aggregation without artifact creation.
 11. Added a Markdown/text/JSON evidence manifest CLI with explicit-output-only writes.
+12. Added the immutable evidence item queue schema and focused local tests.
+13. Added the non-secret Access & Keys metadata/status schema, renderers, and focused local tests.
+14. Added the read-only evidence database taxonomy/dry-run/history schema and focused local tests.
 
-None of these milestones introduced source acquisition, external verification, archive-service access, or GUI integration.
+None of these milestones introduced source acquisition, external verification, archive-service access, credential storage/testing, database scanning, file movement, or GUI integration.
 
 ## Deliberately Out Of Scope
 
@@ -134,15 +157,18 @@ None of these milestones introduced source acquisition, external verification, a
 - Screenshot capture, browser automation, and scraping.
 - ASR execution or provider calls.
 - ZIP extraction or inspection of file contents inside bundle ZIPs.
-- Credential, key, cookie, or authenticated-session storage.
+- Credential, key, token, cookie, or authenticated-session storage/testing.
+- Evidence queue persistence, background processing, or file deletion/movement.
+- Database-root scanning, automatic/sensitive classification, reclassification execution, or file movement.
 - GUI controls or background jobs for preservation workflows.
 - Claims that missing local data proves anything about external availability or provenance.
 
 ## Recommended Next Safe Milestones
 
-1. Perform docs-only bundle/preservation index polish if names or boundaries drift.
-2. Consider a concise cross-project handoff covering ASR, Total Export, and local preservation milestones.
-3. Keep any networked archive, downloader, capture, or provider work deferred until separately approved with explicit opt-in and mocked/local tests.
+1. Reconcile broader cumulative/coverage documentation with the three new source-evidence schema checkpoints if a separate documentation-alignment milestone is approved.
+2. Consider local-only compatibility/reporting helpers across preservation, queue, access-status, taxonomy, provenance, and Total Export metadata without persistence or operational behavior.
+3. Create a fresh full external session handoff before a substantially different feature area.
+4. Keep GUI, persistence, database scanning, automatic/sensitive classification, credential testing/storage, archive/downloader/capture/provider, and other networked behavior deferred until separately approved with explicit opt-in where applicable and local/mocked tests.
 
 ## Verify The Local Preservation Stack
 
@@ -151,13 +177,13 @@ Run from the repository root with the project virtual environment active.
 Compile the current preservation modules and tests:
 
 ```cmd
-python -m py_compile total_export_manual_archive.py total_export_manual_archive_test.py total_export_local_media.py total_export_local_media_test.py total_export_local_media_verify.py total_export_local_media_verify_test.py total_export_local_media_verify_cli.py total_export_local_media_verify_cli_test.py total_export_preservation_plan.py total_export_preservation_plan_test.py total_export_preservation_plan_cli.py total_export_preservation_plan_cli_test.py preservation_metadata_seed_test.py total_export_bundle_index.py total_export_bundle_index_test.py total_export_bundle_index_cli.py total_export_bundle_index_cli_test.py total_export_bundle_index_reconcile.py total_export_bundle_index_reconcile_test.py total_export_bundle_index_reconcile_cli.py total_export_bundle_index_reconcile_cli_test.py youtube_url_utils.py youtube_url_utils_test.py
+python -m py_compile total_export_manual_archive.py total_export_manual_archive_test.py total_export_local_media.py total_export_local_media_test.py total_export_local_media_verify.py total_export_local_media_verify_test.py total_export_local_media_verify_cli.py total_export_local_media_verify_cli_test.py total_export_preservation_plan.py total_export_preservation_plan_test.py total_export_preservation_plan_cli.py total_export_preservation_plan_cli_test.py preservation_metadata_seed_test.py total_export_bundle_index.py total_export_bundle_index_test.py total_export_bundle_index_cli.py total_export_bundle_index_cli_test.py total_export_bundle_index_reconcile.py total_export_bundle_index_reconcile_test.py total_export_bundle_index_reconcile_cli.py total_export_bundle_index_reconcile_cli_test.py youtube_url_utils.py youtube_url_utils_test.py evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py
 ```
 
 Run the local self-tests:
 
 ```cmd
-python total_export_manual_archive_test.py & python total_export_local_media_test.py & python total_export_local_media_verify_test.py & python total_export_local_media_verify_cli_test.py & python total_export_preservation_plan_test.py & python total_export_preservation_plan_cli_test.py & python preservation_metadata_seed_test.py & python total_export_bundle_index_test.py & python total_export_bundle_index_cli_test.py & python total_export_bundle_index_reconcile_test.py & python total_export_bundle_index_reconcile_cli_test.py & python youtube_url_utils_test.py
+python total_export_manual_archive_test.py & python total_export_local_media_test.py & python total_export_local_media_verify_test.py & python total_export_local_media_verify_cli_test.py & python total_export_preservation_plan_test.py & python total_export_preservation_plan_cli_test.py & python preservation_metadata_seed_test.py & python total_export_bundle_index_test.py & python total_export_bundle_index_cli_test.py & python total_export_bundle_index_reconcile_test.py & python total_export_bundle_index_reconcile_cli_test.py & python youtube_url_utils_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py
 ```
 
 Review repository consistency:

@@ -1,14 +1,14 @@
 # Project Current-State Handoff
 
-Date: 2026-07-10
+Date: 2026-07-12
 
-Checkpoint: `b59a052 Fix ASR manual seed metadata test`
+Checkpoint: `e63def4 Add evidence database taxonomy schema skeleton`
 
 Branch: `v2.6.0-asr-engines`
 
 ## Purpose
 
-This document is the cross-project handoff for the current ASR comparison, Total Export, upstream v2.1.1 parity, source-preservation, and local evidence-manifest work.
+This document is the cross-project handoff for the current ASR comparison, Total Export, upstream v2.1.1 parity, source-preservation, local evidence-manifest, and source-evidence model-skeleton work.
 
 It records the state needed for a future session to resume safely. It does not implement behavior and does not replace the detailed subsystem documents listed below.
 
@@ -16,7 +16,7 @@ It records the state needed for a future session to resume safely. It does not i
 
 - The working tree was clean when this handoff milestone started. Reconfirm with `git status --short` before applying any new patch.
 - Current branch: `v2.6.0-asr-engines`.
-- Current checkpoint: `b59a052 Fix ASR manual seed metadata test`.
+- Current checkpoint: `e63def4 Add evidence database taxonomy schema skeleton`.
 - The user performs final local checks, commits, and pushes after reviewing each patch.
 - Codex should not commit unless the user explicitly changes that instruction.
 - Keep one milestone per patch.
@@ -40,6 +40,9 @@ Unless a later milestone is explicitly approved, do not add:
 - ZIP extraction or reading files from inside ZIPs.
 - Login, paywall, private-content, anti-copy, or DRM bypass behavior.
 - GUI wiring for the local-only preservation/evidence/report helpers.
+- Evidence queue persistence, background processing, or file operations.
+- Credential storage/testing, OAuth, browser-profile integration, or secret-bearing Access & Keys fields.
+- Database-root scanning, automatic classification, sensitive-trait inference, reclassification execution, or file movement.
 - New runtime dependencies or hidden configuration for these milestones.
 
 Existing YouTube comment/live-chat behavior, app exports, ASR runtime behavior, and Total Export package/review behavior must remain stable unless a separately approved milestone changes them with local/mocked coverage.
@@ -136,6 +139,16 @@ Important boundaries:
 
 See `TOTAL_EXPORT_DEV_CLI_EXAMPLES.md` for CMD-friendly prepare, review, inspect, ZIP, sidecar, verification, and batch examples.
 
+## Source Evidence Model Skeleton State
+
+Three planned source-evidence areas now have standalone, local-only schema implementations with focused tests:
+
+- `evidence_item_queue.py` and `evidence_item_queue_test.py` (`7af8eea`): immutable queue-item, link, ASR-pairing, role, lifecycle-status, and Total Export include/exclude metadata. Source URLs, local media, reference text, transcript/subtitle candidates, ASR results, screenshots/snapshots, archive URLs, packages, and taxonomy suggestions remain distinct roles. The model performs no file checks, deletion, persistence, GUI work, ASR execution, capture, archive access, or Total Export wiring.
+- `access_keys_metadata.py` and `access_keys_metadata_test.py` (`66871b6`): non-secret access-mode, credential-status, connection-test-status, provider/source/archive/browser-assisted-capture metadata, deterministic serialization, and text/Markdown/JSON rendering. It stores no key, token, password, cookie, session, authorization header, or browser-profile path and performs no credential test, OAuth, provider call, archive call, source fetch, or GUI wiring.
+- `evidence_database_taxonomy.py` and `evidence_database_taxonomy_test.py` (`e63def4`): read-only database-root/taxonomy metadata, arbitrary user-defined dimensions, valid unknown/not-identified states, dry-run reclassification and alias-normalization suggestions, sensitive-classification safeguards, review states, preserved history, and queue/package/source references. Paths are descriptive metadata only; the model performs no scanning, automatic classification, persistence, reclassification execution, or file movement.
+
+These are implemented local-only schema/test foundations, not implemented UI/runtime workflows. The corresponding specification documents remain authoritative for future behavior, and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` should continue to distinguish implemented schema foundations from docs-only GUI, persistence, external access, and execution gaps.
+
 ## Upstream v2.1.1 Parity State
 
 `UPSTREAM_V2_1_1_AUDIT.md` is the original local parity audit and should be read as the baseline before the later regression/fix commits.
@@ -190,7 +203,12 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | `TOTAL_EXPORT_BUNDLE_INDEX_RECONCILIATION.md` | Expected bundle reconciliation semantics and CLI. |
 | `SOURCE_PRESERVATION_CURRENT_STATE.md` | Detailed local preservation/evidence handoff and test index. |
 | `SOURCE_PRESERVATION_ROADMAP.md` | Preservation phase boundaries and deferred behavior. |
-| `SOURCE_CONTEXT_GLOSSARY_CURRENT_STATE.md` | Current local source URL, adapter, capture plan, provenance, and context/glossary helper/test index. |
+| `SOURCE_CONTEXT_GLOSSARY_CURRENT_STATE.md` | Current local source URL, adapter, capture plan, provenance, context/glossary, and source-evidence model/test index. |
+| `SOURCE_EVIDENCE_ROADMAP.md` | Cross-source evidence, capture, access, queue, taxonomy, and preservation roadmap. |
+| `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` | Requirement-to-document/implementation coverage and next-gap audit. |
+| `EVIDENCE_ITEM_QUEUE_UI_SPEC.md` | Future evidence queue UI/workflow contract; current implementation is schema-only. |
+| `ACCESS_KEYS_MANAGER_SPEC.md` | Future Access & Keys UI/workflow contract; current implementation is non-secret metadata-only. |
+| `EVIDENCE_DATABASE_TAXONOMY_SPEC.md` | Future database taxonomy/index/reclassification contract; current implementation is read-only schema/dry-run metadata only. |
 | `PRESERVATION_METADATA_SEED.md` | Local preservation fixture and report-generator usage. |
 | `EVIDENCE_PACKAGE_MANIFEST.md` | Local evidence manifest helper and CLI semantics. |
 | `UPSTREAM_V2_1_1_AUDIT.md` | Historical upstream parity audit and recommended regression areas. |
@@ -207,23 +225,27 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | Manual archive/local media | `total_export_manual_archive.py`, `total_export_local_media.py`, `total_export_local_media_verify.py` and verification CLI | Manual archive, local media, and verification helper/CLI tests |
 | Preservation plans/seeds | `total_export_preservation_plan.py`, plan CLI, `preservation_metadata_seed_report.py` | Plan helper/CLI, seed, and seed-report tests |
 | Evidence manifest | `total_export_evidence_manifest.py`, `total_export_evidence_manifest_cli.py` | Evidence manifest helper and CLI tests |
+| Evidence item queue schema | `evidence_item_queue.py` | `evidence_item_queue_test.py` |
+| Access & Keys metadata schema | `access_keys_metadata.py` | `access_keys_metadata_test.py` |
+| Evidence database taxonomy schema | `evidence_database_taxonomy.py` | `evidence_database_taxonomy_test.py` |
 | URL normalization | `youtube_url_utils.py` | `youtube_url_utils_test.py` |
 | Upstream parity | Extractor/spam/settings/export-state code | Five local/mocked parity tests listed above |
 
 ## Latest Known Commit Chain
 
 ```
-b59a052 Fix ASR manual seed metadata test
-975238e Polish ASR manual seed metadata
-7821f7f Add combined ASR report CLI
-7ff20d0 Add ASR provider status notes
-39fe85b Add ASR reporting current-state handoff
-a1d9d36 Add ASR decision summary CLI
-2af464a Add ASR term coverage summary CLI
-f30c7d5 Add ASR term coverage summary report
-6cede20 Add ASR decision summary report
-a5cfe85 Add cross-project current-state handoff
-5ed8a69 Add local evidence manifest CLI
+e63def4 Add evidence database taxonomy schema skeleton
+66871b6 Add access keys metadata model skeleton
+7af8eea Add evidence item queue model skeleton
+cc10998 Document source evidence roadmap coverage
+65cf20f Document access keys manager flow
+e4c195d Document evidence database taxonomy flow
+e2456b6 Document evidence item queue UI flow
+9aab238 Plan media evidence logging and source crediting
+6f2449e Plan evidence queue and database taxonomy
+f1d0da0 Audit Total Export validation errors
+917dcdc Audit package inspection statuses
+6795c14 Audit ZIP inspection statuses
 ```
 
 
@@ -249,6 +271,12 @@ Bundle index and reconciliation:
 python -m py_compile total_export_bundle_index.py total_export_bundle_index_test.py total_export_bundle_index_cli.py total_export_bundle_index_cli_test.py total_export_bundle_index_reconcile.py total_export_bundle_index_reconcile_test.py total_export_bundle_index_reconcile_cli.py total_export_bundle_index_reconcile_cli_test.py youtube_url_utils.py youtube_url_utils_test.py & python total_export_bundle_index_test.py & python total_export_bundle_index_cli_test.py & python total_export_bundle_index_reconcile_test.py & python total_export_bundle_index_reconcile_cli_test.py & python youtube_url_utils_test.py
 ```
 
+Source-evidence model skeletons:
+
+```cmd
+python -m py_compile evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py
+```
+
 Upstream parity regressions:
 
 ```cmd
@@ -265,10 +293,10 @@ Do not add provider/API/network calls to these verification chains.
 
 ## Safe Next Milestones
 
-1. Perform docs-only bundle/preservation index polish if names or boundaries drift.
-2. Add a local-only ASR term coverage/gap summary over manual records, or polish comparison/decision report formatting without provider calls.
-3. Review whether this phase has reached a useful stopping point and create an external session handoff for the user.
-4. Keep any future networked provider/archive/downloader/capture behavior deferred until explicitly approved, opt-in, and covered by local/mocked tests. Any additional adapters should start as metadata-only, site-specific or site-family skeletons.
+1. Reconcile `CURRENT_DEV_STATE.md` and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` with the three implemented local-only schema/test milestones if a broader documentation-alignment milestone is approved.
+2. Consider local-only compatibility/reporting helpers between the queue, Access & Keys catalog, taxonomy schema, and existing source/evidence models, but only as explicit metadata transforms with focused tests and no persistence/runtime wiring.
+3. Create the next full external session handoff before beginning a substantially different feature area.
+4. Keep GUI, persistence, database scanning, automatic/sensitive classification, credential testing/storage, provider/archive/downloader/capture, and other networked behavior deferred until explicitly approved, opt-in where applicable, and covered by local/mocked tests.
 
 ## Do-Not-Do List
 
@@ -280,6 +308,8 @@ Do not add provider/API/network calls to these verification chains.
 - Do not copy/build packages or extract ZIPs through preservation/evidence metadata helpers.
 - Do not infer remote deletion or unavailability from missing local records.
 - Do not expose or record secrets in docs, logs, manifests, reports, screenshots, or test fixtures.
+- Do not describe the queue, Access & Keys manager, or database taxonomy UI/persistence/runtime as implemented; only their local schema/test foundations exist.
+- Do not infer sensitive classifications from weak clues or turn dry-run taxonomy suggestions into automatic file operations.
 - Do not modify mature YouTube comment/live-chat/export behavior during unrelated milestones.
 - Do not commit before the user has reviewed the patch and local checks.
 
