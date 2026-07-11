@@ -515,3 +515,5 @@ Evidence bundle JSON input validation now has a batched helper/CLI audit proving
 `total_export_preservation_plan_cli_test.py` and `preservation_metadata_seed_report_test.py` now share invalid-command assertion helpers for preservation planning CLI/report coverage while preserving local-only, non-network semantics.
 
 `source_capture_plan_cli_test.py` and `context_glossary_cli_test.py` now share invalid-command assertion helpers for source/context CLI coverage while preserving local-only, non-fetch semantics.
+
+`total_export_bundle_index_reconcile_cli_test.py` now shares invalid-command assertion helpers for local bundle index reconciliation CLI coverage.

@@ -49,6 +49,14 @@ def _run_cli(argv: list[str]):
         code = main(argv)
     return code, stdout.getvalue(), stderr.getvalue()
 
+def _assert_cli_failure(argv: list[str], expected_error: str) -> str:
+    code, stdout, stderr = _run_cli(argv)
+    assert code == 1
+    assert stdout == ""
+    assert expected_error in stderr
+    return stderr
+
+
 
 def run_self_test() -> None:
     with TemporaryDirectory() as temp_dir:
@@ -238,10 +246,7 @@ def run_self_test() -> None:
             "# Total Export Bundle Index Reconciliation"
         )
 
-        code, stdout, stderr = _run_cli(output_args)
-        assert code == 1
-        assert stdout == ""
-        assert "Output file already exists" in stderr
+        _assert_cli_failure(output_args, 'Output file already exists')
 
         output_path.write_text("old\n", encoding="utf-8")
         code, stdout, stderr = _run_cli([*output_args, "--overwrite"])
@@ -252,21 +257,11 @@ def run_self_test() -> None:
             encoding="utf-8"
         )
 
-        code, stdout, stderr = _run_cli(
-            ["--root", str(root), "--expected", str(root / "missing.json")]
-        )
-        assert code == 1
-        assert stdout == ""
-        assert "does not exist" in stderr
+        _assert_cli_failure(["--root", str(root), "--expected", str(root / "missing.json")], 'does not exist')
 
         invalid_json = root / "invalid.json"
         invalid_json.write_text("{not json\n", encoding="utf-8")
-        code, stdout, stderr = _run_cli(
-            ["--root", str(root), "--expected", str(invalid_json)]
-        )
-        assert code == 1
-        assert stdout == ""
-        assert "Invalid expected bundle JSON" in stderr
+        _assert_cli_failure(["--root", str(root), "--expected", str(invalid_json)], 'Invalid expected bundle JSON')
 
 
 if __name__ == "__main__":

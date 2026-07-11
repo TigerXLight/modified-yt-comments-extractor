@@ -410,3 +410,5 @@ Total Export prepare CLI tests now share invalid-command result checks while pre
 Preservation planning CLI/report tests now share invalid-command result checks while preserving metadata-only archive, download, network/API, file-open, validation, and temp-output boundaries.
 
 Source capture/context CLI tests now share invalid-command result checks while preserving metadata-only source planning, glossary, network/API, fetch, browser, validation, and temp-output boundaries.
+
+Total Export bundle index reconciliation CLI tests now share invalid-command result checks while preserving metadata-only ZIP sidecar, reconciliation, no-extraction, network/API, download, archive, validation, and temp-output boundaries.

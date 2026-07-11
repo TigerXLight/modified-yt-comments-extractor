@@ -897,3 +897,4 @@ Next local-ASR branches:
 - The Total Export prepare CLI integration tests now include a batched cleanup pass that shares invalid-command assertions while preserving descriptive, non-operational export/evidence plan coverage.
 - The preservation planning CLI/report tests now include a batched cleanup pass that shares invalid-command assertions while preserving local-only preservation metadata/report semantics.
 - The source capture/context CLI tests now include a batched cleanup pass that shares invalid-command assertions while preserving local-only, non-fetch planning/report semantics.
+- The Total Export bundle index reconciliation CLI tests now include a batched cleanup pass that shares invalid-command assertions while preserving local-only ZIP/index reconciliation semantics.

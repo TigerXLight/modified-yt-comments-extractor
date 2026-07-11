@@ -481,3 +481,5 @@ Total Export prepare CLI coverage now includes a batched cleanup pass for consis
 Preservation planning CLI/report coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and local-only preservation metadata semantics.
 
 Source capture/context CLI coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and local-only, non-fetch context/glossary semantics.
+
+Total Export bundle index reconciliation CLI coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and local-only ZIP/index semantics.
