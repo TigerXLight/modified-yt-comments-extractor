@@ -394,3 +394,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now includes negative descriptive path-hint checks for URL, drive-qualified, root-relative, and absolute examples so the helper cannot silently weaken.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now includes negative checks proving representative forbidden file-state keys such as captured, exists, hash, opened, sha256, size_bytes, uploaded, and validated are rejected.

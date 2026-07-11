@@ -62,6 +62,14 @@ def _assert_no_file_state_keys(value: object) -> None:
             _assert_no_file_state_keys(child)
 
 
+def _assert_rejects_file_state_key(key: str) -> None:
+    try:
+        _assert_no_file_state_keys({"items": [{key: "example"}]})
+    except AssertionError:
+        return
+    raise AssertionError(f"Expected file-state key to be rejected: {key!r}")
+
+
 def _assert_descriptive_path_hint(path_hint: str) -> None:
     assert path_hint == r"captures\\comments.png", path_hint
     assert "://" not in path_hint, path_hint
@@ -136,6 +144,18 @@ def run_self_test() -> None:
     _assert_rejects_path_hint(r"C:\captures\comments.png")
     _assert_rejects_path_hint(r"\captures\comments.png")
     _assert_rejects_path_hint("/tmp/captures/comments.png")
+
+    for forbidden_key in (
+        "captured",
+        "exists",
+        "hash",
+        "opened",
+        "sha256",
+        "size_bytes",
+        "uploaded",
+        "validated",
+    ):
+        _assert_rejects_file_state_key(forbidden_key)
 
     with tempfile.TemporaryDirectory() as temp_dir:
         input_path = Path(temp_dir) / "evidence_bundle.json"

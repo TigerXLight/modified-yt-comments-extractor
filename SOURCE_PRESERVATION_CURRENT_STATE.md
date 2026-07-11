@@ -289,3 +289,6 @@ Evidence bundle local-only scope invariant testing now asserts structured path h
 
 
 Evidence bundle local-only scope invariant testing now includes negative path-hint examples to ensure evidence hints stay relative/descriptive rather than executable or resolved paths.
+
+
+Evidence bundle local-only scope invariant testing now includes negative assertions for representative forbidden file-state keys to keep evidence metadata descriptive only.

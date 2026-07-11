@@ -825,3 +825,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now asserts structured path hints stay relative/descriptive and are not absolute paths, URLs, or drive-qualified paths.
 
 - Evidence bundle local-only scope invariant coverage now includes negative path-hint assertions for URL, drive-qualified, root-relative, and absolute examples.
+
+- Evidence bundle local-only scope invariant coverage now includes negative assertions proving representative forbidden file-state keys are rejected.
