@@ -370,3 +370,5 @@ Evidence bundle regression runner behavior tests now use one helper for repeatab
 Evidence bundle regression runner behavior tests now use one helper for successful targeted subprocess results, preserving exact labels, one aggregate banner, zero stderr, and successful return codes.
 
 Evidence bundle regression runner behavior tests now use one helper for unknown-label failures, preserving diagnostic-only output, every missing label, and the complete valid-choice list.
+
+Evidence bundle regression runner behavior tests now assert validation rejects duplicated valid selections mixed with an unknown label before any selected regression group runs.

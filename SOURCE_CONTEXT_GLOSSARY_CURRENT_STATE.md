@@ -441,3 +441,5 @@ Evidence bundle regression runner behavior coverage now shares deterministic rep
 Evidence bundle regression runner behavior coverage now shares successful targeted-result assertions while retaining exact passed-label, single-banner, return-code, and clean-stderr validation.
 
 Evidence bundle regression runner behavior coverage now shares contains-based unknown-label failure assertions across single, multiple, and mixed targeted-selection diagnostics.
+
+Evidence bundle regression runner behavior coverage now verifies an unknown label blocks execution even when a valid targeted label is duplicated in the same selection.

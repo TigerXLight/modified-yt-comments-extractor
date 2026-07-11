@@ -206,6 +206,22 @@ def run_self_test() -> None:
     _assert_unknown_label_failure(mixed_unknown_result, "missing regression group")
     assert "evidence bundle JSON helper validation" in mixed_unknown_result.stderr
 
+    duplicate_known_unknown_result = _run_runner(
+        *_only_args(
+            "evidence bundle JSON helper validation",
+            "evidence bundle JSON helper validation",
+            "missing regression group",
+        )
+    )
+    _assert_unknown_label_failure(
+        duplicate_known_unknown_result,
+        "missing regression group",
+    )
+    assert (
+        "evidence bundle JSON helper validation: passed"
+        not in duplicate_known_unknown_result.stdout
+    )
+
 
 if __name__ == "__main__":
     run_self_test()
