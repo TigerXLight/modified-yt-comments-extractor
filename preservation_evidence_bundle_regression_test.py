@@ -5,6 +5,9 @@ from preservation_evidence_bundle_cli_test import run_self_test as run_evidence_
 from preservation_evidence_bundle_json_input_validation_test import (
     run_self_test as run_evidence_bundle_json_input_validation_test,
 )
+from preservation_evidence_bundle_regression_runner_test import (
+    run_self_test as run_evidence_bundle_regression_runner_test,
+)
 from preservation_evidence_bundle_scope_invariant_test import (
     run_self_test as run_evidence_bundle_scope_invariant_test,
 )
@@ -19,6 +22,7 @@ REGRESSION_TESTS = (
     ("standalone evidence bundle CLI", run_evidence_bundle_cli_test),
     ("preservation backend plan CLI integration", run_backend_plan_cli_test),
     ("Total Export prepare CLI integration", run_total_export_prepare_cli_test),
+    ("evidence bundle regression runner behavior", run_evidence_bundle_regression_runner_test),
 )
 
 

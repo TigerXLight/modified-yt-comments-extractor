@@ -799,3 +799,5 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now covers repeatable `--only` selections for targeted multi-group local regression runs.
 
 - Evidence bundle local-only scope invariant coverage now also checks preservation backend plan CLI JSON output via `--input ... --format json`.
+
+- The regression runner behavior test no longer imports the aggregate runner directly, allowing the aggregate evidence bundle runner to include its behavior test without a circular import.

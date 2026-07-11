@@ -355,3 +355,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` runner now suppo
 
 
 The evidence bundle scope invariant test now also verifies preservation backend plan CLI JSON output via `--input ... --format json`, alongside model serialization, standalone evidence bundle CLI JSON output, and Total Export preservation-plan JSON output.
+
+
+The aggregate `preservation_evidence_bundle_regression_test.py` suite now includes `evidence bundle regression runner behavior`. The behavior test uses subprocess calls instead of importing the aggregate runner, avoiding the earlier circular import issue.

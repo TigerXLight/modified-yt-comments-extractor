@@ -250,3 +250,6 @@ Evidence bundle regression runner behavior tests now cover repeatable `--only` s
 
 
 Evidence bundle local-only scope invariant testing now covers preservation backend plan CLI JSON output via `--input ... --format json` in addition to model, standalone CLI, and Total Export JSON outputs.
+
+
+Full evidence bundle regression runs now include the runner behavior test group. The test avoids circular imports by validating `--list`, targeted `--only`, repeatable `--only`, and unknown-label errors through subprocess execution.

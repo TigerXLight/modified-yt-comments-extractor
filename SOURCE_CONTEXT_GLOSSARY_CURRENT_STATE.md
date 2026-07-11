@@ -321,3 +321,6 @@ The aggregate evidence bundle regression runner test now covers repeatable `--on
 
 
 Evidence bundle local-only scope invariants now include preservation backend plan CLI JSON output through `--format json`, keeping path hints descriptive and local-only.
+
+
+The aggregate evidence bundle regression runner now includes its own behavior test group without circular imports; the behavior test exercises the runner through subprocess calls.
