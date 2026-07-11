@@ -547,6 +547,34 @@ def run_self_test() -> None:
         assert "evidence bundle input file not found" in missing_bundle_input_error
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 
+        invalid_bundle_input_path = Path(temp_dir) / "invalid_evidence_bundle.json"
+        invalid_bundle_input_path.write_text("{", encoding="utf-8")
+        error_code, invalid_bundle_input_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--evidence-bundle-input",
+                str(invalid_bundle_input_path),
+            ]
+        )
+        assert error_code == 2
+        assert "invalid evidence bundle JSON in" in invalid_bundle_input_error
+        invalid_bundle_input_path.unlink()
+        assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
+
+        list_bundle_input_path = Path(temp_dir) / "list_evidence_bundle.json"
+        list_bundle_input_path.write_text("[]", encoding="utf-8")
+        error_code, list_bundle_input_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--evidence-bundle-input",
+                str(list_bundle_input_path),
+            ]
+        )
+        assert error_code == 2
+        assert "evidence bundle input JSON must be an object" in list_bundle_input_error
+        list_bundle_input_path.unlink()
+        assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
+
         error_code, override_bundle_input_error = _run_cli_error(
             [
                 "--explain-preservation-plan",

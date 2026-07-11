@@ -276,3 +276,6 @@ Evidence bundle CLI JSON input errors are covered for missing files and malforme
 
 
 Total Export preservation-plan explanations can render explicit evidence bundle JSON input. The JSON is local metadata only; path hints inside it are labels and do not trigger file inspection or capture behavior.
+
+
+Total Export evidence bundle JSON input error handling is covered for malformed JSON and non-object roots, while continuing to avoid evidence path inspection.

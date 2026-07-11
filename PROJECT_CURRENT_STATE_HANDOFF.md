@@ -310,3 +310,6 @@ Standalone evidence bundle CLI `--input` handling now has regression coverage fo
 
 
 Total Export prepare `--explain-preservation-plan` supports `--evidence-bundle-input` for explicit local evidence bundle JSON metadata. It rejects combining this with evidence-item override flags and keeps path hints descriptive only.
+
+
+Total Export evidence bundle JSON input coverage now includes missing files, malformed JSON, non-object JSON roots, and rejection of combined metadata override flags.

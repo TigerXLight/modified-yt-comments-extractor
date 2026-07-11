@@ -205,3 +205,6 @@ Standalone evidence bundle CLI JSON input validation now covers missing input fi
 
 
 Total Export prepare CLI supports `--evidence-bundle-input` for local evidence bundle JSON metadata in preservation-plan explanations. It reads only the supplied JSON file and does not open, scan, hash, or validate referenced evidence path hints.
+
+
+Total Export evidence bundle JSON input validation now covers malformed JSON and non-object JSON roots, with local-only reads of the explicit JSON input path.
