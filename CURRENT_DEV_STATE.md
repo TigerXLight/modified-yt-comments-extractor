@@ -841,3 +841,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now rejects parent-traversal path hints such as `..\\captures\\comments.png` and `../captures/comments.png`.
 
 - Evidence bundle local-only scope invariant coverage now also rejects embedded parent-traversal path hints such as `captures\\..\\comments.png` and `captures/../comments.png`.
+
+- The evidence bundle regression runner behavior test now also verifies mixed known/unknown `--only` errors list every expected regression label without running partial selections.

@@ -418,3 +418,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now covers embedded parent-traversal path hints as well as leading traversal examples, rejecting both Windows-style and POSIX-style `captures/../...` forms.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now verifies mixed known/unknown `--only` failures include the `expected one of` choices and every current regression label, matching the single-unknown diagnostic coverage.

@@ -384,3 +384,6 @@ Evidence bundle local-only scope invariants now reject parent-traversal path hin
 
 
 Evidence bundle local-only scope invariants now reject embedded parent-traversal path hints, not only traversal at the start of the hint.
+
+
+Evidence bundle regression runner behavior coverage now checks mixed known/unknown selection errors include all expected regression labels.

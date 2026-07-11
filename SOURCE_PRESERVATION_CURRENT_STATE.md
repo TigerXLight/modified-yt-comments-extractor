@@ -313,3 +313,6 @@ Evidence bundle local-only scope invariant testing now includes parent-traversal
 
 
 Evidence bundle local-only scope invariant testing now includes embedded parent-traversal path-hint rejection for both Windows-style and POSIX-style examples.
+
+
+Evidence bundle regression runner behavior tests now assert mixed known/unknown `--only` diagnostics list every valid regression label.
