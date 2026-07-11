@@ -907,3 +907,4 @@ Next local-ASR branches:
 - The Total Export package ZIP tests now share successful and failed result-state assertions while preserving path, hash, size, count, inspection, and diagnostic coverage.
 - The Total Export ZIP inspection tests now share status assertions across valid, missing, invalid, empty, unsafe, and manifest-error ZIP scenarios without changing behavior.
 - The Total Export package inspection tests now share status assertions across valid, explicit-manifest, invalid-manifest, missing-package, missing-manifest, and multiple-manifest scenarios without changing behavior.
+- The Total Export validation tests now share exact error-code assertions across missing-asset, size/hash mismatch, invalid-JSON, and missing-manifest scenarios without changing behavior.

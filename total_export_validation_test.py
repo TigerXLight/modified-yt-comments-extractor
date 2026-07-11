@@ -21,6 +21,14 @@ def _issue_codes(result: ManifestValidationResult) -> tuple[str, ...]:
     return tuple(issue.code for issue in result.issues)
 
 
+def _assert_error_codes(
+    result: ManifestValidationResult,
+    expected_codes: tuple[str, ...],
+) -> None:
+    assert _issue_codes(result) == expected_codes
+    assert result.has_errors
+
+
 def run_self_test() -> None:
     with TemporaryDirectory() as temp_dir:
         package_folder = Path(temp_dir) / "package"
@@ -71,8 +79,7 @@ def run_self_test() -> None:
                 ],
             )
         )
-        assert _issue_codes(missing_asset) == ("ASSET_FILE_MISSING",)
-        assert missing_asset.has_errors
+        _assert_error_codes(missing_asset, ("ASSET_FILE_MISSING",))
 
         wrong_size = validate_total_export_manifest(
             TotalExportManifest(
@@ -90,8 +97,7 @@ def run_self_test() -> None:
                 ],
             )
         )
-        assert _issue_codes(wrong_size) == ("ASSET_SIZE_MISMATCH",)
-        assert wrong_size.has_errors
+        _assert_error_codes(wrong_size, ("ASSET_SIZE_MISMATCH",))
 
         wrong_hash = validate_total_export_manifest(
             TotalExportManifest(
@@ -109,8 +115,7 @@ def run_self_test() -> None:
                 ],
             )
         )
-        assert _issue_codes(wrong_hash) == ("ASSET_SHA256_MISMATCH",)
-        assert wrong_hash.has_errors
+        _assert_error_codes(wrong_hash, ("ASSET_SHA256_MISMATCH",))
 
         relative_asset = export_asset_for_file(
             file_path=str(package_folder / copied.asset.path),
@@ -146,12 +151,10 @@ def run_self_test() -> None:
         invalid_path = package_folder / "invalid.json"
         invalid_path.write_text("{not json", encoding="utf-8")
         invalid_result = validate_manifest_json_file(str(invalid_path))
-        assert _issue_codes(invalid_result) == ("MANIFEST_READ_FAILED",)
-        assert invalid_result.has_errors
+        _assert_error_codes(invalid_result, ("MANIFEST_READ_FAILED",))
 
         missing_result = validate_manifest_json_file(str(package_folder / "missing.json"))
-        assert _issue_codes(missing_result) == ("MANIFEST_READ_FAILED",)
-        assert missing_result.has_errors
+        _assert_error_codes(missing_result, ("MANIFEST_READ_FAILED",))
 
 
 if __name__ == "__main__":
