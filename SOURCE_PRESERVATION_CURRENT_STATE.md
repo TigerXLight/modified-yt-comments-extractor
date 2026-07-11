@@ -322,3 +322,6 @@ Evidence bundle regression runner behavior tests now assert `--list` remains lis
 
 
 Evidence bundle local-only scope invariant testing now proves temp directory paths and temporary JSON input filenames are rejected if they appear in rendered CLI output.
+
+
+Evidence bundle regression runner behavior tests now assert targeted `--only` runs do not emit extra regression pass lines beyond the requested labels.

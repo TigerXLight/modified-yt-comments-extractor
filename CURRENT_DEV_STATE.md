@@ -847,3 +847,5 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now verifies `--list` stays listing-only and does not emit pass banners or per-test passed output.
 
 - Evidence bundle local-only scope invariant coverage now includes negative checks proving temp directory paths and temporary JSON input filenames are rejected if rendered into CLI output.
+
+- The evidence bundle regression runner behavior test now verifies targeted `--only` runs emit exactly the selected passed labels and no extra regression pass lines.
