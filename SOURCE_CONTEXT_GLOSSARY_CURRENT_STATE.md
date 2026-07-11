@@ -390,3 +390,6 @@ Evidence bundle regression runner behavior coverage now checks mixed known/unkno
 
 
 Evidence bundle regression runner behavior coverage now checks `--list` does not run regression groups or emit pass output.
+
+
+Evidence bundle local-only scope invariants now include negative temp-path leak examples for temp directories and temporary JSON input filenames.

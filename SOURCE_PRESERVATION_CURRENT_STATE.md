@@ -319,3 +319,6 @@ Evidence bundle regression runner behavior tests now assert mixed known/unknown 
 
 
 Evidence bundle regression runner behavior tests now assert `--list` remains listing-only and does not emit regression pass output.
+
+
+Evidence bundle local-only scope invariant testing now proves temp directory paths and temporary JSON input filenames are rejected if they appear in rendered CLI output.

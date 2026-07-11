@@ -424,3 +424,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now verifies `--list` is listing-only by rejecting pass banners and per-test `passed` output in list mode.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now includes negative checks for temp path leaks, proving temp directory paths plus `evidence_bundle.json` and `backend_plan.json` input filenames are rejected if rendered into CLI output.

@@ -156,6 +156,14 @@ def _assert_no_temp_path_leak(output: str, temp_dir: str) -> None:
         assert temp_string not in output, output
 
 
+def _assert_rejects_temp_path_leak(output: str, temp_dir: str) -> None:
+    try:
+        _assert_no_temp_path_leak(output, temp_dir)
+    except AssertionError:
+        return
+    raise AssertionError(f"Expected temp path leak to be rejected: {output!r}")
+
+
 def run_self_test() -> None:
     bundle = build_preservation_evidence_bundle_from_dict(BUNDLE_INPUT)
     model_data = preservation_evidence_bundle_to_dict(bundle)
@@ -174,6 +182,14 @@ def run_self_test() -> None:
         _assert_rejects_file_state_key(forbidden_key)
 
     with tempfile.TemporaryDirectory() as temp_dir:
+        _assert_rejects_temp_path_leak(f"leaked temp dir: {temp_dir}", temp_dir)
+        _assert_rejects_temp_path_leak(
+            f"leaked temp input: {Path(temp_dir) / 'evidence_bundle.json'}",
+            temp_dir,
+        )
+        _assert_rejects_temp_path_leak("leaked backend_plan.json", temp_dir)
+        _assert_rejects_temp_path_leak("leaked evidence_bundle.json", temp_dir)
+
         input_path = Path(temp_dir) / "evidence_bundle.json"
         input_path.write_text(json.dumps(BUNDLE_INPUT), encoding="utf-8")
 
