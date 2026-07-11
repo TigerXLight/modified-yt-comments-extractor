@@ -182,6 +182,13 @@ def run_self_test() -> None:
     assert f"{RUNNER_BEHAVIOR_LABEL}: passed" not in non_self_result.stdout
     _assert_success_result(non_self_result, non_self_labels)
 
+    missing_only_value_result = _run_runner("--only")
+    assert missing_only_value_result.returncode == 2
+    _assert_no_success_output(missing_only_value_result)
+    assert "--only" in missing_only_value_result.stderr
+    missing_only_error = missing_only_value_result.stderr.lower()
+    assert "expected" in missing_only_error or "argument" in missing_only_error
+
     unknown_result = _run_runner("--only", "missing regression group")
     _assert_unknown_label_failure(unknown_result, "missing regression group")
 

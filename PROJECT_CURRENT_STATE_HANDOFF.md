@@ -477,3 +477,5 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 `preservation_evidence_bundle_regression_runner_test.py` now centralizes unknown-label failure assertions in a helper, preserving return-code, empty-stdout, no-success-output, missing-label, expected-choice, and valid-label diagnostic checks.
 
 `preservation_evidence_bundle_regression_runner_test.py` now covers a duplicated valid `--only` selection mixed with an unknown label, asserting validation fails diagnostically before the valid regression group can run.
+
+`preservation_evidence_bundle_regression_runner_test.py` now covers malformed `--only` usage with no label value, asserting diagnostic-only failure output before any regression group can run.
