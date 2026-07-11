@@ -411,3 +411,6 @@ Evidence bundle regression runner behavior coverage now verifies successful targ
 
 
 Evidence bundle regression runner behavior coverage now actively applies the success-banner-once helper to each successful targeted runner subprocess.
+
+
+Evidence bundle regression runner behavior coverage now verifies failure diagnostics do not include success banners or passed-output lines.

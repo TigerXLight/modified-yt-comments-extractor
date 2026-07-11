@@ -445,3 +445,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now wires `_assert_success_banner_once(...)` into each successful targeted runner subprocess check, so the previously added helper actively verifies one completion banner per successful targeted invocation.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now asserts unknown-label and mixed known/unknown failures keep stdout empty and do not leak success banners or `: passed` output in stderr.

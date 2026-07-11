@@ -39,6 +39,12 @@ def _assert_success_banner_once(result: subprocess.CompletedProcess[str]) -> Non
     assert result.stdout.count('Preservation evidence bundle regression self-test passed.') == 1, result.stdout
 
 
+def _assert_no_success_output(result: subprocess.CompletedProcess[str]) -> None:
+    assert result.stdout == "", result.stdout
+    assert 'Preservation evidence bundle regression self-test passed.' not in result.stderr, result.stderr
+    assert ": passed" not in result.stderr, result.stderr
+
+
 def run_self_test() -> None:
     list_result = _run_runner("--list")
     assert list_result.returncode == 0, list_result.stderr
@@ -121,6 +127,7 @@ def run_self_test() -> None:
     unknown_result = _run_runner("--only", "missing regression group")
     assert unknown_result.returncode == 2
     assert unknown_result.stdout == ""
+    _assert_no_success_output(unknown_result)
     assert "unknown regression test label(s): missing regression group" in unknown_result.stderr
     assert "expected one of" in unknown_result.stderr
     for expected_label in EXPECTED_LABELS:
@@ -134,6 +141,7 @@ def run_self_test() -> None:
     )
     assert mixed_unknown_result.returncode == 2
     assert mixed_unknown_result.stdout == ""
+    _assert_no_success_output(mixed_unknown_result)
     assert "unknown regression test label(s): missing regression group" in mixed_unknown_result.stderr
     assert "expected one of" in mixed_unknown_result.stderr
     assert "evidence bundle JSON helper validation" in mixed_unknown_result.stderr

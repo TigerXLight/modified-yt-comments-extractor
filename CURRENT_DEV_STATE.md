@@ -859,3 +859,5 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now asserts successful targeted runner invocations emit the success banner exactly once.
 
 - The evidence bundle regression runner behavior test now wires the success-banner helper into each successful targeted runner subprocess assertion.
+
+- The evidence bundle regression runner behavior test now asserts unknown-label failures emit no success banner or passed-output lines.

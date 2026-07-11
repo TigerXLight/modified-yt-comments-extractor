@@ -340,3 +340,6 @@ Evidence bundle regression runner behavior tests now assert successful targeted 
 
 
 Evidence bundle regression runner behavior tests now actively assert the success banner appears exactly once for each successful targeted subprocess result.
+
+
+Evidence bundle regression runner behavior tests now assert unknown-label failure paths produce diagnostics only, with no success banner or passed-output leakage.
