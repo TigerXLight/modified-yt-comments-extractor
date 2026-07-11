@@ -193,3 +193,6 @@ Evidence item spec parsing and item-detail validation are centralized in the pre
 
 
 Evidence item detail validation is covered by local regression tests for malformed `artifact_id=value` specs, duplicate item details, and unknown item IDs. These checks remain metadata-only and do not inspect files.
+
+
+Preservation backend plan CLI input JSON supports an `evidence_bundle` object. This parses local metadata only and treats path hints as labels rather than files to open, scan, hash, or validate.

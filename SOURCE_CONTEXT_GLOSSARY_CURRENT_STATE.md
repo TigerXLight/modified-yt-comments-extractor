@@ -264,3 +264,6 @@ Evidence item detail parsing now uses shared preservation evidence bundle helper
 
 
 Evidence item detail metadata now has local regression checks for malformed specs, duplicate details, and unknown artifact IDs across the shared helper and CLI entry points.
+
+
+Preservation backend plan input JSON can include evidence bundle metadata for local reporting. The evidence bundle fields remain descriptive metadata and do not cause source fetching, file opening, capture, or network behavior.

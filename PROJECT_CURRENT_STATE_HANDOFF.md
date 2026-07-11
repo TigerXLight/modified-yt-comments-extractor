@@ -298,3 +298,6 @@ Evidence item detail parsing/validation is centralized in `preservation_evidence
 
 
 Evidence item detail parsing now has focused regression coverage for malformed `artifact_id=value` specs, duplicate detail entries, and detail metadata that references unknown artifact IDs across the helper and CLI entry points.
+
+
+Preservation backend plan JSON input may include an `evidence_bundle` object with metadata-only items, roles, origins, path hints, notes, and capture-method IDs. The CLI still only reads the explicit JSON input file and does not inspect referenced evidence paths.

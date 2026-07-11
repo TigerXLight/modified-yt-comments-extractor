@@ -1,3 +1,4 @@
+# Evidence bundle JSON input coverage repair.
 # Backend CLI invalid detail assertions live inside run_self_test.
 import io
 import json
@@ -198,6 +199,65 @@ def run_self_test() -> None:
         assert code == 1
         assert stdout == ""
         assert "expected one of none, select, all" in stderr
+
+    # input evidence bundle JSON should be rendered without opening or checking path hints
+    with TemporaryDirectory() as temp_dir:
+        input_path = Path(temp_dir) / "plan_with_evidence_bundle.json"
+        _write_json(
+            input_path,
+            {
+                "source_url": "https://www.telegraph.co.uk/news/example/",
+                "selected_backend_ids": ["manual_local_files"],
+                "selected_format_ids": ["html"],
+                "selected_capture_method_ids": ["scrollable_container_screenshot"],
+                "media_preservation_choice": "select",
+                "evidence_bundle": {
+                    "source_url": "https://www.telegraph.co.uk/news/example/",
+                    "bundle_label": "Input evidence",
+                    "status": "manual_supplied",
+                    "items": [
+                        {
+                            "artifact_id": "screenshot",
+                            "artifact_format": "png",
+                            "capture_method_id": "scrollable_container_screenshot",
+                            "artifact_role": "primary",
+                            "origin": "manual",
+                            "path_hint": r"captures\comments.png",
+                            "notes": "Input JSON path hint only.",
+                        }
+                    ],
+                },
+            },
+        )
+        code, stdout, stderr = _run_cli(
+            ["--input", str(input_path), "--format", "json"]
+        )
+        assert code == 0
+        assert stderr == ""
+        parsed = json.loads(stdout)
+        assert parsed["source_url"] == "https://www.telegraph.co.uk/news/example/"
+        assert parsed["evidence_bundle"]["status"] == "manual_supplied"
+        assert parsed["evidence_bundle"]["bundle_label"] == "Input evidence"
+        assert parsed["evidence_bundle"]["items"][0]["artifact_id"] == "screenshot"
+        assert parsed["evidence_bundle"]["items"][0]["artifact_format"] == "png"
+        assert parsed["evidence_bundle"]["items"][0]["capture_method_id"] == "scrollable_container_screenshot"
+        assert parsed["evidence_bundle"]["items"][0]["artifact_role"] == "primary"
+        assert parsed["evidence_bundle"]["items"][0]["origin"] == "manual"
+        assert parsed["evidence_bundle"]["items"][0]["path_hint"] == r"captures\comments.png"
+        assert parsed["evidence_bundle"]["items"][0]["notes"] == "Input JSON path hint only."
+        assert "no file open" in parsed["evidence_bundle"]["scope"]
+
+        bad_input_path = Path(temp_dir) / "bad_plan_with_evidence_bundle.json"
+        _write_json(
+            bad_input_path,
+            {
+                "evidence_bundle": [],
+            },
+        )
+        code, stdout, stderr = _run_cli(["--input", str(bad_input_path)])
+        assert code == 1
+        assert stdout == ""
+        assert "evidence_bundle must be an object" in stderr
 
     # backend detail specs should reject malformed values before rendering
     code, output, error = _run_cli(

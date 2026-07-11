@@ -761,3 +761,5 @@ Next local-ASR branches:
 - Evidence item spec parsing is centralized in the preservation evidence bundle model and reused by the standalone CLI, preservation backend CLI, and Total Export prepare CLI to keep detail validation consistent.
 
 - Added regression coverage that rejects malformed, duplicate, or unknown evidence item detail specs across the shared helper and CLI entry points.
+
+- Preservation backend plan CLI input JSON can include an `evidence_bundle` object parsed as local descriptive metadata only; path hints remain labels and are not opened or checked.
