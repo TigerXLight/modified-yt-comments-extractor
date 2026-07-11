@@ -459,3 +459,5 @@ Evidence bundle regression runner behavior coverage now verifies `--help` docume
 Evidence bundle regression runner behavior coverage now shares no-regression-output assertions across `--list` and `--help` while preserving their mode-specific diagnostics.
 
 Evidence bundle regression runner behavior coverage now verifies `--list` remains listing-only when combined with `--only`, with no targeted regression output.
+
+Evidence bundle regression runner behavior coverage now verifies `--help` remains non-executing when combined with `--only` or `--list`.

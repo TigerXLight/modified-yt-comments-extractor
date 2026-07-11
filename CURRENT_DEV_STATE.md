@@ -886,3 +886,4 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now covers `--help` output, ensuring help mode documents `--list`/`--only` without emitting regression pass output.
 - The evidence bundle regression runner behavior test now shares no-regression-output assertions for list/help modes while preserving mode-specific output checks.
 - The evidence bundle regression runner behavior test now verifies `--list` remains listing-only even when `--only` is also supplied.
+- The evidence bundle regression runner behavior test now covers `--help` combined with selection/list flags, ensuring help output remains non-executing.

@@ -79,6 +79,15 @@ def _assert_no_regression_output(stdout: str) -> None:
     assert SUCCESS_BANNER not in stdout
 
 
+def _assert_help_result(result: subprocess.CompletedProcess[str]) -> None:
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert "usage:" in result.stdout.lower()
+    assert "--list" in result.stdout
+    assert "--only" in result.stdout
+    _assert_no_regression_output(result.stdout)
+
+
 def _assert_argument_parse_failure(
     result: subprocess.CompletedProcess[str],
     *expected_stderr_tokens: str,
@@ -138,12 +147,20 @@ def run_self_test() -> None:
     )
 
     help_result = _run_runner("--help")
-    assert help_result.returncode == 0
-    assert help_result.stderr == ""
-    assert "usage:" in help_result.stdout.lower()
-    assert "--list" in help_result.stdout
-    assert "--only" in help_result.stdout
-    _assert_no_regression_output(help_result.stdout)
+    _assert_help_result(help_result)
+
+    help_with_only_result = _run_runner(
+        "--help",
+        *_only_args("evidence bundle JSON helper validation"),
+    )
+    _assert_help_result(help_with_only_result)
+    assert (
+        "evidence bundle JSON helper validation: passed"
+        not in help_with_only_result.stdout
+    )
+
+    help_with_list_result = _run_runner("--help", "--list")
+    _assert_help_result(help_with_list_result)
 
     only_result = _run_runner("--only", "evidence bundle JSON helper validation")
     assert "evidence bundle JSON helper validation: passed" in only_result.stdout
