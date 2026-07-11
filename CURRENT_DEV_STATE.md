@@ -839,3 +839,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now asserts evidence item execution stays `metadata only` when present in structured outputs and in rendered text/Markdown surfaces.
 
 - Evidence bundle local-only scope invariant coverage now rejects parent-traversal path hints such as `..\\captures\\comments.png` and `../captures/comments.png`.
+
+- Evidence bundle local-only scope invariant coverage now also rejects embedded parent-traversal path hints such as `captures\\..\\comments.png` and `captures/../comments.png`.

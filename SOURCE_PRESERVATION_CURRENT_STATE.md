@@ -310,3 +310,6 @@ Evidence bundle local-only scope invariant testing now asserts `metadata only` e
 
 
 Evidence bundle local-only scope invariant testing now includes parent-traversal path-hint rejection for both Windows-style and POSIX-style examples.
+
+
+Evidence bundle local-only scope invariant testing now includes embedded parent-traversal path-hint rejection for both Windows-style and POSIX-style examples.

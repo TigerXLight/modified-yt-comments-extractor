@@ -381,3 +381,6 @@ Evidence bundle local-only scope invariants now check metadata-only execution wo
 
 
 Evidence bundle local-only scope invariants now reject parent-traversal path hints, so descriptive evidence hints cannot point outside their labeled relative context.
+
+
+Evidence bundle local-only scope invariants now reject embedded parent-traversal path hints, not only traversal at the start of the hint.

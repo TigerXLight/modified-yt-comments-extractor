@@ -167,6 +167,8 @@ def run_self_test() -> None:
     _assert_rejects_path_hint("/tmp/captures/comments.png")
     _assert_rejects_path_hint(r"..\captures\comments.png")
     _assert_rejects_path_hint("../captures/comments.png")
+    _assert_rejects_path_hint(r"captures\..\comments.png")
+    _assert_rejects_path_hint("captures/../comments.png")
 
     for forbidden_key in sorted(FORBIDDEN_FILE_STATE_KEYS):
         _assert_rejects_file_state_key(forbidden_key)

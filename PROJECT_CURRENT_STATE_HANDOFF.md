@@ -415,3 +415,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now rejects parent-traversal path hints in addition to URL, drive-qualified, root-relative, and absolute examples, keeping evidence hints relative and non-resolving.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now covers embedded parent-traversal path hints as well as leading traversal examples, rejecting both Windows-style and POSIX-style `captures/../...` forms.
