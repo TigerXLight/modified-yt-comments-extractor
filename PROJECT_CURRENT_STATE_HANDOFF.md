@@ -409,3 +409,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now rejects rendered file-state field markers (`checksum`, `file_size`, `mtime`, `sha256`, `size_bytes`) in text/Markdown outputs, while still allowing prohibition wording like scan/hash/upload.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now asserts evidence items keep `execution=metadata only` semantics when present in structured outputs and in rendered text/Markdown output surfaces.

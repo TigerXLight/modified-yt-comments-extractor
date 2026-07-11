@@ -304,3 +304,6 @@ Evidence bundle regression runner behavior tests now assert unknown-label diagno
 
 
 Evidence bundle local-only scope invariant testing now checks text/Markdown outputs for absence of rendered file-state markers such as checksum, file_size, mtime, sha256, and size_bytes.
+
+
+Evidence bundle local-only scope invariant testing now asserts `metadata only` execution semantics when present in structured outputs and in rendered evidence bundle outputs.

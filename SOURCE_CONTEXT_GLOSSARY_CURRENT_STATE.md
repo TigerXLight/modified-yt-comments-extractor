@@ -375,3 +375,6 @@ Evidence bundle regression runner behavior coverage now checks unknown-label dia
 
 
 Evidence bundle local-only scope invariants now reject rendered file-state field markers in text/Markdown output so rendered metadata does not expose measured evidence state.
+
+
+Evidence bundle local-only scope invariants now check metadata-only execution wording when present in structured outputs and in rendered outputs so evidence items remain descriptive rather than executable artifacts.

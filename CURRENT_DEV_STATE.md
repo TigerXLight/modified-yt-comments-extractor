@@ -835,3 +835,5 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now verifies unknown-label errors list every expected regression label.
 
 - Evidence bundle local-only scope invariant coverage now rejects rendered file-state field markers such as checksum, file_size, mtime, sha256, and size_bytes in text/Markdown output surfaces.
+
+- Evidence bundle local-only scope invariant coverage now asserts evidence item execution stays `metadata only` when present in structured outputs and in rendered text/Markdown surfaces.

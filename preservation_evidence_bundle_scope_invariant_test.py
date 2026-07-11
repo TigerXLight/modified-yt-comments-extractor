@@ -110,6 +110,9 @@ def _assert_local_only_bundle(bundle: dict) -> None:
     item = bundle["items"][0]
     _assert_descriptive_path_hint(item["path_hint"])
     assert item["limitations"]
+    execution = item.get("execution")
+    if execution is not None:
+        assert str(execution).lower() == "metadata only", item
 
 
 def _assert_local_only_text(output: str) -> None:
@@ -128,6 +131,7 @@ def _assert_local_only_text(output: str) -> None:
     assert "download" in lower_output, output
     for marker in RENDERED_FILE_STATE_FIELD_MARKERS:
         assert marker not in lower_output, output
+    assert "metadata only" in lower_output, output
     assert (
         "not opened or checked" in lower_output
         or "no file open" in lower_output
