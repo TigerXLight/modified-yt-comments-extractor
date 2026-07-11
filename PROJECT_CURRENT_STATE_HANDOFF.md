@@ -388,3 +388,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now rejects structured file-state keys in evidence bundle outputs, preventing local-only metadata from growing hash/size/existence/opened/created/uploaded/validated/captured state fields.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now asserts structured evidence path hints remain relative/descriptive metadata rather than URLs, absolute paths, or drive-qualified local paths.

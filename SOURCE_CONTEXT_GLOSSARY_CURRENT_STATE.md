@@ -354,3 +354,6 @@ Evidence bundle local-only scope invariants now check rendered and structured CL
 
 
 Evidence bundle local-only scope invariants now reject structured file-state keys, keeping evidence items descriptive rather than measured, opened, validated, or materialized.
+
+
+Evidence bundle local-only scope invariants now verify structured path hints stay relative and descriptive, not absolute, URL-like, or drive-qualified evidence paths.

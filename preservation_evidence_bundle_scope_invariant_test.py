@@ -62,6 +62,14 @@ def _assert_no_file_state_keys(value: object) -> None:
             _assert_no_file_state_keys(child)
 
 
+def _assert_descriptive_path_hint(path_hint: str) -> None:
+    assert path_hint == r"captures\\comments.png", path_hint
+    assert "://" not in path_hint, path_hint
+    assert ":" not in path_hint, path_hint
+    assert not path_hint.startswith(("/", "\\")), path_hint
+    assert not Path(path_hint).is_absolute(), path_hint
+
+
 def _assert_local_only_bundle(bundle: dict) -> None:
     scope = bundle["scope"].lower()
     assert "no file open" in scope, scope
@@ -75,7 +83,7 @@ def _assert_local_only_bundle(bundle: dict) -> None:
     _assert_no_file_state_keys(bundle)
 
     item = bundle["items"][0]
-    assert item["path_hint"] == r"captures\\comments.png"
+    _assert_descriptive_path_hint(item["path_hint"])
     assert item["limitations"]
 
 

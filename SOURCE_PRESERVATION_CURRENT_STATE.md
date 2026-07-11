@@ -283,3 +283,6 @@ Evidence bundle local-only scope invariant testing now verifies standalone, back
 
 
 Evidence bundle local-only scope invariant testing now rejects file-state keys such as hashes, sizes, existence, opened, created, uploaded, validated, or captured state in structured outputs.
+
+
+Evidence bundle local-only scope invariant testing now asserts structured path hints remain relative/descriptive and are not URLs, absolute paths, or drive-qualified local paths.
