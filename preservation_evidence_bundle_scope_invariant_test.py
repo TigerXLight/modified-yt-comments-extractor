@@ -43,6 +43,8 @@ def _assert_local_only_bundle(bundle: dict) -> None:
     assert "upload" in scope, scope
     assert "capture" in scope, scope
     assert "network" in scope, scope
+    assert "archive" in scope, scope
+    assert "download" in scope, scope
 
     item = bundle["items"][0]
     assert item["path_hint"] == r"captures\\comments.png"
@@ -61,6 +63,8 @@ def _assert_local_only_text(output: str) -> None:
     assert "upload" in lower_output, output
     assert "capture" in lower_output, output
     assert "network" in lower_output, output
+    assert "archive" in lower_output, output
+    assert "download" in lower_output, output
     assert (
         "not opened or checked" in lower_output
         or "no file open" in lower_output

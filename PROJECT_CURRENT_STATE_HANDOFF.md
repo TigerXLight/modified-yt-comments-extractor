@@ -379,3 +379,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now verifies mixed known/unknown `--only` selections fail cleanly, with the unknown label and expected choices reported in stderr.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now also asserts archive/download prohibition wording in local-only evidence scope output, alongside scan/hash/upload/capture/network checks.

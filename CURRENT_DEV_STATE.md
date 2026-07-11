@@ -815,3 +815,5 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now verifies targeted `--only` selections are emitted in canonical regression order even when requested in reverse order.
 
 - The evidence bundle regression runner behavior test now covers mixed known/unknown `--only` selections and verifies the error still reports the unknown label plus expected choices.
+
+- Evidence bundle local-only scope invariant coverage now also asserts archive/download prohibition wording alongside scan/hash/upload/capture/network wording.

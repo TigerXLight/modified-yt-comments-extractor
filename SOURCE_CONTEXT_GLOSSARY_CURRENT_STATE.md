@@ -345,3 +345,6 @@ Evidence bundle regression runner behavior coverage now checks targeted selectio
 
 
 Evidence bundle regression runner behavior coverage now checks mixed known/unknown targeted selections produce clear unknown-label diagnostics.
+
+
+Evidence bundle local-only scope invariants now explicitly check archive/download prohibition wording so preservation metadata stays descriptive and non-executing.

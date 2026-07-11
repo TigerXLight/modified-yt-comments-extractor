@@ -274,3 +274,6 @@ Evidence bundle regression runner behavior tests now cover canonical ordering fo
 
 
 Evidence bundle regression runner behavior tests now cover mixed known/unknown `--only` selections and assert clear stderr diagnostics.
+
+
+Evidence bundle local-only scope invariant testing now asserts archive/download prohibition wording in both structured and rendered output checks.
