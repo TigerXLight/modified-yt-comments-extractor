@@ -376,3 +376,5 @@ Evidence bundle regression runner behavior tests now assert validation rejects d
 Evidence bundle regression runner behavior tests now cover malformed bare `--only` usage and require diagnostic-only argparse failure before any regression execution.
 
 Evidence bundle regression runner behavior tests now cover whitespace-only `--only` labels and require unknown-label diagnostics with no regression execution output.
+
+Evidence bundle regression runner behavior tests now centralize malformed bare `--only` assertions in a helper while retaining diagnostic-only blank-label validation.

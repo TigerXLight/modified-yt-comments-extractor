@@ -73,6 +73,16 @@ def _assert_no_success_output(result: subprocess.CompletedProcess[str]) -> None:
     assert ": passed" not in result.stderr, result.stderr
 
 
+def _assert_only_argument_failure(
+    result: subprocess.CompletedProcess[str],
+) -> None:
+    assert result.returncode == 2
+    _assert_no_success_output(result)
+    assert "--only" in result.stderr
+    lowered_stderr = result.stderr.lower()
+    assert "expected" in lowered_stderr or "argument" in lowered_stderr
+
+
 def _assert_unknown_label_failure(
     result: subprocess.CompletedProcess[str],
     *missing_labels: str,
@@ -183,11 +193,7 @@ def run_self_test() -> None:
     _assert_success_result(non_self_result, non_self_labels)
 
     missing_only_value_result = _run_runner("--only")
-    assert missing_only_value_result.returncode == 2
-    _assert_no_success_output(missing_only_value_result)
-    assert "--only" in missing_only_value_result.stderr
-    missing_only_error = missing_only_value_result.stderr.lower()
-    assert "expected" in missing_only_error or "argument" in missing_only_error
+    _assert_only_argument_failure(missing_only_value_result)
 
     blank_label_result = _run_runner("--only", "   ")
     _assert_unknown_label_failure(blank_label_result)
