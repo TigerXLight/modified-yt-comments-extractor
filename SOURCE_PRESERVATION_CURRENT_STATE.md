@@ -223,3 +223,6 @@ Total Export evidence bundle input validation now covers malformed nested item m
 
 
 Standalone evidence bundle CLI JSON input validation now covers malformed nested item metadata, invalid capture-method IDs, and duplicate artifact IDs. Path hints remain labels only.
+
+
+A local aggregate preservation evidence bundle regression runner now covers model/rendering behavior, JSON helper validation, standalone CLI input, backend plan CLI integration, and Total Export prepare CLI integration.

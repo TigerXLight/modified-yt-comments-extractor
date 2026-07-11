@@ -294,3 +294,6 @@ Total Export evidence bundle input now rejects malformed nested local metadata t
 
 
 Standalone evidence bundle CLI JSON input now rejects malformed nested local metadata before rendering, without inspecting path hints or evidence files.
+
+
+Evidence bundle regression coverage can now be run through a single aggregate local test runner spanning model, JSON helper, standalone CLI, backend plan CLI, and Total Export prepare CLI checks.

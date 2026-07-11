@@ -328,3 +328,6 @@ Total Export `--evidence-bundle-input` coverage now includes nested item-list va
 
 
 Standalone evidence bundle CLI `--input` coverage now includes nested item-list validation, item object validation, invalid capture-method IDs, and duplicate artifact IDs.
+
+
+An aggregate `preservation_evidence_bundle_regression_test.py` runner now executes the evidence bundle model, JSON helper validation, standalone CLI, backend plan CLI, and Total Export prepare CLI regression tests together.
