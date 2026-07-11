@@ -490,6 +490,78 @@ def run_self_test() -> None:
         assert "duplicate item role metadata" in duplicate_detail_error
         assert list(Path(temp_dir).iterdir()) == []
 
+        evidence_bundle_input_path = Path(temp_dir) / "evidence_bundle.json"
+        evidence_bundle_input_path.write_text(
+            json.dumps(
+                {
+                    "source_url": "https://www.telegraph.co.uk/news/example/",
+                    "bundle_label": "Input evidence",
+                    "status": "manual_supplied",
+                    "items": [
+                        {
+                            "artifact_id": "screenshot",
+                            "artifact_format": "png",
+                            "capture_method_id": "scrollable_container_screenshot",
+                            "artifact_role": "primary",
+                            "origin": "manual",
+                            "path_hint": r"captures\comments.png",
+                            "notes": "Total Export JSON input path hint only.",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        exit_code, input_bundle_output = _run_cli(
+            [
+                "--explain-preservation-plan",
+                "--source-url",
+                "https://www.telegraph.co.uk/news/example/",
+                "--preservation-backend",
+                "manual_local_files",
+                "--preservation-format",
+                "html",
+                "--evidence-bundle-input",
+                str(evidence_bundle_input_path),
+            ]
+        )
+        assert exit_code == 0
+        assert "Evidence bundle:" in input_bundle_output
+        assert "- status: manual_supplied" in input_bundle_output
+        assert "- bundle_label: Input evidence" in input_bundle_output
+        assert "role=primary" in input_bundle_output
+        assert "origin=manual" in input_bundle_output
+        assert r"path_hint=captures\comments.png" in input_bundle_output
+        assert "Total Export JSON input path hint only." in input_bundle_output
+        assert "not opened or checked" in input_bundle_output
+        assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
+
+        error_code, missing_bundle_input_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--evidence-bundle-input",
+                str(Path(temp_dir) / "missing_evidence_bundle.json"),
+            ]
+        )
+        assert error_code == 2
+        assert "evidence bundle input file not found" in missing_bundle_input_error
+        assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
+
+        error_code, override_bundle_input_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--evidence-bundle-input",
+                str(evidence_bundle_input_path),
+                "--evidence-item",
+                "screenshot:png",
+            ]
+        )
+        assert error_code == 2
+        assert "--evidence-bundle-input cannot be combined" in override_bundle_input_error
+        assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
+        evidence_bundle_input_path.unlink()
+        assert list(Path(temp_dir).iterdir()) == []
+
         exit_code, explain_json_output = _run_cli(
             [
                 "--explain-plan",

@@ -767,3 +767,5 @@ Next local-ASR branches:
 - Standalone preservation evidence bundle CLI can read an explicit local JSON bundle metadata file with `--input`; it reads only that JSON file and does not inspect path hints inside it.
 
 - Standalone evidence bundle CLI input handling has regression coverage for missing JSON files and malformed JSON, keeping failures local and explicit.
+
+- Total Export preservation-plan explanations can read an explicit local evidence bundle JSON file via `--evidence-bundle-input`; this reads only that JSON file and does not inspect evidence path hints.

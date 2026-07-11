@@ -307,3 +307,6 @@ Standalone preservation evidence bundle CLI supports `--input` for explicit loca
 
 
 Standalone evidence bundle CLI `--input` handling now has regression coverage for missing input files and malformed JSON, in addition to metadata override rejection.
+
+
+Total Export prepare `--explain-preservation-plan` supports `--evidence-bundle-input` for explicit local evidence bundle JSON metadata. It rejects combining this with evidence-item override flags and keeps path hints descriptive only.

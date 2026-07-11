@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Sequence
 
 from asr_provider_metadata import ASRProviderMetadata, available_asr_provider_metadata
@@ -74,6 +75,7 @@ from preservation_backend_plan import (
 from preservation_evidence_bundle import (
     BUNDLE_STATUSES,
     build_preservation_evidence_bundle,
+    build_preservation_evidence_bundle_from_dict,
     build_preservation_evidence_items_from_specs,
 )
 
@@ -107,6 +109,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
     )
     parser.add_argument("--preservation-notes", default="")
+    parser.add_argument(
+        "--evidence-bundle-input",
+        default="",
+        help="Optional explicit local JSON evidence bundle metadata file for preservation-plan explanations. This reads only the JSON file, not path hints inside it.",
+    )
     parser.add_argument(
         "--evidence-bundle-status",
         choices=BUNDLE_STATUSES,
@@ -515,6 +522,44 @@ def print_preservation_backend_options() -> None:
 
 
 
+def _read_evidence_bundle_input_json(path: str):
+    input_path = Path(path)
+    if not input_path.exists():
+        raise FileNotFoundError(f"evidence bundle input file not found: {input_path}")
+    try:
+        data = json.loads(input_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid evidence bundle JSON in {input_path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("evidence bundle input JSON must be an object")
+    return build_preservation_evidence_bundle_from_dict(data)
+
+
+def _disallow_evidence_bundle_input_overrides(args) -> None:
+    overridden = []
+    if args.evidence_bundle_status:
+        overridden.append("--evidence-bundle-status")
+    if args.evidence_bundle_label:
+        overridden.append("--evidence-bundle-label")
+    if args.evidence_item:
+        overridden.append("--evidence-item")
+    if args.evidence_notes:
+        overridden.append("--evidence-notes")
+    if args.evidence_item_role:
+        overridden.append("--evidence-item-role")
+    if args.evidence_item_origin:
+        overridden.append("--evidence-item-origin")
+    if args.evidence_item_path_hint:
+        overridden.append("--evidence-item-path-hint")
+    if args.evidence_item_notes:
+        overridden.append("--evidence-item-notes")
+    if overridden:
+        raise ValueError(
+            "--evidence-bundle-input cannot be combined with evidence bundle metadata flags: "
+            + ", ".join(overridden)
+        )
+
+
 def _build_cli_evidence_bundle(
     *,
     source_url: str = "",
@@ -760,18 +805,22 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.explain_preservation_plan:
         try:
-            evidence_bundle = _build_cli_evidence_bundle(
-                source_url=args.source_url or "",
-                bundle_label=args.evidence_bundle_label,
-                status=args.evidence_bundle_status,
-                notes=args.evidence_notes,
-                item_values=args.evidence_item,
-                item_role_values=args.evidence_item_role,
-                item_origin_values=args.evidence_item_origin,
-                item_path_hint_values=args.evidence_item_path_hint,
-                item_note_values=args.evidence_item_notes,
-            )
-        except ValueError as exc:
+            if args.evidence_bundle_input:
+                _disallow_evidence_bundle_input_overrides(args)
+                evidence_bundle = _read_evidence_bundle_input_json(args.evidence_bundle_input)
+            else:
+                evidence_bundle = _build_cli_evidence_bundle(
+                    source_url=args.source_url or "",
+                    bundle_label=args.evidence_bundle_label,
+                    status=args.evidence_bundle_status,
+                    notes=args.evidence_notes,
+                    item_values=args.evidence_item,
+                    item_role_values=args.evidence_item_role,
+                    item_origin_values=args.evidence_item_origin,
+                    item_path_hint_values=args.evidence_item_path_hint,
+                    item_note_values=args.evidence_item_notes,
+                )
+        except (FileNotFoundError, ValueError) as exc:
             parser.error(str(exc))
         plan = build_preservation_backend_plan(
             source_url=args.source_url,
