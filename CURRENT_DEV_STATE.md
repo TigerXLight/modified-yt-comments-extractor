@@ -801,3 +801,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now also checks preservation backend plan CLI JSON output via `--input ... --format json`.
 
 - The regression runner behavior test no longer imports the aggregate runner directly, allowing the aggregate evidence bundle runner to include its behavior test without a circular import.
+
+- Evidence bundle local-only scope invariant coverage now checks text output as well as JSON output for standalone evidence bundle CLI, preservation backend plan CLI, and Total Export preservation-plan explanations.

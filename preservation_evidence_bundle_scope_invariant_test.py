@@ -49,6 +49,18 @@ def _assert_local_only_bundle(bundle: dict) -> None:
     assert item["limitations"]
 
 
+def _assert_local_only_text(output: str) -> None:
+    lower_output = output.lower()
+    normalized_output = output.replace("\\\\", "\\")
+    assert "path_hint=captures\\comments.png" in normalized_output, output
+    assert "scan" in lower_output, output
+    assert "hash" in lower_output, output
+    assert "upload" in lower_output, output
+    assert "capture" in lower_output, output
+    assert "network" in lower_output, output
+    assert "not opened or checked" in lower_output or "no file open" in lower_output, output
+
+
 def run_self_test() -> None:
     bundle = build_preservation_evidence_bundle_from_dict(BUNDLE_INPUT)
     model_data = preservation_evidence_bundle_to_dict(bundle)
@@ -68,6 +80,16 @@ def run_self_test() -> None:
         assert standalone_result.returncode == 0, standalone_result.stderr
         standalone_bundle = json.loads(standalone_result.stdout)
         _assert_local_only_bundle(standalone_bundle)
+
+        standalone_text_result = _run_command(
+            "preservation_evidence_bundle_cli.py",
+            "--input",
+            str(input_path),
+            "--format",
+            "text",
+        )
+        assert standalone_text_result.returncode == 0, standalone_text_result.stderr
+        _assert_local_only_text(standalone_text_result.stdout)
 
         backend_input_path = Path(temp_dir) / "backend_plan.json"
         backend_input_path.write_text(
@@ -94,6 +116,16 @@ def run_self_test() -> None:
         assert isinstance(backend_bundle, dict), backend_plan
         _assert_local_only_bundle(backend_bundle)
 
+        backend_plan_text_result = _run_command(
+            "preservation_backend_plan_cli.py",
+            "--input",
+            str(backend_input_path),
+            "--format",
+            "text",
+        )
+        assert backend_plan_text_result.returncode == 0, backend_plan_text_result.stderr
+        _assert_local_only_text(backend_plan_text_result.stdout)
+
         total_export_result = _run_command(
             "total_export_prepare_cli.py",
             "--explain-preservation-plan",
@@ -110,6 +142,21 @@ def run_self_test() -> None:
         assert total_export_result.returncode == 0, total_export_result.stderr
         total_export_plan = json.loads(total_export_result.stdout)
         _assert_local_only_bundle(total_export_plan["evidence_bundle"])
+
+        total_export_text_result = _run_command(
+            "total_export_prepare_cli.py",
+            "--explain-preservation-plan",
+            "--source-url",
+            "https://www.telegraph.co.uk/news/example/",
+            "--preservation-backend",
+            "manual_local_files",
+            "--preservation-format",
+            "html",
+            "--evidence-bundle-input",
+            str(input_path),
+        )
+        assert total_export_text_result.returncode == 0, total_export_text_result.stderr
+        _assert_local_only_text(total_export_text_result.stdout)
 
 
 if __name__ == "__main__":

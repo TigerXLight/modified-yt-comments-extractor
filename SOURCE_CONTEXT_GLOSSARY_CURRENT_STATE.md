@@ -324,3 +324,6 @@ Evidence bundle local-only scope invariants now include preservation backend pla
 
 
 The aggregate evidence bundle regression runner now includes its own behavior test group without circular imports; the behavior test exercises the runner through subprocess calls.
+
+
+Evidence bundle local-only scope invariants now cover text and JSON output surfaces, checking path hints remain descriptive and no-open/scan/hash/upload/capture/network wording remains visible.

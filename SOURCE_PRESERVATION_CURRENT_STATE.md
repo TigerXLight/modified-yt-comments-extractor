@@ -253,3 +253,6 @@ Evidence bundle local-only scope invariant testing now covers preservation backe
 
 
 Full evidence bundle regression runs now include the runner behavior test group. The test avoids circular imports by validating `--list`, targeted `--only`, repeatable `--only`, and unknown-label errors through subprocess execution.
+
+
+Evidence bundle local-only scope invariant testing now covers both text and JSON outputs across standalone evidence bundle CLI, preservation backend plan CLI, and Total Export preservation-plan explanations.

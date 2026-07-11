@@ -358,3 +358,6 @@ The evidence bundle scope invariant test now also verifies preservation backend 
 
 
 The aggregate `preservation_evidence_bundle_regression_test.py` suite now includes `evidence bundle regression runner behavior`. The behavior test uses subprocess calls instead of importing the aggregate runner, avoiding the earlier circular import issue.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now checks text output and JSON output for local-only evidence scope wording and path hints across standalone evidence bundle CLI, preservation backend plan CLI, and Total Export preservation-plan explanations.
