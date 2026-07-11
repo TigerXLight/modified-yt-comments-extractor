@@ -429,3 +429,5 @@ Evidence bundle regression runner behavior coverage now exercises all non-self r
 
 
 Evidence bundle regression runner behavior coverage now pins the self-recursive runner behavior label to the final canonical position and checks non-self coverage against `EXPECTED_LABELS[:-1]`.
+
+Evidence bundle regression runner behavior coverage now checks multiple unknown `--only` labels are reported together, with empty stdout, no success-output leakage, and every valid expected label retained in diagnostics.

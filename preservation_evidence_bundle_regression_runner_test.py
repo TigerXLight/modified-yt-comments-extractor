@@ -160,6 +160,22 @@ def run_self_test() -> None:
     for expected_label in EXPECTED_LABELS:
         assert expected_label in unknown_result.stderr
 
+    multiple_unknown_result = _run_runner(
+        "--only",
+        "missing regression group",
+        "--only",
+        "missing second regression group",
+    )
+    assert multiple_unknown_result.returncode == 2
+    assert multiple_unknown_result.stdout == ""
+    _assert_no_success_output(multiple_unknown_result)
+    assert "unknown regression test label(s):" in multiple_unknown_result.stderr
+    assert "missing regression group" in multiple_unknown_result.stderr
+    assert "missing second regression group" in multiple_unknown_result.stderr
+    assert "expected one of" in multiple_unknown_result.stderr
+    for expected_label in EXPECTED_LABELS:
+        assert expected_label in multiple_unknown_result.stderr
+
     mixed_unknown_result = _run_runner(
         "--only",
         "evidence bundle JSON helper validation",
