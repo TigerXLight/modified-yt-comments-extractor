@@ -306,3 +306,6 @@ Evidence bundle JSON helper tests now cover optional `None` normalization for lo
 
 
 Evidence bundle regression coverage can now be listed or selectively run through `preservation_evidence_bundle_regression_test.py --list` and `--only LABEL`.
+
+
+The aggregate evidence bundle regression runner now has a focused local test for listing, targeted execution, and unknown label validation.

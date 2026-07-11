@@ -340,3 +340,6 @@ Evidence bundle JSON helper validation now confirms optional `None` source/item 
 
 
 The aggregate `preservation_evidence_bundle_regression_test.py` runner now supports `--list` and repeatable `--only LABEL`, so future sessions can run the whole evidence-bundle suite or a targeted subset without editing code.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now verifies the aggregate runner's `--list`, targeted `--only`, and unknown-label error behavior.

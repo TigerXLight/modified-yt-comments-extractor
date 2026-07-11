@@ -789,3 +789,5 @@ Next local-ASR branches:
 - Evidence bundle JSON helper validation now covers `None` normalization for optional source and item metadata fields while keeping required artifact fields strict.
 
 - The aggregate preservation evidence bundle regression runner now supports `--list` and repeatable `--only LABEL` for targeted local checks.
+
+- Added a focused regression runner behavior test covering `--list`, targeted `--only`, and unknown label errors for the evidence bundle aggregate runner.

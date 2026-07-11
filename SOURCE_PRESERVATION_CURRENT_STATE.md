@@ -235,3 +235,6 @@ Evidence bundle JSON helper validation now covers `None` normalization for optio
 
 
 The local aggregate preservation evidence bundle regression runner now supports listing and targeted execution of regression groups with `--list` and repeatable `--only LABEL`.
+
+
+Evidence bundle regression runner argument behavior is covered by a focused local test for `--list`, `--only`, and unknown-label errors.
