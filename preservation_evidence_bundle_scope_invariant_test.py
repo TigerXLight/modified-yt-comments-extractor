@@ -185,6 +185,10 @@ def run_self_test() -> None:
         assert total_export_text_result.returncode == 0, total_export_text_result.stderr
         _assert_local_only_text(total_export_text_result.stdout)
 
+        temp_file_names = sorted(path.name for path in Path(temp_dir).iterdir())
+        assert temp_file_names == ["backend_plan.json", "evidence_bundle.json"], temp_file_names
+        assert not (Path(temp_dir) / "captures").exists()
+
 
 if __name__ == "__main__":
     run_self_test()

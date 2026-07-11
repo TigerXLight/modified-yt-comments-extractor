@@ -330,3 +330,6 @@ Evidence bundle local-only scope invariants now cover text and JSON output surfa
 
 
 Evidence bundle local-only scope invariants now cover Markdown output for the standalone evidence bundle and backend preservation-plan CLIs, keeping path hints descriptive and local-only.
+
+
+Evidence bundle local-only scope invariants now assert path hints remain descriptive only and are not materialized into temp capture files or directories during CLI checks.

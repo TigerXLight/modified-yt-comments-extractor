@@ -805,3 +805,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now checks text output as well as JSON output for standalone evidence bundle CLI, preservation backend plan CLI, and Total Export preservation-plan explanations.
 
 - Evidence bundle local-only scope invariant coverage now checks Markdown output for standalone evidence bundle CLI and preservation backend plan CLI in addition to text and JSON outputs.
+
+- Evidence bundle local-only scope invariant coverage now also asserts that path hints are not materialized into temp evidence files or directories during JSON/text/Markdown CLI checks.

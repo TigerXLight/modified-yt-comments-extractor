@@ -259,3 +259,6 @@ Evidence bundle local-only scope invariant testing now covers both text and JSON
 
 
 Evidence bundle local-only scope invariant testing now includes Markdown output for standalone evidence bundle CLI and preservation backend plan CLI, in addition to text and JSON outputs.
+
+
+Evidence bundle local-only scope invariant testing now verifies that path hints are not materialized into temp evidence files or directories during standalone, backend-plan, and Total Export CLI checks.
