@@ -495,3 +495,5 @@ Total Export batch review bundle coverage now shares deterministic row/success/f
 Total Export batch review reconciliation coverage now shares deterministic single-item status checks across its primary local result scenarios.
 
 Total Export batch review plan coverage now shares deterministic row/error count checks across ready and invalid local planning scenarios.
+
+Total Export package ZIP coverage now shares deterministic created/failure result checks while preserving local archive metadata and inspection diagnostics.

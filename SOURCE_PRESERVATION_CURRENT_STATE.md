@@ -424,3 +424,5 @@ Total Export batch review bundle tests now centralize repeated result-count asse
 Total Export batch review reconciliation tests now centralize single-item status assertions while retaining local ZIP, sidecar, verification, report, warning, and no-network behavior.
 
 Total Export batch review plan tests now centralize row/error count assertions while retaining metadata-only source, package-path, ZIP-path, sidecar, duplicate, warning, and existing-output coverage.
+
+Total Export package ZIP tests now centralize result-state assertions while retaining local-only path safety, hash, size, entry ordering, inspection, no-extraction, and diagnostic coverage.

@@ -4,6 +4,7 @@ from zipfile import ZipFile
 
 from total_export_manifest import sha256_for_file
 from total_export_package_zip import (
+    TotalExportPackageZipResult,
     build_total_export_package_zip_text,
     create_total_export_package_zip,
     default_total_export_zip_path,
@@ -32,6 +33,19 @@ def _package_file_count(package_folder: str) -> int:
     return sum(1 for path in Path(package_folder).rglob("*") if path.is_file())
 
 
+def _assert_zip_created(result: TotalExportPackageZipResult) -> None:
+    assert result.zip_created is True
+    assert Path(result.zip_path).is_file()
+
+
+def _assert_zip_failure(
+    result: TotalExportPackageZipResult,
+    expected_error: str,
+) -> None:
+    assert result.zip_created is False
+    assert any(expected_error in error for error in result.errors)
+
+
 def run_self_test() -> None:
     with TemporaryDirectory() as temp_dir:
         prepared = _prepare_full_review_package(temp_dir)
@@ -39,9 +53,8 @@ def run_self_test() -> None:
         package_basename = Path(package_folder).name
 
         result = create_total_export_package_zip(package_folder)
-        assert result.zip_created is True
+        _assert_zip_created(result)
         assert result.zip_path == default_total_export_zip_path(package_folder)
-        assert Path(result.zip_path).is_file()
         assert result.zip_sha256
         assert result.zip_sha256 == sha256_for_file(result.zip_path)
         assert result.zip_size_bytes == Path(result.zip_path).stat().st_size
@@ -59,34 +72,30 @@ def run_self_test() -> None:
         assert f"{package_basename}/metadata/TOTAL_EXPORT_INVENTORY.txt" in names
 
         existing = create_total_export_package_zip(package_folder)
-        assert existing.zip_created is False
-        assert any("already exists" in error for error in existing.errors)
+        _assert_zip_failure(existing, "already exists")
 
         overwritten = create_total_export_package_zip(package_folder, overwrite=True)
-        assert overwritten.zip_created is True
-        assert Path(overwritten.zip_path).is_file()
+        _assert_zip_created(overwritten)
 
         custom_zip_path = str(Path(temp_dir) / "custom" / "package.zip")
         custom = create_total_export_package_zip(
             package_folder,
             zip_path=custom_zip_path,
         )
-        assert custom.zip_created is True
+        _assert_zip_created(custom)
         assert custom.zip_path == custom_zip_path
-        assert Path(custom_zip_path).is_file()
 
         inside = create_total_export_package_zip(
             package_folder,
             zip_path=str(Path(package_folder) / "inside.zip"),
         )
-        assert inside.zip_created is False
+        _assert_zip_failure(inside, "must not be inside")
         assert inside.errors == ("ZIP path must not be inside the package folder.",)
         assert not (Path(package_folder) / "inside.zip").exists()
 
         missing = create_total_export_package_zip(str(Path(temp_dir) / "missing_package"))
-        assert missing.zip_created is False
+        _assert_zip_failure(missing, "inspection status")
         assert missing.inspection_status == "missing_package_folder"
-        assert any("inspection status" in error for error in missing.errors)
 
         invalid_prepared = _prepare_full_review_package(temp_dir, "invalid zip package")
         invalid_package_folder = (
@@ -94,9 +103,8 @@ def run_self_test() -> None:
         )
         (Path(invalid_package_folder) / "metadata" / "SOURCE_CAPTURE_PLAN.txt").unlink()
         invalid = create_total_export_package_zip(invalid_package_folder)
-        assert invalid.zip_created is False
+        _assert_zip_failure(invalid, "inspection status")
         assert invalid.inspection_status == "invalid_manifest"
-        assert any("inspection status" in error for error in invalid.errors)
 
         as_dict = package_zip_result_to_dict(result)
         assert set(as_dict) == {

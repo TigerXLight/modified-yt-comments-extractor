@@ -904,3 +904,4 @@ Next local-ASR branches:
 - The Total Export batch review bundle tests now share row/success/failure count assertions across complete, missing-input, repeated-output, and unsupported-source scenarios without changing behavior.
 - The Total Export batch review reconcile tests now share single-item status assertions across missing-ZIP, invalid-row, verified, and missing-sidecar scenarios without changing behavior.
 - The Total Export batch review plan tests now share row/error count assertions across ready, missing-input, empty-source, and unsupported-source scenarios without changing behavior.
+- The Total Export package ZIP tests now share successful and failed result-state assertions while preserving path, hash, size, count, inspection, and diagnostic coverage.
