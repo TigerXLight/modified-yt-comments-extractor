@@ -26,6 +26,15 @@ def _listed_labels(stdout: str) -> tuple[str, ...]:
     return tuple(line.strip() for line in stdout.splitlines() if line.strip())
 
 
+def _passed_labels(stdout: str) -> tuple[str, ...]:
+    suffix = ": passed"
+    return tuple(
+        line.removesuffix(suffix)
+        for line in stdout.splitlines()
+        if line.endswith(suffix)
+    )
+
+
 def run_self_test() -> None:
     list_result = _run_runner("--list")
     assert list_result.returncode == 0, list_result.stderr
@@ -76,6 +85,20 @@ def run_self_test() -> None:
     assert "standalone evidence bundle CLI: passed" not in duplicate_only_result.stdout
     assert "Preservation evidence bundle regression self-test passed." in duplicate_only_result.stdout
     assert duplicate_only_result.stderr == ""
+
+    reverse_order_result = _run_runner(
+        "--only",
+        "evidence bundle local-only scope invariants",
+        "--only",
+        "evidence bundle JSON helper validation",
+    )
+    assert reverse_order_result.returncode == 0, reverse_order_result.stderr
+    assert _passed_labels(reverse_order_result.stdout) == (
+        "evidence bundle JSON helper validation",
+        "evidence bundle local-only scope invariants",
+    )
+    assert "Preservation evidence bundle regression self-test passed." in reverse_order_result.stdout
+    assert reverse_order_result.stderr == ""
 
     unknown_result = _run_runner("--only", "missing regression group")
     assert unknown_result.returncode == 2

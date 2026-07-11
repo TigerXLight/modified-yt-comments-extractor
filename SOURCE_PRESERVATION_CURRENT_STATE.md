@@ -268,3 +268,6 @@ Evidence bundle local-only scope invariant testing now asserts clean stderr for 
 
 
 Evidence bundle regression runner behavior tests now cover duplicate `--only` selections and assert the selected regression group runs only once.
+
+
+Evidence bundle regression runner behavior tests now cover canonical ordering for targeted `--only` selections, including reverse-order input.

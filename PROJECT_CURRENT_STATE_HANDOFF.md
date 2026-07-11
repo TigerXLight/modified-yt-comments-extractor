@@ -373,3 +373,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now verifies duplicate `--only` labels are de-duplicated, so repeated selections do not execute the same regression group twice.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now verifies targeted `--only` selections keep canonical regression order even when the labels are requested in reverse order.

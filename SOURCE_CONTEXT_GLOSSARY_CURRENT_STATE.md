@@ -339,3 +339,6 @@ Evidence bundle local-only scope invariants now verify successful CLI output che
 
 
 Evidence bundle regression runner behavior coverage now checks duplicate `--only` labels run once, preserving deterministic targeted regression selection.
+
+
+Evidence bundle regression runner behavior coverage now checks targeted selections preserve canonical regression order instead of depending on request order.

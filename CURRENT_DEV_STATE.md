@@ -811,3 +811,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now asserts successful subprocess checks leave stderr empty for JSON/text/Markdown output surfaces.
 
 - The evidence bundle regression runner behavior test now verifies duplicate `--only` labels are de-duplicated and run once.
+
+- The evidence bundle regression runner behavior test now verifies targeted `--only` selections are emitted in canonical regression order even when requested in reverse order.
