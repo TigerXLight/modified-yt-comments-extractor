@@ -337,3 +337,6 @@ Evidence bundle regression runner behavior tests now assert the canonical regres
 
 
 Evidence bundle regression runner behavior tests now assert successful targeted subprocess runs produce one and only one success banner.
+
+
+Evidence bundle regression runner behavior tests now actively assert the success banner appears exactly once for each successful targeted subprocess result.

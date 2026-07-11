@@ -442,3 +442,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now asserts successful targeted runner subprocesses emit the aggregate success banner exactly once, preventing duplicate or missing completion banners.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now wires `_assert_success_banner_once(...)` into each successful targeted runner subprocess check, so the previously added helper actively verifies one completion banner per successful targeted invocation.

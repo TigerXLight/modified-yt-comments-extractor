@@ -408,3 +408,6 @@ Evidence bundle regression runner behavior coverage now rejects duplicate regres
 
 
 Evidence bundle regression runner behavior coverage now verifies successful targeted runs emit exactly one aggregate success banner.
+
+
+Evidence bundle regression runner behavior coverage now actively applies the success-banner-once helper to each successful targeted runner subprocess.
