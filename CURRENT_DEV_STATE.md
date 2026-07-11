@@ -910,3 +910,4 @@ Next local-ASR branches:
 - The Total Export validation tests now share exact error-code assertions across missing-asset, size/hash mismatch, invalid-JSON, and missing-manifest scenarios without changing behavior.
 - `SOURCE_EVIDENCE_ROADMAP.md` now plans a future Add Media/evidence item queue and user-defined evidence database taxonomy/reclassification workflow; this is docs-only and not implemented.
 - `SOURCE_EVIDENCE_ROADMAP.md` now also plans future explicit public-media evidence download/capture policy, behavior/activity logs, compression-tool guidance, and source-credit/witness/access-actor accounting; this is docs-only and not implemented.
+- Added `EVIDENCE_ITEM_QUEUE_UI_SPEC.md` as a docs-only UI/data-flow specification for a future Add Media/evidence item queue, preserving old ASR reference pairing while planning source-evidence and Total Export item selection.
