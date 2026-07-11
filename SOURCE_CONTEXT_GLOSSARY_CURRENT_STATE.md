@@ -336,3 +336,6 @@ Evidence bundle local-only scope invariants now assert path hints remain descrip
 
 
 Evidence bundle local-only scope invariants now verify successful CLI output checks produce no stderr noise across JSON, text, and Markdown surfaces.
+
+
+Evidence bundle regression runner behavior coverage now checks duplicate `--only` labels run once, preserving deterministic targeted regression selection.

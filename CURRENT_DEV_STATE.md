@@ -809,3 +809,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now also asserts that path hints are not materialized into temp evidence files or directories during JSON/text/Markdown CLI checks.
 
 - Evidence bundle local-only scope invariant coverage now asserts successful subprocess checks leave stderr empty for JSON/text/Markdown output surfaces.
+
+- The evidence bundle regression runner behavior test now verifies duplicate `--only` labels are de-duplicated and run once.

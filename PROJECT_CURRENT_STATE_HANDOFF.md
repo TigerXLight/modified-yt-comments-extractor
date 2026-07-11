@@ -370,3 +370,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now also asserts that successful JSON/text/Markdown subprocess checks leave stderr empty, so hidden warnings do not pass unnoticed.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now verifies duplicate `--only` labels are de-duplicated, so repeated selections do not execute the same regression group twice.

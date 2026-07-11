@@ -63,6 +63,20 @@ def run_self_test() -> None:
     assert "Preservation evidence bundle regression self-test passed." in multi_only_result.stdout
     assert multi_only_result.stderr == ""
 
+    duplicate_only_result = _run_runner(
+        "--only",
+        "evidence bundle JSON helper validation",
+        "--only",
+        "evidence bundle JSON helper validation",
+    )
+    assert duplicate_only_result.returncode == 0, duplicate_only_result.stderr
+    assert duplicate_only_result.stdout.count(
+        "evidence bundle JSON helper validation: passed"
+    ) == 1
+    assert "standalone evidence bundle CLI: passed" not in duplicate_only_result.stdout
+    assert "Preservation evidence bundle regression self-test passed." in duplicate_only_result.stdout
+    assert duplicate_only_result.stderr == ""
+
     unknown_result = _run_runner("--only", "missing regression group")
     assert unknown_result.returncode == 2
     assert unknown_result.stdout == ""
