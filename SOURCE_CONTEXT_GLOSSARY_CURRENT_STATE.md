@@ -473,3 +473,5 @@ Evidence bundle scope invariant coverage now includes a batched cleanup pass for
 Evidence bundle JSON input validation coverage now verifies operational file-state keys are discarded across helper and CLI metadata input paths before rendered or structured evidence output.
 
 Standalone evidence bundle CLI coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and descriptive-only evidence metadata semantics.
+
+Preservation backend plan CLI coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and descriptive-only preservation/evidence plan semantics.

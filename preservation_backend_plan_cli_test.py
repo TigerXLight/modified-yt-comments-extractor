@@ -15,6 +15,13 @@ def _run_cli(argv: list[str]):
     return code, stdout.getvalue(), stderr.getvalue()
 
 
+def _assert_cli_failure(argv: list[str], expected_error: str) -> None:
+    code, stdout, stderr = _run_cli(argv)
+    assert code == 1
+    assert stdout == ""
+    assert expected_error in stderr
+
+
 def _run_cli_error(argv: list[str]) -> tuple[int, str]:
     stderr = io.StringIO()
     try:
@@ -143,10 +150,7 @@ def run_self_test() -> None:
             "# Preservation Backend Plan"
         )
 
-        code, stdout, stderr = _run_cli(output_args)
-        assert code == 1
-        assert stdout == ""
-        assert "output path already exists" in stderr
+        _assert_cli_failure(output_args, "output path already exists")
 
         output_path.write_text("old\n", encoding="utf-8")
         code, stdout, stderr = _run_cli([*output_args, "--overwrite"])
@@ -158,45 +162,45 @@ def run_self_test() -> None:
         )
 
         missing_input = root / "missing.json"
-        code, stdout, stderr = _run_cli(["--input", str(missing_input)])
-        assert code == 1
-        assert stdout == ""
-        assert "input file not found" in stderr
+        _assert_cli_failure(
+            ["--input", str(missing_input)],
+            "input file not found",
+        )
 
         invalid_input = root / "invalid.json"
         invalid_input.write_text("{not json\n", encoding="utf-8")
-        code, stdout, stderr = _run_cli(["--input", str(invalid_input)])
-        assert code == 1
-        assert stdout == ""
-        assert "invalid JSON" in stderr
+        _assert_cli_failure(
+            ["--input", str(invalid_input)],
+            "invalid JSON",
+        )
 
         list_input = root / "list.json"
         _write_json(list_input, [])
-        code, stdout, stderr = _run_cli(["--input", str(list_input)])
-        assert code == 1
-        assert stdout == ""
-        assert "input JSON must be an object" in stderr
+        _assert_cli_failure(
+            ["--input", str(list_input)],
+            "input JSON must be an object",
+        )
 
         bad_backends = root / "bad_backends.json"
         _write_json(bad_backends, {"selected_backend_ids": "manual_local_files"})
-        code, stdout, stderr = _run_cli(["--input", str(bad_backends)])
-        assert code == 1
-        assert stdout == ""
-        assert "selected_backend_ids must be a list of strings" in stderr
+        _assert_cli_failure(
+            ["--input", str(bad_backends)],
+            "selected_backend_ids must be a list of strings",
+        )
 
         bad_formats = root / "bad_formats.json"
         _write_json(bad_formats, {"selected_format_ids": "html"})
-        code, stdout, stderr = _run_cli(["--input", str(bad_formats)])
-        assert code == 1
-        assert stdout == ""
-        assert "selected_format_ids must be a list of strings" in stderr
+        _assert_cli_failure(
+            ["--input", str(bad_formats)],
+            "selected_format_ids must be a list of strings",
+        )
 
         bad_media_choice = root / "bad_media_choice.json"
         _write_json(bad_media_choice, {"media_preservation_choice": "everything"})
-        code, stdout, stderr = _run_cli(["--input", str(bad_media_choice)])
-        assert code == 1
-        assert stdout == ""
-        assert "expected one of none, select, all" in stderr
+        _assert_cli_failure(
+            ["--input", str(bad_media_choice)],
+            "expected one of none, select, all",
+        )
 
     # input evidence bundle JSON should be rendered without opening or checking path hints
     with TemporaryDirectory() as temp_dir:
@@ -256,10 +260,10 @@ def run_self_test() -> None:
                 "evidence_bundle": [],
             },
         )
-        code, stdout, stderr = _run_cli(["--input", str(bad_input_path)])
-        assert code == 1
-        assert stdout == ""
-        assert "evidence_bundle must be an object" in stderr
+        _assert_cli_failure(
+            ["--input", str(bad_input_path)],
+            "evidence_bundle must be an object",
+        )
 
         bad_items_path = Path(temp_dir) / "bad_plan_with_evidence_bundle_items_string.json"
         _write_json(
@@ -270,10 +274,10 @@ def run_self_test() -> None:
                 },
             },
         )
-        code, stdout, stderr = _run_cli(["--input", str(bad_items_path)])
-        assert code == 1
-        assert stdout == ""
-        assert "evidence_bundle.items must be a list" in stderr
+        _assert_cli_failure(
+            ["--input", str(bad_items_path)],
+            "evidence_bundle.items must be a list",
+        )
 
         bad_item_object_path = Path(temp_dir) / "bad_plan_with_evidence_bundle_item_object.json"
         _write_json(
@@ -284,10 +288,10 @@ def run_self_test() -> None:
                 },
             },
         )
-        code, stdout, stderr = _run_cli(["--input", str(bad_item_object_path)])
-        assert code == 1
-        assert stdout == ""
-        assert "evidence bundle item must be an object" in stderr
+        _assert_cli_failure(
+            ["--input", str(bad_item_object_path)],
+            "evidence bundle item must be an object",
+        )
 
         bad_capture_method_path = Path(temp_dir) / "bad_plan_with_evidence_bundle_capture_method.json"
         _write_json(
@@ -304,10 +308,10 @@ def run_self_test() -> None:
                 },
             },
         )
-        code, stdout, stderr = _run_cli(["--input", str(bad_capture_method_path)])
-        assert code == 1
-        assert stdout == ""
-        assert "invalid capture method ID" in stderr
+        _assert_cli_failure(
+            ["--input", str(bad_capture_method_path)],
+            "invalid capture method ID",
+        )
 
         duplicate_item_path = Path(temp_dir) / "bad_plan_with_evidence_bundle_duplicate_item.json"
         _write_json(
@@ -321,13 +325,13 @@ def run_self_test() -> None:
                 },
             },
         )
-        code, stdout, stderr = _run_cli(["--input", str(duplicate_item_path)])
-        assert code == 1
-        assert stdout == ""
-        assert "duplicate artifact IDs: screenshot" in stderr
+        _assert_cli_failure(
+            ["--input", str(duplicate_item_path)],
+            "duplicate artifact IDs: screenshot",
+        )
 
     # backend detail specs should reject malformed values before rendering
-    code, output, error = _run_cli(
+    _assert_cli_failure(
         [
             "--evidence-bundle-status",
             "manual_supplied",
@@ -335,13 +339,11 @@ def run_self_test() -> None:
             "screenshot:png",
             "--evidence-item-role",
             "screenshot-primary",
-        ]
+        ],
+        "item role must use artifact_id=value",
     )
-    assert code == 1
-    assert output == ""
-    assert "item role must use artifact_id=value" in error
 
-    code, output, error = _run_cli(
+    _assert_cli_failure(
         [
             "--evidence-bundle-status",
             "manual_supplied",
@@ -349,13 +351,11 @@ def run_self_test() -> None:
             "screenshot:png",
             "--evidence-item-role",
             "missing=primary",
-        ]
+        ],
+        "unknown artifact IDs",
     )
-    assert code == 1
-    assert output == ""
-    assert "unknown artifact IDs" in error
 
-    code, output, error = _run_cli(
+    _assert_cli_failure(
         [
             "--evidence-bundle-status",
             "manual_supplied",
@@ -365,11 +365,9 @@ def run_self_test() -> None:
             "screenshot=primary",
             "--evidence-item-role",
             "screenshot=supporting",
-        ]
+        ],
+        "duplicate item role metadata",
     )
-    assert code == 1
-    assert output == ""
-    assert "duplicate item role metadata" in error
 
 
 

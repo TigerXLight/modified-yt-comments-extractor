@@ -893,3 +893,4 @@ Next local-ASR branches:
 - The evidence bundle local-only scope invariant tests now include a batched cleanup pass that shares clean-command and no-temp-path checks while keeping evidence file references descriptive and non-operational.
 - The evidence bundle JSON input validation tests now verify unknown operational file-state keys are stripped across helper, standalone CLI, backend-plan CLI, and Total Export input paths.
 - The standalone evidence bundle CLI tests now include a batched cleanup pass that shares invalid-command result assertions while preserving descriptive, non-operational metadata output coverage.
+- The preservation backend plan CLI integration tests now include a batched cleanup pass that shares invalid-command assertions while preserving descriptive, non-operational plan coverage.
