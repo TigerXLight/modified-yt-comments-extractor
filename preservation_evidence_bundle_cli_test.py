@@ -15,6 +15,13 @@ def _run_cli(argv: list[str]):
     return code, stdout.getvalue(), stderr.getvalue()
 
 
+def _assert_cli_failure(argv: list[str], expected_error: str) -> None:
+    code, output, error = _run_cli(argv)
+    assert code == 1
+    assert output == ""
+    assert expected_error in error
+
+
 def run_self_test() -> None:
     code, output, error = _run_cli([])
     assert code == 0
@@ -109,39 +116,37 @@ def run_self_test() -> None:
         assert "sha256" not in parsed["items"][0]
         assert "no file open" in parsed["scope"]
 
-        code, output, error = _run_cli(
-            ["--input", str(input_path), "--item", "screenshot:png"]
+        _assert_cli_failure(
+            ["--input", str(input_path), "--item", "screenshot:png"],
+            "--input cannot be combined",
         )
-        assert code == 1
-        assert output == ""
-        assert "--input cannot be combined" in error
 
         bad_input_path = Path(temp_dir) / "bad_bundle.json"
         bad_input_path.write_text("[]", encoding="utf-8")
-        code, output, error = _run_cli(["--input", str(bad_input_path)])
-        assert code == 1
-        assert output == ""
-        assert "input JSON must be an object" in error
+        _assert_cli_failure(
+            ["--input", str(bad_input_path)],
+            "input JSON must be an object",
+        )
 
         bad_input_items_path = Path(temp_dir) / "bad_input_items.json"
         bad_input_items_path.write_text(
             json.dumps({"items": "screenshot"}),
             encoding="utf-8",
         )
-        code, output, error = _run_cli(["--input", str(bad_input_items_path)])
-        assert code == 1
-        assert output == ""
-        assert "evidence_bundle.items must be a list" in error
+        _assert_cli_failure(
+            ["--input", str(bad_input_items_path)],
+            "evidence_bundle.items must be a list",
+        )
 
         bad_input_item_path = Path(temp_dir) / "bad_input_item.json"
         bad_input_item_path.write_text(
             json.dumps({"items": ["screenshot"]}),
             encoding="utf-8",
         )
-        code, output, error = _run_cli(["--input", str(bad_input_item_path)])
-        assert code == 1
-        assert output == ""
-        assert "evidence bundle item must be an object" in error
+        _assert_cli_failure(
+            ["--input", str(bad_input_item_path)],
+            "evidence bundle item must be an object",
+        )
 
         bad_input_capture_method_path = Path(temp_dir) / "bad_input_capture_method.json"
         bad_input_capture_method_path.write_text(
@@ -158,10 +163,10 @@ def run_self_test() -> None:
             ),
             encoding="utf-8",
         )
-        code, output, error = _run_cli(["--input", str(bad_input_capture_method_path)])
-        assert code == 1
-        assert output == ""
-        assert "invalid capture method ID" in error
+        _assert_cli_failure(
+            ["--input", str(bad_input_capture_method_path)],
+            "invalid capture method ID",
+        )
 
         duplicate_input_item_path = Path(temp_dir) / "duplicate_input_item.json"
         duplicate_input_item_path.write_text(
@@ -175,49 +180,42 @@ def run_self_test() -> None:
             ),
             encoding="utf-8",
         )
-        code, output, error = _run_cli(["--input", str(duplicate_input_item_path)])
-        assert code == 1
-        assert output == ""
-        assert "duplicate artifact IDs: screenshot" in error
+        _assert_cli_failure(
+            ["--input", str(duplicate_input_item_path)],
+            "duplicate artifact IDs: screenshot",
+        )
 
         missing_input_path = Path(temp_dir) / "missing_bundle.json"
-        code, output, error = _run_cli(["--input", str(missing_input_path)])
-        assert code == 1
-        assert output == ""
-        assert "input file not found" in error
+        _assert_cli_failure(
+            ["--input", str(missing_input_path)],
+            "input file not found",
+        )
 
         invalid_json_path = Path(temp_dir) / "invalid_bundle.json"
         invalid_json_path.write_text("{", encoding="utf-8")
-        code, output, error = _run_cli(["--input", str(invalid_json_path)])
-        assert code == 1
-        assert output == ""
-        assert "invalid JSON in" in error
+        _assert_cli_failure(
+            ["--input", str(invalid_json_path)],
+            "invalid JSON in",
+        )
 
-    code, output, error = _run_cli(["--item", "bad:exe"])
-    assert code == 1
-    assert output == ""
-    assert "invalid artifact format" in error
+    _assert_cli_failure(["--item", "bad:exe"], "invalid artifact format")
 
-    code, output, error = _run_cli(["--item", "bad:png:unknown"])
-    assert code == 1
-    assert output == ""
-    assert "invalid capture method ID" in error
-
-    code, output, error = _run_cli(
-        ["--item", "screenshot:png", "--item-role", "missing=primary"]
+    _assert_cli_failure(
+        ["--item", "bad:png:unknown"],
+        "invalid capture method ID",
     )
-    assert code == 1
-    assert output == ""
-    assert "unknown artifact IDs" in error
 
-    code, output, error = _run_cli(
-        ["--item", "screenshot:png", "--item-role", "screenshot-primary"]
+    _assert_cli_failure(
+        ["--item", "screenshot:png", "--item-role", "missing=primary"],
+        "unknown artifact IDs",
     )
-    assert code == 1
-    assert output == ""
-    assert "item role must use artifact_id=value" in error
 
-    code, output, error = _run_cli(
+    _assert_cli_failure(
+        ["--item", "screenshot:png", "--item-role", "screenshot-primary"],
+        "item role must use artifact_id=value",
+    )
+
+    _assert_cli_failure(
         [
             "--item",
             "screenshot:png",
@@ -225,23 +223,19 @@ def run_self_test() -> None:
             "screenshot=primary",
             "--item-role",
             "screenshot=supporting",
-        ]
+        ],
+        "duplicate item role metadata",
     )
-    assert code == 1
-    assert output == ""
-    assert "duplicate item role metadata" in error
 
-    code, output, error = _run_cli(
-        ["--item", "same:png", "--item", "same:html"]
+    _assert_cli_failure(
+        ["--item", "same:png", "--item", "same:html"],
+        "duplicate artifact IDs: same",
     )
-    assert code == 1
-    assert output == ""
-    assert "duplicate artifact IDs: same" in error
 
-    code, output, error = _run_cli(["--item", "missing_format"])
-    assert code == 1
-    assert output == ""
-    assert "artifact_id:artifact_format" in error
+    _assert_cli_failure(
+        ["--item", "missing_format"],
+        "artifact_id:artifact_format",
+    )
 
 
 if __name__ == "__main__":

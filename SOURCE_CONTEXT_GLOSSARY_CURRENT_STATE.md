@@ -471,3 +471,5 @@ Evidence bundle regression runner behavior coverage now has a final cleanup pass
 Evidence bundle scope invariant coverage now includes a batched cleanup pass for clean local command output, descriptive-only evidence metadata, and no temporary-path leakage.
 
 Evidence bundle JSON input validation coverage now verifies operational file-state keys are discarded across helper and CLI metadata input paths before rendered or structured evidence output.
+
+Standalone evidence bundle CLI coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and descriptive-only evidence metadata semantics.

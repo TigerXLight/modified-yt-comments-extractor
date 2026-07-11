@@ -505,3 +505,5 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 `preservation_evidence_bundle_scope_invariant_test.py` now has a batched local-only scope cleanup that shares successful-command, clean-stderr, and no-temp-path checks while preserving the rule that evidence metadata never operates on user evidence files.
 
 Evidence bundle JSON input validation now has a batched helper/CLI audit proving unknown operational fields such as upload state and hashes cannot survive normalization into standalone, backend-plan, or Total Export evidence output.
+
+`preservation_evidence_bundle_cli_test.py` now has a batched standalone CLI cleanup that centralizes failed-command assertions while preserving metadata-only rendering and evidence-file non-operation boundaries.
