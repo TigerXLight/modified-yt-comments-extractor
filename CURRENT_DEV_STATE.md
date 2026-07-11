@@ -873,3 +873,4 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now asserts the self-recursive runner behavior label remains the final canonical label and that non-self coverage equals `EXPECTED_LABELS[:-1]`.
 - The evidence bundle regression runner behavior test now covers multiple unknown `--only` labels and checks both missing labels appear in diagnostics without success-output leakage.
 - The evidence bundle regression runner behavior test now centralizes the aggregate success banner and self-recursive runner label as constants, with an explicit non-recursion note for broad targeted coverage.
+- The evidence bundle regression runner behavior test now asserts broad non-self targeted arguments exclude the self-recursive runner label and contain one `--only` switch per selected label.

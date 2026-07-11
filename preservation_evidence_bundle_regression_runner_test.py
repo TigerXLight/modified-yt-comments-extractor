@@ -148,6 +148,11 @@ def run_self_test() -> None:
         for label in non_self_labels
         for argument in ("--only", label)
     )
+    assert RUNNER_BEHAVIOR_LABEL not in non_self_labels
+    assert RUNNER_BEHAVIOR_LABEL not in non_self_args
+    for expected_label in non_self_labels:
+        assert expected_label in non_self_args
+    assert non_self_args.count("--only") == len(non_self_labels)
     non_self_result = _run_runner(*non_self_args)
     assert non_self_result.returncode == 0, non_self_result.stderr
     assert f"{RUNNER_BEHAVIOR_LABEL}: passed" not in non_self_result.stdout

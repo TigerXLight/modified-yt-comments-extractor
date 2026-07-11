@@ -362,3 +362,5 @@ Evidence bundle regression runner behavior tests now assert the self-recursive r
 Evidence bundle regression runner behavior tests now cover repeated unknown `--only` labels together, requiring both missing labels and every valid expected choice in diagnostics while keeping stdout and success output empty.
 
 Evidence bundle regression runner behavior tests now centralize the aggregate success banner and self-recursive label as constants, with an explicit warning against no-filter aggregate calls inside the behavior test.
+
+Evidence bundle regression runner behavior tests now guard the constructed broad non-self argument tuple against recursive self-selection and verify one `--only` switch for every selected label.
