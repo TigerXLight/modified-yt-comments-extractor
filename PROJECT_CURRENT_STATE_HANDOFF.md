@@ -385,3 +385,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now asserts JSON/text/Markdown CLI outputs do not leak the temp input directory path or temp folder name, reinforcing that path hints are not resolved to local evidence paths.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now rejects structured file-state keys in evidence bundle outputs, preventing local-only metadata from growing hash/size/existence/opened/created/uploaded/validated/captured state fields.

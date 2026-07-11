@@ -280,3 +280,6 @@ Evidence bundle local-only scope invariant testing now asserts archive/download 
 
 
 Evidence bundle local-only scope invariant testing now verifies standalone, backend-plan, and Total Export CLI outputs do not leak temp input paths while carrying path hints.
+
+
+Evidence bundle local-only scope invariant testing now rejects file-state keys such as hashes, sizes, existence, opened, created, uploaded, validated, or captured state in structured outputs.

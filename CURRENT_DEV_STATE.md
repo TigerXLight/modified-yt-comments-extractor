@@ -819,3 +819,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now also asserts archive/download prohibition wording alongside scan/hash/upload/capture/network wording.
 
 - Evidence bundle local-only scope invariant coverage now asserts CLI JSON/text/Markdown outputs do not leak the temp input directory path, keeping path hints descriptive rather than resolved.
+
+- Evidence bundle local-only scope invariant coverage now rejects structured file-state keys such as hashes, sizes, existence, opened, created, uploaded, validated, or captured state in evidence bundle outputs.

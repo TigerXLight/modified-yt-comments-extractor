@@ -351,3 +351,6 @@ Evidence bundle local-only scope invariants now explicitly check archive/downloa
 
 
 Evidence bundle local-only scope invariants now check rendered and structured CLI outputs do not leak temp input paths, so descriptive path hints remain non-resolved metadata.
+
+
+Evidence bundle local-only scope invariants now reject structured file-state keys, keeping evidence items descriptive rather than measured, opened, validated, or materialized.

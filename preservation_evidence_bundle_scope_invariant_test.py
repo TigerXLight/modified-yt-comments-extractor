@@ -35,6 +35,33 @@ def _run_command(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+FORBIDDEN_FILE_STATE_KEYS = {
+    "captured",
+    "checksum",
+    "created",
+    "exists",
+    "file_size",
+    "hash",
+    "mtime",
+    "opened",
+    "sha256",
+    "size_bytes",
+    "uploaded",
+    "validated",
+}
+
+
+def _assert_no_file_state_keys(value: object) -> None:
+    if isinstance(value, dict):
+        forbidden = FORBIDDEN_FILE_STATE_KEYS.intersection(value)
+        assert not forbidden, forbidden
+        for child in value.values():
+            _assert_no_file_state_keys(child)
+    elif isinstance(value, list):
+        for child in value:
+            _assert_no_file_state_keys(child)
+
+
 def _assert_local_only_bundle(bundle: dict) -> None:
     scope = bundle["scope"].lower()
     assert "no file open" in scope, scope
@@ -45,6 +72,7 @@ def _assert_local_only_bundle(bundle: dict) -> None:
     assert "network" in scope, scope
     assert "archive" in scope, scope
     assert "download" in scope, scope
+    _assert_no_file_state_keys(bundle)
 
     item = bundle["items"][0]
     assert item["path_hint"] == r"captures\\comments.png"
