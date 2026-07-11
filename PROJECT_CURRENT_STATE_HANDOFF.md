@@ -376,3 +376,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now verifies targeted `--only` selections keep canonical regression order even when the labels are requested in reverse order.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now verifies mixed known/unknown `--only` selections fail cleanly, with the unknown label and expected choices reported in stderr.

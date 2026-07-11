@@ -342,3 +342,6 @@ Evidence bundle regression runner behavior coverage now checks duplicate `--only
 
 
 Evidence bundle regression runner behavior coverage now checks targeted selections preserve canonical regression order instead of depending on request order.
+
+
+Evidence bundle regression runner behavior coverage now checks mixed known/unknown targeted selections produce clear unknown-label diagnostics.

@@ -271,3 +271,6 @@ Evidence bundle regression runner behavior tests now cover duplicate `--only` se
 
 
 Evidence bundle regression runner behavior tests now cover canonical ordering for targeted `--only` selections, including reverse-order input.
+
+
+Evidence bundle regression runner behavior tests now cover mixed known/unknown `--only` selections and assert clear stderr diagnostics.
