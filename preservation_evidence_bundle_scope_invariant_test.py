@@ -51,6 +51,15 @@ FORBIDDEN_FILE_STATE_KEYS = {
 }
 
 
+RENDERED_FILE_STATE_FIELD_MARKERS = (
+    "checksum",
+    "file_size",
+    "mtime",
+    "sha256",
+    "size_bytes",
+)
+
+
 def _assert_no_file_state_keys(value: object) -> None:
     if isinstance(value, dict):
         forbidden = FORBIDDEN_FILE_STATE_KEYS.intersection(value)
@@ -117,6 +126,8 @@ def _assert_local_only_text(output: str) -> None:
     assert "network" in lower_output, output
     assert "archive" in lower_output, output
     assert "download" in lower_output, output
+    for marker in RENDERED_FILE_STATE_FIELD_MARKERS:
+        assert marker not in lower_output, output
     assert (
         "not opened or checked" in lower_output
         or "no file open" in lower_output

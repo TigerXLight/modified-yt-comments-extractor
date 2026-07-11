@@ -833,3 +833,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now also asserts CLI outputs do not leak the temporary JSON input filenames.
 
 - The evidence bundle regression runner behavior test now verifies unknown-label errors list every expected regression label.
+
+- Evidence bundle local-only scope invariant coverage now rejects rendered file-state field markers such as checksum, file_size, mtime, sha256, and size_bytes in text/Markdown output surfaces.

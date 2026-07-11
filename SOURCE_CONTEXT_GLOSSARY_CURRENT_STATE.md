@@ -372,3 +372,6 @@ Evidence bundle local-only scope invariants now check CLI outputs do not leak te
 
 
 Evidence bundle regression runner behavior coverage now checks unknown-label diagnostics include all expected regression labels.
+
+
+Evidence bundle local-only scope invariants now reject rendered file-state field markers in text/Markdown output so rendered metadata does not expose measured evidence state.

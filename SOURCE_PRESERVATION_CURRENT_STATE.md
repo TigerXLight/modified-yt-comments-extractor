@@ -301,3 +301,6 @@ Evidence bundle local-only scope invariant testing now verifies standalone, back
 
 
 Evidence bundle regression runner behavior tests now assert unknown-label diagnostics list every valid regression label.
+
+
+Evidence bundle local-only scope invariant testing now checks text/Markdown outputs for absence of rendered file-state markers such as checksum, file_size, mtime, sha256, and size_bytes.

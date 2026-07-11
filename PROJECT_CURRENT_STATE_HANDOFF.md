@@ -406,3 +406,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now verifies unknown-label errors include the `expected one of` choices and every current regression label.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now rejects rendered file-state field markers (`checksum`, `file_size`, `mtime`, `sha256`, `size_bytes`) in text/Markdown outputs, while still allowing prohibition wording like scan/hash/upload.
