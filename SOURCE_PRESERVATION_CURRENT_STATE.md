@@ -325,3 +325,6 @@ Evidence bundle local-only scope invariant testing now proves temp directory pat
 
 
 Evidence bundle regression runner behavior tests now assert targeted `--only` runs do not emit extra regression pass lines beyond the requested labels.
+
+
+Evidence bundle regression runner behavior tests now assert duplicate targeted `--only` selections emit exactly one canonical passed label, matching the single targeted case.

@@ -849,3 +849,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now includes negative checks proving temp directory paths and temporary JSON input filenames are rejected if rendered into CLI output.
 
 - The evidence bundle regression runner behavior test now verifies targeted `--only` runs emit exactly the selected passed labels and no extra regression pass lines.
+
+- The evidence bundle regression runner behavior test now pins exact passed-label output for both single targeted and duplicate targeted `--only` runs.

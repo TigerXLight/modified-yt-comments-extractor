@@ -49,6 +49,7 @@ def run_self_test() -> None:
     assert "standalone evidence bundle CLI: passed" not in only_result.stdout
     assert "evidence bundle regression runner behavior: passed" not in only_result.stdout
     assert "Preservation evidence bundle regression self-test passed." in only_result.stdout
+    assert _passed_labels(only_result.stdout) == ('evidence bundle JSON helper validation',)
     assert only_result.stderr == ""
 
     scope_only_result = _run_runner("--only", "evidence bundle local-only scope invariants")
@@ -87,7 +88,7 @@ def run_self_test() -> None:
     ) == 1
     assert "standalone evidence bundle CLI: passed" not in duplicate_only_result.stdout
     assert "Preservation evidence bundle regression self-test passed." in duplicate_only_result.stdout
-    assert _passed_labels(only_result.stdout) == ('evidence bundle JSON helper validation',)
+    assert _passed_labels(duplicate_only_result.stdout) == ('evidence bundle JSON helper validation',)
     assert duplicate_only_result.stderr == ""
 
     reverse_order_result = _run_runner(

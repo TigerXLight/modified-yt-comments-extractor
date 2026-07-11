@@ -430,3 +430,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now parses `: passed` lines and asserts targeted `--only` runs emit exactly the selected regression labels, preventing accidental extra group execution.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now keeps exact passed-label assertions beside the matching targeted run checks and also asserts duplicate `--only` selections emit one canonical passed label.

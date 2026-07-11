@@ -396,3 +396,6 @@ Evidence bundle local-only scope invariants now include negative temp-path leak 
 
 
 Evidence bundle regression runner behavior coverage now verifies targeted `--only` output contains exactly the requested passed labels.
+
+
+Evidence bundle regression runner behavior coverage now pins exact passed-label output for single and duplicate targeted selections.
