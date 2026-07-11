@@ -366,3 +366,5 @@ Evidence bundle regression runner behavior tests now centralize the aggregate su
 Evidence bundle regression runner behavior tests now guard the constructed broad non-self argument tuple against recursive self-selection and verify one `--only` switch for every selected label.
 
 Evidence bundle regression runner behavior tests now use one helper for repeatable targeted `--only` arguments while retaining the explicit no-filter recursion boundary.
+
+Evidence bundle regression runner behavior tests now use one helper for successful targeted subprocess results, preserving exact labels, one aggregate banner, zero stderr, and successful return codes.

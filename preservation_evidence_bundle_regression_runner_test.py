@@ -56,6 +56,17 @@ def _assert_success_banner_once(result: subprocess.CompletedProcess[str]) -> Non
     assert result.stdout.count(SUCCESS_BANNER) == 1, result.stdout
 
 
+def _assert_success_result(
+    result: subprocess.CompletedProcess[str],
+    expected_labels: tuple[str, ...],
+) -> None:
+    assert result.returncode == 0, result.stderr
+    assert SUCCESS_BANNER in result.stdout
+    _assert_success_banner_once(result)
+    assert _passed_labels(result.stdout) == expected_labels
+    assert result.stderr == ""
+
+
 def _assert_no_success_output(result: subprocess.CompletedProcess[str]) -> None:
     assert result.stdout == "", result.stdout
     assert SUCCESS_BANNER not in result.stderr, result.stderr
@@ -78,25 +89,20 @@ def run_self_test() -> None:
     assert SUCCESS_BANNER not in list_result.stdout
 
     only_result = _run_runner("--only", "evidence bundle JSON helper validation")
-    assert only_result.returncode == 0, only_result.stderr
     assert "evidence bundle JSON helper validation: passed" in only_result.stdout
     assert "standalone evidence bundle CLI: passed" not in only_result.stdout
     assert f"{RUNNER_BEHAVIOR_LABEL}: passed" not in only_result.stdout
-    assert SUCCESS_BANNER in only_result.stdout
-    _assert_success_banner_once(only_result)
-    assert _passed_labels(only_result.stdout) == ('evidence bundle JSON helper validation',)
-    assert only_result.stderr == ""
+    _assert_success_result(only_result, ("evidence bundle JSON helper validation",))
 
     scope_only_result = _run_runner("--only", "evidence bundle local-only scope invariants")
-    assert scope_only_result.returncode == 0, scope_only_result.stderr
     assert "evidence bundle local-only scope invariants: passed" in scope_only_result.stdout
     assert "evidence bundle JSON helper validation: passed" not in scope_only_result.stdout
     assert "standalone evidence bundle CLI: passed" not in scope_only_result.stdout
     assert f"{RUNNER_BEHAVIOR_LABEL}: passed" not in scope_only_result.stdout
-    assert SUCCESS_BANNER in scope_only_result.stdout
-    _assert_success_banner_once(scope_only_result)
-    assert _passed_labels(scope_only_result.stdout) == ('evidence bundle local-only scope invariants',)
-    assert scope_only_result.stderr == ""
+    _assert_success_result(
+        scope_only_result,
+        ("evidence bundle local-only scope invariants",),
+    )
 
     multi_only_result = _run_runner(
         *_only_args(
@@ -104,15 +110,17 @@ def run_self_test() -> None:
             "evidence bundle local-only scope invariants",
         )
     )
-    assert multi_only_result.returncode == 0, multi_only_result.stderr
     assert "evidence bundle JSON helper validation: passed" in multi_only_result.stdout
     assert "evidence bundle local-only scope invariants: passed" in multi_only_result.stdout
     assert "standalone evidence bundle CLI: passed" not in multi_only_result.stdout
     assert f"{RUNNER_BEHAVIOR_LABEL}: passed" not in multi_only_result.stdout
-    assert SUCCESS_BANNER in multi_only_result.stdout
-    _assert_success_banner_once(multi_only_result)
-    assert _passed_labels(multi_only_result.stdout) == ('evidence bundle JSON helper validation', 'evidence bundle local-only scope invariants')
-    assert multi_only_result.stderr == ""
+    _assert_success_result(
+        multi_only_result,
+        (
+            "evidence bundle JSON helper validation",
+            "evidence bundle local-only scope invariants",
+        ),
+    )
 
     duplicate_only_result = _run_runner(
         *_only_args(
@@ -120,15 +128,14 @@ def run_self_test() -> None:
             "evidence bundle JSON helper validation",
         )
     )
-    assert duplicate_only_result.returncode == 0, duplicate_only_result.stderr
     assert duplicate_only_result.stdout.count(
         "evidence bundle JSON helper validation: passed"
     ) == 1
     assert "standalone evidence bundle CLI: passed" not in duplicate_only_result.stdout
-    assert SUCCESS_BANNER in duplicate_only_result.stdout
-    _assert_success_banner_once(duplicate_only_result)
-    assert _passed_labels(duplicate_only_result.stdout) == ('evidence bundle JSON helper validation',)
-    assert duplicate_only_result.stderr == ""
+    _assert_success_result(
+        duplicate_only_result,
+        ("evidence bundle JSON helper validation",),
+    )
 
     reverse_order_result = _run_runner(
         *_only_args(
@@ -136,15 +143,13 @@ def run_self_test() -> None:
             "evidence bundle JSON helper validation",
         )
     )
-    assert reverse_order_result.returncode == 0, reverse_order_result.stderr
-    assert _passed_labels(reverse_order_result.stdout) == (
-        "evidence bundle JSON helper validation",
-        "evidence bundle local-only scope invariants",
+    _assert_success_result(
+        reverse_order_result,
+        (
+            "evidence bundle JSON helper validation",
+            "evidence bundle local-only scope invariants",
+        ),
     )
-    assert SUCCESS_BANNER in reverse_order_result.stdout
-    _assert_success_banner_once(reverse_order_result)
-    assert _passed_labels(reverse_order_result.stdout) == ('evidence bundle JSON helper validation', 'evidence bundle local-only scope invariants')
-    assert reverse_order_result.stderr == ""
 
     # Do not call the aggregate runner without --only here: that would recursively
     # select this runner-behavior test group.
@@ -160,12 +165,8 @@ def run_self_test() -> None:
         assert expected_label in non_self_args
     assert non_self_args.count("--only") == len(non_self_labels)
     non_self_result = _run_runner(*non_self_args)
-    assert non_self_result.returncode == 0, non_self_result.stderr
     assert f"{RUNNER_BEHAVIOR_LABEL}: passed" not in non_self_result.stdout
-    assert SUCCESS_BANNER in non_self_result.stdout
-    _assert_success_banner_once(non_self_result)
-    assert _passed_labels(non_self_result.stdout) == non_self_labels
-    assert non_self_result.stderr == ""
+    _assert_success_result(non_self_result, non_self_labels)
 
     unknown_result = _run_runner("--only", "missing regression group")
     assert unknown_result.returncode == 2
