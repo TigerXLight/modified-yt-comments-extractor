@@ -404,3 +404,5 @@ Evidence bundle JSON input validation tests now reinforce descriptive-only seman
 Standalone evidence bundle CLI tests now share invalid-command result checks while preserving metadata-only archive, download, screenshot, hash, file-open, validation, and temp-output boundaries.
 
 Preservation backend plan CLI tests now share invalid-command result checks while preserving metadata-only ArchiveBox, archive, download, screenshot, hash, file-open, validation, and temp-output boundaries.
+
+Total Export prepare CLI tests now share invalid-command result checks while preserving metadata-only ArchiveBox, archive, download, screenshot, hash, file-open, validation, and temp-output boundaries.

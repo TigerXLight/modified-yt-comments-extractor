@@ -28,6 +28,12 @@ def _run_cli_error(argv: list[str]) -> tuple[int, str]:
         return int(exc.code), output.getvalue()
     raise AssertionError("Expected argparse SystemExit.")
 
+def _assert_cli_error(argv: list[str], expected_error: str) -> None:
+    code, error = _run_cli_error(argv)
+    assert code == 2
+    assert expected_error in error
+
+
 
 def _manifest_path_from_output(output: str) -> str:
     for line in output.splitlines():
@@ -196,23 +202,11 @@ def run_self_test() -> None:
         }
         assert list(Path(temp_dir).iterdir()) == []
 
-        error_code, combined_mode_error = _run_cli_error(
-            ["--list-capture-options", "--list-source-adapters"]
-        )
-        assert error_code == 2
-        assert "Use only one list/explain mode at a time" in combined_mode_error
+        _assert_cli_error(["--list-capture-options", "--list-source-adapters"], 'Use only one list/explain mode at a time')
 
-        error_code, metadata_combined_error = _run_cli_error(
-            ["--list-metadata", "--list-source-adapters"]
-        )
-        assert error_code == 2
-        assert "--list-metadata cannot be combined" in metadata_combined_error
+        _assert_cli_error(["--list-metadata", "--list-source-adapters"], '--list-metadata cannot be combined')
 
-        error_code, preservation_combined_error = _run_cli_error(
-            ["--list-preservation-backends", "--list-source-adapters"]
-        )
-        assert error_code == 2
-        assert "Use only one list/explain mode at a time" in preservation_combined_error
+        _assert_cli_error(["--list-preservation-backends", "--list-source-adapters"], 'Use only one list/explain mode at a time')
 
         exit_code, explain_output = _run_cli(
             [
@@ -420,74 +414,69 @@ def run_self_test() -> None:
         assert "no file open" in parsed_evidence_preservation["evidence_bundle"]["scope"]
         assert list(Path(temp_dir).iterdir()) == []
 
-        error_code, invalid_capture_method_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--capture-method",
-                "unknown_capture",
-            ]
+                            "--explain-preservation-plan",
+                            "--capture-method",
+                            "unknown_capture",
+                        ],
+            'invalid choice',
         )
-        assert error_code == 2
-        assert "invalid choice" in invalid_capture_method_error
         assert list(Path(temp_dir).iterdir()) == []
 
-        error_code, invalid_media_choice_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--media-preservation-choice",
-                "everything",
-            ]
+                            "--explain-preservation-plan",
+                            "--media-preservation-choice",
+                            "everything",
+                        ],
+            'invalid choice',
         )
-        assert error_code == 2
-        assert "invalid choice" in invalid_media_choice_error
         assert list(Path(temp_dir).iterdir()) == []
 
         # prepare CLI detail specs should reject malformed values before rendering
-        error_code, malformed_detail_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--evidence-bundle-status",
-                "manual_supplied",
-                "--evidence-item",
-                "screenshot:png",
-                "--evidence-item-role",
-                "screenshot-primary",
-            ]
+                            "--explain-preservation-plan",
+                            "--evidence-bundle-status",
+                            "manual_supplied",
+                            "--evidence-item",
+                            "screenshot:png",
+                            "--evidence-item-role",
+                            "screenshot-primary",
+                        ],
+            'item role must use artifact_id=value',
         )
-        assert error_code == 2
-        assert "item role must use artifact_id=value" in malformed_detail_error
         assert list(Path(temp_dir).iterdir()) == []
 
-        error_code, unknown_detail_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--evidence-bundle-status",
-                "manual_supplied",
-                "--evidence-item",
-                "screenshot:png",
-                "--evidence-item-role",
-                "missing=primary",
-            ]
+                            "--explain-preservation-plan",
+                            "--evidence-bundle-status",
+                            "manual_supplied",
+                            "--evidence-item",
+                            "screenshot:png",
+                            "--evidence-item-role",
+                            "missing=primary",
+                        ],
+            'unknown artifact IDs',
         )
-        assert error_code == 2
-        assert "unknown artifact IDs" in unknown_detail_error
         assert list(Path(temp_dir).iterdir()) == []
 
-        error_code, duplicate_detail_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--evidence-bundle-status",
-                "manual_supplied",
-                "--evidence-item",
-                "screenshot:png",
-                "--evidence-item-role",
-                "screenshot=primary",
-                "--evidence-item-role",
-                "screenshot=supporting",
-            ]
+                            "--explain-preservation-plan",
+                            "--evidence-bundle-status",
+                            "manual_supplied",
+                            "--evidence-item",
+                            "screenshot:png",
+                            "--evidence-item-role",
+                            "screenshot=primary",
+                            "--evidence-item-role",
+                            "screenshot=supporting",
+                        ],
+            'duplicate item role metadata',
         )
-        assert error_code == 2
-        assert "duplicate item role metadata" in duplicate_detail_error
         assert list(Path(temp_dir).iterdir()) == []
 
         evidence_bundle_input_path = Path(temp_dir) / "evidence_bundle.json"
@@ -571,42 +560,39 @@ def run_self_test() -> None:
         assert "no file open" in parsed_input_bundle_plan["evidence_bundle"]["scope"]
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 
-        error_code, missing_bundle_input_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--evidence-bundle-input",
-                str(Path(temp_dir) / "missing_evidence_bundle.json"),
-            ]
+                            "--explain-preservation-plan",
+                            "--evidence-bundle-input",
+                            str(Path(temp_dir) / "missing_evidence_bundle.json"),
+                        ],
+            'evidence bundle input file not found',
         )
-        assert error_code == 2
-        assert "evidence bundle input file not found" in missing_bundle_input_error
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 
         invalid_bundle_input_path = Path(temp_dir) / "invalid_evidence_bundle.json"
         invalid_bundle_input_path.write_text("{", encoding="utf-8")
-        error_code, invalid_bundle_input_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--evidence-bundle-input",
-                str(invalid_bundle_input_path),
-            ]
+                            "--explain-preservation-plan",
+                            "--evidence-bundle-input",
+                            str(invalid_bundle_input_path),
+                        ],
+            'invalid evidence bundle JSON in',
         )
-        assert error_code == 2
-        assert "invalid evidence bundle JSON in" in invalid_bundle_input_error
         invalid_bundle_input_path.unlink()
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 
         list_bundle_input_path = Path(temp_dir) / "list_evidence_bundle.json"
         list_bundle_input_path.write_text("[]", encoding="utf-8")
-        error_code, list_bundle_input_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--evidence-bundle-input",
-                str(list_bundle_input_path),
-            ]
+                            "--explain-preservation-plan",
+                            "--evidence-bundle-input",
+                            str(list_bundle_input_path),
+                        ],
+            'evidence bundle input JSON must be an object',
         )
-        assert error_code == 2
-        assert "evidence bundle input JSON must be an object" in list_bundle_input_error
         list_bundle_input_path.unlink()
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 
@@ -615,15 +601,14 @@ def run_self_test() -> None:
             json.dumps({"items": "screenshot"}),
             encoding="utf-8",
         )
-        error_code, bad_items_bundle_input_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--evidence-bundle-input",
-                str(bad_items_bundle_input_path),
-            ]
+                            "--explain-preservation-plan",
+                            "--evidence-bundle-input",
+                            str(bad_items_bundle_input_path),
+                        ],
+            'evidence_bundle.items must be a list',
         )
-        assert error_code == 2
-        assert "evidence_bundle.items must be a list" in bad_items_bundle_input_error
         bad_items_bundle_input_path.unlink()
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 
@@ -632,15 +617,14 @@ def run_self_test() -> None:
             json.dumps({"items": ["screenshot"]}),
             encoding="utf-8",
         )
-        error_code, bad_item_bundle_input_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--evidence-bundle-input",
-                str(bad_item_bundle_input_path),
-            ]
+                            "--explain-preservation-plan",
+                            "--evidence-bundle-input",
+                            str(bad_item_bundle_input_path),
+                        ],
+            'evidence bundle item must be an object',
         )
-        assert error_code == 2
-        assert "evidence bundle item must be an object" in bad_item_bundle_input_error
         bad_item_bundle_input_path.unlink()
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 
@@ -659,15 +643,14 @@ def run_self_test() -> None:
             ),
             encoding="utf-8",
         )
-        error_code, bad_capture_bundle_input_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--evidence-bundle-input",
-                str(bad_capture_bundle_input_path),
-            ]
+                            "--explain-preservation-plan",
+                            "--evidence-bundle-input",
+                            str(bad_capture_bundle_input_path),
+                        ],
+            'invalid capture method ID',
         )
-        assert error_code == 2
-        assert "invalid capture method ID" in bad_capture_bundle_input_error
         bad_capture_bundle_input_path.unlink()
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 
@@ -683,29 +666,27 @@ def run_self_test() -> None:
             ),
             encoding="utf-8",
         )
-        error_code, duplicate_bundle_input_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--evidence-bundle-input",
-                str(duplicate_bundle_input_path),
-            ]
+                            "--explain-preservation-plan",
+                            "--evidence-bundle-input",
+                            str(duplicate_bundle_input_path),
+                        ],
+            'duplicate artifact IDs: screenshot',
         )
-        assert error_code == 2
-        assert "duplicate artifact IDs: screenshot" in duplicate_bundle_input_error
         duplicate_bundle_input_path.unlink()
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 
-        error_code, override_bundle_input_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--explain-preservation-plan",
-                "--evidence-bundle-input",
-                str(evidence_bundle_input_path),
-                "--evidence-item",
-                "screenshot:png",
-            ]
+                            "--explain-preservation-plan",
+                            "--evidence-bundle-input",
+                            str(evidence_bundle_input_path),
+                            "--evidence-item",
+                            "screenshot:png",
+                        ],
+            '--evidence-bundle-input cannot be combined',
         )
-        assert error_code == 2
-        assert "--evidence-bundle-input cannot be combined" in override_bundle_input_error
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
         evidence_bundle_input_path.unlink()
         assert list(Path(temp_dir).iterdir()) == []
@@ -753,17 +734,11 @@ def run_self_test() -> None:
         assert "No source adapter supports the URL: https://example.com/article" in explain_unsupported_output
         assert list(Path(temp_dir).iterdir()) == []
 
-        error_code, explain_missing_source_error = _run_cli_error(["--explain-plan"])
-        assert error_code == 2
-        assert "--source-url is required when --explain-plan is used" in explain_missing_source_error
+        _assert_cli_error(["--explain-plan"], '--source-url is required when --explain-plan is used')
 
-        error_code, missing_both_error = _run_cli_error([])
-        assert error_code == 2
-        assert "--base-folder is required unless a list/explain mode is used" in missing_both_error
+        _assert_cli_error([], '--base-folder is required unless a list/explain mode is used')
 
-        error_code, missing_source_error = _run_cli_error(["--base-folder", temp_dir])
-        assert error_code == 2
-        assert "--source-url is required unless a list mode is used" in missing_source_error
+        _assert_cli_error(["--base-folder", temp_dir], '--source-url is required unless a list mode is used')
 
         exit_code, output = _run_cli(
             [
@@ -1730,35 +1705,31 @@ def run_self_test() -> None:
         assert parsed_verify_tamper_json["status"] == "mismatch"
         assert parsed_verify_tamper_json["hash_matches_inspection_json"] is False
 
-        error_code, verify_missing_path_error = _run_cli_error(["--verify-review-bundle"])
-        assert error_code == 2
-        assert "--zip-path is required when --verify-review-bundle is used" in verify_missing_path_error
+        _assert_cli_error(["--verify-review-bundle"], '--zip-path is required when --verify-review-bundle is used')
 
-        error_code, verify_build_bundle_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--verify-review-bundle",
-                "--build-review-bundle",
-                "--zip-path",
-                str(bundle_zip_path),
-                "--base-folder",
-                temp_dir,
-                "--source-url",
-                f"https://www.youtube.com/watch?v={VALID_ID}",
-            ]
+                            "--verify-review-bundle",
+                            "--build-review-bundle",
+                            "--zip-path",
+                            str(bundle_zip_path),
+                            "--base-folder",
+                            temp_dir,
+                            "--source-url",
+                            f"https://www.youtube.com/watch?v={VALID_ID}",
+                        ],
+            'Use only one list/explain mode at a time',
         )
-        assert error_code == 2
-        assert "Use only one list/explain mode at a time" in verify_build_bundle_error
 
-        error_code, verify_full_review_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--verify-review-bundle",
-                "--zip-path",
-                str(bundle_zip_path),
-                "--full-review-files",
-            ]
+                            "--verify-review-bundle",
+                            "--zip-path",
+                            str(bundle_zip_path),
+                            "--full-review-files",
+                        ],
+            'read-only',
         )
-        assert error_code == 2
-        assert "read-only" in verify_full_review_error
 
         folder_verify_dir = Path(temp_dir) / "folder_verify_cli"
         exit_code, folder_bundle_one_output = _run_cli(
@@ -1959,38 +1930,29 @@ def run_self_test() -> None:
         assert exit_code == 0
         assert json.loads(overwrite_report_json_output)["report_written"] is True
 
-        error_code, folder_verify_missing_folder_arg_error = _run_cli_error(
-            ["--verify-review-bundle-folder"]
-        )
-        assert error_code == 2
-        assert (
-            "--review-bundle-folder is required when --verify-review-bundle-folder is used"
-            in folder_verify_missing_folder_arg_error
+        _assert_cli_error(["--verify-review-bundle-folder"], '--review-bundle-folder is required when --verify-review-bundle-folder is used')
+
+        _assert_cli_error(
+            [
+                            "--verify-review-bundle-folder",
+                            "--verify-review-bundle",
+                            "--review-bundle-folder",
+                            str(folder_verify_dir),
+                            "--zip-path",
+                            str(bundle_zip_path),
+                        ],
+            'Use only one list/explain mode at a time',
         )
 
-        error_code, folder_verify_single_verify_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--verify-review-bundle-folder",
-                "--verify-review-bundle",
-                "--review-bundle-folder",
-                str(folder_verify_dir),
-                "--zip-path",
-                str(bundle_zip_path),
-            ]
+                            "--verify-review-bundle-folder",
+                            "--review-bundle-folder",
+                            str(folder_verify_dir),
+                            "--full-review-files",
+                        ],
+            'read-only',
         )
-        assert error_code == 2
-        assert "Use only one list/explain mode at a time" in folder_verify_single_verify_error
-
-        error_code, folder_verify_full_review_error = _run_cli_error(
-            [
-                "--verify-review-bundle-folder",
-                "--review-bundle-folder",
-                str(folder_verify_dir),
-                "--full-review-files",
-            ]
-        )
-        assert error_code == 2
-        assert "read-only" in folder_verify_full_review_error
 
         batch_plan_source_file = Path(temp_dir) / "batch_plan_sources_cli.txt"
         batch_plan_source_file.write_text(
@@ -2069,57 +2031,47 @@ def run_self_test() -> None:
         assert parsed_batch_duplicates["duplicate_package_id_count"] == 2
         assert all(item["duplicate_package_id"] for item in parsed_batch_duplicates["items"])
 
-        error_code, batch_plan_missing_source_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--plan-batch-review-bundles",
-                "--batch-output-folder",
-                str(Path(temp_dir) / "batch_plan_missing_source"),
-            ]
-        )
-        assert error_code == 2
-        assert (
-            "--batch-source-file is required when --plan-batch-review-bundles is used"
-            in batch_plan_missing_source_error
+                            "--plan-batch-review-bundles",
+                            "--batch-output-folder",
+                            str(Path(temp_dir) / "batch_plan_missing_source"),
+                        ],
+            '--batch-source-file is required when --plan-batch-review-bundles is used',
         )
 
-        error_code, batch_plan_missing_output_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--plan-batch-review-bundles",
-                "--batch-source-file",
-                str(batch_plan_source_file),
-            ]
-        )
-        assert error_code == 2
-        assert (
-            "--batch-output-folder is required when --plan-batch-review-bundles is used"
-            in batch_plan_missing_output_error
+                            "--plan-batch-review-bundles",
+                            "--batch-source-file",
+                            str(batch_plan_source_file),
+                        ],
+            '--batch-output-folder is required when --plan-batch-review-bundles is used',
         )
 
-        error_code, batch_plan_build_conflict_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--plan-batch-review-bundles",
-                "--build-batch-review-bundles",
-                "--batch-source-file",
-                str(batch_plan_source_file),
-                "--batch-output-folder",
-                str(Path(temp_dir) / "batch_plan_build_conflict"),
-            ]
+                            "--plan-batch-review-bundles",
+                            "--build-batch-review-bundles",
+                            "--batch-source-file",
+                            str(batch_plan_source_file),
+                            "--batch-output-folder",
+                            str(Path(temp_dir) / "batch_plan_build_conflict"),
+                        ],
+            'Use only one list/explain mode at a time',
         )
-        assert error_code == 2
-        assert "Use only one list/explain mode at a time" in batch_plan_build_conflict_error
 
-        error_code, batch_plan_full_review_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--plan-batch-review-bundles",
-                "--batch-source-file",
-                str(batch_plan_source_file),
-                "--batch-output-folder",
-                str(Path(temp_dir) / "batch_plan_full_review_conflict"),
-                "--full-review-files",
-            ]
+                            "--plan-batch-review-bundles",
+                            "--batch-source-file",
+                            str(batch_plan_source_file),
+                            "--batch-output-folder",
+                            str(Path(temp_dir) / "batch_plan_full_review_conflict"),
+                            "--full-review-files",
+                        ],
+            'dry-run mode',
         )
-        assert error_code == 2
-        assert "dry-run mode" in batch_plan_full_review_error
 
         batch_source_file = Path(temp_dir) / "batch_sources_cli.txt"
         batch_source_file.write_text(
@@ -2251,59 +2203,49 @@ def run_self_test() -> None:
         assert parsed_batch_report["folder_verification_report_written"] is True
         assert Path(parsed_batch_report["folder_verification_report_path"]).is_file()
 
-        error_code, batch_missing_source_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--build-batch-review-bundles",
-                "--batch-output-folder",
-                str(Path(temp_dir) / "batch_missing_source"),
-            ]
-        )
-        assert error_code == 2
-        assert (
-            "--batch-source-file is required when --build-batch-review-bundles is used"
-            in batch_missing_source_error
+                            "--build-batch-review-bundles",
+                            "--batch-output-folder",
+                            str(Path(temp_dir) / "batch_missing_source"),
+                        ],
+            '--batch-source-file is required when --build-batch-review-bundles is used',
         )
 
-        error_code, batch_missing_output_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--build-batch-review-bundles",
-                "--batch-source-file",
-                str(batch_source_file),
-            ]
-        )
-        assert error_code == 2
-        assert (
-            "--batch-output-folder is required when --build-batch-review-bundles is used"
-            in batch_missing_output_error
+                            "--build-batch-review-bundles",
+                            "--batch-source-file",
+                            str(batch_source_file),
+                        ],
+            '--batch-output-folder is required when --build-batch-review-bundles is used',
         )
 
-        error_code, batch_folder_verify_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--build-batch-review-bundles",
-                "--verify-review-bundle-folder",
-                "--batch-source-file",
-                str(batch_source_file),
-                "--batch-output-folder",
-                str(Path(temp_dir) / "batch_conflict"),
-                "--review-bundle-folder",
-                str(folder_verify_dir),
-            ]
+                            "--build-batch-review-bundles",
+                            "--verify-review-bundle-folder",
+                            "--batch-source-file",
+                            str(batch_source_file),
+                            "--batch-output-folder",
+                            str(Path(temp_dir) / "batch_conflict"),
+                            "--review-bundle-folder",
+                            str(folder_verify_dir),
+                        ],
+            'Use only one list/explain mode at a time',
         )
-        assert error_code == 2
-        assert "Use only one list/explain mode at a time" in batch_folder_verify_error
 
-        error_code, batch_full_review_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--build-batch-review-bundles",
-                "--batch-source-file",
-                str(batch_source_file),
-                "--batch-output-folder",
-                str(Path(temp_dir) / "batch_full_review_conflict"),
-                "--full-review-files",
-            ]
+                            "--build-batch-review-bundles",
+                            "--batch-source-file",
+                            str(batch_source_file),
+                            "--batch-output-folder",
+                            str(Path(temp_dir) / "batch_full_review_conflict"),
+                            "--full-review-files",
+                        ],
+            'cannot be combined with manual prepare/write/review flags',
         )
-        assert error_code == 2
-        assert "cannot be combined with manual prepare/write/review flags" in batch_full_review_error
 
         exit_code, reconcile_text_output = _run_cli(
             [
@@ -2450,155 +2392,130 @@ def run_self_test() -> None:
         assert exit_code == 0
         assert json.loads(reconcile_report_overwrite_json_output)["report_written"] is True
 
-        error_code, reconcile_missing_source_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--reconcile-batch-review-bundles",
-                "--batch-output-folder",
-                str(Path(temp_dir) / "reconcile_missing_source"),
-            ]
-        )
-        assert error_code == 2
-        assert (
-            "--batch-source-file is required when --reconcile-batch-review-bundles is used"
-            in reconcile_missing_source_error
+                            "--reconcile-batch-review-bundles",
+                            "--batch-output-folder",
+                            str(Path(temp_dir) / "reconcile_missing_source"),
+                        ],
+            '--batch-source-file is required when --reconcile-batch-review-bundles is used',
         )
 
-        error_code, reconcile_missing_output_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--reconcile-batch-review-bundles",
-                "--batch-source-file",
-                str(batch_source_file),
-            ]
-        )
-        assert error_code == 2
-        assert (
-            "--batch-output-folder is required when --reconcile-batch-review-bundles is used"
-            in reconcile_missing_output_error
+                            "--reconcile-batch-review-bundles",
+                            "--batch-source-file",
+                            str(batch_source_file),
+                        ],
+            '--batch-output-folder is required when --reconcile-batch-review-bundles is used',
         )
 
-        error_code, reconcile_plan_conflict_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--reconcile-batch-review-bundles",
-                "--plan-batch-review-bundles",
-                "--batch-source-file",
-                str(batch_source_file),
-                "--batch-output-folder",
-                str(batch_output_folder),
-            ]
+                            "--reconcile-batch-review-bundles",
+                            "--plan-batch-review-bundles",
+                            "--batch-source-file",
+                            str(batch_source_file),
+                            "--batch-output-folder",
+                            str(batch_output_folder),
+                        ],
+            'Use only one list/explain mode at a time',
         )
-        assert error_code == 2
-        assert "Use only one list/explain mode at a time" in reconcile_plan_conflict_error
 
-        error_code, reconcile_full_review_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--reconcile-batch-review-bundles",
-                "--batch-source-file",
-                str(batch_source_file),
-                "--batch-output-folder",
-                str(batch_output_folder),
-                "--full-review-files",
-            ]
+                            "--reconcile-batch-review-bundles",
+                            "--batch-source-file",
+                            str(batch_source_file),
+                            "--batch-output-folder",
+                            str(batch_output_folder),
+                            "--full-review-files",
+                        ],
+            'cannot be combined',
         )
-        assert error_code == 2
-        assert "cannot be combined" in reconcile_full_review_error
 
-        error_code, bundle_missing_base_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--build-review-bundle",
-                "--source-url",
-                f"https://www.youtube.com/watch?v={VALID_ID}",
-            ]
+                            "--build-review-bundle",
+                            "--source-url",
+                            f"https://www.youtube.com/watch?v={VALID_ID}",
+                        ],
+            '--base-folder is required when --build-review-bundle is used',
         )
-        assert error_code == 2
-        assert "--base-folder is required when --build-review-bundle is used" in bundle_missing_base_error
 
-        error_code, bundle_missing_source_error = _run_cli_error(
-            ["--build-review-bundle", "--base-folder", temp_dir]
-        )
-        assert error_code == 2
-        assert "--source-url is required when --build-review-bundle is used" in bundle_missing_source_error
+        _assert_cli_error(["--build-review-bundle", "--base-folder", temp_dir], '--source-url is required when --build-review-bundle is used')
 
-        error_code, bundle_inspect_zip_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--build-review-bundle",
-                "--inspect-zip",
-                "--base-folder",
-                temp_dir,
-                "--source-url",
-                f"https://www.youtube.com/watch?v={VALID_ID}",
-                "--zip-path",
-                str(default_zip_path),
-            ]
+                            "--build-review-bundle",
+                            "--inspect-zip",
+                            "--base-folder",
+                            temp_dir,
+                            "--source-url",
+                            f"https://www.youtube.com/watch?v={VALID_ID}",
+                            "--zip-path",
+                            str(default_zip_path),
+                        ],
+            'Use only one list/explain mode at a time',
         )
-        assert error_code == 2
-        assert "Use only one list/explain mode at a time" in bundle_inspect_zip_error
 
-        error_code, bundle_full_review_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--build-review-bundle",
-                "--base-folder",
-                temp_dir,
-                "--source-url",
-                f"https://www.youtube.com/watch?v={VALID_ID}",
-                "--full-review-files",
-            ]
+                            "--build-review-bundle",
+                            "--base-folder",
+                            temp_dir,
+                            "--source-url",
+                            f"https://www.youtube.com/watch?v={VALID_ID}",
+                            "--full-review-files",
+                        ],
+            'implies full review files',
         )
-        assert error_code == 2
-        assert "implies full review files" in bundle_full_review_error
 
-        error_code, inspect_zip_missing_path_error = _run_cli_error(["--inspect-zip"])
-        assert error_code == 2
-        assert "--zip-path is required when --inspect-zip is used" in inspect_zip_missing_path_error
+        _assert_cli_error(["--inspect-zip"], '--zip-path is required when --inspect-zip is used')
 
-        error_code, sidecar_missing_path_error = _run_cli_error(["--write-zip-sidecars"])
-        assert error_code == 2
-        assert "--zip-path is required when --write-zip-sidecars is used" in sidecar_missing_path_error
+        _assert_cli_error(["--write-zip-sidecars"], '--zip-path is required when --write-zip-sidecars is used')
 
-        error_code, inspect_zip_zip_package_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--inspect-zip",
-                "--zip-package",
-                "--zip-path",
-                str(default_zip_path),
-                "--package-folder",
-                full_review_package_folder,
-            ]
+                            "--inspect-zip",
+                            "--zip-package",
+                            "--zip-path",
+                            str(default_zip_path),
+                            "--package-folder",
+                            full_review_package_folder,
+                        ],
+            'Use only one list/explain mode at a time',
         )
-        assert error_code == 2
-        assert "Use only one list/explain mode at a time" in inspect_zip_zip_package_error
 
-        error_code, sidecar_inspect_zip_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--write-zip-sidecars",
-                "--inspect-zip",
-                "--zip-path",
-                str(default_zip_path),
-            ]
+                            "--write-zip-sidecars",
+                            "--inspect-zip",
+                            "--zip-path",
+                            str(default_zip_path),
+                        ],
+            'Use only one list/explain mode at a time',
         )
-        assert error_code == 2
-        assert "Use only one list/explain mode at a time" in sidecar_inspect_zip_error
 
-        error_code, inspect_zip_write_flag_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--inspect-zip",
-                "--zip-path",
-                str(default_zip_path),
-                "--full-review-files",
-            ]
+                            "--inspect-zip",
+                            "--zip-path",
+                            str(default_zip_path),
+                            "--full-review-files",
+                        ],
+            'read-only',
         )
-        assert error_code == 2
-        assert "read-only" in inspect_zip_write_flag_error
 
-        error_code, sidecar_write_flag_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--write-zip-sidecars",
-                "--zip-path",
-                str(default_zip_path),
-                "--full-review-files",
-            ]
+                            "--write-zip-sidecars",
+                            "--zip-path",
+                            str(default_zip_path),
+                            "--full-review-files",
+                        ],
+            'cannot be combined with prepare/write/review flags',
         )
-        assert error_code == 2
-        assert "cannot be combined with prepare/write/review flags" in sidecar_write_flag_error
 
         extra_file = Path(full_review_package_folder) / "extra_local_note.txt"
         extra_file.write_text("local note", encoding="utf-8")
@@ -2690,59 +2607,51 @@ def run_self_test() -> None:
         assert exit_code == 0
         assert json.loads(inspect_multiple_manifest_output)["status"] == "multiple_manifests"
 
-        error_code, inspect_missing_folder_error = _run_cli_error(["--inspect-package"])
-        assert error_code == 2
-        assert "--package-folder is required when --inspect-package is used" in inspect_missing_folder_error
+        _assert_cli_error(["--inspect-package"], '--package-folder is required when --inspect-package is used')
 
-        error_code, inspect_explain_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--inspect-package",
-                "--package-folder",
-                full_review_package_folder,
-                "--explain-plan",
-                "--source-url",
-                f"https://www.youtube.com/watch?v={VALID_ID}",
-            ]
+                            "--inspect-package",
+                            "--package-folder",
+                            full_review_package_folder,
+                            "--explain-plan",
+                            "--source-url",
+                            f"https://www.youtube.com/watch?v={VALID_ID}",
+                        ],
+            'Use only one list/explain mode at a time',
         )
-        assert error_code == 2
-        assert "Use only one list/explain mode at a time" in inspect_explain_error
 
-        error_code, inspect_write_flag_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--inspect-package",
-                "--package-folder",
-                full_review_package_folder,
-                "--full-review-files",
-            ]
+                            "--inspect-package",
+                            "--package-folder",
+                            full_review_package_folder,
+                            "--full-review-files",
+                        ],
+            'read-only',
         )
-        assert error_code == 2
-        assert "read-only" in inspect_write_flag_error
 
-        error_code, zip_missing_folder_error = _run_cli_error(["--zip-package"])
-        assert error_code == 2
-        assert "--package-folder is required when --zip-package is used" in zip_missing_folder_error
+        _assert_cli_error(["--zip-package"], '--package-folder is required when --zip-package is used')
 
-        error_code, zip_inspect_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--zip-package",
-                "--inspect-package",
-                "--package-folder",
-                full_review_package_folder,
-            ]
+                            "--zip-package",
+                            "--inspect-package",
+                            "--package-folder",
+                            full_review_package_folder,
+                        ],
+            'Use only one list/explain mode at a time',
         )
-        assert error_code == 2
-        assert "Use only one list/explain mode at a time" in zip_inspect_error
 
-        error_code, zip_write_flag_error = _run_cli_error(
+        _assert_cli_error(
             [
-                "--zip-package",
-                "--package-folder",
-                full_review_package_folder,
-                "--full-review-files",
-            ]
+                            "--zip-package",
+                            "--package-folder",
+                            full_review_package_folder,
+                            "--full-review-files",
+                        ],
+            'cannot be combined with prepare/write/review flags',
         )
-        assert error_code == 2
-        assert "cannot be combined with prepare/write/review flags" in zip_write_flag_error
 
         exit_code, full_review_no_plan_register_output = _run_cli(
             [
