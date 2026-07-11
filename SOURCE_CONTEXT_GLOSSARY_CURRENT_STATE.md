@@ -366,3 +366,6 @@ Evidence bundle local-only scope invariants now include negative file-state key 
 
 
 Evidence bundle local-only scope invariants now exercise the full forbidden file-state key set in negative tests, keeping the helper and forbidden-key list synchronized.
+
+
+Evidence bundle local-only scope invariants now check CLI outputs do not leak temporary JSON input filenames, keeping rendered metadata detached from test input files.

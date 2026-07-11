@@ -295,3 +295,6 @@ Evidence bundle local-only scope invariant testing now includes negative asserti
 
 
 Evidence bundle local-only scope invariant testing now rejects every configured forbidden file-state key through explicit negative test iteration.
+
+
+Evidence bundle local-only scope invariant testing now verifies standalone, backend-plan, and Total Export CLI outputs do not leak temporary JSON input filenames.

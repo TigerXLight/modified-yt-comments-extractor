@@ -131,7 +131,11 @@ def _assert_no_temp_path_leak(output: str, temp_dir: str) -> None:
         temp_path.as_posix(),
         temp_path.name,
     }
-    for temp_string in temp_strings:
+    input_file_names = {
+        "backend_plan.json",
+        "evidence_bundle.json",
+    }
+    for temp_string in temp_strings.union(input_file_names):
         assert temp_string not in output, output
 
 

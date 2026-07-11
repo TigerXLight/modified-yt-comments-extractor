@@ -400,3 +400,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now iterates over the full `FORBIDDEN_FILE_STATE_KEYS` set for negative checks, so every forbidden file-state key must be rejected by the invariant helper.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now asserts JSON/text/Markdown CLI outputs do not leak the temporary input filenames (`evidence_bundle.json` or `backend_plan.json`) in addition to temp directory paths.
