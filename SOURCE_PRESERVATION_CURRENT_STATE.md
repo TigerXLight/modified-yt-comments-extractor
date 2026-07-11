@@ -416,3 +416,5 @@ Total Export bundle index reconciliation CLI tests now share invalid-command res
 Total Export ZIP sidecar tests now share SHA256/inspection JSON write-state checks while preserving metadata-only ZIP sidecar, no-extraction, network/API, download, archive, validation, and temp-output boundaries.
 
 Total Export review bundle verification tests now share status checks while preserving metadata-only ZIP sidecar, no-extraction, network/API, download, archive, validation, mismatch, and unsafe-entry boundaries.
+
+Total Export review bundle folder verification tests now share folder count checks while preserving metadata-only ZIP sidecar, no-extraction, recursion, report-output, network/API, download, archive, validation, mismatch, and missing-sidecar boundaries.

@@ -24,6 +24,26 @@ def _build_bundle(base_folder: Path, package_id: str):
         create_asset_folders=False,
     )
 
+def _assert_folder_counts(
+    result,
+    *,
+    zip_count: int,
+    verified_count: int | None = None,
+    failed_count: int | None = None,
+    missing_sidecar_count: int | None = None,
+    mismatch_count: int | None = None,
+) -> None:
+    assert result.zip_count == zip_count
+    if verified_count is not None:
+        assert result.verified_count == verified_count
+    if failed_count is not None:
+        assert result.failed_count == failed_count
+    if missing_sidecar_count is not None:
+        assert result.missing_sidecar_count == missing_sidecar_count
+    if mismatch_count is not None:
+        assert result.mismatch_count == mismatch_count
+
+
 
 def run_self_test() -> None:
     with TemporaryDirectory() as temp_dir:
@@ -38,9 +58,7 @@ def run_self_test() -> None:
         assert discovered == tuple(sorted(discovered, key=lambda value: Path(value).name))
 
         valid = verify_total_export_review_bundle_folder(str(valid_folder))
-        assert valid.zip_count == 2
-        assert valid.verified_count == 2
-        assert valid.failed_count == 0
+        _assert_folder_counts(valid, zip_count=2, verified_count=2, failed_count=0)
         assert valid.report_written is False
         text = build_total_export_review_bundle_folder_verification_text(valid)
         assert "Total Export review bundle folder verification" in text
@@ -78,9 +96,7 @@ def run_self_test() -> None:
         missing_bundle = _build_bundle(missing_sidecar_folder, "folder missing sidecar")
         Path(missing_bundle.zip_sidecar_sha256_path).unlink()
         missing_sidecar = verify_total_export_review_bundle_folder(str(missing_sidecar_folder))
-        assert missing_sidecar.zip_count == 1
-        assert missing_sidecar.missing_sidecar_count == 1
-        assert missing_sidecar.failed_count == 1
+        _assert_folder_counts(missing_sidecar, zip_count=1, failed_count=1, missing_sidecar_count=1)
 
         mismatch_folder = root / "mismatch"
         mismatch_folder.mkdir()
@@ -90,9 +106,7 @@ def run_self_test() -> None:
             encoding="utf-8",
         )
         mismatch = verify_total_export_review_bundle_folder(str(mismatch_folder))
-        assert mismatch.zip_count == 1
-        assert mismatch.mismatch_count == 1
-        assert mismatch.failed_count == 1
+        _assert_folder_counts(mismatch, zip_count=1, failed_count=1, mismatch_count=1)
 
         recursive_folder = root / "recursive"
         recursive_folder.mkdir()
@@ -148,8 +162,7 @@ def run_self_test() -> None:
         empty_folder = root / "empty"
         empty_folder.mkdir()
         empty = verify_total_export_review_bundle_folder(str(empty_folder))
-        assert empty.zip_count == 0
-        assert empty.failed_count == 0
+        _assert_folder_counts(empty, zip_count=0, failed_count=0)
         assert empty.errors == ()
 
         with_entries = verify_total_export_review_bundle_folder(
@@ -157,8 +170,7 @@ def run_self_test() -> None:
             include_zip_entries=True,
             hash_zip_entries=True,
         )
-        assert with_entries.zip_count == 2
-        assert with_entries.verified_count == 2
+        _assert_folder_counts(with_entries, zip_count=2, verified_count=2)
 
 
 if __name__ == "__main__":
