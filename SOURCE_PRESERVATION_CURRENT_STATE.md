@@ -422,3 +422,5 @@ Total Export review bundle folder verification tests now share folder count chec
 Total Export batch review bundle tests now centralize repeated result-count assertions while retaining local ZIP, sidecar, folder-verification, and unsupported-source coverage.
 
 Total Export batch review reconciliation tests now centralize single-item status assertions while retaining local ZIP, sidecar, verification, report, warning, and no-network behavior.
+
+Total Export batch review plan tests now centralize row/error count assertions while retaining metadata-only source, package-path, ZIP-path, sidecar, duplicate, warning, and existing-output coverage.

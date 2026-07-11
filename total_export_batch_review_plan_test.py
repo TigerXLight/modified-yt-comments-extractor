@@ -2,6 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from total_export_batch_review_plan import (
+    TotalExportBatchReviewPlanResult,
     batch_review_plan_to_dict,
     build_total_export_batch_review_plan,
     build_total_export_batch_review_plan_text,
@@ -14,6 +15,16 @@ CANONICAL_URL = f"https://www.youtube.com/watch?v={VALID_ID}"
 
 def _write_batch(path: Path, rows: list[str]) -> None:
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+def _assert_row_error_counts(
+    result: TotalExportBatchReviewPlanResult,
+    *,
+    rows: int,
+    errors: int,
+) -> None:
+    assert result.row_count == rows
+    assert result.error_count == errors
 
 
 def run_self_test() -> None:
@@ -37,9 +48,8 @@ def run_self_test() -> None:
             base_folder=str(output_folder),
             selected_capture_options=["comments"],
         )
-        assert plan.row_count == 3
+        _assert_row_error_counts(plan, rows=3, errors=0)
         assert plan.ready_count == 3
-        assert plan.error_count == 0
         assert plan.items[0].package_id.startswith("batch_line_3_")
         assert plan.items[1].package_id == "plan package two"
         assert plan.items[2].title == "Clip Title"
@@ -74,8 +84,7 @@ def run_self_test() -> None:
             batch_source_file=str(root / "missing.txt"),
             base_folder=str(root / "missing_output"),
         )
-        assert missing.row_count == 0
-        assert missing.error_count == 1
+        _assert_row_error_counts(missing, rows=0, errors=1)
         assert missing.errors
 
         duplicate_file = root / "duplicates.txt"
@@ -101,8 +110,7 @@ def run_self_test() -> None:
             batch_source_file=str(empty_file),
             base_folder=str(root / "empty_output"),
         )
-        assert empty.row_count == 1
-        assert empty.error_count == 1
+        _assert_row_error_counts(empty, rows=1, errors=1)
         assert empty.items[0].errors
 
         unsupported_file = root / "unsupported.txt"
@@ -111,9 +119,8 @@ def run_self_test() -> None:
             batch_source_file=str(unsupported_file),
             base_folder=str(root / "unsupported_output"),
         )
-        assert unsupported.row_count == 1
+        _assert_row_error_counts(unsupported, rows=1, errors=0)
         assert unsupported.ready_count == 1
-        assert unsupported.error_count == 0
         assert unsupported.warning_count == 1
         assert unsupported.items[0].source_supported is False
         assert "No source adapter supports the URL: https://example.com/article" in unsupported.items[0].warnings

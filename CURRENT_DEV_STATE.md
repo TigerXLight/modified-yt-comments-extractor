@@ -903,3 +903,4 @@ Next local-ASR branches:
 - The Total Export review bundle folder verification tests now include a batched cleanup pass that shares folder count assertions while preserving missing-sidecar, mismatch, recursion, report, and empty-folder diagnostics.
 - The Total Export batch review bundle tests now share row/success/failure count assertions across complete, missing-input, repeated-output, and unsupported-source scenarios without changing behavior.
 - The Total Export batch review reconcile tests now share single-item status assertions across missing-ZIP, invalid-row, verified, and missing-sidecar scenarios without changing behavior.
+- The Total Export batch review plan tests now share row/error count assertions across ready, missing-input, empty-source, and unsupported-source scenarios without changing behavior.
