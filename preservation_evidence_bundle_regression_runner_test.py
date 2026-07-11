@@ -189,6 +189,9 @@ def run_self_test() -> None:
     missing_only_error = missing_only_value_result.stderr.lower()
     assert "expected" in missing_only_error or "argument" in missing_only_error
 
+    blank_label_result = _run_runner("--only", "   ")
+    _assert_unknown_label_failure(blank_label_result)
+
     unknown_result = _run_runner("--only", "missing regression group")
     _assert_unknown_label_failure(unknown_result, "missing regression group")
 

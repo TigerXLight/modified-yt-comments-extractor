@@ -374,3 +374,5 @@ Evidence bundle regression runner behavior tests now use one helper for unknown-
 Evidence bundle regression runner behavior tests now assert validation rejects duplicated valid selections mixed with an unknown label before any selected regression group runs.
 
 Evidence bundle regression runner behavior tests now cover malformed bare `--only` usage and require diagnostic-only argparse failure before any regression execution.
+
+Evidence bundle regression runner behavior tests now cover whitespace-only `--only` labels and require unknown-label diagnostics with no regression execution output.

@@ -445,3 +445,5 @@ Evidence bundle regression runner behavior coverage now shares contains-based un
 Evidence bundle regression runner behavior coverage now verifies an unknown label blocks execution even when a valid targeted label is duplicated in the same selection.
 
 Evidence bundle regression runner behavior coverage now verifies argparse rejects a bare `--only` option without emitting regression pass or aggregate success output.
+
+Evidence bundle regression runner behavior coverage now verifies whitespace-only `--only` labels are rejected as unknown before any targeted regression output appears.
