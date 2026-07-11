@@ -817,3 +817,5 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now covers mixed known/unknown `--only` selections and verifies the error still reports the unknown label plus expected choices.
 
 - Evidence bundle local-only scope invariant coverage now also asserts archive/download prohibition wording alongside scan/hash/upload/capture/network wording.
+
+- Evidence bundle local-only scope invariant coverage now asserts CLI JSON/text/Markdown outputs do not leak the temp input directory path, keeping path hints descriptive rather than resolved.

@@ -348,3 +348,6 @@ Evidence bundle regression runner behavior coverage now checks mixed known/unkno
 
 
 Evidence bundle local-only scope invariants now explicitly check archive/download prohibition wording so preservation metadata stays descriptive and non-executing.
+
+
+Evidence bundle local-only scope invariants now check rendered and structured CLI outputs do not leak temp input paths, so descriptive path hints remain non-resolved metadata.

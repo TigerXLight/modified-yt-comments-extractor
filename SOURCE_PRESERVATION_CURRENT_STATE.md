@@ -277,3 +277,6 @@ Evidence bundle regression runner behavior tests now cover mixed known/unknown `
 
 
 Evidence bundle local-only scope invariant testing now asserts archive/download prohibition wording in both structured and rendered output checks.
+
+
+Evidence bundle local-only scope invariant testing now verifies standalone, backend-plan, and Total Export CLI outputs do not leak temp input paths while carrying path hints.
