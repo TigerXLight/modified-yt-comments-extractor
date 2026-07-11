@@ -279,3 +279,6 @@ Total Export preservation-plan explanations can render explicit evidence bundle 
 
 
 Total Export evidence bundle JSON input error handling is covered for malformed JSON and non-object roots, while continuing to avoid evidence path inspection.
+
+
+Total Export evidence bundle JSON input is checked in JSON preservation-plan output so metadata fields remain stable for downstream tooling.

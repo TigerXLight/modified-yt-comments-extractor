@@ -536,6 +536,32 @@ def run_self_test() -> None:
         assert "not opened or checked" in input_bundle_output
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 
+        exit_code, input_bundle_json_output = _run_cli(
+            [
+                "--explain-preservation-plan",
+                "--source-url",
+                "https://www.telegraph.co.uk/news/example/",
+                "--preservation-backend",
+                "manual_local_files",
+                "--preservation-format",
+                "html",
+                "--evidence-bundle-input",
+                str(evidence_bundle_input_path),
+                "--json",
+            ]
+        )
+        assert exit_code == 0
+        parsed_input_bundle_plan = json.loads(input_bundle_json_output)
+        assert parsed_input_bundle_plan["evidence_bundle"]["bundle_label"] == "Input evidence"
+        assert parsed_input_bundle_plan["evidence_bundle"]["status"] == "manual_supplied"
+        assert parsed_input_bundle_plan["evidence_bundle"]["items"][0]["artifact_id"] == "screenshot"
+        assert parsed_input_bundle_plan["evidence_bundle"]["items"][0]["artifact_role"] == "primary"
+        assert parsed_input_bundle_plan["evidence_bundle"]["items"][0]["origin"] == "manual"
+        assert parsed_input_bundle_plan["evidence_bundle"]["items"][0]["path_hint"] == r"captures\comments.png"
+        assert parsed_input_bundle_plan["evidence_bundle"]["items"][0]["notes"] == "Total Export JSON input path hint only."
+        assert "no file open" in parsed_input_bundle_plan["evidence_bundle"]["scope"]
+        assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
+
         error_code, missing_bundle_input_error = _run_cli_error(
             [
                 "--explain-preservation-plan",

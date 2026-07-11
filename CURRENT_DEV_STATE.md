@@ -771,3 +771,5 @@ Next local-ASR branches:
 - Total Export preservation-plan explanations can read an explicit local evidence bundle JSON file via `--evidence-bundle-input`; this reads only that JSON file and does not inspect evidence path hints.
 
 - Total Export evidence bundle JSON input handling has regression coverage for missing files, malformed JSON, non-object JSON roots, and override rejection.
+
+- Total Export evidence bundle JSON input is now covered in both text and JSON preservation-plan explanations.

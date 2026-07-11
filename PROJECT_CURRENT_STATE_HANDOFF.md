@@ -313,3 +313,6 @@ Total Export prepare `--explain-preservation-plan` supports `--evidence-bundle-i
 
 
 Total Export evidence bundle JSON input coverage now includes missing files, malformed JSON, non-object JSON roots, and rejection of combined metadata override flags.
+
+
+Total Export evidence bundle input coverage now verifies both text output and `--json` preservation-plan output for item details and local-only scope.

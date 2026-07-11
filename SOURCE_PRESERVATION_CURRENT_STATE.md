@@ -208,3 +208,6 @@ Total Export prepare CLI supports `--evidence-bundle-input` for local evidence b
 
 
 Total Export evidence bundle JSON input validation now covers malformed JSON and non-object JSON roots, with local-only reads of the explicit JSON input path.
+
+
+Total Export evidence bundle JSON input now has JSON-output regression coverage for bundle label, item details, path hints, notes, and local-only scope.
