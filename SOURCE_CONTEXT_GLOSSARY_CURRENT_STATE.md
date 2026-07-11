@@ -303,3 +303,6 @@ Evidence bundle JSON helper tests now verify that source and item metadata field
 
 
 Evidence bundle JSON helper tests now cover optional `None` normalization for local metadata fields, preserving empty path hints as descriptive labels only.
+
+
+Evidence bundle regression coverage can now be listed or selectively run through `preservation_evidence_bundle_regression_test.py --list` and `--only LABEL`.

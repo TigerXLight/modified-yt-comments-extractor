@@ -337,3 +337,6 @@ Evidence bundle JSON helper validation now covers non-string source metadata fie
 
 
 Evidence bundle JSON helper validation now confirms optional `None` source/item metadata normalizes to empty/default metadata while required artifact fields remain strict.
+
+
+The aggregate `preservation_evidence_bundle_regression_test.py` runner now supports `--list` and repeatable `--only LABEL`, so future sessions can run the whole evidence-bundle suite or a targeted subset without editing code.
