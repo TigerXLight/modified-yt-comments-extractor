@@ -485,3 +485,5 @@ Source capture/context CLI coverage now includes a batched cleanup pass for cons
 Total Export bundle index reconciliation CLI coverage now includes a batched cleanup pass for consistent invalid-input diagnostics and local-only ZIP/index semantics.
 
 Total Export ZIP sidecar coverage now includes a batched cleanup pass for shared SHA256/inspection JSON write-state assertions and local-only ZIP sidecar semantics.
+
+Total Export review bundle verification coverage now includes a batched cleanup pass for shared status assertions and local-only ZIP sidecar diagnostics.

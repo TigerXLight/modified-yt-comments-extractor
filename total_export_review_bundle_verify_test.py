@@ -54,6 +54,10 @@ def _tamper_inspection_json(json_path: str, field: str, value) -> None:
     data["zip_inspection"][field] = value
     Path(json_path).write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+def _assert_review_bundle_status(result, expected_status: str) -> None:
+    assert result.status == expected_status
+
+
 
 def run_self_test() -> None:
     with TemporaryDirectory() as temp_dir:
@@ -65,7 +69,7 @@ def run_self_test() -> None:
             create_asset_folders=False,
         )
         result = verify_total_export_review_bundle(bundle.zip_path)
-        assert result.status == REVIEW_BUNDLE_VERIFY_STATUS_VERIFIED
+        _assert_review_bundle_status(result, REVIEW_BUNDLE_VERIFY_STATUS_VERIFIED)
         assert result.zip_found is True
         assert result.zip_readable is True
         assert result.zip_sha256
@@ -131,7 +135,7 @@ def run_self_test() -> None:
         assert as_dict["status"] == REVIEW_BUNDLE_VERIFY_STATUS_VERIFIED
 
         missing_zip = verify_total_export_review_bundle(str(Path(temp_dir) / "missing.zip"))
-        assert missing_zip.status == REVIEW_BUNDLE_VERIFY_STATUS_MISSING_ZIP
+        _assert_review_bundle_status(missing_zip, REVIEW_BUNDLE_VERIFY_STATUS_MISSING_ZIP)
 
         missing_sha_bundle = build_total_export_review_bundle(
             base_folder=temp_dir,
@@ -142,7 +146,7 @@ def run_self_test() -> None:
         )
         Path(missing_sha_bundle.zip_sidecar_sha256_path).unlink()
         missing_sha = verify_total_export_review_bundle(missing_sha_bundle.zip_path)
-        assert missing_sha.status == REVIEW_BUNDLE_VERIFY_STATUS_MISSING_SIDECAR
+        _assert_review_bundle_status(missing_sha, REVIEW_BUNDLE_VERIFY_STATUS_MISSING_SIDECAR)
         assert missing_sha.sha256_sidecar_found is False
 
         missing_json_bundle = build_total_export_review_bundle(
@@ -154,7 +158,7 @@ def run_self_test() -> None:
         )
         Path(missing_json_bundle.zip_sidecar_json_path).unlink()
         missing_json = verify_total_export_review_bundle(missing_json_bundle.zip_path)
-        assert missing_json.status == REVIEW_BUNDLE_VERIFY_STATUS_MISSING_SIDECAR
+        _assert_review_bundle_status(missing_json, REVIEW_BUNDLE_VERIFY_STATUS_MISSING_SIDECAR)
         assert missing_json.inspection_json_found is False
 
         malformed_sha_bundle = build_total_export_review_bundle(
@@ -166,7 +170,7 @@ def run_self_test() -> None:
         )
         Path(malformed_sha_bundle.zip_sidecar_sha256_path).write_text("not a sha\n", encoding="utf-8")
         malformed_sha = verify_total_export_review_bundle(malformed_sha_bundle.zip_path)
-        assert malformed_sha.status == REVIEW_BUNDLE_VERIFY_STATUS_INVALID_SIDECAR
+        _assert_review_bundle_status(malformed_sha, REVIEW_BUNDLE_VERIFY_STATUS_INVALID_SIDECAR)
         assert malformed_sha.sha256_sidecar_valid is False
 
         sha_mismatch_bundle = build_total_export_review_bundle(
@@ -181,7 +185,7 @@ def run_self_test() -> None:
             encoding="utf-8",
         )
         sha_mismatch = verify_total_export_review_bundle(sha_mismatch_bundle.zip_path)
-        assert sha_mismatch.status == REVIEW_BUNDLE_VERIFY_STATUS_MISMATCH
+        _assert_review_bundle_status(sha_mismatch, REVIEW_BUNDLE_VERIFY_STATUS_MISMATCH)
         assert sha_mismatch.hash_matches_sha256_sidecar is False
 
         filename_mismatch_bundle = build_total_export_review_bundle(
@@ -196,7 +200,7 @@ def run_self_test() -> None:
             encoding="utf-8",
         )
         filename_mismatch = verify_total_export_review_bundle(filename_mismatch_bundle.zip_path)
-        assert filename_mismatch.status == REVIEW_BUNDLE_VERIFY_STATUS_INVALID_SIDECAR
+        _assert_review_bundle_status(filename_mismatch, REVIEW_BUNDLE_VERIFY_STATUS_INVALID_SIDECAR)
         assert filename_mismatch.sha256_sidecar_valid is False
 
         malformed_json_bundle = build_total_export_review_bundle(
@@ -208,7 +212,7 @@ def run_self_test() -> None:
         )
         Path(malformed_json_bundle.zip_sidecar_json_path).write_text("{not json", encoding="utf-8")
         malformed_json = verify_total_export_review_bundle(malformed_json_bundle.zip_path)
-        assert malformed_json.status == REVIEW_BUNDLE_VERIFY_STATUS_INVALID_SIDECAR
+        _assert_review_bundle_status(malformed_json, REVIEW_BUNDLE_VERIFY_STATUS_INVALID_SIDECAR)
         assert malformed_json.inspection_json_readable is False
 
         json_hash_bundle = build_total_export_review_bundle(
@@ -220,7 +224,7 @@ def run_self_test() -> None:
         )
         _tamper_inspection_json(json_hash_bundle.zip_sidecar_json_path, "zip_sha256", "0" * 64)
         json_hash_mismatch = verify_total_export_review_bundle(json_hash_bundle.zip_path)
-        assert json_hash_mismatch.status == REVIEW_BUNDLE_VERIFY_STATUS_MISMATCH
+        _assert_review_bundle_status(json_hash_mismatch, REVIEW_BUNDLE_VERIFY_STATUS_MISMATCH)
         assert json_hash_mismatch.hash_matches_inspection_json is False
 
         json_size_bundle = build_total_export_review_bundle(
@@ -232,7 +236,7 @@ def run_self_test() -> None:
         )
         _tamper_inspection_json(json_size_bundle.zip_sidecar_json_path, "zip_size_bytes", 1)
         json_size_mismatch = verify_total_export_review_bundle(json_size_bundle.zip_path)
-        assert json_size_mismatch.status == REVIEW_BUNDLE_VERIFY_STATUS_MISMATCH
+        _assert_review_bundle_status(json_size_mismatch, REVIEW_BUNDLE_VERIFY_STATUS_MISMATCH)
         assert json_size_mismatch.size_matches_inspection_json is False
 
         json_count_bundle = build_total_export_review_bundle(
@@ -244,14 +248,14 @@ def run_self_test() -> None:
         )
         _tamper_inspection_json(json_count_bundle.zip_sidecar_json_path, "entry_count", 1)
         json_count_mismatch = verify_total_export_review_bundle(json_count_bundle.zip_path)
-        assert json_count_mismatch.status == REVIEW_BUNDLE_VERIFY_STATUS_MISMATCH
+        _assert_review_bundle_status(json_count_mismatch, REVIEW_BUNDLE_VERIFY_STATUS_MISMATCH)
         assert json_count_mismatch.entry_count_matches_inspection_json is False
 
         unsafe_zip_path = str(Path(temp_dir) / "unsafe.zip")
         _write_zip(Path(unsafe_zip_path), [("../evil.txt", b"bad")])
         _write_matching_sidecars(unsafe_zip_path)
         unsafe = verify_total_export_review_bundle(unsafe_zip_path)
-        assert unsafe.status == REVIEW_BUNDLE_VERIFY_STATUS_UNSAFE_ZIP
+        _assert_review_bundle_status(unsafe, REVIEW_BUNDLE_VERIFY_STATUS_UNSAFE_ZIP)
         assert "../evil.txt" in unsafe.unsafe_entries
 
         with_entries = verify_total_export_review_bundle(
@@ -259,7 +263,7 @@ def run_self_test() -> None:
             include_zip_entries=True,
             hash_zip_entries=True,
         )
-        assert with_entries.status == REVIEW_BUNDLE_VERIFY_STATUS_VERIFIED
+        _assert_review_bundle_status(with_entries, REVIEW_BUNDLE_VERIFY_STATUS_VERIFIED)
 
 
 if __name__ == "__main__":

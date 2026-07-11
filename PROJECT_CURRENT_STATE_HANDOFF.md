@@ -519,3 +519,5 @@ Evidence bundle JSON input validation now has a batched helper/CLI audit proving
 `total_export_bundle_index_reconcile_cli_test.py` now shares invalid-command assertion helpers for local bundle index reconciliation CLI coverage.
 
 `total_export_zip_sidecar_test.py` now shares ZIP sidecar write-state assertions for SHA256 and inspection JSON outputs while preserving local-only review-bundle semantics.
+
+`total_export_review_bundle_verify_test.py` now shares review-bundle verification status assertions while preserving sidecar, hash, size, entry-count, and unsafe-ZIP diagnostic coverage.
