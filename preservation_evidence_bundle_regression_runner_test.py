@@ -73,6 +73,12 @@ def _assert_no_success_output(result: subprocess.CompletedProcess[str]) -> None:
     assert ": passed" not in result.stderr, result.stderr
 
 
+def _assert_no_regression_output(stdout: str) -> None:
+    assert _passed_labels(stdout) == ()
+    assert ": passed" not in stdout
+    assert SUCCESS_BANNER not in stdout
+
+
 def _assert_argument_parse_failure(
     result: subprocess.CompletedProcess[str],
     *expected_stderr_tokens: str,
@@ -114,9 +120,8 @@ def run_self_test() -> None:
     assert EXPECTED_LABELS[-1] == RUNNER_BEHAVIOR_LABEL
     assert len(set(_listed_labels(list_result.stdout))) == len(EXPECTED_LABELS)
     assert list_result.stderr == ""
-    assert _passed_labels(list_result.stdout) == ()
+    _assert_no_regression_output(list_result.stdout)
     assert "passed" not in list_result.stdout
-    assert SUCCESS_BANNER not in list_result.stdout
 
     help_result = _run_runner("--help")
     assert help_result.returncode == 0
@@ -124,9 +129,7 @@ def run_self_test() -> None:
     assert "usage:" in help_result.stdout.lower()
     assert "--list" in help_result.stdout
     assert "--only" in help_result.stdout
-    assert _passed_labels(help_result.stdout) == ()
-    assert ": passed" not in help_result.stdout
-    assert SUCCESS_BANNER not in help_result.stdout
+    _assert_no_regression_output(help_result.stdout)
 
     only_result = _run_runner("--only", "evidence bundle JSON helper validation")
     assert "evidence bundle JSON helper validation: passed" in only_result.stdout

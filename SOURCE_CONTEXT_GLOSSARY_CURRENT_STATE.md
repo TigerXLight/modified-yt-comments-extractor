@@ -455,3 +455,5 @@ Evidence bundle regression runner behavior coverage now verifies unexpected posi
 Evidence bundle regression runner behavior coverage now shares argparse-style malformed argument assertions across bare `--only` and unexpected positional failures.
 
 Evidence bundle regression runner behavior coverage now verifies `--help` documents `--list` and `--only` without emitting regression pass lines or the aggregate success banner.
+
+Evidence bundle regression runner behavior coverage now shares no-regression-output assertions across `--list` and `--help` while preserving their mode-specific diagnostics.
