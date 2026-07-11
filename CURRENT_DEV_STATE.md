@@ -777,3 +777,5 @@ Next local-ASR branches:
 - Preservation evidence bundle JSON helpers have focused regression coverage for item object validation, string field types, catalog values, duplicate artifact IDs, and invalid capture-method IDs.
 
 - Preservation backend plan CLI input JSON now has regression coverage for nested evidence bundle item validation errors, invalid capture-method IDs, and duplicate artifact IDs.
+
+- Total Export evidence bundle input now has CLI-level regression coverage for malformed nested item metadata, invalid capture-method IDs, and duplicate artifact IDs.

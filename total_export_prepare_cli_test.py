@@ -601,6 +601,91 @@ def run_self_test() -> None:
         list_bundle_input_path.unlink()
         assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
 
+        bad_items_bundle_input_path = Path(temp_dir) / "bad_total_export_input_bundle_items.json"
+        bad_items_bundle_input_path.write_text(
+            json.dumps({"items": "screenshot"}),
+            encoding="utf-8",
+        )
+        error_code, bad_items_bundle_input_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--evidence-bundle-input",
+                str(bad_items_bundle_input_path),
+            ]
+        )
+        assert error_code == 2
+        assert "evidence_bundle.items must be a list" in bad_items_bundle_input_error
+        bad_items_bundle_input_path.unlink()
+        assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
+
+        bad_item_bundle_input_path = Path(temp_dir) / "bad_total_export_input_bundle_item.json"
+        bad_item_bundle_input_path.write_text(
+            json.dumps({"items": ["screenshot"]}),
+            encoding="utf-8",
+        )
+        error_code, bad_item_bundle_input_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--evidence-bundle-input",
+                str(bad_item_bundle_input_path),
+            ]
+        )
+        assert error_code == 2
+        assert "evidence bundle item must be an object" in bad_item_bundle_input_error
+        bad_item_bundle_input_path.unlink()
+        assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
+
+        bad_capture_bundle_input_path = Path(temp_dir) / "bad_total_export_input_bundle_capture_method.json"
+        bad_capture_bundle_input_path.write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "artifact_id": "screenshot",
+                            "artifact_format": "png",
+                            "capture_method_id": "unknown_capture",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        error_code, bad_capture_bundle_input_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--evidence-bundle-input",
+                str(bad_capture_bundle_input_path),
+            ]
+        )
+        assert error_code == 2
+        assert "invalid capture method ID" in bad_capture_bundle_input_error
+        bad_capture_bundle_input_path.unlink()
+        assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
+
+        duplicate_bundle_input_path = Path(temp_dir) / "bad_total_export_input_bundle_duplicate_item.json"
+        duplicate_bundle_input_path.write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {"artifact_id": "screenshot", "artifact_format": "png"},
+                        {"artifact_id": "screenshot", "artifact_format": "html"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        error_code, duplicate_bundle_input_error = _run_cli_error(
+            [
+                "--explain-preservation-plan",
+                "--evidence-bundle-input",
+                str(duplicate_bundle_input_path),
+            ]
+        )
+        assert error_code == 2
+        assert "duplicate artifact IDs: screenshot" in duplicate_bundle_input_error
+        duplicate_bundle_input_path.unlink()
+        assert list(Path(temp_dir).iterdir()) == [evidence_bundle_input_path]
+
         error_code, override_bundle_input_error = _run_cli_error(
             [
                 "--explain-preservation-plan",

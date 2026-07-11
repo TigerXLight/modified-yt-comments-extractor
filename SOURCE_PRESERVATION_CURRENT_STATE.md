@@ -217,3 +217,6 @@ Preservation evidence bundle JSON helper validation now has focused tests for ma
 
 
 Preservation backend plan CLI input JSON validation now covers malformed nested evidence bundle item metadata, invalid capture-method IDs, and duplicate artifact IDs. These remain metadata-only checks.
+
+
+Total Export evidence bundle input validation now covers malformed nested item metadata, invalid capture-method IDs, and duplicate artifact IDs at the CLI layer, still without inspecting evidence path hints.

@@ -322,3 +322,6 @@ Preservation evidence bundle JSON helper validation is now covered by a focused 
 
 
 Preservation backend plan CLI input JSON coverage now includes nested evidence bundle item-list validation, item object validation, invalid capture-method IDs, and duplicate artifact IDs.
+
+
+Total Export `--evidence-bundle-input` coverage now includes nested item-list validation, item object validation, invalid capture-method IDs, and duplicate artifact IDs at the CLI level.
