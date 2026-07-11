@@ -293,6 +293,133 @@ Planned fields:
 - Consider placing Total Export near the Source URLs/evidence capture controls rather than burying it with quick exports.
 - Archive Check can be default-on inside Total Export; Archive Submit should stay explicit.
 
+## Future Add Media / Evidence Item Queue
+
+- The current Add Media flow should evolve into a short selectable media/evidence item queue at the left or right of the workspace.
+- Adding local media, source URLs, text/reference files, subtitle files, screenshots, manual imports, archive URLs, or local evidence notes should add one explicit item to the queue.
+- Selecting an item should show its role, linked source URL, local path, status, and available item-specific actions.
+- Planned actions include:
+  - Edit a subtitle file.
+  - Inspect a transcript or text file.
+  - Attach media to a source URL.
+  - Attach a screenshot or HTML/text snapshot to a source URL.
+  - Mark an item as a manual import.
+  - Assign a role such as source media, screenshot, transcript, sidecar, evidence note, archive note, or reference file.
+  - Remove an item from the current working set without implying deletion of the source file.
+- Source URL items and local media/reference items must retain explicit, separate roles. The queue should support both evidence/source work and ASR work without blending their meanings.
+- Older local ASR/reference workflows must remain possible, including combinations of a YouTube URL, TXT reference file, source MP4/media file, and subtitle/transcript file.
+- ASR reference-accuracy work should preserve a clear pairing among media, reference text, subtitle/transcript output, engine/provider metadata, scoring window, and accuracy result.
+- This queue is planning-only. This roadmap item does not implement UI, storage, media parsing, subtitle editing, or ASR workflow changes.
+
+Planned item fields:
+
+- `item_id`
+- `item_role`
+- `display_name`
+- `source_url`
+- `linked_source_id`
+- `local_path`
+- `media_type`
+- `is_manual_import`
+- `linked_reference_text_path`
+- `linked_subtitle_path`
+- `linked_transcript_path`
+- `linked_screenshot_path`
+- `linked_archive_url`
+- `asr_engine_or_provider`
+- `asr_result_path`
+- `reference_score_path`
+- `item_status`
+- `created_at_utc`
+- `updated_at_utc`
+- `user_notes`
+
+## Future Evidence Database Taxonomy And Reclassification
+
+- The app should eventually let the user register an evidence database root that can be described, indexed, and updated without imposing one built-in folder taxonomy.
+- Existing folder structures should be recognised and represented rather than overwritten. The taxonomy should be data-driven and user-editable.
+- The database may suggest repositories or category paths for articles, cases, evidence items, and Total Export packages using user-defined dimensions such as category, type, date, source outlet, identity known/unknown, relationship category, direct/indirect, adult/child, and other user metadata.
+- Category suggestions must be dry-run output first. Moves, renames, relabelling, and reclassification require explicit user approval.
+- Reclassification must never delete original evidence. Export/package IDs and original manifests should remain stable, with notes and history preserving what changed.
+- The feature should support case/article/export folders, not only raw article URLs, and record when each folder was indexed and last updated.
+
+Generic existing-tree patterns may include paths such as:
+
+```text
+Database/
+  Topic/
+    Action type/
+      Direct or indirect/
+        Identity known or not identified/
+          Month and year/
+            Source outlet/
+              article or export folder/
+```
+
+```text
+Database/
+  Case type/
+    Adult or child/
+      Relationship category/
+        Source classification/
+          Date bucket/
+            article, case, or Total Export package/
+```
+
+These are examples of dimensions the app may discover or suggest, not a required directory layout.
+
+Reclassification and sensitive-data rules:
+
+- If a later source supplies a classification that was previously unknown, flag the older item for review and optionally suggest a new path or label.
+- For example, an item under `Non-religious or not identified` may be flagged when a later source explicitly records a relevant religious identity; no move should occur without review and approval.
+- Do not infer protected or sensitive classifications such as religion, ethnicity, sex/gender relationship category, or identity from weak clues.
+- Sensitive classifications require explicit source evidence, user confirmation, or manual tagging. `Unknown/not identified` remains a valid status, not an error.
+- Preserve the previous path, suggested path, reason and source for the update, source role/status, timestamp, and user approval state.
+- Alias, spelling, outlet-name, and date normalization should be suggestions requiring user approval, for example `religous` to `religious`, `incitment` to `incitement`, or a consistent outlet/month label.
+
+Planned database fields:
+
+- `database_root`
+- `taxonomy_version`
+- `category_path`
+- `suggested_category_path`
+- `previous_category_path`
+- `classification_dimensions`
+- `classification_status`
+- `classification_basis`
+- `classification_source_url`
+- `classification_source_role`
+- `classification_source_status`
+- `classification_updated_at_utc`
+- `user_review_status`
+- `user_reviewed_at_utc`
+- `source_outlet`
+- `article_or_export_title`
+- `event_or_article_date`
+- `month_bucket`
+- `export_package_id`
+- `manifest_path`
+- `source_urls`
+- `archive_urls`
+- `local_evidence_paths`
+- `indexed_at_utc`
+- `last_updated_at_utc`
+- `notes`
+- `history`
+
+Possible future actions:
+
+- Register a database root.
+- Scan/index folders and detect existing taxonomy paths.
+- Generate a dry-run suggested destination path.
+- Flag classification conflicts and unknown-to-known updates.
+- Record user approval or rejection.
+- Move or relabel only after explicit approval.
+- Preserve original manifests and evidence files.
+- Write reclassification notes and history.
+
+This database taxonomy is planning-only. It does not add folder scanning, file movement, reclassification, or storage behavior in the current app.
+
 ## KEYS / Access & Keys Manager
 
 - Replace or supplement the sidebar "API KEY" area with a "KEYS" button.
