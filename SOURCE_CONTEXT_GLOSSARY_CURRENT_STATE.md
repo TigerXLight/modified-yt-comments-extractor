@@ -300,3 +300,6 @@ Evidence bundle regression coverage can now be run through a single aggregate lo
 
 
 Evidence bundle JSON helper tests now verify that source and item metadata fields stay typed as strings, preserving path hints as descriptive labels only.
+
+
+Evidence bundle JSON helper tests now cover optional `None` normalization for local metadata fields, preserving empty path hints as descriptive labels only.

@@ -229,3 +229,6 @@ A local aggregate preservation evidence bundle regression runner now covers mode
 
 
 Evidence bundle JSON helper validation now explicitly covers string-field typing for source metadata and item metadata fields, including path hints and limitations. These checks remain local metadata validation only.
+
+
+Evidence bundle JSON helper validation now covers `None` normalization for optional source and item metadata fields. This remains local metadata validation and does not inspect evidence paths.

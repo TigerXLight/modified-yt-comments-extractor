@@ -49,6 +49,40 @@ def run_self_test() -> None:
     assert data["items"][0]["notes"] == "JSON input path hint only."
     assert "no file open" in data["scope"]
 
+    none_normalized_bundle = build_preservation_evidence_bundle_from_dict(
+        {
+            "source_url": None,
+            "source_id": None,
+            "source_name": None,
+            "bundle_label": None,
+            "notes": None,
+            "items": [
+                {
+                    "artifact_id": "metadata",
+                    "artifact_format": "json",
+                    "capture_method_id": None,
+                    "artifact_role": None,
+                    "origin": None,
+                    "path_hint": None,
+                    "notes": None,
+                    "limitations": None,
+                }
+            ],
+        }
+    )
+    none_data = preservation_evidence_bundle_to_dict(none_normalized_bundle)
+    assert none_data["source_url"] == ""
+    assert none_data["source_id"] == ""
+    assert none_data["source_name"] == ""
+    assert none_data["bundle_label"] == ""
+    assert none_data["notes"] == ""
+    assert none_data["items"][0]["capture_method_id"] == ""
+    assert none_data["items"][0]["artifact_role"] == "supporting"
+    assert none_data["items"][0]["origin"] == "unknown"
+    assert none_data["items"][0]["path_hint"] == ""
+    assert none_data["items"][0]["notes"] == ""
+    assert none_data["items"][0]["limitations"] == ""
+
     _expect_value_error({"items": "screenshot"}, "evidence_bundle.items must be a list")
     _expect_value_error({"items": ["screenshot"]}, "evidence bundle item must be an object")
     _expect_value_error(

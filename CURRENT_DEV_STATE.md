@@ -785,3 +785,5 @@ Next local-ASR branches:
 - Added an aggregate preservation evidence bundle regression runner covering the model, JSON helper validation, standalone CLI, backend plan CLI integration, and Total Export prepare CLI integration.
 
 - Evidence bundle JSON helper validation now includes explicit string-field type checks for source metadata and item-level capture method, path hint, notes, and limitations fields.
+
+- Evidence bundle JSON helper validation now covers `None` normalization for optional source and item metadata fields while keeping required artifact fields strict.
