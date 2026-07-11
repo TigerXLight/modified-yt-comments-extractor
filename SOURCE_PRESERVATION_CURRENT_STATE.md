@@ -355,3 +355,6 @@ Evidence bundle regression runner behavior tests now make list-mode output shape
 
 
 Evidence bundle regression runner behavior tests now cover an all-non-self targeted run, preserving broad runner coverage while avoiding recursive full-run execution.
+
+
+Evidence bundle regression runner behavior tests now assert the self-recursive runner label stays last and the broad non-self run covers exactly the preceding labels.

@@ -460,3 +460,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now verifies a repeatable `--only` invocation containing every label except `evidence bundle regression runner behavior`, proving canonical output for the non-self suite without recursively invoking the runner behavior test.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now asserts `evidence bundle regression runner behavior` remains the final canonical label and that all-non-self targeted coverage exactly equals `EXPECTED_LABELS[:-1]`, preventing accidental recursive self-selection changes.

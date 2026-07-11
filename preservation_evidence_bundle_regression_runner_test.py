@@ -57,6 +57,7 @@ def run_self_test() -> None:
     assert _listed_labels(list_result.stdout) == EXPECTED_LABELS
     _assert_list_output_shape(list_result.stdout)
     assert len(set(EXPECTED_LABELS)) == len(EXPECTED_LABELS)
+    assert EXPECTED_LABELS[-1] == 'evidence bundle regression runner behavior'
     assert len(set(_listed_labels(list_result.stdout))) == len(EXPECTED_LABELS)
     assert list_result.stderr == ""
     assert _passed_labels(list_result.stdout) == ()
@@ -136,6 +137,7 @@ def run_self_test() -> None:
         label for label in EXPECTED_LABELS
         if label != 'evidence bundle regression runner behavior'
     )
+    assert non_self_labels == EXPECTED_LABELS[:-1]
     non_self_args = tuple(
         argument
         for label in non_self_labels

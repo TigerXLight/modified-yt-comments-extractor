@@ -426,3 +426,6 @@ Evidence bundle regression runner behavior coverage now treats blank list-mode l
 
 
 Evidence bundle regression runner behavior coverage now exercises all non-self regression labels in one targeted invocation to validate canonical output without recursive self-selection.
+
+
+Evidence bundle regression runner behavior coverage now pins the self-recursive runner behavior label to the final canonical position and checks non-self coverage against `EXPECTED_LABELS[:-1]`.
