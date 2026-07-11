@@ -199,3 +199,6 @@ Preservation backend plan CLI input JSON supports an `evidence_bundle` object. T
 
 
 Standalone preservation evidence bundle CLI now supports explicit local JSON input for evidence bundle metadata. This reads the JSON file only and treats path hints inside the JSON as labels, not files to open or validate.
+
+
+Standalone evidence bundle CLI JSON input validation now covers missing input files and malformed JSON. These checks only read the explicit JSON input path supplied by the user.

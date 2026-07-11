@@ -304,3 +304,6 @@ Preservation backend plan JSON input may include an `evidence_bundle` object wit
 
 
 Standalone preservation evidence bundle CLI supports `--input` for explicit local JSON bundle metadata. It rejects combining input JSON with metadata override flags and does not inspect referenced path hints.
+
+
+Standalone evidence bundle CLI `--input` handling now has regression coverage for missing input files and malformed JSON, in addition to metadata override rejection.

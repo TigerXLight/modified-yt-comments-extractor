@@ -1,3 +1,4 @@
+# Evidence bundle CLI input error regression tests.
 # Evidence bundle CLI JSON input tests.
 import io
 import json
@@ -119,6 +120,19 @@ def run_self_test() -> None:
         assert code == 1
         assert output == ""
         assert "input JSON must be an object" in error
+
+        missing_input_path = Path(temp_dir) / "missing_bundle.json"
+        code, output, error = _run_cli(["--input", str(missing_input_path)])
+        assert code == 1
+        assert output == ""
+        assert "input file not found" in error
+
+        invalid_json_path = Path(temp_dir) / "invalid_bundle.json"
+        invalid_json_path.write_text("{", encoding="utf-8")
+        code, output, error = _run_cli(["--input", str(invalid_json_path)])
+        assert code == 1
+        assert output == ""
+        assert "invalid JSON in" in error
 
     code, output, error = _run_cli(["--item", "bad:exe"])
     assert code == 1
