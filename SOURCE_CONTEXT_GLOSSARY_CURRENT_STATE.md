@@ -318,3 +318,6 @@ The aggregate evidence bundle regression runner test now explicitly covers targe
 
 
 The aggregate evidence bundle regression runner test now covers repeatable `--only` usage for targeted multi-group execution.
+
+
+Evidence bundle local-only scope invariants now include preservation backend plan CLI JSON output through `--format json`, keeping path hints descriptive and local-only.

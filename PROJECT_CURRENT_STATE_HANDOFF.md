@@ -352,3 +352,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` runner now suppo
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now verifies repeatable `--only` selections so targeted multi-group evidence-bundle regression runs are covered.
+
+
+The evidence bundle scope invariant test now also verifies preservation backend plan CLI JSON output via `--input ... --format json`, alongside model serialization, standalone evidence bundle CLI JSON output, and Total Export preservation-plan JSON output.

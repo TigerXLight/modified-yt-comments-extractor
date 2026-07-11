@@ -247,3 +247,6 @@ Evidence bundle regression runner behavior tests now explicitly cover targeted e
 
 
 Evidence bundle regression runner behavior tests now cover repeatable `--only` selections for targeted multi-group local regression runs.
+
+
+Evidence bundle local-only scope invariant testing now covers preservation backend plan CLI JSON output via `--input ... --format json` in addition to model, standalone CLI, and Total Export JSON outputs.
