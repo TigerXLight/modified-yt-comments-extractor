@@ -70,6 +70,14 @@ def _assert_descriptive_path_hint(path_hint: str) -> None:
     assert not Path(path_hint).is_absolute(), path_hint
 
 
+def _assert_rejects_path_hint(path_hint: str) -> None:
+    try:
+        _assert_descriptive_path_hint(path_hint)
+    except AssertionError:
+        return
+    raise AssertionError(f"Expected path hint to be rejected: {path_hint!r}")
+
+
 def _assert_local_only_bundle(bundle: dict) -> None:
     scope = bundle["scope"].lower()
     assert "no file open" in scope, scope
@@ -123,6 +131,11 @@ def run_self_test() -> None:
     bundle = build_preservation_evidence_bundle_from_dict(BUNDLE_INPUT)
     model_data = preservation_evidence_bundle_to_dict(bundle)
     _assert_local_only_bundle(model_data)
+
+    _assert_rejects_path_hint("https://example.invalid/captures/comments.png")
+    _assert_rejects_path_hint(r"C:\captures\comments.png")
+    _assert_rejects_path_hint(r"\captures\comments.png")
+    _assert_rejects_path_hint("/tmp/captures/comments.png")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         input_path = Path(temp_dir) / "evidence_bundle.json"

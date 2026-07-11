@@ -823,3 +823,5 @@ Next local-ASR branches:
 - Evidence bundle local-only scope invariant coverage now rejects structured file-state keys such as hashes, sizes, existence, opened, created, uploaded, validated, or captured state in evidence bundle outputs.
 
 - Evidence bundle local-only scope invariant coverage now asserts structured path hints stay relative/descriptive and are not absolute paths, URLs, or drive-qualified paths.
+
+- Evidence bundle local-only scope invariant coverage now includes negative path-hint assertions for URL, drive-qualified, root-relative, and absolute examples.

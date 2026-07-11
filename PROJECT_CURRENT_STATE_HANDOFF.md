@@ -391,3 +391,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now asserts structured evidence path hints remain relative/descriptive metadata rather than URLs, absolute paths, or drive-qualified local paths.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now includes negative descriptive path-hint checks for URL, drive-qualified, root-relative, and absolute examples so the helper cannot silently weaken.

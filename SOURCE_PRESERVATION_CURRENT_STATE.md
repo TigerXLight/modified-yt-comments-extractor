@@ -286,3 +286,6 @@ Evidence bundle local-only scope invariant testing now rejects file-state keys s
 
 
 Evidence bundle local-only scope invariant testing now asserts structured path hints remain relative/descriptive and are not URLs, absolute paths, or drive-qualified local paths.
+
+
+Evidence bundle local-only scope invariant testing now includes negative path-hint examples to ensure evidence hints stay relative/descriptive rather than executable or resolved paths.
