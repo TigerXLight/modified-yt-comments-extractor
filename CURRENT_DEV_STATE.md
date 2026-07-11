@@ -901,3 +901,4 @@ Next local-ASR branches:
 - The Total Export ZIP sidecar tests now include a batched cleanup pass that shares SHA256/inspection sidecar write-state assertions while preserving local-only ZIP sidecar semantics.
 - The Total Export review bundle verification tests now include a batched cleanup pass that shares verification status assertions while preserving sidecar mismatch and unsafe-ZIP diagnostics.
 - The Total Export review bundle folder verification tests now include a batched cleanup pass that shares folder count assertions while preserving missing-sidecar, mismatch, recursion, report, and empty-folder diagnostics.
+- The Total Export batch review bundle tests now share row/success/failure count assertions across complete, missing-input, repeated-output, and unsupported-source scenarios without changing behavior.

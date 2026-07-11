@@ -418,3 +418,5 @@ Total Export ZIP sidecar tests now share SHA256/inspection JSON write-state chec
 Total Export review bundle verification tests now share status checks while preserving metadata-only ZIP sidecar, no-extraction, network/API, download, archive, validation, mismatch, and unsafe-entry boundaries.
 
 Total Export review bundle folder verification tests now share folder count checks while preserving metadata-only ZIP sidecar, no-extraction, recursion, report-output, network/API, download, archive, validation, mismatch, and missing-sidecar boundaries.
+
+Total Export batch review bundle tests now centralize repeated result-count assertions while retaining local ZIP, sidecar, folder-verification, and unsupported-source coverage.

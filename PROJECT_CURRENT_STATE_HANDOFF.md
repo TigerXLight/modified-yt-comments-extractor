@@ -523,3 +523,5 @@ Evidence bundle JSON input validation now has a batched helper/CLI audit proving
 `total_export_review_bundle_verify_test.py` now shares review-bundle verification status assertions while preserving sidecar, hash, size, entry-count, and unsafe-ZIP diagnostic coverage.
 
 `total_export_review_bundle_folder_verify_test.py` now shares review-bundle folder count assertions while preserving missing-sidecar, mismatch, recursion, report-output, and empty-folder coverage.
+
+`total_export_batch_review_bundle_test.py` now centralizes repeated batch row/success/failure count assertions while preserving scenario-specific ZIP, folder verification, warning, and error checks.

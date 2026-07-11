@@ -3,6 +3,7 @@ from tempfile import TemporaryDirectory
 import json
 
 from total_export_batch_review_bundle import (
+    TotalExportBatchReviewBundleResult,
     batch_review_bundle_result_to_dict,
     build_total_export_batch_review_bundle_text,
     build_total_export_batch_review_bundles,
@@ -15,6 +16,18 @@ VALID_ID = "aB3_dE-9xYz"
 
 def _write_batch(path: Path, rows: list[str]) -> None:
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+def _assert_batch_counts(
+    result: TotalExportBatchReviewBundleResult,
+    *,
+    rows: int,
+    successes: int,
+    failures: int,
+) -> None:
+    assert result.row_count == rows
+    assert result.success_count == successes
+    assert result.failed_count == failures
 
 
 def run_self_test() -> None:
@@ -46,9 +59,7 @@ def run_self_test() -> None:
             user_terms=["Caltheris"],
             create_asset_folders=False,
         )
-        assert result.row_count == 3
-        assert result.success_count == 3
-        assert result.failed_count == 0
+        _assert_batch_counts(result, rows=3, successes=3, failures=0)
         assert result.folder_verification_ran is True
         assert result.folder_verification_zip_count == 3
         assert result.folder_verification_verified_count == 3
@@ -93,9 +104,7 @@ def run_self_test() -> None:
             batch_source_file=str(root / "missing.txt"),
             base_folder=str(root / "missing_output"),
         )
-        assert missing.row_count == 0
-        assert missing.success_count == 0
-        assert missing.failed_count == 0
+        _assert_batch_counts(missing, rows=0, successes=0, failures=0)
         assert missing.errors
 
         repeated = build_total_export_batch_review_bundles(
@@ -104,9 +113,7 @@ def run_self_test() -> None:
             selected_capture_options=["comments"],
             create_asset_folders=False,
         )
-        assert repeated.row_count == 3
-        assert repeated.success_count == 0
-        assert repeated.failed_count == 3
+        _assert_batch_counts(repeated, rows=3, successes=0, failures=3)
         assert any(item.errors for item in repeated.items)
 
         overwritten = build_total_export_batch_review_bundles(
@@ -177,9 +184,7 @@ def run_self_test() -> None:
             selected_capture_options=["comments"],
             create_asset_folders=False,
         )
-        assert unsupported.row_count == 1
-        assert unsupported.success_count == 1
-        assert unsupported.failed_count == 0
+        _assert_batch_counts(unsupported, rows=1, successes=1, failures=0)
         assert "No source adapter supports the URL: https://example.com/article" in unsupported.items[0].warnings
 
 
