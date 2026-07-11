@@ -85,6 +85,7 @@ def run_self_test() -> None:
             "json",
         )
         assert standalone_result.returncode == 0, standalone_result.stderr
+        assert standalone_result.stderr == "", standalone_result.stderr
         standalone_bundle = json.loads(standalone_result.stdout)
         _assert_local_only_bundle(standalone_bundle)
 
@@ -96,6 +97,7 @@ def run_self_test() -> None:
             "text",
         )
         assert standalone_text_result.returncode == 0, standalone_text_result.stderr
+        assert standalone_text_result.stderr == "", standalone_text_result.stderr
         _assert_local_only_text(standalone_text_result.stdout)
 
         standalone_markdown_result = _run_command(
@@ -106,6 +108,7 @@ def run_self_test() -> None:
             "markdown",
         )
         assert standalone_markdown_result.returncode == 0, standalone_markdown_result.stderr
+        assert standalone_markdown_result.stderr == "", standalone_markdown_result.stderr
         _assert_local_only_text(standalone_markdown_result.stdout)
 
         backend_input_path = Path(temp_dir) / "backend_plan.json"
@@ -128,6 +131,7 @@ def run_self_test() -> None:
             "json",
         )
         assert backend_plan_result.returncode == 0, backend_plan_result.stderr
+        assert backend_plan_result.stderr == "", backend_plan_result.stderr
         backend_plan = json.loads(backend_plan_result.stdout)
         backend_bundle = backend_plan.get("evidence_bundle")
         assert isinstance(backend_bundle, dict), backend_plan
@@ -141,6 +145,7 @@ def run_self_test() -> None:
             "text",
         )
         assert backend_plan_text_result.returncode == 0, backend_plan_text_result.stderr
+        assert backend_plan_text_result.stderr == "", backend_plan_text_result.stderr
         _assert_local_only_text(backend_plan_text_result.stdout)
 
         backend_plan_markdown_result = _run_command(
@@ -151,6 +156,7 @@ def run_self_test() -> None:
             "markdown",
         )
         assert backend_plan_markdown_result.returncode == 0, backend_plan_markdown_result.stderr
+        assert backend_plan_markdown_result.stderr == "", backend_plan_markdown_result.stderr
         _assert_local_only_text(backend_plan_markdown_result.stdout)
 
         total_export_result = _run_command(
@@ -167,6 +173,7 @@ def run_self_test() -> None:
             "--json",
         )
         assert total_export_result.returncode == 0, total_export_result.stderr
+        assert total_export_result.stderr == "", total_export_result.stderr
         total_export_plan = json.loads(total_export_result.stdout)
         _assert_local_only_bundle(total_export_plan["evidence_bundle"])
 
@@ -183,6 +190,7 @@ def run_self_test() -> None:
             str(input_path),
         )
         assert total_export_text_result.returncode == 0, total_export_text_result.stderr
+        assert total_export_text_result.stderr == "", total_export_text_result.stderr
         _assert_local_only_text(total_export_text_result.stdout)
 
         temp_file_names = sorted(path.name for path in Path(temp_dir).iterdir())

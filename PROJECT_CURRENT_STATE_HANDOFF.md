@@ -367,3 +367,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_scope_invariant_test.py` now also checks that evidence path hints are not materialized into temp files or directories; only the explicit JSON input files may appear in the temp test directory.
+
+
+`preservation_evidence_bundle_scope_invariant_test.py` now also asserts that successful JSON/text/Markdown subprocess checks leave stderr empty, so hidden warnings do not pass unnoticed.

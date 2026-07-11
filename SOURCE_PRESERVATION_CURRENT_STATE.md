@@ -262,3 +262,6 @@ Evidence bundle local-only scope invariant testing now includes Markdown output 
 
 
 Evidence bundle local-only scope invariant testing now verifies that path hints are not materialized into temp evidence files or directories during standalone, backend-plan, and Total Export CLI checks.
+
+
+Evidence bundle local-only scope invariant testing now asserts clean stderr for successful standalone, backend-plan, and Total Export CLI checks.

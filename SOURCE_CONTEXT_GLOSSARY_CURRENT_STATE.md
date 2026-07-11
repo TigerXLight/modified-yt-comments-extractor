@@ -333,3 +333,6 @@ Evidence bundle local-only scope invariants now cover Markdown output for the st
 
 
 Evidence bundle local-only scope invariants now assert path hints remain descriptive only and are not materialized into temp capture files or directories during CLI checks.
+
+
+Evidence bundle local-only scope invariants now verify successful CLI output checks produce no stderr noise across JSON, text, and Markdown surfaces.
