@@ -414,3 +414,6 @@ Evidence bundle regression runner behavior coverage now actively applies the suc
 
 
 Evidence bundle regression runner behavior coverage now verifies failure diagnostics do not include success banners or passed-output lines.
+
+
+Evidence bundle regression runner behavior coverage now pins list-mode output shape to one raw label line per canonical regression label.

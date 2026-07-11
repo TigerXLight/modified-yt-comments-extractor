@@ -448,3 +448,6 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 
 `preservation_evidence_bundle_regression_runner_test.py` now asserts unknown-label and mixed known/unknown failures keep stdout empty and do not leak success banners or `: passed` output in stderr.
+
+
+`preservation_evidence_bundle_regression_runner_test.py` now asserts `--list` output shape exactly matches one raw `LABEL` line for each canonical regression label, with no headers, bullets, or extra lines.

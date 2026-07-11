@@ -26,6 +26,11 @@ def _listed_labels(stdout: str) -> tuple[str, ...]:
     return tuple(line.strip() for line in stdout.splitlines() if line.strip())
 
 
+def _assert_list_output_shape(output: str) -> None:
+    lines = tuple(line for line in output.splitlines() if line.strip())
+    assert lines == EXPECTED_LABELS, output
+
+
 def _passed_labels(stdout: str) -> tuple[str, ...]:
     suffix = ": passed"
     return tuple(
@@ -49,6 +54,7 @@ def run_self_test() -> None:
     list_result = _run_runner("--list")
     assert list_result.returncode == 0, list_result.stderr
     assert _listed_labels(list_result.stdout) == EXPECTED_LABELS
+    _assert_list_output_shape(list_result.stdout)
     assert len(set(EXPECTED_LABELS)) == len(EXPECTED_LABELS)
     assert len(set(_listed_labels(list_result.stdout))) == len(EXPECTED_LABELS)
     assert list_result.stderr == ""

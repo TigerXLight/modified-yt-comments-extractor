@@ -343,3 +343,6 @@ Evidence bundle regression runner behavior tests now actively assert the success
 
 
 Evidence bundle regression runner behavior tests now assert unknown-label failure paths produce diagnostics only, with no success banner or passed-output leakage.
+
+
+Evidence bundle regression runner behavior tests now assert `--list` output is exactly the canonical raw label list and nothing else.
