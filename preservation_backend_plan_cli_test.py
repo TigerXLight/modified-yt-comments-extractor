@@ -1,5 +1,3 @@
-# Evidence bundle JSON input coverage repair.
-# Backend CLI invalid detail assertions live inside run_self_test.
 import io
 import json
 from contextlib import redirect_stderr, redirect_stdout

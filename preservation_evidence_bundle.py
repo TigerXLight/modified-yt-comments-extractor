@@ -1,6 +1,3 @@
-# Evidence bundle JSON input helpers.
-# Evidence item spec parsing helpers.
-# Evidence item notes rendering repair.
 from __future__ import annotations
 
 import json

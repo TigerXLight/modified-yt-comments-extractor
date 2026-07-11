@@ -1,7 +1,3 @@
-# Evidence bundle CLI input main repair.
-# Evidence bundle CLI JSON input support.
-# Evidence item spec parsing helper reuse.
-# Evidence bundle CLI item detail flags.
 from __future__ import annotations
 
 import argparse

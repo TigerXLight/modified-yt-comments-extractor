@@ -1,5 +1,3 @@
-# Evidence bundle CLI input error regression tests.
-# Evidence bundle CLI JSON input tests.
 import io
 import json
 from contextlib import redirect_stderr, redirect_stdout

@@ -1,6 +1,3 @@
-# Evidence item spec parsing helper reuse.
-# Evidence bundle item detail flags integration.
-# Evidence bundle integration: Total Export prepare CLI flags.
 from __future__ import annotations
 
 import argparse
