@@ -451,3 +451,5 @@ Evidence bundle regression runner behavior coverage now verifies whitespace-only
 Evidence bundle regression runner behavior coverage now shares malformed bare `--only` assertion checks through a helper while preserving diagnostic-only blank-label validation.
 
 Evidence bundle regression runner behavior coverage now verifies unexpected positional arguments are rejected diagnostically before any targeted regression output appears.
+
+Evidence bundle regression runner behavior coverage now shares argparse-style malformed argument assertions across bare `--only` and unexpected positional failures.

@@ -73,14 +73,20 @@ def _assert_no_success_output(result: subprocess.CompletedProcess[str]) -> None:
     assert ": passed" not in result.stderr, result.stderr
 
 
-def _assert_only_argument_failure(
+def _assert_argument_parse_failure(
     result: subprocess.CompletedProcess[str],
+    *expected_stderr_tokens: str,
 ) -> None:
     assert result.returncode == 2
     _assert_no_success_output(result)
-    assert "--only" in result.stderr
     lowered_stderr = result.stderr.lower()
-    assert "expected" in lowered_stderr or "argument" in lowered_stderr
+    assert (
+        "argument" in lowered_stderr
+        or "unrecognized" in lowered_stderr
+        or "expected" in lowered_stderr
+    )
+    for expected_token in expected_stderr_tokens:
+        assert expected_token in result.stderr
 
 
 def _assert_unknown_label_failure(
@@ -193,14 +199,10 @@ def run_self_test() -> None:
     _assert_success_result(non_self_result, non_self_labels)
 
     missing_only_value_result = _run_runner("--only")
-    _assert_only_argument_failure(missing_only_value_result)
+    _assert_argument_parse_failure(missing_only_value_result, "--only")
 
     unexpected_arg_result = _run_runner("unexpected-positional")
-    assert unexpected_arg_result.returncode == 2
-    _assert_no_success_output(unexpected_arg_result)
-    assert "unexpected-positional" in unexpected_arg_result.stderr
-    unexpected_arg_error = unexpected_arg_result.stderr.lower()
-    assert "unrecognized" in unexpected_arg_error or "argument" in unexpected_arg_error
+    _assert_argument_parse_failure(unexpected_arg_result, "unexpected-positional")
 
     blank_label_result = _run_runner("--only", "   ")
     _assert_unknown_label_failure(blank_label_result)
