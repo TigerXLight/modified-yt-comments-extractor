@@ -773,3 +773,5 @@ Next local-ASR branches:
 - Total Export evidence bundle JSON input handling has regression coverage for missing files, malformed JSON, non-object JSON roots, and override rejection.
 
 - Total Export evidence bundle JSON input is now covered in both text and JSON preservation-plan explanations.
+
+- Preservation evidence bundle JSON helpers have focused regression coverage for item object validation, string field types, catalog values, duplicate artifact IDs, and invalid capture-method IDs.

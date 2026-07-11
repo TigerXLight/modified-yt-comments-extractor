@@ -282,3 +282,6 @@ Total Export evidence bundle JSON input error handling is covered for malformed 
 
 
 Total Export evidence bundle JSON input is checked in JSON preservation-plan output so metadata fields remain stable for downstream tooling.
+
+
+Evidence bundle JSON helper validation now has standalone coverage for malformed local metadata while keeping path hints descriptive only.

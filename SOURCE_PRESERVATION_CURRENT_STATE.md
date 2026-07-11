@@ -211,3 +211,6 @@ Total Export evidence bundle JSON input validation now covers malformed JSON and
 
 
 Total Export evidence bundle JSON input now has JSON-output regression coverage for bundle label, item details, path hints, notes, and local-only scope.
+
+
+Preservation evidence bundle JSON helper validation now has focused tests for malformed metadata, invalid catalog values, duplicate artifact IDs, and invalid capture-method IDs. These are metadata-only checks and do not inspect evidence paths.

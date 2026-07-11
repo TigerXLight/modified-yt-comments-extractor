@@ -316,3 +316,6 @@ Total Export evidence bundle JSON input coverage now includes missing files, mal
 
 
 Total Export evidence bundle input coverage now verifies both text output and `--json` preservation-plan output for item details and local-only scope.
+
+
+Preservation evidence bundle JSON helper validation is now covered by a focused self-test for malformed items, non-string fields, invalid catalog values, duplicate IDs, and invalid capture-method IDs.
