@@ -888,3 +888,4 @@ Next local-ASR branches:
 - The evidence bundle regression runner behavior test now verifies `--list` remains listing-only even when `--only` is also supplied.
 - The evidence bundle regression runner behavior test now covers `--help` combined with selection/list flags, ensuring help output remains non-executing.
 - The evidence bundle regression runner behavior test now verifies `--only` label matching remains exact by rejecting partial label text diagnostically.
+- The evidence bundle regression runner behavior test now batches final CLI edge coverage for unknown options, exact suffix-label rejection, and list/help modes combined with unknown `--only` labels.

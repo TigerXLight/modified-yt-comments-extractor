@@ -463,3 +463,5 @@ Evidence bundle regression runner behavior coverage now verifies `--list` remain
 Evidence bundle regression runner behavior coverage now verifies `--help` remains non-executing when combined with `--only` or `--list`.
 
 Evidence bundle regression runner behavior coverage now verifies partial `--only` label text is rejected diagnostically rather than matched by substring or fuzziness.
+
+Evidence bundle regression runner behavior coverage now includes unknown option rejection, suffix-only exact-match rejection, and non-executing list/help behavior when unknown `--only` labels are supplied.

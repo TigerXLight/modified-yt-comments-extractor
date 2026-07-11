@@ -146,6 +146,17 @@ def run_self_test() -> None:
         not in list_with_only_result.stdout
     )
 
+    list_with_unknown_only_result = _run_runner(
+        "--list",
+        *_only_args("missing regression group"),
+    )
+    assert list_with_unknown_only_result.returncode == 0
+    assert list_with_unknown_only_result.stderr == ""
+    assert _listed_labels(list_with_unknown_only_result.stdout) == EXPECTED_LABELS
+    _assert_list_output_shape(list_with_unknown_only_result.stdout)
+    _assert_no_regression_output(list_with_unknown_only_result.stdout)
+    assert "missing regression group: passed" not in list_with_unknown_only_result.stdout
+
     help_result = _run_runner("--help")
     _assert_help_result(help_result)
 
@@ -161,6 +172,16 @@ def run_self_test() -> None:
 
     help_with_list_result = _run_runner("--help", "--list")
     _assert_help_result(help_with_list_result)
+
+    help_with_unknown_only_result = _run_runner(
+        "--help",
+        *_only_args("missing regression group"),
+    )
+    _assert_help_result(help_with_unknown_only_result)
+    assert (
+        "missing regression group: passed"
+        not in help_with_unknown_only_result.stdout
+    )
 
     only_result = _run_runner("--only", "evidence bundle JSON helper validation")
     assert "evidence bundle JSON helper validation: passed" in only_result.stdout
@@ -248,6 +269,12 @@ def run_self_test() -> None:
     unexpected_arg_result = _run_runner("unexpected-positional")
     _assert_argument_parse_failure(unexpected_arg_result, "unexpected-positional")
 
+    unknown_option_result = _run_runner("--not-a-real-regression-option")
+    _assert_argument_parse_failure(
+        unknown_option_result,
+        "--not-a-real-regression-option",
+    )
+
     blank_label_result = _run_runner("--only", "   ")
     _assert_unknown_label_failure(blank_label_result)
 
@@ -256,6 +283,9 @@ def run_self_test() -> None:
 
     partial_label_result = _run_runner("--only", "evidence bundle")
     _assert_unknown_label_failure(partial_label_result, "evidence bundle")
+
+    suffix_label_result = _run_runner("--only", "runner behavior")
+    _assert_unknown_label_failure(suffix_label_result, "runner behavior")
 
     multiple_unknown_result = _run_runner(
         *_only_args(
