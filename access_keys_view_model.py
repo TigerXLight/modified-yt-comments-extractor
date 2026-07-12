@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+from access_keys_catalog import AccessKeysEntryLayout
 from access_keys_metadata import (
     AccessEntryKind,
     AccessEntryMetadata,
@@ -15,7 +16,6 @@ ACCESS_KEYS_VIEW_MODEL_SCOPE = (
     "credential values/storage/testing, OAuth, browser-profile access, provider/API "
     "calls, archive execution, source fetching, persistence, or runtime wiring"
 )
-
 
 _CAPABILITY_FIELDS = (
     ("browser_capture", "supports_browser_capture"),
@@ -49,7 +49,42 @@ def _enabled_capabilities(entry: AccessEntryMetadata) -> tuple[str, ...]:
     )
 
 
-def _entry_search_text(entry: AccessEntryMetadata) -> str:
+def _fallback_layout(
+    entry: AccessEntryMetadata,
+    *,
+    original_index: int,
+) -> AccessKeysEntryLayout:
+    section_id = _normalized_text(entry.platform_family) or "other"
+    return AccessKeysEntryLayout(
+        entry_id=entry.entry_id,
+        section_id=section_id,
+        section_label=section_id,
+        section_order=original_index,
+        subgroup_id="",
+        subgroup_label="",
+        subgroup_order=0,
+        entry_order=original_index,
+        canonical_name=entry.display_name,
+    )
+
+
+def _layout_map(
+    entries: Sequence[AccessEntryMetadata],
+    layouts: Sequence[AccessKeysEntryLayout],
+) -> dict[str, AccessKeysEntryLayout]:
+    result = {layout.entry_id: layout for layout in layouts}
+    for index, entry in enumerate(entries):
+        result.setdefault(
+            entry.entry_id,
+            _fallback_layout(entry, original_index=index),
+        )
+    return result
+
+
+def _entry_search_text(
+    entry: AccessEntryMetadata,
+    layout: AccessKeysEntryLayout,
+) -> str:
     return " ".join(
         (
             entry.entry_id,
@@ -62,7 +97,17 @@ def _entry_search_text(entry: AccessEntryMetadata) -> str:
             entry.credential_type,
             entry.project_status,
             entry.setup_hint,
+            entry.privacy_notes,
+            entry.cost_or_rate_limit_notes,
             entry.access_limitations,
+            layout.section_id,
+            layout.section_label,
+            layout.subgroup_id,
+            layout.subgroup_label,
+            layout.canonical_name,
+            *layout.aliases,
+            *layout.tags,
+            *layout.planned_capabilities,
             *_enabled_capabilities(entry),
         )
     ).casefold()
@@ -86,6 +131,15 @@ class AccessKeysEntryView:
     cost_or_rate_limit_notes: str = ""
     access_limitations: str = ""
     selected: bool = False
+    section_id: str = ""
+    section_label: str = ""
+    subgroup_id: str = ""
+    subgroup_label: str = ""
+    planned_capabilities: tuple[str, ...] = ()
+    aliases: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
+    canonical_name: str = ""
+    planned_only: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -105,6 +159,30 @@ class AccessKeysEntryView:
             "cost_or_rate_limit_notes": self.cost_or_rate_limit_notes,
             "access_limitations": self.access_limitations,
             "selected": self.selected,
+            "section_id": self.section_id,
+            "section_label": self.section_label,
+            "subgroup_id": self.subgroup_id,
+            "subgroup_label": self.subgroup_label,
+            "planned_capabilities": list(self.planned_capabilities),
+            "aliases": list(self.aliases),
+            "tags": list(self.tags),
+            "canonical_name": self.canonical_name,
+            "planned_only": self.planned_only,
+        }
+
+
+@dataclass(frozen=True)
+class AccessKeysSubgroupView:
+    subgroup_id: str
+    display_name: str
+    entries: tuple[AccessKeysEntryView, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "subgroup_id": self.subgroup_id,
+            "display_name": self.display_name,
+            "entry_count": len(self.entries),
+            "entries": [entry.to_dict() for entry in self.entries],
         }
 
 
@@ -113,6 +191,7 @@ class AccessKeysSectionView:
     section_id: str
     display_name: str
     entries: tuple[AccessKeysEntryView, ...] = ()
+    subgroups: tuple[AccessKeysSubgroupView, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -120,6 +199,8 @@ class AccessKeysSectionView:
             "display_name": self.display_name,
             "entry_count": len(self.entries),
             "entries": [entry.to_dict() for entry in self.entries],
+            "subgroup_count": len(self.subgroups),
+            "subgroups": [subgroup.to_dict() for subgroup in self.subgroups],
         }
 
 
@@ -156,6 +237,7 @@ class AccessKeysManagerView:
 
 def _entry_view(
     entry: AccessEntryMetadata,
+    layout: AccessKeysEntryLayout,
     *,
     selected_entry_id: str,
 ) -> AccessKeysEntryView:
@@ -176,6 +258,15 @@ def _entry_view(
         cost_or_rate_limit_notes=entry.cost_or_rate_limit_notes,
         access_limitations=entry.access_limitations,
         selected=entry.entry_id == selected_entry_id,
+        section_id=layout.section_id,
+        section_label=layout.section_label,
+        subgroup_id=layout.subgroup_id,
+        subgroup_label=layout.subgroup_label,
+        planned_capabilities=layout.planned_capabilities,
+        aliases=layout.aliases,
+        tags=layout.tags,
+        canonical_name=layout.canonical_name or entry.display_name,
+        planned_only=entry.implementation_state == "planned metadata only",
     )
 
 
@@ -193,6 +284,35 @@ def _duplicate_entry_warnings(
     return tuple(warnings)
 
 
+def _duplicate_layout_warnings(
+    layouts: Sequence[AccessKeysEntryLayout],
+) -> tuple[str, ...]:
+    seen: set[str] = set()
+    warned: set[str] = set()
+    warnings: list[str] = []
+    for layout in layouts:
+        if layout.entry_id in seen and layout.entry_id not in warned:
+            warnings.append(f"Duplicate access layout ID: {layout.entry_id}")
+            warned.add(layout.entry_id)
+        seen.add(layout.entry_id)
+    return tuple(warnings)
+
+
+def _family_matches(
+    layout: AccessKeysEntryLayout,
+    entry: AccessEntryMetadata,
+    normalized_family: str,
+) -> bool:
+    if not normalized_family:
+        return True
+    target = normalized_family.casefold()
+    return target in {
+        layout.section_id.casefold(),
+        layout.section_label.casefold(),
+        entry.platform_family.casefold(),
+    }
+
+
 def build_access_keys_manager_view(
     catalog: AccessKeysCatalog,
     *,
@@ -200,54 +320,106 @@ def build_access_keys_manager_view(
     entry_kind: AccessEntryKind | None = None,
     platform_family: str = "",
     selected_entry_id: str = "",
+    layouts: Sequence[AccessKeysEntryLayout] = (),
 ) -> AccessKeysManagerView:
     normalized_query = _normalized_text(search_query)
     normalized_family = _normalized_text(platform_family)
     requested_selection = _normalized_text(selected_entry_id)
 
-    visible_entries = [
-        entry
-        for entry in catalog.entries
+    layout_by_id = _layout_map(catalog.entries, layouts)
+    indexed_entries = list(enumerate(catalog.entries))
+    visible_pairs = [
+        (index, entry, layout_by_id[entry.entry_id])
+        for index, entry in indexed_entries
         if (entry_kind is None or entry.entry_kind is entry_kind)
-        and (
-            not normalized_family
-            or entry.platform_family.casefold() == normalized_family.casefold()
+        and _family_matches(
+            layout_by_id[entry.entry_id],
+            entry,
+            normalized_family,
         )
         and (
             not normalized_query
-            or normalized_query.casefold() in _entry_search_text(entry)
+            or normalized_query.casefold()
+            in _entry_search_text(entry, layout_by_id[entry.entry_id])
         )
     ]
+    visible_pairs.sort(
+        key=lambda item: (
+            item[2].section_order,
+            item[2].subgroup_order,
+            item[2].entry_order,
+            item[0],
+            item[1].display_name.casefold(),
+        )
+    )
 
-    visible_ids = {entry.entry_id for entry in visible_entries}
+    visible_ids = {entry.entry_id for _, entry, _ in visible_pairs}
     resolved_selection = (
         requested_selection if requested_selection in visible_ids else ""
     )
+
     warnings = list(_duplicate_entry_warnings(catalog.entries))
+    warnings.extend(_duplicate_layout_warnings(layouts))
     if requested_selection and not resolved_selection:
         warnings.append(
             f"Selected access entry is not visible: {requested_selection}"
         )
 
-    grouped: dict[str, list[AccessKeysEntryView]] = {}
-    section_names: dict[str, str] = {}
-    for entry in visible_entries:
-        section_id = _normalized_text(entry.platform_family) or "other"
-        section_names.setdefault(section_id, section_id)
-        grouped.setdefault(section_id, []).append(
-            _entry_view(entry, selected_entry_id=resolved_selection)
+    section_order: list[str] = []
+    section_labels: dict[str, str] = {}
+    section_entries: dict[str, list[AccessKeysEntryView]] = {}
+    subgroup_order: dict[str, list[str]] = {}
+    subgroup_labels: dict[tuple[str, str], str] = {}
+    subgroup_entries: dict[tuple[str, str], list[AccessKeysEntryView]] = {}
+
+    for _, entry, layout in visible_pairs:
+        section_id = layout.section_id or "other"
+        if section_id not in section_order:
+            section_order.append(section_id)
+        section_labels.setdefault(
+            section_id,
+            layout.section_label or section_id,
         )
+        entry_view = _entry_view(
+            entry,
+            layout,
+            selected_entry_id=resolved_selection,
+        )
+        section_entries.setdefault(section_id, []).append(entry_view)
+
+        subgroup_id = layout.subgroup_id
+        if subgroup_id:
+            subgroup_order.setdefault(section_id, [])
+            if subgroup_id not in subgroup_order[section_id]:
+                subgroup_order[section_id].append(subgroup_id)
+            subgroup_labels.setdefault(
+                (section_id, subgroup_id),
+                layout.subgroup_label or subgroup_id,
+            )
+            subgroup_entries.setdefault((section_id, subgroup_id), []).append(
+                entry_view
+            )
 
     sections = tuple(
         AccessKeysSectionView(
             section_id=section_id,
-            display_name=section_names[section_id],
-            entries=tuple(entries),
+            display_name=section_labels[section_id],
+            entries=tuple(section_entries.get(section_id, ())),
+            subgroups=tuple(
+                AccessKeysSubgroupView(
+                    subgroup_id=subgroup_id,
+                    display_name=subgroup_labels[(section_id, subgroup_id)],
+                    entries=tuple(
+                        subgroup_entries.get((section_id, subgroup_id), ())
+                    ),
+                )
+                for subgroup_id in subgroup_order.get(section_id, ())
+            ),
         )
-        for section_id, entries in grouped.items()
+        for section_id in section_order
     )
-    visible_count = len(visible_entries)
 
+    visible_count = len(visible_pairs)
     return AccessKeysManagerView(
         search_query=normalized_query,
         entry_kind_filter=entry_kind.value if entry_kind is not None else "",
@@ -257,7 +429,7 @@ def build_access_keys_manager_view(
         visible_entry_count=visible_count,
         empty_message=(
             "No access entries match the current filters."
-            if catalog.entries and not visible_entries
+            if catalog.entries and not visible_pairs
             else "No access entries are available."
             if not catalog.entries
             else ""
