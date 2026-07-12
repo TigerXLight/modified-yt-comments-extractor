@@ -7,7 +7,7 @@ Branch: `v2.6.0-asr-engines`
 Latest known checkpoint:
 
 ```text
-e63def4 Add evidence database taxonomy schema skeleton
+8d11a4b Add Access Keys manager view model
 ```
 
 ## Purpose
@@ -55,6 +55,7 @@ Current helpers validate, normalize, classify, and assemble local metadata only.
 | Source plan provenance | `source_plan_provenance.py`, `source_plan_provenance_test.py` | Local provenance records derived from Source Capture Plans without fetch/capture behavior. |
 | Evidence item queue schema | `evidence_item_queue.py`, `evidence_item_queue_test.py` | Immutable local queue-item/link/ASR-pairing metadata with explicit roles, lifecycle states, and Total Export include/exclude intent; no persistence, file operations, GUI, capture, ASR, archive, or export wiring. |
 | Access & Keys metadata schema | `access_keys_metadata.py`, `access_keys_metadata_test.py` | Non-secret access/credential/test-status and provider/source/archive/browser-assisted-capture metadata with deterministic reports; no secret fields, credential tests, OAuth, provider calls, archive calls, or GUI wiring. |
+| Access & Keys manager view model | `access_keys_view_model.py`, `access_keys_view_model_test.py` | GUI-independent platform sections plus search/filter/selection and safe status/capability presentation over the non-secret catalog; no widgets, credential values, connection execution, provider calls, persistence, or runtime wiring. |
 | Evidence database taxonomy schema | `evidence_database_taxonomy.py`, `evidence_database_taxonomy_test.py` | Read-only root/taxonomy/dimension/dry-run/history metadata with unknown-state and sensitive-classification safeguards; no scanning, automatic classification, persistence, reclassification execution, or file movement. |
 
 ## Current Verified State
@@ -87,6 +88,7 @@ The later source-evidence skeleton milestones also passed their focused and adja
 - `7af8eea`: `evidence_item_queue_test.py`.
 - `66871b6`: `access_keys_metadata_test.py`.
 - `e63def4`: `evidence_database_taxonomy_test.py`.
+- `8d11a4b`: `access_keys_view_model_test.py` plus adjacent source-adapter/ASR-provider metadata regressions.
 
 The generated schemas were reviewed as standalone data/reporting foundations only. No source fetching, credential testing, database scanning, file movement, GUI, or runtime behavior was added.
 
@@ -246,18 +248,18 @@ The CLI prints to stdout by default, writes only when `--output` is explicitly s
 Run from Windows CMD with the project virtual environment active:
 
 ```cmd
-python -m py_compile source_adapters.py source_adapters_test.py source_adapters_registry_test.py source_adapter_capability_report.py source_adapter_capability_report_test.py source_adapter_capability_report_cli.py source_adapter_capability_report_cli_test.py source_adapter_gap_analysis.py source_adapter_gap_analysis_test.py source_adapter_gap_analysis_cli.py source_adapter_gap_analysis_cli_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python source_adapters_test.py & python source_adapters_registry_test.py & python source_adapter_capability_report_test.py & python source_adapter_capability_report_cli_test.py & python source_adapter_gap_analysis_test.py & python source_adapter_gap_analysis_cli_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py & git diff --check & git status --short
+python -m py_compile source_adapters.py source_adapters_test.py source_adapters_registry_test.py source_adapter_capability_report.py source_adapter_capability_report_test.py source_adapter_capability_report_cli.py source_adapter_capability_report_cli_test.py source_adapter_gap_analysis.py source_adapter_gap_analysis_test.py source_adapter_gap_analysis_cli.py source_adapter_gap_analysis_cli_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py access_keys_view_model.py access_keys_view_model_test.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python source_adapters_test.py & python source_adapters_registry_test.py & python source_adapter_capability_report_test.py & python source_adapter_capability_report_cli_test.py & python source_adapter_gap_analysis_test.py & python source_adapter_gap_analysis_cli_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python access_keys_view_model_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py & git diff --check & git status --short
 ```
 
 Expected result: all listed local self-tests pass and the working tree is clean after committed changes.
 
 ## Safe Next Milestones
 
-1. Broader documentation alignment:
-   - reconcile `CURRENT_DEV_STATE.md` and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` with the implemented queue, Access & Keys metadata, and taxonomy schema checkpoints if separately approved,
-   - continue distinguishing schema/test foundations from UI, persistence, scanning, credential, and runtime gaps.
+1. Ordered Access & Keys boundary:
+   - actual `KEYS` sidebar/window wiring is the first unresolved roadmap layer and requires explicit approval,
+   - reuse the existing non-secret catalog/view model without credential storage/testing, provider calls, or unrelated runtime changes.
 2. Local-only compatibility/reporting:
-   - consider explicit transforms or reports across queue, adapter, access-status, taxonomy, provenance, and Total Export metadata,
+   - defer explicit transforms or reports across queue, adapter, access-status, taxonomy, provenance, and Total Export metadata until ordered row 1 is resolved,
    - no persistence, background jobs, file operations, external calls, or GUI wiring.
 3. Future source adapters and runtime integration:
    - adapters should remain metadata/capability skeletons first, not a generic scraper,

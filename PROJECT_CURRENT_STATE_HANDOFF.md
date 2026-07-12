@@ -2,7 +2,7 @@
 
 Date: 2026-07-12
 
-Checkpoint: `e63def4 Add evidence database taxonomy schema skeleton`
+Checkpoint: `8d11a4b Add Access Keys manager view model`
 
 Branch: `v2.6.0-asr-engines`
 
@@ -16,7 +16,7 @@ It records the state needed for a future session to resume safely. It does not i
 
 - The working tree was clean when this handoff milestone started. Reconfirm with `git status --short` before applying any new patch.
 - Current branch: `v2.6.0-asr-engines`.
-- Current checkpoint: `e63def4 Add evidence database taxonomy schema skeleton`.
+- Current checkpoint: `8d11a4b Add Access Keys manager view model`.
 - The user performs final local checks, commits, and pushes after reviewing each patch.
 - Codex should not commit unless the user explicitly changes that instruction.
 - Keep one milestone per patch.
@@ -145,6 +145,7 @@ Three planned source-evidence areas now have standalone, local-only schema imple
 
 - `evidence_item_queue.py` and `evidence_item_queue_test.py` (`7af8eea`): immutable queue-item, link, ASR-pairing, role, lifecycle-status, and Total Export include/exclude metadata. Source URLs, local media, reference text, transcript/subtitle candidates, ASR results, screenshots/snapshots, archive URLs, packages, and taxonomy suggestions remain distinct roles. The model performs no file checks, deletion, persistence, GUI work, ASR execution, capture, archive access, or Total Export wiring.
 - `access_keys_metadata.py` and `access_keys_metadata_test.py` (`66871b6`): non-secret access-mode, credential-status, connection-test-status, provider/source/archive/browser-assisted-capture metadata, deterministic serialization, and text/Markdown/JSON rendering. It stores no key, token, password, cookie, session, authorization header, or browser-profile path and performs no credential test, OAuth, provider call, archive call, source fetch, or GUI wiring.
+- `access_keys_view_model.py` and `access_keys_view_model_test.py` (`8d11a4b`): GUI-independent searchable/filterable platform sections, selected-entry state, safe capability/status presentation, empty/duplicate diagnostics, and deterministic dictionary output over the existing non-secret catalog. It creates no widgets, stores no credential values, performs no connection test or external call, and does not wire into the sidebar/runtime.
 - `evidence_database_taxonomy.py` and `evidence_database_taxonomy_test.py` (`e63def4`): read-only database-root/taxonomy metadata, arbitrary user-defined dimensions, valid unknown/not-identified states, dry-run reclassification and alias-normalization suggestions, sensitive-classification safeguards, review states, preserved history, and queue/package/source references. Paths are descriptive metadata only; the model performs no scanning, automatic classification, persistence, reclassification execution, or file movement.
 
 These are implemented local-only schema/test foundations, not implemented UI/runtime workflows. The corresponding specification documents remain authoritative for future behavior, and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` should continue to distinguish implemented schema foundations from docs-only GUI, persistence, external access, and execution gaps.
@@ -234,6 +235,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 ## Latest Known Commit Chain
 
 ```
+8d11a4b Add Access Keys manager view model
 e63def4 Add evidence database taxonomy schema skeleton
 66871b6 Add access keys metadata model skeleton
 7af8eea Add evidence item queue model skeleton
@@ -274,7 +276,7 @@ python -m py_compile total_export_bundle_index.py total_export_bundle_index_test
 Source-evidence model skeletons:
 
 ```cmd
-python -m py_compile evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py
+python -m py_compile evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py access_keys_view_model.py access_keys_view_model_test.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python access_keys_view_model_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py
 ```
 
 Upstream parity regressions:
@@ -293,8 +295,8 @@ Do not add provider/API/network calls to these verification chains.
 
 ## Safe Next Milestones
 
-1. Reconcile `CURRENT_DEV_STATE.md` and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` with the three implemented local-only schema/test milestones if a broader documentation-alignment milestone is approved.
-2. Consider local-only compatibility/reporting helpers between the queue, Access & Keys catalog, taxonomy schema, and existing source/evidence models, but only as explicit metadata transforms with focused tests and no persistence/runtime wiring.
+1. The first unresolved ordered roadmap layer is actual `KEYS` sidebar/window wiring. It requires explicit approval and must reuse the non-secret catalog/view model without adding credential storage/testing or provider calls.
+2. Only after row 1 is explicitly resolved, consider local-only compatibility/reporting helpers between the queue, Access & Keys catalog, taxonomy schema, and existing source/evidence models; keep them as explicit metadata transforms with focused tests and no persistence/runtime wiring.
 3. Create the next full external session handoff before beginning a substantially different feature area.
 4. Keep GUI, persistence, database scanning, automatic/sensitive classification, credential testing/storage, provider/archive/downloader/capture, and other networked behavior deferred until explicitly approved, opt-in where applicable, and covered by local/mocked tests.
 
