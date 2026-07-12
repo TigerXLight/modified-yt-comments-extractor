@@ -10,6 +10,11 @@ from credential_architecture import (
     build_row2a_credential_architecture,
     serialized_secret_field_paths,
 )
+from credential_store import (
+    CredentialStore,
+    CredentialStoreStatus,
+    credential_locator_for_id,
+)
 
 
 CREDENTIAL_RUNTIME_STATUS_SCOPE = (
@@ -35,6 +40,8 @@ class CredentialPresenceState(_StringEnum):
 class CredentialProvenance(_StringEnum):
     EXISTING_YOUTUBE_KEYRING = "EXISTING_YOUTUBE_KEYRING"
     EXISTING_YOUTUBE_LEGACY_SETTINGS = "EXISTING_YOUTUBE_LEGACY_SETTINGS"
+    SECURE_KEYRING = "SECURE_KEYRING"
+    SECURE_KEYRING_AND_ENVIRONMENT = "SECURE_KEYRING_AND_ENVIRONMENT"
     ENVIRONMENT_VARIABLE = "ENVIRONMENT_VARIABLE"
     NOT_FOUND = "NOT_FOUND"
     UNKNOWN = "UNKNOWN"
@@ -228,10 +235,129 @@ class LocalCredentialStatusProvider:
         settings_manager: Any = None,
         youtube_configured: bool = False,
         environ: Mapping[str, str] | None = None,
+        credential_store: CredentialStore | None = None,
     ) -> None:
         self._settings_manager = settings_manager
         self._youtube_configured = bool(youtube_configured)
         self._environ = environ if environ is not None else __import__("os").environ
+        self._credential_store = credential_store
+
+    def _cloud_asr_status(
+        self,
+        descriptor: CredentialDescriptor,
+    ) -> CredentialRuntimeStatus:
+        configured, incomplete = _environment_requirement(descriptor, self._environ)
+        if self._credential_store is None:
+            if configured:
+                return _status(
+                    descriptor,
+                    state=CredentialPresenceState.CONFIGURED,
+                    provenance=CredentialProvenance.ENVIRONMENT_VARIABLE,
+                    diagnostic=SafeCredentialDiagnostic.CONFIGURED_PRESENCE_ONLY,
+                    backend_label="Environment variable (read-only presence check)",
+                )
+            if incomplete:
+                return _status(
+                    descriptor,
+                    state=CredentialPresenceState.MISSING,
+                    provenance=CredentialProvenance.ENVIRONMENT_VARIABLE,
+                    diagnostic=SafeCredentialDiagnostic.COMPOUND_CREDENTIAL_INCOMPLETE,
+                    backend_label="Environment variable (read-only presence check)",
+                )
+            return _status(
+                descriptor,
+                state=CredentialPresenceState.MISSING,
+                provenance=CredentialProvenance.NOT_FOUND,
+                diagnostic=SafeCredentialDiagnostic.REQUIRED_CREDENTIAL_MISSING,
+                backend_label="Environment variable (read-only presence check)",
+            )
+
+        result = self._credential_store.credential_present(
+            descriptor.credential_id
+        )
+        if result.status is CredentialStoreStatus.PRESENT:
+            if configured:
+                return _status(
+                    descriptor,
+                    state=CredentialPresenceState.CONFIGURED,
+                    provenance=CredentialProvenance.SECURE_KEYRING_AND_ENVIRONMENT,
+                    diagnostic=SafeCredentialDiagnostic.CONFIGURED_PRESENCE_ONLY,
+                    backend_label="Secure store and environment variable presence",
+                )
+            return _status(
+                descriptor,
+                state=CredentialPresenceState.CONFIGURED,
+                provenance=CredentialProvenance.SECURE_KEYRING,
+                diagnostic=SafeCredentialDiagnostic.CONFIGURED_PRESENCE_ONLY,
+                backend_label="Secure credential store",
+            )
+
+        if result.status is CredentialStoreStatus.NOT_FOUND:
+            if configured:
+                return _status(
+                    descriptor,
+                    state=CredentialPresenceState.CONFIGURED,
+                    provenance=CredentialProvenance.ENVIRONMENT_VARIABLE,
+                    diagnostic=SafeCredentialDiagnostic.CONFIGURED_PRESENCE_ONLY,
+                    backend_label="Environment variable (read-only presence check)",
+                )
+            if incomplete:
+                return _status(
+                    descriptor,
+                    state=CredentialPresenceState.MISSING,
+                    provenance=CredentialProvenance.ENVIRONMENT_VARIABLE,
+                    diagnostic=SafeCredentialDiagnostic.COMPOUND_CREDENTIAL_INCOMPLETE,
+                    backend_label="Environment variable (read-only presence check)",
+                )
+            return _status(
+                descriptor,
+                state=CredentialPresenceState.MISSING,
+                provenance=CredentialProvenance.NOT_FOUND,
+                diagnostic=SafeCredentialDiagnostic.REQUIRED_CREDENTIAL_MISSING,
+                backend_label="Secure credential store",
+            )
+
+        if result.status is CredentialStoreStatus.BACKEND_UNAVAILABLE:
+            if configured:
+                return _status(
+                    descriptor,
+                    state=CredentialPresenceState.CONFIGURED,
+                    provenance=CredentialProvenance.ENVIRONMENT_VARIABLE,
+                    diagnostic=SafeCredentialDiagnostic.CONFIGURED_PRESENCE_ONLY,
+                    backend_label="Environment variable; secure store unavailable",
+                )
+            return _status(
+                descriptor,
+                state=CredentialPresenceState.BACKEND_UNAVAILABLE,
+                provenance=CredentialProvenance.UNKNOWN,
+                diagnostic=SafeCredentialDiagnostic.KEYRING_BACKEND_UNAVAILABLE,
+                backend_label="Secure credential store",
+            )
+
+        if result.status is CredentialStoreStatus.BACKEND_ERROR:
+            if configured:
+                return _status(
+                    descriptor,
+                    state=CredentialPresenceState.CONFIGURED,
+                    provenance=CredentialProvenance.ENVIRONMENT_VARIABLE,
+                    diagnostic=SafeCredentialDiagnostic.CONFIGURED_PRESENCE_ONLY,
+                    backend_label="Environment variable; secure store status error",
+                )
+            return _status(
+                descriptor,
+                state=CredentialPresenceState.ERROR,
+                provenance=CredentialProvenance.UNKNOWN,
+                diagnostic=SafeCredentialDiagnostic.KEYRING_ACCESS_ERROR,
+                backend_label="Secure credential store",
+            )
+
+        return _status(
+            descriptor,
+            state=CredentialPresenceState.ERROR,
+            provenance=CredentialProvenance.UNKNOWN,
+            diagnostic=SafeCredentialDiagnostic.STORAGE_STATUS_ERROR,
+            backend_label="Secure credential store",
+        )
 
     def read_statuses(self) -> Mapping[str, CredentialRuntimeStatus]:
         plan = build_row2a_credential_architecture()
@@ -245,31 +371,7 @@ class LocalCredentialStatusProvider:
                     configured=self._youtube_configured,
                 )
             else:
-                configured, incomplete = _environment_requirement(descriptor, self._environ)
-                if configured:
-                    status = _status(
-                        descriptor,
-                        state=CredentialPresenceState.CONFIGURED,
-                        provenance=CredentialProvenance.ENVIRONMENT_VARIABLE,
-                        diagnostic=SafeCredentialDiagnostic.CONFIGURED_PRESENCE_ONLY,
-                        backend_label="Environment variable (read-only presence check)",
-                    )
-                elif incomplete:
-                    status = _status(
-                        descriptor,
-                        state=CredentialPresenceState.MISSING,
-                        provenance=CredentialProvenance.ENVIRONMENT_VARIABLE,
-                        diagnostic=SafeCredentialDiagnostic.COMPOUND_CREDENTIAL_INCOMPLETE,
-                        backend_label="Environment variable (read-only presence check)",
-                    )
-                else:
-                    status = _status(
-                        descriptor,
-                        state=CredentialPresenceState.MISSING,
-                        provenance=CredentialProvenance.NOT_FOUND,
-                        diagnostic=SafeCredentialDiagnostic.REQUIRED_CREDENTIAL_MISSING,
-                        backend_label="Environment variable (read-only presence check)",
-                    )
+                status = self._cloud_asr_status(descriptor)
             statuses[descriptor.entry_id] = status
 
         return statuses
@@ -280,12 +382,24 @@ def build_runtime_credential_statuses(
     settings_manager: Any = None,
     youtube_configured: bool = False,
     environ: Mapping[str, str] | None = None,
+    credential_store: CredentialStore | None = None,
 ) -> Mapping[str, CredentialRuntimeStatus]:
     return LocalCredentialStatusProvider(
         settings_manager=settings_manager,
         youtube_configured=youtube_configured,
         environ=environ,
+        credential_store=credential_store,
     ).read_statuses()
+
+
+def cloud_asr_credential_id_for_entry_id(entry_id: str) -> str:
+    normalized = " ".join((entry_id or "").split())
+    for descriptor in build_row2a_credential_architecture().descriptors:
+        if descriptor.entry_id != normalized:
+            continue
+        if credential_locator_for_id(descriptor.credential_id) is not None:
+            return descriptor.credential_id
+    return ""
 
 
 def _metadata_status(state: CredentialPresenceState) -> CredentialStatus:

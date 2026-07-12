@@ -31,16 +31,21 @@ except ModuleNotFoundError:
 
 import access_keys_dialog
 from access_keys_catalog import build_default_access_keys_catalog_bundle
+from access_keys_metadata import AccessEntryKind
 from access_keys_dialog import (
     ACCESS_KEYS_BUTTON_TEXT,
     ACCESS_KEYS_WINDOW_TITLE,
     ALL_FAMILIES_LABEL,
+    CREDENTIAL_ENTRY_MASK,
     AccessKeysDialogController,
     AccessKeysWindow,
     access_keys_detail_lines,
     build_default_access_keys_catalog,
     open_or_focus_access_keys_window,
+    _create_masked_credential_entry,
 )
+from access_keys_view_model import AccessKeysEntryView
+from credential_store import InMemoryCredentialStore
 
 
 class _FakeAccessKeysWindow:
@@ -65,6 +70,63 @@ class _FakeAccessKeysWindow:
     def close(self) -> None:
         self.exists = False
         self.on_close()
+
+
+class _FakeInnerEntry:
+    def __init__(self) -> None:
+        self.options: dict[str, object] = {}
+
+    def configure(self, **kwargs: object) -> None:
+        self.options.update(kwargs)
+
+    def cget(self, key: str) -> object:
+        return self.options.get(key, "")
+
+
+class _FakeCredentialEntry:
+    instances: list["_FakeCredentialEntry"] = []
+
+    def __init__(self, value: str = "", **kwargs: object) -> None:
+        self.value = value
+        self.options: dict[str, object] = dict(kwargs)
+        self._entry = _FakeInnerEntry()
+        self.__class__.instances.append(self)
+
+    def get(self) -> str:
+        return self.value
+
+    def delete(self, _start: object, _end: object) -> None:
+        self.value = ""
+
+    def configure(self, **kwargs: object) -> None:
+        self.options.update(kwargs)
+
+    def cget(self, key: str) -> object:
+        return self.options.get(key, "")
+
+
+def _assert_entry_masked(entry: _FakeCredentialEntry) -> None:
+    assert entry.cget("show") == CREDENTIAL_ENTRY_MASK
+    assert entry._entry.cget("show") == CREDENTIAL_ENTRY_MASK
+
+
+class _FakeStatusLabel:
+    def __init__(self) -> None:
+        self.text = ""
+
+    def configure(self, *, text: str) -> None:
+        self.text = text
+
+
+class _FakePanel:
+    def __init__(self) -> None:
+        self.visible = False
+
+    def grid(self) -> None:
+        self.visible = True
+
+    def grid_remove(self) -> None:
+        self.visible = False
 
 
 def _function_source(module_source: str, name: str) -> str:
@@ -164,8 +226,10 @@ def test_sidebar_button_preserves_api_key_entry() -> None:
     assert "open_or_focus_access_keys_window" in open_method
     assert "AccessKeysWindow" in open_method
     assert "build_runtime_credential_statuses" in open_method
+    assert "SystemKeyringCredentialStore" in open_method
     assert "settings_manager=self.settings_manager" in open_method
     assert "youtube_configured=bool(" in open_method
+    assert "credential_store=credential_store" in open_method
     assert "self.api_key_entry.get().strip()" in open_method
     assert "get_api_key" not in open_method
     assert "set_api_key" not in open_method
@@ -307,6 +371,117 @@ def test_filter_changes_reset_scroll_to_top() -> None:
     AccessKeysWindow._reset_list_scroll_to_top(window)
 
 
+def test_cloud_asr_credential_entry_mask_is_effective_on_creation() -> None:
+    original_entry_class = access_keys_dialog.ctk.CTkEntry
+    _FakeCredentialEntry.instances = []
+    access_keys_dialog.ctk.CTkEntry = _FakeCredentialEntry
+    try:
+        entry = _create_masked_credential_entry(
+            "parent",
+            placeholder_text="Enter credential to save",
+        )
+    finally:
+        access_keys_dialog.ctk.CTkEntry = original_entry_class
+
+    assert isinstance(entry, _FakeCredentialEntry)
+    assert _FakeCredentialEntry.instances == [entry]
+    _assert_entry_masked(entry)
+
+
+def test_cloud_asr_credential_controls_are_scoped_and_masked() -> None:
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    window._credential_store = InMemoryCredentialStore()
+    window.credential_entry = _FakeCredentialEntry("old draft")
+    window.credential_action_status_label = _FakeStatusLabel()
+    window.credential_action_panel = _FakePanel()
+
+    cloud_entry = AccessKeysEntryView(
+        entry_id="asr:elevenlabs_scribe",
+        display_name="ElevenLabs Scribe",
+        entry_kind=AccessEntryKind.ASR_PROVIDER,
+        platform_family="asr",
+        implementation_state="provider metadata only",
+        access_mode="API_KEY",
+        credential_status="REQUIRED_MISSING",
+    )
+    AccessKeysWindow._render_credential_controls(window, cloud_entry)
+    assert window._current_credential_id == "elevenlabs_scribe_api_key"
+    assert window.credential_entry.get() == ""
+    _assert_entry_masked(window.credential_entry)
+    assert window.credential_action_panel.visible is True
+    assert "never preloaded" in window.credential_action_status_label.text
+
+    window.credential_entry.value = "new draft"
+
+    youtube_entry = AccessKeysEntryView(
+        entry_id="source:youtube",
+        display_name="YouTube",
+        entry_kind=AccessEntryKind.SOURCE_ADAPTER,
+        platform_family="source",
+        implementation_state="registered source adapter metadata",
+        access_mode="API_KEY",
+        credential_status="REQUIRED_MISSING",
+    )
+    AccessKeysWindow._render_credential_controls(window, youtube_entry)
+    assert window._current_credential_id == ""
+    assert window.credential_entry.get() == ""
+    _assert_entry_masked(window.credential_entry)
+    assert window.credential_action_panel.visible is False
+
+
+def test_cloud_asr_save_and_clear_use_fake_store_without_retaining_value() -> None:
+    secret = "ROW2C2-SECRET-MUST-NOT-APPEAR"
+    store = InMemoryCredentialStore()
+    refresh_events: list[str] = []
+
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    window._credential_store = store
+    window._current_credential_id = "elevenlabs_scribe_api_key"
+    window.credential_entry = _FakeCredentialEntry(secret)
+    window.credential_action_status_label = _FakeStatusLabel()
+    window._refresh_runtime_statuses_after_credential_action = (
+        lambda: refresh_events.append("refresh")
+    )
+
+    AccessKeysWindow._save_selected_credential(window)
+    assert window.credential_entry.get() == ""
+    _assert_entry_masked(window.credential_entry)
+    assert "saved" in window.credential_action_status_label.text.casefold()
+    assert refresh_events == ["refresh"]
+    if store._test_only_stored_credential("elevenlabs_scribe_api_key") != secret:
+        raise AssertionError("credential was not saved in the fake store")
+    assert secret not in window.credential_action_status_label.text
+    assert secret not in repr(window.__dict__)
+
+    AccessKeysWindow._clear_selected_credential(window)
+    assert store._test_only_stored_credential("elevenlabs_scribe_api_key") is None
+    assert window.credential_entry.get() == ""
+    _assert_entry_masked(window.credential_entry)
+    assert "cleared" in window.credential_action_status_label.text.casefold()
+    assert refresh_events == ["refresh", "refresh"]
+
+
+def test_cloud_asr_save_failure_clears_draft_and_uses_safe_message() -> None:
+    secret = "ROW2C2-SECRET-MUST-NOT-APPEAR"
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    window._credential_store = InMemoryCredentialStore(fail_save=True)
+    window._current_credential_id = "elevenlabs_scribe_api_key"
+    window.credential_entry = _FakeCredentialEntry(secret)
+    window.credential_action_status_label = _FakeStatusLabel()
+    window._refresh_runtime_statuses_after_credential_action = lambda: None
+
+    AccessKeysWindow._save_selected_credential(window)
+    assert window.credential_entry.get() == ""
+    _assert_entry_masked(window.credential_entry)
+    assert "safe error" in window.credential_action_status_label.text
+    assert secret not in window.credential_action_status_label.text
+
+    window.credential_entry = _FakeCredentialEntry("   ")
+    AccessKeysWindow._save_selected_credential(window)
+    _assert_entry_masked(window.credential_entry)
+    assert "empty input" in window.credential_action_status_label.text
+
+
 def test_static_selector_and_no_flicker_design() -> None:
     assert ACCESS_KEYS_WINDOW_TITLE == "Access & Keys"
     assert ACCESS_KEYS_BUTTON_TEXT == "KEYS"
@@ -438,8 +613,20 @@ def test_static_selector_and_no_flicker_design() -> None:
     assert "hover=False" not in source
     assert "_clear_children" not in source
 
-    assert source.count("ctk.CTkEntry(") == 1
+    assert source.count("ctk.CTkEntry(") == 2
     assert 'placeholder_text="Search access metadata"' in source
+    assert "CREDENTIAL_ENTRY_MASK" in source
+    assert "show=CREDENTIAL_ENTRY_MASK" in source
+    assert 'show=""' not in source
+    assert 'placeholder_text="Enter credential to save"' in source
+    assert "clipboard" not in source
+
+    refresh_status = inspect.getsource(
+        AccessKeysWindow._refresh_runtime_statuses_after_credential_action
+    )
+    assert "_apply_view" not in refresh_status
+    assert "_build_widgets" not in refresh_status
+    assert "_build_catalog_widgets" not in refresh_status
 
     for forbidden_action in (
         "Reveal",
@@ -465,6 +652,10 @@ def run_self_test() -> None:
     test_single_window_lifecycle()
     test_fast_selection_path_updates_only_changed_controls()
     test_filter_changes_reset_scroll_to_top()
+    test_cloud_asr_credential_entry_mask_is_effective_on_creation()
+    test_cloud_asr_credential_controls_are_scoped_and_masked()
+    test_cloud_asr_save_and_clear_use_fake_store_without_retaining_value()
+    test_cloud_asr_save_failure_clears_draft_and_uses_safe_message()
     test_static_selector_and_no_flicker_design()
 
 

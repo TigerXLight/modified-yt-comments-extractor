@@ -137,10 +137,12 @@ def test_unknown_and_youtube_credentials_are_rejected() -> None:
     unknown = memory.save_credential("unknown_provider", SECRET_SENTINEL)
     youtube_save = memory.save_credential(YOUTUBE_CREDENTIAL_ID, SECRET_SENTINEL)
     youtube_clear = memory.clear_credential(YOUTUBE_CREDENTIAL_ID)
+    youtube_presence = memory.credential_present(YOUTUBE_CREDENTIAL_ID)
 
     assert unknown.status is CredentialStoreStatus.UNSUPPORTED_CREDENTIAL
     assert youtube_save.status is CredentialStoreStatus.YOUTUBE_CREDENTIAL_EXCLUDED
     assert youtube_clear.status is CredentialStoreStatus.YOUTUBE_CREDENTIAL_EXCLUDED
+    assert youtube_presence.status is CredentialStoreStatus.YOUTUBE_CREDENTIAL_EXCLUDED
     _assert_test_store_value(memory, SUPPORTED_ID, None)
     _assert_secret_not_exposed(unknown)
     _assert_secret_not_exposed(youtube_save)
@@ -149,11 +151,20 @@ def test_unknown_and_youtube_credentials_are_rejected() -> None:
 def test_in_memory_save_overwrite_and_clear() -> None:
     memory = InMemoryCredentialStore()
 
+    absent = memory.credential_present(SUPPORTED_ID)
+    assert absent.operation is CredentialStoreOperation.PRESENCE
+    assert absent.status is CredentialStoreStatus.NOT_FOUND
+    _assert_secret_not_exposed(absent)
+
     first = memory.save_credential(SUPPORTED_ID, SECRET_SENTINEL)
     assert first.status is CredentialStoreStatus.SAVED
     assert first.changed is True
     _assert_test_store_value(memory, SUPPORTED_ID, SECRET_SENTINEL)
     _assert_secret_not_exposed(first)
+
+    present = memory.credential_present(SUPPORTED_ID)
+    assert present.status is CredentialStoreStatus.PRESENT
+    _assert_secret_not_exposed(present)
 
     second = memory.save_credential(SUPPORTED_ID, "replacement")
     assert second.status is CredentialStoreStatus.UPDATED
@@ -175,15 +186,21 @@ def test_in_memory_save_overwrite_and_clear() -> None:
 
 def test_in_memory_simulated_failures() -> None:
     unavailable = InMemoryCredentialStore(available=False)
+    presence_unavailable = unavailable.credential_present(SUPPORTED_ID)
     save_unavailable = unavailable.save_credential(
         SUPPORTED_ID,
         SECRET_SENTINEL,
     )
     clear_unavailable = unavailable.clear_credential(SUPPORTED_ID)
+    assert presence_unavailable.status is CredentialStoreStatus.BACKEND_UNAVAILABLE
     assert save_unavailable.status is CredentialStoreStatus.BACKEND_UNAVAILABLE
     assert clear_unavailable.status is CredentialStoreStatus.BACKEND_UNAVAILABLE
+    _assert_secret_not_exposed(presence_unavailable)
     _assert_secret_not_exposed(save_unavailable)
 
+    presence_error = InMemoryCredentialStore(
+        fail_presence=True
+    ).credential_present(SUPPORTED_ID)
     save_error = InMemoryCredentialStore(fail_save=True).save_credential(
         SUPPORTED_ID,
         SECRET_SENTINEL,
@@ -191,8 +208,10 @@ def test_in_memory_simulated_failures() -> None:
     clear_error = InMemoryCredentialStore(fail_clear=True).clear_credential(
         SUPPORTED_ID
     )
+    assert presence_error.status is CredentialStoreStatus.BACKEND_ERROR
     assert save_error.status is CredentialStoreStatus.BACKEND_ERROR
     assert clear_error.status is CredentialStoreStatus.BACKEND_ERROR
+    _assert_secret_not_exposed(presence_error)
     _assert_secret_not_exposed(save_error)
     _assert_secret_not_exposed(clear_error)
 
@@ -214,6 +233,10 @@ def test_system_keyring_save_update_clear_and_missing() -> None:
     assert fake.calls == ["get_password", "set_password"]
     _assert_secret_not_exposed(first)
 
+    present = store.credential_present(SUPPORTED_ID)
+    assert present.status is CredentialStoreStatus.PRESENT
+    _assert_secret_not_exposed(present)
+
     second = store.save_credential(SUPPORTED_ID, "replacement")
     assert second.status is CredentialStoreStatus.UPDATED
     _assert_fake_keyring_value(
@@ -229,6 +252,10 @@ def test_system_keyring_save_update_clear_and_missing() -> None:
     assert cleared.changed is True
     assert (locator.service_name, locator.account_name) not in fake.store
     _assert_secret_not_exposed(cleared)
+
+    absent = store.credential_present(SUPPORTED_ID)
+    assert absent.status is CredentialStoreStatus.NOT_FOUND
+    _assert_secret_not_exposed(absent)
 
     missing = store.clear_credential(SUPPORTED_ID)
     assert missing.status is CredentialStoreStatus.NOT_FOUND
@@ -263,6 +290,12 @@ def test_system_keyring_unavailable_and_failures_are_safe() -> None:
     ).save_credential(SUPPORTED_ID, SECRET_SENTINEL)
     assert get_failure.status is CredentialStoreStatus.BACKEND_ERROR
     _assert_secret_not_exposed(get_failure)
+
+    presence_failure = SystemKeyringCredentialStore(
+        keyring_module=FakeKeyring(fail_get=True),
+    ).credential_present(SUPPORTED_ID)
+    assert presence_failure.status is CredentialStoreStatus.BACKEND_ERROR
+    _assert_secret_not_exposed(presence_failure)
 
     delete_failure = SystemKeyringCredentialStore(
         keyring_module=FakeKeyring(fail_delete=True),
@@ -308,15 +341,20 @@ def test_no_plaintext_fallback_environment_or_file_writes() -> None:
     assert {path: path.read_bytes() for path in watched_files} == before_bytes
 
 
-def test_no_runtime_or_gui_integration() -> None:
-    integration_files = (
-        "main.py",
+def test_row2c2_integration_is_limited_to_main_and_dialog() -> None:
+    main_source = Path("main.py").read_text(encoding="utf-8")
+    dialog_source = Path("access_keys_dialog.py").read_text(encoding="utf-8")
+    assert "SystemKeyringCredentialStore" in main_source
+    assert "credential_store=credential_store" in main_source
+    assert "CredentialStore" in dialog_source
+    assert "save_credential" in dialog_source
+    assert "clear_credential" in dialog_source
+
+    for filename in (
         "core/settings.py",
-        "access_keys_dialog.py",
         "access_keys_catalog.py",
         "access_keys_view_model.py",
-    )
-    for filename in integration_files:
+    ):
         source = Path(filename).read_text(encoding="utf-8")
         assert "credential_store" not in source
         assert "InMemoryCredentialStore" not in source
@@ -384,7 +422,7 @@ def run_self_test() -> None:
     test_system_keyring_save_update_clear_and_missing()
     test_system_keyring_unavailable_and_failures_are_safe()
     test_no_plaintext_fallback_environment_or_file_writes()
-    test_no_runtime_or_gui_integration()
+    test_row2c2_integration_is_limited_to_main_and_dialog()
     test_static_safety_and_no_import_time_keyring_call()
     test_result_objects_do_not_leak_values_or_exception_text()
 

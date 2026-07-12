@@ -14,6 +14,11 @@ from access_keys_metadata import AccessKeysCatalog
 from credential_runtime_status import (
     CredentialRuntimeStatus,
     apply_runtime_credential_statuses,
+    cloud_asr_credential_id_for_entry_id,
+)
+from credential_store import (
+    CredentialStore,
+    CredentialStoreStatus,
 )
 from access_keys_view_model import (
     AccessKeysEntryView,
@@ -26,6 +31,7 @@ from core.constants import COLORS
 ACCESS_KEYS_WINDOW_TITLE = "Access & Keys"
 ACCESS_KEYS_BUTTON_TEXT = "KEYS"
 ALL_FAMILIES_LABEL = "All families"
+CREDENTIAL_ENTRY_MASK = "*"
 
 _DETAIL_LABELS = (
     "Name",
@@ -46,6 +52,25 @@ _DETAIL_LABELS = (
     "Cost / rate limits",
     "Access limitations",
 )
+
+
+def _set_entry_masked(entry: object) -> None:
+    configure = getattr(entry, "configure", None)
+    if callable(configure):
+        configure(show=CREDENTIAL_ENTRY_MASK)
+
+    # CustomTkinter wraps a tkinter Entry internally. Configure it directly
+    # too so masking is effective from widget creation onward on all runtimes.
+    internal_entry = getattr(entry, "_entry", None)
+    internal_configure = getattr(internal_entry, "configure", None)
+    if callable(internal_configure):
+        internal_configure(show=CREDENTIAL_ENTRY_MASK)
+
+
+def _create_masked_credential_entry(parent: object, **kwargs: object) -> object:
+    entry = ctk.CTkEntry(parent, show=CREDENTIAL_ENTRY_MASK, **kwargs)
+    _set_entry_masked(entry)
+    return entry
 
 
 class AccessKeysDialogController:
@@ -178,6 +203,10 @@ class AccessKeysWindow(ctk.CTkToplevel):
         credential_statuses: Optional[
             Mapping[str, CredentialRuntimeStatus]
         ] = None,
+        credential_store: Optional[CredentialStore] = None,
+        credential_status_provider: Optional[
+            Callable[[], Mapping[str, CredentialRuntimeStatus]]
+        ] = None,
         on_close: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(parent)
@@ -189,6 +218,10 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._detail_rows_visible = False
         self._family_popup_visible = False
         self._list_scroll_reset_after_id: Optional[str] = None
+        self._credential_store = credential_store
+        self._credential_status_provider = credential_status_provider
+        self._current_credential_entry_id = ""
+        self._current_credential_id = ""
 
         if catalog is None:
             bundle = build_default_access_keys_catalog_bundle()
@@ -197,6 +230,8 @@ class AccessKeysWindow(ctk.CTkToplevel):
                 catalog=catalog,
                 layouts=tuple(layouts),
             )
+        self._base_catalog = bundle.catalog
+        self._layouts = tuple(bundle.layouts)
         bundle = AccessKeysCatalogBundle(
             catalog=apply_runtime_credential_statuses(
                 bundle.catalog,
@@ -253,9 +288,10 @@ class AccessKeysWindow(ctk.CTkToplevel):
         ctk.CTkLabel(
             header,
             text=(
-                "Read-only local credential presence/provenance status. This "
-                "window does not display values, store, migrate, clear, test, "
-                "or call providers."
+                "Local credential presence/provenance status. Cloud ASR entries "
+                "can save or clear secure-store credentials explicitly; this "
+                "window never displays values, reveals, copies, migrates, tests, "
+                "or calls providers."
             ),
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_secondary"],
@@ -462,6 +498,87 @@ class AccessKeysWindow(ctk.CTkToplevel):
             label_widget.grid_remove()
             value_widget.grid_remove()
             self._detail_rows[label] = (label_widget, value_widget)
+
+        self.credential_action_panel = ctk.CTkFrame(
+            self.details_panel,
+            fg_color=COLORS["bg_input"],
+            border_width=1,
+            border_color=COLORS["border"],
+            corner_radius=6,
+        )
+        self.credential_action_panel.grid(
+            row=row,
+            column=0,
+            sticky="ew",
+            padx=14,
+            pady=(16, 8),
+        )
+        self.credential_action_panel.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            self.credential_action_panel,
+            text="Cloud ASR secure credential",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=COLORS["text_secondary"],
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=10, pady=(8, 2))
+
+        self.credential_entry = _create_masked_credential_entry(
+            self.credential_action_panel,
+            placeholder_text="Enter credential to save",
+            fg_color=COLORS["bg_card"],
+            border_color=COLORS["border"],
+        )
+        self.credential_entry.grid(
+            row=1,
+            column=0,
+            sticky="ew",
+            padx=(10, 6),
+            pady=(4, 8),
+        )
+        self.credential_save_button = ctk.CTkButton(
+            self.credential_action_panel,
+            text="Save",
+            width=72,
+            command=self._save_selected_credential,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["accent_hover"],
+        )
+        self.credential_save_button.grid(
+            row=1,
+            column=1,
+            padx=(0, 6),
+            pady=(4, 8),
+        )
+        self.credential_clear_button = ctk.CTkButton(
+            self.credential_action_panel,
+            text="Clear",
+            width=72,
+            command=self._clear_selected_credential,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+        )
+        self.credential_clear_button.grid(
+            row=1,
+            column=2,
+            padx=(0, 10),
+            pady=(4, 8),
+        )
+        self.credential_action_status_label = ctk.CTkLabel(
+            self.credential_action_panel,
+            text="",
+            text_color=COLORS["text_secondary"],
+            wraplength=500,
+            justify="left",
+        )
+        self.credential_action_status_label.grid(
+            row=2,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            padx=10,
+            pady=(0, 8),
+        )
+        self.credential_action_panel.grid_remove()
 
     @staticmethod
     def _button_text(entry: AccessKeysEntryView) -> str:
@@ -730,6 +847,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
     ) -> None:
         if entry is None:
             self._set_detail_rows_visible(False)
+            self._render_credential_controls(None)
             self.detail_placeholder.grid(
                 row=0,
                 column=0,
@@ -745,6 +863,112 @@ class AccessKeysWindow(ctk.CTkToplevel):
             _label_widget, value_widget = self._detail_rows[label]
             if value_widget.cget("text") != value:
                 value_widget.configure(text=value)
+        self._render_credential_controls(entry)
+
+    def _render_credential_controls(
+        self,
+        entry: Optional[AccessKeysEntryView],
+    ) -> None:
+        credential_id = (
+            cloud_asr_credential_id_for_entry_id(entry.entry_id)
+            if entry is not None and self._credential_store is not None
+            else ""
+        )
+        self._current_credential_entry_id = entry.entry_id if entry else ""
+        self._current_credential_id = credential_id
+        _set_entry_masked(self.credential_entry)
+        if not credential_id:
+            self.credential_entry.delete(0, "end")
+            _set_entry_masked(self.credential_entry)
+            self.credential_action_status_label.configure(text="")
+            self.credential_action_panel.grid_remove()
+            return
+
+        self.credential_action_panel.grid()
+        self.credential_entry.delete(0, "end")
+        _set_entry_masked(self.credential_entry)
+        self.credential_action_status_label.configure(
+            text=(
+                "Enter a cloud-ASR credential only when you choose Save. "
+                "Stored values are never preloaded, revealed, copied, or tested."
+            )
+        )
+
+    @staticmethod
+    def _credential_result_message(status: CredentialStoreStatus) -> str:
+        messages = {
+            CredentialStoreStatus.SAVED: "Credential saved.",
+            CredentialStoreStatus.UPDATED: "Credential updated.",
+            CredentialStoreStatus.CLEARED: "Credential cleared.",
+            CredentialStoreStatus.NOT_FOUND: "Credential was already missing.",
+            CredentialStoreStatus.EMPTY_CREDENTIAL_REJECTED: "Nothing was saved; empty input is not accepted.",
+            CredentialStoreStatus.BACKEND_UNAVAILABLE: "Secure credential store is unavailable.",
+            CredentialStoreStatus.BACKEND_ERROR: "Secure credential store returned a safe error.",
+            CredentialStoreStatus.UNSUPPORTED_CREDENTIAL: "This credential is not supported by the secure store.",
+            CredentialStoreStatus.YOUTUBE_CREDENTIAL_EXCLUDED: "The existing YouTube credential is excluded here.",
+        }
+        return messages.get(status, "Credential action finished.")
+
+    def _refresh_runtime_statuses_after_credential_action(self) -> None:
+        if self._credential_status_provider is None:
+            return
+        statuses = self._credential_status_provider()
+        self.controller.catalog = apply_runtime_credential_statuses(
+            self._base_catalog,
+            statuses,
+        )
+        view = self.controller.view()
+        self._entry_views = {
+            entry.entry_id: entry
+            for section in view.sections
+            for entry in section.entries
+        }
+        for entry_id in tuple(self._visible_entry_ids):
+            if entry_id in self._entry_buttons and entry_id in self._entry_views:
+                self._configure_entry_button(
+                    entry_id,
+                    selected=entry_id == view.selected_entry_id,
+                )
+        self._selected_entry_id = view.selected_entry_id
+        self._render_details(self.controller.selected_entry(view))
+
+    def _save_selected_credential(self) -> None:
+        credential_id = self._current_credential_id
+        store = self._credential_store
+        credential = self.credential_entry.get()
+        self.credential_entry.delete(0, "end")
+        _set_entry_masked(self.credential_entry)
+        if not credential_id or store is None:
+            self.credential_action_status_label.configure(
+                text="No supported cloud-ASR credential is selected."
+            )
+            return
+        if not str(credential).strip():
+            self.credential_action_status_label.configure(
+                text=self._credential_result_message(
+                    CredentialStoreStatus.EMPTY_CREDENTIAL_REJECTED
+                )
+            )
+            return
+        result = store.save_credential(credential_id, str(credential).strip())
+        message = self._credential_result_message(result.status)
+        self._refresh_runtime_statuses_after_credential_action()
+        self.credential_action_status_label.configure(text=message)
+
+    def _clear_selected_credential(self) -> None:
+        credential_id = self._current_credential_id
+        store = self._credential_store
+        self.credential_entry.delete(0, "end")
+        _set_entry_masked(self.credential_entry)
+        if not credential_id or store is None:
+            self.credential_action_status_label.configure(
+                text="No supported cloud-ASR credential is selected."
+            )
+            return
+        result = store.clear_credential(credential_id)
+        message = self._credential_result_message(result.status)
+        self._refresh_runtime_statuses_after_credential_action()
+        self.credential_action_status_label.configure(text=message)
 
     def close(self) -> None:
         if self._closed:

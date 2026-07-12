@@ -10,14 +10,20 @@ from access_keys_metadata import (
     AccessMode,
     CredentialStatus,
 )
+from credential_architecture import build_row2a_credential_architecture
 from credential_runtime_status import (
     CredentialPresenceState,
     CredentialProvenance,
     LocalCredentialStatusProvider,
     SafeCredentialDiagnostic,
     apply_runtime_credential_statuses,
+    cloud_asr_credential_id_for_entry_id,
     runtime_statuses_to_dict,
     validate_runtime_credential_statuses,
+)
+from credential_store import (
+    SUPPORTED_CLOUD_ASR_CREDENTIAL_IDS,
+    InMemoryCredentialStore,
 )
 
 
@@ -51,6 +57,7 @@ def _read(
     last_error: str | None = None,
     raise_storage: bool = False,
     environ: dict[str, str] | None = None,
+    credential_store: object | None = None,
 ):
     provider = LocalCredentialStatusProvider(
         settings_manager=FakeSettingsManager(
@@ -60,6 +67,7 @@ def _read(
         ),
         youtube_configured=youtube_configured,
         environ=environ or {},
+        credential_store=credential_store,
     )
     return provider.read_statuses()
 
@@ -118,6 +126,83 @@ def test_environment_statuses() -> None:
     assert validate_runtime_credential_statuses(statuses) == ()
 
 
+def test_secure_store_presence_and_precedence() -> None:
+    store = InMemoryCredentialStore()
+    store.save_credential("elevenlabs_scribe_api_key", SECRET_SENTINEL)
+
+    keyring_only = _read(credential_store=store)
+    eleven = keyring_only["asr:elevenlabs_scribe"]
+    assert eleven.state is CredentialPresenceState.CONFIGURED
+    assert eleven.provenance is CredentialProvenance.SECURE_KEYRING
+    assert eleven.backend_label == "Secure credential store"
+
+    both = _read(
+        credential_store=store,
+        environ={"ELEVENLABS_API_KEY": SECRET_SENTINEL},
+    )["asr:elevenlabs_scribe"]
+    assert both.state is CredentialPresenceState.CONFIGURED
+    assert both.provenance is CredentialProvenance.SECURE_KEYRING_AND_ENVIRONMENT
+
+    store.clear_credential("elevenlabs_scribe_api_key")
+    env_after_clear = _read(
+        credential_store=store,
+        environ={"ELEVENLABS_API_KEY": SECRET_SENTINEL},
+    )["asr:elevenlabs_scribe"]
+    assert env_after_clear.state is CredentialPresenceState.CONFIGURED
+    assert env_after_clear.provenance is CredentialProvenance.ENVIRONMENT_VARIABLE
+
+    serialized = json.dumps(
+        runtime_statuses_to_dict(keyring_only),
+        sort_keys=True,
+    )
+    assert SECRET_SENTINEL not in serialized
+    assert validate_runtime_credential_statuses(keyring_only) == ()
+
+
+def test_secure_store_presence_failures_are_safe() -> None:
+    unavailable = _read(
+        credential_store=InMemoryCredentialStore(available=False)
+    )["asr:elevenlabs_scribe"]
+    assert unavailable.state is CredentialPresenceState.BACKEND_UNAVAILABLE
+    assert (
+        unavailable.safe_diagnostic
+        is SafeCredentialDiagnostic.KEYRING_BACKEND_UNAVAILABLE
+    )
+
+    error = _read(
+        credential_store=InMemoryCredentialStore(fail_presence=True)
+    )["asr:elevenlabs_scribe"]
+    assert error.state is CredentialPresenceState.ERROR
+    assert error.safe_diagnostic is SafeCredentialDiagnostic.KEYRING_ACCESS_ERROR
+
+    env_with_error = _read(
+        credential_store=InMemoryCredentialStore(fail_presence=True),
+        environ={"ELEVENLABS_API_KEY": SECRET_SENTINEL},
+    )["asr:elevenlabs_scribe"]
+    assert env_with_error.state is CredentialPresenceState.CONFIGURED
+    assert env_with_error.provenance is CredentialProvenance.ENVIRONMENT_VARIABLE
+
+    serialized = json.dumps(error.to_dict(), sort_keys=True)
+    assert SECRET_SENTINEL not in serialized
+
+
+def test_cloud_asr_entry_id_mapping_excludes_youtube_and_unknowns() -> None:
+    plan = build_row2a_credential_architecture()
+    mapped = {
+        descriptor.credential_id: cloud_asr_credential_id_for_entry_id(
+            descriptor.entry_id
+        )
+        for descriptor in plan.descriptors
+    }
+    assert tuple(
+        credential_id
+        for credential_id, mapped_id in mapped.items()
+        if mapped_id
+    ) == SUPPORTED_CLOUD_ASR_CREDENTIAL_IDS
+    assert cloud_asr_credential_id_for_entry_id("source:youtube") == ""
+    assert cloud_asr_credential_id_for_entry_id("asr:unknown") == ""
+
+
 def test_catalog_overlay() -> None:
     entry = AccessEntryMetadata(
         entry_id="source:youtube",
@@ -165,22 +250,27 @@ def test_runtime_integration_is_bounded() -> None:
         "credential_statuses:Optional[Mapping[str,CredentialRuntimeStatus]]"
         in compact_dialog_source
     )
+    assert "credential_store:Optional[CredentialStore]" in compact_dialog_source
     assert "apply_runtime_credential_statuses(" in dialog_source
     assert "build_runtime_credential_statuses(" in main_source
+    assert "credential_store=credential_store" in main_source
     assert (
         "youtube_configured=bool(self.api_key_entry.get().strip())"
         in compact_main_source
     )
     assert (
-        "does not display values, store, migrate, clear, test, "
+        "window never displays values, reveals, copies, migrates, tests, "
         in dialog_source
     )
-    assert "or call providers." in dialog_source
+    assert "or calls providers." in dialog_source
 
 
 def main() -> None:
     test_youtube_statuses()
     test_environment_statuses()
+    test_secure_store_presence_and_precedence()
+    test_secure_store_presence_failures_are_safe()
+    test_cloud_asr_entry_id_mapping_excludes_youtube_and_unknowns()
     test_catalog_overlay()
     test_runtime_integration_is_bounded()
     print("Credential runtime status self-test passed.")

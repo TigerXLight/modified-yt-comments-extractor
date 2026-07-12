@@ -40,9 +40,11 @@ class CredentialStoreBackend(_StringEnum):
 class CredentialStoreOperation(_StringEnum):
     SAVE = "save"
     CLEAR = "clear"
+    PRESENCE = "presence"
 
 
 class CredentialStoreStatus(_StringEnum):
+    PRESENT = "present"
     SAVED = "saved"
     UPDATED = "updated"
     CLEARED = "cleared"
@@ -93,6 +95,9 @@ class CredentialStoreResult:
 
 
 class CredentialStore:
+    def credential_present(self, credential_id: str) -> CredentialStoreResult:
+        raise NotImplementedError
+
     def save_credential(
         self,
         credential_id: str,
@@ -190,10 +195,12 @@ class InMemoryCredentialStore(CredentialStore):
         self,
         *,
         available: bool = True,
+        fail_presence: bool = False,
         fail_save: bool = False,
         fail_clear: bool = False,
     ) -> None:
         self._available = bool(available)
+        self._fail_presence = bool(fail_presence)
         self._fail_save = bool(fail_save)
         self._fail_clear = bool(fail_clear)
         self._credentials: dict[str, str] = {}
@@ -203,6 +210,43 @@ class InMemoryCredentialStore(CredentialStore):
             "InMemoryCredentialStore("
             f"available={self._available}, "
             f"stored_count={len(self._credentials)})"
+        )
+
+    def credential_present(self, credential_id: str) -> CredentialStoreResult:
+        unsupported = _unsupported_result(
+            credential_id,
+            operation=CredentialStoreOperation.PRESENCE,
+            backend=CredentialStoreBackend.MEMORY,
+        )
+        if unsupported is not None:
+            return unsupported
+
+        locator = credential_locator_for_id(credential_id)
+        assert locator is not None
+
+        if not self._available:
+            return _result(
+                locator,
+                operation=CredentialStoreOperation.PRESENCE,
+                backend=CredentialStoreBackend.MEMORY,
+                status=CredentialStoreStatus.BACKEND_UNAVAILABLE,
+            )
+        if self._fail_presence:
+            return _result(
+                locator,
+                operation=CredentialStoreOperation.PRESENCE,
+                backend=CredentialStoreBackend.MEMORY,
+                status=CredentialStoreStatus.BACKEND_ERROR,
+            )
+        return _result(
+            locator,
+            operation=CredentialStoreOperation.PRESENCE,
+            backend=CredentialStoreBackend.MEMORY,
+            status=(
+                CredentialStoreStatus.PRESENT
+                if locator.credential_id in self._credentials
+                else CredentialStoreStatus.NOT_FOUND
+            ),
         )
 
     def save_credential(
@@ -339,6 +383,51 @@ class SystemKeyringCredentialStore(CredentialStore):
         if any(not callable(getattr(module, name, None)) for name in required):
             return None, False
         return module, True
+
+    def credential_present(self, credential_id: str) -> CredentialStoreResult:
+        unsupported = _unsupported_result(
+            credential_id,
+            operation=CredentialStoreOperation.PRESENCE,
+            backend=CredentialStoreBackend.SYSTEM_KEYRING,
+        )
+        if unsupported is not None:
+            return unsupported
+
+        locator = credential_locator_for_id(credential_id)
+        assert locator is not None
+
+        keyring_module, available = self._safe_keyring_module()
+        if not available:
+            return _result(
+                locator,
+                operation=CredentialStoreOperation.PRESENCE,
+                backend=CredentialStoreBackend.SYSTEM_KEYRING,
+                status=CredentialStoreStatus.BACKEND_UNAVAILABLE,
+            )
+
+        try:
+            configured = keyring_module.get_password(
+                locator.service_name,
+                locator.account_name,
+            ) is not None
+        except Exception:
+            return _result(
+                locator,
+                operation=CredentialStoreOperation.PRESENCE,
+                backend=CredentialStoreBackend.SYSTEM_KEYRING,
+                status=CredentialStoreStatus.BACKEND_ERROR,
+            )
+
+        return _result(
+            locator,
+            operation=CredentialStoreOperation.PRESENCE,
+            backend=CredentialStoreBackend.SYSTEM_KEYRING,
+            status=(
+                CredentialStoreStatus.PRESENT
+                if configured
+                else CredentialStoreStatus.NOT_FOUND
+            ),
+        )
 
     def save_credential(
         self,
