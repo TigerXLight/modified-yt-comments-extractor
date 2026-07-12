@@ -1,18 +1,18 @@
 # Source Context / Glossary Current State
 
-Date: 2026-07-12
+Date: 2026-07-13
 
 Branch: `v2.6.0-asr-engines`
 
 Latest known checkpoint:
 
 ```text
-29af218 Add secure credential store backend
+97de48d Add cloud ASR credential controls
 ```
 
 ## Purpose
 
-This document is the local current-state handoff for the source URL, source adapter, source capture plan, provenance, context/glossary, evidence queue, Access & Keys metadata/catalog/window, row 2A credential architecture/audit, row 2B read-only credential status integration, row 2C1 backend-only secure credential-store infrastructure, and evidence database taxonomy skeletons.
+This document is the local current-state handoff for the source URL, source adapter, source capture plan, provenance, context/glossary, evidence queue, Access & Keys metadata/catalog/window, row 2A credential architecture/audit, row 2B read-only credential status integration, row 2C1 secure credential-store infrastructure, row 2C2 masked cloud-ASR Save/Clear controls, and evidence database taxonomy skeletons.
 
 It records what exists now, what is intentionally not implemented, how to verify the local helpers, and what safe future milestones look like.
 
@@ -34,7 +34,7 @@ They must not:
 - persist or background-process evidence queue items,
 - test/store credentials or integrate OAuth/browser profiles,
 - scan database roots, classify evidence automatically, infer sensitive traits, or move files,
-- add secret-bearing GUI/runtime wiring beyond the bounded Access & Keys presentation, read-only status overlay, and backend-only row 2C1 store abstraction,
+- add secret-bearing GUI/runtime wiring beyond the bounded Access & Keys presentation, read-only status overlay, row 2C1 store abstraction, and row 2C2 masked cloud-ASR Save/Clear controls,
 - change runtime extractor/export/ASR behavior.
 
 Current helpers validate, normalize, classify, and assemble local metadata only.
@@ -57,10 +57,10 @@ Current helpers validate, normalize, classify, and assemble local metadata only.
 | Access & Keys metadata schema | `access_keys_metadata.py`, `access_keys_metadata_test.py` | Non-secret access/credential/test-status and provider/source/archive/browser-assisted-capture metadata with deterministic reports; no secret fields, credential tests, OAuth, provider calls, archive calls, or GUI wiring. |
 | Access & Keys catalog | `access_keys_catalog.py`, `access_keys_catalog_test.py` | Complete planned non-secret services, ordered sections/subgroups, aliases, planned/implemented status, separate archive/browser placeholders, and deterministic validation; no credentials or external execution. |
 | Access & Keys manager view model | `access_keys_view_model.py`, `access_keys_view_model_test.py` | GUI-independent platform sections plus search/filter/selection and safe status/capability presentation over the non-secret catalog; no widgets, credential values, connection execution, provider calls, persistence, or runtime wiring. |
-| Access & Keys window | `access_keys_dialog.py`, `access_keys_dialog_test.py`, narrow `main.py` wiring | Separate `KEYS` button and reusable catalog window with ordered sections/subgroups, alias-aware search, full-width family selection, stable in-place selection/details, short-family scroll-reset behavior, empty/duplicate diagnostics, and the row 2B safe status overlay; no credential values, lifecycle changes, testing, or external access. |
+| Access & Keys window | `access_keys_dialog.py`, `access_keys_dialog_test.py`, narrow `main.py` wiring | Separate `KEYS` button and reusable catalog window with ordered sections/subgroups, alias-aware search, full-width family selection, stable in-place selection/details, short-family scroll-reset behavior, empty/duplicate diagnostics, the row 2B safe status overlay, and row 2C2 masked cloud-ASR Save/Clear controls for supported cloud-ASR entries only; no provider/API/network execution. |
 | Credential architecture/security audit | `credential_architecture.py`, `credential_architecture_test.py`, `CREDENTIAL_SECURITY_AUDIT.md` | Approved row 2A stable non-secret credential IDs, backend/migration/redaction/sink policy, safe presence labels, eight existing-code findings, deterministic reporting, and later approval boundaries; no credential lifecycle changes, provider tests, or network behavior. |
 | Read-only credential runtime status | `credential_runtime_status.py`, `credential_runtime_status_test.py`, Access & Keys metadata/dialog, narrow `main.py` wiring | Approved row 2B configured/missing/backend-unavailable/error status plus safe provenance. YouTube uses the already-loaded masked-field presence and safe storage information; cloud ASR uses named environment-variable presence only. No value rendering/retention, writes, migration, connection tests, provider calls, OAuth, or network behavior. |
-| Backend-only secure credential store | `credential_store.py`, `credential_store_test.py` | Approved row 2C1 secure-store infrastructure for catalogued cloud-ASR credential IDs only. It provides deterministic non-secret keyring locators, explicit `youtube_data_api_key` rejection, a session-only in-memory test backend, a fail-closed injected/system-keyring backend, fixed non-secret result statuses/diagnostics, and no production caller, GUI, settings migration, legacy cleanup, provider calls, OAuth, browser, or network behavior. |
+| Secure credential store | `credential_store.py`, `credential_store_test.py` | Approved row 2C1 secure-store infrastructure for catalogued cloud-ASR credential IDs only. It provides deterministic non-secret keyring locators, explicit `youtube_data_api_key` rejection, a session-only in-memory test backend, a fail-closed injected/system-keyring backend, and fixed non-secret result statuses/diagnostics. Row 2C2 invokes it only for explicit cloud-ASR Save/Clear and safe presence probing; the existing YouTube workflow remains excluded. |
 | Evidence database taxonomy schema | `evidence_database_taxonomy.py`, `evidence_database_taxonomy_test.py` | Read-only root/taxonomy/dimension/dry-run/history metadata with unknown-state and sensitive-classification safeguards; no scanning, automatic classification, persistence, reclassification execution, or file movement. |
 
 ## Current Verified State
@@ -100,8 +100,9 @@ The later source-evidence skeleton milestones also passed their focused and adja
 - `ef92017`: `credential_architecture_test.py` plus Access & Keys metadata/catalog/view/dialog, ASR-provider, source-adapter, and `main_export_state_test.py` regressions; confirmed row 2A contains only non-secret descriptors/policies/redaction/status helpers and audit documentation with no existing runtime-file changes or credential/provider/network behavior.
 - `7c1db2a`: `credential_runtime_status_test.py` plus credential architecture, Access & Keys metadata/catalog/view/dialog, ASR-provider, source-adapter, and `main_export_state_test.py` regressions; manual inspection confirmed safe YouTube/cloud-ASR status and provenance text with no credential values.
 - `29af218`: `credential_store_test.py` plus credential architecture/runtime status, Access & Keys metadata/catalog/view/dialog, source-adapter, ASR-provider, and `main_export_state_test.py` regressions; confirmed row 2C1 adds only `credential_store.py` and `credential_store_test.py`, rejects the existing YouTube credential ID, uses injected/fake keyring tests, and exposes no credential values, fragments, lengths, hashes, exception text, tracebacks, or secret-bearing diagnostics.
+- `97de48d`: `credential_store_test.py`, `credential_runtime_status_test.py`, `access_keys_dialog_test.py`, Access & Keys metadata/catalog/view tests, ASR-provider/source-adapter regressions, and `main_export_state_test.py`; confirmed row 2C2 adds masked cloud-ASR Save/Clear controls only for supported cloud-ASR entries, safe keyring/environment status refresh, fake/injected keyring coverage, no provider/API/network execution, and no changes to the existing YouTube credential workflow. The first manual row 2C2 test exposed an unmasked cloud credential field; the defect was fixed before commit, wrapper/internal-entry masking tests were added, and the corrected manual retest passed.
 
-The queue/taxonomy schemas and Access & Keys metadata/view-model remain data/reporting foundations. Commits `1b57e74`, `0ff528d`, and `ee945fe` add the bounded `KEYS` button/window, complete planned catalog, corrected local interactions, and short-family visibility behavior described above. Commit `ef92017` adds row 2A non-secret credential architecture/audit, `7c1db2a` adds only the row 2B read-only safe status/provenance overlay, and `29af218` adds only the row 2C1 backend-only secure-store infrastructure. No source fetching, credential-value display or retention, production credential-store caller, GUI save/clear field, settings migration, legacy cleanup, database scanning, file movement, provider access, network behavior, or unrelated runtime behavior was added.
+The queue/taxonomy schemas and Access & Keys metadata/view-model remain data/reporting foundations. Commits `1b57e74`, `0ff528d`, and `ee945fe` add the bounded `KEYS` button/window, complete planned catalog, corrected local interactions, and short-family visibility behavior described above. Commit `ef92017` adds row 2A non-secret credential architecture/audit, `7c1db2a` adds the row 2B read-only safe status/provenance overlay, `29af218` adds row 2C1 secure-store infrastructure, and `97de48d` adds row 2C2 masked cloud-ASR Save/Clear controls with safe presence/provenance refresh. No source fetching, provider credential consumption, connection testing, settings migration, legacy cleanup, database scanning, file movement, provider access, network behavior, or unrelated runtime behavior was added.
 
 ## Pipeline Position
 
@@ -116,7 +117,7 @@ The planned pipeline remains:
 7. Optional future provider-specific keyterms.
 8. Term QA after transcription.
 
-Only local planning, metadata, bounded Access & Keys presentation, row 2A credential architecture/audit, row 2B read-only safe status/provenance, and row 2C1 backend-only secure-store layers exist here. The evidence queue can describe links among source URLs, local media, reference text, transcript/subtitle candidates, ASR results, archive/snapshot records, packages, and taxonomy suggestions, but it is not persisted or wired into this pipeline. The credential runtime layer reports only boolean presence, safe provenance, and fixed diagnostic categories; it does not render or retain values. The secure-store backend has no production caller and deliberately excludes the existing YouTube credential workflow. Fetching, capture, ASR use, provider keyterms, masked credential-entry/save/clear GUI, migration, legacy cleanup, reveal/copy UI, credential connection tests, database scanning, file movement, and new persistence workflows are not implemented by this layer.
+Only local planning, metadata, bounded Access & Keys presentation, row 2A credential architecture/audit, row 2B read-only safe status/provenance, row 2C1 secure-store infrastructure, and row 2C2 masked cloud-ASR Save/Clear controls exist here. The evidence queue can describe links among source URLs, local media, reference text, transcript/subtitle candidates, ASR results, archive/snapshot records, packages, and taxonomy suggestions, but it is not persisted or wired into this pipeline. The credential runtime layer reports only boolean presence, safe provenance, and fixed diagnostic categories; it does not render or retain values. The secure-store path is used only for explicit cloud-ASR Save/Clear and safe presence probing, provider execution does not consume stored credentials, and the existing YouTube credential workflow remains deliberately excluded. Fetching, capture, ASR use, provider keyterms, YouTube migration, legacy cleanup, reveal/copy UI, credential connection tests, database scanning, file movement, and new persistence workflows are not implemented by this layer.
 
 ## Context / Glossary Policy
 
@@ -275,9 +276,10 @@ Expected result: all listed local self-tests pass and the working tree is clean 
    - row 2A non-secret credential architecture/audit is implemented at `ef92017`,
    - row 2B read-only non-secret presence/provenance status, safe diagnostic categories, and fail-closed behavior is implemented at `7c1db2a`,
    - row 2C1 backend-only secure credential-store infrastructure is implemented at `29af218`,
-   - row 2C2 masked credential-entry fields, explicit save/clear GUI actions, and any later migration/legacy plaintext cleanup require separate explicit security approval; real connection/provider/network behavior remains a later boundary.
+   - row 2C2 masked cloud-ASR credential-entry fields, explicit Save/Clear GUI actions, and safe presence/provenance refresh are implemented at `97de48d`,
+   - the next separately approved credential boundary is remaining row 2C lifecycle work for existing YouTube migration, legacy plaintext cleanup, and any cleanup/removal of the legacy YouTube plaintext fallback; real provider credential consumption, connection testing, OAuth/browser flows, provider/API calls, uploads, and network behavior remain later boundaries.
 2. Local-only compatibility/reporting:
-   - defer explicit transforms or reports across queue, adapter, access-status, taxonomy, provenance, and Total Export metadata until ordered row 2C2 is resolved,
+   - defer explicit transforms or reports across queue, adapter, access-status, taxonomy, provenance, and Total Export metadata until the next ordered credential boundary is separately approved or intentionally deferred,
    - no background jobs, file operations, external calls, provider tests, or network behavior.
 3. Future source adapters and runtime integration:
    - adapters should remain metadata/capability skeletons first, not a generic scraper,
