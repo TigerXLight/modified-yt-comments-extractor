@@ -80,6 +80,11 @@ from asr_calibration import ensure_asr_calibration_sample, get_asr_calibration_r
 from asr_defaults import load_asr_defaults, save_asr_defaults
 from asr_settings_dialog import ask_asr_settings
 from asr_topic_resolver import resolve_asr_topic_glossary
+from access_keys_dialog import (
+    ACCESS_KEYS_BUTTON_TEXT,
+    AccessKeysWindow,
+    open_or_focus_access_keys_window,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -213,6 +218,7 @@ class App(ctk.CTk):
         self.transcript_waveform_source_path: Optional[str] = None
         self.last_package_dir: Optional[str] = None
         self.last_asr_topic_glossary: Optional[Dict[str, Any]] = None
+        self.access_keys_window: Optional[AccessKeysWindow] = None
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
@@ -428,6 +434,35 @@ class App(ctk.CTk):
             text_color=COLORS["text_muted"]
         )
         self.storage_label.pack(anchor="w", pady=(4, 0))
+
+        self.access_keys_button = ctk.CTkButton(
+            api_frame,
+            text=ACCESS_KEYS_BUTTON_TEXT,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+            command=self.open_access_keys_window,
+        )
+        self.access_keys_button.pack(fill="x", pady=(10, 0))
+
+    def open_access_keys_window(self) -> AccessKeysWindow:
+        """Open or focus the single non-secret Access & Keys window."""
+        existing = getattr(self, "access_keys_window", None)
+        self.access_keys_window = open_or_focus_access_keys_window(
+            existing,
+            lambda: AccessKeysWindow(
+                self,
+                on_close=self._on_access_keys_window_closed,
+            ),
+        )
+        return self.access_keys_window
+
+    def _on_access_keys_window_closed(self) -> None:
+        """Release the closed Access & Keys window reference."""
+        self.access_keys_window = None
 
     def _create_filters_section(self) -> None:
         """Create filters section in sidebar."""
