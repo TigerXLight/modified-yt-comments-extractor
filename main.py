@@ -85,6 +85,7 @@ from access_keys_dialog import (
     AccessKeysWindow,
     open_or_focus_access_keys_window,
 )
+from credential_runtime_status import build_runtime_credential_statuses
 
 # Configure logging
 logging.basicConfig(
@@ -449,12 +450,18 @@ class App(ctk.CTk):
         self.access_keys_button.pack(fill="x", pady=(10, 0))
 
     def open_access_keys_window(self) -> AccessKeysWindow:
-        """Open or focus the single non-secret Access & Keys window."""
+        """Open or focus the read-only Access & Keys status window."""
         existing = getattr(self, "access_keys_window", None)
         self.access_keys_window = open_or_focus_access_keys_window(
             existing,
             lambda: AccessKeysWindow(
                 self,
+                credential_statuses=build_runtime_credential_statuses(
+                    settings_manager=self.settings_manager,
+                    youtube_configured=bool(
+                        self.api_key_entry.get().strip()
+                    ),
+                ),
                 on_close=self._on_access_keys_window_closed,
             ),
         )

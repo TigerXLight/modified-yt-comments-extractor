@@ -163,8 +163,13 @@ def test_sidebar_button_preserves_api_key_entry() -> None:
     )
     assert "open_or_focus_access_keys_window" in open_method
     assert "AccessKeysWindow" in open_method
-    assert "settings_manager" not in open_method
-    assert "api_key_entry" not in open_method
+    assert "build_runtime_credential_statuses" in open_method
+    assert "settings_manager=self.settings_manager" in open_method
+    assert "youtube_configured=bool(" in open_method
+    assert "self.api_key_entry.get().strip()" in open_method
+    assert "get_api_key" not in open_method
+    assert "set_api_key" not in open_method
+    assert "delete_api_key" not in open_method
 
     close_method = _function_source(
         main_source,

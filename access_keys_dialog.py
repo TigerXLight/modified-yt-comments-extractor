@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Optional, Sequence
+from typing import Callable, Mapping, Optional, Sequence
 
 import customtkinter as ctk
 
@@ -11,6 +11,10 @@ from access_keys_catalog import (
     build_default_access_keys_catalog_bundle,
 )
 from access_keys_metadata import AccessKeysCatalog
+from credential_runtime_status import (
+    CredentialRuntimeStatus,
+    apply_runtime_credential_statuses,
+)
 from access_keys_view_model import (
     AccessKeysEntryView,
     AccessKeysManagerView,
@@ -171,6 +175,9 @@ class AccessKeysWindow(ctk.CTkToplevel):
         *,
         catalog: Optional[AccessKeysCatalog] = None,
         layouts: Sequence[AccessKeysEntryLayout] = (),
+        credential_statuses: Optional[
+            Mapping[str, CredentialRuntimeStatus]
+        ] = None,
         on_close: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(parent)
@@ -190,6 +197,13 @@ class AccessKeysWindow(ctk.CTkToplevel):
                 catalog=catalog,
                 layouts=tuple(layouts),
             )
+        bundle = AccessKeysCatalogBundle(
+            catalog=apply_runtime_credential_statuses(
+                bundle.catalog,
+                credential_statuses or {},
+            ),
+            layouts=bundle.layouts,
+        )
         self.controller = AccessKeysDialogController(
             bundle.catalog,
             bundle.layouts,
@@ -239,8 +253,9 @@ class AccessKeysWindow(ctk.CTkToplevel):
         ctk.CTkLabel(
             header,
             text=(
-                "Non-secret access metadata only. This window does not read, "
-                "store, reveal, migrate, or test credentials."
+                "Read-only local credential presence/provenance status. This "
+                "window does not display values, store, migrate, clear, test, "
+                "or call providers."
             ),
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_secondary"],
