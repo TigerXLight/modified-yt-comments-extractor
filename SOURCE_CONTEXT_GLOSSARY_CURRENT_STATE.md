@@ -7,7 +7,7 @@ Branch: `v2.6.0-asr-engines`
 Latest known checkpoint:
 
 ```text
-1b57e74 Wire Access Keys manager window
+ee945fe Fix Access Keys short-family visibility
 ```
 
 ## Purpose
@@ -34,7 +34,7 @@ They must not:
 - persist or background-process evidence queue items,
 - test/store credentials or integrate OAuth/browser profiles,
 - scan database roots, classify evidence automatically, infer sensitive traits, or move files,
-- wire into the GUI,
+- add further GUI/runtime wiring beyond the bounded non-secret Access & Keys presentation,
 - change runtime extractor/export/ASR behavior.
 
 Current helpers validate, normalize, classify, and assemble local metadata only.
@@ -55,8 +55,9 @@ Current helpers validate, normalize, classify, and assemble local metadata only.
 | Source plan provenance | `source_plan_provenance.py`, `source_plan_provenance_test.py` | Local provenance records derived from Source Capture Plans without fetch/capture behavior. |
 | Evidence item queue schema | `evidence_item_queue.py`, `evidence_item_queue_test.py` | Immutable local queue-item/link/ASR-pairing metadata with explicit roles, lifecycle states, and Total Export include/exclude intent; no persistence, file operations, GUI, capture, ASR, archive, or export wiring. |
 | Access & Keys metadata schema | `access_keys_metadata.py`, `access_keys_metadata_test.py` | Non-secret access/credential/test-status and provider/source/archive/browser-assisted-capture metadata with deterministic reports; no secret fields, credential tests, OAuth, provider calls, archive calls, or GUI wiring. |
+| Access & Keys catalog | `access_keys_catalog.py`, `access_keys_catalog_test.py` | Complete planned non-secret services, ordered sections/subgroups, aliases, planned/implemented status, separate archive/browser placeholders, and deterministic validation; no credentials or external execution. |
 | Access & Keys manager view model | `access_keys_view_model.py`, `access_keys_view_model_test.py` | GUI-independent platform sections plus search/filter/selection and safe status/capability presentation over the non-secret catalog; no widgets, credential values, connection execution, provider calls, persistence, or runtime wiring. |
-| Access & Keys window | `access_keys_dialog.py`, `access_keys_dialog_test.py`, narrow `main.py` wiring | Separate `KEYS` button and reusable non-secret metadata window with search/family/selection/diagnostic presentation; existing API-key behavior is preserved and no credential values/actions, provider calls, browser/archive access, or persistence are added. |
+| Access & Keys window | `access_keys_dialog.py`, `access_keys_dialog_test.py`, narrow `main.py` wiring | Separate `KEYS` button and reusable non-secret catalog window with ordered sections/subgroups, alias-aware search, full-width family selection, stable in-place selection/details, short-family scroll-reset behavior, empty/duplicate diagnostics, and preserved existing API-key behavior; no credential lifecycle or external access. |
 | Evidence database taxonomy schema | `evidence_database_taxonomy.py`, `evidence_database_taxonomy_test.py` | Read-only root/taxonomy/dimension/dry-run/history metadata with unknown-state and sensitive-classification safeguards; no scanning, automatic classification, persistence, reclassification execution, or file movement. |
 
 ## Current Verified State
@@ -91,8 +92,10 @@ The later source-evidence skeleton milestones also passed their focused and adja
 - `e63def4`: `evidence_database_taxonomy_test.py`.
 - `8d11a4b`: `access_keys_view_model_test.py` plus adjacent source-adapter/ASR-provider metadata regressions.
 - `1b57e74`: guarded-headless `access_keys_dialog_test.py` plus metadata, view-model, evidence-schema, queue, taxonomy, and source-adapter regressions.
+- `0ff528d`: `access_keys_catalog_test.py`, `access_keys_view_model_test.py`, `access_keys_dialog_test.py`, metadata/schema/queue/taxonomy/source-adapter regressions, and `main_export_state_test.py`; manual acceptance confirmed restored hover, working family selection, and removal of the earlier selection/filter flash.
+- `ee945fe`: focused `access_keys_dialog_test.py` short-family visibility regression plus the adjacent Access & Keys, ASR-provider, source-adapter, and `main_export_state_test.py` chain; manual acceptance confirmed ASR Providers and other short families appear immediately after switching from a long scrolled family.
 
-The schema/view-model milestones remain standalone data/reporting foundations. Commit `1b57e74` adds only the bounded non-secret `KEYS` button/window presentation described above; no source fetching, credential testing, database scanning, file movement, provider access, or unrelated runtime behavior was added.
+The queue/taxonomy schemas and Access & Keys metadata/view-model remain data/reporting foundations. Commits `1b57e74`, `0ff528d`, and `ee945fe` add only the bounded non-secret `KEYS` button/window, complete planned catalog, corrected local interactions, and short-family visibility behavior described above; no source fetching, credential testing, database scanning, file movement, provider access, or unrelated runtime behavior was added.
 
 ## Pipeline Position
 
@@ -107,7 +110,7 @@ The planned pipeline remains:
 7. Optional future provider-specific keyterms.
 8. Term QA after transcription.
 
-Only local planning and metadata layers exist here. The evidence queue can now describe links among source URLs, local media, reference text, transcript/subtitle candidates, ASR results, archive/snapshot records, packages, and taxonomy suggestions, but it is not persisted or wired into this pipeline. Access status and taxonomy review records are likewise descriptive schemas only. Fetching, capture, ASR use, provider keyterms, credential tests, database scanning, file movement, persistence, and GUI integration are not implemented by this layer.
+Only local planning and metadata layers exist here. The evidence queue can now describe links among source URLs, local media, reference text, transcript/subtitle candidates, ASR results, archive/snapshot records, packages, and taxonomy suggestions, but it is not persisted or wired into this pipeline. Access status/catalog records now have a bounded non-secret GUI presentation, while credential lifecycle and external access remain absent; taxonomy review records remain descriptive schemas only. Fetching, capture, ASR use, provider keyterms, credential tests, database scanning, file movement, and persistence are not implemented by this layer.
 
 ## Context / Glossary Policy
 
@@ -250,10 +253,14 @@ The CLI prints to stdout by default, writes only when `--output` is explicitly s
 Run from Windows CMD with the project virtual environment active:
 
 ```cmd
-python -m py_compile source_adapters.py source_adapters_test.py source_adapters_registry_test.py source_adapter_capability_report.py source_adapter_capability_report_test.py source_adapter_capability_report_cli.py source_adapter_capability_report_cli_test.py source_adapter_gap_analysis.py source_adapter_gap_analysis_test.py source_adapter_gap_analysis_cli.py source_adapter_gap_analysis_cli_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py access_keys_view_model.py access_keys_view_model_test.py access_keys_dialog.py access_keys_dialog_test.py main.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python source_adapters_test.py & python source_adapters_registry_test.py & python source_adapter_capability_report_test.py & python source_adapter_capability_report_cli_test.py & python source_adapter_gap_analysis_test.py & python source_adapter_gap_analysis_cli_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python access_keys_view_model_test.py & python access_keys_dialog_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py & git diff --check & git status --short
+python -m py_compile source_adapters.py source_adapters_test.py source_adapters_registry_test.py source_adapter_capability_report.py source_adapter_capability_report_test.py source_adapter_capability_report_cli.py source_adapter_capability_report_cli_test.py source_adapter_gap_analysis.py source_adapter_gap_analysis_test.py source_adapter_gap_analysis_cli.py source_adapter_gap_analysis_cli_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py access_keys_catalog.py access_keys_catalog_test.py access_keys_view_model.py access_keys_view_model_test.py access_keys_dialog.py access_keys_dialog_test.py main.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python source_adapters_test.py & python source_adapters_registry_test.py & python source_adapter_capability_report_test.py & python source_adapter_capability_report_cli_test.py & python source_adapter_gap_analysis_test.py & python source_adapter_gap_analysis_cli_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python access_keys_catalog_test.py & python access_keys_view_model_test.py & python access_keys_dialog_test.py & python main_export_state_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py & git diff --check & git status --short
 ```
 
 Expected result: all listed local self-tests pass and the working tree is clean after committed changes.
+
+## Deferred GUI Performance Note
+
+- The corrected Access & Keys interaction path, including short-family visibility after relayout, is accepted through `ee945fe`. Broader pauses while moving or closing application windows remain deferred to a later whole-application GUI responsiveness/performance audit.
 
 ## Safe Next Milestones
 

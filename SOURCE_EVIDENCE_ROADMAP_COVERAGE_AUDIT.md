@@ -2,7 +2,7 @@
 
 Date: 2026-07-12
 
-Checkpoint: `1b57e74 Wire Access Keys manager window`
+Checkpoint: `ee945fe Fix Access Keys short-family visibility`
 
 Branch: `v2.6.0-asr-engines`
 
@@ -18,9 +18,9 @@ This is documentation only. It does not implement adapters, capture, downloads, 
 
 | User requirement | Covered? | Where covered | Current state | Gap / next milestone | Do not duplicate? |
 | --- | --- | --- | --- | --- | --- |
-| KEYS / Access & Keys manager window | Implemented bounded GUI presentation | `ACCESS_KEYS_MANAGER_SPEC.md`; Access & Keys metadata/view model; `access_keys_dialog.py`; `main.py` | Sidebar `KEYS` button and single reusable `Access & Keys` window render non-secret platform sections, search/family filters, selection details, diagnostics, and limitations; the existing API-key entry remains unchanged | Row-1 presentation layer is complete; credential values/storage/testing and provider-specific operations belong to row 2 and require separate approval | Yes; extend existing models/spec |
+| KEYS / Access & Keys manager window | Implemented bounded GUI presentation | `ACCESS_KEYS_MANAGER_SPEC.md`; `access_keys_catalog.py`; Access & Keys metadata/view model/dialog; `main.py` | Sidebar `KEYS` button and single reusable `Access & Keys` window render the complete planned non-secret catalog with ordered user-facing sections/subgroups, alias-aware search, full-width family selection, stable in-place selection/details, immediate short-family visibility after filtering, diagnostics, and limitations; the existing API-key entry remains unchanged | Row-1 presentation layer is complete; credential values/storage/testing and provider-specific operations belong to row 2 and require separate approval | Yes; extend existing models/spec |
 | API/cloud ASR provider credentials | Implemented non-secret presentation only | `ACCESS_KEYS_MANAGER_SPEC.md`; Access & Keys metadata/view/dialog modules | Status/capability/setup/privacy/cost metadata can be viewed; no secret values, storage, masking, clearing, migration, environment/keyring access, or real tests exist | First unresolved row: design/implement secret-bearing credential lifecycle only after separate explicit security approval | Yes |
-| Platform/source access families beyond one API key | Implemented local metadata and presentation | `SOURCE_EVIDENCE_ROADMAP.md`; `ACCESS_KEYS_MANAGER_SPEC.md`; Access & Keys modules | Existing ASR-provider and source-adapter metadata populate deterministic platform-family sections; no real authentication or adapter execution is added | Real platform authentication/access remains deferred behind row 2 and later source-specific approvals | Yes |
+| Platform/source access families beyond one API key | Implemented local metadata and presentation | `SOURCE_EVIDENCE_ROADMAP.md`; `ACCESS_KEYS_MANAGER_SPEC.md`; `access_keys_catalog.py`; Access & Keys modules | The complete planned non-secret service catalog is represented in deterministic sections/subgroups with aliases and explicit planned-versus-implemented status; no real authentication or adapter execution is added | Real platform authentication/access remains deferred behind row 2 and later source-specific approvals | Yes |
 | Multi-source / website comment capture | Partly covered | `SOURCE_EVIDENCE_ROADMAP.md`, Track A and Mixed-Access Websites | YouTube works; News Website adapter is metadata/URL recognition only | Add one site-specific adapter with mocked/local tests after explicit approval | Yes; avoid generic scraper |
 | Post capture | Partly covered | `SOURCE_EVIDENCE_ROADMAP.md`, Capture Checkbox Roadmap | Roadmap checkbox only | Define adapter capabilities/provenance/completeness warnings | Yes |
 | Comments/replies/live chat capture | Implemented existing runtime for YouTube | Existing YouTube extractor flow; `SOURCE_EVIDENCE_ROADMAP.md` YouTube note | YouTube comments/replies/live chat exist; other sources do not | Preserve YouTube while adding adapters one by one | Yes |
@@ -106,10 +106,16 @@ Future work should extend the relevant spec rather than re-adding the same roadm
   - Added GUI-independent searchable/filterable platform sections, selection state, safe entry presentation, and deterministic serialization.
 - `1b57e74 Wire Access Keys manager window`
   - Added the separate `KEYS` sidebar control and reusable non-secret `Access & Keys` window while preserving the existing API-key field and behavior.
+- `191ee21 Update Access Keys roadmap state`
+  - Checkpointed the bounded non-secret window and retained row 2 as the first secret-bearing approval boundary.
+- `0ff528d Complete Access Keys catalog and interactions`
+  - Added the complete planned non-secret service catalog and ordered sections/subgroups, corrected full-width family selection, removed the earlier selection/filter pane flash, restored hover feedback, and added focused catalog/interaction regressions.
+- `ee945fe Fix Access Keys short-family visibility`
+  - Reset and coalesced the catalog scroll position during family/search relayout so short families such as ASR Providers, News Websites, Archive Services, and Browser-Assisted Capture appear immediately after switching from a long scrolled family; added the deterministic regression and passed manual acceptance.
 
-## Ordered Audit Progress At `1b57e74`
+## Ordered Audit Progress At `ee945fe`
 
-- Row 1 is complete for its approved bounded presentation layer: spec, non-secret metadata, view model, sidebar control, and reusable window are implemented and tested.
+- Row 1 is complete for its approved bounded presentation layer: spec, non-secret metadata, complete planned catalog, view model, sidebar control, reusable window, full-width family selector, in-place selection/detail updates, and short-family scroll-reset behavior are implemented and tested.
 - Row 2 is now the first unresolved row. Secret-bearing credential storage/masking/clearing/migration and provider-specific testing remain unimplemented and require separate explicit approval.
 - Row 3 retains verified non-secret metadata and GUI presentation only; it does not claim real platform authentication.
 - Rows 4 through 39 were reviewed for ordering only and were not implemented in this session. Existing completed schema layers at rows 27 through 31 were recognised and not duplicated.
@@ -134,7 +140,7 @@ Implemented local-only helper/CLI/test infrastructure:
 - ASR comparison/reporting/manual seed tooling.
 - Evidence item queue schema with links, ASR pairing metadata, and explicit Total Export selection intent.
 - Non-secret Access & Keys catalog/report metadata and GUI-independent manager presentation state.
-- Bounded `KEYS` sidebar/window presentation over existing non-secret metadata, with search, family filters, selection details, empty states, and diagnostics.
+- Bounded `KEYS` sidebar/window presentation over non-secret metadata and the complete planned catalog, with ordered sections/subgroups, alias-aware search, full-width family filtering, stable in-place selection/details, empty states, and diagnostics.
 - Evidence database taxonomy/dry-run/reclassification/history schema with sensitive-classification safeguards.
 
 Docs-only/spec-only:
@@ -150,6 +156,11 @@ Docs-only/spec-only:
 - Evidence database scanning/indexing/reclassification.
 - Behavior/activity log implementation.
 - Source credit/witness UI/workflow.
+
+## Deferred General GUI Responsiveness Note
+
+- Manual user testing accepted the corrected Access & Keys catalog, hover, family filtering, platform-selection behavior, and immediate visibility of short families after switching from a long scrolled family.
+- Some broader pauses remain while moving or closing windows in the main application. These are recorded for a later whole-application GUI responsiveness/performance audit and are not treated as an unresolved Access & Keys row-1 interaction defect.
 
 ## Ordered Next Boundary
 

@@ -2,7 +2,7 @@
 
 Date: 2026-07-12
 
-Checkpoint: `1b57e74 Wire Access Keys manager window`
+Checkpoint: `ee945fe Fix Access Keys short-family visibility`
 
 Branch: `v2.6.0-asr-engines`
 
@@ -16,7 +16,7 @@ It records the state needed for a future session to resume safely. It does not i
 
 - The working tree was clean when this handoff milestone started. Reconfirm with `git status --short` before applying any new patch.
 - Current branch: `v2.6.0-asr-engines`.
-- Current checkpoint: `1b57e74 Wire Access Keys manager window`.
+- Current checkpoint: `ee945fe Fix Access Keys short-family visibility`.
 - The user performs final local checks, commits, and pushes after reviewing each patch.
 - Codex should not commit unless the user explicitly changes that instruction.
 - Keep one milestone per patch.
@@ -147,9 +147,12 @@ Three planned source-evidence areas now have standalone, local-only schema imple
 - `access_keys_metadata.py` and `access_keys_metadata_test.py` (`66871b6`): non-secret access-mode, credential-status, connection-test-status, provider/source/archive/browser-assisted-capture metadata, deterministic serialization, and text/Markdown/JSON rendering. It stores no key, token, password, cookie, session, authorization header, or browser-profile path and performs no credential test, OAuth, provider call, archive call, source fetch, or GUI wiring.
 - `access_keys_view_model.py` and `access_keys_view_model_test.py` (`8d11a4b`): GUI-independent searchable/filterable platform sections, selected-entry state, safe capability/status presentation, empty/duplicate diagnostics, and deterministic dictionary output over the existing non-secret catalog. It creates no widgets, stores no credential values, performs no connection test or external call, and does not wire into the sidebar/runtime.
 - `access_keys_dialog.py`, `access_keys_dialog_test.py`, and narrow `main.py` wiring (`1b57e74`): preserve the existing masked YouTube API-key entry and add a separate `KEYS` button plus single reusable `Access & Keys` window. The window renders existing non-secret ASR-provider/source-adapter metadata with search, family filters, selection details, empty states, and duplicate diagnostics; it adds no credential-value widgets/actions, storage, migration, connection execution, provider/network/browser/archive behavior, or unrelated runtime changes.
+- `access_keys_catalog.py` and `access_keys_catalog_test.py` (`0ff528d`): complete planned non-secret service catalog with deterministic top-level sections/subgroups, aliases, planned-versus-implemented status, separate archive check/submit entries, browser-assisted-capture placeholders, and no credential or external execution.
+- The same `0ff528d` interaction pass replaces the partially clickable family control with a full-width selector, keeps list/detail containers stable, updates selection/details in place, removes the synchronous blank/loading flash, restores hover feedback, and preserves existing API-key, YouTube, ASR, and export behavior.
+- `ee945fe` fixes the remaining short-family visibility defect by resetting the catalog scroll position before relayout and once after idle, coalescing/cancelling pending callbacks, and adding a deterministic regression. Manual testing confirmed ASR Providers, News Websites, Archive Services, and Browser-Assisted Capture appear immediately after switching from a long scrolled family.
 - `evidence_database_taxonomy.py` and `evidence_database_taxonomy_test.py` (`e63def4`): read-only database-root/taxonomy metadata, arbitrary user-defined dimensions, valid unknown/not-identified states, dry-run reclassification and alias-normalization suggestions, sensitive-classification safeguards, review states, preserved history, and queue/package/source references. Paths are descriptive metadata only; the model performs no scanning, automatic classification, persistence, reclassification execution, or file movement.
 
-These are implemented local-only schema/test foundations, not implemented UI/runtime workflows. The corresponding specification documents remain authoritative for future behavior, and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` should continue to distinguish implemented schema foundations from docs-only GUI, persistence, external access, and execution gaps.
+The queue and taxonomy remain local-only schema/test foundations rather than implemented UI/runtime workflows. Access & Keys now also has the bounded non-secret catalog/view/window described above, but credential lifecycle, connection testing, provider access, OAuth, browser-profile access, and persistence remain unimplemented. The corresponding specification documents remain authoritative for future behavior, and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` should continue to distinguish implemented layers from docs-only persistence, external access, and execution gaps.
 
 ## Upstream v2.1.1 Parity State
 
@@ -209,7 +212,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | `SOURCE_EVIDENCE_ROADMAP.md` | Cross-source evidence, capture, access, queue, taxonomy, and preservation roadmap. |
 | `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` | Requirement-to-document/implementation coverage and next-gap audit. |
 | `EVIDENCE_ITEM_QUEUE_UI_SPEC.md` | Future evidence queue UI/workflow contract; current implementation is schema-only. |
-| `ACCESS_KEYS_MANAGER_SPEC.md` | Future Access & Keys UI/workflow contract; current implementation is non-secret metadata-only. |
+| `ACCESS_KEYS_MANAGER_SPEC.md` | Access & Keys UI/workflow contract; current implementation includes bounded non-secret metadata, catalog, view model, and window presentation only. |
 | `EVIDENCE_DATABASE_TAXONOMY_SPEC.md` | Future database taxonomy/index/reclassification contract; current implementation is read-only schema/dry-run metadata only. |
 | `PRESERVATION_METADATA_SEED.md` | Local preservation fixture and report-generator usage. |
 | `EVIDENCE_PACKAGE_MANIFEST.md` | Local evidence manifest helper and CLI semantics. |
@@ -229,6 +232,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | Evidence manifest | `total_export_evidence_manifest.py`, `total_export_evidence_manifest_cli.py` | Evidence manifest helper and CLI tests |
 | Evidence item queue schema | `evidence_item_queue.py` | `evidence_item_queue_test.py` |
 | Access & Keys metadata schema | `access_keys_metadata.py` | `access_keys_metadata_test.py` |
+| Access & Keys catalog/view/window | `access_keys_catalog.py`, `access_keys_view_model.py`, `access_keys_dialog.py`, narrow `main.py` wiring | `access_keys_catalog_test.py`, `access_keys_view_model_test.py`, `access_keys_dialog_test.py`, `main_export_state_test.py`; includes short-family scroll-reset regression |
 | Evidence database taxonomy schema | `evidence_database_taxonomy.py` | `evidence_database_taxonomy_test.py` |
 | URL normalization | `youtube_url_utils.py` | `youtube_url_utils_test.py` |
 | Upstream parity | Extractor/spam/settings/export-state code | Five local/mocked parity tests listed above |
@@ -236,6 +240,9 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 ## Latest Known Commit Chain
 
 ```
+ee945fe Fix Access Keys short-family visibility
+0ff528d Complete Access Keys catalog and interactions
+191ee21 Update Access Keys roadmap state
 1b57e74 Wire Access Keys manager window
 8d11a4b Add Access Keys manager view model
 e63def4 Add evidence database taxonomy schema skeleton
@@ -278,7 +285,7 @@ python -m py_compile total_export_bundle_index.py total_export_bundle_index_test
 Source-evidence model skeletons:
 
 ```cmd
-python -m py_compile evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py access_keys_view_model.py access_keys_view_model_test.py access_keys_dialog.py access_keys_dialog_test.py main.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python access_keys_view_model_test.py & python access_keys_dialog_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py
+python -m py_compile evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py access_keys_catalog.py access_keys_catalog_test.py access_keys_view_model.py access_keys_view_model_test.py access_keys_dialog.py access_keys_dialog_test.py main.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python access_keys_catalog_test.py & python access_keys_view_model_test.py & python access_keys_dialog_test.py & python main_export_state_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py
 ```
 
 Upstream parity regressions:
@@ -294,6 +301,11 @@ git diff --check & git status --short
 ```
 
 Do not add provider/API/network calls to these verification chains.
+
+## Deferred General GUI Responsiveness
+
+- Access & Keys selection, filtering, hover, popup behavior, and short-family visibility passed focused tests and manual acceptance through `ee945fe`.
+- The user still observed broader pauses while moving or closing application windows. Preserve this as a later whole-application GUI responsiveness/performance audit; do not treat it as unfinished row-1 catalog interaction or use it to bypass row 2.
 
 ## Safe Next Milestones
 
@@ -312,7 +324,7 @@ Do not add provider/API/network calls to these verification chains.
 - Do not copy/build packages or extract ZIPs through preservation/evidence metadata helpers.
 - Do not infer remote deletion or unavailability from missing local records.
 - Do not expose or record secrets in docs, logs, manifests, reports, screenshots, or test fixtures.
-- Do not describe the queue, Access & Keys manager, or database taxonomy UI/persistence/runtime as implemented; only their local schema/test foundations exist.
+- Do not describe the queue or database-taxonomy UI/persistence/runtime as implemented. The bounded non-secret Access & Keys catalog/view/window is implemented, but credential lifecycle, connection testing, provider access, OAuth, browser-profile access, and persistence remain unimplemented.
 - Do not infer sensitive classifications from weak clues or turn dry-run taxonomy suggestions into automatic file operations.
 - Do not modify mature YouTube comment/live-chat/export behavior during unrelated milestones.
 - Do not commit before the user has reviewed the patch and local checks.
