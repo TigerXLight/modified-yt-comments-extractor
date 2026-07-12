@@ -2,7 +2,7 @@
 
 Date: 2026-07-12
 
-Checkpoint: `ee945fe Fix Access Keys short-family visibility`
+Checkpoint: `ef92017 Add credential architecture and security audit`
 
 Branch: `v2.6.0-asr-engines`
 
@@ -16,7 +16,7 @@ It records the state needed for a future session to resume safely. It does not i
 
 - The working tree was clean when this handoff milestone started. Reconfirm with `git status --short` before applying any new patch.
 - Current branch: `v2.6.0-asr-engines`.
-- Current checkpoint: `ee945fe Fix Access Keys short-family visibility`.
+- Current checkpoint: `ef92017 Add credential architecture and security audit`.
 - The user performs final local checks, commits, and pushes after reviewing each patch.
 - Codex should not commit unless the user explicitly changes that instruction.
 - Keep one milestone per patch.
@@ -150,9 +150,10 @@ Three planned source-evidence areas now have standalone, local-only schema imple
 - `access_keys_catalog.py` and `access_keys_catalog_test.py` (`0ff528d`): complete planned non-secret service catalog with deterministic top-level sections/subgroups, aliases, planned-versus-implemented status, separate archive check/submit entries, browser-assisted-capture placeholders, and no credential or external execution.
 - The same `0ff528d` interaction pass replaces the partially clickable family control with a full-width selector, keeps list/detail containers stable, updates selection/details in place, removes the synchronous blank/loading flash, restores hover feedback, and preserves existing API-key, YouTube, ASR, and export behavior.
 - `ee945fe` fixes the remaining short-family visibility defect by resetting the catalog scroll position before relayout and once after idle, coalescing/cancelling pending callbacks, and adding a deterministic regression. Manual testing confirmed ASR Providers, News Websites, Archive Services, and Browser-Assisted Capture appear immediately after switching from a long scrolled family.
+- `credential_architecture.py`, `credential_architecture_test.py`, and `CREDENTIAL_SECURITY_AUDIT.md` (`ef92017`) implement approved row 2A as a non-secret architecture and existing-code audit: stable credential IDs for YouTube and catalogued cloud ASR providers, backend/migration/redaction/sink policy, safe presence labels, eight findings, deterministic serialization/rendering, and explicit row 2B/2C/later-network boundaries. They perform no credential reads/writes, storage, migration, clearing, GUI secret handling, provider testing, OAuth, browser access, or network activity and change no existing runtime file.
 - `evidence_database_taxonomy.py` and `evidence_database_taxonomy_test.py` (`e63def4`): read-only database-root/taxonomy metadata, arbitrary user-defined dimensions, valid unknown/not-identified states, dry-run reclassification and alias-normalization suggestions, sensitive-classification safeguards, review states, preserved history, and queue/package/source references. Paths are descriptive metadata only; the model performs no scanning, automatic classification, persistence, reclassification execution, or file movement.
 
-The queue and taxonomy remain local-only schema/test foundations rather than implemented UI/runtime workflows. Access & Keys now also has the bounded non-secret catalog/view/window described above, but credential lifecycle, connection testing, provider access, OAuth, browser-profile access, and persistence remain unimplemented. The corresponding specification documents remain authoritative for future behavior, and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` should continue to distinguish implemented layers from docs-only persistence, external access, and execution gaps.
+The queue and taxonomy remain local-only schema/test foundations rather than implemented UI/runtime workflows. Access & Keys has the bounded non-secret catalog/view/window plus the row 2A credential architecture/audit described above. Actual backend inspection, credential lifecycle, secret-entry/save/clear/migration/reveal/copy UI, connection testing, provider access, OAuth, browser-profile access, and credential persistence remain unimplemented. The corresponding specification and audit documents remain authoritative for future behavior, and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` should continue to distinguish implemented non-secret architecture from runtime, secret-bearing, and external-access gaps.
 
 ## Upstream v2.1.1 Parity State
 
@@ -213,6 +214,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` | Requirement-to-document/implementation coverage and next-gap audit. |
 | `EVIDENCE_ITEM_QUEUE_UI_SPEC.md` | Future evidence queue UI/workflow contract; current implementation is schema-only. |
 | `ACCESS_KEYS_MANAGER_SPEC.md` | Access & Keys UI/workflow contract; current implementation includes bounded non-secret metadata, catalog, view model, and window presentation only. |
+| `CREDENTIAL_SECURITY_AUDIT.md` | Approved row 2A audit of the existing YouTube settings/keyring/plaintext path plus stable non-secret credential architecture, findings, storage/migration/redaction rules, and later approval boundaries; no runtime credential handling. |
 | `EVIDENCE_DATABASE_TAXONOMY_SPEC.md` | Future database taxonomy/index/reclassification contract; current implementation is read-only schema/dry-run metadata only. |
 | `PRESERVATION_METADATA_SEED.md` | Local preservation fixture and report-generator usage. |
 | `EVIDENCE_PACKAGE_MANIFEST.md` | Local evidence manifest helper and CLI semantics. |
@@ -233,6 +235,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | Evidence item queue schema | `evidence_item_queue.py` | `evidence_item_queue_test.py` |
 | Access & Keys metadata schema | `access_keys_metadata.py` | `access_keys_metadata_test.py` |
 | Access & Keys catalog/view/window | `access_keys_catalog.py`, `access_keys_view_model.py`, `access_keys_dialog.py`, narrow `main.py` wiring | `access_keys_catalog_test.py`, `access_keys_view_model_test.py`, `access_keys_dialog_test.py`, `main_export_state_test.py`; includes short-family scroll-reset regression |
+| Credential architecture/security audit | `credential_architecture.py`, `CREDENTIAL_SECURITY_AUDIT.md` | `credential_architecture_test.py`; stable non-secret descriptors/policies/redaction/status helpers only, with no backend or runtime access |
 | Evidence database taxonomy schema | `evidence_database_taxonomy.py` | `evidence_database_taxonomy_test.py` |
 | URL normalization | `youtube_url_utils.py` | `youtube_url_utils_test.py` |
 | Upstream parity | Extractor/spam/settings/export-state code | Five local/mocked parity tests listed above |
@@ -240,6 +243,8 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 ## Latest Known Commit Chain
 
 ```
+ef92017 Add credential architecture and security audit
+447f031 Close Access Keys presentation milestone
 ee945fe Fix Access Keys short-family visibility
 0ff528d Complete Access Keys catalog and interactions
 191ee21 Update Access Keys roadmap state
@@ -285,7 +290,7 @@ python -m py_compile total_export_bundle_index.py total_export_bundle_index_test
 Source-evidence model skeletons:
 
 ```cmd
-python -m py_compile evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py access_keys_catalog.py access_keys_catalog_test.py access_keys_view_model.py access_keys_view_model_test.py access_keys_dialog.py access_keys_dialog_test.py main.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python access_keys_catalog_test.py & python access_keys_view_model_test.py & python access_keys_dialog_test.py & python main_export_state_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py
+python -m py_compile evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py access_keys_catalog.py access_keys_catalog_test.py access_keys_view_model.py access_keys_view_model_test.py access_keys_dialog.py access_keys_dialog_test.py credential_architecture.py credential_architecture_test.py main.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python access_keys_catalog_test.py & python access_keys_view_model_test.py & python access_keys_dialog_test.py & python credential_architecture_test.py & python main_export_state_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py
 ```
 
 Upstream parity regressions:
@@ -309,10 +314,12 @@ Do not add provider/API/network calls to these verification chains.
 
 ## Safe Next Milestones
 
-1. Row 2 is the first unresolved ordered roadmap layer: credential storage/masking/clearing/migration and any real connection-test lifecycle require a separate security design and explicit approval.
-2. Do not begin later-row compatibility/reporting work while row 2 remains unresolved under the ordered roadmap prompt.
-3. Create the next full external session handoff before beginning a substantially different feature area.
-4. Keep GUI, persistence, database scanning, automatic/sensitive classification, credential testing/storage, provider/archive/downloader/capture, and other networked behavior deferred until explicitly approved, opt-in where applicable, and covered by local/mocked tests.
+1. Row 2A non-secret credential architecture/audit is complete at `ef92017`.
+2. Row 2B is the first unresolved ordered roadmap layer and requires separate explicit approval: a runtime credential-provider abstraction limited to read-only non-secret presence/provenance status, safe diagnostic categories, and fail-closed backend behavior.
+3. Do not expand row 2B into credential-value exposure, writes, save/clear/migration/reveal/copy UI, legacy plaintext cleanup, connection tests, provider calls, OAuth, cloud ASR execution, browser behavior, or network access; those are row 2C or later separately approved boundaries.
+4. Do not begin later-row compatibility/reporting work while row 2B remains unresolved under the ordered roadmap prompt.
+5. Create the next full external session handoff before beginning a substantially different feature area.
+6. Keep GUI, persistence, database scanning, automatic/sensitive classification, credential testing/storage, provider/archive/downloader/capture, and other networked behavior deferred until explicitly approved, opt-in where applicable, and covered by local/mocked tests.
 
 ## Do-Not-Do List
 
@@ -324,7 +331,7 @@ Do not add provider/API/network calls to these verification chains.
 - Do not copy/build packages or extract ZIPs through preservation/evidence metadata helpers.
 - Do not infer remote deletion or unavailability from missing local records.
 - Do not expose or record secrets in docs, logs, manifests, reports, screenshots, or test fixtures.
-- Do not describe the queue or database-taxonomy UI/persistence/runtime as implemented. The bounded non-secret Access & Keys catalog/view/window is implemented, but credential lifecycle, connection testing, provider access, OAuth, browser-profile access, and persistence remain unimplemented.
+- Do not describe the queue or database-taxonomy UI/persistence/runtime as implemented. The bounded non-secret Access & Keys catalog/view/window and row 2A credential architecture/audit are implemented, but backend inspection, credential lifecycle, secret-bearing UI, connection testing, provider access, OAuth, browser-profile access, and persistence remain unimplemented.
 - Do not infer sensitive classifications from weak clues or turn dry-run taxonomy suggestions into automatic file operations.
 - Do not modify mature YouTube comment/live-chat/export behavior during unrelated milestones.
 - Do not commit before the user has reviewed the patch and local checks.
