@@ -7,12 +7,12 @@ Branch: `v2.6.0-asr-engines`
 Latest known checkpoint:
 
 ```text
-ef92017 Add credential architecture and security audit
+7c1db2a Add read-only credential status integration
 ```
 
 ## Purpose
 
-This document is the local current-state handoff for the source URL, source adapter, source capture plan, provenance, context/glossary, evidence queue, Access & Keys metadata/catalog/window, row 2A credential architecture/audit, and evidence database taxonomy skeletons.
+This document is the local current-state handoff for the source URL, source adapter, source capture plan, provenance, context/glossary, evidence queue, Access & Keys metadata/catalog/window, row 2A credential architecture/audit, row 2B read-only credential status integration, and evidence database taxonomy skeletons.
 
 It records what exists now, what is intentionally not implemented, how to verify the local helpers, and what safe future milestones look like.
 
@@ -34,7 +34,7 @@ They must not:
 - persist or background-process evidence queue items,
 - test/store credentials or integrate OAuth/browser profiles,
 - scan database roots, classify evidence automatically, infer sensitive traits, or move files,
-- add further GUI/runtime wiring beyond the bounded non-secret Access & Keys presentation,
+- add secret-bearing GUI/runtime wiring beyond the bounded Access & Keys presentation and read-only status overlay,
 - change runtime extractor/export/ASR behavior.
 
 Current helpers validate, normalize, classify, and assemble local metadata only.
@@ -57,8 +57,9 @@ Current helpers validate, normalize, classify, and assemble local metadata only.
 | Access & Keys metadata schema | `access_keys_metadata.py`, `access_keys_metadata_test.py` | Non-secret access/credential/test-status and provider/source/archive/browser-assisted-capture metadata with deterministic reports; no secret fields, credential tests, OAuth, provider calls, archive calls, or GUI wiring. |
 | Access & Keys catalog | `access_keys_catalog.py`, `access_keys_catalog_test.py` | Complete planned non-secret services, ordered sections/subgroups, aliases, planned/implemented status, separate archive/browser placeholders, and deterministic validation; no credentials or external execution. |
 | Access & Keys manager view model | `access_keys_view_model.py`, `access_keys_view_model_test.py` | GUI-independent platform sections plus search/filter/selection and safe status/capability presentation over the non-secret catalog; no widgets, credential values, connection execution, provider calls, persistence, or runtime wiring. |
-| Access & Keys window | `access_keys_dialog.py`, `access_keys_dialog_test.py`, narrow `main.py` wiring | Separate `KEYS` button and reusable non-secret catalog window with ordered sections/subgroups, alias-aware search, full-width family selection, stable in-place selection/details, short-family scroll-reset behavior, empty/duplicate diagnostics, and preserved existing API-key behavior; no credential lifecycle or external access. |
-| Credential architecture/security audit | `credential_architecture.py`, `credential_architecture_test.py`, `CREDENTIAL_SECURITY_AUDIT.md` | Approved row 2A stable non-secret credential IDs, backend/migration/redaction/sink policy, safe presence labels, eight existing-code findings, deterministic reporting, and later approval boundaries; no credential values, backend access, GUI secret controls, provider tests, or network behavior. |
+| Access & Keys window | `access_keys_dialog.py`, `access_keys_dialog_test.py`, narrow `main.py` wiring | Separate `KEYS` button and reusable catalog window with ordered sections/subgroups, alias-aware search, full-width family selection, stable in-place selection/details, short-family scroll-reset behavior, empty/duplicate diagnostics, and the row 2B safe status overlay; no credential values, lifecycle changes, testing, or external access. |
+| Credential architecture/security audit | `credential_architecture.py`, `credential_architecture_test.py`, `CREDENTIAL_SECURITY_AUDIT.md` | Approved row 2A stable non-secret credential IDs, backend/migration/redaction/sink policy, safe presence labels, eight existing-code findings, deterministic reporting, and later approval boundaries; no credential lifecycle changes, provider tests, or network behavior. |
+| Read-only credential runtime status | `credential_runtime_status.py`, `credential_runtime_status_test.py`, Access & Keys metadata/dialog, narrow `main.py` wiring | Approved row 2B configured/missing/backend-unavailable/error status plus safe provenance. YouTube uses the already-loaded masked-field presence and safe storage information; cloud ASR uses named environment-variable presence only. No value rendering/retention, writes, migration, connection tests, provider calls, OAuth, or network behavior. |
 | Evidence database taxonomy schema | `evidence_database_taxonomy.py`, `evidence_database_taxonomy_test.py` | Read-only root/taxonomy/dimension/dry-run/history metadata with unknown-state and sensitive-classification safeguards; no scanning, automatic classification, persistence, reclassification execution, or file movement. |
 
 ## Current Verified State
@@ -96,8 +97,9 @@ The later source-evidence skeleton milestones also passed their focused and adja
 - `0ff528d`: `access_keys_catalog_test.py`, `access_keys_view_model_test.py`, `access_keys_dialog_test.py`, metadata/schema/queue/taxonomy/source-adapter regressions, and `main_export_state_test.py`; manual acceptance confirmed restored hover, working family selection, and removal of the earlier selection/filter flash.
 - `ee945fe`: focused `access_keys_dialog_test.py` short-family visibility regression plus the adjacent Access & Keys, ASR-provider, source-adapter, and `main_export_state_test.py` chain; manual acceptance confirmed ASR Providers and other short families appear immediately after switching from a long scrolled family.
 - `ef92017`: `credential_architecture_test.py` plus Access & Keys metadata/catalog/view/dialog, ASR-provider, source-adapter, and `main_export_state_test.py` regressions; confirmed row 2A contains only non-secret descriptors/policies/redaction/status helpers and audit documentation with no existing runtime-file changes or credential/provider/network behavior.
+- `7c1db2a`: `credential_runtime_status_test.py` plus credential architecture, Access & Keys metadata/catalog/view/dialog, ASR-provider, source-adapter, and `main_export_state_test.py` regressions; manual inspection confirmed safe YouTube/cloud-ASR status and provenance text with no credential values.
 
-The queue/taxonomy schemas and Access & Keys metadata/view-model remain data/reporting foundations. Commits `1b57e74`, `0ff528d`, and `ee945fe` add only the bounded non-secret `KEYS` button/window, complete planned catalog, corrected local interactions, and short-family visibility behavior described above. Commit `ef92017` adds only the row 2A non-secret credential architecture/audit. No source fetching, credential-value access, credential testing, database scanning, file movement, provider access, network behavior, or unrelated runtime behavior was added.
+The queue/taxonomy schemas and Access & Keys metadata/view-model remain data/reporting foundations. Commits `1b57e74`, `0ff528d`, and `ee945fe` add the bounded `KEYS` button/window, complete planned catalog, corrected local interactions, and short-family visibility behavior described above. Commit `ef92017` adds row 2A non-secret credential architecture/audit, and `7c1db2a` adds only the row 2B read-only safe status/provenance overlay. No source fetching, credential-value display or retention, credential writes/migration/testing, database scanning, file movement, provider access, network behavior, or unrelated runtime behavior was added.
 
 ## Pipeline Position
 
@@ -112,7 +114,7 @@ The planned pipeline remains:
 7. Optional future provider-specific keyterms.
 8. Term QA after transcription.
 
-Only local planning, metadata, bounded non-secret Access & Keys presentation, and row 2A credential architecture/audit layers exist here. The evidence queue can describe links among source URLs, local media, reference text, transcript/subtitle candidates, ASR results, archive/snapshot records, packages, and taxonomy suggestions, but it is not persisted or wired into this pipeline. The credential architecture can describe stable IDs, allowed backend policy, safe presence labels, and prohibited sinks, but it does not inspect backends or access values. Fetching, capture, ASR use, provider keyterms, runtime credential-provider access, secret-bearing UI, credential tests, database scanning, file movement, and persistence are not implemented by this layer.
+Only local planning, metadata, bounded Access & Keys presentation, row 2A credential architecture/audit, and row 2B read-only safe status/provenance layers exist here. The evidence queue can describe links among source URLs, local media, reference text, transcript/subtitle candidates, ASR results, archive/snapshot records, packages, and taxonomy suggestions, but it is not persisted or wired into this pipeline. The credential runtime layer reports only boolean presence, safe provenance, and fixed diagnostic categories; it does not render or retain values. Fetching, capture, ASR use, provider keyterms, secret-entry/save/clear/migration/reveal/copy UI, credential connection tests, database scanning, file movement, and new persistence are not implemented by this layer.
 
 ## Context / Glossary Policy
 
@@ -255,7 +257,7 @@ The CLI prints to stdout by default, writes only when `--output` is explicitly s
 Run from Windows CMD with the project virtual environment active:
 
 ```cmd
-python -m py_compile source_adapters.py source_adapters_test.py source_adapters_registry_test.py source_adapter_capability_report.py source_adapter_capability_report_test.py source_adapter_capability_report_cli.py source_adapter_capability_report_cli_test.py source_adapter_gap_analysis.py source_adapter_gap_analysis_test.py source_adapter_gap_analysis_cli.py source_adapter_gap_analysis_cli_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py access_keys_catalog.py access_keys_catalog_test.py access_keys_view_model.py access_keys_view_model_test.py access_keys_dialog.py access_keys_dialog_test.py credential_architecture.py credential_architecture_test.py main.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python source_adapters_test.py & python source_adapters_registry_test.py & python source_adapter_capability_report_test.py & python source_adapter_capability_report_cli_test.py & python source_adapter_gap_analysis_test.py & python source_adapter_gap_analysis_cli_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python access_keys_catalog_test.py & python access_keys_view_model_test.py & python access_keys_dialog_test.py & python credential_architecture_test.py & python main_export_state_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py & git diff --check & git status --short
+python -m py_compile source_adapters.py source_adapters_test.py source_adapters_registry_test.py source_adapter_capability_report.py source_adapter_capability_report_test.py source_adapter_capability_report_cli.py source_adapter_capability_report_cli_test.py source_adapter_gap_analysis.py source_adapter_gap_analysis_test.py source_adapter_gap_analysis_cli.py source_adapter_gap_analysis_cli_test.py source_capture_plan.py source_capture_plan_test.py source_capture_plan_cli.py source_capture_plan_cli_test.py source_plan_provenance.py source_plan_provenance_test.py context_glossary.py context_glossary_test.py context_glossary_cli.py context_glossary_cli_test.py youtube_url_utils.py youtube_url_utils_test.py evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py access_keys_catalog.py access_keys_catalog_test.py access_keys_view_model.py access_keys_view_model_test.py access_keys_dialog.py access_keys_dialog_test.py credential_architecture.py credential_architecture_test.py credential_runtime_status.py credential_runtime_status_test.py main.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python source_adapters_test.py & python source_adapters_registry_test.py & python source_adapter_capability_report_test.py & python source_adapter_capability_report_cli_test.py & python source_adapter_gap_analysis_test.py & python source_adapter_gap_analysis_cli_test.py & python source_capture_plan_test.py & python source_capture_plan_cli_test.py & python source_plan_provenance_test.py & python context_glossary_test.py & python context_glossary_cli_test.py & python youtube_url_utils_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python access_keys_catalog_test.py & python access_keys_view_model_test.py & python access_keys_dialog_test.py & python credential_architecture_test.py & python credential_runtime_status_test.py & python main_export_state_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py & git diff --check & git status --short
 ```
 
 Expected result: all listed local self-tests pass and the working tree is clean after committed changes.
@@ -267,13 +269,13 @@ Expected result: all listed local self-tests pass and the working tree is clean 
 ## Safe Next Milestones
 
 1. Ordered Access & Keys boundary:
-   - row 1 bounded non-secret `KEYS` sidebar/window presentation is implemented,
+   - row 1 bounded `KEYS` sidebar/window presentation is implemented,
    - row 2A non-secret credential architecture/audit is implemented at `ef92017`,
-   - row 2B runtime credential-provider abstraction for read-only non-secret presence/provenance status, safe diagnostic categories, and fail-closed backend behavior requires separate explicit approval,
-   - row 2C secret-entry/save/clear/migration/reveal/copy UI and all real connection/provider/network behavior remain later separate approval boundaries.
+   - row 2B read-only non-secret presence/provenance status, safe diagnostic categories, and fail-closed behavior is implemented at `7c1db2a`,
+   - row 2C secret-entry/save/clear/migration/reveal/copy UI and legacy plaintext cleanup require separate explicit security approval; real connection/provider/network behavior remains a later boundary.
 2. Local-only compatibility/reporting:
-   - defer explicit transforms or reports across queue, adapter, access-status, taxonomy, provenance, and Total Export metadata until ordered row 2B is resolved,
-   - no persistence, background jobs, file operations, external calls, or GUI wiring.
+   - defer explicit transforms or reports across queue, adapter, access-status, taxonomy, provenance, and Total Export metadata until ordered row 2C is resolved,
+   - no background jobs, file operations, external calls, provider tests, or network behavior.
 3. Future source adapters and runtime integration:
    - adapters should remain metadata/capability skeletons first, not a generic scraper,
    - site fetching, credential testing, database scanning, file movement, and GUI/runtime integration remain deferred until separately approved with local/mocked tests.

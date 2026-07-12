@@ -2,7 +2,7 @@
 
 Date: 2026-07-12
 
-Checkpoint: `ef92017 Add credential architecture and security audit`
+Checkpoint: `7c1db2a Add read-only credential status integration`
 
 Branch: `v2.6.0-asr-engines`
 
@@ -19,7 +19,7 @@ This is documentation only. It does not implement adapters, capture, downloads, 
 | User requirement | Covered? | Where covered | Current state | Gap / next milestone | Do not duplicate? |
 | --- | --- | --- | --- | --- | --- |
 | KEYS / Access & Keys manager window | Implemented bounded GUI presentation | `ACCESS_KEYS_MANAGER_SPEC.md`; `access_keys_catalog.py`; Access & Keys metadata/view model/dialog; `main.py` | Sidebar `KEYS` button and single reusable `Access & Keys` window render the complete planned non-secret catalog with ordered user-facing sections/subgroups, alias-aware search, full-width family selection, stable in-place selection/details, immediate short-family visibility after filtering, diagnostics, and limitations; the existing API-key entry remains unchanged | Row-1 presentation layer is complete; credential values/storage/testing and provider-specific operations belong to row 2 and require separate approval | Yes; extend existing models/spec |
-| API/cloud ASR provider credentials | Row 2A non-secret architecture/audit implemented; runtime deferred | `ACCESS_KEYS_MANAGER_SPEC.md`; `CREDENTIAL_SECURITY_AUDIT.md`; `credential_architecture.py`; `credential_architecture_test.py`; Access & Keys metadata/view/dialog modules | Stable credential IDs for YouTube and catalogued cloud ASR providers, backend policy, redaction/sink rules, safe presence labels, eight existing-code findings, and later approval boundaries are represented without credential values, backend reads/writes, migration, clearing, GUI wiring, connection tests, provider calls, or network access | Row 2B is the first unresolved layer: runtime credential-provider abstraction, read-only non-secret presence/provenance status, safe diagnostic categories, and fail-closed backend behavior require separate explicit approval | Yes; extend the row 2A architecture rather than bypassing it |
+| API/cloud ASR provider credentials | Rows 2A and 2B implemented within non-secret/read-only boundaries | `ACCESS_KEYS_MANAGER_SPEC.md`; `CREDENTIAL_SECURITY_AUDIT.md`; `credential_architecture.py`; `credential_runtime_status.py`; focused tests; Access & Keys metadata/dialog; narrow `main.py` wiring | Stable credential IDs and security policy are implemented together with read-only runtime status overlays. YouTube reports only boolean presence plus safe existing-storage provenance; catalogued cloud ASR providers report only named environment-variable presence. Statuses are limited to configured, missing, backend unavailable, or safe error categories; values and exception text are never rendered or retained. No credential writes, clearing, migration, connection tests, provider calls, OAuth, or network access were added | Row 2C is the first unresolved layer: secret-entry/save/clear/migration/reveal/copy behavior and legacy plaintext cleanup require separate explicit security approval; real connection/provider/network behavior remains a later boundary | Yes; extend the row 2A/2B architecture rather than bypassing it |
 | Platform/source access families beyond one API key | Implemented local metadata and presentation | `SOURCE_EVIDENCE_ROADMAP.md`; `ACCESS_KEYS_MANAGER_SPEC.md`; `access_keys_catalog.py`; Access & Keys modules | The complete planned non-secret service catalog is represented in deterministic sections/subgroups with aliases and explicit planned-versus-implemented status; no real authentication or adapter execution is added | Real platform authentication/access remains deferred behind row 2 and later source-specific approvals | Yes |
 | Multi-source / website comment capture | Partly covered | `SOURCE_EVIDENCE_ROADMAP.md`, Track A and Mixed-Access Websites | YouTube works; News Website adapter is metadata/URL recognition only | Add one site-specific adapter with mocked/local tests after explicit approval | Yes; avoid generic scraper |
 | Post capture | Partly covered | `SOURCE_EVIDENCE_ROADMAP.md`, Capture Checkbox Roadmap | Roadmap checkbox only | Define adapter capabilities/provenance/completeness warnings | Yes |
@@ -55,8 +55,8 @@ This is documentation only. It does not implement adapters, capture, downloads, 
 | Source crediting/witness/access-actor accounting | Covered in roadmap | `SOURCE_EVIDENCE_ROADMAP.md`, Future Source Crediting / Witness And Access-Actor Accounting | Planning only; no UI/workflow | Map actors to claim/source-role records and queue items | Yes |
 | Total Export folder/package of selected outputs | Implemented local-only | Total Export helpers; `TOTAL_EXPORT_DEV_CLI_EXAMPLES.md`; current-state docs | Local package shell, manifest, assets, review files, ZIP, sidecars, batch/index/reconcile exist | GUI integration and actual capture outputs remain absent | Yes |
 | Current Total Export local capabilities | Implemented local-only | `PROJECT_CURRENT_STATE_HANDOFF.md`; `CURRENT_DEV_STATE.md`; Total Export docs | Plan/package/manifest, validation, inventory, summaries, ZIP, sidecars, verification, batch, index, reconciliation | Consolidate into GUI only after deliberate UX milestone | Yes |
-| Remaining roadmap-only work | Roadmap-only | Roadmap/spec docs | Keys UI, non-YouTube adapters, page capture, screenshots, archives, media acquisition, queue UI, database indexing/reclassification are not implemented | Keep each operational area separately approved and locally/mocked | Yes |
-| Most important next milestone | Gap remains after row 2A | Row 2B; `CREDENTIAL_SECURITY_AUDIT.md`; `credential_architecture.py` | Row 2A architecture/audit is implemented without values, backend access, runtime wiring, GUI secret controls, connection tests, or network behavior | Obtain separate explicit approval for the bounded row 2B runtime abstraction: read-only non-secret presence/provenance status, safe diagnostic categories, and fail-closed backend behavior; do not start save/clear/migration UI or provider testing | Do not start row 2B implicitly or skip to later rows |
+| Remaining roadmap-only work | Roadmap-only | Roadmap/spec docs | Credential lifecycle UI, non-YouTube adapters, page capture, screenshots, archives, media acquisition, queue UI, and database indexing/reclassification are not implemented | Keep each operational area separately approved and locally/mocked | Yes |
+| Most important next milestone | Gap remains after row 2B | Row 2C; `CREDENTIAL_SECURITY_AUDIT.md`; `credential_architecture.py`; `credential_runtime_status.py` | Rows 2A and 2B are implemented: non-secret policy plus read-only local status/provenance overlays, with no secret values, writes, migration, connection tests, provider calls, or network behavior | Obtain separate explicit security approval before any secret-entry/save/clear/migration/reveal/copy UI or legacy plaintext cleanup; keep connection/provider/network testing as a later independently approved layer | Do not start row 2C implicitly or skip to later rows |
 
 ## Already Covered And Should Not Be Duplicated
 
@@ -116,12 +116,17 @@ Future work should extend the relevant spec rather than re-adding the same roadm
   - Closed row 1 documentation while preserving the deferred whole-application GUI responsiveness note and retaining row 2 as a separate approval boundary.
 - `ef92017 Add credential architecture and security audit`
   - Added row 2A stable non-secret credential descriptors, backend/migration/redaction/sink policies, safe status helpers, eight existing-code security findings, focused validation, and explicit row 2B/2C/later-network boundaries without changing runtime credential behavior.
+- `d610ddf Close credential architecture audit milestone`
+  - Closed row 2A documentation and retained row 2B as a separately approved read-only runtime-status boundary.
+- `7c1db2a Add read-only credential status integration`
+  - Added row 2B local read-only credential status/provenance overlays for the already-loaded YouTube key and named cloud-ASR environment variables, fail-closed safe diagnostics, metadata/dialog integration, and focused regressions without exposing values or adding writes, migration, provider tests, calls, OAuth, or network behavior.
 
-## Ordered Audit Progress At `ef92017`
+## Ordered Audit Progress At `7c1db2a`
 
 - Row 1 is complete for its approved bounded presentation layer: spec, non-secret metadata, complete planned catalog, view model, sidebar control, reusable window, full-width family selector, in-place selection/detail updates, and short-family scroll-reset behavior are implemented and tested.
-- Row 2A is complete as a non-secret architecture and existing-code audit only. It defines stable credential IDs, storage/migration/redaction/sink policy, safe presence labels, and security findings without reading, writing, storing, migrating, clearing, or testing credentials and without GUI/runtime/network wiring.
-- Row 2B is now the first unresolved layer and requires separate explicit approval. Row 2C secret-entry/save/clear/migration/reveal/copy UI and all real connection/provider/network behavior remain later separate boundaries.
+- Row 2A is complete as a non-secret architecture and existing-code audit. It defines stable credential IDs, storage/migration/redaction/sink policy, safe presence labels, and security findings without changing credential lifecycle behavior.
+- Row 2B is complete within its approved read-only boundary. It reports only non-secret presence/provenance and fixed safe diagnostic categories, derives YouTube presence from the already-loaded masked field, inspects only named cloud-ASR environment-variable presence, and adds no secret values, writes, clearing, migration, connection tests, provider calls, OAuth, or network behavior.
+- Row 2C is now the first unresolved layer and requires separate explicit security approval. Secret-entry/save/clear/migration/reveal/copy UI and legacy plaintext cleanup belong there; real connection/provider/network behavior remains a later independently approved boundary.
 - Row 3 retains verified non-secret metadata and GUI presentation only; it does not claim real platform authentication.
 - Rows 4 through 39 were reviewed for ordering only and were not implemented in this session. Existing completed schema layers at rows 27 through 31 were recognised and not duplicated.
 
@@ -146,12 +151,12 @@ Implemented local-only helper/CLI/test infrastructure:
 - Evidence item queue schema with links, ASR pairing metadata, and explicit Total Export selection intent.
 - Non-secret Access & Keys catalog/report metadata and GUI-independent manager presentation state.
 - Bounded `KEYS` sidebar/window presentation over non-secret metadata and the complete planned catalog, with ordered sections/subgroups, alias-aware search, full-width family filtering, stable in-place selection/details, empty states, and diagnostics.
-- Row 2A credential architecture/audit metadata: stable non-secret provider credential IDs, backend and migration policy, prohibited secret-sink rules, exact-value redaction helpers, safe presence labels, eight findings, deterministic serialization/rendering, and focused validation; no credential values or backend/runtime access.
+- Row 2A credential architecture/audit metadata: stable non-secret provider credential IDs, backend and migration policy, prohibited secret-sink rules, exact-value redaction helpers, safe presence labels, eight findings, deterministic serialization/rendering, and focused validation.
+- Row 2B read-only runtime credential status: `credential_runtime_status.py` plus focused tests and narrow Access & Keys wiring report configured/missing/backend-unavailable/error states and safe provenance without rendering or retaining values; YouTube uses the already-loaded masked field plus safe storage information, while cloud ASR uses named environment-variable presence only.
 - Evidence database taxonomy/dry-run/reclassification/history schema with sensitive-classification safeguards.
 
 Docs-only/spec-only:
 
-- Row 2B runtime credential-provider abstraction and read-only presence/provenance inspection.
 - Row 2C masked entry/save/clear/migration/reveal/copy UI and legacy plaintext cleanup.
 - Real connection testing/provider access, OAuth, cloud ASR uploads/runs, and all network behavior.
 - Generalized non-YouTube adapters.
@@ -172,11 +177,11 @@ Docs-only/spec-only:
 
 ## Ordered Next Boundary
 
-Row 1 bounded GUI presentation and row 2A non-secret credential architecture/audit are complete.
+Row 1 bounded GUI presentation, row 2A non-secret credential architecture/audit, and row 2B read-only local credential status integration are complete.
 
-Row 2B is the first unresolved layer: a runtime credential-provider abstraction limited to read-only non-secret presence/provenance status, safe diagnostic categories, and fail-closed backend behavior. It requires separate explicit approval because it would inspect actual backend state even though reporting must remain non-secret.
+Row 2C is the first unresolved layer: secret-entry/save/clear/migration/reveal/copy behavior and legacy plaintext cleanup. It requires separate explicit security approval because it would introduce secret-bearing state changes and migration decisions.
 
-Row 2B must not silently expand into credential-value exposure, writes, save/clear/migration UI, legacy plaintext cleanup, connection tests, provider calls, OAuth, cloud ASR execution, or network access. Those remain row 2C or later separate approval boundaries. Do not skip to later roadmap rows.
+Row 2C must not silently expand into connection tests, provider calls, OAuth, cloud ASR execution, browser access, or network behavior. Those remain later separate approval boundaries. Do not skip to later roadmap rows.
 
 ## Risk Warning
 
