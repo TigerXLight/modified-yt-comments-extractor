@@ -2,7 +2,7 @@
 
 Date: 2026-07-12
 
-Checkpoint: `8d11a4b Add Access Keys manager view model`
+Checkpoint: `1b57e74 Wire Access Keys manager window`
 
 Branch: `v2.6.0-asr-engines`
 
@@ -18,9 +18,9 @@ This is documentation only. It does not implement adapters, capture, downloads, 
 
 | User requirement | Covered? | Where covered | Current state | Gap / next milestone | Do not duplicate? |
 | --- | --- | --- | --- | --- | --- |
-| KEYS / Access & Keys manager window | Implemented local-only predecessor | `ACCESS_KEYS_MANAGER_SPEC.md`; `access_keys_metadata.py`; `access_keys_view_model.py` | Non-secret metadata plus deterministic searchable/filterable/selection presentation state exist; no sidebar button, window, widgets, credential storage, or runtime wiring | Actual `KEYS` sidebar/window wiring is the first unresolved ordered boundary and requires explicit approval | Yes; extend existing models/spec |
-| API/cloud ASR provider credentials | Implemented local-only metadata | `ACCESS_KEYS_MANAGER_SPEC.md`; `access_keys_metadata.py`; `access_keys_view_model.py` | Non-secret access/credential/test-status records and presentation state exist; no secret values, storage, migration, or real tests | Secret storage/masking/clearing/migration and provider tests require separate explicit security/runtime approval | Yes |
-| Platform/source access families beyond one API key | Implemented local-only metadata | `SOURCE_EVIDENCE_ROADMAP.md`; `ACCESS_KEYS_MANAGER_SPEC.md`; Access & Keys metadata/view model | Shared platform-family, access-mode, capability, filter, and section state exists without UI or adapter execution | Runtime catalog population and GUI integration remain deferred behind row 1 | Yes |
+| KEYS / Access & Keys manager window | Implemented bounded GUI presentation | `ACCESS_KEYS_MANAGER_SPEC.md`; Access & Keys metadata/view model; `access_keys_dialog.py`; `main.py` | Sidebar `KEYS` button and single reusable `Access & Keys` window render non-secret platform sections, search/family filters, selection details, diagnostics, and limitations; the existing API-key entry remains unchanged | Row-1 presentation layer is complete; credential values/storage/testing and provider-specific operations belong to row 2 and require separate approval | Yes; extend existing models/spec |
+| API/cloud ASR provider credentials | Implemented non-secret presentation only | `ACCESS_KEYS_MANAGER_SPEC.md`; Access & Keys metadata/view/dialog modules | Status/capability/setup/privacy/cost metadata can be viewed; no secret values, storage, masking, clearing, migration, environment/keyring access, or real tests exist | First unresolved row: design/implement secret-bearing credential lifecycle only after separate explicit security approval | Yes |
+| Platform/source access families beyond one API key | Implemented local metadata and presentation | `SOURCE_EVIDENCE_ROADMAP.md`; `ACCESS_KEYS_MANAGER_SPEC.md`; Access & Keys modules | Existing ASR-provider and source-adapter metadata populate deterministic platform-family sections; no real authentication or adapter execution is added | Real platform authentication/access remains deferred behind row 2 and later source-specific approvals | Yes |
 | Multi-source / website comment capture | Partly covered | `SOURCE_EVIDENCE_ROADMAP.md`, Track A and Mixed-Access Websites | YouTube works; News Website adapter is metadata/URL recognition only | Add one site-specific adapter with mocked/local tests after explicit approval | Yes; avoid generic scraper |
 | Post capture | Partly covered | `SOURCE_EVIDENCE_ROADMAP.md`, Capture Checkbox Roadmap | Roadmap checkbox only | Define adapter capabilities/provenance/completeness warnings | Yes |
 | Comments/replies/live chat capture | Implemented existing runtime for YouTube | Existing YouTube extractor flow; `SOURCE_EVIDENCE_ROADMAP.md` YouTube note | YouTube comments/replies/live chat exist; other sources do not | Preserve YouTube while adding adapters one by one | Yes |
@@ -56,7 +56,7 @@ This is documentation only. It does not implement adapters, capture, downloads, 
 | Total Export folder/package of selected outputs | Implemented local-only | Total Export helpers; `TOTAL_EXPORT_DEV_CLI_EXAMPLES.md`; current-state docs | Local package shell, manifest, assets, review files, ZIP, sidecars, batch/index/reconcile exist | GUI integration and actual capture outputs remain absent | Yes |
 | Current Total Export local capabilities | Implemented local-only | `PROJECT_CURRENT_STATE_HANDOFF.md`; `CURRENT_DEV_STATE.md`; Total Export docs | Plan/package/manifest, validation, inventory, summaries, ZIP, sidecars, verification, batch, index, reconciliation | Consolidate into GUI only after deliberate UX milestone | Yes |
 | Remaining roadmap-only work | Roadmap-only | Roadmap/spec docs | Keys UI, non-YouTube adapters, page capture, screenshots, archives, media acquisition, queue UI, database indexing/reclassification are not implemented | Keep each operational area separately approved and locally/mocked | Yes |
-| Most important next milestone | Gap remains | Row 1; Access & Keys spec, metadata, and view model | Safe local schema/presentation predecessors are implemented | Obtain explicit approval for tightly scoped `KEYS` sidebar/window wiring, with no secret storage/testing or provider calls | Do not skip row 1 or start later runtime work |
+| Most important next milestone | Gap remains | Row 2; Access & Keys spec and bounded non-secret GUI | Row 1 GUI presentation is implemented without secrets or external behavior | Obtain separate approval for a security design covering credential storage/masking/clearing/migration before any secret-bearing implementation | Do not start row 2 implicitly or skip to later rows |
 
 ## Already Covered And Should Not Be Duplicated
 
@@ -104,12 +104,14 @@ Future work should extend the relevant spec rather than re-adding the same roadm
   - Added read-only taxonomy, dry-run, review, safeguard, and history structures.
 - `8d11a4b Add Access Keys manager view model`
   - Added GUI-independent searchable/filterable platform sections, selection state, safe entry presentation, and deterministic serialization.
+- `1b57e74 Wire Access Keys manager window`
+  - Added the separate `KEYS` sidebar control and reusable non-secret `Access & Keys` window while preserving the existing API-key field and behavior.
 
-## Ordered Audit Progress At `8d11a4b`
+## Ordered Audit Progress At `1b57e74`
 
-- Row 1 remains the first unresolved row. Its docs/spec, non-secret metadata model, and GUI-independent view model are complete and tested.
-- The next row-1 layer is actual sidebar/window/widget wiring. That changes the existing GUI/runtime and requires explicit approval under the ordered prompt.
-- Rows 2 and 3 have verified non-secret metadata/view foundations, but no later operational work was started because row 1 remains unresolved.
+- Row 1 is complete for its approved bounded presentation layer: spec, non-secret metadata, view model, sidebar control, and reusable window are implemented and tested.
+- Row 2 is now the first unresolved row. Secret-bearing credential storage/masking/clearing/migration and provider-specific testing remain unimplemented and require separate explicit approval.
+- Row 3 retains verified non-secret metadata and GUI presentation only; it does not claim real platform authentication.
 - Rows 4 through 39 were reviewed for ordering only and were not implemented in this session. Existing completed schema layers at rows 27 through 31 were recognised and not duplicated.
 
 ## What Is Implemented Now
@@ -132,11 +134,12 @@ Implemented local-only helper/CLI/test infrastructure:
 - ASR comparison/reporting/manual seed tooling.
 - Evidence item queue schema with links, ASR pairing metadata, and explicit Total Export selection intent.
 - Non-secret Access & Keys catalog/report metadata and GUI-independent manager presentation state.
+- Bounded `KEYS` sidebar/window presentation over existing non-secret metadata, with search, family filters, selection details, empty states, and diagnostics.
 - Evidence database taxonomy/dry-run/reclassification/history schema with sensitive-classification safeguards.
 
 Docs-only/spec-only:
 
-- Access & Keys window.
+- Credential storage/masking/clearing/migration and real connection testing/provider access.
 - Generalized non-YouTube adapters.
 - Website/page capture.
 - Screenshots and scrollable-container capture execution.
@@ -150,11 +153,11 @@ Docs-only/spec-only:
 
 ## Ordered Next Boundary
 
-The earlier implementation-skeleton choices are complete. The ordered next layer is row 1 actual `KEYS` sidebar/window wiring using the existing non-secret catalog and view model.
+Row 1 bounded GUI presentation is complete. Row 2 is the first unresolved row: credential storage, masking, clearing, migration, and any real provider-specific test lifecycle.
 
-That layer requires explicit approval because it changes the current GUI/runtime. Approval should remain narrowly scoped: no credential values or storage, no migration, no connection testing, no provider/API calls, no OAuth/browser-profile access, and no changes to existing YouTube/ASR behavior.
+Row 2 requires a separate security design and explicit approval because it would introduce secret-bearing state and may interact with existing settings/keyring behavior. No part of row 2 was implemented by the non-secret window.
 
-Do not proceed to row 2 or later implementation work until row 1 is explicitly approved or its required layer is otherwise resolved.
+Do not proceed to row 2 implementation or later audit rows until that approval boundary is resolved.
 
 ## Risk Warning
 
