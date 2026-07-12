@@ -2,7 +2,7 @@
 
 Date: 2026-07-12
 
-Checkpoint: `7c1db2a Add read-only credential status integration`
+Checkpoint: `29af218 Add secure credential store backend`
 
 Branch: `v2.6.0-asr-engines`
 
@@ -16,7 +16,7 @@ It records the state needed for a future session to resume safely. It does not i
 
 - The working tree was clean when this handoff milestone started. Reconfirm with `git status --short` before applying any new patch.
 - Current branch: `v2.6.0-asr-engines`.
-- Current checkpoint: `7c1db2a Add read-only credential status integration`.
+- Current checkpoint: `29af218 Add secure credential store backend`.
 - The user performs final local checks, commits, and pushes after reviewing each patch.
 - Codex should not commit unless the user explicitly changes that instruction.
 - Keep one milestone per patch.
@@ -41,7 +41,7 @@ Unless a later milestone is explicitly approved, do not add:
 - Login, paywall, private-content, anti-copy, or DRM bypass behavior.
 - GUI wiring for the local-only preservation/evidence/report helpers.
 - Evidence queue persistence, background processing, or file operations.
-- Credential storage/testing, OAuth, browser-profile integration, or secret-bearing Access & Keys fields.
+- Credential UI storage/testing, OAuth, browser-profile integration, or secret-bearing Access & Keys fields beyond the backend-only row 2C1 store abstraction that has no production caller.
 - Database-root scanning, automatic classification, sensitive-trait inference, reclassification execution, or file movement.
 - New runtime dependencies or hidden configuration for these milestones.
 
@@ -152,9 +152,10 @@ Three planned source-evidence areas now have standalone, local-only schema imple
 - `ee945fe` fixes the remaining short-family visibility defect by resetting the catalog scroll position before relayout and once after idle, coalescing/cancelling pending callbacks, and adding a deterministic regression. Manual testing confirmed ASR Providers, News Websites, Archive Services, and Browser-Assisted Capture appear immediately after switching from a long scrolled family.
 - `credential_architecture.py`, `credential_architecture_test.py`, and `CREDENTIAL_SECURITY_AUDIT.md` (`ef92017`) implement approved row 2A as a non-secret architecture and existing-code audit: stable credential IDs for YouTube and catalogued cloud ASR providers, backend/migration/redaction/sink policy, safe presence labels, eight findings, deterministic serialization/rendering, and explicit row 2B/2C/later-network boundaries. They perform no credential reads/writes, storage, migration, clearing, GUI secret handling, provider testing, OAuth, browser access, or network activity and change no existing runtime file.
 - `credential_runtime_status.py`, `credential_runtime_status_test.py`, metadata/test updates, and narrow `access_keys_dialog.py`/`main.py` wiring (`7c1db2a`) implement approved row 2B. The Access & Keys window receives only read-only configured/missing/backend-unavailable/error states and safe provenance. YouTube presence comes from the API key already loaded into the masked sidebar field plus safe storage information; cloud ASR checks named environment-variable presence only. No value is rendered or retained, and no save, clear, migration, connection test, provider call, OAuth, browser, or network behavior was added.
+- `credential_store.py` and `credential_store_test.py` (`29af218`) implement approved row 2C1 as backend-only secure-store infrastructure for the already-catalogued cloud-ASR credential IDs. It provides deterministic non-secret keyring locators, explicit `youtube_data_api_key` rejection, a session-only in-memory test backend, an injected/system-keyring backend that fails closed, explicit save/overwrite/clear result statuses, and fixed non-secret diagnostics. It has no production caller and does not change the Access & Keys GUI, settings, provider logic, existing YouTube workflow, connection testing, OAuth, browser access, or network behavior.
 - `evidence_database_taxonomy.py` and `evidence_database_taxonomy_test.py` (`e63def4`): read-only database-root/taxonomy metadata, arbitrary user-defined dimensions, valid unknown/not-identified states, dry-run reclassification and alias-normalization suggestions, sensitive-classification safeguards, review states, preserved history, and queue/package/source references. Paths are descriptive metadata only; the model performs no scanning, automatic classification, persistence, reclassification execution, or file movement.
 
-The queue and taxonomy remain local-only schema/test foundations rather than implemented UI/runtime workflows. Access & Keys has the bounded catalog/view/window, row 2A credential architecture/audit, and row 2B read-only non-secret status/provenance overlay described above. Secret lifecycle changes, secret-entry/save/clear/migration/reveal/copy UI, legacy plaintext cleanup, connection testing, provider access, OAuth, browser-profile access, and new credential persistence remain unimplemented. The corresponding specification and audit documents remain authoritative for future behavior, and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` should continue to distinguish implemented read-only status inspection from secret-bearing and external-access gaps.
+The queue and taxonomy remain local-only schema/test foundations rather than implemented UI/runtime workflows. Access & Keys has the bounded catalog/view/window, row 2A credential architecture/audit, row 2B read-only non-secret status/provenance overlay, and row 2C1 backend-only secure-store infrastructure described above. Secret-entry fields, explicit save/clear GUI actions, production callers for the store, migration, legacy plaintext cleanup, reveal/copy UI, connection testing, provider access, OAuth, browser-profile access, and new credential persistence workflows remain unimplemented. The existing YouTube API-key/settings/keyring workflow is unchanged and deliberately excluded from row 2C1, so older YouTube security findings must not be marked fixed. The corresponding specification and audit documents remain authoritative for future behavior, and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` should continue to distinguish implemented backend-only infrastructure from secret-bearing and external-access gaps.
 
 ## Upstream v2.1.1 Parity State
 
@@ -238,6 +239,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | Access & Keys catalog/view/window | `access_keys_catalog.py`, `access_keys_view_model.py`, `access_keys_dialog.py`, narrow `main.py` wiring | `access_keys_catalog_test.py`, `access_keys_view_model_test.py`, `access_keys_dialog_test.py`, `main_export_state_test.py`; includes short-family scroll-reset regression |
 | Credential architecture/security audit | `credential_architecture.py`, `CREDENTIAL_SECURITY_AUDIT.md` | `credential_architecture_test.py`; stable non-secret descriptors/policies/redaction/status helpers |
 | Read-only credential runtime status | `credential_runtime_status.py`, Access & Keys metadata/dialog, narrow `main.py` wiring | `credential_runtime_status_test.py`, Access & Keys regressions, `main_export_state_test.py`; safe presence/provenance only, with no values, writes, migration, tests, provider calls, or network access |
+| Backend-only secure credential store | `credential_store.py` | `credential_store_test.py`; deterministic cloud-ASR keyring locators, explicit YouTube rejection, test-only/session-only memory backend, fail-closed injected/system-keyring backend, fixed non-secret result statuses, and no production caller |
 | Evidence database taxonomy schema | `evidence_database_taxonomy.py` | `evidence_database_taxonomy_test.py` |
 | URL normalization | `youtube_url_utils.py` | `youtube_url_utils_test.py` |
 | Upstream parity | Extractor/spam/settings/export-state code | Five local/mocked parity tests listed above |
@@ -245,6 +247,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 ## Latest Known Commit Chain
 
 ```
+29af218 Add secure credential store backend
 7c1db2a Add read-only credential status integration
 d610ddf Close credential architecture audit milestone
 ef92017 Add credential architecture and security audit
@@ -294,7 +297,7 @@ python -m py_compile total_export_bundle_index.py total_export_bundle_index_test
 Source-evidence model skeletons:
 
 ```cmd
-python -m py_compile evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py access_keys_catalog.py access_keys_catalog_test.py access_keys_view_model.py access_keys_view_model_test.py access_keys_dialog.py access_keys_dialog_test.py credential_architecture.py credential_architecture_test.py credential_runtime_status.py credential_runtime_status_test.py main.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python access_keys_catalog_test.py & python access_keys_view_model_test.py & python access_keys_dialog_test.py & python credential_architecture_test.py & python credential_runtime_status_test.py & python main_export_state_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py
+python -m py_compile evidence_item_queue.py evidence_item_queue_test.py access_keys_metadata.py access_keys_metadata_test.py access_keys_catalog.py access_keys_catalog_test.py access_keys_view_model.py access_keys_view_model_test.py access_keys_dialog.py access_keys_dialog_test.py credential_architecture.py credential_architecture_test.py credential_runtime_status.py credential_runtime_status_test.py credential_store.py credential_store_test.py main.py evidence_database_taxonomy.py evidence_database_taxonomy_test.py evidence_schema.py evidence_schema_test.py & python evidence_item_queue_test.py & python access_keys_metadata_test.py & python access_keys_catalog_test.py & python access_keys_view_model_test.py & python access_keys_dialog_test.py & python credential_architecture_test.py & python credential_runtime_status_test.py & python credential_store_test.py & python main_export_state_test.py & python evidence_database_taxonomy_test.py & python evidence_schema_test.py
 ```
 
 Upstream parity regressions:
@@ -318,10 +321,10 @@ Do not add provider/API/network calls to these verification chains.
 
 ## Safe Next Milestones
 
-1. Row 2A non-secret credential architecture/audit is complete at `ef92017`, and row 2B read-only local credential status integration is complete at `7c1db2a`.
-2. Row 2C is the first unresolved ordered roadmap layer and requires separate explicit security approval: secret-entry/save/clear/migration/reveal/copy behavior and legacy plaintext cleanup.
-3. Do not expand row 2C into connection tests, provider calls, OAuth, cloud ASR execution, browser behavior, or network access; those remain later separately approved boundaries.
-4. Do not begin later-row compatibility/reporting work while row 2C remains unresolved under the ordered roadmap prompt.
+1. Row 2A non-secret credential architecture/audit is complete at `ef92017`, row 2B read-only local credential status integration is complete at `7c1db2a`, and row 2C1 backend-only secure credential-store infrastructure is complete at `29af218`.
+2. Row 2C2 is the first unresolved ordered roadmap layer and requires separate explicit security approval: masked credential-entry fields, explicit save/clear GUI actions, and any later migration/legacy plaintext cleanup.
+3. Do not expand row 2C2 into connection tests, provider calls, OAuth, cloud ASR execution, browser behavior, or network access; those remain later separately approved boundaries.
+4. Do not begin later-row compatibility/reporting work while row 2C2 remains unresolved under the ordered roadmap prompt.
 5. Create the next full external session handoff before beginning a substantially different feature area.
 6. Keep database scanning, automatic/sensitive classification, credential testing/provider access, archive/downloader/capture, and other networked behavior deferred until explicitly approved, opt-in where applicable, and covered by local/mocked tests.
 
@@ -335,7 +338,7 @@ Do not add provider/API/network calls to these verification chains.
 - Do not copy/build packages or extract ZIPs through preservation/evidence metadata helpers.
 - Do not infer remote deletion or unavailability from missing local records.
 - Do not expose or record secrets in docs, logs, manifests, reports, screenshots, or test fixtures.
-- Do not describe the queue or database-taxonomy UI/persistence/runtime as implemented. The bounded Access & Keys catalog/view/window, row 2A architecture/audit, and row 2B read-only safe status/provenance overlay are implemented, but credential lifecycle changes, secret-bearing UI, legacy plaintext cleanup, connection testing, provider access, OAuth, browser-profile access, and new persistence remain unimplemented.
+- Do not describe the queue or database-taxonomy UI/persistence/runtime as implemented. The bounded Access & Keys catalog/view/window, row 2A architecture/audit, row 2B read-only safe status/provenance overlay, and row 2C1 backend-only secure-store infrastructure are implemented, but credential-entry fields, production store callers, secret-bearing UI, legacy plaintext cleanup, connection testing, provider access, OAuth, browser-profile access, and new persistence workflows remain unimplemented.
 - Do not infer sensitive classifications from weak clues or turn dry-run taxonomy suggestions into automatic file operations.
 - Do not modify mature YouTube comment/live-chat/export behavior during unrelated milestones.
 - Do not commit before the user has reviewed the patch and local checks.

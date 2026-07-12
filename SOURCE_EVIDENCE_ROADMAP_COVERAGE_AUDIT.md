@@ -2,7 +2,7 @@
 
 Date: 2026-07-12
 
-Checkpoint: `7c1db2a Add read-only credential status integration`
+Checkpoint: `29af218 Add secure credential store backend`
 
 Branch: `v2.6.0-asr-engines`
 
@@ -19,7 +19,7 @@ This is documentation only. It does not implement adapters, capture, downloads, 
 | User requirement | Covered? | Where covered | Current state | Gap / next milestone | Do not duplicate? |
 | --- | --- | --- | --- | --- | --- |
 | KEYS / Access & Keys manager window | Implemented bounded GUI presentation | `ACCESS_KEYS_MANAGER_SPEC.md`; `access_keys_catalog.py`; Access & Keys metadata/view model/dialog; `main.py` | Sidebar `KEYS` button and single reusable `Access & Keys` window render the complete planned non-secret catalog with ordered user-facing sections/subgroups, alias-aware search, full-width family selection, stable in-place selection/details, immediate short-family visibility after filtering, diagnostics, and limitations; the existing API-key entry remains unchanged | Row-1 presentation layer is complete; credential values/storage/testing and provider-specific operations belong to row 2 and require separate approval | Yes; extend existing models/spec |
-| API/cloud ASR provider credentials | Rows 2A and 2B implemented within non-secret/read-only boundaries | `ACCESS_KEYS_MANAGER_SPEC.md`; `CREDENTIAL_SECURITY_AUDIT.md`; `credential_architecture.py`; `credential_runtime_status.py`; focused tests; Access & Keys metadata/dialog; narrow `main.py` wiring | Stable credential IDs and security policy are implemented together with read-only runtime status overlays. YouTube reports only boolean presence plus safe existing-storage provenance; catalogued cloud ASR providers report only named environment-variable presence. Statuses are limited to configured, missing, backend unavailable, or safe error categories; values and exception text are never rendered or retained. No credential writes, clearing, migration, connection tests, provider calls, OAuth, or network access were added | Row 2C is the first unresolved layer: secret-entry/save/clear/migration/reveal/copy behavior and legacy plaintext cleanup require separate explicit security approval; real connection/provider/network behavior remains a later boundary | Yes; extend the row 2A/2B architecture rather than bypassing it |
+| API/cloud ASR provider credentials | Rows 2A, 2B, and 2C1 implemented within non-secret/read-only/backend-only boundaries | `ACCESS_KEYS_MANAGER_SPEC.md`; `CREDENTIAL_SECURITY_AUDIT.md`; `credential_architecture.py`; `credential_runtime_status.py`; `credential_store.py`; focused tests; Access & Keys metadata/dialog; narrow `main.py` wiring | Stable credential IDs and security policy are implemented together with read-only runtime status overlays and a backend-only secure credential-store abstraction for already-catalogued cloud-ASR credential IDs. YouTube reports only boolean presence plus safe existing-storage provenance and remains excluded from the new store. Catalogued cloud ASR providers report only named environment-variable presence in row 2B; row 2C1 adds deterministic non-secret keyring locators, session-only in-memory test storage, and a fail-closed injected/system-keyring backend with fixed non-secret result statuses. Values, fragments, lengths, hashes, exception text, tracebacks, and secret-bearing representations are never exposed by public results/diagnostics. No production caller, GUI field, settings migration, legacy cleanup, connection test, provider call, OAuth, or network access was added | Row 2C2 is the first unresolved secret-lifecycle layer: masked credential-entry fields, explicit save/clear actions, and any later migration/legacy cleanup require separate explicit security approval; real connection/provider/network behavior remains a later boundary | Yes; extend the row 2A/2B/2C1 architecture rather than bypassing it |
 | Platform/source access families beyond one API key | Implemented local metadata and presentation | `SOURCE_EVIDENCE_ROADMAP.md`; `ACCESS_KEYS_MANAGER_SPEC.md`; `access_keys_catalog.py`; Access & Keys modules | The complete planned non-secret service catalog is represented in deterministic sections/subgroups with aliases and explicit planned-versus-implemented status; no real authentication or adapter execution is added | Real platform authentication/access remains deferred behind row 2 and later source-specific approvals | Yes |
 | Multi-source / website comment capture | Partly covered | `SOURCE_EVIDENCE_ROADMAP.md`, Track A and Mixed-Access Websites | YouTube works; News Website adapter is metadata/URL recognition only | Add one site-specific adapter with mocked/local tests after explicit approval | Yes; avoid generic scraper |
 | Post capture | Partly covered | `SOURCE_EVIDENCE_ROADMAP.md`, Capture Checkbox Roadmap | Roadmap checkbox only | Define adapter capabilities/provenance/completeness warnings | Yes |
@@ -56,7 +56,7 @@ This is documentation only. It does not implement adapters, capture, downloads, 
 | Total Export folder/package of selected outputs | Implemented local-only | Total Export helpers; `TOTAL_EXPORT_DEV_CLI_EXAMPLES.md`; current-state docs | Local package shell, manifest, assets, review files, ZIP, sidecars, batch/index/reconcile exist | GUI integration and actual capture outputs remain absent | Yes |
 | Current Total Export local capabilities | Implemented local-only | `PROJECT_CURRENT_STATE_HANDOFF.md`; `CURRENT_DEV_STATE.md`; Total Export docs | Plan/package/manifest, validation, inventory, summaries, ZIP, sidecars, verification, batch, index, reconciliation | Consolidate into GUI only after deliberate UX milestone | Yes |
 | Remaining roadmap-only work | Roadmap-only | Roadmap/spec docs | Credential lifecycle UI, non-YouTube adapters, page capture, screenshots, archives, media acquisition, queue UI, and database indexing/reclassification are not implemented | Keep each operational area separately approved and locally/mocked | Yes |
-| Most important next milestone | Gap remains after row 2B | Row 2C; `CREDENTIAL_SECURITY_AUDIT.md`; `credential_architecture.py`; `credential_runtime_status.py` | Rows 2A and 2B are implemented: non-secret policy plus read-only local status/provenance overlays, with no secret values, writes, migration, connection tests, provider calls, or network behavior | Obtain separate explicit security approval before any secret-entry/save/clear/migration/reveal/copy UI or legacy plaintext cleanup; keep connection/provider/network testing as a later independently approved layer | Do not start row 2C implicitly or skip to later rows |
+| Most important next milestone | Gap remains after row 2C1 | Row 2C2; `CREDENTIAL_SECURITY_AUDIT.md`; `credential_architecture.py`; `credential_runtime_status.py`; `credential_store.py` | Rows 2A, 2B, and 2C1 are implemented: non-secret policy, read-only local status/provenance overlays, and a backend-only secure store abstraction for cloud-ASR credential IDs. There is still no production caller, GUI secret-entry field, save/clear button, migration, legacy cleanup, connection test, provider call, or network behavior | Obtain separate explicit security approval before any masked credential-entry/save/clear UI or later migration/legacy plaintext cleanup; keep connection/provider/network testing as a later independently approved layer | Do not start row 2C2 implicitly or skip to later rows |
 
 ## Already Covered And Should Not Be Duplicated
 
@@ -120,13 +120,16 @@ Future work should extend the relevant spec rather than re-adding the same roadm
   - Closed row 2A documentation and retained row 2B as a separately approved read-only runtime-status boundary.
 - `7c1db2a Add read-only credential status integration`
   - Added row 2B local read-only credential status/provenance overlays for the already-loaded YouTube key and named cloud-ASR environment variables, fail-closed safe diagnostics, metadata/dialog integration, and focused regressions without exposing values or adding writes, migration, provider tests, calls, OAuth, or network behavior.
+- `29af218 Add secure credential store backend`
+  - Added row 2C1 backend-only secure credential-store infrastructure for catalogued cloud-ASR credential IDs, with deterministic non-secret keyring locators, a session-only in-memory test backend, a fail-closed injected/system-keyring backend, fixed non-secret result statuses, explicit YouTube credential rejection, and focused leakage/error regressions. No production caller, GUI credential field, settings migration, legacy cleanup, provider test/call, OAuth, browser, or network behavior was added.
 
-## Ordered Audit Progress At `7c1db2a`
+## Ordered Audit Progress At `29af218`
 
 - Row 1 is complete for its approved bounded presentation layer: spec, non-secret metadata, complete planned catalog, view model, sidebar control, reusable window, full-width family selector, in-place selection/detail updates, and short-family scroll-reset behavior are implemented and tested.
 - Row 2A is complete as a non-secret architecture and existing-code audit. It defines stable credential IDs, storage/migration/redaction/sink policy, safe presence labels, and security findings without changing credential lifecycle behavior.
 - Row 2B is complete within its approved read-only boundary. It reports only non-secret presence/provenance and fixed safe diagnostic categories, derives YouTube presence from the already-loaded masked field, inspects only named cloud-ASR environment-variable presence, and adds no secret values, writes, clearing, migration, connection tests, provider calls, OAuth, or network behavior.
-- Row 2C is now the first unresolved layer and requires separate explicit security approval. Secret-entry/save/clear/migration/reveal/copy UI and legacy plaintext cleanup belong there; real connection/provider/network behavior remains a later independently approved boundary.
+- Row 2C1 is complete within its approved backend-only boundary. It adds `credential_store.py` and `credential_store_test.py` only: deterministic cloud-ASR keyring locators, explicit `youtube_data_api_key` rejection, session-only in-memory testing, injected/system-keyring operations, fail-closed status results, and no plaintext/settings/env/file fallback or production caller.
+- Row 2C2 is now the first unresolved layer and requires separate explicit security approval. Masked credential-entry fields, explicit save/clear GUI actions, and any later migration/legacy plaintext cleanup belong there; real connection/provider/network behavior remains a later independently approved boundary.
 - Row 3 retains verified non-secret metadata and GUI presentation only; it does not claim real platform authentication.
 - Rows 4 through 39 were reviewed for ordering only and were not implemented in this session. Existing completed schema layers at rows 27 through 31 were recognised and not duplicated.
 
@@ -153,11 +156,12 @@ Implemented local-only helper/CLI/test infrastructure:
 - Bounded `KEYS` sidebar/window presentation over non-secret metadata and the complete planned catalog, with ordered sections/subgroups, alias-aware search, full-width family filtering, stable in-place selection/details, empty states, and diagnostics.
 - Row 2A credential architecture/audit metadata: stable non-secret provider credential IDs, backend and migration policy, prohibited secret-sink rules, exact-value redaction helpers, safe presence labels, eight findings, deterministic serialization/rendering, and focused validation.
 - Row 2B read-only runtime credential status: `credential_runtime_status.py` plus focused tests and narrow Access & Keys wiring report configured/missing/backend-unavailable/error states and safe provenance without rendering or retaining values; YouTube uses the already-loaded masked field plus safe storage information, while cloud ASR uses named environment-variable presence only.
+- Row 2C1 backend-only secure credential store: `credential_store.py` plus focused tests provide deterministic non-secret locators for catalogued cloud-ASR credentials, explicit save/overwrite/clear result statuses, a test-only/session-only memory backend, and a fail-closed injected/system-keyring backend. It has no production caller and deliberately excludes the existing YouTube credential workflow.
 - Evidence database taxonomy/dry-run/reclassification/history schema with sensitive-classification safeguards.
 
 Docs-only/spec-only:
 
-- Row 2C masked entry/save/clear/migration/reveal/copy UI and legacy plaintext cleanup.
+- Row 2C2 masked credential-entry/save/clear UI, later migration/legacy plaintext cleanup, reveal/copy behavior, and any production caller for the row 2C1 backend.
 - Real connection testing/provider access, OAuth, cloud ASR uploads/runs, and all network behavior.
 - Generalized non-YouTube adapters.
 - Website/page capture.
@@ -177,11 +181,11 @@ Docs-only/spec-only:
 
 ## Ordered Next Boundary
 
-Row 1 bounded GUI presentation, row 2A non-secret credential architecture/audit, and row 2B read-only local credential status integration are complete.
+Row 1 bounded GUI presentation, row 2A non-secret credential architecture/audit, row 2B read-only local credential status integration, and row 2C1 backend-only secure credential-store infrastructure are complete.
 
-Row 2C is the first unresolved layer: secret-entry/save/clear/migration/reveal/copy behavior and legacy plaintext cleanup. It requires separate explicit security approval because it would introduce secret-bearing state changes and migration decisions.
+Row 2C2 is the first unresolved layer: masked credential-entry fields, explicit save/clear GUI actions, and any later migration/legacy plaintext cleanup. It requires separate explicit security approval because it would introduce secret-bearing state changes and migration decisions.
 
-Row 2C must not silently expand into connection tests, provider calls, OAuth, cloud ASR execution, browser access, or network behavior. Those remain later separate approval boundaries. Do not skip to later roadmap rows.
+Row 2C2 must not silently expand into connection tests, provider calls, OAuth, cloud ASR execution, browser access, or network behavior. Those remain later separate approval boundaries. Do not skip to later roadmap rows.
 
 ## Risk Warning
 
