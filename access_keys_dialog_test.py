@@ -261,6 +261,47 @@ def test_fast_selection_path_updates_only_changed_controls() -> None:
     assert detail_updates == [selected_id]
 
 
+def test_filter_changes_reset_scroll_to_top() -> None:
+    events: list[tuple[str, object]] = []
+
+    class _FakeCanvas:
+        def yview_moveto(self, value: float) -> None:
+            events.append(("scroll", value))
+
+    class _FakePanel:
+        _parent_canvas = _FakeCanvas()
+
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    window.list_panel = _FakePanel()
+    window._closed = False
+    window._list_scroll_reset_after_id = "old-reset"
+    window._apply_view = lambda view: events.append(("apply", view))
+    window.after_cancel = lambda token: events.append(("cancel", token))
+
+    def after_idle(callback: object) -> str:
+        events.append(("after_idle", getattr(callback, "__name__", "")))
+        return "new-reset"
+
+    window.after_idle = after_idle
+
+    AccessKeysWindow._apply_filtered_view(window, "filtered-view")
+    assert events == [
+        ("scroll", 0.0),
+        ("apply", "filtered-view"),
+        ("cancel", "old-reset"),
+        ("after_idle", "_finish_list_scroll_reset"),
+    ]
+    assert window._list_scroll_reset_after_id == "new-reset"
+
+    AccessKeysWindow._finish_list_scroll_reset(window)
+    assert events[-1] == ("scroll", 0.0)
+    assert window._list_scroll_reset_after_id is None
+
+    # Missing internal canvas support is a safe no-op rather than a crash.
+    window.list_panel = object()
+    AccessKeysWindow._reset_list_scroll_to_top(window)
+
+
 def test_static_selector_and_no_flicker_design() -> None:
     assert ACCESS_KEYS_WINDOW_TITLE == "Access & Keys"
     assert ACCESS_KEYS_BUTTON_TEXT == "KEYS"
@@ -320,6 +361,18 @@ def test_static_selector_and_no_flicker_design() -> None:
     search_changed = inspect.getsource(
         AccessKeysWindow._on_search_changed
     )
+    choose_family = inspect.getsource(
+        AccessKeysWindow._choose_family
+    )
+    apply_filtered_view = inspect.getsource(
+        AccessKeysWindow._apply_filtered_view
+    )
+    reset_scroll = inspect.getsource(
+        AccessKeysWindow._reset_list_scroll_to_top
+    )
+    queue_scroll_reset = inspect.getsource(
+        AccessKeysWindow._queue_list_scroll_reset
+    )
     render_details = inspect.getsource(
         AccessKeysWindow._render_details
     )
@@ -349,7 +402,22 @@ def test_static_selector_and_no_flicker_design() -> None:
     assert "loading" not in apply_view.casefold()
     assert ".after(" not in apply_view
     assert ".update(" not in apply_view
-    assert search_changed.count("_apply_view") == 1
+    assert search_changed.count("_apply_filtered_view") == 1
+    assert "_apply_view" not in search_changed
+    assert choose_family.count("_apply_filtered_view") == 1
+    assert "_apply_view" not in choose_family
+
+    # Family/search filters reset the scroll position before layout and once
+    # after idle. This prevents a short family such as ASR Providers from
+    # inheriting a lower scroll offset and appearing blank.
+    assert apply_filtered_view.index("_reset_list_scroll_to_top") < (
+        apply_filtered_view.index("_apply_view")
+    )
+    assert "_queue_list_scroll_reset" in apply_filtered_view
+    assert "_parent_canvas" in reset_scroll
+    assert "yview_moveto(0.0)" in reset_scroll
+    assert "after_idle" in queue_scroll_reset
+    assert "after_cancel" in queue_scroll_reset
 
     # Detail rows are created once and only their changed text is configured
     # during entry-to-entry selection.
@@ -391,6 +459,7 @@ def run_self_test() -> None:
     test_sidebar_button_preserves_api_key_entry()
     test_single_window_lifecycle()
     test_fast_selection_path_updates_only_changed_controls()
+    test_filter_changes_reset_scroll_to_top()
     test_static_selector_and_no_flicker_design()
 
 

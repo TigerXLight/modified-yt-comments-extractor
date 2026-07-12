@@ -181,6 +181,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._visible_entry_ids: set[str] = set()
         self._detail_rows_visible = False
         self._family_popup_visible = False
+        self._list_scroll_reset_after_id: Optional[str] = None
 
         if catalog is None:
             bundle = build_default_access_keys_catalog_bundle()
@@ -511,14 +512,45 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self.family_popup.place_forget()
         self._family_popup_visible = False
 
+    def _reset_list_scroll_to_top(self) -> None:
+        # CTkScrollableFrame does not expose a public yview API. Guard the
+        # internal canvas lookup so older/newer CustomTkinter builds degrade
+        # safely instead of leaving a filtered short list below the old scroll
+        # offset.
+        canvas = getattr(self.list_panel, "_parent_canvas", None)
+        yview_moveto = getattr(canvas, "yview_moveto", None)
+        if callable(yview_moveto):
+            yview_moveto(0.0)
+
+    def _finish_list_scroll_reset(self) -> None:
+        self._list_scroll_reset_after_id = None
+        if self._closed:
+            return
+        self._reset_list_scroll_to_top()
+
+    def _queue_list_scroll_reset(self) -> None:
+        if self._list_scroll_reset_after_id is not None:
+            self.after_cancel(self._list_scroll_reset_after_id)
+        self._list_scroll_reset_after_id = self.after_idle(
+            self._finish_list_scroll_reset
+        )
+
+    def _apply_filtered_view(self, view: AccessKeysManagerView) -> None:
+        # Reset immediately so a short filtered family does not inherit the
+        # previous long list's lower scroll position. Repeat after idle once
+        # geometry and the canvas scrollregion have caught up.
+        self._reset_list_scroll_to_top()
+        self._apply_view(view)
+        self._queue_list_scroll_reset()
+
     def _choose_family(self, value: str) -> None:
         self._hide_family_menu()
         self._family_var.set(value)
         self.family_button.configure(text=f"{value}  ▾")
-        self._apply_view(self.controller.set_family(value))
+        self._apply_filtered_view(self.controller.set_family(value))
 
     def _on_search_changed(self, *_args: object) -> None:
-        self._apply_view(
+        self._apply_filtered_view(
             self.controller.set_search(self._search_var.get())
         )
 
@@ -703,6 +735,9 @@ class AccessKeysWindow(ctk.CTkToplevel):
         if self._closed:
             return
         self._hide_family_menu()
+        if self._list_scroll_reset_after_id is not None:
+            self.after_cancel(self._list_scroll_reset_after_id)
+            self._list_scroll_reset_after_id = None
         self._closed = True
         callback = self._on_close_callback
         self._on_close_callback = None
