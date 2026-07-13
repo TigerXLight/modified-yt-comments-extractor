@@ -1,8 +1,8 @@
 # Project Current-State Handoff
 
-Date: 2026-07-13
+Date: 2026-07-14
 
-Checkpoint: `97de48d Add cloud ASR credential controls`
+Checkpoint: `3abb49d Add secure YouTube credential migration`
 
 Branch: `v2.6.0-asr-engines`
 
@@ -16,7 +16,7 @@ It records the state needed for a future session to resume safely. It does not i
 
 - The working tree was clean when this handoff milestone started. Reconfirm with `git status --short` before applying any new patch.
 - Current branch: `v2.6.0-asr-engines`.
-- Current checkpoint: `97de48d Add cloud ASR credential controls`.
+- Current checkpoint: `3abb49d Add secure YouTube credential migration`.
 - The user performs final local checks, commits, and pushes after reviewing each patch.
 - Codex should not commit unless the user explicitly changes that instruction.
 - Keep one milestone per patch.
@@ -41,7 +41,7 @@ Unless a later milestone is explicitly approved, do not add:
 - Login, paywall, private-content, anti-copy, or DRM bypass behavior.
 - GUI wiring for the local-only preservation/evidence/report helpers.
 - Evidence queue persistence, background processing, or file operations.
-- Credential migration, OAuth, browser-profile integration, provider/API calls, connection testing, or secret-bearing Access & Keys behavior beyond the approved row 2C2 masked cloud-ASR Save/Clear controls and safe presence/provenance refresh.
+- Credential work beyond the approved row 2C2 masked cloud-ASR Save/Clear controls, safe presence/provenance refresh, and committed secure YouTube credential migration/legacy cleanup. Provider credential consumption, OAuth, browser-profile integration, provider/API calls, connection testing, network behavior, and future reveal/copy/export behavior remain separately approval-gated.
 - Database-root scanning, automatic classification, sensitive-trait inference, reclassification execution, or file movement.
 - New runtime dependencies or hidden configuration for these milestones.
 
@@ -156,9 +156,12 @@ Three planned source-evidence areas now have standalone, local-only schema imple
 - `access_keys_dialog.py`, `access_keys_dialog_test.py`, `credential_runtime_status.py`, `credential_runtime_status_test.py`, `credential_store.py`, `credential_store_test.py`, and narrow `main.py` wiring (`97de48d`) implement approved row 2C2. Access & Keys now shows masked cloud-ASR credential Save/Clear controls only for supported catalogued cloud-ASR entries. The field is masked from widget creation onward, has no reveal/copy control, never preloads stored values, clears after successful Save and Clear paths, stays empty after close/reopen, and reports only fixed non-secret outcomes. The secure store is invoked only for explicit cloud-ASR Save/Clear and safe presence probing; no provider execution path consumes stored credentials.
 - Row 2C2 also refreshes safe configured/missing/unavailable/error status and provenance after actions, preserves read-only environment-variable presence reporting, and handles deterministic keyring/environment precedence so clearing secure-store state does not falsely report missing when an environment credential is still configured. Tests use fake/injected keyring behavior and do not access the user's real keyring.
 - Manual row 2C2 verification found an initial plaintext cloud credential rendering defect. The masking defect was fixed before `97de48d`, automated tests were strengthened to verify effective wrapper and internal-entry masking, and the corrected manual retest passed for masked input, Save, configured status, close/reopen without value preload, Clear, missing status, local entries without controls, existing YouTube field remaining masked/unchanged, and no obvious destructive pane rebuild regression.
+- `core/settings.py`, `youtube_credential_migration.py`, `youtube_credential_migration_test.py`, `settings_keyring_fallback_test.py`, `credential_runtime_status.py`, `credential_runtime_status_test.py`, `main.py`, `main_export_state_test.py`, and `access_keys_dialog_test.py` (`3abb49d`) implement the approved secure YouTube credential migration and legacy-cleanup boundary. New/updated YouTube saves are secure-only with no plaintext fallback; legacy plaintext migration is explicit and user-controlled; cleanup removes legacy plaintext only after secure save plus safe non-secret presence verification; Clear reports secure-only, legacy-only, both-copy, missing, backend-unavailable/error, malformed-settings, and partial-failure states truthfully.
+- The YouTube API-key field is permanently masked, has no reveal/copy/unmask control, and never preloads stored credentials. After startup, reopen, status refresh, migration, and Clear, configured status can persist while the field remains empty. Existing extraction compatibility is preserved by resolving configured credentials internally at action time without inserting them into the widget; typed draft input still wins, and legacy-only credentials remain internally usable before explicit migration.
+- Final YouTube security corrections before `3abb49d` removed the obsolete reveal/unmask path, removed stored-key UI preload, preserved legacy plaintext on secure-delete failure, refused destructive Clear for malformed settings, and avoided downgrading keyring read failures to false missing states. Manual production verification used `python main.py` with the venv active; an explicit equivalent is `.\venv\Scripts\python.exe main.py`. The corrected manual pass confirmed masked Save, configured status, empty field after restart, Access & Keys presence/provenance, no settings-root plaintext key, and no credential value exposure.
 - `evidence_database_taxonomy.py` and `evidence_database_taxonomy_test.py` (`e63def4`): read-only database-root/taxonomy metadata, arbitrary user-defined dimensions, valid unknown/not-identified states, dry-run reclassification and alias-normalization suggestions, sensitive-classification safeguards, review states, preserved history, and queue/package/source references. Paths are descriptive metadata only; the model performs no scanning, automatic classification, persistence, reclassification execution, or file movement.
 
-The queue and taxonomy remain local-only schema/test foundations rather than implemented UI/runtime workflows. Access & Keys has the bounded catalog/view/window, row 2A credential architecture/audit, row 2B read-only non-secret status/provenance overlay, row 2C1 secure-store infrastructure, and row 2C2 masked cloud-ASR Save/Clear controls described above. Existing YouTube migration, legacy plaintext cleanup, reveal/copy UI, connection testing, provider credential consumption, provider access, OAuth, browser-profile access, and new non-ASR credential persistence workflows remain unimplemented. The existing YouTube API-key/settings/keyring workflow is unchanged and deliberately excluded from the row 2C1/2C2 secure-store path, so older YouTube security findings must not be marked fixed. The corresponding specification and audit documents remain authoritative for future behavior, and `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` should continue to distinguish implemented cloud-ASR Save/Clear behavior from later credential lifecycle and external-access gaps.
+The queue and taxonomy remain local-only schema/test foundations rather than implemented UI/runtime workflows. Access & Keys has the bounded catalog/view/window, row 2A credential architecture/audit, row 2B read-only non-secret status/provenance overlay, row 2C1 secure-store infrastructure, row 2C2 masked cloud-ASR Save/Clear controls, and committed secure YouTube credential migration/legacy cleanup described above. Cloud-ASR row 2C2 remains unchanged and no provider consumes stored credentials yet. Connection testing, provider credential consumption, provider access, OAuth, browser-profile access, future reveal/copy/export behavior, and new non-ASR credential persistence workflows remain unimplemented and separately approval-gated. `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` should continue to distinguish implemented secure storage/UI behavior from later credential-consumption and external-access gaps.
 
 ## Upstream v2.1.1 Parity State
 
@@ -243,6 +246,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | Credential architecture/security audit | `credential_architecture.py`, `CREDENTIAL_SECURITY_AUDIT.md` | `credential_architecture_test.py`; stable non-secret descriptors/policies/redaction/status helpers |
 | Read-only credential runtime status | `credential_runtime_status.py`, Access & Keys metadata/dialog, narrow `main.py` wiring | `credential_runtime_status_test.py`, Access & Keys regressions, `main_export_state_test.py`; safe presence/provenance only, with no values, writes, migration, tests, provider calls, or network access |
 | Secure credential store and masked cloud-ASR controls | `credential_store.py`, `credential_runtime_status.py`, `access_keys_dialog.py`, narrow `main.py` wiring | `credential_store_test.py`, `credential_runtime_status_test.py`, `access_keys_dialog_test.py`, `main_export_state_test.py`; deterministic cloud-ASR keyring locators, explicit YouTube rejection, test-only/session-only memory backend, fail-closed injected/system-keyring backend, fixed non-secret result statuses, masked cloud-ASR Save/Clear controls, safe presence/provenance refresh, and no provider/API/network execution |
+| Secure YouTube credential migration | `core/settings.py`, `youtube_credential_migration.py`, `credential_runtime_status.py`, narrow `main.py` wiring | `youtube_credential_migration_test.py`, `settings_keyring_fallback_test.py`, `credential_runtime_status_test.py`, `main_export_state_test.py`, `access_keys_dialog_test.py`; secure-only Save/Update, explicit legacy migration/cleanup, no plaintext fallback, no UI preload, no reveal/unmask path, truthful partial-failure states, and existing extraction compatibility through internal action-time resolution |
 | Evidence database taxonomy schema | `evidence_database_taxonomy.py` | `evidence_database_taxonomy_test.py` |
 | URL normalization | `youtube_url_utils.py` | `youtube_url_utils_test.py` |
 | Upstream parity | Extractor/spam/settings/export-state code | Five local/mocked parity tests listed above |
@@ -250,29 +254,16 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 ## Latest Known Commit Chain
 
 ```
+3abb49d Add secure YouTube credential migration
+5bd23c3 Close cloud ASR credential controls milestone
 97de48d Add cloud ASR credential controls
+2dfbb4d Close secure credential store backend milestone
 29af218 Add secure credential store backend
 7c1db2a Add read-only credential status integration
 d610ddf Close credential architecture audit milestone
 ef92017 Add credential architecture and security audit
 447f031 Close Access Keys presentation milestone
 ee945fe Fix Access Keys short-family visibility
-0ff528d Complete Access Keys catalog and interactions
-191ee21 Update Access Keys roadmap state
-1b57e74 Wire Access Keys manager window
-8d11a4b Add Access Keys manager view model
-e63def4 Add evidence database taxonomy schema skeleton
-66871b6 Add access keys metadata model skeleton
-7af8eea Add evidence item queue model skeleton
-cc10998 Document source evidence roadmap coverage
-65cf20f Document access keys manager flow
-e4c195d Document evidence database taxonomy flow
-e2456b6 Document evidence item queue UI flow
-9aab238 Plan media evidence logging and source crediting
-6f2449e Plan evidence queue and database taxonomy
-f1d0da0 Audit Total Export validation errors
-917dcdc Audit package inspection statuses
-6795c14 Audit ZIP inspection statuses
 ```
 
 
@@ -325,9 +316,9 @@ Do not add provider/API/network calls to these verification chains.
 
 ## Safe Next Milestones
 
-1. Row 2A non-secret credential architecture/audit is complete at `ef92017`, row 2B read-only local credential status integration is complete at `7c1db2a`, row 2C1 secure credential-store infrastructure is complete at `29af218`, and row 2C2 masked cloud-ASR Save/Clear controls are complete at `97de48d`.
-2. The exact next ordered credential boundary is the remaining separately approved row 2C credential lifecycle work: existing YouTube credential migration, legacy plaintext cleanup, and any cleanup/removal of the legacy YouTube plaintext fallback. The roadmap does not currently define a precise `row 2C3` label.
-3. Do not expand that boundary into provider credential consumption, connection tests, provider calls, OAuth, cloud ASR execution, browser behavior, uploads, or network access; those remain later separately approved boundaries.
+1. Row 2A non-secret credential architecture/audit is complete at `ef92017`, row 2B read-only local credential status integration is complete at `7c1db2a`, row 2C1 secure credential-store infrastructure is complete at `29af218`, row 2C2 masked cloud-ASR Save/Clear controls are complete at `97de48d`, and secure YouTube credential migration/legacy cleanup is complete at `3abb49d`.
+2. The exact next ordered credential boundary is provider credential consumption and/or explicit connection testing for stored credentials. The current roadmap does not define a precise row label for that boundary, so treat it as separately approval-gated rather than inventing a row number.
+3. Do not expand that boundary into provider calls, OAuth, cloud ASR execution, browser behavior, uploads, network access, or future reveal/copy/export behavior without explicit approval.
 4. Do not begin later-row compatibility/reporting work by treating row 2C2 as approval for unresolved credential migration or provider/network layers.
 5. Create the next full external session handoff before beginning a substantially different feature area.
 6. Keep database scanning, automatic/sensitive classification, credential testing/provider access, archive/downloader/capture, and other networked behavior deferred until explicitly approved, opt-in where applicable, and covered by local/mocked tests.
@@ -342,7 +333,7 @@ Do not add provider/API/network calls to these verification chains.
 - Do not copy/build packages or extract ZIPs through preservation/evidence metadata helpers.
 - Do not infer remote deletion or unavailability from missing local records.
 - Do not expose or record secrets in docs, logs, manifests, reports, screenshots, or test fixtures.
-- Do not describe the queue or database-taxonomy UI/persistence/runtime as implemented. The bounded Access & Keys catalog/view/window, row 2A architecture/audit, row 2B read-only safe status/provenance overlay, row 2C1 secure-store infrastructure, and row 2C2 masked cloud-ASR Save/Clear UI are implemented, but existing YouTube migration, legacy plaintext cleanup, provider credential consumption, connection testing, provider access, OAuth, browser-profile access, and new persistence workflows remain unimplemented.
+- Do not describe the queue or database-taxonomy UI/persistence/runtime as implemented. The bounded Access & Keys catalog/view/window, row 2A architecture/audit, row 2B read-only safe status/provenance overlay, row 2C1 secure-store infrastructure, row 2C2 masked cloud-ASR Save/Clear UI, and secure YouTube credential migration/legacy cleanup are implemented, but provider credential consumption, connection testing, provider access, OAuth, browser-profile access, future reveal/copy/export behavior, and new persistence workflows remain unimplemented.
 - Do not infer sensitive classifications from weak clues or turn dry-run taxonomy suggestions into automatic file operations.
 - Do not modify mature YouTube comment/live-chat/export behavior during unrelated milestones.
 - Do not commit before the user has reviewed the patch and local checks.
