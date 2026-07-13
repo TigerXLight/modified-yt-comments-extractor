@@ -40,6 +40,9 @@ class CredentialPresenceState(_StringEnum):
 class CredentialProvenance(_StringEnum):
     EXISTING_YOUTUBE_KEYRING = "EXISTING_YOUTUBE_KEYRING"
     EXISTING_YOUTUBE_LEGACY_SETTINGS = "EXISTING_YOUTUBE_LEGACY_SETTINGS"
+    EXISTING_YOUTUBE_KEYRING_AND_LEGACY_SETTINGS = (
+        "EXISTING_YOUTUBE_KEYRING_AND_LEGACY_SETTINGS"
+    )
     SECURE_KEYRING = "SECURE_KEYRING"
     SECURE_KEYRING_AND_ENVIRONMENT = "SECURE_KEYRING_AND_ENVIRONMENT"
     ENVIRONMENT_VARIABLE = "ENVIRONMENT_VARIABLE"
@@ -186,24 +189,48 @@ def _youtube_status(
     # Check the explicit legacy-storage wording before "keyring": the
     # existing SettingsManager message can say
     # "settings.json (install keyring for secure storage)".
-    if "settings.json" in storage_lower or "stored in file" in storage_lower:
+    if "keyring and legacy" in storage_lower or (
+        "keyring" in storage_lower and "legacy" in storage_lower
+    ):
+        provenance = CredentialProvenance.EXISTING_YOUTUBE_KEYRING_AND_LEGACY_SETTINGS
+        backend_label = "System keyring and legacy settings.json"
+    elif (
+        "legacy settings.json" in storage_lower
+        or "settings.json" in storage_lower
+        or "stored in file" in storage_lower
+    ):
         provenance = CredentialProvenance.EXISTING_YOUTUBE_LEGACY_SETTINGS
         backend_label = "Legacy settings.json"
     elif "keyring" in storage_lower:
         provenance = CredentialProvenance.EXISTING_YOUTUBE_KEYRING
         backend_label = "System keyring"
+    elif "unavailable" in storage_lower:
+        provenance = CredentialProvenance.UNKNOWN
+        backend_label = "Secure storage unavailable"
+    elif "error" in storage_lower:
+        provenance = CredentialProvenance.UNKNOWN
+        backend_label = "Existing YouTube credential storage"
     else:
         provenance = CredentialProvenance.UNKNOWN
         backend_label = "Existing YouTube credential storage"
 
-    if configured:
+    storage_configured = provenance in {
+        CredentialProvenance.EXISTING_YOUTUBE_KEYRING,
+        CredentialProvenance.EXISTING_YOUTUBE_LEGACY_SETTINGS,
+        CredentialProvenance.EXISTING_YOUTUBE_KEYRING_AND_LEGACY_SETTINGS,
+    }
+
+    if configured or storage_configured:
         return _status(
             descriptor,
             state=CredentialPresenceState.CONFIGURED,
             provenance=provenance,
             diagnostic=SafeCredentialDiagnostic.CONFIGURED_PRESENCE_ONLY,
             backend_label=backend_label,
-            notes="Presence was derived from the already-loaded YouTube field; the value is not returned.",
+            notes=(
+                "Presence was derived from the already-loaded YouTube field "
+                "or safe storage status; the value is not returned."
+            ),
         )
 
     if provenance is CredentialProvenance.EXISTING_YOUTUBE_KEYRING and not bool(

@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import core.settings as settings_module
 from core.settings import AppSettings, SettingsManager
 
 
@@ -64,90 +63,89 @@ def _read_json(path: str) -> dict[str, object]:
         return json.load(file)
 
 
-def test_keyring_unavailable_saves_dummy_key_to_json() -> None:
+def _assert_dummy_key_preserved(path: str) -> None:
+    if _read_json(path).get("api_key") != DUMMY_API_KEY:
+        raise AssertionError("legacy API key was not preserved")
+
+
+def _assert_loaded_key_preserved(manager: SettingsManager) -> None:
+    if manager.load().api_key != DUMMY_API_KEY:
+        raise AssertionError("legacy API key was not loaded")
+
+
+def test_keyring_unavailable_rejects_new_plaintext_write() -> None:
     with TemporaryDirectory() as tmpdir:
         path = _settings_file(tmpdir)
-        manager = SettingsManager(path)
-        manager._use_keyring = False
+        manager = SettingsManager(path, keyring_module=None)
 
-        assert manager.save(AppSettings(api_key=DUMMY_API_KEY, min_likes=3))
+        assert not manager.save(AppSettings(api_key=DUMMY_API_KEY, min_likes=3))
+        assert not Path(path).exists()
+
+
+def test_keyring_set_failure_preserves_legacy_without_plaintext_update() -> None:
+    with TemporaryDirectory() as tmpdir:
+        path = _settings_file(tmpdir)
+        with open(path, "w", encoding="utf-8") as file:
+            json.dump({"api_key": DUMMY_API_KEY, "min_likes": 7}, file)
+        manager = SettingsManager(
+            path,
+            keyring_module=FakeKeyring(
+                set_error=RuntimeError("safe keyring write failed")
+            ),
+        )
+
+        assert not manager.save(AppSettings(api_key="replacement", min_likes=9))
 
         data = _read_json(path)
-        assert data["api_key"] == DUMMY_API_KEY
-        assert data["min_likes"] == 3
-        reload_manager = SettingsManager(path)
-        reload_manager._use_keyring = False
-        assert reload_manager.load().api_key == DUMMY_API_KEY
-
-
-def test_keyring_set_failure_falls_back_to_json() -> None:
-    original_keyring = getattr(settings_module, "keyring", None)
-    settings_module.keyring = FakeKeyring(set_error=RuntimeError("keyring write failed"))
-    try:
-        with TemporaryDirectory() as tmpdir:
-            path = _settings_file(tmpdir)
-            manager = SettingsManager(path)
-            manager._use_keyring = True
-
-            assert manager.save(AppSettings(api_key=DUMMY_API_KEY, min_likes=7))
-
-            data = _read_json(path)
-            assert data["api_key"] == DUMMY_API_KEY
-            assert data["min_likes"] == 7
-            assert not manager.keyring_available
-            assert "settings.json" in manager.get_storage_info()
-            reload_manager = SettingsManager(path)
-            reload_manager._use_keyring = False
-            assert reload_manager.load().api_key == DUMMY_API_KEY
-    finally:
-        if original_keyring is not None:
-            settings_module.keyring = original_keyring
+        _assert_dummy_key_preserved(path)
+        assert data["min_likes"] == 7
+        assert manager.keyring_available
+        assert "storage status error" in manager.get_storage_info()
+        reload_manager = SettingsManager(path, keyring_module=None)
+        _assert_loaded_key_preserved(reload_manager)
 
 
 def test_keyring_get_failure_loads_json_fallback() -> None:
-    original_keyring = getattr(settings_module, "keyring", None)
-    settings_module.keyring = FakeKeyring(get_error=RuntimeError("keyring read failed"))
-    try:
-        with TemporaryDirectory() as tmpdir:
-            path = _settings_file(tmpdir)
-            with open(path, "w", encoding="utf-8") as file:
-                json.dump({"api_key": DUMMY_API_KEY, "min_likes": 11}, file)
+    with TemporaryDirectory() as tmpdir:
+        path = _settings_file(tmpdir)
+        with open(path, "w", encoding="utf-8") as file:
+            json.dump({"api_key": DUMMY_API_KEY, "min_likes": 11}, file)
 
-            manager = SettingsManager(path)
-            manager._use_keyring = True
+        manager = SettingsManager(
+            path,
+            keyring_module=FakeKeyring(
+                get_error=RuntimeError("safe keyring read failed")
+            ),
+        )
 
-            loaded = manager.load()
+        loaded = manager.load()
 
-            assert loaded.api_key == DUMMY_API_KEY
-            assert loaded.min_likes == 11
-            assert not manager.keyring_available
-            assert "settings.json" in manager.get_storage_info()
-    finally:
-        if original_keyring is not None:
-            settings_module.keyring = original_keyring
+        if loaded.api_key != DUMMY_API_KEY:
+            raise AssertionError("legacy API key was not loaded")
+        assert loaded.min_likes == 11
+        assert manager.keyring_available
+        assert "storage status error" in manager.get_storage_info()
 
 
-def test_keyring_delete_failure_marks_fallback_state() -> None:
-    original_keyring = getattr(settings_module, "keyring", None)
-    settings_module.keyring = FakeKeyring(delete_error=RuntimeError("keyring delete failed"))
-    try:
-        with TemporaryDirectory() as tmpdir:
-            manager = SettingsManager(_settings_file(tmpdir))
-            manager._use_keyring = True
+def test_keyring_delete_failure_does_not_report_full_clear() -> None:
+    with TemporaryDirectory() as tmpdir:
+        manager = SettingsManager(
+            _settings_file(tmpdir),
+            keyring_module=FakeKeyring(
+                delete_error=RuntimeError("safe keyring delete failed")
+            ),
+        )
 
-            assert not manager.delete_api_key()
-            assert not manager.keyring_available
-            assert "settings.json" in manager.get_storage_info()
-    finally:
-        if original_keyring is not None:
-            settings_module.keyring = original_keyring
+        assert not manager.delete_api_key()
+        assert manager.keyring_available
+        assert "storage status error" in manager.get_storage_info()
 
 
 def run_self_test() -> None:
-    test_keyring_unavailable_saves_dummy_key_to_json()
-    test_keyring_set_failure_falls_back_to_json()
+    test_keyring_unavailable_rejects_new_plaintext_write()
+    test_keyring_set_failure_preserves_legacy_without_plaintext_update()
     test_keyring_get_failure_loads_json_fallback()
-    test_keyring_delete_failure_marks_fallback_state()
+    test_keyring_delete_failure_does_not_report_full_clear()
 
 
 if __name__ == "__main__":

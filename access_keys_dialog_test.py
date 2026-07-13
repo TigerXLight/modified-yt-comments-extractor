@@ -215,7 +215,13 @@ def test_sidebar_button_preserves_api_key_entry() -> None:
     api_section = _function_source(main_source, "_create_api_section")
     assert 'placeholder_text="Enter API key"' in api_section
     assert 'show="*"' in api_section
-    assert "command=self._toggle_api_key_visibility" in api_section
+    assert "command=self._save_youtube_api_key_secure" in api_section
+    assert "command=self._migrate_youtube_api_key" in api_section
+    assert "command=self._clear_youtube_api_key" in api_section
+    assert "_toggle_api_key_visibility" not in main_source
+    assert "toggle_api_key_button" not in main_source
+    assert "api_key_visible" not in main_source
+    assert 'show=""' not in main_source
     assert "text=ACCESS_KEYS_BUTTON_TEXT" in api_section
     assert "command=self.open_access_keys_window" in api_section
 

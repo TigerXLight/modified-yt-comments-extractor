@@ -85,8 +85,27 @@ def test_youtube_statuses() -> None:
     )["source:youtube"]
     assert legacy.provenance is CredentialProvenance.EXISTING_YOUTUBE_LEGACY_SETTINGS
 
-    missing = _read(youtube_configured=False)["source:youtube"]
+    both = _read(
+        youtube_configured=True,
+        storage_info="API key present in system keyring and legacy settings.json",
+    )["source:youtube"]
+    assert (
+        both.provenance
+        is CredentialProvenance.EXISTING_YOUTUBE_KEYRING_AND_LEGACY_SETTINGS
+    )
+
+    missing = _read(
+        youtube_configured=False,
+        storage_info="API key not configured",
+    )["source:youtube"]
     assert missing.state is CredentialPresenceState.MISSING
+
+    stored_without_entry_text = _read(youtube_configured=False)["source:youtube"]
+    assert stored_without_entry_text.state is CredentialPresenceState.CONFIGURED
+    assert (
+        stored_without_entry_text.provenance
+        is CredentialProvenance.EXISTING_YOUTUBE_KEYRING
+    )
 
     failed = _read(
         youtube_configured=True,

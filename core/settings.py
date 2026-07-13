@@ -9,7 +9,7 @@ import json
 import logging
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from core.constants import (
     SETTINGS_FILE,
@@ -29,10 +29,27 @@ try:
     KEYRING_AVAILABLE = True
 except ImportError:
     KEYRING_AVAILABLE = False
-    logger.warning(
-        "keyring package not installed. API key will be stored in plaintext. "
-        "Install with: pip install keyring"
-    )
+    logger.warning("keyring package not installed; secure API-key storage is unavailable.")
+
+
+YOUTUBE_KEYRING_PRESENT = "present"
+YOUTUBE_KEYRING_MISSING = "missing"
+YOUTUBE_KEYRING_UNAVAILABLE = "backend_unavailable"
+YOUTUBE_KEYRING_ERROR = "backend_error"
+
+YOUTUBE_SAVE_SAVED = "saved"
+YOUTUBE_SAVE_UPDATED = "updated"
+YOUTUBE_SAVE_EMPTY = "empty_credential_rejected"
+YOUTUBE_SAVE_BACKEND_UNAVAILABLE = "backend_unavailable"
+YOUTUBE_SAVE_BACKEND_ERROR = "backend_error"
+YOUTUBE_SAVE_VERIFICATION_FAILED = "presence_verification_failed"
+
+YOUTUBE_CLEAR_CLEARED = "cleared"
+YOUTUBE_CLEAR_NOT_FOUND = "not_found"
+YOUTUBE_CLEAR_BACKEND_UNAVAILABLE = "backend_unavailable"
+YOUTUBE_CLEAR_BACKEND_ERROR = "backend_error"
+
+_DEFAULT_KEYRING_MODULE = object()
 
 
 @dataclass
@@ -103,7 +120,12 @@ class SettingsManager:
         manager.save(settings)
     """
 
-    def __init__(self, settings_file: Optional[str] = None):
+    def __init__(
+        self,
+        settings_file: Optional[str] = None,
+        *,
+        keyring_module: Any = _DEFAULT_KEYRING_MODULE,
+    ):
         """
         Initialize the settings manager.
 
@@ -116,7 +138,11 @@ class SettingsManager:
         else:
             app_dir = Path(__file__).resolve().parent.parent
             self.settings_file = app_dir / SETTINGS_FILE
-        self._use_keyring = KEYRING_AVAILABLE
+        if keyring_module is _DEFAULT_KEYRING_MODULE:
+            self._keyring_module = keyring if KEYRING_AVAILABLE else None
+        else:
+            self._keyring_module = keyring_module
+        self._use_keyring = self._keyring_module is not None
         self._last_keyring_error: Optional[str] = None
 
     @property
@@ -163,20 +189,25 @@ class SettingsManager:
             True if saved successfully
         """
         try:
-            # Save API key securely
-            self._save_api_key(settings.api_key)
+            # Save API key securely. Existing legacy plaintext is preserved
+            # unless an explicit migration/clear action removes it.
+            if settings.api_key:
+                status = self.save_api_key_secure(settings.api_key)
+                if status not in {YOUTUBE_SAVE_SAVED, YOUTUBE_SAVE_UPDATED}:
+                    return False
 
-            # Save other settings to JSON (without API key if using keyring)
-            include_api_key = not self._use_keyring
-            data = settings.to_dict(include_api_key=include_api_key)
+            data = settings.to_dict(include_api_key=False)
+            legacy_api_key = self.read_legacy_api_key_for_migration()
+            if legacy_api_key:
+                data["api_key"] = legacy_api_key
 
             with open(self.settings_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
 
             return True
 
-        except Exception as e:
-            logger.error(f"Failed to save settings: {e}")
+        except Exception:
+            logger.error("Failed to save settings safely.")
             return False
 
     def _load_api_key(self) -> Optional[str]:
@@ -184,77 +215,195 @@ class SettingsManager:
         # Try keyring first
         if self._use_keyring:
             try:
-                api_key = keyring.get_password(
+                api_key = self._keyring_module.get_password(
                     KEYRING_SERVICE_NAME,
                     KEYRING_API_KEY_NAME
                 )
                 if api_key:
                     return api_key
-            except Exception as e:
-                logger.warning(f"Failed to load API key from keyring: {e}")
-                self._last_keyring_error = str(e)
-                self._use_keyring = False
+            except Exception:
+                logger.warning("Failed to load API key from keyring.")
+                self._last_keyring_error = YOUTUBE_KEYRING_ERROR
 
         # Fall back to settings file
-        if self.settings_file.exists():
-            try:
-                with open(self.settings_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    return data.get('api_key', '')
-            except Exception:
-                pass
+        return self.read_legacy_api_key_for_migration() or None
 
-        return None
+    def _read_settings_data(self) -> tuple[dict[str, Any], bool]:
+        if not self.settings_file.exists():
+            return {}, True
+        try:
+            with open(self.settings_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data, True
+        except Exception:
+            pass
+        return {}, False
+
+    def _write_settings_data(self, data: dict[str, Any]) -> bool:
+        try:
+            self.settings_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.settings_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            return True
+        except Exception:
+            logger.error("Failed to update settings file safely.")
+            return False
+
+    def read_legacy_api_key_for_migration(self) -> str:
+        """Return legacy plaintext only for explicit migration/save compatibility."""
+        data, readable = self._read_settings_data()
+        if not readable:
+            return ""
+        value = data.get("api_key", "")
+        return str(value).strip() if value else ""
+
+    def legacy_api_key_present(self) -> bool:
+        return bool(self.read_legacy_api_key_for_migration())
+
+    def legacy_settings_readable(self) -> bool:
+        _data, readable = self._read_settings_data()
+        return readable
+
+    def remove_legacy_api_key(self) -> str:
+        data, readable = self._read_settings_data()
+        if not readable:
+            return YOUTUBE_CLEAR_BACKEND_ERROR
+        if "api_key" not in data:
+            return YOUTUBE_CLEAR_NOT_FOUND
+        cleaned = dict(data)
+        cleaned.pop("api_key", None)
+        if not self._write_settings_data(cleaned):
+            return YOUTUBE_CLEAR_BACKEND_ERROR
+        return YOUTUBE_CLEAR_CLEARED
 
     def _save_api_key(self, api_key: str) -> None:
         """Save API key to keyring or settings file."""
-        if not api_key:
-            return
+        status = self.save_api_key_secure(api_key)
+        if status not in {YOUTUBE_SAVE_SAVED, YOUTUBE_SAVE_UPDATED, YOUTUBE_SAVE_EMPTY}:
+            raise RuntimeError(status)
 
-        if self._use_keyring:
-            try:
-                keyring.set_password(
+    def secure_api_key_presence_status(self) -> str:
+        if not self._use_keyring or self._keyring_module is None:
+            return YOUTUBE_KEYRING_UNAVAILABLE
+        try:
+            configured = self._keyring_module.get_password(
+                KEYRING_SERVICE_NAME,
+                KEYRING_API_KEY_NAME,
+            ) is not None
+        except Exception:
+            self._last_keyring_error = YOUTUBE_KEYRING_ERROR
+            return YOUTUBE_KEYRING_ERROR
+        self._last_keyring_error = None
+        return YOUTUBE_KEYRING_PRESENT if configured else YOUTUBE_KEYRING_MISSING
+
+    def save_api_key_secure(self, api_key: str) -> str:
+        api_key = str(api_key or "").strip()
+        if not api_key:
+            return YOUTUBE_SAVE_EMPTY
+        if not self._use_keyring or self._keyring_module is None:
+            self._last_keyring_error = YOUTUBE_KEYRING_UNAVAILABLE
+            return YOUTUBE_SAVE_BACKEND_UNAVAILABLE
+        existing = None
+        try:
+            existing = self._keyring_module.get_password(
+                KEYRING_SERVICE_NAME,
+                KEYRING_API_KEY_NAME,
+            )
+            self._keyring_module.set_password(
+                KEYRING_SERVICE_NAME,
+                KEYRING_API_KEY_NAME,
+                api_key,
+            )
+        except Exception:
+            self._last_keyring_error = YOUTUBE_KEYRING_ERROR
+            return YOUTUBE_SAVE_BACKEND_ERROR
+        if self.secure_api_key_presence_status() != YOUTUBE_KEYRING_PRESENT:
+            self._restore_secure_api_key_after_failed_save(existing)
+            self._last_keyring_error = YOUTUBE_SAVE_VERIFICATION_FAILED
+            return YOUTUBE_SAVE_VERIFICATION_FAILED
+        self._last_keyring_error = None
+        return YOUTUBE_SAVE_UPDATED if existing is not None else YOUTUBE_SAVE_SAVED
+
+    def _restore_secure_api_key_after_failed_save(
+        self,
+        previous_api_key: Optional[str],
+    ) -> None:
+        if not self._use_keyring or self._keyring_module is None:
+            return
+        try:
+            if previous_api_key is None:
+                self._keyring_module.delete_password(
                     KEYRING_SERVICE_NAME,
                     KEYRING_API_KEY_NAME,
-                    api_key
                 )
-                self._last_keyring_error = None
+            else:
+                self._keyring_module.set_password(
+                    KEYRING_SERVICE_NAME,
+                    KEYRING_API_KEY_NAME,
+                    previous_api_key,
+                )
+        except Exception as exc:
+            password_delete_error = getattr(
+                getattr(self._keyring_module, "errors", object()),
+                "PasswordDeleteError",
+                None,
+            )
+            if password_delete_error is not None and isinstance(exc, password_delete_error):
                 return
-            except Exception as e:
-                logger.warning(f"Failed to save API key to keyring: {e}")
-                self._last_keyring_error = str(e)
-                self._use_keyring = False
-
-        # If keyring unavailable or failed, it will be saved with other settings
-        logger.debug("API key will be stored in settings file (less secure)")
+            logger.error("Failed to restore previous API key state safely.")
 
     def delete_api_key(self) -> bool:
         """
-        Delete the stored API key from keyring.
+        Delete the stored API key from keyring and legacy settings.
 
         Returns:
             True if deleted successfully
         """
-        if self._use_keyring:
-            try:
-                keyring.delete_password(
-                    KEYRING_SERVICE_NAME,
-                    KEYRING_API_KEY_NAME
-                )
-                return True
-            except keyring.errors.PasswordDeleteError:
-                # Key didn't exist
-                return True
-            except Exception as e:
-                logger.error(f"Failed to delete API key from keyring: {e}")
-                self._last_keyring_error = str(e)
-                self._use_keyring = False
-                return False
-        return True
+        secure = self.clear_secure_api_key()
+        legacy = self.remove_legacy_api_key()
+        secure_ok = secure in {YOUTUBE_CLEAR_CLEARED, YOUTUBE_CLEAR_NOT_FOUND}
+        legacy_ok = legacy in {YOUTUBE_CLEAR_CLEARED, YOUTUBE_CLEAR_NOT_FOUND}
+        return secure_ok and legacy_ok
+
+    def clear_secure_api_key(self) -> str:
+        if not self._use_keyring or self._keyring_module is None:
+            self._last_keyring_error = YOUTUBE_KEYRING_UNAVAILABLE
+            return YOUTUBE_CLEAR_BACKEND_UNAVAILABLE
+        try:
+            self._keyring_module.delete_password(
+                KEYRING_SERVICE_NAME,
+                KEYRING_API_KEY_NAME,
+            )
+            self._last_keyring_error = None
+            return YOUTUBE_CLEAR_CLEARED
+        except Exception as exc:
+            password_delete_error = getattr(
+                getattr(self._keyring_module, "errors", object()),
+                "PasswordDeleteError",
+                None,
+            )
+            if password_delete_error is not None and isinstance(exc, password_delete_error):
+                self._last_keyring_error = None
+                return YOUTUBE_CLEAR_NOT_FOUND
+            self._last_keyring_error = YOUTUBE_KEYRING_ERROR
+            logger.error("Failed to clear API key from keyring.")
+            return YOUTUBE_CLEAR_BACKEND_ERROR
 
     def get_storage_info(self) -> str:
         """Get information about how the API key is stored."""
-        if self._use_keyring:
+        if self._last_keyring_error == YOUTUBE_KEYRING_ERROR:
+            return "API key storage status error"
+        secure = self.secure_api_key_presence_status()
+        legacy = self.legacy_api_key_present()
+        if secure == YOUTUBE_KEYRING_PRESENT and legacy:
+            return "API key present in system keyring and legacy settings.json"
+        if secure == YOUTUBE_KEYRING_PRESENT:
             return "API key stored securely in system keyring"
-        else:
-            return "API key stored in settings.json (install 'keyring' for secure storage)"
+        if legacy:
+            return "API key stored in legacy settings.json"
+        if secure == YOUTUBE_KEYRING_UNAVAILABLE:
+            return "API key secure storage unavailable"
+        if secure == YOUTUBE_KEYRING_ERROR:
+            return "API key storage status error"
+        return "API key not configured"

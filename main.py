@@ -87,6 +87,11 @@ from access_keys_dialog import (
 )
 from credential_runtime_status import build_runtime_credential_statuses
 from credential_store import SystemKeyringCredentialStore
+from youtube_credential_migration import (
+    YouTubeCredentialActionStatus,
+    YouTubeCredentialMigrationService,
+    YouTubeCredentialStorageState,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -394,7 +399,7 @@ class App(ctk.CTk):
         api_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
         api_frame.pack(fill="x", padx=20)
 
-        # API key entry with toggle button
+        # API key entry. It remains masked; migration/clear actions are explicit.
         entry_frame = ctk.CTkFrame(api_frame, fg_color="transparent")
         entry_frame.pack(fill="x")
         entry_frame.grid_columnconfigure(0, weight=1)
@@ -411,21 +416,6 @@ class App(ctk.CTk):
         )
         self.api_key_entry.grid(row=0, column=0, sticky="ew")
 
-        self.api_key_visible = False
-        self.toggle_api_key_button = ctk.CTkButton(
-            entry_frame,
-            text="👁",
-            width=36,
-            height=36,
-            font=ctk.CTkFont(size=12),
-            fg_color=COLORS["bg_input"],
-            hover_color=COLORS["border"],
-            text_color=COLORS["text_secondary"],
-            corner_radius=6,
-            command=self._toggle_api_key_visibility
-        )
-        self.toggle_api_key_button.grid(row=0, column=1, padx=(6, 0))
-
         # Storage info
         storage_info = self.settings_manager.get_storage_info()
         info_text = "🔒 Secure" if "keyring" in storage_info else "⚠️ File"
@@ -436,6 +426,50 @@ class App(ctk.CTk):
             text_color=COLORS["text_muted"]
         )
         self.storage_label.pack(anchor="w", pady=(4, 0))
+
+        api_actions = ctk.CTkFrame(api_frame, fg_color="transparent")
+        api_actions.pack(fill="x", pady=(8, 0))
+        api_actions.grid_columnconfigure((0, 1), weight=1)
+
+        self.save_api_key_button = ctk.CTkButton(
+            api_actions,
+            text="Save secure",
+            height=30,
+            font=ctk.CTkFont(size=11),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["accent_hover"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+            command=self._save_youtube_api_key_secure,
+        )
+        self.save_api_key_button.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+
+        self.clear_api_key_button = ctk.CTkButton(
+            api_actions,
+            text="Clear credential",
+            height=30,
+            font=ctk.CTkFont(size=11),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+            command=self._clear_youtube_api_key,
+        )
+        self.clear_api_key_button.grid(row=0, column=1, sticky="ew", padx=(4, 0))
+
+        self.migrate_api_key_button = ctk.CTkButton(
+            api_frame,
+            text="Migrate legacy key to secure storage",
+            height=30,
+            font=ctk.CTkFont(size=11),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+            command=self._migrate_youtube_api_key,
+        )
+        self.migrate_api_key_button.pack(fill="x", pady=(6, 0))
+        self._refresh_youtube_credential_status()
 
         self.access_keys_button = ctk.CTkButton(
             api_frame,
@@ -2311,15 +2345,108 @@ class App(ctk.CTk):
                 self._fetch_thread_ref.join(timeout=2.0)
         self.destroy()
 
-    def _toggle_api_key_visibility(self) -> None:
-        """Toggle API key visibility."""
-        self.api_key_visible = not self.api_key_visible
-        if self.api_key_visible:
-            self.api_key_entry.configure(show="")
-            self.toggle_api_key_button.configure(text="🔒")
-        else:
-            self.api_key_entry.configure(show="*")
-            self.toggle_api_key_button.configure(text="👁")
+    def _youtube_credential_service(self) -> YouTubeCredentialMigrationService:
+        return YouTubeCredentialMigrationService(self.settings_manager)
+
+    def _resolve_youtube_api_key_for_action(self) -> str:
+        """Return a typed draft or stored YouTube key without populating the UI."""
+        draft = self.api_key_entry.get().strip()
+        if draft:
+            return draft
+        return self.settings_manager.load().api_key.strip()
+
+    def _youtube_action_message(
+        self,
+        status: YouTubeCredentialActionStatus,
+    ) -> tuple[str, str]:
+        messages = {
+            YouTubeCredentialActionStatus.SAVED: (
+                "YouTube API key saved securely.",
+                "success",
+            ),
+            YouTubeCredentialActionStatus.UPDATED: (
+                "YouTube API key updated securely.",
+                "success",
+            ),
+            YouTubeCredentialActionStatus.MIGRATED: (
+                "Legacy YouTube API key migrated to secure storage.",
+                "success",
+            ),
+            YouTubeCredentialActionStatus.CLEARED: (
+                "YouTube API key cleared from known storage.",
+                "success",
+            ),
+            YouTubeCredentialActionStatus.NOT_FOUND: (
+                "No YouTube API key was found in known storage.",
+                "warning",
+            ),
+            YouTubeCredentialActionStatus.PARTIAL_FAILURE: (
+                "YouTube API key clear was only partially completed.",
+                "warning",
+            ),
+            YouTubeCredentialActionStatus.LEGACY_CLEANUP_FAILED: (
+                "Secure save succeeded, but legacy cleanup failed.",
+                "warning",
+            ),
+            YouTubeCredentialActionStatus.EMPTY_CREDENTIAL_REJECTED: (
+                "Enter a YouTube API key before saving.",
+                "warning",
+            ),
+            YouTubeCredentialActionStatus.BACKEND_UNAVAILABLE: (
+                "Secure credential storage is unavailable.",
+                "error",
+            ),
+            YouTubeCredentialActionStatus.PRESENCE_VERIFICATION_FAILED: (
+                "Secure credential storage could not be verified.",
+                "error",
+            ),
+            YouTubeCredentialActionStatus.BACKEND_ERROR: (
+                "Secure credential storage returned a safe error.",
+                "error",
+            ),
+        }
+        return messages.get(status, ("Credential action finished.", "info"))
+
+    def _refresh_youtube_credential_status(self) -> None:
+        state = self._youtube_credential_service().storage_status().state
+        labels = {
+            YouTubeCredentialStorageState.SECURE_KEYRING_ONLY: "Secure storage configured",
+            YouTubeCredentialStorageState.LEGACY_PLAINTEXT_ONLY: "Legacy settings storage detected",
+            YouTubeCredentialStorageState.BOTH_SECURE_AND_LEGACY: "Secure + legacy copies detected",
+            YouTubeCredentialStorageState.MISSING: "API key not configured",
+            YouTubeCredentialStorageState.SECURE_BACKEND_UNAVAILABLE: "Secure storage unavailable",
+            YouTubeCredentialStorageState.STATUS_ERROR: "Storage status error",
+        }
+        self.storage_label.configure(text=labels.get(state, "Storage status unknown"))
+
+    def _save_youtube_api_key_secure(self) -> None:
+        credential = self.api_key_entry.get().strip()
+        result = self._youtube_credential_service().save_secure(credential)
+        if result.status in {
+            YouTubeCredentialActionStatus.SAVED,
+            YouTubeCredentialActionStatus.UPDATED,
+        }:
+            self.api_key_entry.delete(0, "end")
+        self.api_key_entry.configure(show="*")
+        self._refresh_youtube_credential_status()
+        message, level = self._youtube_action_message(result.status)
+        self.log_message(message, level)
+
+    def _migrate_youtube_api_key(self) -> None:
+        result = self._youtube_credential_service().migrate_legacy_to_secure()
+        self.api_key_entry.delete(0, "end")
+        self.api_key_entry.configure(show="*")
+        self._refresh_youtube_credential_status()
+        message, level = self._youtube_action_message(result.status)
+        self.log_message(message, level)
+
+    def _clear_youtube_api_key(self) -> None:
+        result = self._youtube_credential_service().clear_all()
+        self.api_key_entry.delete(0, "end")
+        self.api_key_entry.configure(show="*")
+        self._refresh_youtube_credential_status()
+        message, level = self._youtube_action_message(result.status)
+        self.log_message(message, level)
 
     def _on_spam_filter_toggle(self) -> None:
         """Handle spam filter toggle - enable/disable threshold slider."""
@@ -2484,8 +2611,8 @@ class App(ctk.CTk):
         try:
             settings = self.settings_manager.load()
 
-            if settings.api_key:
-                self.api_key_entry.insert(0, settings.api_key)
+            self.api_key_entry.delete(0, "end")
+            self.api_key_entry.configure(show="*")
 
             self.spam_filter_var.set(settings.filter_spam)
             self.spam_threshold_var.set(settings.spam_threshold)
@@ -2516,7 +2643,7 @@ class App(ctk.CTk):
         except Exception as e:
             logger.error(f"Failed to load settings: {e}")
 
-    def _save_settings(self) -> None:
+    def _save_settings(self) -> bool:
         """Save current settings."""
         try:
             settings = AppSettings(
@@ -2531,10 +2658,14 @@ class App(ctk.CTk):
                 blacklist_patterns=self._blacklist_patterns,
                 whitelist_patterns=self._whitelist_patterns,
             )
-            self.settings_manager.save(settings)
-        except Exception as e:
-            logger.error(f"Failed to save settings: {e}")
-            self.log_message(f"Error saving settings: {e}", "error")
+            saved = self.settings_manager.save(settings)
+            if not saved:
+                self.log_message("Settings were not saved safely.", "error")
+            return saved
+        except Exception:
+            logger.error("Failed to save settings safely.")
+            self.log_message("Error saving settings safely.", "error")
+            return False
 
     # =========================================================================
     # UTILITY METHODS
@@ -2684,7 +2815,7 @@ class App(ctk.CTk):
             return
 
         # Get and validate inputs
-        api_key = self.api_key_entry.get().strip()
+        api_key = self._resolve_youtube_api_key_for_action()
 
         current_text = self.url_entry.get("1.0", "end").strip()
         if current_text == self._url_placeholder.strip():
@@ -7319,7 +7450,7 @@ class App(ctk.CTk):
                 video_info: Dict[str, Any] = {}
                 speaker_name = "YouTube"
 
-                api_key = self.api_key_entry.get().strip()
+                api_key = self._resolve_youtube_api_key_for_action()
 
                 if api_key:
                     try:
