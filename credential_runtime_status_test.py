@@ -30,6 +30,14 @@ from credential_store import (
 SECRET_SENTINEL = "ROW2B-SECRET-MUST-NOT-APPEAR"
 
 
+def _store_raw_test_credential(
+    store: InMemoryCredentialStore,
+    credential_id: str,
+    value: str,
+) -> None:
+    store._credentials[credential_id] = value
+
+
 class FakeSettingsManager:
     def __init__(
         self,
@@ -205,6 +213,52 @@ def test_secure_store_presence_failures_are_safe() -> None:
     assert SECRET_SENTINEL not in serialized
 
 
+def test_invalid_secure_store_values_are_not_configured() -> None:
+    for value in ("", "   "):
+        store = InMemoryCredentialStore()
+        _store_raw_test_credential(
+            store,
+            "elevenlabs_scribe_api_key",
+            value,
+        )
+        invalid = _read(credential_store=store)["asr:elevenlabs_scribe"]
+        assert invalid.state is CredentialPresenceState.ERROR
+        assert invalid.provenance is CredentialProvenance.SECURE_KEYRING
+        assert (
+            invalid.safe_diagnostic
+            is SafeCredentialDiagnostic.INVALID_SECURE_CREDENTIAL_VALUE
+        )
+        assert SECRET_SENTINEL not in json.dumps(invalid.to_dict(), sort_keys=True)
+
+        invalid_with_env = _read(
+            credential_store=store,
+            environ={"ELEVENLABS_API_KEY": SECRET_SENTINEL},
+        )["asr:elevenlabs_scribe"]
+        assert invalid_with_env.state is CredentialPresenceState.ERROR
+        assert (
+            invalid_with_env.safe_diagnostic
+            is SafeCredentialDiagnostic.INVALID_SECURE_CREDENTIAL_VALUE
+        )
+
+    entry = AccessEntryMetadata(
+        entry_id="asr:elevenlabs_scribe",
+        entry_kind=AccessEntryKind.ASR_PROVIDER,
+        display_name="ElevenLabs Scribe",
+        platform_family="asr_providers",
+        access_mode=AccessMode.API_KEY,
+        credential_status=CredentialStatus.REQUIRED_MISSING,
+        credentials_required=True,
+    )
+    store = InMemoryCredentialStore()
+    _store_raw_test_credential(store, "elevenlabs_scribe_api_key", "")
+    updated = apply_runtime_credential_statuses(
+        AccessKeysCatalog(entries=(entry,)),
+        _read(credential_store=store),
+    )
+    assert updated.entries[0].credential_status is CredentialStatus.STATUS_ERROR
+    assert "invalid_secure_credential_value" in updated.entries[0].access_limitations
+
+
 def test_cloud_asr_entry_id_mapping_excludes_youtube_and_unknowns() -> None:
     plan = build_row2a_credential_architecture()
     mapped = {
@@ -289,6 +343,7 @@ def main() -> None:
     test_environment_statuses()
     test_secure_store_presence_and_precedence()
     test_secure_store_presence_failures_are_safe()
+    test_invalid_secure_store_values_are_not_configured()
     test_cloud_asr_entry_id_mapping_excludes_youtube_and_unknowns()
     test_catalog_overlay()
     test_runtime_integration_is_bounded()

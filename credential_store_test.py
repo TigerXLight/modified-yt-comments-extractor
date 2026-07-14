@@ -184,6 +184,16 @@ def test_in_memory_save_overwrite_and_clear() -> None:
     _assert_secret_not_exposed(missing)
 
 
+def test_in_memory_presence_rejects_invalid_stored_values() -> None:
+    for stored_value in ("", "   "):
+        memory = InMemoryCredentialStore()
+        memory._credentials[SUPPORTED_ID] = stored_value
+        invalid = memory.credential_present(SUPPORTED_ID)
+        assert invalid.status is CredentialStoreStatus.INVALID_CREDENTIAL
+        assert invalid.operation is CredentialStoreOperation.PRESENCE
+        _assert_secret_not_exposed(invalid)
+
+
 def test_in_memory_simulated_failures() -> None:
     unavailable = InMemoryCredentialStore(available=False)
     presence_unavailable = unavailable.credential_present(SUPPORTED_ID)
@@ -261,6 +271,21 @@ def test_system_keyring_save_update_clear_and_missing() -> None:
     assert missing.status is CredentialStoreStatus.NOT_FOUND
     assert missing.changed is False
     _assert_secret_not_exposed(missing)
+
+
+def test_system_keyring_presence_rejects_invalid_stored_values() -> None:
+    locator = credential_locator_for_id(SUPPORTED_ID)
+    assert locator is not None
+
+    for stored_value in ("", "   "):
+        fake = FakeKeyring()
+        fake.store[(locator.service_name, locator.account_name)] = stored_value
+        invalid = SystemKeyringCredentialStore(
+            keyring_module=fake,
+        ).credential_present(SUPPORTED_ID)
+        assert invalid.status is CredentialStoreStatus.INVALID_CREDENTIAL
+        assert invalid.operation is CredentialStoreOperation.PRESENCE
+        _assert_secret_not_exposed(invalid)
 
 
 def test_system_keyring_unavailable_and_failures_are_safe() -> None:
@@ -418,8 +443,10 @@ def run_self_test() -> None:
     test_supported_locator_mapping_and_uniqueness()
     test_unknown_and_youtube_credentials_are_rejected()
     test_in_memory_save_overwrite_and_clear()
+    test_in_memory_presence_rejects_invalid_stored_values()
     test_in_memory_simulated_failures()
     test_system_keyring_save_update_clear_and_missing()
+    test_system_keyring_presence_rejects_invalid_stored_values()
     test_system_keyring_unavailable_and_failures_are_safe()
     test_no_plaintext_fallback_environment_or_file_writes()
     test_row2c2_integration_is_limited_to_main_and_dialog()

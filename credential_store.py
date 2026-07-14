@@ -54,6 +54,7 @@ class CredentialStoreStatus(_StringEnum):
     UNSUPPORTED_CREDENTIAL = "unsupported_credential"
     YOUTUBE_CREDENTIAL_EXCLUDED = "youtube_credential_excluded"
     EMPTY_CREDENTIAL_REJECTED = "empty_credential_rejected"
+    INVALID_CREDENTIAL = "invalid_credential"
 
 
 @dataclass(frozen=True)
@@ -243,9 +244,13 @@ class InMemoryCredentialStore(CredentialStore):
             operation=CredentialStoreOperation.PRESENCE,
             backend=CredentialStoreBackend.MEMORY,
             status=(
-                CredentialStoreStatus.PRESENT
-                if locator.credential_id in self._credentials
-                else CredentialStoreStatus.NOT_FOUND
+                CredentialStoreStatus.NOT_FOUND
+                if locator.credential_id not in self._credentials
+                else (
+                    CredentialStoreStatus.PRESENT
+                    if str(self._credentials[locator.credential_id]).strip()
+                    else CredentialStoreStatus.INVALID_CREDENTIAL
+                )
             ),
         )
 
@@ -406,10 +411,10 @@ class SystemKeyringCredentialStore(CredentialStore):
             )
 
         try:
-            configured = keyring_module.get_password(
+            value = keyring_module.get_password(
                 locator.service_name,
                 locator.account_name,
-            ) is not None
+            )
         except Exception:
             return _result(
                 locator,
@@ -418,15 +423,18 @@ class SystemKeyringCredentialStore(CredentialStore):
                 status=CredentialStoreStatus.BACKEND_ERROR,
             )
 
+        if value is None:
+            status = CredentialStoreStatus.NOT_FOUND
+        elif str(value).strip():
+            status = CredentialStoreStatus.PRESENT
+        else:
+            status = CredentialStoreStatus.INVALID_CREDENTIAL
+
         return _result(
             locator,
             operation=CredentialStoreOperation.PRESENCE,
             backend=CredentialStoreBackend.SYSTEM_KEYRING,
-            status=(
-                CredentialStoreStatus.PRESENT
-                if configured
-                else CredentialStoreStatus.NOT_FOUND
-            ),
+            status=status,
         )
 
     def save_credential(

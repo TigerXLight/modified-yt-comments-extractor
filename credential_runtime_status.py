@@ -58,6 +58,7 @@ class SafeCredentialDiagnostic(_StringEnum):
     STORAGE_STATUS_ERROR = "storage_status_error"
     STATUS_PROVIDER_UNAVAILABLE = "status_provider_unavailable"
     COMPOUND_CREDENTIAL_INCOMPLETE = "compound_credential_incomplete"
+    INVALID_SECURE_CREDENTIAL_VALUE = "invalid_secure_credential_value"
 
 
 @dataclass(frozen=True)
@@ -375,6 +376,15 @@ class LocalCredentialStatusProvider:
                 state=CredentialPresenceState.ERROR,
                 provenance=CredentialProvenance.UNKNOWN,
                 diagnostic=SafeCredentialDiagnostic.KEYRING_ACCESS_ERROR,
+                backend_label="Secure credential store",
+            )
+
+        if result.status is CredentialStoreStatus.INVALID_CREDENTIAL:
+            return _status(
+                descriptor,
+                state=CredentialPresenceState.ERROR,
+                provenance=CredentialProvenance.SECURE_KEYRING,
+                diagnostic=SafeCredentialDiagnostic.INVALID_SECURE_CREDENTIAL_VALUE,
                 backend_label="Secure credential store",
             )
 
