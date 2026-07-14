@@ -454,5 +454,7 @@ def _status_from_transport_category(category: str) -> ElevenLabsScribeStatus:
         "provider_service_unavailable": ElevenLabsScribeStatus.PROVIDER_SERVICE_UNAVAILABLE,
         "timeout": ElevenLabsScribeStatus.TIMEOUT,
         "cancelled": ElevenLabsScribeStatus.CANCELLED,
+        "dependency_unavailable": ElevenLabsScribeStatus.TRANSPORT_UNAVAILABLE,
+        "malformed_provider_response": ElevenLabsScribeStatus.MALFORMED_PROVIDER_RESPONSE,
     }
     return mapping.get(category, ElevenLabsScribeStatus.UNKNOWN_PROVIDER_FAILURE)
