@@ -699,3 +699,13 @@ UI wording notes:
 - There is no known truly infinite free hosted ASR API.
 - Local/offline ASR remains the only practical unlimited option.
 - Cloud ASR remains optional and quota/cost/API-key dependent.
+
+## Current Online ASR Action State
+
+- ElevenLabs Scribe v2 now has a production-capable SDK transport and a separately approved one-call live verification for the narrow local-file explicit-action path.
+- The live smoke call succeeded with secure keyring credential resolution, one request, `max_retries=0`, local 240-second timeout policy, provider/model `elevenlabs_scribe` / `scribe_v2`, normalized action/provider success, and no secret/raw-response output. Exact-phrase accuracy was not confirmed by the synthetic sample.
+- The main transcript toolbar now includes `Online ASR` immediately next to `Local ASR`. The new control mirrors the Local ASR orange button/cog treatment and opens a local-file workflow.
+- Opening Online ASR, selecting a file, or opening its cog/Access & Keys surface must not contact a provider. A provider request is allowed only after an explicit user `Transcribe` action.
+- The Online ASR action must use the committed coordinator path: UI action -> `ASRProviderActionCoordinator` -> secure credential consumption -> ElevenLabs provider adapter -> SDK transport.
+- The current first slice is local-file only, Scribe v2 only, word timestamps, diarization off by default, audio-event tagging off by default, and no keyterms by default.
+- User-facing Test Connection wiring remains a later approval-gated milestone. Do not treat Online ASR transcription wiring as approval for automatic/background checks, account/quota/model calls, broad provider/API behavior, OAuth/browser access, or credential reveal/copy/export behavior.

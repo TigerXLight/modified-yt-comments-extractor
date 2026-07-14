@@ -80,6 +80,18 @@ from asr_calibration import ensure_asr_calibration_sample, get_asr_calibration_r
 from asr_defaults import load_asr_defaults, save_asr_defaults
 from asr_settings_dialog import ask_asr_settings
 from asr_topic_resolver import resolve_asr_topic_glossary
+from asr_provider_action import (
+    ASRProviderActionCoordinator,
+    ASR_PROVIDER_ACTION_TRANSCRIBE,
+)
+from elevenlabs_scribe_provider import (
+    ELEVENLABS_SCRIBE_MODEL_ID,
+    ELEVENLABS_SCRIBE_PROVIDER_ID,
+    ElevenLabsScribeRequest,
+    ElevenLabsScribeResult,
+    ElevenLabsScribeValidationError,
+)
+from elevenlabs_scribe_transport import create_elevenlabs_scribe_sdk_provider_executor
 from access_keys_dialog import (
     ACCESS_KEYS_BUTTON_TEXT,
     AccessKeysWindow,
@@ -106,6 +118,36 @@ logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
 # Configure CustomTkinter
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
+
+
+ASR_ACTION_BUTTON_SPEC: Dict[str, Any] = {
+    "wrap_width": 150,
+    "wrap_height": 36,
+    "wrap_pack_padx": 3,
+    "wrap_pack_pady": 3,
+    "button_width": 150,
+    "button_height": 32,
+    "button_font_size": 11,
+    "button_font_weight": "bold",
+    "button_corner_radius": 8,
+    "button_anchor": "w",
+    "button_fg_color_key": "accent",
+    "button_hover_color_key": "accent_hover",
+    "button_text_color_key": "text_primary",
+    "cog_x": 121,
+    "cog_y": 4,
+    "cog_width": 24,
+    "cog_height": 24,
+    "cog_normal_asset": "asr_cog_normal.png",
+    "cog_hover_asset": "asr_cog_hover.png",
+    "fallback_cog_text": "⚙",
+    "fallback_cog_font": ("Segoe UI Symbol", 13, "bold"),
+    "fallback_cog_normal_fg": "#5f5f5f",
+    "fallback_cog_hover_fg": "#2f2f2f",
+}
+
+ONLINE_ASR_BUTTON_TEXT = "🎙 Online ASR"
+LOCAL_ASR_BUTTON_TEXT = "🎙 Local ASR"
 
 
 # =============================================================================
@@ -513,6 +555,247 @@ class App(ctk.CTk):
     def _on_access_keys_window_closed(self) -> None:
         """Release the closed Access & Keys window reference."""
         self.access_keys_window = None
+
+    def _ensure_asr_cog_icons(self) -> None:
+        """Load shared Local/Online ASR cog icons once."""
+        if hasattr(self, "asr_cog_icon_image") and hasattr(self, "asr_cog_icon_hover_image"):
+            return
+
+        try:
+            if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+                asset_base_dir = sys._MEIPASS
+            else:
+                asset_base_dir = os.path.dirname(os.path.abspath(__file__))
+
+            def _load_asr_cog_variant(filename: str):
+                icon_path = os.path.join(asset_base_dir, "assets", filename)
+                icon_image = Image.open(icon_path).convert("RGBA")
+                icon_image = icon_image.resize(
+                    (ASR_ACTION_BUTTON_SPEC["cog_width"], ASR_ACTION_BUTTON_SPEC["cog_height"]),
+                    Image.LANCZOS,
+                )
+                return ImageTk.PhotoImage(icon_image)
+
+            self.asr_cog_icon_image = _load_asr_cog_variant(
+                ASR_ACTION_BUTTON_SPEC["cog_normal_asset"]
+            )
+            self.asr_cog_icon_hover_image = _load_asr_cog_variant(
+                ASR_ACTION_BUTTON_SPEC["cog_hover_asset"]
+            )
+
+        except Exception as icon_error:
+            logger.warning(f"Could not load ASR cog icons: {icon_error}")
+            self.asr_cog_icon_image = None
+            self.asr_cog_icon_hover_image = None
+
+    def _create_asr_action_control(
+        self,
+        parent: object,
+        *,
+        text: str,
+        command: object,
+        settings_command: object,
+        wrap_attr: str,
+        button_attr: str,
+        settings_attr: str,
+    ) -> None:
+        """Create a Local-ASR-style action button with matching cog behavior."""
+        spec = ASR_ACTION_BUTTON_SPEC
+        self._ensure_asr_cog_icons()
+
+        button_wrap = ctk.CTkFrame(
+            parent,
+            fg_color="transparent",
+            width=spec["wrap_width"],
+            height=spec["wrap_height"],
+        )
+        button_wrap.pack(
+            side="left",
+            padx=spec["wrap_pack_padx"],
+            pady=spec["wrap_pack_pady"],
+        )
+        button_wrap.pack_propagate(False)
+
+        action_button = ctk.CTkButton(
+            button_wrap,
+            text=text,
+            command=command,
+            width=spec["button_width"],
+            height=spec["button_height"],
+            font=ctk.CTkFont(
+                size=spec["button_font_size"],
+                weight=spec["button_font_weight"],
+            ),
+            fg_color=COLORS[spec["button_fg_color_key"]],
+            hover_color=COLORS[spec["button_hover_color_key"]],
+            text_color=COLORS[spec["button_text_color_key"]],
+            corner_radius=spec["button_corner_radius"],
+            anchor=spec["button_anchor"],
+        )
+        action_button.place(x=0, y=0)
+
+        if self.asr_cog_icon_image is not None:
+            settings_button = tk.Label(
+                button_wrap,
+                image=self.asr_cog_icon_image,
+                bg=COLORS["accent"],
+                activebackground=COLORS["accent"],
+                bd=0,
+                relief="flat",
+                highlightthickness=0,
+                padx=0,
+                pady=0,
+                cursor="hand2",
+            )
+        else:
+            settings_button = tk.Label(
+                button_wrap,
+                text=spec["fallback_cog_text"],
+                bg=COLORS["accent"],
+                fg=spec["fallback_cog_normal_fg"],
+                activebackground=COLORS["accent"],
+                activeforeground=spec["fallback_cog_hover_fg"],
+                bd=0,
+                relief="flat",
+                highlightthickness=0,
+                padx=0,
+                pady=0,
+                font=spec["fallback_cog_font"],
+                cursor="hand2",
+            )
+
+        settings_button.place(
+            x=spec["cog_x"],
+            y=spec["cog_y"],
+            width=spec["cog_width"],
+            height=spec["cog_height"],
+        )
+
+        def _set_button_normal() -> None:
+            try:
+                action_button.configure(
+                    fg_color=COLORS["accent"],
+                    hover_color=COLORS["accent_hover"],
+                )
+            except Exception:
+                pass
+
+            try:
+                button_wrap.configure(bg=COLORS["accent"])
+            except Exception:
+                pass
+
+            try:
+                settings_button.configure(bg=COLORS["accent"])
+            except Exception:
+                pass
+
+            try:
+                if self.asr_cog_icon_image is not None:
+                    settings_button.configure(image=self.asr_cog_icon_image)
+                else:
+                    settings_button.configure(fg=spec["fallback_cog_normal_fg"])
+            except Exception:
+                pass
+
+        def _set_button_hover() -> None:
+            try:
+                action_button.configure(
+                    fg_color=COLORS["accent_hover"],
+                    hover_color=COLORS["accent_hover"],
+                )
+            except Exception:
+                pass
+
+            try:
+                button_wrap.configure(bg=COLORS["accent_hover"])
+            except Exception:
+                pass
+
+            try:
+                settings_button.configure(bg=COLORS["accent_hover"])
+            except Exception:
+                pass
+
+            try:
+                if self.asr_cog_icon_image is not None:
+                    settings_button.configure(image=self.asr_cog_icon_image)
+                else:
+                    settings_button.configure(fg=spec["fallback_cog_normal_fg"])
+            except Exception:
+                pass
+
+        def _set_cog_icon_hover() -> None:
+            try:
+                action_button.configure(
+                    fg_color=COLORS["accent"],
+                    hover_color=COLORS["accent_hover"],
+                )
+            except Exception:
+                pass
+
+            try:
+                button_wrap.configure(bg=COLORS["accent"])
+            except Exception:
+                pass
+
+            try:
+                settings_button.configure(bg=COLORS["accent"])
+            except Exception:
+                pass
+
+            try:
+                if self.asr_cog_icon_hover_image is not None:
+                    settings_button.configure(image=self.asr_cog_icon_hover_image)
+                else:
+                    settings_button.configure(fg=spec["fallback_cog_hover_fg"])
+            except Exception:
+                pass
+
+        def _sync_hover_from_pointer() -> None:
+            try:
+                pointer_widget = self.winfo_containing(
+                    self.winfo_pointerx(),
+                    self.winfo_pointery(),
+                )
+            except Exception:
+                pointer_widget = None
+
+            if pointer_widget is settings_button:
+                _set_cog_icon_hover()
+                return
+
+            if pointer_widget is action_button:
+                _set_button_hover()
+                return
+
+            _set_button_normal()
+
+        def _button_enter(_event=None):
+            _set_button_hover()
+            return None
+
+        def _button_leave(_event=None):
+            self.after(40, _sync_hover_from_pointer)
+            return None
+
+        def _cog_enter(_event=None):
+            _set_cog_icon_hover()
+            return "break"
+
+        def _cog_leave(_event=None):
+            self.after(40, _sync_hover_from_pointer)
+            return "break"
+
+        action_button.bind("<Enter>", _button_enter, add="+")
+        action_button.bind("<Leave>", _button_leave, add="+")
+        settings_button.bind("<Enter>", _cog_enter)
+        settings_button.bind("<Leave>", _cog_leave)
+        settings_button.bind("<Button-1>", lambda _event: settings_command())
+
+        setattr(self, wrap_attr, button_wrap)
+        setattr(self, button_attr, action_button)
+        setattr(self, settings_attr, settings_button)
 
     def _create_filters_section(self) -> None:
         """Create filters section in sidebar."""
@@ -1442,6 +1725,16 @@ class App(ctk.CTk):
         self.transcript_asr_settings_button.bind(
             "<Button-1>",
             lambda _event: self.open_asr_settings_clicked()
+        )
+
+        self._create_asr_action_control(
+            button_row,
+            text=ONLINE_ASR_BUTTON_TEXT,
+            command=self.online_asr_transcribe_clicked,
+            settings_command=self.open_online_asr_settings_clicked,
+            wrap_attr="transcript_online_asr_button_wrap",
+            button_attr="transcript_online_asr_button",
+            settings_attr="transcript_online_asr_settings_button",
         )
 
 
@@ -7659,6 +7952,392 @@ class App(ctk.CTk):
             "ASR Settings Saved",
             "Local ASR defaults were saved for future transcriptions."
         )
+
+    def open_online_asr_settings_clicked(self) -> AccessKeysWindow:
+        """Open the existing Access & Keys surface for Online ASR credentials."""
+        return self.open_access_keys_window()
+
+    def online_asr_transcribe_clicked(self) -> None:
+        """Open the explicit Online ASR workflow without dispatching a provider call."""
+        existing = getattr(self, "online_asr_window", None)
+        try:
+            if existing is not None and existing.winfo_exists():
+                existing.focus()
+                return
+        except Exception:
+            pass
+
+        dialog = ctk.CTkToplevel(self)
+        self.online_asr_window = dialog
+        dialog.title("Online ASR")
+        dialog.geometry("540x260")
+        dialog.transient(self)
+        dialog.grid_columnconfigure(0, weight=1)
+
+        content = ctk.CTkFrame(dialog, fg_color=COLORS["bg_card"], corner_radius=10)
+        content.grid(row=0, column=0, sticky="nsew", padx=16, pady=16)
+        content.grid_columnconfigure(0, weight=1)
+
+        title = ctk.CTkLabel(
+            content,
+            text="Online ASR",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=COLORS["text_primary"],
+        )
+        title.grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 4))
+
+        description = ctk.CTkLabel(
+            content,
+            text="ElevenLabs Scribe v2; local file only. No request is sent until Transcribe is pressed.",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            anchor="w",
+        )
+        description.grid(row=1, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 10))
+
+        file_var = tk.StringVar(value="")
+        linked_media_file = getattr(self, "linked_transcript_media_path", None)
+        if linked_media_file and os.path.exists(linked_media_file):
+            file_var.set(linked_media_file)
+
+        file_entry = ctk.CTkEntry(
+            content,
+            textvariable=file_var,
+            height=34,
+            fg_color=COLORS["bg_input"],
+            border_color=COLORS["border"],
+            corner_radius=6,
+        )
+        file_entry.grid(row=2, column=0, sticky="ew", padx=(14, 8), pady=(0, 8))
+
+        def browse_file() -> None:
+            filename = filedialog.askopenfilename(
+                title="Choose audio or video file for Online ASR",
+                filetypes=[
+                    ("Media files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg *.mp4 *.mkv *.webm *.mov *.avi"),
+                    ("Audio files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
+                    ("Video files", "*.mp4 *.mkv *.webm *.mov *.avi"),
+                    ("All files", "*.*"),
+                ],
+            )
+            if filename:
+                file_var.set(filename)
+
+        browse_button = ctk.CTkButton(
+            content,
+            text="Browse",
+            command=browse_file,
+            width=88,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+        )
+        browse_button.grid(row=2, column=1, sticky="e", padx=(0, 14), pady=(0, 8))
+
+        status_var = tk.StringVar(value="Ready. Choose a local media file, then press Transcribe.")
+        status_label = ctk.CTkLabel(
+            content,
+            textvariable=status_var,
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            anchor="w",
+        )
+        status_label.grid(row=3, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 12))
+
+        actions = ctk.CTkFrame(content, fg_color="transparent")
+        actions.grid(row=4, column=0, columnspan=2, sticky="e", padx=14, pady=(0, 12))
+
+        def close_dialog() -> None:
+            self.online_asr_window = None
+            try:
+                dialog.destroy()
+            except Exception:
+                pass
+
+        close_button = ctk.CTkButton(
+            actions,
+            text="Close",
+            command=close_dialog,
+            width=90,
+            height=34,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+        )
+        close_button.pack(side="right", padx=(8, 0))
+
+        start_button = ctk.CTkButton(
+            actions,
+            text="Transcribe",
+            command=lambda: self._start_online_asr_transcription(
+                file_var.get(),
+                status_var=status_var,
+                start_button=start_button,
+                browse_button=browse_button,
+                close_button=close_button,
+                dialog=dialog,
+            ),
+            width=110,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color=COLORS["text_primary"],
+            corner_radius=8,
+        )
+        start_button.pack(side="right")
+
+        dialog.protocol("WM_DELETE_WINDOW", close_dialog)
+
+    def _online_asr_set_busy(
+        self,
+        busy: bool,
+        *,
+        status_var: object | None = None,
+        start_button: object | None = None,
+        browse_button: object | None = None,
+        close_button: object | None = None,
+    ) -> None:
+        self.online_asr_busy = bool(busy)
+        state = "disabled" if busy else "normal"
+        for widget in (
+            getattr(self, "transcript_online_asr_button", None),
+            start_button,
+            browse_button,
+            close_button,
+        ):
+            try:
+                if widget is not None:
+                    widget.configure(state=state)
+            except Exception:
+                pass
+        if status_var is not None and busy:
+            try:
+                status_var.set("Online ASR request is running...")
+            except Exception:
+                pass
+
+    def _dispatch_online_asr_provider_action(
+        self,
+        media_file: str,
+        *,
+        coordinator_factory: object = ASRProviderActionCoordinator,
+        executor_factory: object = create_elevenlabs_scribe_sdk_provider_executor,
+    ) -> tuple[object, ElevenLabsScribeResult | None]:
+        request = ElevenLabsScribeRequest(
+            file_path=media_file,
+            tag_audio_events=False,
+            diarize=False,
+            timestamps_granularity="word",
+            keyterms=(),
+        )
+        inner_executor = executor_factory(request)
+        result_holder: Dict[str, ElevenLabsScribeResult] = {}
+
+        def trusted_executor(provider_id: str, action_kind: str, credential: str) -> object:
+            result = inner_executor(provider_id, action_kind, credential)
+            if isinstance(result, ElevenLabsScribeResult):
+                result_holder["result"] = result
+            return result
+
+        coordinator = coordinator_factory(
+            executors={
+                (ELEVENLABS_SCRIBE_PROVIDER_ID, ASR_PROVIDER_ACTION_TRANSCRIBE): trusted_executor
+            }
+        )
+        action_result = coordinator.dispatch_provider_action(
+            ELEVENLABS_SCRIBE_PROVIDER_ID,
+            action_kind=ASR_PROVIDER_ACTION_TRANSCRIBE,
+        )
+        return action_result, result_holder.get("result")
+
+    def _online_asr_result_to_segments(
+        self,
+        result: ElevenLabsScribeResult,
+    ) -> List[TranscriptSegment]:
+        segments: List[TranscriptSegment] = []
+        for item in result.words:
+            word_type = (item.word_type or "word").strip().casefold()
+            if word_type not in {"", "word", "words"}:
+                continue
+            text = (item.text or "").strip()
+            if not text:
+                continue
+            start = self._seconds_to_transcript_time(item.start or 0.0)
+            end = self._seconds_to_transcript_time(
+                item.end if item.end is not None else item.start or 0.0
+            )
+            speaker = item.speaker_id.strip() if item.speaker_id else "Speaker 1"
+            segments.append(
+                TranscriptSegment(
+                    speaker=speaker or "Speaker 1",
+                    start=start,
+                    end=end,
+                    text=text,
+                )
+            )
+        if not segments and result.text.strip():
+            segments.append(
+                TranscriptSegment(
+                    speaker="Speaker 1",
+                    start=self._seconds_to_transcript_time(0.0),
+                    end=self._seconds_to_transcript_time(0.0),
+                    text=result.text.strip(),
+                )
+            )
+        return segments
+
+    def _apply_online_asr_success(
+        self,
+        media_file: str,
+        result: ElevenLabsScribeResult,
+    ) -> None:
+        segments = self._online_asr_result_to_segments(result)
+        self.transcript_segments = segments
+        self.last_youtube_video_info = None
+        self.last_asr_metadata = {
+            "engine": "online_asr",
+            "provider_id": result.provider_id,
+            "model_id": result.model_id,
+            "language": result.language_code or "unknown",
+            "language_probability": result.language_probability,
+            "segment_count": len(segments),
+            "word_item_count": len(result.words),
+            "audio_event_item_count": len(
+                [
+                    item
+                    for item in result.words
+                    if (item.word_type or "").strip().casefold() not in {"", "word", "words"}
+                ]
+            ),
+        }
+        self._set_linked_transcript_media(media_file)
+        self.last_transcript_source = (
+            f"Online ASR transcript from {os.path.basename(media_file)} "
+            f"using ElevenLabs Scribe v2"
+        )
+        self._refresh_transcript_display()
+        self.evidence_button.configure(state="normal")
+        probability = result.language_probability
+        probability_text = f"{probability:.2%}" if probability is not None else "unknown"
+        self.log_message(
+            f"Online ASR complete: {len(segments):,} segment(s), "
+            f"language={result.language_code or 'unknown'}, confidence={probability_text}",
+            "success",
+        )
+        messagebox.showinfo(
+            "Online ASR Complete",
+            (
+                f"Transcribed file:\n\n{os.path.basename(media_file)}\n\n"
+                f"Segments: {len(segments):,}\n"
+                f"Detected language: {result.language_code or 'unknown'}\n"
+                f"Language confidence: {probability_text}"
+            ),
+        )
+
+    def _online_asr_failure_message(self, action_result: object) -> str:
+        diagnostic = getattr(action_result, "safe_diagnostic", "") or "online_asr_failed"
+        status = getattr(getattr(action_result, "status", None), "value", "")
+        if status:
+            return f"Online ASR failed safely: {status} / {diagnostic}"
+        return f"Online ASR failed safely: {diagnostic}"
+
+    def _start_online_asr_transcription(
+        self,
+        media_file: str,
+        *,
+        status_var: object | None = None,
+        start_button: object | None = None,
+        browse_button: object | None = None,
+        close_button: object | None = None,
+        dialog: object | None = None,
+    ) -> bool:
+        if getattr(self, "online_asr_busy", False):
+            return False
+
+        media_file = (media_file or "").strip()
+        if not media_file:
+            if status_var is not None:
+                status_var.set("Choose a local media file before transcribing.")
+            return False
+
+        self._online_asr_set_busy(
+            True,
+            status_var=status_var,
+            start_button=start_button,
+            browse_button=browse_button,
+            close_button=close_button,
+        )
+        self.log_message(
+            f"Starting Online ASR with ElevenLabs Scribe v2 for {os.path.basename(media_file)}",
+            "info",
+        )
+
+        def ui_call(callback: object) -> None:
+            try:
+                if dialog is not None and not dialog.winfo_exists():
+                    return
+            except Exception:
+                pass
+            self.after(0, callback)
+
+        def worker() -> None:
+            try:
+                action_result, provider_result = self._dispatch_online_asr_provider_action(media_file)
+                if getattr(action_result, "action_succeeded", False) and provider_result is not None:
+                    def on_success() -> None:
+                        self._apply_online_asr_success(media_file, provider_result)
+                        if status_var is not None:
+                            status_var.set("Online ASR complete.")
+
+                    ui_call(on_success)
+                else:
+                    def on_failure() -> None:
+                        message = self._online_asr_failure_message(action_result)
+                        if status_var is not None:
+                            status_var.set(message)
+                        self.log_message(message, "error")
+                        messagebox.showerror("Online ASR Error", message)
+
+                    ui_call(on_failure)
+            except ElevenLabsScribeValidationError as validation_error:
+                fixed_message = f"Online ASR request rejected: {validation_error}"
+
+                def on_validation_error() -> None:
+                    if status_var is not None:
+                        status_var.set(fixed_message)
+                    self.log_message(fixed_message, "error")
+                    messagebox.showerror("Online ASR Error", fixed_message)
+
+                ui_call(on_validation_error)
+            except (KeyboardInterrupt, SystemExit, GeneratorExit):
+                raise
+            except Exception:
+                fixed_message = "Online ASR failed safely: online_asr_unexpected_local_error"
+
+                def on_unexpected_error() -> None:
+                    if status_var is not None:
+                        status_var.set(fixed_message)
+                    self.log_message(fixed_message, "error")
+                    messagebox.showerror("Online ASR Error", fixed_message)
+
+                ui_call(on_unexpected_error)
+            finally:
+                self.after(
+                    0,
+                    lambda: self._online_asr_set_busy(
+                        False,
+                        status_var=status_var,
+                        start_button=start_button,
+                        browse_button=browse_button,
+                        close_button=close_button,
+                    ),
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
+        return True
 
 
     def _build_asr_auto_probe_candidates(
