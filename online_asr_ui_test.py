@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from types import SimpleNamespace
 
@@ -16,6 +17,7 @@ from elevenlabs_scribe_provider import (
 
 
 SECRET_SENTINEL = "ONLINE-ASR-SECRET-MUST-NOT-LEAK"
+CREATED_WIDGETS: list["FakeWidget"] = []
 
 
 class FakeWidget:
@@ -27,6 +29,7 @@ class FakeWidget:
         self.place_calls: list[dict[str, object]] = []
         self.bind_calls: list[tuple[str, object, object]] = []
         self.destroyed = False
+        CREATED_WIDGETS.append(self)
 
     def configure(self, **kwargs: object) -> None:
         self.kwargs.update(kwargs)
@@ -50,6 +53,9 @@ class FakeWidget:
         self.bind_calls.append((event, callback, add))
 
     def grid_columnconfigure(self, *_args: object, **_kwargs: object) -> None:
+        return None
+
+    def grid_rowconfigure(self, *_args: object, **_kwargs: object) -> None:
         return None
 
     def title(self, value: str) -> None:
@@ -125,20 +131,51 @@ class FakeMessageBox:
         cls.errors.append((title, message))
 
 
-def _patch_fake_widgets() -> tuple[object, object, object, object]:
+def _patch_fake_widgets() -> tuple[object, ...]:
+    CREATED_WIDGETS.clear()
+    original_toplevel = main.ctk.CTkToplevel
     original_frame = main.ctk.CTkFrame
     original_button = main.ctk.CTkButton
+    original_ctk_label = main.ctk.CTkLabel
+    original_entry = main.ctk.CTkEntry
     original_font = main.ctk.CTkFont
     original_label = main.tk.Label
+    original_string_var = main.tk.StringVar
+    main.ctk.CTkToplevel = FakeWidget
     main.ctk.CTkFrame = FakeWidget
     main.ctk.CTkButton = FakeWidget
+    main.ctk.CTkLabel = FakeWidget
+    main.ctk.CTkEntry = FakeWidget
     main.ctk.CTkFont = lambda **kwargs: ("font", kwargs)
     main.tk.Label = FakeWidget
-    return original_frame, original_button, original_font, original_label
+    main.tk.StringVar = FakeVar
+    return (
+        original_toplevel,
+        original_frame,
+        original_button,
+        original_ctk_label,
+        original_entry,
+        original_font,
+        original_label,
+        original_string_var,
+    )
 
 
-def _restore_fake_widgets(originals: tuple[object, object, object, object]) -> None:
-    main.ctk.CTkFrame, main.ctk.CTkButton, main.ctk.CTkFont, main.tk.Label = originals
+def _created_widgets_with_text(text: str) -> list[FakeWidget]:
+    return [widget for widget in CREATED_WIDGETS if widget.kwargs.get("text") == text]
+
+
+def _restore_fake_widgets(originals: tuple[object, ...]) -> None:
+    (
+        main.ctk.CTkToplevel,
+        main.ctk.CTkFrame,
+        main.ctk.CTkButton,
+        main.ctk.CTkLabel,
+        main.ctk.CTkEntry,
+        main.ctk.CTkFont,
+        main.tk.Label,
+        main.tk.StringVar,
+    ) = originals
 
 
 def _app() -> main.App:
@@ -152,8 +189,67 @@ def _app() -> main.App:
     app.evidence_button = FakeEvidenceButton()
     app.online_asr_busy = False
     app.transcript_online_asr_button = None
+    app.online_asr_provider_window = None
+    app.online_asr_provider_id = main.ONLINE_ASR_DEFAULT_PROVIDER_ID
+    app.online_asr_provider_selection_status = ""
     app._set_linked_transcript_media = lambda path: setattr(app, "linked_media", path)
     app._refresh_transcript_display = lambda: setattr(app, "refreshed", True)
+    return app
+
+
+class FakeSettingsManager:
+    def __init__(self, provider_id: str = "") -> None:
+        self.settings = main.AppSettings(online_asr_provider_id=provider_id)
+        self.saved_settings: list[object] = []
+        self.load_calls = 0
+        self.load_preferences_calls = 0
+
+    def load(self) -> object:
+        self.load_calls += 1
+        return self.settings
+
+    def load_preferences_only(self) -> object:
+        self.load_preferences_calls += 1
+        return self.settings
+
+    def save(self, settings: object) -> bool:
+        self.saved_settings.append(settings)
+        self.settings = settings
+        return True
+
+
+class FakeEntry:
+    def __init__(self, value: str = "") -> None:
+        self.value = value
+        self.config: dict[str, object] = {}
+
+    def delete(self, *_args: object) -> None:
+        self.value = ""
+
+    def insert(self, _index: object, value: object) -> None:
+        self.value = str(value)
+
+    def get(self) -> str:
+        return self.value
+
+    def configure(self, **kwargs: object) -> None:
+        self.config.update(kwargs)
+
+
+def _settings_app(settings_manager: FakeSettingsManager) -> main.App:
+    app = _app()
+    app.settings_manager = settings_manager
+    app.api_key_entry = FakeEntry()
+    app.spam_filter_var = FakeVar()
+    app.spam_threshold_var = FakeVar()
+    app.exclude_creator_var = FakeVar()
+    app.min_likes_entry = FakeEntry()
+    app.max_comments_entry = FakeEntry()
+    app.filter_words_entry = FakeEntry()
+    app.sort_var = FakeVar()
+    app._on_spam_threshold_change = lambda _value: None
+    app._on_spam_filter_toggle = lambda: None
+    app._update_filter_counts = lambda: None
     return app
 
 
@@ -212,13 +308,167 @@ def test_online_asr_control_copies_local_asr_visual_spec() -> None:
         _restore_fake_widgets(originals)
 
 
+def test_main_import_does_not_eager_load_heavy_asr_or_sdk_client() -> None:
+    assert "faster_whisper" not in sys.modules
+    assert "elevenlabs.client" not in sys.modules
+
+
+def test_load_settings_uses_preferences_only_and_keeps_provider_selection() -> None:
+    manager = FakeSettingsManager(main.ELEVENLABS_SCRIBE_PROVIDER_ID)
+    app = _settings_app(manager)
+
+    main.App._load_settings(app)
+
+    assert manager.load_preferences_calls == 1
+    assert manager.load_calls == 0
+    assert app.online_asr_provider_id == main.ELEVENLABS_SCRIBE_PROVIDER_ID
+    assert app.api_key_entry.get() == ""
+    assert app.api_key_entry.config["show"] == "*"
+
+
+def test_api_section_startup_does_not_probe_credential_status() -> None:
+    originals = _patch_fake_widgets()
+    try:
+        app = _app()
+        app.sidebar_scroll = FakeWidget()
+
+        class ExplodingSettingsManager:
+            def get_storage_info(self) -> str:
+                raise AssertionError("startup should not probe credential storage")
+
+        app.settings_manager = ExplodingSettingsManager()
+        app._refresh_youtube_credential_status = lambda: (_ for _ in ()).throw(
+            AssertionError("startup should not refresh credential status")
+        )
+
+        main.App._create_api_section(app)
+
+        assert app.storage_label.kwargs["text"] == "Credential status not refreshed"
+    finally:
+        _restore_fake_widgets(originals)
+
+
 def test_online_asr_cog_opens_access_keys_without_dispatch() -> None:
+    originals = _patch_fake_widgets()
+    try:
+        app = _app()
+        app.settings_manager = FakeSettingsManager()
+        status_calls: list[str] = []
+        app._online_asr_credential_status_provider = (
+            lambda: status_calls.append("status") or {}
+        )
+        calls: list[str] = []
+        app.open_access_keys_window = lambda: calls.append("access_keys") or "window"
+        app._dispatch_online_asr_provider_action = lambda *_args, **_kwargs: calls.append("dispatch")
+
+        window = app.open_online_asr_settings_clicked()
+
+        assert isinstance(window, FakeWidget)
+        assert window.kwargs["title"] == main.ONLINE_ASR_PROVIDERS_WINDOW_TITLE
+        assert calls == []
+        assert status_calls == ["status"]
+    finally:
+        _restore_fake_widgets(originals)
+
+
+def test_keys_button_still_opens_access_keys_directly() -> None:
     app = _app()
+    app.access_keys_window = None
+    app.settings_manager = object()
     calls: list[str] = []
     app.open_access_keys_window = lambda: calls.append("access_keys") or "window"
 
-    assert app.open_online_asr_settings_clicked() == "window"
+    assert app.open_access_keys_window() == "window"
     assert calls == ["access_keys"]
+
+
+def test_online_asr_body_still_opens_transcription_workflow() -> None:
+    app = _app()
+    calls: list[str] = []
+    app.online_asr_transcribe_clicked = lambda: calls.append("body")
+
+    app.online_asr_transcribe_clicked()
+
+    assert calls == ["body"]
+
+
+def test_online_asr_provider_selection_persists_non_secret_metadata() -> None:
+    app = _app()
+    manager = FakeSettingsManager()
+    app.settings_manager = manager
+
+    selected = app._set_online_asr_provider_id(
+        main.ELEVENLABS_SCRIBE_PROVIDER_ID,
+        persist=True,
+    )
+
+    assert selected == main.ELEVENLABS_SCRIBE_PROVIDER_ID
+    assert manager.saved_settings
+    saved = manager.saved_settings[-1]
+    assert saved.online_asr_provider_id == main.ELEVENLABS_SCRIBE_PROVIDER_ID
+    assert getattr(saved, "api_key", "") == ""
+    assert SECRET_SENTINEL not in repr(saved)
+
+
+def test_online_asr_invalid_provider_falls_back_safely() -> None:
+    app = _app()
+    app.settings_manager = FakeSettingsManager("unsupported_provider")
+
+    selected = app._set_online_asr_provider_id("unsupported_provider", persist=False)
+
+    assert selected == main.ONLINE_ASR_DEFAULT_PROVIDER_ID
+    assert app.online_asr_provider_selection_status
+    assert "Unsupported" in app.online_asr_provider_selection_status
+
+
+def test_online_asr_manage_key_opens_access_keys_without_dispatch() -> None:
+    originals = _patch_fake_widgets()
+    try:
+        app = _app()
+        app.settings_manager = FakeSettingsManager()
+        app._online_asr_credential_status_provider = lambda: {}
+        calls: list[str] = []
+        access_window = SimpleNamespace(
+            _select_entry=lambda entry_id: calls.append(f"select:{entry_id}")
+        )
+        app.open_access_keys_window = lambda: calls.append("access_keys") or access_window
+        app._dispatch_online_asr_provider_action = lambda *_args, **_kwargs: calls.append("dispatch")
+
+        app.open_online_asr_settings_clicked()
+        manage_buttons = [
+            widget
+            for widget in _created_widgets_with_text("Manage key")
+        ]
+        assert manage_buttons
+        manage_buttons[-1].kwargs["command"]()
+
+        assert calls == ["access_keys", "select:asr:elevenlabs_scribe"]
+    finally:
+        _restore_fake_widgets(originals)
+
+
+def test_online_asr_use_provider_saves_without_dispatch() -> None:
+    originals = _patch_fake_widgets()
+    try:
+        app = _app()
+        manager = FakeSettingsManager()
+        app.settings_manager = manager
+        app._online_asr_credential_status_provider = lambda: {}
+        dispatch_calls: list[str] = []
+        app._dispatch_online_asr_provider_action = (
+            lambda *_args, **_kwargs: dispatch_calls.append("dispatch")
+        )
+
+        app.open_online_asr_settings_clicked()
+        use_buttons = _created_widgets_with_text("Use provider")
+        assert use_buttons
+        use_buttons[-1].kwargs["command"]()
+
+        assert dispatch_calls == []
+        assert manager.saved_settings
+        assert manager.saved_settings[-1].online_asr_provider_id == main.ELEVENLABS_SCRIBE_PROVIDER_ID
+    finally:
+        _restore_fake_widgets(originals)
 
 
 def test_online_asr_dispatch_uses_coordinator_and_validated_request_once() -> None:
@@ -426,7 +676,16 @@ def test_online_asr_worker_restores_main_button_when_dialog_was_closed() -> None
 
 if __name__ == "__main__":
     test_online_asr_control_copies_local_asr_visual_spec()
+    test_main_import_does_not_eager_load_heavy_asr_or_sdk_client()
+    test_load_settings_uses_preferences_only_and_keeps_provider_selection()
+    test_api_section_startup_does_not_probe_credential_status()
     test_online_asr_cog_opens_access_keys_without_dispatch()
+    test_keys_button_still_opens_access_keys_directly()
+    test_online_asr_body_still_opens_transcription_workflow()
+    test_online_asr_provider_selection_persists_non_secret_metadata()
+    test_online_asr_invalid_provider_falls_back_safely()
+    test_online_asr_manage_key_opens_access_keys_without_dispatch()
+    test_online_asr_use_provider_saves_without_dispatch()
     test_online_asr_dispatch_uses_coordinator_and_validated_request_once()
     test_online_asr_start_requires_file_and_prevents_duplicate_dispatch()
     test_online_asr_success_routes_to_transcript_display()

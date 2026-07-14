@@ -74,17 +74,12 @@ from youtube_transcript_downloader import (
     merge_transcript_segments,
 )
 from youtube_video_metadata import fetch_youtube_video_metadata
-from asr_tools import transcribe_media_file
-from asr_whispercpp import build_whispercpp_prompt, is_whispercpp_vulkan_available
-from asr_calibration import ensure_asr_calibration_sample, get_asr_calibration_reference_segments
-from asr_defaults import load_asr_defaults, save_asr_defaults
-from asr_settings_dialog import ask_asr_settings
-from asr_topic_resolver import resolve_asr_topic_glossary
 from asr_provider_action import (
     ASRProviderActionCoordinator,
     ASR_PROVIDER_ACTION_TRANSCRIBE,
 )
 from elevenlabs_scribe_provider import (
+    ELEVENLABS_SCRIBE_CREDENTIAL_ID,
     ELEVENLABS_SCRIBE_MODEL_ID,
     ELEVENLABS_SCRIBE_PROVIDER_ID,
     ElevenLabsScribeRequest,
@@ -97,7 +92,11 @@ from access_keys_dialog import (
     AccessKeysWindow,
     open_or_focus_access_keys_window,
 )
-from credential_runtime_status import build_runtime_credential_statuses
+from credential_runtime_status import (
+    CredentialPresenceState,
+    CredentialRuntimeStatus,
+    build_runtime_credential_statuses,
+)
 from credential_store import SystemKeyringCredentialStore
 from youtube_credential_migration import (
     YouTubeCredentialActionStatus,
@@ -118,6 +117,66 @@ logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
 # Configure CustomTkinter
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
+
+
+def transcribe_media_file(*args: Any, **kwargs: Any) -> Any:
+    from asr_tools import transcribe_media_file as _transcribe_media_file
+
+    return _transcribe_media_file(*args, **kwargs)
+
+
+def build_whispercpp_prompt(*args: Any, **kwargs: Any) -> Any:
+    from asr_whispercpp import build_whispercpp_prompt as _build_whispercpp_prompt
+
+    return _build_whispercpp_prompt(*args, **kwargs)
+
+
+def is_whispercpp_vulkan_available(*args: Any, **kwargs: Any) -> Any:
+    from asr_whispercpp import (
+        is_whispercpp_vulkan_available as _is_whispercpp_vulkan_available,
+    )
+
+    return _is_whispercpp_vulkan_available(*args, **kwargs)
+
+
+def ensure_asr_calibration_sample(*args: Any, **kwargs: Any) -> Any:
+    from asr_calibration import ensure_asr_calibration_sample as _ensure_sample
+
+    return _ensure_sample(*args, **kwargs)
+
+
+def get_asr_calibration_reference_segments(*args: Any, **kwargs: Any) -> Any:
+    from asr_calibration import (
+        get_asr_calibration_reference_segments as _get_reference_segments,
+    )
+
+    return _get_reference_segments(*args, **kwargs)
+
+
+def load_asr_defaults(*args: Any, **kwargs: Any) -> Any:
+    from asr_defaults import load_asr_defaults as _load_asr_defaults
+
+    return _load_asr_defaults(*args, **kwargs)
+
+
+def save_asr_defaults(*args: Any, **kwargs: Any) -> Any:
+    from asr_defaults import save_asr_defaults as _save_asr_defaults
+
+    return _save_asr_defaults(*args, **kwargs)
+
+
+def ask_asr_settings(*args: Any, **kwargs: Any) -> Any:
+    from asr_settings_dialog import ask_asr_settings as _ask_asr_settings
+
+    return _ask_asr_settings(*args, **kwargs)
+
+
+def resolve_asr_topic_glossary(*args: Any, **kwargs: Any) -> Any:
+    from asr_topic_resolver import (
+        resolve_asr_topic_glossary as _resolve_asr_topic_glossary,
+    )
+
+    return _resolve_asr_topic_glossary(*args, **kwargs)
 
 
 ASR_ACTION_BUTTON_SPEC: Dict[str, Any] = {
@@ -148,6 +207,28 @@ ASR_ACTION_BUTTON_SPEC: Dict[str, Any] = {
 
 ONLINE_ASR_BUTTON_TEXT = "🎙 Online ASR"
 LOCAL_ASR_BUTTON_TEXT = "🎙 Local ASR"
+ONLINE_ASR_PROVIDERS_WINDOW_TITLE = "Online ASR Providers"
+ONLINE_ASR_DEFAULT_PROVIDER_ID = ELEVENLABS_SCRIBE_PROVIDER_ID
+
+
+@dataclass(frozen=True)
+class OnlineASRProviderOption:
+    provider_id: str
+    display_name: str
+    model_id: str
+    credential_id: str
+    credential_entry_id: str
+
+
+ONLINE_ASR_PROVIDER_OPTIONS: Tuple[OnlineASRProviderOption, ...] = (
+    OnlineASRProviderOption(
+        provider_id=ELEVENLABS_SCRIBE_PROVIDER_ID,
+        display_name="ElevenLabs Scribe v2",
+        model_id=ELEVENLABS_SCRIBE_MODEL_ID,
+        credential_id=ELEVENLABS_SCRIBE_CREDENTIAL_ID,
+        credential_entry_id="asr:elevenlabs_scribe",
+    ),
+)
 
 
 # =============================================================================
@@ -268,6 +349,10 @@ class App(ctk.CTk):
         self.last_package_dir: Optional[str] = None
         self.last_asr_topic_glossary: Optional[Dict[str, Any]] = None
         self.access_keys_window: Optional[AccessKeysWindow] = None
+        self.online_asr_provider_window = None
+        self.online_asr_provider_id: str = ONLINE_ASR_DEFAULT_PROVIDER_ID
+        self.online_asr_provider_selection_status: str = ""
+        self.access_keys_added_provider_ids: tuple[str, ...] = ()
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
@@ -458,9 +543,10 @@ class App(ctk.CTk):
         )
         self.api_key_entry.grid(row=0, column=0, sticky="ew")
 
-        # Storage info
-        storage_info = self.settings_manager.get_storage_info()
-        info_text = "🔒 Secure" if "keyring" in storage_info else "⚠️ File"
+        # Storage info is refreshed explicitly after user credential actions
+        # or when Access & Keys opens. Startup avoids probing keyring merely
+        # to draw the sidebar.
+        info_text = "Credential status not refreshed"
         self.storage_label = ctk.CTkLabel(
             api_frame,
             text=info_text,
@@ -511,8 +597,6 @@ class App(ctk.CTk):
             command=self._migrate_youtube_api_key,
         )
         self.migrate_api_key_button.pack(fill="x", pady=(6, 0))
-        self._refresh_youtube_credential_status()
-
         self.access_keys_button = ctk.CTkButton(
             api_frame,
             text=ACCESS_KEYS_BUTTON_TEXT,
@@ -544,9 +628,10 @@ class App(ctk.CTk):
             existing,
             lambda: AccessKeysWindow(
                 self,
-                credential_statuses=credential_status_provider(),
                 credential_store=credential_store,
                 credential_status_provider=credential_status_provider,
+                added_entry_ids=self._get_access_keys_added_provider_ids(),
+                on_added_entry_ids_change=self._set_access_keys_added_provider_ids,
                 on_close=self._on_access_keys_window_closed,
             ),
         )
@@ -555,6 +640,39 @@ class App(ctk.CTk):
     def _on_access_keys_window_closed(self) -> None:
         """Release the closed Access & Keys window reference."""
         self.access_keys_window = None
+
+    def _get_access_keys_added_provider_ids(self) -> tuple[str, ...]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in getattr(self, "access_keys_added_provider_ids", ()):
+            entry_id = " ".join(str(value or "").split())
+            if not entry_id or entry_id in seen:
+                continue
+            seen.add(entry_id)
+            result.append(entry_id)
+        self.access_keys_added_provider_ids = tuple(result)
+        return self.access_keys_added_provider_ids
+
+    def _set_access_keys_added_provider_ids(self, entry_ids: tuple[str, ...]) -> None:
+        self.access_keys_added_provider_ids = tuple(entry_ids)
+        self._persist_access_keys_added_provider_ids()
+
+    def _persist_access_keys_added_provider_ids(self) -> bool:
+        try:
+            load_preferences = getattr(
+                self.settings_manager,
+                "load_preferences_only",
+                self.settings_manager.load,
+            )
+            settings = load_preferences()
+            settings.api_key = ""
+            settings.access_keys_added_provider_ids = (
+                self._get_access_keys_added_provider_ids()
+            )
+            return self.settings_manager.save(settings)
+        except Exception:
+            logger.error("Failed to persist Access & Keys provider list safely.")
+            return False
 
     def _ensure_asr_cog_icons(self) -> None:
         """Load shared Local/Online ASR cog icons once."""
@@ -2902,7 +3020,12 @@ class App(ctk.CTk):
     def _load_settings(self) -> None:
         """Load settings from storage."""
         try:
-            settings = self.settings_manager.load()
+            load_preferences = getattr(
+                self.settings_manager,
+                "load_preferences_only",
+                self.settings_manager.load,
+            )
+            settings = load_preferences()
 
             self.api_key_entry.delete(0, "end")
             self.api_key_entry.configure(show="*")
@@ -2932,6 +3055,19 @@ class App(ctk.CTk):
             self._blacklist_patterns = settings.blacklist_patterns or ""
             self._whitelist_patterns = settings.whitelist_patterns or ""
             self._update_filter_counts()
+            self._set_online_asr_provider_id(
+                getattr(settings, "online_asr_provider_id", ""),
+                persist=False,
+            )
+            self.access_keys_added_provider_ids = tuple(
+                str(entry_id)
+                for entry_id in getattr(
+                    settings,
+                    "access_keys_added_provider_ids",
+                    (),
+                )
+                if str(entry_id or "").strip()
+            )
 
         except Exception as e:
             logger.error(f"Failed to load settings: {e}")
@@ -2950,6 +3086,8 @@ class App(ctk.CTk):
                 sort_by=SortOption.from_display_name(self.sort_var.get()).value,
                 blacklist_patterns=self._blacklist_patterns,
                 whitelist_patterns=self._whitelist_patterns,
+                online_asr_provider_id=self._get_online_asr_provider_id(),
+                access_keys_added_provider_ids=self._get_access_keys_added_provider_ids(),
             )
             saved = self.settings_manager.save(settings)
             if not saved:
@@ -7953,9 +8091,288 @@ class App(ctk.CTk):
             "Local ASR defaults were saved for future transcriptions."
         )
 
-    def open_online_asr_settings_clicked(self) -> AccessKeysWindow:
-        """Open the existing Access & Keys surface for Online ASR credentials."""
-        return self.open_access_keys_window()
+    def _online_asr_provider_option(
+        self,
+        provider_id: str,
+    ) -> OnlineASRProviderOption:
+        normalized = (provider_id or "").strip()
+        for option in ONLINE_ASR_PROVIDER_OPTIONS:
+            if option.provider_id == normalized:
+                return option
+        return ONLINE_ASR_PROVIDER_OPTIONS[0]
+
+    def _normalize_online_asr_provider_id(self, provider_id: str) -> tuple[str, str]:
+        normalized = (provider_id or "").strip()
+        supported_ids = {option.provider_id for option in ONLINE_ASR_PROVIDER_OPTIONS}
+        if normalized in supported_ids:
+            return normalized, ""
+        return (
+            ONLINE_ASR_DEFAULT_PROVIDER_ID,
+            "Unsupported Online ASR provider selection was reset to ElevenLabs Scribe v2.",
+        )
+
+    def _get_online_asr_provider_id(self) -> str:
+        provider_id, status = self._normalize_online_asr_provider_id(
+            getattr(self, "online_asr_provider_id", ONLINE_ASR_DEFAULT_PROVIDER_ID)
+        )
+        self.online_asr_provider_id = provider_id
+        self.online_asr_provider_selection_status = status
+        return provider_id
+
+    def _set_online_asr_provider_id(
+        self,
+        provider_id: str,
+        *,
+        persist: bool = True,
+    ) -> str:
+        normalized, status = self._normalize_online_asr_provider_id(provider_id)
+        self.online_asr_provider_id = normalized
+        self.online_asr_provider_selection_status = status
+        if persist:
+            self._persist_online_asr_provider_id(normalized)
+        return normalized
+
+    def _persist_online_asr_provider_id(self, provider_id: str) -> bool:
+        try:
+            load_preferences = getattr(
+                self.settings_manager,
+                "load_preferences_only",
+                self.settings_manager.load,
+            )
+            settings = load_preferences()
+            settings.api_key = ""
+            settings.online_asr_provider_id = provider_id
+            return self.settings_manager.save(settings)
+        except Exception:
+            logger.error("Failed to persist Online ASR provider selection safely.")
+            return False
+
+    def _online_asr_credential_statuses(self) -> Dict[str, CredentialRuntimeStatus]:
+        provider = getattr(self, "_online_asr_credential_status_provider", None)
+        if callable(provider):
+            return dict(provider())
+        return dict(
+            build_runtime_credential_statuses(
+                settings_manager=self.settings_manager,
+                youtube_configured=False,
+                credential_store=SystemKeyringCredentialStore(),
+            )
+        )
+
+    def _online_asr_provider_credential_status(
+        self,
+        option: OnlineASRProviderOption,
+    ) -> CredentialRuntimeStatus | None:
+        statuses = self._online_asr_credential_statuses()
+        return statuses.get(option.credential_entry_id)
+
+    def _online_asr_status_label(
+        self,
+        status: CredentialRuntimeStatus | None,
+    ) -> str:
+        if status is None:
+            return "Unavailable"
+        if status.state is CredentialPresenceState.CONFIGURED:
+            return "Configured"
+        if status.state is CredentialPresenceState.MISSING:
+            return "Not configured"
+        if status.state is CredentialPresenceState.BACKEND_UNAVAILABLE:
+            return "Unavailable"
+        return "Status error"
+
+    def open_online_asr_settings_clicked(self):
+        """Open or focus the dedicated Online ASR provider-selection window."""
+        existing = getattr(self, "online_asr_provider_window", None)
+        try:
+            if existing is not None and existing.winfo_exists():
+                existing.focus()
+                return existing
+        except Exception:
+            pass
+
+        window = ctk.CTkToplevel(self)
+        self.online_asr_provider_window = window
+        window.title(ONLINE_ASR_PROVIDERS_WINDOW_TITLE)
+        window.geometry("560x360")
+        window.transient(self)
+        window.grid_columnconfigure(0, weight=1)
+        window.grid_rowconfigure(0, weight=1)
+
+        def close_window() -> None:
+            self.online_asr_provider_window = None
+            try:
+                window.destroy()
+            except Exception:
+                pass
+
+        window.protocol("WM_DELETE_WINDOW", close_window)
+
+        content = ctk.CTkFrame(window, fg_color=COLORS["bg_card"], corner_radius=10)
+        content.grid(row=0, column=0, sticky="nsew", padx=16, pady=16)
+        content.grid_columnconfigure(0, weight=1)
+        content.grid_columnconfigure(1, weight=2)
+        content.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            content,
+            text=ONLINE_ASR_PROVIDERS_WINDOW_TITLE,
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=COLORS["text_primary"],
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 2))
+
+        ctk.CTkLabel(
+            content,
+            text=(
+                "Choose the provider used by the Online ASR Transcribe action. "
+                "No provider request is sent from this window."
+            ),
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            anchor="w",
+        ).grid(row=1, column=0, columnspan=2, sticky="new", padx=14, pady=(0, 10))
+
+        list_frame = ctk.CTkFrame(content, fg_color="transparent")
+        list_frame.grid(row=2, column=0, sticky="nsew", padx=(14, 8), pady=(0, 12))
+
+        detail_frame = ctk.CTkFrame(
+            content,
+            fg_color=COLORS["bg_input"],
+            corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        detail_frame.grid(row=2, column=1, sticky="nsew", padx=(8, 14), pady=(0, 12))
+        detail_frame.grid_columnconfigure(0, weight=1)
+
+        selected_provider_var = tk.StringVar(value=self._get_online_asr_provider_id())
+        selected_option = self._online_asr_provider_option(selected_provider_var.get())
+        selected_status = self._online_asr_provider_credential_status(selected_option)
+
+        detail_title_var = tk.StringVar(value=selected_option.display_name)
+        detail_model_var = tk.StringVar(value=f"Model: {selected_option.model_id}")
+        detail_status_var = tk.StringVar(
+            value=f"Credential status: {self._online_asr_status_label(selected_status)}"
+        )
+        detail_note_var = tk.StringVar(
+            value=(
+                self.online_asr_provider_selection_status
+                or "Provider selection is local metadata only."
+            )
+        )
+
+        def select_provider(option: OnlineASRProviderOption) -> None:
+            selected_provider_var.set(option.provider_id)
+            status = self._online_asr_provider_credential_status(option)
+            detail_title_var.set(option.display_name)
+            detail_model_var.set(f"Model: {option.model_id}")
+            detail_status_var.set(
+                f"Credential status: {self._online_asr_status_label(status)}"
+            )
+            detail_note_var.set("Provider selection is local metadata only.")
+
+        for option in ONLINE_ASR_PROVIDER_OPTIONS:
+            button = ctk.CTkButton(
+                list_frame,
+                text=option.display_name,
+                command=lambda option=option: select_provider(option),
+                height=34,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                fg_color=(
+                    COLORS["accent"]
+                    if option.provider_id == selected_provider_var.get()
+                    else COLORS["accent_secondary"]
+                ),
+                hover_color=COLORS["accent_hover"],
+                text_color=COLORS["text_primary"],
+                corner_radius=8,
+                anchor="w",
+            )
+            button.pack(fill="x", pady=(0, 8))
+
+        ctk.CTkLabel(
+            detail_frame,
+            textvariable=detail_title_var,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=COLORS["text_primary"],
+        ).grid(row=0, column=0, sticky="w", padx=14, pady=(14, 6))
+
+        ctk.CTkLabel(
+            detail_frame,
+            textvariable=detail_model_var,
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary"],
+        ).grid(row=1, column=0, sticky="w", padx=14, pady=(0, 5))
+
+        ctk.CTkLabel(
+            detail_frame,
+            textvariable=detail_status_var,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["text_primary"],
+        ).grid(row=2, column=0, sticky="w", padx=14, pady=(0, 5))
+
+        ctk.CTkLabel(
+            detail_frame,
+            textvariable=detail_note_var,
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            wraplength=300,
+            justify="left",
+        ).grid(row=3, column=0, sticky="w", padx=14, pady=(0, 14))
+
+        actions = ctk.CTkFrame(content, fg_color="transparent")
+        actions.grid(row=3, column=0, columnspan=2, sticky="e", padx=14, pady=(0, 12))
+
+        def use_selected_provider() -> None:
+            option = self._online_asr_provider_option(selected_provider_var.get())
+            self._set_online_asr_provider_id(option.provider_id, persist=True)
+            detail_note_var.set(f"Using {option.display_name} for Online ASR.")
+
+        def manage_key() -> None:
+            access_window = self.open_access_keys_window()
+            try:
+                select_entry = getattr(access_window, "_select_entry", None)
+                if callable(select_entry):
+                    option = self._online_asr_provider_option(selected_provider_var.get())
+                    select_entry(option.credential_entry_id)
+            except Exception:
+                pass
+
+        ctk.CTkButton(
+            actions,
+            text="Close",
+            command=close_window,
+            width=90,
+            height=34,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+        ).pack(side="right", padx=(8, 0))
+
+        ctk.CTkButton(
+            actions,
+            text="Manage key",
+            command=manage_key,
+            width=110,
+            height=34,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+        ).pack(side="right", padx=(8, 0))
+
+        ctk.CTkButton(
+            actions,
+            text="Use provider",
+            command=use_selected_provider,
+            width=120,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color=COLORS["text_primary"],
+            corner_radius=8,
+        ).pack(side="right")
+
+        return window
 
     def online_asr_transcribe_clicked(self) -> None:
         """Open the explicit Online ASR workflow without dispatching a provider call."""
@@ -8126,6 +8543,8 @@ class App(ctk.CTk):
         coordinator_factory: object = ASRProviderActionCoordinator,
         executor_factory: object = create_elevenlabs_scribe_sdk_provider_executor,
     ) -> tuple[object, ElevenLabsScribeResult | None]:
+        provider_id = self._get_online_asr_provider_id()
+        option = self._online_asr_provider_option(provider_id)
         request = ElevenLabsScribeRequest(
             file_path=media_file,
             tag_audio_events=False,
@@ -8144,11 +8563,11 @@ class App(ctk.CTk):
 
         coordinator = coordinator_factory(
             executors={
-                (ELEVENLABS_SCRIBE_PROVIDER_ID, ASR_PROVIDER_ACTION_TRANSCRIBE): trusted_executor
+                (option.provider_id, ASR_PROVIDER_ACTION_TRANSCRIBE): trusted_executor
             }
         )
         action_result = coordinator.dispatch_provider_action(
-            ELEVENLABS_SCRIBE_PROVIDER_ID,
+            option.provider_id,
             action_kind=ASR_PROVIDER_ACTION_TRANSCRIBE,
         )
         return action_result, result_holder.get("result")

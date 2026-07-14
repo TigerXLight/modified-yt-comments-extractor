@@ -48,7 +48,7 @@ class ASRProviderMetadata:
 _ASR_PROVIDER_METADATA = (
     ASRProviderMetadata(
         provider_id="elevenlabs_scribe",
-        display_name="ElevenLabs Scribe",
+        display_name="ElevenLabs Scribe v2",
         provider_family="cloud_asr",
         credential_type=CREDENTIAL_API_KEY,
         credentials_required=True,

@@ -37,11 +37,16 @@ from access_keys_dialog import (
     ACCESS_KEYS_WINDOW_TITLE,
     ALL_FAMILIES_LABEL,
     CREDENTIAL_ENTRY_MASK,
+    MY_PROVIDERS_HEADING,
+    STATUS_ICON_ASSETS,
+    VIDEO_SOCIAL_CATEGORY_LABEL,
     AccessKeysDialogController,
     AccessKeysWindow,
     access_keys_detail_lines,
     build_default_access_keys_catalog,
     open_or_focus_access_keys_window,
+    status_icon_key,
+    user_status_text,
     _create_masked_credential_entry,
 )
 from access_keys_view_model import AccessKeysEntryView
@@ -153,7 +158,7 @@ def test_catalog_controller_and_details() -> None:
     assert controller.family_options() == (
         "All families",
         "ASR Providers",
-        "Social Media",
+        VIDEO_SOCIAL_CATEGORY_LABEL,
         "News Websites",
         "Professional, Jobs, Experts & Portfolios",
         "Workplace, Chat & Collaboration",
@@ -166,7 +171,7 @@ def test_catalog_controller_and_details() -> None:
     assert full_view.selected_entry_id
     first_id = full_view.selected_entry_id
 
-    social = controller.set_family("Social Media")
+    social = controller.set_family(VIDEO_SOCIAL_CATEGORY_LABEL)
     assert social.visible_entry_count > 40
     assert all(
         section.section_id == "social_media"
@@ -186,11 +191,10 @@ def test_catalog_controller_and_details() -> None:
     assert selected.planned_only is True
 
     details = dict(access_keys_detail_lines(selected))
-    assert details["Section"] == "Social Media"
-    assert details["Subgroup"] == "Pure Photography & Creator Hubs"
-    assert details["Implementation"] == "planned metadata only"
-    assert details["Planned capabilities"] != "none"
-    assert details["Enabled capabilities"] == "none"
+    assert set(details) == {"Status", "Use", "Model", "Data use"}
+    assert "Subgroup" not in details
+    assert "Implementation" not in details
+    assert "Credential status" not in details
 
     youtube_search = controller.set_search("YouTube")
     assert youtube_search.visible_entry_count >= 1
@@ -248,6 +252,123 @@ def test_sidebar_button_preserves_api_key_entry() -> None:
     assert "self.access_keys_window = None" in close_method
 
 
+def test_my_providers_subset_and_status_semantics() -> None:
+    bundle = build_default_access_keys_catalog_bundle()
+    subset = access_keys_dialog._catalog_subset(
+        bundle.catalog,
+        bundle.layouts,
+        ("asr:elevenlabs_scribe",),
+    )
+    controller = AccessKeysDialogController(subset.catalog, subset.layouts)
+    view = controller.view()
+
+    assert view.visible_entry_count == 1
+    assert view.sections[0].display_name == "ASR Providers"
+    selected = controller.selected_entry(view)
+    assert selected is not None
+    assert selected.display_name == "ElevenLabs Scribe v2"
+    assert "source:youtube" not in {
+        entry.entry_id
+        for section in view.sections
+        for entry in section.entries
+    }
+    assert status_icon_key(selected) == "missing"
+    assert user_status_text(selected) == "No key saved"
+
+    saved = AccessKeysEntryView(
+        entry_id="asr:elevenlabs_scribe",
+        display_name="ElevenLabs Scribe v2",
+        entry_kind=AccessEntryKind.ASR_PROVIDER,
+        platform_family="asr",
+        implementation_state="provider metadata only",
+        access_mode="API_KEY",
+        credential_status="CONFIGURED_UNTESTED",
+        last_test_status="TEST_NOT_RUN",
+    )
+    assert status_icon_key(saved) == "saved"
+    assert user_status_text(saved) == "Key saved — not yet validated"
+    assert "incorrect" not in user_status_text(saved).casefold()
+
+    verified = AccessKeysEntryView(
+        entry_id="asr:elevenlabs_scribe",
+        display_name="ElevenLabs Scribe v2",
+        entry_kind=AccessEntryKind.ASR_PROVIDER,
+        platform_family="asr",
+        implementation_state="provider metadata only",
+        access_mode="API_KEY",
+        credential_status="CONFIGURED_TEST_PASSED",
+        last_test_status="TEST_PASSED",
+    )
+    assert status_icon_key(verified) == "verified"
+    assert user_status_text(verified) == "Verified"
+
+    rejected = AccessKeysEntryView(
+        entry_id="asr:elevenlabs_scribe",
+        display_name="ElevenLabs Scribe v2",
+        entry_kind=AccessEntryKind.ASR_PROVIDER,
+        platform_family="asr",
+        implementation_state="provider metadata only",
+        access_mode="API_KEY",
+        credential_status="CONFIGURED_TEST_FAILED",
+        last_test_status="TEST_FAILED",
+        access_limitations="Authentication rejected by provider.",
+    )
+    assert status_icon_key(rejected) == "warning"
+    assert user_status_text(rejected) == "Key validation failed"
+
+    transient = AccessKeysEntryView(
+        entry_id="asr:elevenlabs_scribe",
+        display_name="ElevenLabs Scribe v2",
+        entry_kind=AccessEntryKind.ASR_PROVIDER,
+        platform_family="asr",
+        implementation_state="provider metadata only",
+        access_mode="API_KEY",
+        credential_status="STATUS_ERROR",
+        last_test_status="TEST_FAILED",
+        access_limitations="Provider outage or network timeout.",
+    )
+    assert status_icon_key(transient) == "warning"
+    assert user_status_text(transient) == "Key could not be validated"
+
+
+def test_add_and_remove_provider_metadata_only() -> None:
+    events: list[tuple[str, ...]] = []
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    bundle = build_default_access_keys_catalog_bundle()
+    window._full_catalog = bundle.catalog
+    window._base_catalog = bundle.catalog
+    window._full_layouts = bundle.layouts
+    window._added_entry_ids = ()
+    window._selected_entry_id = ""
+    window._on_added_entry_ids_change = lambda ids: events.append(ids)
+    window._hide_add_provider_popup = lambda: None
+
+    applied: list[int] = []
+    window._apply_view = lambda view: applied.append(view.visible_entry_count)
+
+    AccessKeysWindow._add_provider(
+        window,
+        "asr:elevenlabs_scribe",
+        select=True,
+    )
+    assert window._added_entry_ids == ("asr:elevenlabs_scribe",)
+    assert events == [("asr:elevenlabs_scribe",)]
+    assert applied == [1]
+
+    AccessKeysWindow._add_provider(
+        window,
+        "asr:elevenlabs_scribe",
+        select=True,
+    )
+    assert window._added_entry_ids == ("asr:elevenlabs_scribe",)
+    assert events == [("asr:elevenlabs_scribe",)]
+
+    window._selected_entry_id = "asr:elevenlabs_scribe"
+    AccessKeysWindow._remove_selected_provider(window)
+    assert window._added_entry_ids == ()
+    assert events[-1] == ()
+
+
 def test_single_window_lifecycle() -> None:
     _FakeAccessKeysWindow.instances.clear()
     holder: dict[str, object] = {"window": None}
@@ -295,6 +416,8 @@ def test_fast_selection_path_updates_only_changed_controls() -> None:
     window.controller.selected_entry_id = previous_id
     window._visible_entry_ids = set(entry_ids)
     window._selected_entry_id = previous_id
+    window._runtime_status_checked_entry_ids = set()
+    window._credential_status_provider = None
     window._entry_buttons = {
         entry_id: object()
         for entry_id in entry_ids
@@ -415,7 +538,12 @@ def test_cloud_asr_credential_controls_are_scoped_and_masked() -> None:
     assert window.credential_entry.get() == ""
     _assert_entry_masked(window.credential_entry)
     assert window.credential_action_panel.visible is True
-    assert "never preloaded" in window.credential_action_status_label.text
+    assert (
+        "Key saved securely. The key has not yet been checked with the provider."
+        in window.credential_action_status_label.text
+    )
+    assert "never displayed" in window.credential_action_status_label.text
+    assert "provenance" not in window.credential_action_status_label.text.casefold()
 
     window.credential_entry.value = "new draft"
 
@@ -531,6 +659,11 @@ def test_static_selector_and_no_flicker_design() -> None:
     assert "ctk.CTkOptionMenu(" not in source
     assert "tk.Menu(" not in source
     assert "import tkinter as tk" not in source
+    assert MY_PROVIDERS_HEADING in source
+    assert VIDEO_SOCIAL_CATEGORY_LABEL in source
+    assert "Local credential presence/provenance status" not in source
+    assert "Cloud ASR secure credential" not in source
+    assert "Subgroup" not in source
     assert "self.family_button = ctk.CTkButton(" in source
     assert "command=self._toggle_family_menu" in source
     assert "self.family_popup = ctk.CTkFrame(" in source
@@ -538,6 +671,15 @@ def test_static_selector_and_no_flicker_design() -> None:
     assert "self.family_popup.place(x=x, y=y)" in source
     assert "self.family_popup.place(x=x, y=y, width=width)" not in source
     assert "self.family_popup.place_forget()" in source
+    assert "self.add_provider_popup = ctk.CTkFrame(" in source
+    assert "self.add_provider_results = ctk.CTkScrollableFrame(" in source
+    assert "ADD_PROVIDER_SEARCH_PLACEHOLDER" in source
+    assert "_show_add_provider_popup" in source
+    assert "_refresh_add_provider_results" in source
+    assert "_add_provider(" in source
+    assert "_remove_selected_provider" in source
+    assert "compound=\"left\"" in source
+    assert "status_icon_labels" not in source
     assert 'self.family_button.bind("<Return>"' in source
     assert 'self.family_button.bind("<space>"' in source
     assert 'self.family_button.bind("<Down>"' in source
@@ -608,6 +750,7 @@ def test_static_selector_and_no_flicker_design() -> None:
     # Detail rows are created once and only their changed text is configured
     # during entry-to-entry selection.
     assert "_set_detail_rows_visible(True)" in render_details
+    assert "detail_title_label.configure" in render_details
     assert 'cget("text") != value' in render_details
     assert "configure(text=value)" in render_details
     assert "destroy" not in render_details
@@ -619,13 +762,16 @@ def test_static_selector_and_no_flicker_design() -> None:
     assert "hover=False" not in source
     assert "_clear_children" not in source
 
-    assert source.count("ctk.CTkEntry(") == 2
-    assert 'placeholder_text="Search access metadata"' in source
+    assert source.count("ctk.CTkEntry(") == 3
+    assert 'placeholder_text="Search My Providers"' in source
+    assert "placeholder_text=ADD_PROVIDER_SEARCH_PLACEHOLDER" in source
     assert "CREDENTIAL_ENTRY_MASK" in source
     assert "show=CREDENTIAL_ENTRY_MASK" in source
     assert 'show=""' not in source
-    assert 'placeholder_text="Enter credential to save"' in source
+    assert 'placeholder_text="Enter key to save"' in source
     assert "clipboard" not in source
+    for asset_name in STATUS_ICON_ASSETS.values():
+        assert Path("assets", asset_name).exists()
 
     refresh_status = inspect.getsource(
         AccessKeysWindow._refresh_runtime_statuses_after_credential_action
@@ -655,6 +801,8 @@ def test_static_selector_and_no_flicker_design() -> None:
 def run_self_test() -> None:
     test_catalog_controller_and_details()
     test_sidebar_button_preserves_api_key_entry()
+    test_my_providers_subset_and_status_semantics()
+    test_add_and_remove_provider_metadata_only()
     test_single_window_lifecycle()
     test_fast_selection_path_updates_only_changed_controls()
     test_filter_changes_reset_scroll_to_top()

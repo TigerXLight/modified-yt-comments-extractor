@@ -332,10 +332,10 @@ def test_runtime_integration_is_bounded() -> None:
         in compact_main_source
     )
     assert (
-        "window never displays values, reveals, copies, migrates, tests, "
+        "Existing keys are never displayed, and this window does not "
         in dialog_source
     )
-    assert "or calls providers." in dialog_source
+    assert "test credentials or call providers." in dialog_source
 
 
 def main() -> None:

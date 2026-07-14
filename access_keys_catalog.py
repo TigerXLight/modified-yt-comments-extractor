@@ -23,7 +23,7 @@ from source_adapters import AVAILABLE_SOURCE_ADAPTERS
 
 
 SECTION_ASR = ("asr_providers", "ASR Providers", 10)
-SECTION_SOCIAL = ("social_media", "Social Media", 20)
+SECTION_SOCIAL = ("social_media", "Video & Social Platforms", 20)
 SECTION_NEWS = ("news_websites", "News Websites", 30)
 SECTION_PROFESSIONAL = (
     "professional_jobs_experts_portfolios",
@@ -201,7 +201,7 @@ def _source_layout(source_name: str, display_name: str) -> AccessKeysEntryLayout
             section_label=section_label,
             section_order=section_order,
             subgroup_id="video_social_video",
-            subgroup_label="Video & Social Video Platforms",
+            subgroup_label="Video & Social Platforms",
             subgroup_order=10,
             entry_order=10,
             canonical_name="YouTube",
@@ -294,7 +294,7 @@ def _planned_source_entries() -> tuple[
         add(
             name,
             "video_social_video",
-            "Video & Social Video Platforms",
+            "Video & Social Platforms",
             10,
             order,
             aliases=aliases,

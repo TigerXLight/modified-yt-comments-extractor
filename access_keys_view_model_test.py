@@ -216,7 +216,7 @@ def test_layout_sections_subgroups_aliases_and_order() -> None:
     assert view.visible_entry_count == len(bundle.catalog.entries)
     assert [section.display_name for section in view.sections] == [
         "ASR Providers",
-        "Social Media",
+        "Video & Social Platforms",
         "News Websites",
         "Professional, Jobs, Experts & Portfolios",
         "Workplace, Chat & Collaboration",
@@ -235,7 +235,7 @@ def test_layout_sections_subgroups_aliases_and_order() -> None:
         if section.section_id == "social_media"
     )
     assert [subgroup.display_name for subgroup in social.subgroups] == [
-        "Video & Social Video Platforms",
+        "Video & Social Platforms",
         "Live Streaming Platforms",
         "Creator-Owned & Independent Hubs",
         "Decentralised & Blockchain-Based Video",
@@ -278,7 +278,7 @@ def test_layout_sections_subgroups_aliases_and_order() -> None:
 
     family = build_access_keys_manager_view(
         bundle.catalog,
-        platform_family="Social Media",
+        platform_family="Video & Social Platforms",
         layouts=bundle.layouts,
     )
     assert family.visible_entry_count == len(social.entries)
@@ -301,7 +301,7 @@ def test_layout_sections_subgroups_aliases_and_order() -> None:
     )
     assert flickr.selected is True
     assert flickr.planned_only is True
-    assert flickr.section_label == "Social Media"
+    assert flickr.section_label == "Video & Social Platforms"
     assert flickr.subgroup_label == "Pure Photography & Creator Hubs"
     assert "photography" in flickr.tags
 

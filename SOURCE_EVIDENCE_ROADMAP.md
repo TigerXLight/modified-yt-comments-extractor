@@ -541,7 +541,11 @@ This database taxonomy is planning-only. It does not add folder scanning, file m
 ## KEYS / Access & Keys Manager
 
 - Replace or supplement the sidebar "API KEY" area with a "KEYS" button.
-- Clicking "KEYS" should open a dedicated Access & Keys window later.
+- Clicking "KEYS" opens a dedicated Access & Keys window.
+- The current user-facing window is a compact My Providers surface: the main list shows only providers the user has added, grouped under headings such as ASR Providers and Video & Social Platforms, with a small add control per group.
+- The add-provider catalog is lazy, searchable, and metadata-only; opening, searching, adding, removing, or selecting providers does not call providers, fetch pricing, or test credentials.
+- Details use plain language, hide raw implementation/provenance/diagnostic enum fields, show official provider/API-key/pricing links when known, and use "Key input" for masked secure credential entry.
+- Saved but unvalidated credentials are shown as `Key saved — not yet validated`, not as correct or incorrect. Green verified status remains reserved for a future explicit successful validation, and the amber warning state is reserved for an explicit validation failure or validation attempt that could not complete.
 - Keep the main sidebar less crowded.
 - The current YouTube Data API key should become one credential/access entry in this future window.
 - Do not imply every platform uses an API key.
@@ -705,7 +709,9 @@ UI wording notes:
 - ElevenLabs Scribe v2 now has a production-capable SDK transport and a separately approved one-call live verification for the narrow local-file explicit-action path.
 - The live smoke call succeeded with secure keyring credential resolution, one request, `max_retries=0`, local 240-second timeout policy, provider/model `elevenlabs_scribe` / `scribe_v2`, normalized action/provider success, and no secret/raw-response output. Exact-phrase accuracy was not confirmed by the synthetic sample.
 - The main transcript toolbar now includes `Online ASR` immediately next to `Local ASR`. The new control mirrors the Local ASR orange button/cog treatment and opens a local-file workflow.
-- Opening Online ASR, selecting a file, or opening its cog/Access & Keys surface must not contact a provider. A provider request is allowed only after an explicit user `Transcribe` action.
+- Opening Online ASR, selecting a file, or opening its cog/provider-picker surface must not contact a provider. A provider request is allowed only after an explicit user `Transcribe` action.
+- The Online ASR cog opens a dedicated `Online ASR Providers` window, not the standalone `Access & Keys` manager. The current selectable production-wired provider is `ElevenLabs Scribe v2` / `elevenlabs_scribe` / `scribe_v2`; selection persists only the non-secret provider ID. The provider window shows safe configured/not-configured status and offers an explicit `Manage key` action that opens Access & Keys for the selected provider when possible.
 - The Online ASR action must use the committed coordinator path: UI action -> `ASRProviderActionCoordinator` -> secure credential consumption -> ElevenLabs provider adapter -> SDK transport.
 - The current first slice is local-file only, Scribe v2 only, word timestamps, diarization off by default, audio-event tagging off by default, and no keyterms by default.
+- A corrective responsiveness pass moved heavy Local ASR imports and startup credential-status probing off initial window construction. Local ASR behavior remains unchanged; the heavy ASR engine modules load only when Local ASR is actually used.
 - User-facing Test Connection wiring remains a later approval-gated milestone. Do not treat Online ASR transcription wiring as approval for automatic/background checks, account/quota/model calls, broad provider/API behavior, OAuth/browser access, or credential reveal/copy/export behavior.

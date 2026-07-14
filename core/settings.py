@@ -73,6 +73,8 @@ class AppSettings:
 
     # Sort settings
     sort_by: str = SortOption.DATE_NEWEST.value
+    online_asr_provider_id: str = ""
+    access_keys_added_provider_ids: tuple[str, ...] = ()
 
     # Date filter (optional)
     date_from: Optional[str] = None
@@ -100,6 +102,12 @@ class AppSettings:
         # Filter to only known fields
         known_fields = {f.name for f in cls.__dataclass_fields__.values()}
         filtered = {k: v for k, v in data.items() if k in known_fields}
+        if "access_keys_added_provider_ids" in filtered:
+            filtered["access_keys_added_provider_ids"] = tuple(
+                str(item)
+                for item in filtered["access_keys_added_provider_ids"]
+                if str(item or "").strip()
+            )
         return cls(**filtered)
 
 
@@ -176,6 +184,27 @@ class SettingsManager:
         if api_key:
             settings.api_key = api_key
 
+        return settings
+
+    def load_preferences_only(self) -> AppSettings:
+        """
+        Load non-secret preferences from the JSON settings file only.
+
+        This intentionally avoids keyring reads. Action-time credential
+        resolution and explicit status refresh paths continue to use load()
+        or the dedicated credential status helpers.
+        """
+        settings = AppSettings()
+        if self.settings_file.exists():
+            try:
+                with open(self.settings_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    settings = AppSettings.from_dict(data)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse settings file: {e}")
+            except Exception as e:
+                logger.error(f"Failed to load settings preferences: {e}")
+        settings.api_key = ""
         return settings
 
     def save(self, settings: AppSettings) -> bool:
