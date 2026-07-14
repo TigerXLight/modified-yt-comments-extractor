@@ -2,7 +2,7 @@
 
 Date: 2026-07-14
 
-Checkpoint: `a1cf07d Add cloud ASR credential consumption`
+Checkpoint: `058af01 Add explicit ASR provider action seam`
 
 Branch: `v2.6.0-asr-engines`
 
@@ -16,7 +16,7 @@ It records the state needed for a future session to resume safely. It does not i
 
 - The working tree was clean when this handoff milestone started. Reconfirm with `git status --short` before applying any new patch.
 - Current branch: `v2.6.0-asr-engines`.
-- Current checkpoint: `a1cf07d Add cloud ASR credential consumption`.
+- Current checkpoint: `058af01 Add explicit ASR provider action seam`.
 - The user performs final local checks, commits, and pushes after reviewing each patch.
 - Codex should not commit unless the user explicitly changes that instruction.
 - Keep one milestone per patch.
@@ -41,7 +41,7 @@ Unless a later milestone is explicitly approved, do not add:
 - Login, paywall, private-content, anti-copy, or DRM bypass behavior.
 - GUI wiring for the local-only preservation/evidence/report helpers.
 - Evidence queue persistence, background processing, or file operations.
-- Credential work beyond the approved row 2C2 masked cloud-ASR Save/Clear controls, safe presence/provenance refresh, committed secure YouTube credential migration/legacy cleanup, and local-only cloud-ASR credential-consumption prerequisite. Real provider-action integration, OAuth, browser-profile integration, provider/API calls, connection testing, network behavior, and future reveal/copy/export behavior remain separately approval-gated.
+- Credential work beyond the approved row 2C2 masked cloud-ASR Save/Clear controls, safe presence/provenance refresh, committed secure YouTube credential migration/legacy cleanup, local-only cloud-ASR credential-consumption prerequisite, and explicit local ASR provider-action coordinator seam. Explicit connection testing, first real provider implementation, OAuth, browser-profile integration, provider/API calls, cloud-ASR execution, uploads, network behavior, and future reveal/copy/export behavior remain separately approval-gated.
 - Database-root scanning, automatic classification, sensitive-trait inference, reclassification execution, or file movement.
 - New runtime dependencies or hidden configuration for these milestones.
 
@@ -64,7 +64,7 @@ Existing YouTube comment/live-chat behavior, app exports, ASR runtime behavior, 
 - Leading tested cloud candidate: ElevenLabs Scribe v2 with keyterms, 84.95%.
   - It preserved the Nicolas Cage reference phrase and found `Shadowsmith`, `Nicolas Cage`, and `Caltheris`.
   - It missed `Kingman`, `ZoneX`, `Freckelston`, and `Nyxara`.
-  - It is a leading optional candidate, not accepted and not final truth.
+  - It is a leading optional candidate, not accepted, not final truth, and not a production-integrated provider implementation.
 - AWS Transcribe custom vocabulary is `blocked`, not rejected.
   - `SubscriptionRequiredException` prevented transcription and scoring in `eu-west-2`.
   - It must not be ranked against scored providers.
@@ -95,6 +95,21 @@ DirectML base/small are rejected for Auto Quality Probe for now. DirectML medium
 - `ASR_MANUAL_RESULTS_SEED.json` metadata was corrected after `975238e` by `b59a052` so `asr_manual_results_seed_test.py` passes; the blocked-status policy now explicitly includes `not quality-rejected`.
 
 These tools do not call providers, run transcription, fetch media, or store credentials.
+
+### Explicit Provider-Action Seam
+
+- `058af01 Add explicit ASR provider action seam` added `asr_provider_action.py` and `asr_provider_action_test.py`.
+- Outcome B applied: no tracked safe production cloud-provider runtime path existed, and the tracked ASR runtime remained local `faster-whisper` / `whisper.cpp`. The milestone therefore added only a local coordinator seam with injected trusted executors.
+- The explicit entry point is `ASRProviderActionCoordinator.dispatch_provider_action(...)`.
+- Credential lookup and executor dispatch occur only after that explicit method call. There is no lookup or dispatch at import, coordinator construction, startup, provider listing/search/filter, Access & Keys open, status refresh, Save/Clear, shutdown, or background time.
+- The coordinator validates provider/action metadata, distinguishes local and cloud seams, delegates cloud credential resolution to `CloudASRCredentialConsumer`, invokes only an injected trusted executor, and returns a fixed non-secret action result.
+- `elevenlabs_scribe` is dispatchable through an injected trusted executor with `elevenlabs_scribe_api_key`; this is not a production ElevenLabs implementation. `whisper_cpp_vulkan_large_v3_turbo` is dispatchable through an injected trusted executor without a cloud credential. AssemblyAI, Deepgram, Speechmatics, Azure, Google STT, Cohere, AWS, unknown IDs, pattern-adjacent IDs such as `elevenlabs_scribe_extra`, YouTube IDs, unsupported actions such as `connection_test`, and missing executors are rejected before credential lookup.
+- The coordinator delegates unchanged credential semantics to `CloudASRCredentialConsumer`: non-empty secure values win, secure `None` permits environment fallback, empty/whitespace secure values are invalid and block environment fallback, backend unavailable/error may use the established non-empty environment fallback, and YouTube credential IDs are not accepted.
+- Injected executors are trusted internal provider/action code, not a security sandbox. A malicious executor could retain or exfiltrate a supplied credential through side effects; the coordinator guarantee is limited to its own state, public result, repr, diagnostics, and tests.
+- Public action results contain only `provider_id`, `action_kind`, `status`, `safe_diagnostic`, `credential_status`, `credential_provenance`, `executor_invoked`, `action_succeeded`, and `scope`. They exclude credential identifiers, credential values, fragments, prefixes/suffixes, lengths, hashes, executor returns, provider responses, transcripts, raw exceptions, tracebacks, request payloads, headers, and audio path/content.
+- Ordinary executor exceptions become fixed non-secret failures; `KeyboardInterrupt`, `SystemExit`, and `GeneratorExit` are re-raised.
+- No connection test, provider SDK/client, credential validation probe, list-model/account/quota call, live API request, audio open/upload, network behavior, GUI wiring, background action, credential write/delete, environment write, YouTube behavior change, cloud-ASR Save/Clear/status behavior change, or source/export behavior change was added.
+- `asr_tools_test.py` is an interactive/manual harness that prompts for an audio/video path. It was compile-checked during the final chain but intentionally not executed as an automated self-test.
 
 ## Total Export Local Package And Review State
 
@@ -161,9 +176,10 @@ Three planned source-evidence areas now have standalone, local-only schema imple
 - Final YouTube security corrections before `3abb49d` removed the obsolete reveal/unmask path, removed stored-key UI preload, preserved legacy plaintext on secure-delete failure, refused destructive Clear for malformed settings, and avoided downgrading keyring read failures to false missing states. Manual production verification used `python main.py` with the venv active; an explicit equivalent is `.\venv\Scripts\python.exe main.py`. The corrected manual pass confirmed masked Save, configured status, empty field after restart, Access & Keys presence/provenance, no settings-root plaintext key, and no credential value exposure.
 - `credential_consumption.py`, `credential_consumption_test.py`, `credential_runtime_status.py`, `credential_runtime_status_test.py`, `credential_store.py`, and `credential_store_test.py` (`a1cf07d`) implement the local-only cloud-ASR credential-consumption prerequisite. It resolves a credential only during an explicit trusted internal callback action, rejects YouTube/local/unknown credential IDs, never returns credential values or callback results in public dataclasses/dicts, performs no lookup at import or construction, and caches no secret. Public result fields are fixed and non-secret: `credential_id`, `status`, `provenance`, `safe_diagnostic`, `provider_id`, `callback_invoked`, `action_succeeded`, and `scope`.
 - Cloud-ASR action-time consumption now matches safe status precedence: a present non-empty secure keyring value wins over environment values; a genuinely absent secure value may fall back to a non-empty environment value where supported; backend unavailable/error states can still use the established environment fallback; an empty or whitespace-only secure value is an invalid secure state that does not invoke the callback and does not fall back to environment. The callback is trusted internal code, not a security sandbox. No real provider currently consumes credentials, and no provider client, connection test, API request, upload, or network behavior was added.
+- `asr_provider_action.py` and `asr_provider_action_test.py` (`058af01`) implement the explicit provider-action seam described above. The seam is dispatchable through injected trusted executors only; it does not add or imply a production cloud provider implementation.
 - `evidence_database_taxonomy.py` and `evidence_database_taxonomy_test.py` (`e63def4`): read-only database-root/taxonomy metadata, arbitrary user-defined dimensions, valid unknown/not-identified states, dry-run reclassification and alias-normalization suggestions, sensitive-classification safeguards, review states, preserved history, and queue/package/source references. Paths are descriptive metadata only; the model performs no scanning, automatic classification, persistence, reclassification execution, or file movement.
 
-The queue and taxonomy remain local-only schema/test foundations rather than implemented UI/runtime workflows. Access & Keys has the bounded catalog/view/window, row 2A credential architecture/audit, row 2B read-only non-secret status/provenance overlay, row 2C1 secure-store infrastructure, row 2C2 masked cloud-ASR Save/Clear controls, committed secure YouTube credential migration/legacy cleanup, and the local-only cloud-ASR credential-consumption prerequisite described above. Cloud-ASR row 2C2 Save/Clear/status behavior remains unchanged and no real provider consumes stored credentials yet. Connection testing, provider-action integration, provider access, OAuth, browser-profile access, future reveal/copy/export behavior, and new non-ASR credential persistence workflows remain unimplemented and separately approval-gated. `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` should continue to distinguish implemented secure storage/UI/consumption-prerequisite behavior from later provider-action and external-access gaps.
+The queue and taxonomy remain local-only schema/test foundations rather than implemented UI/runtime workflows. Access & Keys has the bounded catalog/view/window, row 2A credential architecture/audit, row 2B read-only non-secret status/provenance overlay, row 2C1 secure-store infrastructure, row 2C2 masked cloud-ASR Save/Clear controls, committed secure YouTube credential migration/legacy cleanup, local-only cloud-ASR credential-consumption prerequisite, and explicit provider-action coordinator seam described above. Cloud-ASR row 2C2 Save/Clear/status behavior remains unchanged and no real provider consumes stored credentials yet. Connection testing, first real provider implementation, provider access, OAuth, browser-profile access, future reveal/copy/export behavior, and new non-ASR credential persistence workflows remain unimplemented and separately approval-gated. `SOURCE_EVIDENCE_ROADMAP_COVERAGE_AUDIT.md` should continue to distinguish implemented secure storage/UI/consumption/action-seam behavior from later provider-action and external-access gaps.
 
 ## Upstream v2.1.1 Parity State
 
@@ -257,6 +273,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 ## Latest Known Commit Chain
 
 ```
+058af01 Add explicit ASR provider action seam
 a1cf07d Add cloud ASR credential consumption
 ea94263 Close secure YouTube credential migration milestone
 3abb49d Add secure YouTube credential migration
@@ -321,9 +338,9 @@ Do not add provider/API/network calls to these verification chains.
 
 ## Safe Next Milestones
 
-1. Row 2A non-secret credential architecture/audit is complete at `ef92017`, row 2B read-only local credential status integration is complete at `7c1db2a`, row 2C1 secure credential-store infrastructure is complete at `29af218`, row 2C2 masked cloud-ASR Save/Clear controls are complete at `97de48d`, secure YouTube credential migration/legacy cleanup is complete at `3abb49d`, and the local-only cloud-ASR credential-consumption prerequisite is complete at `a1cf07d`.
-2. The exact next ordered credential boundary is wiring real provider actions through the trusted consumption helper and/or explicit connection testing for stored credentials. The current roadmap does not define a precise row label for that boundary, so treat it as separately approval-gated rather than inventing a row number.
-3. Do not expand that boundary into provider calls beyond the explicitly approved action, OAuth, cloud ASR execution, browser behavior, uploads, network access, or future reveal/copy/export behavior without explicit approval.
+1. Row 2A non-secret credential architecture/audit is complete at `ef92017`, row 2B read-only local credential status integration is complete at `7c1db2a`, row 2C1 secure credential-store infrastructure is complete at `29af218`, row 2C2 masked cloud-ASR Save/Clear controls are complete at `97de48d`, secure YouTube credential migration/legacy cleanup is complete at `3abb49d`, the local-only cloud-ASR credential-consumption prerequisite is complete at `a1cf07d`, and the explicit provider-action coordinator seam is complete at `058af01`.
+2. The exact next ordered credential boundary is explicit connection testing and/or a first real provider implementation. The current roadmap does not define a precise row label for that boundary, so treat it as separately approval-gated rather than inventing a row number.
+3. Do not expand that boundary into provider calls beyond the explicitly approved action, OAuth, cloud ASR execution, browser behavior, uploads, network access, or future reveal/copy/export behavior without explicit approval. Connection testing must be explicit/user-triggered, never automatic/background.
 4. Do not begin later-row compatibility/reporting work by treating row 2C2 as approval for unresolved credential migration or provider/network layers.
 5. Create the next full external session handoff before beginning a substantially different feature area.
 6. Keep database scanning, automatic/sensitive classification, credential testing/provider access, archive/downloader/capture, and other networked behavior deferred until explicitly approved, opt-in where applicable, and covered by local/mocked tests.
@@ -338,7 +355,7 @@ Do not add provider/API/network calls to these verification chains.
 - Do not copy/build packages or extract ZIPs through preservation/evidence metadata helpers.
 - Do not infer remote deletion or unavailability from missing local records.
 - Do not expose or record secrets in docs, logs, manifests, reports, screenshots, or test fixtures.
-- Do not describe the queue or database-taxonomy UI/persistence/runtime as implemented. The bounded Access & Keys catalog/view/window, row 2A architecture/audit, row 2B read-only safe status/provenance overlay, row 2C1 secure-store infrastructure, row 2C2 masked cloud-ASR Save/Clear UI, secure YouTube credential migration/legacy cleanup, and the local-only trusted-callback cloud-ASR credential-consumption prerequisite are implemented, but real provider-action integration, connection testing, provider access, OAuth, browser-profile access, future reveal/copy/export behavior, and new persistence workflows remain unimplemented.
+- Do not describe the queue or database-taxonomy UI/persistence/runtime as implemented. The bounded Access & Keys catalog/view/window, row 2A architecture/audit, row 2B read-only safe status/provenance overlay, row 2C1 secure-store infrastructure, row 2C2 masked cloud-ASR Save/Clear UI, secure YouTube credential migration/legacy cleanup, local-only trusted-callback cloud-ASR credential-consumption prerequisite, and explicit injected-executor ASR provider-action seam are implemented, but connection testing, real provider implementation, provider access, OAuth, browser-profile access, future reveal/copy/export behavior, and new persistence workflows remain unimplemented.
 - Do not infer sensitive classifications from weak clues or turn dry-run taxonomy suggestions into automatic file operations.
 - Do not modify mature YouTube comment/live-chat/export behavior during unrelated milestones.
 - Do not commit before the user has reviewed the patch and local checks.
