@@ -126,6 +126,10 @@ from youtube_credential_migration import (
     YouTubeCredentialMigrationService,
     YouTubeCredentialStorageState,
 )
+from local_asr_capabilities import (
+    ASR_ENGINE_WHISPERCPP_VULKAN,
+    resolve_local_asr_selection,
+)
 
 
 SESSION_FILE_KIND_TRANSCRIPT = "transcript"
@@ -9219,7 +9223,7 @@ class App(ctk.CTk):
                 "label": label,
                 "model_name": model,
                 "device": "vulkan",
-                "compute_type": "whisper.cpp",
+                "compute_type": "",
                 "vad_filter": False,
                 "condition_on_previous_text": None,
                 "use_reference_hotwords": prompt_mode == "terms",
@@ -10252,24 +10256,15 @@ class App(ctk.CTk):
         if not asr_settings:
             return
 
-        model_name = asr_settings.get("model_name", "small").strip().lower() or "small"
+        selection = resolve_local_asr_selection(asr_settings)
+        model_name = selection.model_name
         speaker_name = asr_settings.get("speaker_name", "Speaker 1").strip() or "Speaker 1"
         language_code = asr_settings.get("language", "").strip() or None
         initial_prompt = asr_settings.get("initial_prompt", "").strip() or None
-        device = asr_settings.get("device", "cpu").strip().lower() or "cpu"
-        compute_type = asr_settings.get("compute_type", "int8").strip() or "int8"
-        engine = asr_settings.get("engine", "faster_whisper").strip().lower() or "faster_whisper"
-        profile_name = asr_settings.get("profile_name", "Custom").strip() or "Custom"
-        if device in {"vulkan", "whispercpp", "whisper.cpp"} or compute_type.lower() in {
-            "vulkan",
-            "whispercpp",
-            "whisper.cpp",
-        }:
-            engine = "whispercpp_vulkan"
-        if engine == "whispercpp_vulkan":
-            model_name = "large-v3"
-            device = "vulkan"
-            compute_type = "whisper.cpp"
+        device = selection.acceleration
+        compute_type = selection.faster_whisper_compute_type or ""
+        engine = selection.engine_id
+        profile_name = selection.profile_name
 
         try:
             probe_seconds = int(asr_settings.get("probe_seconds") or 0)
@@ -10371,10 +10366,10 @@ class App(ctk.CTk):
         )
 
         self.transcript_asr_button.configure(state="disabled")
-        engine_label = "whisper.cpp / Vulkan" if engine == "whispercpp_vulkan" else "faster-whisper"
+        engine_label = "whisper.cpp / Vulkan" if engine == ASR_ENGINE_WHISPERCPP_VULKAN else "faster-whisper"
         self.log_message(
             f"Starting local ASR {asr_mode_label} with {engine_label} model: {model_name} "
-            f"({device}/{compute_type})",
+            f"({device}/{compute_type or 'not applicable'})",
             "info"
         )
 
@@ -10680,10 +10675,7 @@ class App(ctk.CTk):
                                 initial_prompt=initial_prompt or "",
                                 device=best.get("device") or device,
                                 compute_type=best.get("compute_type") or compute_type,
-                                engine="whispercpp_vulkan"
-                                if str(best.get("device") or "").strip().lower() == "vulkan"
-                                or str(best.get("compute_type") or "").strip().lower() in {"whisper.cpp", "vulkan", "whispercpp"}
-                                else "faster_whisper",
+                                engine=resolve_local_asr_selection(best).engine_id,
                                 profile_name=profile_name,
                             )
 

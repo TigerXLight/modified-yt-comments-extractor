@@ -76,7 +76,9 @@ def save_asr_defaults(
         "language": language or "",
         "initial_prompt": initial_prompt or "",
         "device": device or DEFAULT_ASR_SETTINGS["device"],
-        "compute_type": compute_type or DEFAULT_ASR_SETTINGS["compute_type"],
+        "compute_type": ""
+        if (engine or "").strip().lower() == "whispercpp_vulkan"
+        else (compute_type or DEFAULT_ASR_SETTINGS["compute_type"]),
     }
 
     path = get_asr_defaults_path()

@@ -15,7 +15,7 @@ def test_asr_defaults_persist_engine_and_profile_without_plain_fallback() -> Non
                 language="en",
                 initial_prompt="Caltheris",
                 device="vulkan",
-                compute_type="whisper.cpp",
+                compute_type="",
                 engine="whispercpp_vulkan",
                 profile_name="Best-tested local profile",
             )
@@ -30,7 +30,7 @@ def test_asr_defaults_persist_engine_and_profile_without_plain_fallback() -> Non
     assert loaded["profile_name"] == "Best-tested local profile"
     assert loaded["model_name"] == "large-v3"
     assert loaded["device"] == "vulkan"
-    assert loaded["compute_type"] == "whisper.cpp"
+    assert loaded["compute_type"] == ""
 
 
 def run_self_test() -> None:

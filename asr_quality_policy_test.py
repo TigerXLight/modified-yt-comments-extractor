@@ -28,7 +28,13 @@ def _base_env():
 def test_benchmarked_whispercpp_vulkan_profile_is_recommended_when_configured() -> None:
     def run():
         return asr_quality_policy.build_auto_quality_recommendation(
-            {"model_name": "small", "device": "cpu", "compute_type": "int8"}
+            {
+                "engine": "whispercpp_vulkan",
+                "profile_name": "Best-tested local profile",
+                "model_name": "large-v3",
+                "device": "vulkan",
+                "compute_type": "",
+            }
         )
 
     env = _base_env()
@@ -43,6 +49,14 @@ def test_benchmarked_whispercpp_vulkan_profile_is_recommended_when_configured() 
 
     assert "Benchmark-backed local profile detected: whisper.cpp / Vulkan / large-v3" in text
     assert "Benchmarked local acceleration uses whisper.cpp / Vulkan / large-v3" in text
+    assert "Resolved selected configuration:" in text
+    assert "- Engine/backend: whisper.cpp" in text
+    assert "- Acceleration: Vulkan" in text
+    assert "- Model: large-v3" in text
+    assert "- Compute type: Not applicable" in text
+    assert "- Resolved runner: asr_whispercpp" in text
+    assert "Engine/backend: faster-whisper" not in text
+    assert "compute=whisper.cpp" not in text
     assert "Best current local path: faster-whisper" not in text
     assert "small is a good default" not in text
     assert "Recommended default" not in text

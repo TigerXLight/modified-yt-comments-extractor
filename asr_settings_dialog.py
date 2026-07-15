@@ -12,8 +12,14 @@ from tkinter import messagebox
 
 from asr_quality_policy import build_auto_quality_recommendation
 from local_asr_capabilities import (
+    ASR_BEST_TESTED_PROFILE,
+    ASR_DEVICE_VULKAN,
+    ASR_ENGINE_FASTER_WHISPER,
+    ASR_ENGINE_WHISPERCPP_VULKAN,
     LocalASRCapabilityInputs,
     build_local_asr_capability_lines,
+    local_asr_settings_from_selection,
+    resolve_local_asr_selection,
 )
 
 
@@ -27,9 +33,6 @@ ASR_COMPUTE_TYPES = [
     "float16",
     "int8_float16",
 ]
-ASR_ENGINE_FASTER_WHISPER = "faster_whisper"
-ASR_ENGINE_WHISPERCPP_VULKAN = "whispercpp_vulkan"
-ASR_BEST_TESTED_PROFILE = "Best-tested local profile"
 ASR_ENGINE_LABELS = {
     ASR_ENGINE_WHISPERCPP_VULKAN: "whisper.cpp — Vulkan",
     ASR_ENGINE_FASTER_WHISPER: "faster-whisper — CPU / NVIDIA CUDA",
@@ -43,8 +46,8 @@ ASR_PROFILES = {
     ASR_BEST_TESTED_PROFILE: {
         "engine": ASR_ENGINE_WHISPERCPP_VULKAN,
         "model_name": "large-v3",
-        "device": "vulkan",
-        "compute_type": "whisper.cpp",
+        "device": ASR_DEVICE_VULKAN,
+        "compute_type": "",
         "note": (
             "Best-tested local profile. Applies: whisper.cpp / Vulkan / "
             "large-v3 using the configured production sidecar runner."
@@ -90,18 +93,8 @@ ASR_PROFILES = {
 
 def normalize_asr_engine(value: str) -> str:
     """Normalize saved/display ASR engine values."""
-    text = (value or "").strip()
-    lowered = text.casefold()
-    if lowered in {
-        ASR_ENGINE_WHISPERCPP_VULKAN,
-        "whispercpp",
-        "whisper.cpp",
-        "whisper.cpp vulkan",
-        "whispercpp_vulkan",
-        "vulkan",
-        ASR_ENGINE_LABELS[ASR_ENGINE_WHISPERCPP_VULKAN].casefold(),
-        ASR_BEST_TESTED_PROFILE.casefold(),
-    }:
+    selection = resolve_local_asr_selection({"engine": value})
+    if selection.engine_id == ASR_ENGINE_WHISPERCPP_VULKAN:
         return ASR_ENGINE_WHISPERCPP_VULKAN
     return ASR_ENGINE_FASTER_WHISPER
 
@@ -117,37 +110,18 @@ def is_whispercpp_engine(engine: str) -> bool:
 
 def best_tested_asr_profile_settings() -> Dict[str, str]:
     """Return the benchmark-backed whisper.cpp Vulkan profile settings."""
-    return {
-        "engine": ASR_ENGINE_WHISPERCPP_VULKAN,
-        "profile_name": ASR_BEST_TESTED_PROFILE,
-        "model_name": "large-v3",
-        "device": "vulkan",
-        "compute_type": "whisper.cpp",
-    }
+    return local_asr_settings_from_selection(resolve_local_asr_selection({"engine": ASR_ENGINE_WHISPERCPP_VULKAN}))
 
 
 def normalize_asr_settings(settings: Dict[str, str]) -> Dict[str, str]:
     """Normalize ASR settings so engine/device/compute agree."""
-    normalized = dict(settings or {})
-    engine = normalize_asr_engine(str(normalized.get("engine") or ""))
-    device = str(normalized.get("device") or "").strip().lower()
-    compute_type = str(normalized.get("compute_type") or "").strip()
-    if device in {"vulkan", "whispercpp", "whisper.cpp"} or compute_type.casefold() in {
-        "vulkan",
-        "whispercpp",
-        "whisper.cpp",
-    }:
-        engine = ASR_ENGINE_WHISPERCPP_VULKAN
-
-    if engine == ASR_ENGINE_WHISPERCPP_VULKAN:
-        normalized.update(best_tested_asr_profile_settings())
-    else:
-        normalized["engine"] = ASR_ENGINE_FASTER_WHISPER
-        normalized["profile_name"] = str(normalized.get("profile_name") or "Custom")
-        normalized["model_name"] = str(normalized.get("model_name") or "small").strip().lower() or "small"
-        normalized["device"] = str(normalized.get("device") or "cpu").strip().lower() or "cpu"
-        normalized["compute_type"] = str(normalized.get("compute_type") or "int8").strip() or "int8"
-    return normalized
+    selection = resolve_local_asr_selection(settings or {})
+    return local_asr_settings_from_selection(
+        selection,
+        speaker_name=str((settings or {}).get("speaker_name") or "Speaker 1"),
+        language=str((settings or {}).get("language") or ""),
+        initial_prompt=str((settings or {}).get("initial_prompt") or ""),
+    )
 
 
 class AsrSettingsDialog(ctk.CTkToplevel):
@@ -574,10 +548,10 @@ class AsrSettingsDialog(ctk.CTkToplevel):
             self.engine_var.set(ASR_ENGINE_LABELS[ASR_ENGINE_WHISPERCPP_VULKAN])
             self.model_combo.configure(values=ASR_WHISPERCPP_MODELS, state="disabled")
             self.device_combo.configure(values=["vulkan"], state="disabled")
-            self.compute_combo.configure(values=["whisper.cpp"], state="disabled")
+            self.compute_combo.configure(values=["Not applicable"], state="disabled")
             self.model_var.set("large-v3")
             self.device_var.set("vulkan")
-            self.compute_type_var.set("whisper.cpp")
+            self.compute_type_var.set("Not applicable")
             self.model_hint_label.configure(
                 text="Best-tested local profile: Engine/backend: whisper.cpp; Acceleration: Vulkan; Model: large-v3."
             )
@@ -614,7 +588,7 @@ class AsrSettingsDialog(ctk.CTkToplevel):
         if engine == ASR_ENGINE_WHISPERCPP_VULKAN:
             model_name = "large-v3"
             device = "vulkan"
-            compute_type = "whisper.cpp"
+            compute_type = ""
         else:
             engine = ASR_ENGINE_FASTER_WHISPER
 
@@ -725,7 +699,10 @@ class AsrSettingsDialog(ctk.CTkToplevel):
         model_name = settings["model_name"]
         device = settings["device"]
         compute_type = settings["compute_type"]
-        engine = normalize_asr_engine(settings.get("engine", ASR_ENGINE_FASTER_WHISPER))
+        selection = resolve_local_asr_selection(settings)
+        model_name = selection.model_name
+        device = selection.acceleration
+        compute_type = selection.faster_whisper_compute_type or ""
 
         cuda_available = False
         cuda_device_name = ""
@@ -783,20 +760,12 @@ class AsrSettingsDialog(ctk.CTkToplevel):
             )
         if whispercpp_vulkan_binary_detected and not whispercpp_vulkan_model_detected:
             lines.append("Reason: the configured whisper.cpp large-v3 model was not found.")
-        if engine == ASR_ENGINE_WHISPERCPP_VULKAN:
-            lines.append(
-                "Selected engine: whisper.cpp / Vulkan / large-v3"
-            )
-        else:
-            lines.append(
-                "Selected engine: faster-whisper / "
-                + ("NVIDIA CUDA" if device == "cuda" else "CPU")
-            )
         lines.append("")
 
         lines.extend(
             build_local_asr_capability_lines(
                 LocalASRCapabilityInputs(
+                    selection=selection,
                     model_name=model_name,
                     device=device,
                     compute_type=compute_type,

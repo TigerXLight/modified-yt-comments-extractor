@@ -13,6 +13,14 @@ import shutil
 import subprocess
 from typing import Any, Dict, List, Optional
 
+from local_asr_capabilities import (
+    ASR_ENGINE_WHISPERCPP_VULKAN,
+    resolve_local_asr_selection,
+    selection_compute_type_label,
+    selection_engine_label,
+    acceleration_label,
+)
+
 
 BENCHMARKED_LOCAL_ASR_ENGINE = "whisper.cpp"
 BENCHMARKED_LOCAL_ASR_ACCELERATION = "Vulkan"
@@ -208,18 +216,21 @@ def build_auto_quality_recommendation(settings: Optional[Dict[str, str]] = None)
     lines.append("- faster-whisper CPU remains available, but CPU speed is a fallback concern, not the accuracy target.")
     lines.append("- If CPU large models are too slow, the app should run a short quality probe before full transcription.")
 
-    selected_model = settings.get("model_name", "")
-    selected_device = settings.get("device", "")
-    selected_compute = settings.get("compute_type", "")
+    selection = resolve_local_asr_selection(settings)
 
-    if selected_model or selected_device or selected_compute:
+    if settings:
         lines.append("")
-        lines.append("Current selected settings:")
-        lines.append(f"- model={selected_model or 'unknown'}")
-        lines.append(f"- device={selected_device or 'unknown'}")
-        lines.append(f"- compute={selected_compute or 'unknown'}")
+        lines.append("Resolved selected configuration:")
+        lines.append(f"- Engine/backend: {selection_engine_label(selection)}")
+        lines.append(f"- Acceleration: {acceleration_label(selection.acceleration)}")
+        lines.append(f"- Model: {selection.model_name}")
+        lines.append(f"- Compute type: {selection_compute_type_label(selection)}")
+        lines.append(f"- Resolved runner: {selection.resolved_runner}")
 
-        if selected_model in {"tiny", "base", "small"}:
+        if (
+            selection.engine_id != ASR_ENGINE_WHISPERCPP_VULKAN
+            and selection.model_name in {"tiny", "base", "small"}
+        ):
             lines.append("[WARNING] This selected model should be treated as draft/preview if clear speech is inaccurate.")
 
     return lines

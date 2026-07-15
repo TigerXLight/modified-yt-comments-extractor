@@ -84,7 +84,7 @@ def test_local_asr_whispercpp_selection_reaches_existing_dispatch_wrapper() -> N
             "language": "en",
             "initial_prompt": "Caltheris",
             "device": "vulkan",
-            "compute_type": "whisper.cpp",
+            "compute_type": "",
         }
         main.load_asr_defaults = lambda: {}
         main.save_asr_defaults = lambda **kwargs: saved.append(dict(kwargs))
@@ -126,7 +126,7 @@ def test_local_asr_whispercpp_selection_reaches_existing_dispatch_wrapper() -> N
     assert len(calls) == 1
     assert calls[0]["model_name"] == "large-v3"
     assert calls[0]["device"] == "vulkan"
-    assert calls[0]["compute_type"] == "whisper.cpp"
+    assert calls[0]["compute_type"] == ""
     assert saved[0]["engine"] == "whispercpp_vulkan"
     assert saved[0]["profile_name"] == "Best-tested local profile"
     assert app.last_asr_metadata["selected_asr_engine"] == "whispercpp_vulkan"
@@ -140,13 +140,13 @@ def test_auto_probe_with_selected_whispercpp_does_not_add_faster_whisper_fallbac
         app,
         selected_model="large-v3",
         selected_device="vulkan",
-        selected_compute_type="whisper.cpp",
+        selected_compute_type="",
     )
 
     assert candidates
     assert all(candidate["engine"] == "whispercpp_vulkan" for candidate in candidates)
     assert {candidate["device"] for candidate in candidates} == {"vulkan"}
-    assert {candidate["compute_type"] for candidate in candidates} == {"whisper.cpp"}
+    assert {candidate["compute_type"] for candidate in candidates} == {""}
 
 
 def run_self_test() -> None:

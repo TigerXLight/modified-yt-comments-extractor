@@ -7,11 +7,17 @@ models, run transcription, probe providers, or contact a network service.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping, Sequence
+from typing import Mapping, Optional, Sequence
 
 
 ASR_DEVICE_CPU = "cpu"
 ASR_DEVICE_CUDA = "cuda"
+ASR_DEVICE_VULKAN = "vulkan"
+ASR_ENGINE_FASTER_WHISPER = "faster_whisper"
+ASR_ENGINE_WHISPERCPP_VULKAN = "whispercpp_vulkan"
+ASR_BEST_TESTED_PROFILE = "Best-tested local profile"
+ASR_RUNNER_FASTER_WHISPER = "asr_tools"
+ASR_RUNNER_WHISPERCPP = "asr_whispercpp"
 BENCHMARKED_LOCAL_ASR_ENGINE = "whisper.cpp"
 BENCHMARKED_LOCAL_ASR_ACCELERATION = "Vulkan"
 BENCHMARKED_LOCAL_ASR_MODEL = "large-v3"
@@ -21,6 +27,7 @@ BENCHMARKED_LOCAL_ASR_MODEL = "large-v3"
 class LocalASRCapabilityInputs:
     """Facts gathered by the caller for local ASR status text."""
 
+    selection: Optional["LocalASRSelection"] = None
     model_name: str = "small"
     device: str = ASR_DEVICE_CPU
     compute_type: str = "int8"
@@ -35,9 +42,124 @@ class LocalASRCapabilityInputs:
     gpu_vendor_hint: str = ""
 
 
+@dataclass(frozen=True)
+class LocalASRSelection:
+    """Resolved Local ASR selection with engine-specific fields."""
+
+    engine_id: str = ASR_ENGINE_FASTER_WHISPER
+    profile_name: str = "Custom"
+    model_name: str = "small"
+    acceleration: str = ASR_DEVICE_CPU
+    faster_whisper_compute_type: Optional[str] = "int8"
+    resolved_runner: str = ASR_RUNNER_FASTER_WHISPER
+
+
+def normalize_asr_engine(value: str) -> str:
+    """Normalize saved/display ASR engine values."""
+    lowered = (value or "").strip().casefold()
+    if "whisper.cpp" in lowered and "vulkan" in lowered:
+        return ASR_ENGINE_WHISPERCPP_VULKAN
+    if lowered in {
+        ASR_ENGINE_WHISPERCPP_VULKAN,
+        "whispercpp",
+        "whisper.cpp",
+        "whisper.cpp vulkan",
+        "vulkan",
+        ASR_BEST_TESTED_PROFILE.casefold(),
+    }:
+        return ASR_ENGINE_WHISPERCPP_VULKAN
+    return ASR_ENGINE_FASTER_WHISPER
+
+
+def resolve_local_asr_selection(settings: Mapping[str, object]) -> LocalASRSelection:
+    """Resolve legacy/current settings into one coherent Local ASR selection."""
+    settings = settings or {}
+    engine = normalize_asr_engine(str(settings.get("engine") or ""))
+    device = str(settings.get("device") or "").strip().lower()
+    compute_type = str(settings.get("compute_type") or "").strip()
+    profile_name = str(settings.get("profile_name") or "Custom")
+
+    # Backwards compatibility for the previous sentinel-like storage shape.
+    if device in {ASR_DEVICE_VULKAN, "whispercpp", "whisper.cpp"} or compute_type.casefold() in {
+        "vulkan",
+        "whispercpp",
+        "whisper.cpp",
+    }:
+        engine = ASR_ENGINE_WHISPERCPP_VULKAN
+
+    if engine == ASR_ENGINE_WHISPERCPP_VULKAN:
+        return LocalASRSelection(
+            engine_id=ASR_ENGINE_WHISPERCPP_VULKAN,
+            profile_name=ASR_BEST_TESTED_PROFILE,
+            model_name=BENCHMARKED_LOCAL_ASR_MODEL,
+            acceleration=ASR_DEVICE_VULKAN,
+            faster_whisper_compute_type=None,
+            resolved_runner=ASR_RUNNER_WHISPERCPP,
+        )
+
+    model_name = str(settings.get("model_name") or "small").strip().lower() or "small"
+    acceleration = device if device in {ASR_DEVICE_CPU, ASR_DEVICE_CUDA} else ASR_DEVICE_CPU
+    faster_compute = compute_type or "int8"
+    return LocalASRSelection(
+        engine_id=ASR_ENGINE_FASTER_WHISPER,
+        profile_name=profile_name,
+        model_name=model_name,
+        acceleration=acceleration,
+        faster_whisper_compute_type=faster_compute,
+        resolved_runner=ASR_RUNNER_FASTER_WHISPER,
+    )
+
+
+def local_asr_settings_from_selection(
+    selection: LocalASRSelection,
+    *,
+    speaker_name: str = "Speaker 1",
+    language: str = "",
+    initial_prompt: str = "",
+) -> dict[str, str]:
+    """Return persistable settings from a resolved Local ASR selection."""
+    if selection.engine_id == ASR_ENGINE_WHISPERCPP_VULKAN:
+        return {
+            "engine": ASR_ENGINE_WHISPERCPP_VULKAN,
+            "profile_name": ASR_BEST_TESTED_PROFILE,
+            "model_name": BENCHMARKED_LOCAL_ASR_MODEL,
+            "speaker_name": speaker_name or "Speaker 1",
+            "language": language or "",
+            "initial_prompt": initial_prompt or "",
+            "device": ASR_DEVICE_VULKAN,
+            "compute_type": "",
+        }
+
+    return {
+        "engine": ASR_ENGINE_FASTER_WHISPER,
+        "profile_name": selection.profile_name or "Custom",
+        "model_name": selection.model_name or "small",
+        "speaker_name": speaker_name or "Speaker 1",
+        "language": language or "",
+        "initial_prompt": initial_prompt or "",
+        "device": selection.acceleration or ASR_DEVICE_CPU,
+        "compute_type": selection.faster_whisper_compute_type or "int8",
+    }
+
+
+def selection_compute_type_label(selection: LocalASRSelection) -> str:
+    """Return the user-facing compute type label for a resolved selection."""
+    if selection.engine_id == ASR_ENGINE_WHISPERCPP_VULKAN:
+        return "Not applicable"
+    return selection.faster_whisper_compute_type or "unknown"
+
+
+def selection_engine_label(selection: LocalASRSelection) -> str:
+    if selection.engine_id == ASR_ENGINE_WHISPERCPP_VULKAN:
+        return BENCHMARKED_LOCAL_ASR_ENGINE
+    return "faster-whisper"
+
+
 def acceleration_label(device: str) -> str:
     """Return a user-facing acceleration label for a stored device value."""
     normalized = (device or "").strip().lower()
+    if normalized == ASR_DEVICE_VULKAN:
+        return BENCHMARKED_LOCAL_ASR_ACCELERATION
     if normalized == ASR_DEVICE_CUDA:
         return "NVIDIA CUDA"
     return "CPU"
@@ -61,6 +183,7 @@ def build_local_asr_capability_lines(
     """Build deterministic local ASR status lines from caller-supplied facts."""
     if not isinstance(inputs, LocalASRCapabilityInputs):
         inputs = LocalASRCapabilityInputs(
+            selection=resolve_local_asr_selection(inputs),
             model_name=str(inputs.get("model_name") or "small"),
             device=str(inputs.get("device") or ASR_DEVICE_CPU),
             compute_type=str(inputs.get("compute_type") or "int8"),
@@ -79,26 +202,36 @@ def build_local_asr_capability_lines(
             gpu_vendor_hint=str(inputs.get("gpu_vendor_hint") or ""),
         )
 
-    model_name = (inputs.model_name or "small").strip() or "small"
-    device = (inputs.device or ASR_DEVICE_CPU).strip().lower() or ASR_DEVICE_CPU
-    compute_type = (inputs.compute_type or "int8").strip() or "int8"
+    selection = inputs.selection or resolve_local_asr_selection(
+        {
+            "model_name": inputs.model_name,
+            "device": inputs.device,
+            "compute_type": inputs.compute_type,
+        }
+    )
+    model_name = selection.model_name
+    device = selection.acceleration
     vendor = normalize_gpu_vendor_hint(inputs.gpu_vendor_hint or inputs.cuda_device_name)
 
     lines: list[str] = []
 
+    lines.append("Selected configuration:")
+    lines.append(f"- Engine/backend: {selection_engine_label(selection)}")
+    lines.append(f"- Acceleration: {acceleration_label(selection.acceleration)}")
+    lines.append(f"- Model: {selection.model_name}")
+    lines.append(f"- Compute type: {selection_compute_type_label(selection)}")
+    lines.append(f"- Resolved runner: {selection.resolved_runner}")
+
+    lines.append("")
+    lines.append("Available backends:")
     if inputs.faster_whisper_available:
-        lines.append("[OK] faster-whisper backend is installed.")
+        lines.append("- faster-whisper backend: Installed")
     else:
         error = (inputs.faster_whisper_error or "").strip()
         lines.append(
-            "[MISSING] faster-whisper backend import failed"
+            "- faster-whisper backend: Import failed"
             + (f": {error}" if error else ".")
         )
-
-    lines.append("[INFO] Engine/backend: faster-whisper")
-    lines.append(f"[INFO] Selected acceleration: {acceleration_label(device)}")
-    lines.append(f"[INFO] Selected model: {model_name}")
-    lines.append(f"[INFO] Selected compute type: {compute_type}")
 
     if device == ASR_DEVICE_CUDA:
         if inputs.cuda_available:
@@ -111,7 +244,7 @@ def build_local_asr_capability_lines(
                 "NVIDIA CUDA runtime/device was detected."
                 + (f" {error}" if error else "")
             )
-    else:
+    elif device == ASR_DEVICE_CPU:
         lines.append("[OK] CPU acceleration selected.")
 
     if model_name in {"medium", "large-v3"} and device == ASR_DEVICE_CPU:
