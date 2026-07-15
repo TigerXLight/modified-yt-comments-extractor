@@ -78,6 +78,10 @@ from asr_provider_action import (
     ASRProviderActionCoordinator,
     ASR_PROVIDER_ACTION_TRANSCRIBE,
 )
+from asr_connection_test import (
+    ASRConnectionTestCoordinator,
+    ASRConnectionTestStatus,
+)
 from elevenlabs_scribe_provider import (
     ELEVENLABS_SCRIBE_CREDENTIAL_ID,
     ELEVENLABS_SCRIBE_MODEL_ID,
@@ -87,10 +91,29 @@ from elevenlabs_scribe_provider import (
     ElevenLabsScribeValidationError,
 )
 from elevenlabs_scribe_transport import create_elevenlabs_scribe_sdk_provider_executor
+from elevenlabs_key_validation import (
+    ELEVENLABS_KEY_VALIDATION_AUTH_FAILED,
+    ELEVENLABS_KEY_VALIDATION_COULD_NOT_COMPLETE,
+    ElevenLabsKeyValidationError,
+    ElevenLabsModelsListKeyValidator,
+)
 from access_keys_dialog import (
     ACCESS_KEYS_BUTTON_TEXT,
     AccessKeysWindow,
     open_or_focus_access_keys_window,
+)
+from provider_key_validation import (
+    KEY_VALIDATION_COULD_NOT_COMPLETE,
+    KEY_VALIDATION_FAILED,
+    KEY_VALIDATION_NOT_CONFIGURED,
+    KEY_VALIDATION_VALIDATED,
+    KEY_STATUS_NO_KEY_CONFIGURED,
+    ProviderKeyValidationRecord,
+    current_utc_timestamp,
+    normalize_validation_records,
+    validation_record_for_cleared_key,
+    validation_records_to_settings_dict,
+    validation_status_text_for_state,
 )
 from credential_runtime_status import (
     CredentialPresenceState,
@@ -353,6 +376,7 @@ class App(ctk.CTk):
         self.online_asr_provider_id: str = ONLINE_ASR_DEFAULT_PROVIDER_ID
         self.online_asr_provider_selection_status: str = ""
         self.access_keys_added_provider_ids: tuple[str, ...] = ()
+        self.access_keys_validation_states: dict[str, dict[str, str]] = {}
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
@@ -630,6 +654,10 @@ class App(ctk.CTk):
                 self,
                 credential_store=credential_store,
                 credential_status_provider=credential_status_provider,
+                validation_records=self._get_access_keys_validation_records(),
+                on_validation_records_change=self._set_access_keys_validation_records,
+                validate_provider_key=self._validate_cloud_asr_provider_key,
+                browser_opener=webbrowser.open,
                 added_entry_ids=self._get_access_keys_added_provider_ids(),
                 on_added_entry_ids_change=self._set_access_keys_added_provider_ids,
                 on_close=self._on_access_keys_window_closed,
@@ -673,6 +701,95 @@ class App(ctk.CTk):
         except Exception:
             logger.error("Failed to persist Access & Keys provider list safely.")
             return False
+
+    def _get_access_keys_validation_records(self) -> dict[str, dict[str, str]]:
+        records = normalize_validation_records(
+            getattr(self, "access_keys_validation_states", {}) or {}
+        )
+        self.access_keys_validation_states = validation_records_to_settings_dict(
+            records
+        )
+        return dict(self.access_keys_validation_states)
+
+    def _set_access_keys_validation_records(
+        self,
+        records: dict[str, dict[str, str]],
+    ) -> None:
+        normalized = normalize_validation_records(records)
+        self.access_keys_validation_states = validation_records_to_settings_dict(
+            normalized
+        )
+        self._persist_access_keys_validation_records()
+
+    def _persist_access_keys_validation_records(self) -> bool:
+        try:
+            load_preferences = getattr(
+                self.settings_manager,
+                "load_preferences_only",
+                self.settings_manager.load,
+            )
+            settings = load_preferences()
+            settings.api_key = ""
+            settings.access_keys_validation_states = (
+                self._get_access_keys_validation_records()
+            )
+            return self.settings_manager.save(settings)
+        except Exception:
+            logger.error("Failed to persist Access & Keys validation state safely.")
+            return False
+
+    def _validate_cloud_asr_provider_key(
+        self,
+        provider_id: str,
+        *,
+        coordinator: ASRConnectionTestCoordinator | None = None,
+        tester: object | None = None,
+    ) -> ProviderKeyValidationRecord:
+        normalized = (provider_id or "").strip()
+        test_coordinator = coordinator or ASRConnectionTestCoordinator()
+        trusted_tester = tester
+        if trusted_tester is None and normalized == ELEVENLABS_SCRIBE_PROVIDER_ID:
+            trusted_tester = ElevenLabsModelsListKeyValidator()
+        failure_category = ""
+
+        def safe_tester(provider: str, credential: str) -> object:
+            nonlocal failure_category
+            try:
+                return trusted_tester(provider, credential)  # type: ignore[misc]
+            except ElevenLabsKeyValidationError as exc:
+                failure_category = exc.category
+                raise
+
+        result = test_coordinator.test_provider_connection(
+            normalized,
+            tester=safe_tester if trusted_tester is not None else None,
+        )
+        if result.status is ASRConnectionTestStatus.TESTER_COMPLETED:
+            state = KEY_VALIDATION_VALIDATED
+            diagnostic = "key_validation_succeeded"
+        elif (
+            result.status is ASRConnectionTestStatus.TESTER_FAILED
+            and failure_category == ELEVENLABS_KEY_VALIDATION_AUTH_FAILED
+        ):
+            state = KEY_VALIDATION_FAILED
+            diagnostic = ELEVENLABS_KEY_VALIDATION_AUTH_FAILED
+        elif result.status is ASRConnectionTestStatus.CREDENTIAL_UNAVAILABLE:
+            state = KEY_VALIDATION_NOT_CONFIGURED
+            diagnostic = result.safe_diagnostic or "credential_unavailable"
+        else:
+            state = KEY_VALIDATION_COULD_NOT_COMPLETE
+            diagnostic = (
+                failure_category
+                or
+                result.safe_diagnostic
+                or ELEVENLABS_KEY_VALIDATION_COULD_NOT_COMPLETE
+            )
+        return ProviderKeyValidationRecord(
+            provider_id=normalized,
+            state=state,
+            checked_at_utc=current_utc_timestamp(),
+            safe_diagnostic=diagnostic,
+        )
 
     def _ensure_asr_cog_icons(self) -> None:
         """Load shared Local/Online ASR cog icons once."""
@@ -3068,6 +3185,9 @@ class App(ctk.CTk):
                 )
                 if str(entry_id or "").strip()
             )
+            self.access_keys_validation_states = dict(
+                getattr(settings, "access_keys_validation_states", {}) or {}
+            )
 
         except Exception as e:
             logger.error(f"Failed to load settings: {e}")
@@ -3088,6 +3208,9 @@ class App(ctk.CTk):
                 whitelist_patterns=self._whitelist_patterns,
                 online_asr_provider_id=self._get_online_asr_provider_id(),
                 access_keys_added_provider_ids=self._get_access_keys_added_provider_ids(),
+                access_keys_validation_states=dict(
+                    getattr(self, "access_keys_validation_states", {}) or {}
+                ),
             )
             saved = self.settings_manager.save(settings)
             if not saved:
@@ -8169,13 +8292,20 @@ class App(ctk.CTk):
     def _online_asr_status_label(
         self,
         status: CredentialRuntimeStatus | None,
+        *,
+        provider_id: str = ELEVENLABS_SCRIBE_PROVIDER_ID,
     ) -> str:
         if status is None:
             return "Unavailable"
         if status.state is CredentialPresenceState.CONFIGURED:
-            return "Configured"
+            record = normalize_validation_records(
+                self._get_access_keys_validation_records()
+            ).get(provider_id)
+            if record is not None:
+                return validation_status_text_for_state(record.state)
+            return validation_status_text_for_state("not_yet_validated")
         if status.state is CredentialPresenceState.MISSING:
-            return "Not configured"
+            return KEY_STATUS_NO_KEY_CONFIGURED
         if status.state is CredentialPresenceState.BACKEND_UNAVAILABLE:
             return "Unavailable"
         return "Status error"
@@ -8251,7 +8381,10 @@ class App(ctk.CTk):
         detail_title_var = tk.StringVar(value=selected_option.display_name)
         detail_model_var = tk.StringVar(value=f"Model: {selected_option.model_id}")
         detail_status_var = tk.StringVar(
-            value=f"Credential status: {self._online_asr_status_label(selected_status)}"
+            value=self._online_asr_status_label(
+                selected_status,
+                provider_id=selected_option.provider_id,
+            )
         )
         detail_note_var = tk.StringVar(
             value=(
@@ -8266,7 +8399,10 @@ class App(ctk.CTk):
             detail_title_var.set(option.display_name)
             detail_model_var.set(f"Model: {option.model_id}")
             detail_status_var.set(
-                f"Credential status: {self._online_asr_status_label(status)}"
+                self._online_asr_status_label(
+                    status,
+                    provider_id=option.provider_id,
+                )
             )
             detail_note_var.set("Provider selection is local metadata only.")
 

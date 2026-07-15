@@ -44,6 +44,7 @@ from access_keys_dialog import (
     AccessKeysWindow,
     access_keys_detail_lines,
     build_default_access_keys_catalog,
+    credential_detail_status_text,
     open_or_focus_access_keys_window,
     status_icon_key,
     user_status_text,
@@ -51,6 +52,12 @@ from access_keys_dialog import (
 )
 from access_keys_view_model import AccessKeysEntryView
 from credential_store import InMemoryCredentialStore
+from provider_key_validation import (
+    KEY_VALIDATION_COULD_NOT_COMPLETE,
+    KEY_VALIDATION_VALIDATED,
+    KEY_STATUS_SAVED_NOT_VALIDATED,
+    ProviderKeyValidationRecord,
+)
 
 
 class _FakeAccessKeysWindow:
@@ -123,6 +130,14 @@ class _FakeStatusLabel:
         self.text = text
 
 
+class _FakeActionButton:
+    def __init__(self) -> None:
+        self.options: dict[str, object] = {}
+
+    def configure(self, **kwargs: object) -> None:
+        self.options.update(kwargs)
+
+
 class _FakePanel:
     def __init__(self) -> None:
         self.visible = False
@@ -132,6 +147,41 @@ class _FakePanel:
 
     def grid_remove(self) -> None:
         self.visible = False
+
+
+class _FakePopup:
+    def __init__(self) -> None:
+        self.placed = False
+        self.lift_count = 0
+
+    def place(self, **_kwargs: object) -> None:
+        self.placed = True
+
+    def place_forget(self) -> None:
+        self.placed = False
+
+    def lift(self) -> None:
+        self.lift_count += 1
+
+    def __str__(self) -> str:
+        return ".popup"
+
+
+class _FakeFocusButton:
+    def __init__(self) -> None:
+        self.focus_count = 0
+
+    def focus_set(self) -> None:
+        self.focus_count += 1
+
+    def winfo_rootx(self) -> int:
+        return 420
+
+    def winfo_rooty(self) -> int:
+        return 120
+
+    def winfo_height(self) -> int:
+        return 24
 
 
 def _function_source(module_source: str, name: str) -> str:
@@ -273,7 +323,7 @@ def test_my_providers_subset_and_status_semantics() -> None:
         for entry in section.entries
     }
     assert status_icon_key(selected) == "missing"
-    assert user_status_text(selected) == "No key saved"
+    assert user_status_text(selected) == "No key configured"
 
     saved = AccessKeysEntryView(
         entry_id="asr:elevenlabs_scribe",
@@ -286,8 +336,12 @@ def test_my_providers_subset_and_status_semantics() -> None:
         last_test_status="TEST_NOT_RUN",
     )
     assert status_icon_key(saved) == "saved"
-    assert user_status_text(saved) == "Key saved — not yet validated"
+    assert user_status_text(saved) == KEY_STATUS_SAVED_NOT_VALIDATED
     assert "incorrect" not in user_status_text(saved).casefold()
+    assert (
+        credential_detail_status_text(saved)
+        == "Key saved securely. The key has not yet been checked with the provider. Existing keys are never displayed."
+    )
 
     verified = AccessKeysEntryView(
         entry_id="asr:elevenlabs_scribe",
@@ -300,7 +354,7 @@ def test_my_providers_subset_and_status_semantics() -> None:
         last_test_status="TEST_PASSED",
     )
     assert status_icon_key(verified) == "verified"
-    assert user_status_text(verified) == "Verified"
+    assert user_status_text(verified) == "Key validated successfully"
 
     rejected = AccessKeysEntryView(
         entry_id="asr:elevenlabs_scribe",
@@ -367,6 +421,97 @@ def test_add_and_remove_provider_metadata_only() -> None:
     AccessKeysWindow._remove_selected_provider(window)
     assert window._added_entry_ids == ()
     assert events[-1] == ()
+
+
+def test_provider_row_text_is_compact_and_status_sentence_stays_in_details() -> None:
+    entry = AccessKeysEntryView(
+        entry_id="asr:elevenlabs_scribe",
+        display_name="ElevenLabs Scribe v2",
+        entry_kind=AccessEntryKind.ASR_PROVIDER,
+        platform_family="asr",
+        implementation_state="provider metadata only",
+        access_mode="API_KEY",
+        credential_status="CONFIGURED_UNTESTED",
+        last_test_status="TEST_NOT_RUN",
+    )
+
+    row_text = AccessKeysWindow._button_text(entry)
+
+    assert row_text == "ElevenLabs Scribe v2"
+    assert "\n" not in row_text
+    assert "\\n" not in row_text
+    assert KEY_STATUS_SAVED_NOT_VALIDATED not in row_text
+    assert KEY_STATUS_SAVED_NOT_VALIDATED == user_status_text(entry)
+
+
+def test_provider_links_use_injected_browser_opener_only_on_explicit_click() -> None:
+    opened: list[str] = []
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    window._browser_opener = lambda url: opened.append(url)
+
+    AccessKeysWindow._open_provider_link(window, "Provider website")
+    AccessKeysWindow._open_provider_link(window, "Get API key")
+    AccessKeysWindow._open_provider_link(window, "View current pricing")
+    AccessKeysWindow._open_provider_link(window, "Untrusted")
+
+    assert opened == [
+        "https://elevenlabs.io/",
+        "https://elevenlabs.io/app/settings/api-keys",
+        "https://elevenlabs.io/pricing",
+    ]
+
+
+def test_add_provider_popup_closes_on_escape_outside_click_and_same_plus() -> None:
+    events: list[tuple[str, object]] = []
+    origin = _FakeFocusButton()
+    other = _FakeFocusButton()
+    popup = _FakePopup()
+    search = _FakeFocusButton()
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    window._add_provider_popup_visible = False
+    window._active_add_group_id = ""
+    window._section_add_buttons = {"asr_providers": origin, "social_media": other}
+    window.add_provider_popup = popup
+    window.add_provider_search_entry = search
+    window._add_provider_origin_button = None
+    window._add_provider_click_bind_id = None
+    window._add_provider_escape_bind_id = None
+    window._add_provider_search_var = type(
+        "Var",
+        (),
+        {"set": lambda self, value: events.append(("search", value))},
+    )()
+    window._refresh_add_provider_results = lambda: events.append(("refresh", ""))
+    window._hide_family_menu = lambda: events.append(("hide_family", ""))
+    window.update_idletasks = lambda: None
+    window.winfo_rootx = lambda: 100
+    window.winfo_rooty = lambda: 50
+    window.bind = lambda event, callback, add=None: f"bind:{event}:{len(events)}"
+    window.unbind = lambda event, token: events.append(("unbind", (event, token)))
+
+    AccessKeysWindow._show_add_provider_popup(window, "asr_providers")
+    assert popup.placed is True
+    assert window._add_provider_popup_visible is True
+    assert search.focus_count == 1
+
+    AccessKeysWindow._show_add_provider_popup(window, "asr_providers")
+    assert popup.placed is False
+    assert window._add_provider_popup_visible is False
+    assert origin.focus_count == 1
+    assert any(event[0] == "unbind" for event in events)
+
+    AccessKeysWindow._show_add_provider_popup(window, "asr_providers")
+    inside_event = type("Event", (), {"widget": ".popup.search"})()
+    AccessKeysWindow._on_add_provider_global_click(window, inside_event)
+    assert window._add_provider_popup_visible is True
+
+    outside_event = type("Event", (), {"widget": ".main.search"})()
+    AccessKeysWindow._on_add_provider_global_click(window, outside_event)
+    assert window._add_provider_popup_visible is False
+
+    AccessKeysWindow._show_add_provider_popup(window, "asr_providers")
+    AccessKeysWindow._hide_add_provider_popup_event(window, object())
+    assert window._add_provider_popup_visible is False
 
 
 def test_single_window_lifecycle() -> None:
@@ -522,7 +667,10 @@ def test_cloud_asr_credential_controls_are_scoped_and_masked() -> None:
     window._credential_store = InMemoryCredentialStore()
     window.credential_entry = _FakeCredentialEntry("old draft")
     window.credential_action_status_label = _FakeStatusLabel()
+    window.credential_validate_button = _FakeActionButton()
     window.credential_action_panel = _FakePanel()
+    window._validate_provider_key = None
+    window._validation_busy_provider_id = ""
 
     cloud_entry = AccessKeysEntryView(
         entry_id="asr:elevenlabs_scribe",
@@ -531,7 +679,7 @@ def test_cloud_asr_credential_controls_are_scoped_and_masked() -> None:
         platform_family="asr",
         implementation_state="provider metadata only",
         access_mode="API_KEY",
-        credential_status="REQUIRED_MISSING",
+        credential_status="CONFIGURED_UNTESTED",
     )
     AccessKeysWindow._render_credential_controls(window, cloud_entry)
     assert window._current_credential_id == "elevenlabs_scribe_api_key"
@@ -571,6 +719,11 @@ def test_cloud_asr_save_and_clear_use_fake_store_without_retaining_value() -> No
     window = AccessKeysWindow.__new__(AccessKeysWindow)
     window._credential_store = store
     window._current_credential_id = "elevenlabs_scribe_api_key"
+    window._current_credential_entry_id = "asr:elevenlabs_scribe"
+    window._validation_records = {}
+    window._base_catalog = build_default_access_keys_catalog()
+    window._full_catalog = window._base_catalog
+    window._on_validation_records_change = lambda _data: None
     window.credential_entry = _FakeCredentialEntry(secret)
     window.credential_action_status_label = _FakeStatusLabel()
     window._refresh_runtime_statuses_after_credential_action = (
@@ -593,6 +746,98 @@ def test_cloud_asr_save_and_clear_use_fake_store_without_retaining_value() -> No
     _assert_entry_masked(window.credential_entry)
     assert "cleared" in window.credential_action_status_label.text.casefold()
     assert refresh_events == ["refresh", "refresh"]
+
+
+def test_validate_key_blocks_missing_key_before_dispatch() -> None:
+    dispatch_calls: list[str] = []
+    missing = AccessKeysEntryView(
+        entry_id="asr:elevenlabs_scribe",
+        display_name="ElevenLabs Scribe",
+        entry_kind=AccessEntryKind.ASR_PROVIDER,
+        platform_family="asr",
+        implementation_state="provider metadata only",
+        access_mode="API_KEY",
+        credential_status="REQUIRED_MISSING",
+    )
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    window._current_validation_provider_id = "elevenlabs_scribe"
+    window._current_credential_entry_id = "asr:elevenlabs_scribe"
+    window._validation_busy_provider_id = ""
+    window._validate_provider_key = lambda provider_id: dispatch_calls.append(provider_id)
+    window._entry_views = {"asr:elevenlabs_scribe": missing}
+    window.credential_action_status_label = _FakeStatusLabel()
+
+    AccessKeysWindow._validate_selected_credential(window)
+
+    assert dispatch_calls == []
+    assert window.credential_action_status_label.text == "No key configured"
+
+
+def test_validate_key_dispatches_once_and_records_safe_success() -> None:
+    original_thread = access_keys_dialog.threading.Thread
+    records: list[dict[str, dict[str, str]]] = []
+
+    class ImmediateThread:
+        created: list[object] = []
+
+        def __init__(self, *, target: object, daemon: bool) -> None:
+            self.target = target
+            self.daemon = daemon
+            self.__class__.created.append(self)
+
+        def start(self) -> None:
+            self.target()
+
+    saved = AccessKeysEntryView(
+        entry_id="asr:elevenlabs_scribe",
+        display_name="ElevenLabs Scribe",
+        entry_kind=AccessEntryKind.ASR_PROVIDER,
+        platform_family="asr",
+        implementation_state="provider metadata only",
+        access_mode="API_KEY",
+        credential_status="CONFIGURED_UNTESTED",
+    )
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    window._closed = False
+    window._current_validation_provider_id = "elevenlabs_scribe"
+    window._current_credential_entry_id = "asr:elevenlabs_scribe"
+    window._validation_busy_provider_id = ""
+    window._entry_views = {"asr:elevenlabs_scribe": saved}
+    window._validation_records = {}
+    window._base_catalog = build_default_access_keys_catalog()
+    window._full_catalog = window._base_catalog
+    window._on_validation_records_change = lambda data: records.append(data)
+    window._refresh_runtime_statuses_after_credential_action = lambda: None
+    window._validate_provider_key = lambda provider_id: ProviderKeyValidationRecord(
+        provider_id=provider_id,
+        state=KEY_VALIDATION_VALIDATED,
+        safe_diagnostic="key_validation_succeeded",
+    )
+    window.after = lambda _delay, callback: callback()
+    window.credential_validate_button = _FakeActionButton()
+    window.credential_action_status_label = _FakeStatusLabel()
+
+    access_keys_dialog.threading.Thread = ImmediateThread
+    try:
+        AccessKeysWindow._validate_selected_credential(window)
+    finally:
+        access_keys_dialog.threading.Thread = original_thread
+
+    assert len(ImmediateThread.created) == 1
+    assert window.credential_action_status_label.text == "Key validated successfully"
+    assert records[-1]["elevenlabs_scribe"]["state"] == KEY_VALIDATION_VALIDATED
+    assert window.credential_validate_button.options["state"] == "normal"
+
+
+def test_validate_key_safe_failure_becomes_could_not_validate() -> None:
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    record = AccessKeysWindow._record_from_validation_exception(
+        "elevenlabs_scribe",
+        RuntimeError("network timeout"),
+    )
+
+    assert record.provider_id == "elevenlabs_scribe"
+    assert record.state == KEY_VALIDATION_COULD_NOT_COMPLETE
 
 
 def test_cloud_asr_save_failure_clears_draft_and_uses_safe_message() -> None:
@@ -803,12 +1048,18 @@ def run_self_test() -> None:
     test_sidebar_button_preserves_api_key_entry()
     test_my_providers_subset_and_status_semantics()
     test_add_and_remove_provider_metadata_only()
+    test_provider_row_text_is_compact_and_status_sentence_stays_in_details()
+    test_provider_links_use_injected_browser_opener_only_on_explicit_click()
+    test_add_provider_popup_closes_on_escape_outside_click_and_same_plus()
     test_single_window_lifecycle()
     test_fast_selection_path_updates_only_changed_controls()
     test_filter_changes_reset_scroll_to_top()
     test_cloud_asr_credential_entry_mask_is_effective_on_creation()
     test_cloud_asr_credential_controls_are_scoped_and_masked()
     test_cloud_asr_save_and_clear_use_fake_store_without_retaining_value()
+    test_validate_key_blocks_missing_key_before_dispatch()
+    test_validate_key_dispatches_once_and_records_safe_success()
+    test_validate_key_safe_failure_becomes_could_not_validate()
     test_cloud_asr_save_failure_clears_draft_and_uses_safe_message()
     test_static_selector_and_no_flicker_design()
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from typing import Callable, Mapping, Optional, Sequence
 
 import customtkinter as ctk
@@ -29,6 +30,29 @@ from access_keys_view_model import (
     build_access_keys_manager_view,
 )
 from core.constants import COLORS
+from provider_key_validation import (
+    KEY_VALIDATION_COULD_NOT_COMPLETE,
+    KEY_VALIDATION_FAILED,
+    KEY_VALIDATION_NOT_CONFIGURED,
+    KEY_VALIDATION_NOT_YET_VALIDATED,
+    KEY_VALIDATION_VALIDATED,
+    KEY_STATUS_NO_KEY_CONFIGURED,
+    KEY_STATUS_NO_KEY_NEEDED,
+    KEY_STATUS_SAVED_NOT_VALIDATED,
+    KEY_STATUS_VALIDATED,
+    ProviderKeyValidationRecord,
+    access_entry_id_for_provider_id,
+    apply_provider_key_validation_records,
+    current_utc_timestamp,
+    normalize_provider_id,
+    normalize_validation_records,
+    provider_id_for_access_entry_id,
+    validation_icon_key_for_state,
+    validation_record_for_cleared_key,
+    validation_record_for_saved_key,
+    validation_records_to_settings_dict,
+    validation_status_text_for_state,
+)
 
 
 ACCESS_KEYS_WINDOW_TITLE = "Access & Keys"
@@ -319,14 +343,24 @@ def _validation_failure_text(entry: AccessKeysEntryView) -> str:
 def user_status_text(entry: AccessKeysEntryView) -> str:
     key = status_icon_key(entry)
     if key == "verified":
-        return "Verified"
+        return KEY_STATUS_VALIDATED
     if key == "warning":
         return _validation_failure_text(entry)
     if key == "saved":
-        return "Key saved — not yet validated"
+        return KEY_STATUS_SAVED_NOT_VALIDATED
     if entry.credential_status == "NOT_NEEDED":
-        return "No key needed"
-    return "No key saved"
+        return KEY_STATUS_NO_KEY_NEEDED
+    return KEY_STATUS_NO_KEY_CONFIGURED
+
+
+def credential_detail_status_text(entry: AccessKeysEntryView) -> str:
+    status_text = user_status_text(entry)
+    if status_icon_key(entry) == "saved":
+        return (
+            "Key saved securely. The key has not yet been checked with the provider. "
+            "Existing keys are never displayed."
+        )
+    return f"{status_text}. Existing keys are never displayed."
 
 
 class AccessKeysWindow(ctk.CTkToplevel):
@@ -343,6 +377,14 @@ class AccessKeysWindow(ctk.CTkToplevel):
         credential_status_provider: Optional[
             Callable[[], Mapping[str, CredentialRuntimeStatus]]
         ] = None,
+        validation_records: Optional[Mapping[str, object]] = None,
+        on_validation_records_change: Optional[
+            Callable[[dict[str, dict[str, str]]], None]
+        ] = None,
+        validate_provider_key: Optional[
+            Callable[[str], ProviderKeyValidationRecord]
+        ] = None,
+        browser_opener: Optional[Callable[[str], object]] = None,
         added_entry_ids: Sequence[str] = (),
         on_added_entry_ids_change: Optional[Callable[[tuple[str, ...]], None]] = None,
         on_close: Optional[Callable[[], None]] = None,
@@ -361,9 +403,18 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._list_scroll_reset_after_id: Optional[str] = None
         self._credential_store = credential_store
         self._credential_status_provider = credential_status_provider
+        self._validation_records = normalize_validation_records(validation_records)
+        self._on_validation_records_change = on_validation_records_change
+        self._validate_provider_key = validate_provider_key
+        self._browser_opener = browser_opener
+        self._validation_busy_provider_id = ""
         self._current_credential_entry_id = ""
         self._current_credential_id = ""
+        self._current_validation_provider_id = ""
         self._runtime_status_checked_entry_ids: set[str] = set()
+        self._add_provider_click_bind_id: Optional[str] = None
+        self._add_provider_escape_bind_id: Optional[str] = None
+        self._add_provider_origin_button: Optional[object] = None
 
         if catalog is None:
             bundle = build_default_access_keys_catalog_bundle()
@@ -391,6 +442,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
                 self._full_catalog,
                 credential_statuses,
             )
+        self._apply_validation_records_to_catalogs()
         my_bundle = self._my_provider_bundle()
         self.controller = AccessKeysDialogController(
             my_bundle.catalog,
@@ -419,7 +471,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
         ] = {}
         self._status_icon_images: dict[str, object] = self._load_status_icons()
         self._add_provider_buttons: dict[str, ctk.CTkButton] = {}
-        self._link_widgets: dict[str, ctk.CTkLabel] = {}
+        self._link_widgets: dict[str, ctk.CTkButton] = {}
 
         self._build_widgets()
         initial_view = self.controller.view()
@@ -455,6 +507,29 @@ class AccessKeysWindow(ctk.CTkToplevel):
     def _notify_added_entry_ids_changed(self) -> None:
         if self._on_added_entry_ids_change is not None:
             self._on_added_entry_ids_change(tuple(self._added_entry_ids))
+
+    def _apply_validation_records_to_catalogs(self) -> None:
+        if not self._validation_records:
+            return
+        self._base_catalog = apply_provider_key_validation_records(
+            self._base_catalog,
+            self._validation_records,
+        )
+        self._full_catalog = apply_provider_key_validation_records(
+            self._full_catalog,
+            self._validation_records,
+        )
+
+    def _set_validation_record(self, record: ProviderKeyValidationRecord) -> None:
+        provider_id = normalize_provider_id(record.provider_id)
+        if not provider_id:
+            return
+        self._validation_records[provider_id] = record
+        self._apply_validation_records_to_catalogs()
+        if self._on_validation_records_change is not None:
+            self._on_validation_records_change(
+                validation_records_to_settings_dict(self._validation_records)
+            )
 
     def _asset_base_dir(self) -> str:
         if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
@@ -792,20 +867,23 @@ class AccessKeysWindow(ctk.CTkToplevel):
             pady=(8, 2),
         )
         self.detail_links_frame.grid_columnconfigure(0, weight=1)
-        self.detail_link_labels: dict[str, ctk.CTkLabel] = {}
+        self.detail_link_labels: dict[str, ctk.CTkButton] = {}
         for link_index, label in enumerate(ELEVENLABS_LINKS):
-            link_label = ctk.CTkLabel(
+            link_label = ctk.CTkButton(
                 self.detail_links_frame,
-                text="",
+                text=label,
+                command=lambda label=label: self._open_provider_link(label),
+                anchor="w",
+                height=28,
                 font=ctk.CTkFont(size=11, weight="bold"),
+                fg_color="transparent",
+                hover_color=COLORS["accent_hover"],
                 text_color=COLORS["accent_hover"],
-                wraplength=500,
-                justify="left",
             )
             link_label.grid(
                 row=link_index,
                 column=0,
-                sticky="w",
+                sticky="ew",
                 pady=(0, 3),
             )
             link_label.grid_remove()
@@ -877,6 +955,22 @@ class AccessKeysWindow(ctk.CTkToplevel):
             padx=(0, 10),
             pady=(4, 8),
         )
+        self.credential_validate_button = ctk.CTkButton(
+            self.credential_action_panel,
+            text="Validate key",
+            command=self._validate_selected_credential,
+            height=30,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["accent_hover"],
+        )
+        self.credential_validate_button.grid(
+            row=2,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            padx=10,
+            pady=(0, 8),
+        )
         self.credential_action_status_label = ctk.CTkLabel(
             self.credential_action_panel,
             text="",
@@ -885,7 +979,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
             justify="left",
         )
         self.credential_action_status_label.grid(
-            row=2,
+            row=3,
             column=0,
             columnspan=3,
             sticky="ew",
@@ -915,7 +1009,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
     @staticmethod
     def _button_text(entry: AccessKeysEntryView) -> str:
         suffix = " - Planned" if entry.planned_only else ""
-        return f"{entry.display_name}{suffix}`n{user_status_text(entry)}"
+        return f"{entry.display_name}{suffix}"
 
     @staticmethod
     def _base_entry_color(entry: AccessKeysEntryView) -> str:
@@ -1019,24 +1113,90 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._hide_add_provider_popup()
         return "break"
 
+    def _bind_add_provider_popup_events(self) -> None:
+        if self._add_provider_click_bind_id is None:
+            self._add_provider_click_bind_id = self.bind(
+                "<Button-1>",
+                self._on_add_provider_global_click,
+                add="+",
+            )
+        if self._add_provider_escape_bind_id is None:
+            self._add_provider_escape_bind_id = self.bind(
+                "<Escape>",
+                self._hide_add_provider_popup_event,
+                add="+",
+            )
+
+    def _unbind_add_provider_popup_events(self) -> None:
+        if self._add_provider_click_bind_id is not None:
+            try:
+                self.unbind("<Button-1>", self._add_provider_click_bind_id)
+            except Exception:
+                pass
+            self._add_provider_click_bind_id = None
+        if self._add_provider_escape_bind_id is not None:
+            try:
+                self.unbind("<Escape>", self._add_provider_escape_bind_id)
+            except Exception:
+                pass
+            self._add_provider_escape_bind_id = None
+
+    def _widget_is_inside_add_provider_popup(self, widget: object) -> bool:
+        popup_name = str(getattr(self, "add_provider_popup", ""))
+        widget_name = str(widget or "")
+        return bool(popup_name and widget_name.startswith(popup_name))
+
+    def _on_add_provider_global_click(self, event: object) -> None:
+        if not self._add_provider_popup_visible:
+            return
+        widget = getattr(event, "widget", None)
+        if self._widget_is_inside_add_provider_popup(widget):
+            return
+        if widget in self._section_add_buttons.values():
+            return
+        self._hide_add_provider_popup()
+
     def _show_add_provider_popup(self, section_id: str) -> None:
         self._hide_family_menu()
+        if (
+            self._add_provider_popup_visible
+            and self._active_add_group_id == section_id
+        ):
+            self._hide_add_provider_popup()
+            return
+        if self._add_provider_popup_visible:
+            self._hide_add_provider_popup()
         self._active_add_group_id = section_id
         self._add_provider_search_var.set("")
         self._refresh_add_provider_results()
         button = self._section_add_buttons[section_id]
+        self._add_provider_origin_button = button
         self.update_idletasks()
         x = button.winfo_rootx() - self.winfo_rootx() - 320
         y = button.winfo_rooty() - self.winfo_rooty() + button.winfo_height() + 2
         self.add_provider_popup.place(x=max(8, x), y=max(8, y))
         self.add_provider_popup.lift()
         self._add_provider_popup_visible = True
+        self._bind_add_provider_popup_events()
+        try:
+            self.add_provider_search_entry.focus_set()
+        except Exception:
+            pass
 
     def _hide_add_provider_popup(self) -> None:
         if not self._add_provider_popup_visible:
             return
         self.add_provider_popup.place_forget()
         self._add_provider_popup_visible = False
+        self._active_add_group_id = ""
+        self._unbind_add_provider_popup_events()
+        origin = self._add_provider_origin_button
+        self._add_provider_origin_button = None
+        try:
+            if origin is not None:
+                origin.focus_set()
+        except Exception:
+            pass
 
     def _on_add_provider_search_changed(self, *_args: object) -> None:
         if self._add_provider_popup_visible:
@@ -1150,6 +1310,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
             self._full_catalog,
             {entry_id: status},
         )
+        self._apply_validation_records_to_catalogs()
         view = self._replace_my_provider_controller()
         self.controller.selected_entry_id = entry_id
         view = self.controller.view()
@@ -1351,12 +1512,20 @@ class AccessKeysWindow(ctk.CTkToplevel):
         for label, widget in self.detail_link_labels.items():
             url = links.get(label, "")
             if url:
-                widget.configure(text=f"{label}: {url}")
+                widget.configure(text=label)
                 widget.grid()
             else:
                 widget.grid_remove()
         self.hide_provider_button.grid()
         self._render_credential_controls(entry)
+
+    def _open_provider_link(self, label: str) -> None:
+        links = dict(ELEVENLABS_LINKS)
+        url = links.get(label, "")
+        if not url.startswith("https://") or url not in set(links.values()):
+            return
+        if self._browser_opener is not None:
+            self._browser_opener(url)
 
     def _render_credential_controls(
         self,
@@ -1369,22 +1538,34 @@ class AccessKeysWindow(ctk.CTkToplevel):
         )
         self._current_credential_entry_id = entry.entry_id if entry else ""
         self._current_credential_id = credential_id
+        self._current_validation_provider_id = (
+            provider_id_for_access_entry_id(entry.entry_id)
+            if entry is not None
+            else ""
+        )
         _set_entry_masked(self.credential_entry)
         if not credential_id:
             self.credential_entry.delete(0, "end")
             _set_entry_masked(self.credential_entry)
             self.credential_action_status_label.configure(text="")
+            self.credential_validate_button.configure(state="disabled")
             self.credential_action_panel.grid_remove()
             return
 
         self.credential_action_panel.grid()
         self.credential_entry.delete(0, "end")
         _set_entry_masked(self.credential_entry)
-        self.credential_action_status_label.configure(
-            text=(
-                "Key saved securely. The key has not yet been checked with the provider. "
-                "Existing keys are never displayed."
+        self.credential_validate_button.configure(
+            state=(
+                "normal"
+                if status_icon_key(entry) in {"saved", "verified", "warning"}
+                and self._validate_provider_key is not None
+                and self._validation_busy_provider_id != self._current_validation_provider_id
+                else "disabled"
             )
+        )
+        self.credential_action_status_label.configure(
+            text=credential_detail_status_text(entry)
         )
 
     @staticmethod
@@ -1415,6 +1596,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
             self._full_catalog,
             statuses,
         )
+        self._apply_validation_records_to_catalogs()
         view = self._replace_my_provider_controller()
         if self._selected_entry_id:
             self.controller.selected_entry_id = self._selected_entry_id
@@ -1453,6 +1635,13 @@ class AccessKeysWindow(ctk.CTkToplevel):
             return
         result = store.save_credential(credential_id, str(credential).strip())
         message = self._credential_result_message(result.status)
+        if result.status in {CredentialStoreStatus.SAVED, CredentialStoreStatus.UPDATED}:
+            provider_id = provider_id_for_access_entry_id(
+                self._current_credential_entry_id
+            )
+            self._set_validation_record(
+                validation_record_for_saved_key(provider_id)
+            )
         self._refresh_runtime_statuses_after_credential_action()
         self.credential_action_status_label.configure(text=message)
 
@@ -1468,8 +1657,83 @@ class AccessKeysWindow(ctk.CTkToplevel):
             return
         result = store.clear_credential(credential_id)
         message = self._credential_result_message(result.status)
+        if result.status in {CredentialStoreStatus.CLEARED, CredentialStoreStatus.NOT_FOUND}:
+            provider_id = provider_id_for_access_entry_id(
+                self._current_credential_entry_id
+            )
+            self._set_validation_record(
+                validation_record_for_cleared_key(provider_id)
+            )
         self._refresh_runtime_statuses_after_credential_action()
         self.credential_action_status_label.configure(text=message)
+
+    @staticmethod
+    def _record_from_validation_exception(
+        provider_id: str,
+        exc: Exception,
+    ) -> ProviderKeyValidationRecord:
+        category = str(getattr(exc, "category", "") or exc)
+        state = (
+            KEY_VALIDATION_FAILED
+            if "validation_failed" in category
+            or "authentication" in category.casefold()
+            else KEY_VALIDATION_COULD_NOT_COMPLETE
+        )
+        return ProviderKeyValidationRecord(
+            provider_id=provider_id,
+            state=state,
+            checked_at_utc=current_utc_timestamp(),
+            safe_diagnostic=category or "validation_could_not_complete",
+        )
+
+    def _finish_validation_record(
+        self,
+        record: ProviderKeyValidationRecord,
+    ) -> None:
+        if self._closed:
+            return
+        self._validation_busy_provider_id = ""
+        self._set_validation_record(record)
+        self._refresh_runtime_statuses_after_credential_action()
+        if self._current_validation_provider_id == record.provider_id:
+            self.credential_validate_button.configure(state="normal")
+            self.credential_action_status_label.configure(
+                text=validation_status_text_for_state(record.state)
+            )
+
+    def _validate_selected_credential(self) -> None:
+        provider_id = self._current_validation_provider_id
+        if (
+            not provider_id
+            or self._validate_provider_key is None
+            or self._validation_busy_provider_id
+        ):
+            return
+        entry = self._entry_views.get(self._current_credential_entry_id)
+        if entry is None or status_icon_key(entry) == "missing":
+            self.credential_action_status_label.configure(
+                text=KEY_STATUS_NO_KEY_CONFIGURED
+            )
+            return
+        self._validation_busy_provider_id = provider_id
+        self.credential_validate_button.configure(state="disabled")
+        self.credential_action_status_label.configure(text="Validating...")
+
+        def worker() -> None:
+            try:
+                record = self._validate_provider_key(provider_id)
+            except (KeyboardInterrupt, SystemExit, GeneratorExit):
+                raise
+            except Exception as exc:
+                record = self._record_from_validation_exception(provider_id, exc)
+            if self._closed:
+                return
+            try:
+                self.after(0, lambda: self._finish_validation_record(record))
+            except Exception:
+                return
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def close(self) -> None:
         if self._closed:

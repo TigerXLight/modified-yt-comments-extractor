@@ -6,6 +6,16 @@ import tempfile
 from types import SimpleNamespace
 
 import main
+from credential_runtime_status import (
+    CredentialPresenceState,
+    CredentialProvenance,
+    CredentialRuntimeStatus,
+    SafeCredentialDiagnostic,
+)
+from provider_key_validation import (
+    KEY_STATUS_SAVED_NOT_VALIDATED,
+    KEY_VALIDATION_VALIDATED,
+)
 from asr_provider_action import ASR_PROVIDER_ACTION_TRANSCRIBE
 from elevenlabs_scribe_provider import (
     ELEVENLABS_SCRIBE_MODEL_ID,
@@ -165,6 +175,15 @@ def _created_widgets_with_text(text: str) -> list[FakeWidget]:
     return [widget for widget in CREATED_WIDGETS if widget.kwargs.get("text") == text]
 
 
+def _created_textvariable_values() -> list[object]:
+    values = []
+    for widget in CREATED_WIDGETS:
+        variable = widget.kwargs.get("textvariable")
+        if hasattr(variable, "get"):
+            values.append(variable.get())
+    return values
+
+
 def _restore_fake_widgets(originals: tuple[object, ...]) -> None:
     (
         main.ctk.CTkToplevel,
@@ -194,7 +213,18 @@ def _app() -> main.App:
     app.online_asr_provider_selection_status = ""
     app._set_linked_transcript_media = lambda path: setattr(app, "linked_media", path)
     app._refresh_transcript_display = lambda: setattr(app, "refreshed", True)
+    app.access_keys_validation_states = {}
     return app
+
+
+def _configured_elevenlabs_status() -> CredentialRuntimeStatus:
+    return CredentialRuntimeStatus(
+        credential_id="elevenlabs_scribe_api_key",
+        entry_id="asr:elevenlabs_scribe",
+        state=CredentialPresenceState.CONFIGURED,
+        provenance=CredentialProvenance.SECURE_KEYRING,
+        safe_diagnostic=SafeCredentialDiagnostic.CONFIGURED_PRESENCE_ONLY,
+    )
 
 
 class FakeSettingsManager:
@@ -371,6 +401,25 @@ def test_online_asr_cog_opens_access_keys_without_dispatch() -> None:
         _restore_fake_widgets(originals)
 
 
+def test_online_asr_provider_window_uses_shared_key_status_wording() -> None:
+    originals = _patch_fake_widgets()
+    try:
+        app = _app()
+        app.settings_manager = FakeSettingsManager()
+        app._online_asr_credential_status_provider = lambda: {
+            "asr:elevenlabs_scribe": _configured_elevenlabs_status()
+        }
+
+        app.open_online_asr_settings_clicked()
+        values = _created_textvariable_values()
+
+        assert KEY_STATUS_SAVED_NOT_VALIDATED in values
+        assert "Credential status: Configured" not in values
+        assert "Configured" not in values
+    finally:
+        _restore_fake_widgets(originals)
+
+
 def test_keys_button_still_opens_access_keys_directly() -> None:
     app = _app()
     app.access_keys_window = None
@@ -469,6 +518,57 @@ def test_online_asr_use_provider_saves_without_dispatch() -> None:
         assert manager.saved_settings[-1].online_asr_provider_id == main.ELEVENLABS_SCRIBE_PROVIDER_ID
     finally:
         _restore_fake_widgets(originals)
+
+
+def test_cloud_asr_key_validation_uses_connection_coordinator_and_safe_tester() -> None:
+    app = _app()
+    tester_calls: list[tuple[str, str]] = []
+
+    class FakeCoordinator:
+        def test_provider_connection(self, provider_id: str, *, tester: object):
+            tester(provider_id, SECRET_SENTINEL)
+            return SimpleNamespace(
+                status=main.ASRConnectionTestStatus.TESTER_COMPLETED,
+                safe_diagnostic="trusted_connection_tester_completed",
+            )
+
+    def fake_tester(provider_id: str, credential: str) -> None:
+        tester_calls.append((provider_id, credential))
+
+    record = app._validate_cloud_asr_provider_key(
+        main.ELEVENLABS_SCRIBE_PROVIDER_ID,
+        coordinator=FakeCoordinator(),
+        tester=fake_tester,
+    )
+
+    assert record.provider_id == main.ELEVENLABS_SCRIBE_PROVIDER_ID
+    assert record.state == KEY_VALIDATION_VALIDATED
+    assert tester_calls == [(main.ELEVENLABS_SCRIBE_PROVIDER_ID, SECRET_SENTINEL)]
+    assert SECRET_SENTINEL not in repr(record)
+
+
+def test_cloud_asr_key_validation_persists_only_non_secret_metadata() -> None:
+    app = _app()
+    manager = FakeSettingsManager()
+    app.settings_manager = manager
+
+    app._set_access_keys_validation_records(
+        {
+            main.ELEVENLABS_SCRIBE_PROVIDER_ID: {
+                "provider_id": main.ELEVENLABS_SCRIBE_PROVIDER_ID,
+                "state": KEY_VALIDATION_VALIDATED,
+                "checked_at_utc": "2026-07-15T12:00:00+00:00",
+                "safe_diagnostic": "key_validation_succeeded",
+                "api_key": SECRET_SENTINEL,
+            }
+        }
+    )
+
+    saved = manager.saved_settings[-1]
+    data = saved.access_keys_validation_states
+    assert data[main.ELEVENLABS_SCRIBE_PROVIDER_ID]["state"] == KEY_VALIDATION_VALIDATED
+    assert "api_key" not in data[main.ELEVENLABS_SCRIBE_PROVIDER_ID]
+    assert SECRET_SENTINEL not in repr(data)
 
 
 def test_online_asr_dispatch_uses_coordinator_and_validated_request_once() -> None:
@@ -680,12 +780,15 @@ if __name__ == "__main__":
     test_load_settings_uses_preferences_only_and_keeps_provider_selection()
     test_api_section_startup_does_not_probe_credential_status()
     test_online_asr_cog_opens_access_keys_without_dispatch()
+    test_online_asr_provider_window_uses_shared_key_status_wording()
     test_keys_button_still_opens_access_keys_directly()
     test_online_asr_body_still_opens_transcription_workflow()
     test_online_asr_provider_selection_persists_non_secret_metadata()
     test_online_asr_invalid_provider_falls_back_safely()
     test_online_asr_manage_key_opens_access_keys_without_dispatch()
     test_online_asr_use_provider_saves_without_dispatch()
+    test_cloud_asr_key_validation_uses_connection_coordinator_and_safe_tester()
+    test_cloud_asr_key_validation_persists_only_non_secret_metadata()
     test_online_asr_dispatch_uses_coordinator_and_validated_request_once()
     test_online_asr_start_requires_file_and_prevents_duplicate_dispatch()
     test_online_asr_success_routes_to_transcript_display()

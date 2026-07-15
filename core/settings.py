@@ -75,6 +75,7 @@ class AppSettings:
     sort_by: str = SortOption.DATE_NEWEST.value
     online_asr_provider_id: str = ""
     access_keys_added_provider_ids: tuple[str, ...] = ()
+    access_keys_validation_states: dict[str, dict[str, str]] = field(default_factory=dict)
 
     # Date filter (optional)
     date_from: Optional[str] = None
@@ -107,6 +108,26 @@ class AppSettings:
                 str(item)
                 for item in filtered["access_keys_added_provider_ids"]
                 if str(item or "").strip()
+            )
+        if "access_keys_validation_states" in filtered:
+            states = filtered["access_keys_validation_states"]
+            filtered["access_keys_validation_states"] = (
+                {
+                    str(provider_id): {
+                        str(key): str(value)
+                        for key, value in record.items()
+                        if key in {
+                            "provider_id",
+                            "state",
+                            "checked_at_utc",
+                            "safe_diagnostic",
+                        }
+                    }
+                    for provider_id, record in states.items()
+                    if str(provider_id or "").strip() and isinstance(record, dict)
+                }
+                if isinstance(states, dict)
+                else {}
             )
         return cls(**filtered)
 
