@@ -179,7 +179,11 @@ def transcribe_media_file(
     audio_filter: Optional[str] = None,
 ) -> Tuple[List[TranscriptSegment], Dict[str, Any]]:
     """
-    Transcribe a local audio/video file with faster-whisper.
+    Transcribe a local audio/video file with the selected local ASR runner.
+
+    The whisper.cpp Vulkan sidecar is used when the caller passes the
+    benchmark-backed Vulkan/whisper.cpp settings; otherwise faster-whisper is
+    used.
 
     If probe_seconds is provided, only the first N seconds are extracted with
     FFmpeg and transcribed. This is intended for quality checks before full ASR.

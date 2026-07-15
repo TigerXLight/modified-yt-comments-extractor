@@ -14,6 +14,11 @@ import subprocess
 from typing import Any, Dict, List, Optional
 
 
+BENCHMARKED_LOCAL_ASR_ENGINE = "whisper.cpp"
+BENCHMARKED_LOCAL_ASR_ACCELERATION = "Vulkan"
+BENCHMARKED_LOCAL_ASR_MODEL = "large-v3"
+
+
 def _detect_windows_gpu_names() -> List[str]:
     """Return Windows GPU names using WMIC when available."""
     if platform.system().lower() != "windows":
@@ -92,9 +97,36 @@ def detect_asr_environment() -> Dict[str, Any]:
     }
 
 
+def detect_benchmarked_whispercpp_vulkan_profile() -> Dict[str, bool]:
+    """Detect the benchmark-backed local whisper.cpp Vulkan profile."""
+    try:
+        from asr_whispercpp import (
+            is_whispercpp_vulkan_available,
+            whispercpp_cli_path,
+            whispercpp_model_path,
+        )
+
+        binary_detected = whispercpp_cli_path().exists()
+        model_detected = whispercpp_model_path(BENCHMARKED_LOCAL_ASR_MODEL).exists()
+        configured = bool(
+            is_whispercpp_vulkan_available(BENCHMARKED_LOCAL_ASR_MODEL)
+        )
+    except Exception:
+        binary_detected = False
+        model_detected = False
+        configured = False
+
+    return {
+        "binary_detected": binary_detected,
+        "model_detected": model_detected,
+        "configured": configured,
+    }
+
+
 def build_auto_quality_recommendation(settings: Optional[Dict[str, str]] = None) -> List[str]:
     """Return human-readable ASR quality recommendations."""
     env = detect_asr_environment()
+    benchmarked_profile = detect_benchmarked_whispercpp_vulkan_profile()
     settings = settings or {}
 
     lines: List[str] = []
@@ -118,17 +150,48 @@ def build_auto_quality_recommendation(settings: Optional[Dict[str, str]] = None)
     else:
         lines.append("- GPU detection: no GPU name detected through WMIC.")
 
+    if benchmarked_profile.get("binary_detected"):
+        lines.append("[OK] whisper.cpp Vulkan binary detected.")
+    else:
+        lines.append("[INFO] whisper.cpp Vulkan binary not detected.")
+
+    if benchmarked_profile.get("model_detected"):
+        lines.append("[OK] whisper.cpp large-v3 model detected.")
+    else:
+        lines.append("[INFO] whisper.cpp large-v3 model not detected.")
+
+    if benchmarked_profile.get("configured"):
+        lines.append(
+            "[OK] Benchmark-backed local profile detected: "
+            f"{BENCHMARKED_LOCAL_ASR_ENGINE} / "
+            f"{BENCHMARKED_LOCAL_ASR_ACCELERATION} / "
+            f"{BENCHMARKED_LOCAL_ASR_MODEL}."
+        )
+    else:
+        lines.append(
+            "[INFO] Benchmark-backed local profile is not fully configured: "
+            f"{BENCHMARKED_LOCAL_ASR_ENGINE} / "
+            f"{BENCHMARKED_LOCAL_ASR_ACCELERATION} / "
+            f"{BENCHMARKED_LOCAL_ASR_MODEL}."
+        )
+
     if env.get("cuda_available"):
         device_name = env.get("cuda_device_name") or "CUDA device"
         lines.append(f"[OK] NVIDIA/CUDA path available: {device_name}")
-        lines.append("     Best current local path: faster-whisper large-v3 / cuda / float16.")
+        lines.append(
+            "     CUDA is a separate faster-whisper path, not the "
+            "benchmark-backed AMD/Vulkan profile."
+        )
     else:
         lines.append("[INFO] NVIDIA/CUDA path is not available.")
 
     if env.get("has_amd_hint"):
         lines.append("[INFO] AMD GPU detected.")
         lines.append("       faster-whisper cannot use AMD through the normal CUDA path.")
-        lines.append("       Future local acceleration path should test DirectML/ONNX or whisper.cpp Vulkan/ROCm.")
+        lines.append(
+            "       Benchmarked local acceleration uses whisper.cpp / Vulkan / "
+            "large-v3 when configured."
+        )
 
     if env.get("has_intel_gpu_hint"):
         lines.append("[INFO] Intel GPU detected.")

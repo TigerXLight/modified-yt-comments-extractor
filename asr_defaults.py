@@ -9,6 +9,8 @@ from typing import Dict
 
 
 DEFAULT_ASR_SETTINGS: Dict[str, str] = {
+    "engine": "faster_whisper",
+    "profile_name": "Custom",
     "model_name": "small",
     "speaker_name": "Speaker 1",
     "language": "en",
@@ -62,9 +64,13 @@ def save_asr_defaults(
     initial_prompt: str,
     device: str = "cpu",
     compute_type: str = "int8",
+    engine: str = "faster_whisper",
+    profile_name: str = "Custom",
 ) -> None:
     """Save Local ASR defaults for the next run."""
     settings = {
+        "engine": engine or DEFAULT_ASR_SETTINGS["engine"],
+        "profile_name": profile_name or DEFAULT_ASR_SETTINGS["profile_name"],
         "model_name": model_name or DEFAULT_ASR_SETTINGS["model_name"],
         "speaker_name": speaker_name or DEFAULT_ASR_SETTINGS["speaker_name"],
         "language": language or "",

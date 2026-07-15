@@ -53,6 +53,12 @@ from provider_key_validation import (
     validation_records_to_settings_dict,
     validation_status_text_for_state,
 )
+from provider_official_links import (
+    is_trusted_official_link,
+    official_link_buttons_for_entry,
+    official_link_labels,
+    official_url_for_label,
+)
 
 
 ACCESS_KEYS_WINDOW_TITLE = "Access & Keys"
@@ -73,12 +79,6 @@ DEFAULT_ACCESS_KEYS_GROUPS = (
     ("asr_providers", "ASR Providers"),
     ("social_media", VIDEO_SOCIAL_CATEGORY_LABEL),
 )
-ELEVENLABS_LINKS = {
-    "Provider website": "https://elevenlabs.io/",
-    "Get API key": "https://elevenlabs.io/app/settings/api-keys",
-    "View current pricing": "https://elevenlabs.io/pricing",
-}
-
 _DETAIL_LABELS = (
     "Status",
     "Use",
@@ -268,9 +268,7 @@ def _entries_for_section(
 
 
 def _provider_links(entry: AccessKeysEntryView) -> tuple[tuple[str, str], ...]:
-    if entry.entry_id == "asr:elevenlabs_scribe":
-        return tuple(ELEVENLABS_LINKS.items())
-    return ()
+    return official_link_buttons_for_entry(entry.entry_id)
 
 
 def provider_model_label(entry: AccessKeysEntryView) -> str:
@@ -415,6 +413,13 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._add_provider_click_bind_id: Optional[str] = None
         self._add_provider_escape_bind_id: Optional[str] = None
         self._add_provider_origin_button: Optional[object] = None
+        self._section_header_rows: dict[str, int] = {}
+        self._add_provider_search_index: dict[str, str] = {}
+        self._last_add_provider_render_key: tuple[str, str, tuple[str, ...]] = (
+            "",
+            "",
+            (),
+        )
 
         if catalog is None:
             bundle = build_default_access_keys_catalog_bundle()
@@ -427,6 +432,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._full_layouts = tuple(bundle.layouts)
         self._base_catalog = bundle.catalog
         self._layouts = tuple(bundle.layouts)
+        self._add_provider_search_index = self._build_add_provider_search_index()
         valid_ids = _catalog_entry_ids(self._full_catalog)
         self._added_entry_ids = tuple(
             entry_id
@@ -645,7 +651,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
             padx=16,
             pady=(0, 12),
         )
-        body.grid_columnconfigure(0, weight=2)
+        body.grid_columnconfigure(0, weight=3, minsize=500)
         body.grid_columnconfigure(1, weight=3)
         body.grid_rowconfigure(0, weight=1)
 
@@ -661,6 +667,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
             padx=(0, 8),
         )
         self.list_panel.grid_columnconfigure(0, weight=1)
+        self.list_panel.grid_columnconfigure(1, weight=1, minsize=260)
 
         self.details_panel = ctk.CTkScrollableFrame(
             body,
@@ -699,8 +706,8 @@ class AccessKeysWindow(ctk.CTkToplevel):
         )
 
         self.add_provider_popup = ctk.CTkFrame(
-            self,
-            width=360,
+            self.list_panel,
+            width=300,
             fg_color=COLORS["bg_card"],
             border_width=1,
             border_color=COLORS["border"],
@@ -868,7 +875,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
         )
         self.detail_links_frame.grid_columnconfigure(0, weight=1)
         self.detail_link_labels: dict[str, ctk.CTkButton] = {}
-        for link_index, label in enumerate(ELEVENLABS_LINKS):
+        for link_index, label in enumerate(official_link_labels()):
             link_label = ctk.CTkButton(
                 self.detail_links_frame,
                 text=label,
@@ -1156,6 +1163,26 @@ class AccessKeysWindow(ctk.CTkToplevel):
             return
         self._hide_add_provider_popup()
 
+    def _build_add_provider_search_index(self) -> dict[str, str]:
+        entry_lookup = _entry_by_id(self._full_catalog)
+        layout_lookup = _layout_by_id(self._full_layouts)
+        index: dict[str, str] = {}
+        for entry_id in _catalog_entry_ids(self._full_catalog):
+            entry = entry_lookup.get(entry_id)
+            layout = layout_lookup.get(entry_id)
+            if entry is None or layout is None:
+                continue
+            index[entry_id] = " ".join(
+                (
+                    getattr(entry, "display_name", ""),
+                    getattr(entry, "entry_id", ""),
+                    layout.canonical_name,
+                    *layout.aliases,
+                    *layout.tags,
+                )
+            ).casefold()
+        return index
+
     def _show_add_provider_popup(self, section_id: str) -> None:
         self._hide_family_menu()
         if (
@@ -1172,9 +1199,19 @@ class AccessKeysWindow(ctk.CTkToplevel):
         button = self._section_add_buttons[section_id]
         self._add_provider_origin_button = button
         self.update_idletasks()
-        x = button.winfo_rootx() - self.winfo_rootx() - 320
-        y = button.winfo_rooty() - self.winfo_rooty() + button.winfo_height() + 2
-        self.add_provider_popup.place(x=max(8, x), y=max(8, y))
+        header = self._section_header_frames.get(section_id)
+        try:
+            row = int((header.grid_info() if header is not None else {}).get("row", 0))
+        except Exception:
+            row = 0
+        self.add_provider_popup.grid(
+            row=max(0, row),
+            column=1,
+            rowspan=8,
+            sticky="new",
+            padx=(10, 8),
+            pady=(8, 10),
+        )
         self.add_provider_popup.lift()
         self._add_provider_popup_visible = True
         self._bind_add_provider_popup_events()
@@ -1186,9 +1223,10 @@ class AccessKeysWindow(ctk.CTkToplevel):
     def _hide_add_provider_popup(self) -> None:
         if not self._add_provider_popup_visible:
             return
-        self.add_provider_popup.place_forget()
+        self.add_provider_popup.grid_remove()
         self._add_provider_popup_visible = False
         self._active_add_group_id = ""
+        self._last_add_provider_render_key = ("", "", ())
         self._unbind_add_provider_popup_events()
         origin = self._add_provider_origin_button
         self._add_provider_origin_button = None
@@ -1203,10 +1241,6 @@ class AccessKeysWindow(ctk.CTkToplevel):
             self._refresh_add_provider_results()
 
     def _refresh_add_provider_results(self) -> None:
-        for button in self._add_provider_buttons.values():
-            button.destroy()
-        self._add_provider_buttons = {}
-
         query = " ".join(self._add_provider_search_var.get().split()).casefold()
         section_ids = _entries_for_section(
             self._full_catalog,
@@ -1214,25 +1248,35 @@ class AccessKeysWindow(ctk.CTkToplevel):
             self._active_add_group_id,
         )
         entry_lookup = _entry_by_id(self._full_catalog)
-        layout_lookup = _layout_by_id(self._full_layouts)
-        row = 0
+        result_ids: list[str] = []
         for entry_id in section_ids:
             if entry_id in self._added_entry_ids:
                 continue
             entry = entry_lookup.get(entry_id)
-            layout = layout_lookup.get(entry_id)
-            if entry is None or layout is None:
+            if entry is None:
                 continue
-            search_text = " ".join(
-                (
-                    getattr(entry, "display_name", ""),
-                    getattr(entry, "entry_id", ""),
-                    layout.canonical_name,
-                    *layout.aliases,
-                    *layout.tags,
-                )
-            ).casefold()
+            search_text = self._add_provider_search_index.get(entry_id, "")
             if query and query not in search_text:
+                continue
+            result_ids.append(entry_id)
+
+        render_key = (
+            self._active_add_group_id,
+            query,
+            tuple(result_ids),
+        )
+        if render_key == self._last_add_provider_render_key:
+            return
+        self._last_add_provider_render_key = render_key
+
+        for button in self._add_provider_buttons.values():
+            button.destroy()
+        self._add_provider_buttons = {}
+
+        row = 0
+        for entry_id in result_ids:
+            entry = entry_lookup.get(entry_id)
+            if entry is None:
                 continue
             disabled = getattr(entry, "implementation_state", "") == "planned metadata only"
             label = (
@@ -1520,9 +1564,9 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._render_credential_controls(entry)
 
     def _open_provider_link(self, label: str) -> None:
-        links = dict(ELEVENLABS_LINKS)
-        url = links.get(label, "")
-        if not url.startswith("https://") or url not in set(links.values()):
+        entry_id = self._selected_entry_id
+        url = official_url_for_label(entry_id, label)
+        if not is_trusted_official_link(entry_id, label, url):
             return
         if self._browser_opener is not None:
             self._browser_opener(url)

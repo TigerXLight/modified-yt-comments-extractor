@@ -127,6 +127,27 @@ from youtube_credential_migration import (
     YouTubeCredentialStorageState,
 )
 
+
+SESSION_FILE_KIND_TRANSCRIPT = "transcript"
+SESSION_FILE_KIND_AUDIO = "audio"
+SESSION_FILE_KIND_VIDEO = "video"
+SESSION_FILE_KIND_MEDIA = "media"
+SESSION_FILE_KIND_OTHER = "other"
+
+TRANSCRIPT_FILE_EXTENSIONS = {".srt", ".vtt", ".txt"}
+AUDIO_FILE_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
+VIDEO_FILE_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
+
+
+@dataclass(frozen=True)
+class SessionFileEntry:
+    """A local file added to the current GUI session only."""
+
+    path: str
+    normalized_path: str
+    display_name: str
+    file_kind: str
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -339,6 +360,7 @@ class App(ctk.CTk):
         self.transcript_undo_stack: List[List[TranscriptSegment]] = []
         self.transcript_redo_stack: List[List[TranscriptSegment]] = []
         self.transcript_history_limit: int = 75
+        self.transcript_has_unsaved_edits: bool = False
         self.transcript_text_edit_phase_segment_index: Optional[int] = None
         self.transcript_glossary_terms: List[str] = [
             "Kingman",
@@ -367,6 +389,8 @@ class App(ctk.CTk):
         self.last_youtube_video_info: Optional[Dict[str, Any]] = None
         self.last_asr_metadata: Optional[Dict[str, Any]] = None
         self.linked_transcript_media_path: Optional[str] = None
+        self.session_files: List[SessionFileEntry] = []
+        self.selected_session_file_path: str = ""
         self.transcript_waveform_peaks: List[float] = []
         self.transcript_waveform_source_path: Optional[str] = None
         self.last_package_dir: Optional[str] = None
@@ -516,6 +540,9 @@ class App(ctk.CTk):
 
         # API Key section
         self._create_api_section()
+
+        # Session files section
+        self._create_files_section()
 
         # Filters section
         self._create_filters_section()
@@ -668,6 +695,264 @@ class App(ctk.CTk):
     def _on_access_keys_window_closed(self) -> None:
         """Release the closed Access & Keys window reference."""
         self.access_keys_window = None
+
+    def _create_files_section(self) -> None:
+        """Create the session-only local files section in the sidebar."""
+        self._create_section_label(self.sidebar_scroll, "FILES")
+
+        self.files_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
+        self.files_frame.pack(fill="x", padx=20)
+
+        self.files_list_frame = ctk.CTkScrollableFrame(
+            self.files_frame,
+            height=110,
+            fg_color=COLORS["bg_input"],
+            corner_radius=6,
+        )
+        self.files_list_frame.pack(fill="x")
+        self.files_list_frame.grid_columnconfigure(0, weight=1)
+
+        self.files_empty_label = ctk.CTkLabel(
+            self.files_list_frame,
+            text="No session files yet",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            anchor="w",
+        )
+        self.files_empty_label.grid(row=0, column=0, sticky="ew", padx=8, pady=6)
+        self.session_file_row_widgets: dict[str, object] = {}
+
+    def _ensure_session_files_state(self) -> None:
+        state = getattr(self, "__dict__", {})
+        if "session_files" not in state:
+            self.session_files = []
+        if "selected_session_file_path" not in state:
+            self.selected_session_file_path = ""
+
+    def _normalise_session_file_path(self, path: str) -> str:
+        return os.path.normcase(os.path.abspath(os.path.expanduser(path or "")))
+
+    def _session_file_kind_for_path(self, path: str) -> str:
+        suffix = os.path.splitext(path or "")[1].lower()
+        if suffix in TRANSCRIPT_FILE_EXTENSIONS:
+            return SESSION_FILE_KIND_TRANSCRIPT
+        if suffix in AUDIO_FILE_EXTENSIONS:
+            return SESSION_FILE_KIND_AUDIO
+        if suffix in VIDEO_FILE_EXTENSIONS:
+            return SESSION_FILE_KIND_VIDEO
+        return SESSION_FILE_KIND_OTHER
+
+    def _session_file_icon_for_kind(self, file_kind: str) -> str:
+        if file_kind == SESSION_FILE_KIND_TRANSCRIPT:
+            return "TXT"
+        if file_kind == SESSION_FILE_KIND_AUDIO:
+            return "AUD"
+        if file_kind == SESSION_FILE_KIND_VIDEO:
+            return "VID"
+        if file_kind == SESSION_FILE_KIND_MEDIA:
+            return "MED"
+        return "FILE"
+
+    def _add_session_file(
+        self,
+        path: str,
+        file_kind: str = "",
+        *,
+        select: bool = False,
+    ) -> Optional[SessionFileEntry]:
+        """Add a local file to the current session list without persistence."""
+        self._ensure_session_files_state()
+        if not path:
+            return None
+        normalized = self._normalise_session_file_path(path)
+        absolute_path = os.path.abspath(os.path.expanduser(path))
+        for entry in self.session_files:
+            if entry.normalized_path == normalized:
+                if select:
+                    self.selected_session_file_path = normalized
+                    self._refresh_session_files_list()
+                return entry
+        entry = SessionFileEntry(
+            path=absolute_path,
+            normalized_path=normalized,
+            display_name=os.path.basename(absolute_path),
+            file_kind=file_kind or self._session_file_kind_for_path(absolute_path),
+        )
+        self.session_files.append(entry)
+        if select:
+            self.selected_session_file_path = normalized
+        self._refresh_session_files_list()
+        return entry
+
+    def _remove_session_file(self, normalized_path: str) -> None:
+        """Detach a file from this session list without deleting it from disk."""
+        self._ensure_session_files_state()
+        normalized_path = self._normalise_session_file_path(normalized_path)
+        self.session_files = [
+            entry
+            for entry in self.session_files
+            if entry.normalized_path != normalized_path
+        ]
+        if self.selected_session_file_path == normalized_path:
+            self.selected_session_file_path = ""
+        self._refresh_session_files_list()
+
+    def _refresh_session_files_list(self) -> None:
+        if "files_list_frame" not in getattr(self, "__dict__", {}):
+            return
+        for widget in getattr(self, "session_file_row_widgets", {}).values():
+            try:
+                widget.destroy()
+            except Exception:
+                pass
+        self.session_file_row_widgets = {}
+
+        if not getattr(self, "session_files", []):
+            self.files_empty_label.grid(row=0, column=0, sticky="ew", padx=8, pady=6)
+            return
+        self.files_empty_label.grid_remove()
+
+        for row, entry in enumerate(self.session_files):
+            row_frame = ctk.CTkFrame(self.files_list_frame, fg_color="transparent")
+            row_frame.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
+            row_frame.grid_columnconfigure(0, weight=1)
+            selected = entry.normalized_path == self.selected_session_file_path
+            text = f"{self._session_file_icon_for_kind(entry.file_kind)}  {entry.display_name}"
+            if (
+                selected
+                and entry.file_kind == SESSION_FILE_KIND_TRANSCRIPT
+                and getattr(self, "transcript_has_unsaved_edits", False)
+            ):
+                text += " *"
+            button = ctk.CTkButton(
+                row_frame,
+                text=text,
+                anchor="w",
+                height=26,
+                fg_color=COLORS["accent_secondary"] if selected else "transparent",
+                hover_color=COLORS["border"],
+                text_color=COLORS["text_primary"],
+                command=lambda path=entry.normalized_path: self._select_session_file(path),
+            )
+            button.grid(row=0, column=0, sticky="ew")
+            remove_button = ctk.CTkButton(
+                row_frame,
+                text="×",
+                width=26,
+                height=26,
+                fg_color="transparent",
+                hover_color=COLORS["border"],
+                text_color=COLORS["text_muted"],
+                command=lambda path=entry.normalized_path: self._remove_session_file(path),
+            )
+            remove_button.grid(row=0, column=1, sticky="e", padx=(4, 0))
+            self.session_file_row_widgets[entry.normalized_path] = row_frame
+
+    def _save_transcript_before_session_switch(self) -> bool:
+        if not self.transcript_segments:
+            self.transcript_has_unsaved_edits = False
+            return True
+        filename = filedialog.asksaveasfilename(
+            defaultextension=".srt",
+            filetypes=[("SRT subtitle files", "*.srt")],
+            title="Save Transcript Before Switching",
+        )
+        if not filename:
+            return False
+        try:
+            export_transcript_srt(self.transcript_segments, filename)
+            self.transcript_has_unsaved_edits = False
+            self._refresh_session_files_list()
+            self.log_message(
+                f"Saved transcript before switching: {os.path.basename(filename)}",
+                "success",
+            )
+            return True
+        except Exception as error:
+            logger.error("Transcript save before switch failed.")
+            messagebox.showerror("Transcript Save Error", str(error))
+            return False
+
+    def _confirm_transcript_switch_allowed(self) -> bool:
+        if not getattr(self, "transcript_has_unsaved_edits", False):
+            return True
+        answer = messagebox.askyesnocancel(
+            "Unsaved Transcript Changes",
+            "Save current transcript edits before switching files?\n\n"
+            "Yes = Save\nNo = Discard\nCancel = stay on the current transcript.",
+        )
+        if answer is None:
+            return False
+        if answer is True:
+            return self._save_transcript_before_session_switch()
+        self.transcript_has_unsaved_edits = False
+        self._refresh_session_files_list()
+        return True
+
+    def _select_session_file(self, normalized_path: str) -> None:
+        self._ensure_session_files_state()
+        normalized_path = self._normalise_session_file_path(normalized_path)
+        entry = next(
+            (
+                candidate
+                for candidate in self.session_files
+                if candidate.normalized_path == normalized_path
+            ),
+            None,
+        )
+        if entry is None:
+            return
+        if entry.file_kind == SESSION_FILE_KIND_TRANSCRIPT:
+            self._load_session_transcript_file(entry)
+            return
+        self._select_session_media_file(entry)
+
+    def _load_session_transcript_file(self, entry: SessionFileEntry) -> bool:
+        if not self._confirm_transcript_switch_allowed():
+            return False
+        try:
+            segments = import_transcript(entry.path)
+            if not segments:
+                messagebox.showwarning(
+                    "No Transcript Segments",
+                    "No transcript segments could be imported from this file.",
+                )
+                return False
+        except Exception as error:
+            logger.error("Transcript session-file import error.")
+            self.log_message(f"Transcript import failed: {error}", "error")
+            messagebox.showerror("Transcript Import Error", str(error))
+            return False
+
+        self.transcript_segments = segments
+        self.last_transcript_source = f"Imported file: {entry.display_name}"
+        self.transcript_has_unsaved_edits = False
+        self.transcript_undo_stack = []
+        self.transcript_redo_stack = []
+        self.selected_session_file_path = entry.normalized_path
+        self._set_linked_transcript_media(None)
+        self._refresh_transcript_display()
+        if "evidence_button" in getattr(self, "__dict__", {}):
+            self.evidence_button.configure(state="normal")
+        self._refresh_session_files_list()
+        return True
+
+    def _select_session_media_file(self, entry: SessionFileEntry) -> bool:
+        if not os.path.exists(entry.path):
+            messagebox.showerror(
+                "Media Not Found",
+                "The selected media file does not exist.",
+            )
+            return False
+        self.selected_session_file_path = entry.normalized_path
+        self._set_linked_transcript_media(entry.path, log=True)
+        self._refresh_session_files_list()
+        if "transcript_cursor_status_label" in getattr(self, "__dict__", {}):
+            self.transcript_cursor_status_label.configure(
+                text=f"Linked media: {entry.display_name}",
+                text_color=COLORS["text_primary"],
+            )
+        return True
 
     def _get_access_keys_added_provider_ids(self) -> tuple[str, ...]:
         result: list[str] = []
@@ -3936,6 +4221,7 @@ class App(ctk.CTk):
             ("Source File Name", "source_file_name"),
             ("Source File Size Bytes", "source_file_size_bytes"),
             ("Source File SHA256", "source_file_sha256"),
+            ("Engine", "selected_asr_engine"),
             ("Model", "model_name"),
             ("Device", "device"),
             ("Compute Type", "compute_type"),
@@ -4266,6 +4552,8 @@ class App(ctk.CTk):
             self.transcript_undo_stack.pop(0)
 
         self.transcript_redo_stack.clear()
+        self.transcript_has_unsaved_edits = True
+        self._refresh_session_files_list()
 
     def _restore_transcript_snapshot(self, snapshot: List[TranscriptSegment], label: str) -> None:
         """Restore transcript segments from a snapshot."""
@@ -4311,6 +4599,8 @@ class App(ctk.CTk):
             self.transcript_redo_stack.append(current_snapshot)
 
         self._restore_transcript_snapshot(previous_snapshot, "Undid")
+        self.transcript_has_unsaved_edits = True
+        self._refresh_session_files_list()
         return "break"
 
     def redo_transcript_edit(self, event=None):
@@ -4330,6 +4620,8 @@ class App(ctk.CTk):
             self.transcript_undo_stack.append(current_snapshot)
 
         self._restore_transcript_snapshot(next_snapshot, "Redid")
+        self.transcript_has_unsaved_edits = True
+        self._refresh_session_files_list()
         return "break"
 
 
@@ -7899,6 +8191,7 @@ class App(ctk.CTk):
             return
 
         self._set_linked_transcript_media(filename, log=True)
+        self._add_session_file(filename, self._session_file_kind_for_path(filename), select=True)
 
         if hasattr(self, "transcript_cursor_status_label"):
             self.transcript_cursor_status_label.configure(
@@ -7935,9 +8228,13 @@ class App(ctk.CTk):
 
             self.transcript_segments = segments
             self.last_transcript_source = f"Imported file: {os.path.basename(filename)}"
+            self.transcript_has_unsaved_edits = False
+            self.transcript_undo_stack = []
+            self.transcript_redo_stack = []
             self._set_linked_transcript_media(None)
             self._refresh_transcript_display()
             self.evidence_button.configure(state="normal")
+            self._add_session_file(filename, SESSION_FILE_KIND_TRANSCRIPT, select=True)
 
             self.log_message(
                 f"Imported transcript: {len(segments):,} segment(s) from {os.path.basename(filename)}",
@@ -8198,10 +8495,13 @@ class App(ctk.CTk):
             initial_prompt=settings.get("initial_prompt", ""),
             device=settings.get("device", "cpu"),
             compute_type=settings.get("compute_type", "int8"),
+            engine=settings.get("engine", "faster_whisper"),
+            profile_name=settings.get("profile_name", "Custom"),
         )
 
         self.log_message(
             "Saved Local ASR defaults: "
+            f"engine={settings.get('engine', 'faster_whisper')}, "
             f"model={settings.get('model_name')}, "
             f"language={settings.get('language') or 'auto-detect'}, "
             f"device={settings.get('device')}, "
@@ -8575,6 +8875,11 @@ class App(ctk.CTk):
             )
             if filename:
                 file_var.set(filename)
+                self._add_session_file(
+                    filename,
+                    self._session_file_kind_for_path(filename),
+                    select=True,
+                )
 
         browse_button = ctk.CTkButton(
             content,
@@ -8924,6 +9229,26 @@ class App(ctk.CTk):
                 "beam_size": 5,
                 "audio_filter": None,
             })
+
+        selected_is_whispercpp = (
+            str(selected_device or "").strip().lower()
+            in {"vulkan", "whispercpp", "whisper.cpp"}
+            or str(selected_compute_type or "").strip().lower()
+            in {"vulkan", "whispercpp", "whisper.cpp"}
+        )
+
+        if selected_is_whispercpp:
+            add_whispercpp(
+                "Current selected whisper.cpp Vulkan large-v3",
+                selected_model or "large-v3",
+                "phrases",
+            )
+            add_whispercpp(
+                "Current selected whisper.cpp Vulkan large-v3 unprompted",
+                selected_model or "large-v3",
+                "none",
+            )
+            return candidates
 
         if is_whispercpp_vulkan_available("large-v3"):
             add_whispercpp("AMD GPU — whisper.cpp large-v3 phrase prompt", "large-v3", "phrases")
@@ -9914,7 +10239,7 @@ class App(ctk.CTk):
         return result[:40]
 
     def local_asr_transcribe_clicked(self) -> None:
-        """Transcribe a local audio/video file using faster-whisper."""
+        """Transcribe a local audio/video file using the selected local ASR engine."""
         asr_defaults = load_asr_defaults()
 
         asr_settings = ask_asr_settings(
@@ -9933,6 +10258,18 @@ class App(ctk.CTk):
         initial_prompt = asr_settings.get("initial_prompt", "").strip() or None
         device = asr_settings.get("device", "cpu").strip().lower() or "cpu"
         compute_type = asr_settings.get("compute_type", "int8").strip() or "int8"
+        engine = asr_settings.get("engine", "faster_whisper").strip().lower() or "faster_whisper"
+        profile_name = asr_settings.get("profile_name", "Custom").strip() or "Custom"
+        if device in {"vulkan", "whispercpp", "whisper.cpp"} or compute_type.lower() in {
+            "vulkan",
+            "whispercpp",
+            "whisper.cpp",
+        }:
+            engine = "whispercpp_vulkan"
+        if engine == "whispercpp_vulkan":
+            model_name = "large-v3"
+            device = "vulkan"
+            compute_type = "whisper.cpp"
 
         try:
             probe_seconds = int(asr_settings.get("probe_seconds") or 0)
@@ -9957,6 +10294,8 @@ class App(ctk.CTk):
                 initial_prompt=initial_prompt or "",
                 device=device,
                 compute_type=compute_type,
+                engine=engine,
+                profile_name=profile_name,
             )
 
             self._run_asr_calibration_probe(
@@ -10014,6 +10353,12 @@ class App(ctk.CTk):
         if not media_file:
             return
 
+        self._add_session_file(
+            media_file,
+            self._session_file_kind_for_path(media_file),
+            select=True,
+        )
+
         save_asr_defaults(
             model_name=model_name,
             speaker_name=speaker_name,
@@ -10021,11 +10366,14 @@ class App(ctk.CTk):
             initial_prompt=initial_prompt or "",
             device=device,
             compute_type=compute_type,
+            engine=engine,
+            profile_name=profile_name,
         )
 
         self.transcript_asr_button.configure(state="disabled")
+        engine_label = "whisper.cpp / Vulkan" if engine == "whispercpp_vulkan" else "faster-whisper"
         self.log_message(
-            f"Starting local ASR {asr_mode_label} with faster-whisper model: {model_name} "
+            f"Starting local ASR {asr_mode_label} with {engine_label} model: {model_name} "
             f"({device}/{compute_type})",
             "info"
         )
@@ -10332,6 +10680,11 @@ class App(ctk.CTk):
                                 initial_prompt=initial_prompt or "",
                                 device=best.get("device") or device,
                                 compute_type=best.get("compute_type") or compute_type,
+                                engine="whispercpp_vulkan"
+                                if str(best.get("device") or "").strip().lower() == "vulkan"
+                                or str(best.get("compute_type") or "").strip().lower() in {"whisper.cpp", "vulkan", "whispercpp"}
+                                else "faster_whisper",
+                                profile_name=profile_name,
                             )
 
                         if best_reference_scored and best_reference_accuracy is not None:
@@ -10437,6 +10790,7 @@ class App(ctk.CTk):
                     probe_seconds=probe_seconds,
                 )
 
+                metadata["selected_asr_engine"] = engine
                 metadata["asr_topic_resolver_used"] = bool(full_asr_topic_terms)
                 metadata["asr_topic_resolver_terms"] = list(full_asr_topic_terms)
                 metadata["asr_topic_resolver_sources"] = list(full_asr_topic_sources)
@@ -10456,7 +10810,7 @@ class App(ctk.CTk):
 
                     self.last_transcript_source = (
                         f"Local ASR {probe_note}transcript from {os.path.basename(media_file)} "
-                        f"using faster-whisper {model_name}{language_note}{prompt_note}"
+                        f"using {engine_label} {model_name}{language_note}{prompt_note}"
                     )
 
                     self._refresh_transcript_display()
@@ -10583,6 +10937,8 @@ class App(ctk.CTk):
                 self._export_readable_transcript_txt(self.transcript_segments, filename)
             else:
                 exporter(self.transcript_segments, filename)
+            self.transcript_has_unsaved_edits = False
+            self._refresh_session_files_list()
 
             self.log_message(
                 f"Exported transcript {export_type.upper()} to: {os.path.basename(filename)}",
@@ -11895,8 +12251,10 @@ class App(ctk.CTk):
         self.transcript_segments = []
         self.transcript_playhead_seconds = None
         self.last_transcript_source = None
+        self.transcript_has_unsaved_edits = False
         self._set_linked_transcript_media(None)
         self._refresh_transcript_display()
+        self._refresh_session_files_list()
         self.log_message("Transcript cleared.", "muted")
 
         with self._data_lock:

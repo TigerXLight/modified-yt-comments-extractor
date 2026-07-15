@@ -58,6 +58,7 @@ from provider_key_validation import (
     KEY_STATUS_SAVED_NOT_VALIDATED,
     ProviderKeyValidationRecord,
 )
+from provider_official_links import official_link_buttons_for_entry
 
 
 class _FakeAccessKeysWindow:
@@ -152,12 +153,14 @@ class _FakePanel:
 class _FakePopup:
     def __init__(self) -> None:
         self.placed = False
+        self.grid_options: dict[str, object] = {}
         self.lift_count = 0
 
-    def place(self, **_kwargs: object) -> None:
+    def grid(self, **kwargs: object) -> None:
         self.placed = True
+        self.grid_options = dict(kwargs)
 
-    def place_forget(self) -> None:
+    def grid_remove(self) -> None:
         self.placed = False
 
     def lift(self) -> None:
@@ -182,6 +185,21 @@ class _FakeFocusButton:
 
     def winfo_height(self) -> int:
         return 24
+
+
+class _FakeResultButton:
+    created: list["_FakeResultButton"] = []
+    destroyed_count = 0
+
+    def __init__(self, *_args: object, **kwargs: object) -> None:
+        self.kwargs = kwargs
+        _FakeResultButton.created.append(self)
+
+    def grid(self, **_kwargs: object) -> None:
+        pass
+
+    def destroy(self) -> None:
+        _FakeResultButton.destroyed_count += 1
 
 
 def _function_source(module_source: str, name: str) -> str:
@@ -448,17 +466,76 @@ def test_provider_links_use_injected_browser_opener_only_on_explicit_click() -> 
     opened: list[str] = []
     window = AccessKeysWindow.__new__(AccessKeysWindow)
     window._browser_opener = lambda url: opened.append(url)
+    window._selected_entry_id = "asr:elevenlabs_scribe"
 
     AccessKeysWindow._open_provider_link(window, "Provider website")
+    AccessKeysWindow._open_provider_link(window, "Developer documentation")
     AccessKeysWindow._open_provider_link(window, "Get API key")
     AccessKeysWindow._open_provider_link(window, "View current pricing")
+    AccessKeysWindow._open_provider_link(window, "Service status")
     AccessKeysWindow._open_provider_link(window, "Untrusted")
 
     assert opened == [
-        "https://elevenlabs.io/",
-        "https://elevenlabs.io/app/settings/api-keys",
-        "https://elevenlabs.io/pricing",
+        url
+        for _label, url in official_link_buttons_for_entry("asr:elevenlabs_scribe")
     ]
+
+    window._selected_entry_id = "planned:source:nebula"
+    AccessKeysWindow._open_provider_link(window, "Developer documentation")
+    assert opened == [
+        url
+        for _label, url in official_link_buttons_for_entry("asr:elevenlabs_scribe")
+    ]
+
+
+def test_provider_links_render_only_applicable_user_facing_labels() -> None:
+    def entry(entry_id: str, name: str) -> AccessKeysEntryView:
+        return AccessKeysEntryView(
+            entry_id=entry_id,
+            display_name=name,
+            entry_kind=AccessEntryKind.ASR_PROVIDER,
+            platform_family="asr",
+            implementation_state="provider metadata only",
+            access_mode="API_KEY",
+            credential_status="REQUIRED_MISSING",
+        )
+
+    assemblyai_links = dict(
+        access_keys_dialog._provider_links(
+            entry("asr:assemblyai_universal_3_5_pro", "AssemblyAI")
+        )
+    )
+    assert {
+        "Provider website",
+        "Developer documentation",
+        "Get API key",
+        "View current pricing",
+    } <= set(assemblyai_links)
+    assert all("_" not in label for label in assemblyai_links)
+
+    whisper_links = dict(
+        access_keys_dialog._provider_links(
+            entry(
+                "asr:whisper_cpp_vulkan_large_v3_turbo",
+                "whisper.cpp",
+            )
+        )
+    )
+    assert "Official repository" in whisper_links
+    assert "Developer documentation" in whisper_links
+    assert "Downloads / releases" in whisper_links
+    assert "Get API key" not in whisper_links
+    assert "View current pricing" not in whisper_links
+
+    youtube = entry("source:youtube", "YouTube")
+    youtube_links = dict(access_keys_dialog._provider_links(youtube))
+    assert "Provider website" in youtube_links
+    assert "Developer documentation" in youtube_links
+    assert "Manage API keys" in youtube_links
+
+    nebula = entry("planned:source:nebula", "Nebula")
+    nebula_links = dict(access_keys_dialog._provider_links(nebula))
+    assert nebula_links == {"Provider website": "https://nebula.tv/"}
 
 
 def test_add_provider_popup_closes_on_escape_outside_click_and_same_plus() -> None:
@@ -484,13 +561,20 @@ def test_add_provider_popup_closes_on_escape_outside_click_and_same_plus() -> No
     window._refresh_add_provider_results = lambda: events.append(("refresh", ""))
     window._hide_family_menu = lambda: events.append(("hide_family", ""))
     window.update_idletasks = lambda: None
-    window.winfo_rootx = lambda: 100
-    window.winfo_rooty = lambda: 50
     window.bind = lambda event, callback, add=None: f"bind:{event}:{len(events)}"
     window.unbind = lambda event, token: events.append(("unbind", (event, token)))
+    window._section_header_frames = {
+        "asr_providers": type(
+            "Header",
+            (),
+            {"grid_info": lambda self: {"row": 2}},
+        )()
+    }
 
     AccessKeysWindow._show_add_provider_popup(window, "asr_providers")
     assert popup.placed is True
+    assert popup.grid_options["column"] == 1
+    assert popup.grid_options["row"] == 2
     assert window._add_provider_popup_visible is True
     assert search.focus_count == 1
 
@@ -512,6 +596,43 @@ def test_add_provider_popup_closes_on_escape_outside_click_and_same_plus() -> No
     AccessKeysWindow._show_add_provider_popup(window, "asr_providers")
     AccessKeysWindow._hide_add_provider_popup_event(window, object())
     assert window._add_provider_popup_visible is False
+
+
+def test_add_provider_search_uses_cached_metadata_and_skips_unchanged_render() -> None:
+    original_button = access_keys_dialog.ctk.CTkButton
+    bundle = build_default_access_keys_catalog_bundle()
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    window._full_catalog = bundle.catalog
+    window._full_layouts = tuple(bundle.layouts)
+    window._added_entry_ids = ()
+    window._active_add_group_id = "asr_providers"
+    window._add_provider_buttons = {}
+    window.add_provider_results = object()
+    window._add_provider_search_var = type(
+        "Var",
+        (),
+        {"get": lambda self: "eleven"},
+    )()
+    window._add_provider_search_index = (
+        AccessKeysWindow._build_add_provider_search_index(window)
+    )
+    window._last_add_provider_render_key = ("", "", ())
+
+    _FakeResultButton.created = []
+    _FakeResultButton.destroyed_count = 0
+    access_keys_dialog.ctk.CTkButton = _FakeResultButton
+    try:
+        AccessKeysWindow._refresh_add_provider_results(window)
+        first_create_count = len(_FakeResultButton.created)
+        AccessKeysWindow._refresh_add_provider_results(window)
+    finally:
+        access_keys_dialog.ctk.CTkButton = original_button
+
+    assert first_create_count >= 1
+    assert len(_FakeResultButton.created) == first_create_count
+    assert _FakeResultButton.destroyed_count == 0
+    assert "asr:elevenlabs_scribe" in window._add_provider_search_index
+    assert "elevenlabs" in window._add_provider_search_index["asr:elevenlabs_scribe"]
 
 
 def test_single_window_lifecycle() -> None:
@@ -917,10 +1038,14 @@ def test_static_selector_and_no_flicker_design() -> None:
     assert "self.family_popup.place(x=x, y=y, width=width)" not in source
     assert "self.family_popup.place_forget()" in source
     assert "self.add_provider_popup = ctk.CTkFrame(" in source
+    assert "self.list_panel," in source
+    assert "self.add_provider_popup.grid(" in source
+    assert "column=1" in source
     assert "self.add_provider_results = ctk.CTkScrollableFrame(" in source
     assert "ADD_PROVIDER_SEARCH_PLACEHOLDER" in source
     assert "_show_add_provider_popup" in source
     assert "_refresh_add_provider_results" in source
+    assert "_build_add_provider_search_index" in source
     assert "_add_provider(" in source
     assert "_remove_selected_provider" in source
     assert "compound=\"left\"" in source
@@ -1050,7 +1175,9 @@ def run_self_test() -> None:
     test_add_and_remove_provider_metadata_only()
     test_provider_row_text_is_compact_and_status_sentence_stays_in_details()
     test_provider_links_use_injected_browser_opener_only_on_explicit_click()
+    test_provider_links_render_only_applicable_user_facing_labels()
     test_add_provider_popup_closes_on_escape_outside_click_and_same_plus()
+    test_add_provider_search_uses_cached_metadata_and_skips_unchanged_render()
     test_single_window_lifecycle()
     test_fast_selection_path_updates_only_changed_controls()
     test_filter_changes_reset_scroll_to_top()
