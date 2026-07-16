@@ -12,8 +12,10 @@ import os
 import re
 import sys
 import array
+import csv
 import subprocess
 import random
+import shutil
 import threading
 import time
 import webbrowser
@@ -68,6 +70,7 @@ from transcript_tools import (
     export_transcript_srt,
     export_transcript_vtt,
 )
+from speech_interval_vad import detect_speech_intervals_for_media_file
 
 from youtube_transcript_downloader import (
     download_youtube_transcript,
@@ -151,6 +154,154 @@ class SessionFileEntry:
     normalized_path: str
     display_name: str
     file_kind: str
+
+
+@dataclass(frozen=True)
+class SessionFileIntakeResult:
+    """Summary of a local FILES intake operation."""
+
+    added_paths: Tuple[str, ...] = ()
+    duplicate_paths: Tuple[str, ...] = ()
+    unsupported_paths: Tuple[str, ...] = ()
+    rejected_paths: Tuple[str, ...] = ()
+    selected_path: str = ""
+
+
+class TranscriptPositionScrubber(tk.Canvas):
+    """Lightweight absolute-position scrubber for smooth playback updates."""
+
+    def __init__(self, master, *, command=None, height: int = 16, **kwargs) -> None:
+        super().__init__(
+            master,
+            height=height,
+            bg=kwargs.pop("bg", COLORS["bg_input"]),
+            highlightthickness=0,
+            bd=0,
+            takefocus=True,
+            **kwargs,
+        )
+        self._command = command
+        self._value = 0.0
+        self._render_x: Optional[float] = None
+        self._dragging = False
+        self._track_id = None
+        self._fill_id = None
+        self._knob_id = None
+        self.bind("<Configure>", lambda _event: self._redraw(immediate=True), add="+")
+        self.bind("<ButtonPress-1>", self._on_press, add="+")
+        self.bind("<B1-Motion>", self._on_drag, add="+")
+        self.bind("<ButtonRelease-1>", self._on_release, add="+")
+        self.bind("<Left>", lambda _event: self._keyboard_step(-1.0), add="+")
+        self.bind("<Right>", lambda _event: self._keyboard_step(1.0), add="+")
+
+    def get(self) -> float:
+        return self._value
+
+    def set(self, value: object) -> None:
+        try:
+            self._value = max(0.0, min(100.0, float(value)))
+        except Exception:
+            self._value = 0.0
+        self._redraw(immediate=False)
+
+    def set_immediate(self, value: object) -> None:
+        try:
+            self._value = max(0.0, min(100.0, float(value)))
+        except Exception:
+            self._value = 0.0
+        self._redraw(immediate=True)
+
+    def _track_bounds(self) -> Tuple[float, float, float]:
+        width = max(1.0, float(self.winfo_width() or 1))
+        y = max(8.0, float(self.winfo_height() or 16) / 2.0)
+        return 8.0, max(8.0, width - 8.0), y
+
+    def _desired_x(self) -> float:
+        left, right, _y = self._track_bounds()
+        return left + (right - left) * (self._value / 100.0)
+
+    def _redraw(self, *, immediate: bool) -> None:
+        left, right, y = self._track_bounds()
+        desired_x = self._desired_x()
+        if self._render_x is None or immediate or self._dragging:
+            render_x = desired_x
+        else:
+            delta = desired_x - self._render_x
+            render_x = (
+                self._render_x + (1.0 if delta > 0 else -1.0)
+                if abs(delta) > 1.0
+                else desired_x
+            )
+        self._render_x = render_x
+        if self._track_id is None:
+            self._track_id = self.create_line(
+                left,
+                y,
+                right,
+                y,
+                fill=COLORS["border"],
+                width=4,
+                capstyle="round",
+            )
+            self._fill_id = self.create_line(
+                left,
+                y,
+                render_x,
+                y,
+                fill=COLORS["accent"],
+                width=4,
+                capstyle="round",
+            )
+            self._knob_id = self.create_oval(
+                render_x - 6,
+                y - 6,
+                render_x + 6,
+                y + 6,
+                fill=COLORS["accent"],
+                outline=COLORS["text_primary"],
+                width=1,
+            )
+        else:
+            self.coords(self._track_id, left, y, right, y)
+            self.coords(self._fill_id, left, y, render_x, y)
+            self.coords(self._knob_id, render_x - 6, y - 6, render_x + 6, y + 6)
+
+    def _set_from_x(self, x: object, *, notify: bool = True) -> None:
+        left, right, _y = self._track_bounds()
+        try:
+            x_value = max(left, min(right, float(x)))
+        except Exception:
+            x_value = left
+        span = max(1.0, right - left)
+        self._value = (x_value - left) / span * 100.0
+        self._redraw(immediate=True)
+        if notify and callable(self._command):
+            self._command(self._value)
+
+    def _on_press(self, event) -> None:
+        self._dragging = True
+        self.focus_set()
+        self._set_from_x(getattr(event, "x", 0), notify=False)
+
+    def _on_drag(self, event) -> None:
+        self._set_from_x(getattr(event, "x", 0))
+
+    def _on_release(self, event) -> None:
+        self._set_from_x(getattr(event, "x", 0))
+        self._dragging = False
+
+    def _keyboard_step(self, delta: float) -> str:
+        self.set_immediate(self._value + float(delta))
+        if callable(self._command):
+            self._command(self._value)
+        return "break"
+
+
+class _NoOpSidebarControl:
+    """Compatibility proxy for removed persistent sidebar controls."""
+
+    def configure(self, **_kwargs: object) -> None:
+        return
 
 # Configure logging
 logging.basicConfig(
@@ -395,6 +546,10 @@ class App(ctk.CTk):
         self.linked_transcript_media_path: Optional[str] = None
         self.session_files: List[SessionFileEntry] = []
         self.selected_session_file_path: str = ""
+        self.active_media_file_path: str = ""
+        self.active_transcript_file_path: str = ""
+        self.file_drag_drop_ready: bool = False
+        self.file_drag_drop_status: str = "not_initialized"
         self.transcript_waveform_peaks: List[float] = []
         self.transcript_waveform_source_path: Optional[str] = None
         self.last_package_dir: Optional[str] = None
@@ -417,9 +572,13 @@ class App(ctk.CTk):
         self._fetch_thread_ref: Optional[threading.Thread] = None
 
         # Build UI
+        self._initialize_file_drag_drop()
         self._create_header()
+        self._create_content_paned_window()
         self._create_sidebar()
         self._create_main_content()
+        self._bind_final_file_drop_targets()
+        self._log_file_drag_drop_startup_state()
 
         # Bind keyboard shortcuts
         self.bind("<Control-Return>", lambda e: self.start_fetching())
@@ -524,13 +683,27 @@ class App(ctk.CTk):
 
     def _create_sidebar(self) -> None:
         """Create the left sidebar with all settings."""
+        initial_sidebar_width = self._get_sidebar_width_preference()
+        parent = getattr(self, "content_paned_window", self)
         self.sidebar = ctk.CTkFrame(
-            self,
-            width=self.SIDEBAR_WIDTH,
+            parent,
+            width=initial_sidebar_width,
             fg_color=COLORS["bg_card"],
             corner_radius=0
         )
-        self.sidebar.grid(row=1, column=0, sticky="nsew")
+        if parent is self:
+            try:
+                self.grid_columnconfigure(0, minsize=initial_sidebar_width)
+            except Exception:
+                pass
+            self.sidebar.grid(row=1, column=0, sticky="nsew")
+        else:
+            parent.add(
+                self.sidebar,
+                minsize=260,
+                width=initial_sidebar_width,
+                stretch="never",
+            )
         self.sidebar.grid_propagate(False)
 
         # Sidebar scrollable content
@@ -542,8 +715,11 @@ class App(ctk.CTk):
         )
         self.sidebar_scroll.pack(fill="both", expand=True, padx=0, pady=0)
 
-        # API Key section
-        self._create_api_section()
+        # Access & Keys section owns credential management.
+        self._create_access_keys_section(first=True)
+
+        # Export/package entry point
+        self._create_export_section()
 
         # Session files section
         self._create_files_section()
@@ -560,6 +736,55 @@ class App(ctk.CTk):
         # Version at bottom
         self._create_sidebar_footer()
 
+    def _create_content_paned_window(self) -> None:
+        """Create the native resizable sidebar/workspace container."""
+        self.content_paned_window = tk.PanedWindow(
+            self,
+            orient=tk.HORIZONTAL,
+            sashwidth=6,
+            bd=0,
+            showhandle=False,
+            bg=COLORS["bg_dark"],
+            opaqueresize=False,
+        )
+        self.content_paned_window.grid(row=1, column=0, columnspan=2, sticky="nsew")
+        self.content_paned_window.bind(
+            "<ButtonRelease-1>",
+            self._on_sidebar_paned_sash_release,
+            add="+",
+        )
+
+    def _on_sidebar_paned_sash_release(self, _event=None) -> None:
+        try:
+            width = int(self.sidebar.winfo_width())
+        except Exception:
+            width = int(getattr(self, "sidebar_width", self.SIDEBAR_WIDTH))
+        self.sidebar_width = max(260, min(560, width))
+        self._persist_sidebar_width_preference(self.sidebar_width)
+
+    def _get_sidebar_width_preference(self) -> int:
+        width = getattr(self, "sidebar_width", self.SIDEBAR_WIDTH)
+        try:
+            settings = self.settings_manager.load_preferences_only()
+            width = getattr(settings, "sidebar_width", width)
+        except Exception:
+            pass
+        try:
+            width = int(width)
+        except Exception:
+            width = self.SIDEBAR_WIDTH
+        return max(260, min(520, width))
+
+    def _persist_sidebar_width_preference(self, width: int) -> None:
+        try:
+            settings = self.settings_manager.load_preferences_only()
+            settings.api_key = ""
+            settings.sidebar_width = max(260, min(520, int(width)))
+            self.settings_manager.save(settings)
+            self.sidebar_width = settings.sidebar_width
+        except Exception:
+            logger.error("Failed to persist sidebar width safely.")
+
     def _create_section_label(self, parent: ctk.CTkFrame, text: str, first: bool = False) -> None:
         """Create a section label with divider."""
         if not first:
@@ -573,6 +798,29 @@ class App(ctk.CTk):
             text_color=COLORS["text_secondary"]
         )
         label.pack(anchor="w", padx=20, pady=(15 if first else 0, 10))
+
+    def _initialize_file_drag_drop(self) -> bool:
+        """Initialize TkDND against the existing CustomTkinter root exactly once."""
+        if getattr(self, "file_drag_drop_status", "") not in {"", "not_initialized"}:
+            return bool(getattr(self, "file_drag_drop_ready", False))
+        try:
+            from tkinterdnd2 import DND_FILES, TkinterDnD  # type: ignore
+            TkinterDnD.require(self)
+            self._file_drag_drop_type = DND_FILES
+            self.file_drag_drop_ready = True
+            self.file_drag_drop_status = "ready"
+        except Exception as error:
+            self._file_drag_drop_type = ""
+            self.file_drag_drop_ready = False
+            self.file_drag_drop_status = f"unavailable: {error}"
+        return self.file_drag_drop_ready
+
+    def _log_file_drag_drop_startup_state(self) -> None:
+        if getattr(self, "file_drag_drop_ready", False):
+            self.log_message("File drag-and-drop: Ready", "success")
+            return
+        reason = getattr(self, "file_drag_drop_status", "unavailable")
+        self.log_message(f"File drag-and-drop: {reason}", "warning")
 
     def _create_api_section(self) -> None:
         """Create API key input section in sidebar."""
@@ -665,6 +913,50 @@ class App(ctk.CTk):
         )
         self.access_keys_button.pack(fill="x", pady=(10, 0))
 
+    def _create_access_keys_section(self, first: bool = False) -> None:
+        """Create the Access & Keys entry point without duplicating API-key fields."""
+        if not first:
+            separator = ctk.CTkFrame(self.sidebar_scroll, height=1, fg_color=COLORS["border"])
+            separator.pack(fill="x", padx=20, pady=(15, 12))
+        keys_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
+        keys_frame.pack(fill="x", padx=20, pady=(15 if first else 0, 10))
+        self.access_keys_button = ctk.CTkButton(
+            keys_frame,
+            text="KEYS",
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+            command=self.open_access_keys_window,
+        )
+        self.access_keys_button.pack(fill="x")
+
+    def _create_export_section(self) -> None:
+        """Create the consolidated export/package sidebar entry point."""
+        separator = ctk.CTkFrame(self.sidebar_scroll, height=1, fg_color=COLORS["border"])
+        separator.pack(fill="x", padx=20, pady=(15, 12))
+        export_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
+        export_frame.pack(fill="x", padx=20)
+
+        self.evidence_button = ctk.CTkButton(
+            export_frame,
+            text="EXPORT",
+            command=self.open_files_export_dialog,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=6,
+            state="disabled",
+        )
+        self.evidence_button.pack(fill="x")
+        self.sidebar_evidence_button = self.evidence_button
+        self.sidebar_open_last_package_button = _NoOpSidebarControl()
+        self.sidebar_screenshot_button = _NoOpSidebarControl()
+        self.sidebar_clear_screenshots_button = _NoOpSidebarControl()
+
     def open_access_keys_window(self) -> AccessKeysWindow:
         """Open or focus the read-only Access & Keys status window."""
         existing = getattr(self, "access_keys_window", None)
@@ -674,7 +966,7 @@ class App(ctk.CTk):
             return build_runtime_credential_statuses(
                 settings_manager=self.settings_manager,
                 youtube_configured=bool(
-                    self.api_key_entry.get().strip()
+                    getattr(getattr(self, "api_key_entry", None), "get", lambda: "")().strip()
                 ),
                 credential_store=credential_store,
             )
@@ -688,6 +980,7 @@ class App(ctk.CTk):
                 validation_records=self._get_access_keys_validation_records(),
                 on_validation_records_change=self._set_access_keys_validation_records,
                 validate_provider_key=self._validate_cloud_asr_provider_key,
+                youtube_migration_action=self._migrate_youtube_api_key,
                 browser_opener=webbrowser.open,
                 added_entry_ids=self._get_access_keys_added_provider_ids(),
                 on_added_entry_ids_change=self._set_access_keys_added_provider_ids,
@@ -702,7 +995,37 @@ class App(ctk.CTk):
 
     def _create_files_section(self) -> None:
         """Create the session-only local files section in the sidebar."""
-        self._create_section_label(self.sidebar_scroll, "FILES")
+        divider = ctk.CTkFrame(self.sidebar_scroll, fg_color=COLORS["border"], height=1)
+        divider.pack(fill="x", padx=20, pady=(15, 10))
+
+        self.files_header_frame = ctk.CTkFrame(
+            self.sidebar_scroll,
+            fg_color="transparent",
+        )
+        self.files_header_frame.pack(fill="x", padx=20, pady=(0, 10))
+        self.files_header_frame.grid_columnconfigure(0, weight=1)
+
+        files_label = ctk.CTkLabel(
+            self.files_header_frame,
+            text="FILES",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["text_secondary"],
+        )
+        files_label.grid(row=0, column=0, sticky="w")
+
+        self.files_add_button_tooltip_text = "Add files"
+        self.files_add_button = ctk.CTkButton(
+            self.files_header_frame,
+            text="+",
+            width=28,
+            height=24,
+            command=self._add_session_files_clicked,
+            fg_color=COLORS["bg_input"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+        )
+        self.files_add_button.grid(row=0, column=1, sticky="e")
 
         self.files_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
         self.files_frame.pack(fill="x", padx=20)
@@ -724,7 +1047,358 @@ class App(ctk.CTk):
             anchor="w",
         )
         self.files_empty_label.grid(row=0, column=0, sticky="ew", padx=8, pady=6)
+        self.files_drop_status_label = ctk.CTkLabel(
+            self.files_frame,
+            text="Drop files here",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"],
+            anchor="w",
+        )
+        self.files_drop_status_label.pack(fill="x", pady=(4, 0))
         self.session_file_row_widgets: dict[str, object] = {}
+        self._bind_files_drop_targets()
+
+    def _session_file_picker_filetypes(self) -> List[Tuple[str, str]]:
+        return [
+            (
+                "Supported session files",
+                "*.srt *.vtt *.txt *.mp3 *.wav *.m4a *.aac *.flac *.ogg *.mp4 *.mkv *.mov *.avi *.webm",
+            ),
+            ("Transcript files", "*.srt *.vtt *.txt"),
+            ("Audio files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
+            ("Video files", "*.mp4 *.mkv *.mov *.avi *.webm"),
+            ("All files", "*.*"),
+        ]
+
+    def _add_session_files_clicked(self) -> None:
+        files = filedialog.askopenfilenames(
+            title="Add Session Files",
+            filetypes=self._session_file_picker_filetypes(),
+        )
+        if not files:
+            return
+        self._intake_session_files(files, select_first=True, source_label="selected")
+
+    def _bind_files_drop_targets(self) -> bool:
+        """Bind TkDND file drops when initialization succeeded."""
+        bound = False
+        if not vars(self).get("file_drag_drop_ready", False):
+            self.files_drag_drop_available = False
+            return False
+        drop_type = vars(self).get("_file_drag_drop_type", "")
+        if not drop_type:
+            self.files_drag_drop_available = False
+            return False
+        for widget in (
+            getattr(self, "files_header_frame", None),
+            getattr(self, "files_frame", None),
+            getattr(self, "files_list_frame", None),
+            getattr(self, "files_empty_label", None),
+            getattr(self, "files_drop_status_label", None),
+        ):
+            if widget is None:
+                continue
+            drop_register = getattr(widget, "drop_target_register", None)
+            dnd_bind = getattr(widget, "dnd_bind", None)
+            if not callable(drop_register) or not callable(dnd_bind):
+                continue
+            try:
+                drop_register(drop_type)
+                dnd_bind("<<Drop>>", self._handle_files_drop_event)
+                dnd_bind("<<DragEnter>>", self._handle_files_drag_enter)
+                dnd_bind("<<DragLeave>>", self._handle_files_drag_leave)
+                bound = True
+            except Exception:
+                logger.debug("FILES drag/drop binding unavailable.", exc_info=True)
+        self.files_drag_drop_available = bound
+        return bound
+
+    def _bind_final_file_drop_targets(self) -> bool:
+        """Register drag/drop on the final live FILES and Transcript widgets."""
+        files_bound = self._bind_files_drop_targets()
+        transcript_bound = self._bind_transcript_drop_targets()
+        bound = bool(files_bound or transcript_bound)
+        if bound:
+            self.file_drag_drop_ready = True
+            self.file_drag_drop_status = "ready"
+        elif getattr(self, "_file_drag_drop_type", ""):
+            self.file_drag_drop_ready = False
+            self.file_drag_drop_status = "unavailable: no live drop targets"
+        return bound
+
+    def _set_files_drop_highlight(self, active: bool) -> None:
+        if hasattr(self, "files_list_frame"):
+            try:
+                self.files_list_frame.configure(
+                    border_width=1 if active else 0,
+                    border_color="#8a63d2" if active else COLORS["border"],
+                )
+            except Exception:
+                pass
+        if hasattr(self, "files_drop_status_label"):
+            self.files_drop_status_label.configure(
+                text="Release to add files" if active else "Drop files here",
+                text_color="#c5a6ff" if active else COLORS["text_muted"],
+            )
+
+    def _handle_files_drag_enter(self, _event: object) -> str:
+        self._set_files_drop_highlight(True)
+        return "copy"
+
+    def _handle_files_drag_leave(self, _event: object) -> str:
+        self._set_files_drop_highlight(False)
+        return "break"
+
+    def _handle_files_drop_event(self, event: object) -> str:
+        self._set_files_drop_highlight(False)
+        try:
+            paths = self._session_file_paths_from_drop_data(getattr(event, "data", ""))
+        except Exception:
+            paths = ()
+        self._intake_session_files(paths, select_first=True, source_label="dropped")
+        return "break"
+
+    def _bind_transcript_drop_targets(self) -> bool:
+        """Bind transcript-specific drops without changing the FILES drop target."""
+        bound = False
+        if not getattr(self, "file_drag_drop_ready", False):
+            self.transcript_drag_drop_available = False
+            return False
+        drop_type = getattr(self, "_file_drag_drop_type", "")
+        if not drop_type:
+            self.transcript_drag_drop_available = False
+            return False
+        transcript_text_widget = None
+        try:
+            transcript_text_widget = self._get_transcript_text_widget()
+        except Exception:
+            transcript_text_widget = None
+        for widget in (
+            getattr(self, "transcript_card", None),
+            getattr(self, "transcript_textbox", None),
+            transcript_text_widget,
+            getattr(self, "transcript_timeline_canvas", None),
+        ):
+            if widget is None:
+                continue
+            drop_register = getattr(widget, "drop_target_register", None)
+            dnd_bind = getattr(widget, "dnd_bind", None)
+            if not callable(drop_register) or not callable(dnd_bind):
+                continue
+            try:
+                drop_register(drop_type)
+                dnd_bind("<<Drop>>", self._handle_transcript_drop_event)
+                dnd_bind("<<DragEnter>>", self._handle_transcript_drag_enter)
+                dnd_bind("<<DragLeave>>", self._handle_transcript_drag_leave)
+                bound = True
+            except Exception:
+                logger.debug("Transcript drag/drop binding unavailable.", exc_info=True)
+        self.transcript_drag_drop_available = bound
+        return bound
+
+    def _set_transcript_drop_highlight(self, active: bool, text: str = "") -> None:
+        if hasattr(self, "transcript_card"):
+            try:
+                self.transcript_card.configure(
+                    border_width=2 if active else 1,
+                    border_color="#8a63d2" if active else COLORS["border"],
+                )
+            except Exception:
+                pass
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=text or (
+                    "Release to load transcript here"
+                    if active
+                    else self._transcript_empty_state_text()
+                    if not getattr(self, "transcript_segments", [])
+                    else "Click inside the transcript to select a segment."
+                ),
+                text_color="#c5a6ff" if active else COLORS["text_primary"],
+            )
+
+    def _handle_transcript_drag_enter(self, _event: object) -> str:
+        self._set_transcript_drop_highlight(True)
+        return "copy"
+
+    def _handle_transcript_drag_leave(self, _event: object) -> str:
+        self._set_transcript_drop_highlight(False)
+        return "break"
+
+    def _handle_transcript_drop_event(self, event: object) -> str:
+        self._set_transcript_drop_highlight(False)
+        try:
+            paths = self._session_file_paths_from_drop_data(getattr(event, "data", ""))
+        except Exception:
+            paths = ()
+        self._handle_transcript_drop_paths(paths)
+        return "break"
+
+    def _handle_transcript_drop_paths(self, paths: object) -> SessionFileIntakeResult:
+        """Add transcript-section drops and load the first transcript deterministically."""
+        if isinstance(paths, (str, bytes, os.PathLike)):
+            incoming = [os.fspath(paths)]
+        else:
+            try:
+                incoming = [os.fspath(path) for path in paths]  # type: ignore[arg-type]
+            except TypeError:
+                incoming = []
+
+        transcript_paths: List[str] = []
+        media_paths: List[str] = []
+        other_paths: List[str] = []
+        for path in incoming:
+            kind = self._session_file_kind_for_path(path)
+            if kind == SESSION_FILE_KIND_TRANSCRIPT:
+                transcript_paths.append(path)
+            elif self._is_session_media_kind(kind):
+                media_paths.append(path)
+            else:
+                other_paths.append(path)
+
+        combined_paths = transcript_paths + media_paths + other_paths
+        result = self._intake_session_files(
+            combined_paths,
+            select_first=False,
+            source_label="transcript drop",
+        )
+
+        loaded = False
+        for path in transcript_paths:
+            entry = self._find_session_file_by_normalized_path(path)
+            if entry is not None and self._load_session_transcript_file(entry):
+                loaded = True
+                break
+
+        if media_paths:
+            self.log_message(
+                "Media dropped on Transcript was added to FILES. Select it there to make it active media.",
+                "info",
+            )
+        if transcript_paths and not loaded:
+            self.log_message("No dropped transcript was loaded.", "warning")
+        return result
+
+    def _session_file_paths_from_drop_data(self, data: object) -> Tuple[str, ...]:
+        text = str(data or "").strip()
+        if not text:
+            return ()
+
+        splitlist = getattr(vars(self).get("tk"), "splitlist", None)
+        if not callable(splitlist):
+            raise RuntimeError("Tk drop payload parser is unavailable.")
+        parts = tuple(str(part) for part in splitlist(text))
+        return tuple(part.strip() for part in parts if str(part or "").strip())
+
+    def _intake_session_files(
+        self,
+        paths: object,
+        *,
+        select_first: bool = True,
+        source_label: str = "selected",
+    ) -> SessionFileIntakeResult:
+        """Add supported local files through one picker/drop intake path."""
+        if isinstance(paths, (str, bytes, os.PathLike)):
+            incoming = [os.fspath(paths)]
+        else:
+            try:
+                incoming = [os.fspath(path) for path in paths]  # type: ignore[arg-type]
+            except TypeError:
+                incoming = []
+
+        self._ensure_session_files_state()
+        added: List[str] = []
+        duplicates: List[str] = []
+        unsupported: List[str] = []
+        rejected: List[str] = []
+        candidates: List[SessionFileEntry] = []
+        seen_in_batch: set[str] = set()
+
+        for raw_path in incoming:
+            path = os.path.abspath(os.path.expanduser(str(raw_path or "").strip()))
+            if not path:
+                continue
+            try:
+                normalized = self._normalise_session_file_path(path)
+            except Exception:
+                rejected.append(path)
+                continue
+            if normalized in seen_in_batch:
+                duplicates.append(path)
+                continue
+            seen_in_batch.add(normalized)
+            if os.path.isdir(path):
+                rejected.append(path)
+                continue
+            if not os.path.isfile(path):
+                rejected.append(path)
+                continue
+            file_kind = self._session_file_kind_for_path(path)
+            if file_kind == SESSION_FILE_KIND_OTHER:
+                unsupported.append(path)
+                continue
+
+            before_count = len(self.session_files)
+            entry = self._add_session_file(path, file_kind)
+            if entry is None:
+                rejected.append(path)
+                continue
+            if len(self.session_files) == before_count:
+                duplicates.append(path)
+            else:
+                added.append(path)
+            candidates.append(entry)
+
+        selected_path = ""
+        if select_first and candidates:
+            transcript_candidate = next(
+                (
+                    entry
+                    for entry in candidates
+                    if entry.file_kind == SESSION_FILE_KIND_TRANSCRIPT
+                ),
+                None,
+            )
+            selected_entry = transcript_candidate or candidates[0]
+            self._select_session_file(selected_entry.normalized_path)
+            selected_path = selected_entry.path
+
+        result = SessionFileIntakeResult(
+            added_paths=tuple(added),
+            duplicate_paths=tuple(duplicates),
+            unsupported_paths=tuple(unsupported),
+            rejected_paths=tuple(rejected),
+            selected_path=selected_path,
+        )
+        self._report_session_file_intake_result(result, source_label=source_label)
+        return result
+
+    def _report_session_file_intake_result(
+        self,
+        result: SessionFileIntakeResult,
+        *,
+        source_label: str,
+    ) -> None:
+        if result.added_paths:
+            noun = "file" if len(result.added_paths) == 1 else "files"
+            self.log_message(
+                f"Added {len(result.added_paths)} {source_label} session {noun}.",
+                "success",
+            )
+
+        skipped = result.unsupported_paths + result.rejected_paths
+        if not skipped:
+            return
+
+        names = ", ".join(os.path.basename(path) or "unnamed" for path in skipped[:5])
+        if len(skipped) > 5:
+            names += f", +{len(skipped) - 5} more"
+        message = f"Some files were not added: {names}"
+        self.log_message(message, "warning")
+        try:
+            messagebox.showwarning("Some Files Were Not Added", message)
+        except Exception:
+            logger.debug("Could not show FILES intake warning.", exc_info=True)
 
     def _ensure_session_files_state(self) -> None:
         state = getattr(self, "__dict__", {})
@@ -732,6 +1406,10 @@ class App(ctk.CTk):
             self.session_files = []
         if "selected_session_file_path" not in state:
             self.selected_session_file_path = ""
+        if "active_media_file_path" not in state:
+            self.active_media_file_path = ""
+        if "active_transcript_file_path" not in state:
+            self.active_transcript_file_path = ""
 
     def _normalise_session_file_path(self, path: str) -> str:
         return os.path.normcase(os.path.abspath(os.path.expanduser(path or "")))
@@ -757,6 +1435,59 @@ class App(ctk.CTk):
             return "MED"
         return "FILE"
 
+    def _is_session_media_kind(self, file_kind: str) -> bool:
+        return file_kind in {
+            SESSION_FILE_KIND_AUDIO,
+            SESSION_FILE_KIND_VIDEO,
+            SESSION_FILE_KIND_MEDIA,
+        }
+
+    def _session_media_entries(self) -> List[SessionFileEntry]:
+        self._ensure_session_files_state()
+        return [
+            entry
+            for entry in self.session_files
+            if self._is_session_media_kind(entry.file_kind)
+        ]
+
+    def _find_session_file_by_normalized_path(
+        self,
+        normalized_path: str,
+    ) -> Optional[SessionFileEntry]:
+        self._ensure_session_files_state()
+        normalized_path = self._normalise_session_file_path(normalized_path)
+        return next(
+            (
+                candidate
+                for candidate in self.session_files
+                if candidate.normalized_path == normalized_path
+            ),
+            None,
+        )
+
+    def _default_session_media_path(self) -> str:
+        self._ensure_session_files_state()
+        for value in (
+            getattr(self, "active_media_file_path", ""),
+            getattr(self, "linked_transcript_media_path", "") or "",
+            getattr(self, "selected_session_file_path", ""),
+        ):
+            if not value:
+                continue
+            entry = self._find_session_file_by_normalized_path(value)
+            if entry is not None and self._is_session_media_kind(entry.file_kind):
+                return entry.path
+        media_entries = self._session_media_entries()
+        if len(media_entries) == 1:
+            return media_entries[0].path
+        return ""
+
+    def _session_media_options(self) -> Tuple[Tuple[str, str], ...]:
+        result: List[Tuple[str, str]] = []
+        for index, entry in enumerate(self._session_media_entries(), start=1):
+            result.append((f"{index}. {entry.display_name}", entry.path))
+        return tuple(result)
+
     def _add_session_file(
         self,
         path: str,
@@ -774,6 +1505,10 @@ class App(ctk.CTk):
             if entry.normalized_path == normalized:
                 if select:
                     self.selected_session_file_path = normalized
+                    if self._is_session_media_kind(entry.file_kind):
+                        self.active_media_file_path = normalized
+                    elif entry.file_kind == SESSION_FILE_KIND_TRANSCRIPT:
+                        self.active_transcript_file_path = normalized
                     self._refresh_session_files_list()
                 return entry
         entry = SessionFileEntry(
@@ -785,6 +1520,10 @@ class App(ctk.CTk):
         self.session_files.append(entry)
         if select:
             self.selected_session_file_path = normalized
+            if self._is_session_media_kind(entry.file_kind):
+                self.active_media_file_path = normalized
+            elif entry.file_kind == SESSION_FILE_KIND_TRANSCRIPT:
+                self.active_transcript_file_path = normalized
         self._refresh_session_files_list()
         return entry
 
@@ -799,6 +1538,11 @@ class App(ctk.CTk):
         ]
         if self.selected_session_file_path == normalized_path:
             self.selected_session_file_path = ""
+        if self.active_media_file_path == normalized_path:
+            self.active_media_file_path = ""
+            self._set_linked_transcript_media(None)
+        if self.active_transcript_file_path == normalized_path:
+            self.active_transcript_file_path = ""
         self._refresh_session_files_list()
 
     def _refresh_session_files_list(self) -> None:
@@ -821,6 +1565,10 @@ class App(ctk.CTk):
             row_frame.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
             row_frame.grid_columnconfigure(0, weight=1)
             selected = entry.normalized_path == self.selected_session_file_path
+            active_media = (
+                self._is_session_media_kind(entry.file_kind)
+                and entry.normalized_path == getattr(self, "active_media_file_path", "")
+            )
             text = f"{self._session_file_icon_for_kind(entry.file_kind)}  {entry.display_name}"
             if (
                 selected
@@ -828,17 +1576,50 @@ class App(ctk.CTk):
                 and getattr(self, "transcript_has_unsaved_edits", False)
             ):
                 text += " *"
+            row_color = "transparent"
+            text_color = COLORS["text_primary"]
+            if active_media:
+                row_color = "#4b2d73"
+                text_color = "#f4ecff"
+            elif selected:
+                row_color = COLORS["accent_secondary"]
             button = ctk.CTkButton(
                 row_frame,
                 text=text,
                 anchor="w",
                 height=26,
-                fg_color=COLORS["accent_secondary"] if selected else "transparent",
+                fg_color=row_color,
                 hover_color=COLORS["border"],
-                text_color=COLORS["text_primary"],
+                text_color=text_color,
                 command=lambda path=entry.normalized_path: self._select_session_file(path),
             )
             button.grid(row=0, column=0, sticky="ew")
+            action_column = 1
+            if self._is_session_media_kind(entry.file_kind):
+                local_button = ctk.CTkButton(
+                    row_frame,
+                    text="⌂",
+                    width=26,
+                    height=26,
+                    fg_color="transparent",
+                    hover_color=COLORS["border"],
+                    text_color=COLORS["text_primary"],
+                    command=lambda path=entry.normalized_path: self._start_local_asr_full_for_session_file(path),
+                )
+                local_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
+                action_column += 1
+                online_button = ctk.CTkButton(
+                    row_frame,
+                    text="◉",
+                    width=26,
+                    height=26,
+                    fg_color="transparent",
+                    hover_color=COLORS["border"],
+                    text_color=COLORS["text_primary"],
+                    command=lambda path=entry.normalized_path: self._start_online_asr_full_for_session_file(path),
+                )
+                online_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
+                action_column += 1
             remove_button = ctk.CTkButton(
                 row_frame,
                 text="×",
@@ -849,7 +1630,7 @@ class App(ctk.CTk):
                 text_color=COLORS["text_muted"],
                 command=lambda path=entry.normalized_path: self._remove_session_file(path),
             )
-            remove_button.grid(row=0, column=1, sticky="e", padx=(4, 0))
+            remove_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
             self.session_file_row_widgets[entry.normalized_path] = row_frame
 
     def _save_transcript_before_session_switch(self) -> bool:
@@ -928,18 +1709,131 @@ class App(ctk.CTk):
             messagebox.showerror("Transcript Import Error", str(error))
             return False
 
+        if not self._confirm_transcript_media_duration_link(segments):
+            return False
+
         self.transcript_segments = segments
         self.last_transcript_source = f"Imported file: {entry.display_name}"
         self.transcript_has_unsaved_edits = False
         self.transcript_undo_stack = []
         self.transcript_redo_stack = []
         self.selected_session_file_path = entry.normalized_path
-        self._set_linked_transcript_media(None)
+        self.active_transcript_file_path = entry.normalized_path
         self._refresh_transcript_display()
         if "evidence_button" in getattr(self, "__dict__", {}):
             self.evidence_button.configure(state="normal")
         self._refresh_session_files_list()
         return True
+
+    def _confirm_transcript_media_duration_link(
+        self,
+        segments: List[TranscriptSegment],
+    ) -> bool:
+        media_duration = self._get_linked_media_duration_seconds()
+        if not isinstance(media_duration, (int, float)) or media_duration <= 0:
+            return True
+        transcript_times = [
+            seconds
+            for segment in segments
+            for seconds in (
+                self._transcript_time_to_seconds(segment.start),
+                self._transcript_time_to_seconds(segment.end),
+            )
+            if seconds is not None
+        ]
+        if not transcript_times:
+            return True
+        transcript_duration = max(transcript_times)
+        difference = abs(float(transcript_duration) - float(media_duration))
+        if difference < 5.0 or difference / max(1.0, float(media_duration)) < 0.08:
+            return True
+        if "tk" not in vars(self):
+            return True
+        choice = self._ask_transcript_media_mismatch_choice(
+            media_duration=float(media_duration),
+            transcript_duration=float(transcript_duration),
+            media_name=os.path.basename(getattr(self, "linked_transcript_media_path", "") or "Media"),
+            transcript_name=os.path.basename(
+                getattr(self, "active_transcript_file_path", "") or "Transcript"
+            ),
+        )
+        if choice == "cancel":
+            return False
+        if choice == "unlink":
+            self._set_linked_transcript_media(None)
+        return True
+
+    def _ask_transcript_media_mismatch_choice(
+        self,
+        *,
+        media_duration: float,
+        transcript_duration: float,
+        media_name: str = "Media",
+        transcript_name: str = "Transcript",
+    ) -> str:
+        """Ask how to handle a transcript/media duration mismatch."""
+        override = vars(self).get("_transcript_media_mismatch_choice_override")
+        if override:
+            return str(override)
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Transcript/Media Duration Mismatch")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+
+        result = {"choice": "cancel"}
+        frame = ctk.CTkFrame(dialog, fg_color=COLORS["bg_card"])
+        frame.pack(fill="both", expand=True, padx=18, pady=18)
+        ctk.CTkLabel(
+            frame,
+            text="Transcript and media durations differ",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=COLORS["text_primary"],
+            anchor="w",
+        ).pack(fill="x")
+        ctk.CTkLabel(
+            frame,
+            text=(
+                "The transcript duration differs materially from the active media duration.\n\n"
+                f"Media:\n{media_name} - {self._format_timeline_time(media_duration)}\n\n"
+                f"Transcript:\n{transcript_name} - {self._format_timeline_time(transcript_duration)}"
+            ),
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary"],
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(8, 14))
+
+        button_row = ctk.CTkFrame(frame, fg_color="transparent")
+        button_row.pack(fill="x")
+
+        def choose(value: str) -> None:
+            result["choice"] = value
+            dialog.destroy()
+
+        for text, value, color in (
+            ("Link anyway", "link", COLORS["accent"]),
+            ("Keep transcript unlinked", "unlink", COLORS["accent_secondary"]),
+            ("Cancel", "cancel", COLORS["border"]),
+        ):
+            ctk.CTkButton(
+                button_row,
+                text=text,
+                command=lambda value=value: choose(value),
+                fg_color=color,
+                hover_color=COLORS["accent_hover"] if value == "link" else COLORS["border"],
+                text_color="#000000" if value == "link" else COLORS["text_primary"],
+                height=30,
+                corner_radius=6,
+            ).pack(side="left", padx=(0, 8))
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: choose("cancel"))
+        try:
+            dialog.wait_window()
+        except Exception:
+            return "cancel"
+        return str(result["choice"])
 
     def _select_session_media_file(self, entry: SessionFileEntry) -> bool:
         if not os.path.exists(entry.path):
@@ -949,6 +1843,7 @@ class App(ctk.CTk):
             )
             return False
         self.selected_session_file_path = entry.normalized_path
+        self.active_media_file_path = entry.normalized_path
         self._set_linked_transcript_media(entry.path, log=True)
         self._refresh_session_files_list()
         if "transcript_cursor_status_label" in getattr(self, "__dict__", {}):
@@ -957,6 +1852,30 @@ class App(ctk.CTk):
                 text_color=COLORS["text_primary"],
             )
         return True
+
+    def _start_local_asr_full_for_session_file(self, normalized_path: str) -> bool:
+        entry = self._find_session_file_by_normalized_path(normalized_path)
+        if entry is None or not self._is_session_media_kind(entry.file_kind):
+            return False
+        if not self._select_session_media_file(entry):
+            return False
+        self.local_asr_transcribe_clicked(media_file=entry.path, force_full=True)
+        return True
+
+    def _start_online_asr_full_for_session_file(self, normalized_path: str) -> bool:
+        entry = self._find_session_file_by_normalized_path(normalized_path)
+        if entry is None or not self._is_session_media_kind(entry.file_kind):
+            return False
+        if not self._select_session_media_file(entry):
+            return False
+
+        option = self._online_asr_provider_option(self._get_online_asr_provider_id())
+        status = self._online_asr_provider_credential_status(option)
+        if status is None or status.state is not CredentialPresenceState.CONFIGURED:
+            self.open_online_asr_settings_clicked()
+            return False
+
+        return bool(self._start_online_asr_transcription(entry.path))
 
     def _get_access_keys_added_provider_ids(self) -> tuple[str, ...]:
         result: list[str] = []
@@ -1634,13 +2553,33 @@ class App(ctk.CTk):
 
     def _create_main_content(self) -> None:
         """Create the scrollable main content area."""
+        parent = getattr(self, "content_paned_window", self)
+        if parent is self:
+            main_parent = self
+            row = 1
+            column = 1
+        else:
+            self.main_workspace = ctk.CTkFrame(
+                parent,
+                fg_color="transparent",
+            )
+            self.main_workspace.grid_columnconfigure(0, weight=1)
+            self.main_workspace.grid_rowconfigure(0, weight=1)
+            parent.add(
+                self.main_workspace,
+                minsize=520,
+                stretch="always",
+            )
+            main_parent = self.main_workspace
+            row = 0
+            column = 0
         self.main_frame = ctk.CTkScrollableFrame(
-            self,
+            main_parent,
             fg_color="transparent",
             scrollbar_button_color=COLORS["border"],
             scrollbar_button_hover_color=COLORS["accent_secondary"]
         )
-        self.main_frame.grid(row=1, column=1, sticky="nsew", padx=20, pady=20)
+        self.main_frame.grid(row=row, column=column, sticky="nsew", padx=20, pady=20)
         self.main_frame.grid_columnconfigure(0, weight=1)
         self.main_frame.grid_rowconfigure(3, weight=0)
 
@@ -1848,17 +2787,9 @@ class App(ctk.CTk):
         )
         self.export_txt_button.pack(side="right", padx=(0, 10))
 
-        # Second row: screenshot/package/update tools
+        # Second row: update tools only. Export/package actions live under FILES -> EXPORT.
         tools_frame = ctk.CTkFrame(action_area, fg_color="transparent")
         tools_frame.pack(fill="x", pady=(10, 0))
-
-        tools_hint = ctk.CTkLabel(
-            tools_frame,
-            text="Attach screenshots, then create an export package",
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS["text_muted"]
-        )
-        tools_hint.pack(side="left")
 
         self.update_button = ctk.CTkButton(
             tools_frame,
@@ -1872,74 +2803,10 @@ class App(ctk.CTk):
             corner_radius=8
         )
         self.update_button.pack(side="right")
-
-        self.evidence_button = ctk.CTkButton(
-            tools_frame,
-            text="📁 Package",
-            command=self.export_evidence_folder,
-            width=105,
-            height=34,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["accent_secondary"],
-            hover_color=COLORS["border"],
-            corner_radius=8,
-            state="disabled"
-        )
-        self.evidence_button.pack(side="right", padx=(0, 10))
-
-        self.screenshot_button = ctk.CTkButton(
-            tools_frame,
-            text="🖼 Attach",
-            command=self.attach_screenshots,
-            width=105,
-            height=34,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["accent_secondary"],
-            hover_color=COLORS["border"],
-            corner_radius=8
-        )
-        self.screenshot_button.pack(side="right", padx=(0, 10))
-
-        # Extra package helper row
-        package_tools_frame = ctk.CTkFrame(action_area, fg_color="transparent")
-        package_tools_frame.pack(fill="x", pady=(8, 0))
-
-        package_tools_hint = ctk.CTkLabel(
-            package_tools_frame,
-            text="Package tools",
-            font=ctk.CTkFont(size=10),
-            text_color=COLORS["text_muted"]
-        )
-        package_tools_hint.pack(side="left")
-
-        self.open_last_package_button = ctk.CTkButton(
-            package_tools_frame,
-            text="📂 Open Last",
-            command=self.open_last_package,
-            width=105,
-            height=30,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=COLORS["accent_secondary"],
-            hover_color=COLORS["border"],
-            corner_radius=8,
-            state="disabled"
-        )
-        self.open_last_package_button.pack(side="right")
-
-        self.clear_screenshots_button = ctk.CTkButton(
-            package_tools_frame,
-            text="🧹 Clear Attach",
-            command=self.clear_attached_screenshots,
-            width=115,
-            height=30,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color="transparent",
-            hover_color=COLORS["border"],
-            text_color=COLORS["text_muted"],
-            corner_radius=8,
-            state="disabled"
-        )
-        self.clear_screenshots_button.pack(side="right", padx=(0, 10))
+        self.evidence_button = self.sidebar_evidence_button
+        self.screenshot_button = _NoOpSidebarControl()
+        self.open_last_package_button = _NoOpSidebarControl()
+        self.clear_screenshots_button = _NoOpSidebarControl()
 
     def _create_progress_section(self) -> None:
         """Create the progress indicator section."""
@@ -2274,6 +3141,8 @@ class App(ctk.CTk):
             corner_radius=8
         )
         self.transcript_media_button.pack(side="left", padx=(8, 0))
+        self.transcript_media_button.configure(state="disabled")
+        self.transcript_media_button.pack_forget()
 
         self.transcript_media_status_label = ctk.CTkLabel(
             button_row,
@@ -2712,6 +3581,8 @@ class App(ctk.CTk):
 
         self.transcript_timeline_zoom_level = 1.0
         self.transcript_timeline_pan_fraction = 0.0
+        self.transcript_timeline_view_fraction = 0.0
+        self.transcript_position_fraction = 0.0
         self.transcript_playhead_seconds: Optional[float] = None
         self.transcript_playback_process = None
         self.transcript_playback_after_id = None
@@ -2720,10 +3591,18 @@ class App(ctk.CTk):
         self.transcript_playback_latency_offset_seconds = 0.0
         self.transcript_playback_active_segment_index: Optional[int] = None
         self.transcript_playback_tick_ms = 30
+        self.transcript_playback_generation = 0
         self.transcript_playback_requested_start_seconds: Optional[float] = None
+        self.transcript_media_duration_seconds: Optional[float] = None
         self.transcript_vlc_clock_anchor_seconds: Optional[float] = None
         self.transcript_vlc_clock_anchor_wall_time: Optional[float] = None
         self.transcript_vlc_last_reported_seconds: Optional[float] = None
+        self.transcript_vlc_max_interpolation_lead_seconds = 0.250
+        self.transcript_playback_follow_anchor_ratio = 0.68
+        self.transcript_playback_follow_hysteresis = 0.06
+        self.transcript_playback_follow_active = False
+        self.transcript_playback_debug_enabled = False
+        self.transcript_playback_debug_ticks: List[Dict[str, Any]] = []
         self.transcript_vlc_module = None
         self.transcript_vlc_instance = None
         self.transcript_vlc_player = None
@@ -2786,6 +3665,19 @@ class App(ctk.CTk):
         )
         self.transcript_waveform_button.grid(row=0, column=3, sticky="e", padx=(8, 0))
 
+        self.transcript_detect_intervals_button = ctk.CTkButton(
+            timeline_zoom_row,
+            text="Create subtitle timings",
+            command=self.detect_speech_intervals_clicked,
+            width=165,
+            height=24,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=6
+        )
+        self.transcript_detect_intervals_button.grid(row=0, column=5, sticky="e", padx=(8, 0))
+
         self.transcript_waveform_status_label = ctk.CTkLabel(
             timeline_zoom_row,
             text="No waveform",
@@ -2806,13 +3698,10 @@ class App(ctk.CTk):
         )
         self.transcript_timeline_pan_label.grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
 
-        self.transcript_timeline_pan_slider = ctk.CTkSlider(
+        self.transcript_timeline_pan_slider = TranscriptPositionScrubber(
             timeline_zoom_row,
-            from_=0,
-            to=100,
-            number_of_steps=2000,
             command=self._on_transcript_timeline_pan_changed,
-            height=16
+            height=18,
         )
         self.transcript_timeline_pan_slider.grid(
             row=1,
@@ -2820,6 +3709,16 @@ class App(ctk.CTk):
             columnspan=4,
             sticky="ew",
             pady=(6, 0)
+        )
+        self.transcript_timeline_pan_slider.bind(
+            "<ButtonPress-1>",
+            self._on_transcript_position_scrub_press,
+            add="+",
+        )
+        self.transcript_timeline_pan_slider.bind(
+            "<ButtonRelease-1>",
+            self._on_transcript_position_scrub_release,
+            add="+",
         )
         self.transcript_timeline_pan_slider.set(0)
 
@@ -2933,6 +3832,7 @@ class App(ctk.CTk):
         )
 
         self._refresh_transcript_display()
+        self._bind_final_file_drop_targets()
 
     def _create_log_section(self) -> None:
         """Create the activity log section."""
@@ -3167,7 +4067,8 @@ class App(ctk.CTk):
 
     def _resolve_youtube_api_key_for_action(self) -> str:
         """Return a typed draft or stored YouTube key without populating the UI."""
-        draft = self.api_key_entry.get().strip()
+        api_entry = getattr(self, "api_key_entry", None)
+        draft = api_entry.get().strip() if api_entry is not None else ""
         if draft:
             return draft
         return self.settings_manager.load().api_key.strip()
@@ -3234,33 +4135,42 @@ class App(ctk.CTk):
             YouTubeCredentialStorageState.SECURE_BACKEND_UNAVAILABLE: "Secure storage unavailable",
             YouTubeCredentialStorageState.STATUS_ERROR: "Storage status error",
         }
-        self.storage_label.configure(text=labels.get(state, "Storage status unknown"))
+        storage_label = getattr(self, "storage_label", None)
+        if storage_label is not None:
+            storage_label.configure(text=labels.get(state, "Storage status unknown"))
 
     def _save_youtube_api_key_secure(self) -> None:
-        credential = self.api_key_entry.get().strip()
+        api_entry = getattr(self, "api_key_entry", None)
+        credential = api_entry.get().strip() if api_entry is not None else ""
         result = self._youtube_credential_service().save_secure(credential)
         if result.status in {
             YouTubeCredentialActionStatus.SAVED,
             YouTubeCredentialActionStatus.UPDATED,
         }:
-            self.api_key_entry.delete(0, "end")
-        self.api_key_entry.configure(show="*")
+            if api_entry is not None:
+                api_entry.delete(0, "end")
+        if api_entry is not None:
+            api_entry.configure(show="*")
         self._refresh_youtube_credential_status()
         message, level = self._youtube_action_message(result.status)
         self.log_message(message, level)
 
     def _migrate_youtube_api_key(self) -> None:
         result = self._youtube_credential_service().migrate_legacy_to_secure()
-        self.api_key_entry.delete(0, "end")
-        self.api_key_entry.configure(show="*")
+        api_entry = getattr(self, "api_key_entry", None)
+        if api_entry is not None:
+            api_entry.delete(0, "end")
+            api_entry.configure(show="*")
         self._refresh_youtube_credential_status()
         message, level = self._youtube_action_message(result.status)
         self.log_message(message, level)
 
     def _clear_youtube_api_key(self) -> None:
         result = self._youtube_credential_service().clear_all()
-        self.api_key_entry.delete(0, "end")
-        self.api_key_entry.configure(show="*")
+        api_entry = getattr(self, "api_key_entry", None)
+        if api_entry is not None:
+            api_entry.delete(0, "end")
+            api_entry.configure(show="*")
         self._refresh_youtube_credential_status()
         message, level = self._youtube_action_message(result.status)
         self.log_message(message, level)
@@ -3433,8 +4343,10 @@ class App(ctk.CTk):
             )
             settings = load_preferences()
 
-            self.api_key_entry.delete(0, "end")
-            self.api_key_entry.configure(show="*")
+            api_key_entry = self.__dict__.get("api_key_entry")
+            if api_key_entry is not None:
+                api_key_entry.delete(0, "end")
+                api_key_entry.configure(show="*")
 
             self.spam_filter_var.set(settings.filter_spam)
             self.spam_threshold_var.set(settings.spam_threshold)
@@ -3485,7 +4397,7 @@ class App(ctk.CTk):
         """Save current settings."""
         try:
             settings = AppSettings(
-                api_key=self.api_key_entry.get().strip(),
+                api_key="",
                 filter_spam=self.spam_filter_var.get(),
                 spam_threshold=self.spam_threshold_var.get(),
                 exclude_creator=self.exclude_creator_var.get(),
@@ -3588,6 +4500,274 @@ class App(ctk.CTk):
         except Exception as error:
             logger.exception("Copy activity log failed")
             messagebox.showerror("Copy Failed", f"Could not copy Activity Log:\n\n{error}")
+
+    def open_files_export_dialog(self) -> None:
+        """Open one FILES-backed export/package dialog."""
+        self._ensure_session_files_state()
+
+        if not self.session_files and not self.transcript_segments and not self.all_comments:
+            messagebox.showinfo(
+                "Export",
+                "Add files, import a transcript, or fetch comments before exporting.",
+            )
+            return
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Export")
+        dialog.geometry("520x560")
+        dialog.configure(fg_color=COLORS["bg_dark"])
+        dialog.transient(self)
+
+        container = ctk.CTkFrame(dialog, fg_color=COLORS["bg_card"], corner_radius=12)
+        container.pack(fill="both", expand=True, padx=16, pady=16)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(2, weight=1)
+
+        ctk.CTkLabel(
+            container,
+            text="Export",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=COLORS["text_primary"],
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 4))
+
+        ctk.CTkLabel(
+            container,
+            text="Copy selected FILES entries or use the existing transcript/comment export actions.",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary"],
+            wraplength=460,
+            justify="left",
+            anchor="w",
+        ).grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
+
+        files_frame = ctk.CTkScrollableFrame(container, fg_color=COLORS["bg_input"], height=220)
+        files_frame.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 12))
+
+        selected_vars: dict[str, tk.BooleanVar] = {}
+        for entry in self.session_files:
+            var = tk.BooleanVar(value=True)
+            selected_vars[entry.normalized_path] = var
+            ctk.CTkCheckBox(
+                files_frame,
+                text=entry.display_name,
+                variable=var,
+                font=ctk.CTkFont(size=12),
+                fg_color=COLORS["accent"],
+                hover_color=COLORS["accent_hover"],
+                text_color=COLORS["text_primary"],
+            ).pack(fill="x", padx=8, pady=(6, 0))
+
+        if not self.session_files:
+            ctk.CTkLabel(
+                files_frame,
+                text="No FILES entries are attached yet.",
+                font=ctk.CTkFont(size=12),
+                text_color=COLORS["text_muted"],
+                anchor="w",
+            ).pack(fill="x", padx=8, pady=8)
+
+        def set_all(value: bool) -> None:
+            for var in selected_vars.values():
+                var.set(value)
+
+        def selected_entries() -> List[SessionFileEntry]:
+            return [
+                entry
+                for entry in self.session_files
+                if selected_vars.get(entry.normalized_path) and selected_vars[entry.normalized_path].get()
+            ]
+
+        def selected_text_entries() -> List[SessionFileEntry]:
+            entries = selected_entries()
+            compatible = [
+                entry
+                for entry in entries
+                if entry.file_kind == SESSION_FILE_KIND_TRANSCRIPT
+                or os.path.splitext(entry.path)[1].lower() in {".txt", ".srt", ".vtt", ".csv"}
+            ]
+            if not entries:
+                messagebox.showinfo("Export FILES", "Select at least one FILES entry.")
+                return []
+            if len(compatible) != len(entries):
+                messagebox.showinfo(
+                    "Export FILES",
+                    "Combined TXT, CSV, and Excel exports support selected text/transcript FILES entries only.",
+                )
+                return []
+            return compatible
+
+        def copy_selected_files() -> None:
+            entries = selected_entries()
+            if not entries:
+                messagebox.showinfo("Export FILES", "Select at least one FILES entry to copy.")
+                return
+            folder = filedialog.askdirectory(title="Choose Export Folder")
+            if not folder:
+                return
+            copied = 0
+            for entry in entries:
+                source = entry.path
+                if not os.path.isfile(source):
+                    continue
+                destination = os.path.join(folder, os.path.basename(source))
+                stem, ext = os.path.splitext(destination)
+                counter = 1
+                while os.path.exists(destination):
+                    destination = f"{stem}_{counter}{ext}"
+                    counter += 1
+                shutil.copy2(source, destination)
+                copied += 1
+            self.log_message(f"Copied {copied} FILES item(s) to export folder.", "success")
+            messagebox.showinfo("Export FILES", f"Copied {copied} file(s).")
+
+        def read_entry_text(entry: SessionFileEntry) -> str:
+            try:
+                segments = import_transcript(entry.path)
+            except Exception:
+                try:
+                    return open(entry.path, "r", encoding="utf-8", errors="replace").read()
+                except Exception:
+                    return ""
+            parts = []
+            for segment in segments:
+                speaker = segment.speaker or "Speaker"
+                time_part = (
+                    f" [{segment.start} - {segment.end}]"
+                    if segment.start or segment.end
+                    else ""
+                )
+                parts.append(f"{speaker}{time_part}\n{segment.text}")
+            return "\n\n".join(parts)
+
+        def combine_selected_txt() -> None:
+            entries = selected_text_entries()
+            if not entries:
+                return
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt")],
+                title="Save Combined FILES Text",
+            )
+            if not filename:
+                return
+            with open(filename, "w", encoding="utf-8") as handle:
+                handle.write("Combined FILES Text Export\n")
+                handle.write("=" * 80 + "\n\n")
+                for entry in entries:
+                    handle.write(f"Source: {entry.display_name}\n")
+                    handle.write(f"Kind: {entry.file_kind}\n")
+                    handle.write("-" * 80 + "\n")
+                    handle.write(read_entry_text(entry).rstrip())
+                    handle.write("\n\n")
+            self.log_message(f"Combined {len(entries)} FILES text item(s).", "success")
+            messagebox.showinfo("Export FILES", f"Combined text saved:\n\n{os.path.basename(filename)}")
+
+        def combine_selected_csv() -> None:
+            entries = selected_text_entries()
+            if not entries:
+                return
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv")],
+                title="Save Combined FILES CSV",
+            )
+            if not filename:
+                return
+            with open(filename, "w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["source", "kind", "text"])
+                writer.writeheader()
+                for entry in entries:
+                    writer.writerow(
+                        {
+                            "source": entry.display_name,
+                            "kind": entry.file_kind,
+                            "text": read_entry_text(entry),
+                        }
+                    )
+            self.log_message(f"Combined {len(entries)} FILES item(s) to CSV.", "success")
+            messagebox.showinfo("Export FILES", f"Combined CSV saved:\n\n{os.path.basename(filename)}")
+
+        def combine_selected_excel() -> None:
+            entries = selected_text_entries()
+            if not entries:
+                return
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")],
+                title="Save Combined FILES Excel",
+            )
+            if not filename:
+                return
+            from openpyxl import Workbook
+
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "Combined FILES"
+            sheet.append(["source", "kind", "text"])
+            for entry in entries:
+                sheet.append([entry.display_name, entry.file_kind, read_entry_text(entry)])
+            workbook.save(filename)
+            self.log_message(f"Combined {len(entries)} FILES item(s) to Excel.", "success")
+            messagebox.showinfo("Export FILES", f"Combined Excel saved:\n\n{os.path.basename(filename)}")
+
+        select_row = ctk.CTkFrame(container, fg_color="transparent")
+        select_row.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 10))
+        ctk.CTkButton(
+            select_row,
+            text="All",
+            command=lambda: set_all(True),
+            width=80,
+            height=28,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+        ).pack(side="left")
+        ctk.CTkButton(
+            select_row,
+            text="Clear all",
+            command=lambda: set_all(False),
+            width=90,
+            height=28,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+        ).pack(side="left", padx=(8, 0))
+        ctk.CTkButton(
+            select_row,
+            text="Copy selected",
+            command=copy_selected_files,
+            width=120,
+            height=28,
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color="#000000",
+        ).pack(side="right")
+
+        action_row = ctk.CTkFrame(container, fg_color="transparent")
+        action_row.grid(row=4, column=0, sticky="ew", padx=14, pady=(0, 12))
+        for label, command in (
+            ("TXT", combine_selected_txt),
+            ("CSV", combine_selected_csv),
+            ("Excel", combine_selected_excel),
+        ):
+            ctk.CTkButton(
+                action_row,
+                text=label,
+                command=command,
+                width=96,
+                height=30,
+                fg_color=COLORS["accent_secondary"],
+                hover_color=COLORS["border"],
+            ).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(
+            container,
+            text="Close",
+            command=dialog.destroy,
+            height=32,
+            fg_color="transparent",
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_secondary"],
+        ).grid(row=5, column=0, sticky="e", padx=14, pady=(0, 12))
 
     def clear_log(self) -> None:
         """Clear the activity log."""
@@ -4225,6 +5405,10 @@ class App(ctk.CTk):
             ("Source File Name", "source_file_name"),
             ("Source File Size Bytes", "source_file_size_bytes"),
             ("Source File SHA256", "source_file_sha256"),
+            ("Normalized PCM SHA256", "normalized_pcm_sha256"),
+            ("Model SHA256", "model_sha256"),
+            ("Resolved Runner", "resolved_runner"),
+            ("Sanitized Command Manifest", "sanitized_command_manifest"),
             ("Engine", "selected_asr_engine"),
             ("Model", "model_name"),
             ("Device", "device"),
@@ -4532,6 +5716,310 @@ class App(ctk.CTk):
             for segment in self.transcript_segments
         ]
 
+    @staticmethod
+    def _blank_text_preserving_transcript_boundaries(
+        segments: List[TranscriptSegment],
+    ) -> List[TranscriptSegment]:
+        """Return editable blank cues without merging ASR timing boundaries."""
+        return [
+            TranscriptSegment(
+                speaker=segment.speaker,
+                start=segment.start,
+                end=segment.end,
+                text="",
+            )
+            for segment in segments
+        ]
+
+    def _build_subtitle_timing_cues(
+        self,
+        segments: List[TranscriptSegment],
+        *,
+        media_duration_seconds: Optional[float] = None,
+        word_timestamps: Optional[List[Dict[str, Any]]] = None,
+        pause_gap_seconds: float = 0.35,
+        max_cue_duration_seconds: float = 6.0,
+        max_cue_chars: int = 90,
+    ) -> List[TranscriptSegment]:
+        """Build editable subtitle cues from ASR timing evidence."""
+        media_limit = (
+            float(media_duration_seconds)
+            if isinstance(media_duration_seconds, (int, float)) and media_duration_seconds > 0
+            else None
+        )
+
+        words: List[Dict[str, Any]] = []
+        for word in word_timestamps or []:
+            if not isinstance(word, dict):
+                continue
+            try:
+                start_seconds = float(word.get("start"))
+                end_seconds = float(word.get("end"))
+            except Exception:
+                continue
+            text = " ".join(str(word.get("text") or "").split())
+            if not text or end_seconds <= start_seconds:
+                continue
+            start_seconds = max(0.0, start_seconds)
+            end_seconds = max(start_seconds, end_seconds)
+            if media_limit is not None:
+                if start_seconds >= media_limit:
+                    continue
+                end_seconds = min(end_seconds, media_limit)
+            words.append(
+                {
+                    "start": start_seconds,
+                    "end": end_seconds,
+                    "text": text,
+                }
+            )
+
+        if words:
+            words.sort(key=lambda item: (float(item["start"]), float(item["end"])))
+            return self._build_word_timestamp_subtitle_cues(
+                words,
+                speaker=(segments[0].speaker if segments else "Speaker 1"),
+                media_limit=media_limit,
+                pause_gap_seconds=pause_gap_seconds,
+                max_cue_duration_seconds=max_cue_duration_seconds,
+                max_cue_chars=max_cue_chars,
+            )
+
+        cues: List[TranscriptSegment] = []
+        for segment in segments:
+            start_seconds = self._transcript_time_to_seconds(segment.start)
+            end_seconds = self._transcript_time_to_seconds(segment.end)
+            text = " ".join((segment.text or "").split())
+            if start_seconds is None or end_seconds is None:
+                if text:
+                    cues.append(
+                        TranscriptSegment(
+                            speaker=segment.speaker,
+                            start=segment.start,
+                            end=segment.end,
+                            text=text,
+                        )
+                    )
+                continue
+            start_seconds = max(0.0, float(start_seconds))
+            end_seconds = max(start_seconds, float(end_seconds))
+            if media_limit is not None:
+                start_seconds = min(start_seconds, media_limit)
+                end_seconds = min(end_seconds, media_limit)
+            if end_seconds <= start_seconds:
+                continue
+            cues.append(
+                TranscriptSegment(
+                    speaker=segment.speaker,
+                    start=self._seconds_to_transcript_time(start_seconds),
+                    end=self._seconds_to_transcript_time(end_seconds),
+                    text=text,
+                )
+            )
+        return cues
+
+    def _build_word_timestamp_subtitle_cues(
+        self,
+        words: List[Dict[str, Any]],
+        *,
+        speaker: str,
+        media_limit: Optional[float],
+        pause_gap_seconds: float,
+        max_cue_duration_seconds: float,
+        max_cue_chars: int,
+    ) -> List[TranscriptSegment]:
+        """Build cues from timestamped words/tokens without filling silent gaps."""
+        groups: List[Dict[str, Any]] = []
+        current: List[Dict[str, Any]] = []
+        gap_threshold = max(0.15, float(pause_gap_seconds))
+
+        def emit_current() -> None:
+            if not current:
+                return
+            start_seconds = max(0.0, float(current[0]["start"]))
+            end_seconds = float(current[-1]["end"])
+            text = " ".join(str(item["text"]) for item in current).strip()
+            if not text:
+                return
+            groups.append({"start": start_seconds, "end": end_seconds, "text": text})
+
+        for word in words:
+            if current:
+                previous = current[-1]
+                gap = float(word["start"]) - float(previous["end"])
+                projected_duration = float(word["end"]) - float(current[0]["start"])
+                projected_text = " ".join(
+                    [str(item["text"]) for item in current] + [str(word["text"])]
+                )
+                previous_text = str(previous["text"])
+                split_for_pause = gap >= gap_threshold
+                split_for_punctuation = (
+                    previous_text.endswith((".", "?", "!"))
+                    and projected_duration >= 1.0
+                )
+                split_for_size = (
+                    projected_duration > max_cue_duration_seconds
+                    or len(projected_text) > max_cue_chars
+                )
+                if split_for_pause or split_for_punctuation or split_for_size:
+                    emit_current()
+                    current = []
+            current.append(word)
+
+        emit_current()
+
+        cues: List[TranscriptSegment] = []
+        for index, group in enumerate(groups):
+            start_seconds = float(group["start"])
+            end_seconds = float(group["end"])
+            previous_end = float(groups[index - 1]["end"]) if index > 0 else 0.0
+            next_start = (
+                float(groups[index + 1]["start"])
+                if index + 1 < len(groups)
+                else (float(media_limit) if media_limit is not None else end_seconds + 1.0)
+            )
+            leading_gap = max(0.0, start_seconds - previous_end)
+            trailing_gap = max(0.0, next_start - end_seconds)
+            leading_pad = min(0.030, leading_gap / 2.0)
+            trailing_pad = min(0.040, trailing_gap / 2.0)
+            cue_start = max(0.0, start_seconds - leading_pad)
+            cue_end = end_seconds + trailing_pad
+            if media_limit is not None:
+                cue_end = min(cue_end, float(media_limit))
+            if cues:
+                previous_cue_end = self._transcript_time_to_seconds(cues[-1].end)
+                if previous_cue_end is not None:
+                    cue_start = max(cue_start, float(previous_cue_end))
+            cue_end = max(cue_start + 0.050, cue_end)
+            cues.append(
+                TranscriptSegment(
+                    speaker=speaker or "Speaker 1",
+                    start=self._seconds_to_transcript_time(cue_start),
+                    end=self._seconds_to_transcript_time(cue_end),
+                    text=str(group["text"]),
+                )
+            )
+        return cues
+
+    def _subtitle_timing_quality_report(
+        self,
+        cues: List[TranscriptSegment],
+        *,
+        media_duration_seconds: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Return deterministic timing diagnostics for generated subtitle cues."""
+        intervals: List[Tuple[float, float]] = []
+        blank_count = 0
+        for cue in cues:
+            start_seconds = self._transcript_time_to_seconds(cue.start)
+            end_seconds = self._transcript_time_to_seconds(cue.end)
+            if start_seconds is None or end_seconds is None or end_seconds <= start_seconds:
+                continue
+            intervals.append((float(start_seconds), float(end_seconds)))
+            if not (cue.text or "").strip():
+                blank_count += 1
+
+        intervals.sort()
+        durations = [end - start for start, end in intervals]
+        gaps = [
+            max(0.0, intervals[index][0] - intervals[index - 1][1])
+            for index in range(1, len(intervals))
+        ]
+        overlaps = [
+            max(0.0, intervals[index - 1][1] - intervals[index][0])
+            for index in range(1, len(intervals))
+        ]
+        positive_gaps = [gap for gap in gaps if gap > 0.001]
+        positive_overlaps = [overlap for overlap in overlaps if overlap > 0.001]
+        covered_duration = sum(durations)
+        malformed_count = 0
+        for cue in cues:
+            text = " ".join((cue.text or "").split())
+            if re.search(r"\b[A-Za-z]\s+[A-Za-z]{1,3}\s+[A-Za-z]{1,5}\b", text):
+                malformed_count += 1
+        median_duration = 0.0
+        if durations:
+            ordered = sorted(durations)
+            middle = len(ordered) // 2
+            if len(ordered) % 2:
+                median_duration = ordered[middle]
+            else:
+                median_duration = (ordered[middle - 1] + ordered[middle]) / 2.0
+        media_duration = (
+            float(media_duration_seconds)
+            if isinstance(media_duration_seconds, (int, float)) and media_duration_seconds > 0
+            else 0.0
+        )
+        coverage = (covered_duration / media_duration * 100.0) if media_duration else 0.0
+        return {
+            "cue_count": len(cues),
+            "covered_duration_seconds": round(covered_duration, 3),
+            "positive_gap_count": len(positive_gaps),
+            "overlap_count": len(positive_overlaps),
+            "median_cue_duration_seconds": round(median_duration, 3),
+            "max_cue_duration_seconds": round(max(durations) if durations else 0.0, 3),
+            "blank_cue_count": blank_count,
+            "malformed_word_cue_count": malformed_count,
+            "coverage_percent": round(coverage, 2),
+        }
+
+    def _subtitle_timing_quality_warnings(self, report: Dict[str, Any]) -> List[str]:
+        warnings: List[str] = []
+        try:
+            overlap_count = int(report.get("overlap_count", 0))
+        except Exception:
+            overlap_count = 0
+        try:
+            positive_gap_count = int(report.get("positive_gap_count", 0))
+        except Exception:
+            positive_gap_count = 0
+        try:
+            coverage_percent = float(report.get("coverage_percent", 0.0))
+        except Exception:
+            coverage_percent = 0.0
+        try:
+            malformed_count = int(report.get("malformed_word_cue_count", 0))
+        except Exception:
+            malformed_count = 0
+
+        if overlap_count > 0:
+            warnings.append(f"{overlap_count} overlapping cue pair(s)")
+        if coverage_percent > 90.0:
+            warnings.append(f"{coverage_percent:.2f}% media coverage")
+        if positive_gap_count < 6:
+            warnings.append(f"only {positive_gap_count} positive gap(s)")
+        if malformed_count > 0:
+            warnings.append(f"{malformed_count} cue(s) with suspicious token spacing")
+        return warnings
+
+    def _ask_low_quality_subtitle_timing_choice(
+        self,
+        report: Dict[str, Any],
+        warnings: List[str],
+    ) -> str:
+        override = vars(self).get("_low_quality_subtitle_timing_choice_override")
+        if override in {"raw", "review", "cancel"}:
+            return str(override)
+        if "tk" not in vars(self):
+            return "review"
+        message = (
+            "The ASR timing evidence looks low quality.\n\n"
+            + "\n".join(f"- {warning}" for warning in warnings)
+            + "\n\n"
+            "Yes: use raw ASR segments\n"
+            "No: review the low-quality draft\n"
+            "Cancel: keep the current transcript"
+        )
+        answer = messagebox.askyesnocancel(
+            "Review Subtitle Timing Quality",
+            message,
+        )
+        if answer is True:
+            return "raw"
+        if answer is False:
+            return "review"
+        return "cancel"
+
     def _push_transcript_undo_state(self, reason: str = "") -> None:
         """Save the current transcript state before an edit."""
         if not self.transcript_segments:
@@ -4628,6 +6116,16 @@ class App(ctk.CTk):
         self._refresh_session_files_list()
         return "break"
 
+    def _transcript_empty_state_text(self) -> str:
+        if getattr(self, "linked_transcript_media_path", None):
+            return (
+                "No transcript loaded. Playback and waveform are available for the active media. "
+                "Add, drop, import, create subtitle timings, or transcribe to create transcript segments."
+            )
+        return (
+            "No transcript loaded. Add media with FILES + or drag/drop, then import, drop, "
+            "create subtitle timings, or transcribe to create transcript segments."
+        )
 
     def _refresh_transcript_display(self) -> None:
         """Refresh transcript preview, stats, and inline editor mapping."""
@@ -4661,7 +6159,7 @@ class App(ctk.CTk):
                 )
             else:
                 self.transcript_cursor_status_label.configure(
-                    text="No transcript segment selected.",
+                    text=self._transcript_empty_state_text(),
                     text_color=COLORS["text_muted"]
                 )
 
@@ -4693,9 +6191,7 @@ class App(ctk.CTk):
             )
             self.transcript_textbox.insert(
                 "1.0",
-                "Import an SRT, VTT, or TXT transcript file here.\n\n"
-                "v2.4.0 supports local import/export, YouTube transcript download, and Local ASR transcription.\n"
-                "Use Local ASR to transcribe local audio/video files with faster-whisper."
+                self._transcript_empty_state_text()
             )
             self.transcript_textbox.configure(state="disabled")
             if hasattr(self, "transcript_search_count_label"):
@@ -6413,6 +7909,7 @@ class App(ctk.CTk):
 
         player.set_media(media)
         self.transcript_vlc_media_path = media_path
+        self.transcript_media_duration_seconds = None
 
 
     def _is_transcript_vlc_playing(self) -> bool:
@@ -6469,6 +7966,7 @@ class App(ctk.CTk):
 
     def _stop_transcript_playback_process(self) -> None:
         """Stop active transcript playback and cancel timers."""
+        self.transcript_playback_generation = getattr(self, "transcript_playback_generation", 0) + 1
         after_id = getattr(self, "transcript_playback_after_id", None)
 
         if after_id:
@@ -6504,6 +8002,26 @@ class App(ctk.CTk):
         self.transcript_vlc_clock_anchor_seconds = None
         self.transcript_vlc_clock_anchor_wall_time = None
         self.transcript_vlc_last_reported_seconds = None
+
+    def _schedule_transcript_playback_tick(self) -> None:
+        after_id = getattr(self, "transcript_playback_after_id", None)
+        if after_id:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+        generation = getattr(self, "transcript_playback_generation", 0)
+
+        def tick_if_current() -> None:
+            if generation != getattr(self, "transcript_playback_generation", 0):
+                return
+            self.transcript_playback_after_id = None
+            self._tick_transcript_timeline_playback(generation=generation)
+
+        self.transcript_playback_after_id = self.after(
+            int(getattr(self, "transcript_playback_tick_ms", 30)),
+            tick_if_current,
+        )
 
 
     def toggle_transcript_timeline_playback(self) -> None:
@@ -6611,14 +8129,25 @@ class App(ctk.CTk):
             return
 
         self.transcript_playback_backend = "vlc"
+        self.transcript_playback_generation = getattr(self, "transcript_playback_generation", 0) + 1
         self.transcript_playback_requested_start_seconds = media_start_seconds
         self.transcript_playback_start_seconds = media_start_seconds
-        self.transcript_playback_start_wall_time = time.monotonic()
+        start_wall = self._transcript_playback_now()
+        self.transcript_playback_start_wall_time = start_wall
         self.transcript_vlc_clock_anchor_seconds = media_start_seconds
-        self.transcript_vlc_clock_anchor_wall_time = time.monotonic()
+        self.transcript_vlc_clock_anchor_wall_time = start_wall
         self.transcript_vlc_last_reported_seconds = None
         self.transcript_playhead_seconds = visual_start_seconds
         self.transcript_playback_active_segment_index = None
+        self.transcript_playback_follow_active = False
+        self.transcript_timeline_center_lock_active = True
+        self.transcript_timeline_center_time = visual_start_seconds
+        try:
+            length_ms = player.get_length()
+        except Exception:
+            length_ms = -1
+        if isinstance(length_ms, (int, float)) and length_ms > 0:
+            self.transcript_media_duration_seconds = float(length_ms) / 1000.0
 
         if hasattr(self, "_center_transcript_timeline_pan_on_time"):
             self._center_transcript_timeline_pan_on_time(visual_start_seconds)
@@ -6627,7 +8156,7 @@ class App(ctk.CTk):
         self._refresh_transcript_timeline()
 
         self._update_transcript_playback_buttons(True)
-        self._tick_transcript_timeline_playback()
+        self._schedule_transcript_playback_tick()
 
 
     def pause_transcript_timeline(self) -> None:
@@ -6638,6 +8167,7 @@ class App(ctk.CTk):
             self._sync_transcript_selection_to_playback_time(current_seconds)
 
         after_id = getattr(self, "transcript_playback_after_id", None)
+        self.transcript_playback_generation = getattr(self, "transcript_playback_generation", 0) + 1
 
         if after_id:
             try:
@@ -6659,8 +8189,17 @@ class App(ctk.CTk):
             self._stop_transcript_playback_process()
 
         self._update_transcript_playback_buttons(False)
+        self.transcript_timeline_center_lock_active = False
         self._refresh_transcript_timeline()
 
+    def _transcript_playback_now(self) -> float:
+        clock = getattr(self, "_transcript_playback_clock", None)
+        if callable(clock):
+            try:
+                return float(clock())
+            except Exception:
+                pass
+        return time.perf_counter()
 
     def _update_transcript_playhead_from_playback_clock(self) -> Optional[float]:
         """Update playhead from VLC's media clock, with sync offset and monotonic smoothing."""
@@ -6674,7 +8213,7 @@ class App(ctk.CTk):
         if player is None:
             return None
 
-        now = time.monotonic()
+        now = self._transcript_playback_now()
 
         try:
             raw_ms = player.get_time()
@@ -6685,6 +8224,7 @@ class App(ctk.CTk):
 
         if raw_ms is not None and raw_ms >= 0:
             raw_media_seconds = raw_ms / 1000.0
+        self.transcript_vlc_last_raw_media_seconds_for_debug = raw_media_seconds
 
         requested_media_start = getattr(self, "transcript_playback_requested_start_seconds", None)
         start_wall_time = getattr(self, "transcript_playback_start_wall_time", None)
@@ -6738,7 +8278,9 @@ class App(ctk.CTk):
             anchor_wall = now
 
         if backend == "vlc" and self._is_transcript_vlc_playing():
-            media_seconds = float(anchor_media_seconds) + max(0.0, now - float(anchor_wall))
+            elapsed = max(0.0, now - float(anchor_wall))
+            lead_limit = float(getattr(self, "transcript_vlc_max_interpolation_lead_seconds", 0.250))
+            media_seconds = float(anchor_media_seconds) + min(elapsed, max(0.0, lead_limit))
         else:
             media_seconds = float(anchor_media_seconds)
 
@@ -6767,8 +8309,15 @@ class App(ctk.CTk):
             current_seconds = max(float(min_time), min(float(max_time), current_seconds))
 
         self.transcript_playhead_seconds = current_seconds
+        media_duration = self._get_linked_media_duration_seconds()
+        if (
+            not getattr(self, "transcript_position_scrubbing", False)
+            and isinstance(media_duration, (int, float))
+            and media_duration > 0
+        ):
+            self._set_transcript_position_slider(float(current_seconds) / float(media_duration))
 
-        if hasattr(self, "transcript_cursor_status_label"):
+        if "transcript_cursor_status_label" in vars(self):
             self.transcript_cursor_status_label.configure(
                 text=f"Playing: {self._format_timeline_time(current_seconds)}",
                 text_color=COLORS["accent"]
@@ -6777,8 +8326,10 @@ class App(ctk.CTk):
         return current_seconds
 
 
-    def _tick_transcript_timeline_playback(self) -> None:
+    def _tick_transcript_timeline_playback(self, *, generation: Optional[int] = None) -> None:
         """Move playhead marker smoothly while VLC is playing."""
+        if generation is not None and generation != getattr(self, "transcript_playback_generation", 0):
+            return
         backend = getattr(self, "transcript_playback_backend", None)
 
         if backend == "vlc":
@@ -6809,15 +8360,28 @@ class App(ctk.CTk):
                 except Exception:
                     zoom_level = 1.0
 
-                if zoom_level > 1.05 and hasattr(self, "_center_transcript_timeline_pan_on_time"):
-                    self._center_transcript_timeline_pan_on_time(current_seconds)
+                viewport_moved = False
+                if zoom_level > 1.05 and hasattr(self, "_keep_transcript_playhead_visible"):
+                    viewport_moved = bool(self._keep_transcript_playhead_visible(current_seconds))
 
-            self._refresh_transcript_timeline()
+                if viewport_moved:
+                    self._refresh_transcript_timeline()
+                    redraw_type = "viewport move"
+                else:
+                    marker_updated = self._draw_transcript_playhead_marker(current_seconds)
+                    if marker_updated:
+                        redraw_type = "playhead-only"
+                    else:
+                        self._refresh_transcript_timeline()
+                        redraw_type = "full waveform redraw"
+                self._record_transcript_playback_debug_tick(
+                    raw_seconds=vars(self).get("transcript_vlc_last_raw_media_seconds_for_debug"),
+                    display_seconds=current_seconds,
+                    redraw_type=redraw_type,
+                    viewport_moved=viewport_moved,
+                )
 
-            self.transcript_playback_after_id = self.after(
-                25,
-                self._tick_transcript_timeline_playback
-            )
+            self._schedule_transcript_playback_tick()
             return
 
         self._update_transcript_playback_buttons(False)
@@ -6868,11 +8432,12 @@ class App(ctk.CTk):
 
         seconds = max(float(min_time), min(float(max_time), seconds))
         self.transcript_playhead_seconds = seconds
+        self.transcript_playback_follow_active = False
 
         sync_offset = self._get_transcript_audio_sync_offset_seconds()
         media_seconds = max(0.0, seconds - sync_offset)
         self.transcript_vlc_clock_anchor_seconds = media_seconds
-        self.transcript_vlc_clock_anchor_wall_time = time.monotonic()
+        self.transcript_vlc_clock_anchor_wall_time = self._transcript_playback_now()
         self.transcript_vlc_last_reported_seconds = media_seconds
 
         if hasattr(self, "transcript_cursor_status_label"):
@@ -6891,6 +8456,93 @@ class App(ctk.CTk):
                 self._center_transcript_timeline_pan_on_time(seconds)
 
             self._refresh_transcript_timeline()
+
+    def _seek_transcript_vlc_to_seconds(self, seconds: float) -> None:
+        """Seek linked VLC playback once and reset interpolation anchors."""
+        sync_offset = self._get_transcript_audio_sync_offset_seconds()
+        media_seconds = max(0.0, float(seconds) - sync_offset)
+        player = getattr(self, "transcript_vlc_player", None)
+        if player is not None:
+            try:
+                player.set_time(int(media_seconds * 1000))
+            except Exception:
+                pass
+        now = self._transcript_playback_now()
+        self.transcript_playhead_seconds = float(seconds)
+        self.transcript_vlc_clock_anchor_seconds = media_seconds
+        self.transcript_vlc_clock_anchor_wall_time = now
+        self.transcript_vlc_last_reported_seconds = media_seconds
+        self.transcript_playback_start_wall_time = now
+        self.transcript_playback_start_seconds = media_seconds
+        self.transcript_playback_requested_start_seconds = media_seconds
+
+    def _begin_transcript_authoritative_scrub(self) -> None:
+        if vars(self).get("transcript_authoritative_scrubbing", False):
+            return
+        self.transcript_authoritative_scrubbing = True
+        self.transcript_scrub_was_playing = self._is_transcript_vlc_playing()
+        self.transcript_timeline_center_lock_active = False
+        after_id = getattr(self, "transcript_playback_after_id", None)
+        self.transcript_playback_generation = getattr(self, "transcript_playback_generation", 0) + 1
+        if after_id:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+        self.transcript_playback_after_id = None
+        if self.transcript_scrub_was_playing:
+            player = getattr(self, "transcript_vlc_player", None)
+            if player is not None:
+                try:
+                    player.pause()
+                    self.transcript_playback_backend = "vlc_paused"
+                except Exception:
+                    pass
+            self._update_transcript_playback_buttons(False)
+
+    def _preview_transcript_authoritative_scrub(self, seconds: float) -> None:
+        min_time, max_time = self._get_transcript_timeline_bounds()
+        if min_time is None or max_time is None:
+            return
+        seconds = max(float(min_time), min(float(max_time), float(seconds)))
+        self.transcript_playhead_seconds = seconds
+        self.transcript_timeline_center_time = seconds
+        media_duration = self._get_linked_media_duration_seconds()
+        if isinstance(media_duration, (int, float)) and media_duration > 0:
+            self._set_transcript_position_slider(float(seconds) / float(media_duration))
+        else:
+            duration = max(1.0, float(max_time) - float(min_time))
+            self._set_transcript_position_slider((seconds - float(min_time)) / duration)
+        if "transcript_cursor_status_label" in vars(self):
+            self.transcript_cursor_status_label.configure(
+                text=f"Preview position: {self._format_timeline_time(seconds)}",
+                text_color=COLORS["text_primary"],
+            )
+        self._refresh_transcript_timeline()
+
+    def _finish_transcript_authoritative_scrub(self, seconds: float) -> None:
+        self.transcript_authoritative_scrubbing = False
+        self.transcript_position_scrubbing = False
+        self._preview_transcript_authoritative_scrub(seconds)
+        self._seek_transcript_vlc_to_seconds(seconds)
+        self._sync_transcript_selection_to_playback_time(seconds)
+        self.transcript_timeline_center_lock_active = bool(
+            vars(self).get("transcript_scrub_was_playing", False)
+        )
+        self.transcript_timeline_center_time = seconds
+        self._refresh_transcript_timeline()
+        if vars(self).get("transcript_scrub_was_playing", False):
+            player = getattr(self, "transcript_vlc_player", None)
+            if player is not None:
+                try:
+                    player.play()
+                    self.transcript_playback_backend = "vlc"
+                    self.transcript_playback_generation = getattr(self, "transcript_playback_generation", 0) + 1
+                    self._update_transcript_playback_buttons(True)
+                    self._schedule_transcript_playback_tick()
+                except Exception:
+                    self._update_transcript_playback_buttons(False)
+        self.transcript_scrub_was_playing = False
 
     def _timeline_canvas_event_to_seconds(self, event) -> Optional[float]:
         """Convert timeline canvas x position into transcript seconds."""
@@ -6913,13 +8565,14 @@ class App(ctk.CTk):
         return float(min_time) + (float(max_time) - float(min_time)) * fraction
 
     def _on_transcript_timeline_canvas_press(self, event) -> None:
-        """Move playhead marker when the timeline background is clicked."""
+        """Begin authoritative timeline scrub from the waveform/timeline."""
         seconds = self._timeline_canvas_event_to_seconds(event)
 
         if seconds is None:
             return
 
-        self._set_transcript_playhead_time(seconds, refresh=True)
+        self._begin_transcript_authoritative_scrub()
+        self._preview_transcript_authoritative_scrub(seconds)
 
     def _on_transcript_timeline_canvas_drag(self, event) -> None:
         """Scrub playhead marker while dragging over the timeline."""
@@ -6928,7 +8581,7 @@ class App(ctk.CTk):
         if seconds is None:
             return
 
-        self._set_transcript_playhead_time(seconds, refresh=True)
+        self._preview_transcript_authoritative_scrub(seconds)
 
     def _on_transcript_timeline_canvas_release(self, event) -> None:
         """Finalize playhead marker position after dragging."""
@@ -6937,7 +8590,7 @@ class App(ctk.CTk):
         if seconds is None:
             return
 
-        self._set_transcript_playhead_time(seconds, refresh=True)
+        self._finish_transcript_authoritative_scrub(seconds)
 
 
     def _update_transcript_waveform_status(self, text: Optional[str] = None, color: Optional[str] = None) -> None:
@@ -7099,6 +8752,225 @@ class App(ctk.CTk):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def detect_speech_intervals_clicked(self) -> None:
+        """Choose a local workflow for creating editable subtitle timing segments."""
+        if getattr(self, "speech_interval_detection_busy", False):
+            self.speech_interval_detection_cancel_requested = True
+            if hasattr(self, "transcript_cursor_status_label"):
+                self.transcript_cursor_status_label.configure(
+                    text="Cancelling subtitle timing creation...",
+                    text_color=COLORS["text_muted"],
+                )
+            return
+
+        media_path = getattr(self, "linked_transcript_media_path", None)
+        if not media_path:
+            messagebox.showinfo(
+                "Create Subtitle Timings",
+                "Add or select a media file first. This workflow creates editable subtitle timing segments from local audio.",
+            )
+            return
+
+        choice = self._ask_create_subtitle_timings_choice()
+        if choice == "cancel":
+            return
+        if choice == "accurate_draft":
+            self.local_asr_timing_mode_after_completion = "draft"
+            self.local_asr_transcribe_clicked(media_file=media_path, force_full=True)
+            return
+        if choice == "accurate_blank":
+            self.local_asr_timing_mode_after_completion = "blank"
+            self.local_asr_blank_text_after_completion = True
+            self.local_asr_transcribe_clicked(media_file=media_path, force_full=True)
+            return
+        self._start_fast_vad_subtitle_timings(media_path)
+
+    def _ask_create_subtitle_timings_choice(self) -> str:
+        """Ask how to create subtitle timings without inventing transcript text."""
+        override = vars(self).get("_create_subtitle_timings_choice_override")
+        if override in {"accurate_draft", "accurate_blank", "fast_vad", "cancel"}:
+            return str(override)
+        if "tk" not in vars(self):
+            return "fast_vad"
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Create Subtitle Timings")
+        dialog.geometry("520x310")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.grid_columnconfigure(0, weight=1)
+
+        result = {"choice": "cancel"}
+
+        content = ctk.CTkFrame(dialog, fg_color=COLORS["bg_card"], corner_radius=10)
+        content.grid(row=0, column=0, sticky="nsew", padx=16, pady=16)
+        content.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            content,
+            text="Create subtitle timings",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=COLORS["text_primary"],
+        ).grid(row=0, column=0, sticky="w", padx=14, pady=(12, 4))
+
+        ctk.CTkLabel(
+            content,
+            text=(
+                "Accurate local ASR timings are recommended. You can keep draft text, "
+                "create blank timed segments from ASR timings, or use fast WebRTC VAD "
+                "for clean speech only."
+            ),
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_secondary"],
+            wraplength=460,
+            justify="left",
+        ).grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 12))
+
+        def choose(value: str) -> None:
+            result["choice"] = value
+            try:
+                dialog.grab_release()
+            except Exception:
+                pass
+            dialog.destroy()
+
+        button_specs = (
+            ("Accurate local ASR timings - keep draft text", "accurate_draft"),
+            ("Accurate local ASR timings - blank segments", "accurate_blank"),
+            ("Fast WebRTC VAD - clean speech only", "fast_vad"),
+            ("Cancel", "cancel"),
+        )
+        for row, (label, value) in enumerate(button_specs, start=2):
+            ctk.CTkButton(
+                content,
+                text=label,
+                command=lambda value=value: choose(value),
+                height=34,
+                fg_color=COLORS["accent"] if row == 2 else COLORS["accent_secondary"],
+                hover_color=COLORS["accent_hover"] if row == 2 else COLORS["border"],
+                corner_radius=8,
+            ).grid(row=row, column=0, sticky="ew", padx=14, pady=(0, 8))
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: choose("cancel"))
+        self.wait_window(dialog)
+        return str(result["choice"])
+
+    def _start_fast_vad_subtitle_timings(self, media_path: str) -> None:
+        """Create blank editable subtitle segments from local WebRTC VAD intervals."""
+        if self.transcript_segments:
+            answer = messagebox.askyesno(
+                "Replace Current Transcript?",
+                (
+                    "Fast VAD subtitle timing will replace the current editor contents with blank timed segments.\n\n"
+                    "The active media file and any transcript files in FILES will remain attached. Continue?"
+                ),
+            )
+            if not answer:
+                return
+
+        self.speech_interval_detection_busy = True
+        self.speech_interval_detection_cancel_requested = False
+        if hasattr(self, "transcript_detect_intervals_button"):
+            self.transcript_detect_intervals_button.configure(text="Cancel intervals")
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text="Creating fast VAD subtitle timings locally...",
+                text_color=COLORS["text_muted"],
+            )
+
+        def progress_callback(value: float) -> None:
+            percent = int(max(0.0, min(1.0, float(value))) * 100)
+            self.after(
+                0,
+                lambda percent=percent: (
+                    hasattr(self, "transcript_cursor_status_label")
+                    and self.transcript_cursor_status_label.configure(
+                        text=f"Creating fast VAD subtitle timings locally... {percent}%",
+                        text_color=COLORS["text_muted"],
+                    )
+                ),
+            )
+
+        def cancel_check() -> bool:
+            return bool(getattr(self, "speech_interval_detection_cancel_requested", False))
+
+        def finish() -> None:
+            self.speech_interval_detection_busy = False
+            self.speech_interval_detection_cancel_requested = False
+            if hasattr(self, "transcript_detect_intervals_button"):
+                self.transcript_detect_intervals_button.configure(text="Create subtitle timings")
+
+        def worker() -> None:
+            try:
+                intervals = detect_speech_intervals_for_media_file(
+                    media_path,
+                    progress_callback=progress_callback,
+                    cancel_check=cancel_check,
+                )
+            except RuntimeError as error:
+                if str(error) == "speech_interval_detection_cancelled":
+                    self.after(0, lambda: self._finish_speech_interval_detection_cancelled(finish))
+                    return
+                self.after(0, lambda error=error: self._finish_speech_interval_detection_error(error, finish))
+                return
+            except Exception as error:
+                self.after(0, lambda error=error: self._finish_speech_interval_detection_error(error, finish))
+                return
+
+            self.after(0, lambda intervals=intervals: self._finish_speech_interval_detection(intervals, finish))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_speech_interval_detection_cancelled(self, finish_callback) -> None:
+        finish_callback()
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text="Subtitle timing creation cancelled.",
+                text_color=COLORS["text_muted"],
+            )
+
+    def _finish_speech_interval_detection_error(self, error: Exception, finish_callback) -> None:
+        finish_callback()
+        messagebox.showerror("Create Subtitle Timings", str(error))
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text="Fast VAD subtitle timing failed.",
+                text_color=COLORS["error"],
+            )
+
+    def _finish_speech_interval_detection(self, intervals, finish_callback) -> None:
+        finish_callback()
+        if not intervals:
+            messagebox.showinfo(
+                "Create Subtitle Timings",
+                "No clean-speech VAD intervals were detected. No transcript text was invented.",
+            )
+            return
+        if self.transcript_segments:
+            self._push_transcript_undo_state()
+        self.transcript_segments = [
+            TranscriptSegment(
+                speaker="Speaker 1",
+                start=self._seconds_to_transcript_time(interval.start_seconds),
+                end=self._seconds_to_transcript_time(interval.end_seconds),
+                text="",
+            )
+            for interval in intervals
+        ]
+        self.last_transcript_source = "Fast local VAD subtitle timings"
+        self.transcript_has_unsaved_edits = True
+        self.transcript_redo_stack = []
+        self.selected_transcript_segment_index = 0
+        self._refresh_transcript_display()
+        self._refresh_transcript_timeline()
+        if hasattr(self, "transcript_cursor_status_label"):
+            self.transcript_cursor_status_label.configure(
+                text=f"Created {len(intervals)} blank fast-VAD timing segment(s).",
+                text_color=COLORS["text_primary"],
+            )
+        if hasattr(self, "evidence_button"):
+            self.evidence_button.configure(state="normal")
+
 
     def _get_transcript_active_waveform_range(self):
         """Return the segment time range currently under the playhead marker."""
@@ -7181,7 +9053,10 @@ class App(ctk.CTk):
         ):
             return
 
-        full_duration = max(1.0, full_max_time - full_min_time)
+        media_duration = self._get_linked_media_duration_seconds()
+        if not isinstance(media_duration, (int, float)) or media_duration <= 0:
+            return
+        full_duration = max(1.0, float(media_duration))
         visible_duration = max(0.001, max_time - min_time)
 
         wave_top = top_margin
@@ -7216,8 +9091,10 @@ class App(ctk.CTk):
         for x in range(x_start, x_end + 1, 2):
             fraction = (x - left_margin) / max(1, timeline_width)
             time_at_x = min_time + visible_duration * fraction
+            if time_at_x < 0 or time_at_x > full_duration:
+                continue
             peak_position = int(
-                ((time_at_x - full_min_time) / full_duration)
+                (time_at_x / full_duration)
                 * max(0, len(peaks) - 1)
             )
             peak_position = max(0, min(len(peaks) - 1, peak_position))
@@ -7244,30 +9121,144 @@ class App(ctk.CTk):
             )
 
 
+    def _get_linked_media_duration_seconds(self) -> Optional[float]:
+        state = vars(self)
+        media_path = state.get("linked_transcript_media_path")
+        if not media_path:
+            return None
+
+        duration = self._probe_media_duration_seconds(media_path)
+        if isinstance(duration, (int, float)) and duration > 0:
+            self.transcript_media_duration_seconds = float(duration)
+            return float(duration)
+
+        cached = state.get("transcript_media_duration_seconds")
+        cached_key = state.get("transcript_media_duration_cache_key")
+        current_key = self._media_duration_cache_key(media_path)
+        if (
+            isinstance(cached, (int, float))
+            and cached > 0
+            and cached_key is not None
+            and cached_key == current_key
+        ):
+            return float(cached)
+
+        player = state.get("transcript_vlc_player")
+        if player is not None:
+            try:
+                length_ms = player.get_length()
+            except Exception:
+                length_ms = -1
+            if isinstance(length_ms, (int, float)) and length_ms > 0:
+                self.transcript_media_duration_seconds = float(length_ms) / 1000.0
+                self.transcript_media_duration_cache_key = current_key
+                return self.transcript_media_duration_seconds
+
+        return None
+
+    def _media_duration_cache_key(self, media_path: str) -> Optional[tuple[str, int, int]]:
+        try:
+            normalized = os.path.normcase(os.path.abspath(os.path.expanduser(media_path or "")))
+            stat = os.stat(normalized)
+            return (normalized, int(stat.st_size), int(stat.st_mtime_ns))
+        except Exception:
+            return None
+
+    def _probe_media_duration_seconds(self, media_path: str) -> Optional[float]:
+        cache_key = self._media_duration_cache_key(media_path)
+        if cache_key is None:
+            return None
+        cache = vars(self).setdefault("_media_duration_seconds_cache", {})
+        if isinstance(cache, dict) and cache_key in cache:
+            cached = cache.get(cache_key)
+            return float(cached) if isinstance(cached, (int, float)) and cached > 0 else None
+
+        command = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            os.path.abspath(os.path.expanduser(media_path or "")),
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
+            )
+        except Exception:
+            return None
+        if result.returncode != 0:
+            return None
+        try:
+            duration = float((result.stdout or "").strip())
+        except Exception:
+            return None
+        if duration <= 0:
+            return None
+        if isinstance(cache, dict):
+            cache[cache_key] = duration
+        self.transcript_media_duration_cache_key = cache_key
+        return duration
+
+    def _get_transcript_duration_seconds(self) -> Optional[float]:
+        times = []
+        for segment in self.transcript_segments:
+            for value in (segment.start, segment.end):
+                seconds = self._transcript_time_to_seconds(value)
+                if seconds is not None:
+                    times.append(float(seconds))
+        if not times:
+            return None
+        return max(times)
+
+    def _get_transcript_timeline_durations(self) -> Dict[str, Optional[float]]:
+        media_duration = self._get_linked_media_duration_seconds()
+        transcript_duration = self._get_transcript_duration_seconds()
+        positive = [
+            float(value)
+            for value in (media_duration, transcript_duration)
+            if isinstance(value, (int, float)) and value > 0
+        ]
+        display_duration = max(positive) if positive else None
+        return {
+            "media_duration": media_duration,
+            "transcript_duration": transcript_duration,
+            "display_duration": display_duration,
+        }
+
+    def _transcript_media_duration_warning(self) -> str:
+        durations = self._get_transcript_timeline_durations()
+        media_duration = durations.get("media_duration")
+        transcript_duration = durations.get("transcript_duration")
+        if not (
+            isinstance(media_duration, (int, float))
+            and isinstance(transcript_duration, (int, float))
+            and media_duration > 0
+            and transcript_duration > 0
+        ):
+            return ""
+        difference = abs(float(media_duration) - float(transcript_duration))
+        material = difference >= 5.0 and difference / max(float(media_duration), 1.0) >= 0.08
+        if not material:
+            return ""
+        return (
+            f"Transcript duration {self._format_timeline_time(float(transcript_duration))} "
+            f"differs from media duration {self._format_timeline_time(float(media_duration))}."
+        )
+
     def _get_transcript_timeline_bounds(self):
         """Return min/max seconds for transcript timeline drawing."""
-        times = []
-
-        for segment in self.transcript_segments:
-            start_seconds = self._transcript_time_to_seconds(segment.start)
-            end_seconds = self._transcript_time_to_seconds(segment.end)
-
-            if start_seconds is not None:
-                times.append(start_seconds)
-
-            if end_seconds is not None:
-                times.append(end_seconds)
-
-        if not times:
+        durations = self._get_transcript_timeline_durations()
+        display_duration = durations.get("display_duration")
+        if display_duration is None:
             return None, None
-
-        min_time = min(times)
-        max_time = max(times)
-
-        if max_time <= min_time:
-            max_time = min_time + 1.0
-
-        return min_time, max_time
+        return 0.0, max(1.0, float(display_duration))
 
     def _format_timeline_time(self, seconds: float) -> str:
         """Format seconds as compact timeline label."""
@@ -7296,19 +9287,34 @@ class App(ctk.CTk):
 
 
 
-    def _set_transcript_timeline_pan_slider(self, fraction: float) -> None:
-        """Update pan slider without causing a second redraw loop."""
+    def _set_transcript_position_slider(self, fraction: float) -> None:
+        """Update the absolute media Position slider without a redraw loop."""
         fraction = max(0.0, min(1.0, float(fraction)))
-        self.transcript_timeline_pan_fraction = fraction
+        self.transcript_position_fraction = fraction
 
-        if not hasattr(self, "transcript_timeline_pan_slider"):
+        slider = vars(self).get("transcript_timeline_pan_slider")
+        if slider is None:
             return
 
         try:
             self._updating_transcript_timeline_pan_slider = True
-            self.transcript_timeline_pan_slider.set(fraction * 100.0)
+            if (
+                getattr(self, "transcript_position_scrubbing", False)
+                or getattr(self, "transcript_authoritative_scrubbing", False)
+            ) and hasattr(slider, "set_immediate"):
+                slider.set_immediate(fraction * 100.0)
+            else:
+                slider.set(fraction * 100.0)
         finally:
             self._updating_transcript_timeline_pan_slider = False
+
+    def _set_transcript_timeline_view_fraction(self, fraction: float) -> None:
+        """Update only the waveform/timeline viewport follow fraction."""
+        self.transcript_timeline_view_fraction = max(0.0, min(1.0, float(fraction)))
+
+    def _set_transcript_timeline_pan_slider(self, fraction: float) -> None:
+        """Backward-compatible alias for the absolute Position slider."""
+        self._set_transcript_position_slider(fraction)
 
 
     def _center_transcript_timeline_pan_on_time(self, center_time: float) -> None:
@@ -7316,7 +9322,7 @@ class App(ctk.CTk):
         min_time, max_time = self._get_transcript_timeline_bounds()
 
         if min_time is None or max_time is None:
-            self._set_transcript_timeline_pan_slider(0.0)
+            self._set_transcript_timeline_view_fraction(0.0)
             return
 
         try:
@@ -7334,48 +9340,148 @@ class App(ctk.CTk):
         zoom_level = max(1.0, min(10.0, zoom_level))
 
         if zoom_level <= 1.05:
-            self._set_transcript_timeline_pan_slider(0.0)
+            self._set_transcript_timeline_view_fraction(0.0)
             return
 
         visible_duration = max(1.0, full_duration / zoom_level)
         max_pan_seconds = max(0.0, full_duration - visible_duration)
 
         if max_pan_seconds <= 0:
-            self._set_transcript_timeline_pan_slider(0.0)
+            self._set_transcript_timeline_view_fraction(0.0)
             return
 
         center_time = max(min_time, min(max_time, center_time))
         visible_min = center_time - visible_duration / 2
         fraction = (visible_min - min_time) / max_pan_seconds
 
-        self._set_transcript_timeline_pan_slider(fraction)
+        self._set_transcript_timeline_view_fraction(fraction)
 
-    def _keep_transcript_playhead_visible(self, seconds: float) -> None:
-        """Auto-pan during playback so the blue marker stays visible without hard jumps."""
-        view = getattr(self, "_transcript_timeline_view", None)
-
-        if not view:
-            self._center_transcript_timeline_pan_on_time(seconds)
-            return
-
+    def _keep_transcript_playhead_visible(self, seconds: float) -> bool:
+        """Keep playback locked to a fixed centre playhead."""
         try:
             seconds = float(seconds)
-            visible_min = float(view.get("min_time"))
-            visible_max = float(view.get("max_time"))
         except Exception:
+            return False
+
+        previous_center = vars(self).get("transcript_timeline_center_time")
+        self.transcript_timeline_center_lock_active = True
+        self.transcript_timeline_center_time = seconds
+        view = vars(self).get("_transcript_timeline_view") or {}
+        try:
+            full_min_time = float(view.get("full_min_time", 0.0))
+            duration = max(
+                1.0,
+                float(view.get("full_max_time", 0.0)) - full_min_time,
+            )
+            absolute_fraction = (seconds - full_min_time) / duration
+            self._set_transcript_timeline_view_fraction(absolute_fraction)
+            media_duration = self._get_linked_media_duration_seconds()
+            if isinstance(media_duration, (int, float)) and media_duration > 0:
+                self._set_transcript_position_slider(seconds / float(media_duration))
+            else:
+                self._set_transcript_position_slider(absolute_fraction)
+        except Exception:
+            pass
+        return previous_center is None or abs(float(previous_center) - seconds) >= 0.001
+
+    def _draw_transcript_playhead_marker(self, seconds: float) -> bool:
+        view = getattr(self, "_transcript_timeline_view", None)
+        if not view or not hasattr(self, "transcript_timeline_canvas"):
+            return False
+        try:
+            min_time = float(view["min_time"])
+            max_time = float(view["max_time"])
+            left_margin = float(view["left_margin"])
+            top_margin = float(view["top_margin"])
+            bottom_margin = float(view["bottom_margin"])
+            timeline_width = float(view["timeline_width"])
+            canvas_height = float(view["canvas_height"])
+            duration = max(0.001, max_time - min_time)
+            seconds = float(seconds)
+        except Exception:
+            return False
+        canvas = self.transcript_timeline_canvas
+        try:
+            canvas.delete("transcript_playhead_marker")
+        except Exception:
+            return False
+        if not (min_time <= seconds <= max_time):
+            return False
+        if bool(view.get("center_lock")):
+            marker_x = left_margin + timeline_width / 2.0
+        else:
+            marker_x = left_margin + ((seconds - min_time) / duration) * timeline_width
+        marker_color = "#38BDF8"
+        canvas.create_polygon(
+            marker_x - 6,
+            top_margin - 17,
+            marker_x + 6,
+            top_margin - 17,
+            marker_x,
+            top_margin - 6,
+            fill=marker_color,
+            outline=marker_color,
+            tags=("transcript_playhead_marker",),
+        )
+        canvas.create_line(
+            marker_x,
+            top_margin - 5,
+            marker_x,
+            canvas_height - bottom_margin + 4,
+            fill=marker_color,
+            width=1,
+            tags=("transcript_playhead_marker",),
+        )
+        return True
+
+    def _record_transcript_playback_debug_tick(
+        self,
+        *,
+        raw_seconds: Optional[float],
+        display_seconds: Optional[float],
+        redraw_type: str,
+        viewport_moved: bool,
+    ) -> None:
+        if not getattr(self, "transcript_playback_debug_enabled", False):
             return
-
-        visible_duration = max(0.001, visible_max - visible_min)
-        right_guard = visible_min + visible_duration * 0.72
-        left_guard = visible_min + visible_duration * 0.18
-
-        # When playing forward, pan ahead only when the marker approaches the right side.
-        if seconds > right_guard:
-            target_center = seconds + visible_duration * 0.18
-            self._center_transcript_timeline_pan_on_time(target_center)
-        elif seconds < left_guard:
-            target_center = seconds - visible_duration * 0.18
-            self._center_transcript_timeline_pan_on_time(target_center)
+        ticks = getattr(self, "transcript_playback_debug_ticks", None)
+        if ticks is None:
+            ticks = []
+            self.transcript_playback_debug_ticks = ticks
+        view = getattr(self, "_transcript_timeline_view", None) or {}
+        position_slider_value = None
+        if "transcript_timeline_pan_slider" in vars(self):
+            try:
+                position_slider_value = self.transcript_timeline_pan_slider.get()
+            except Exception:
+                position_slider_value = None
+        timeline_width = view.get("timeline_width")
+        left_margin = view.get("left_margin")
+        center_playhead_x = None
+        if isinstance(timeline_width, (int, float)) and isinstance(left_margin, (int, float)):
+            center_playhead_x = float(left_margin) + (float(timeline_width) / 2.0)
+        ticks.append(
+            {
+                "monotonic": self._transcript_playback_now(),
+                "raw_player_time": raw_seconds,
+                "display_time": display_seconds,
+                "generation": getattr(self, "transcript_playback_generation", 0),
+                "pending_callback": bool(getattr(self, "transcript_playback_after_id", None)),
+                "pan_fraction": vars(self).get("transcript_timeline_view_fraction", 0.0),
+                "position_fraction": vars(self).get("transcript_position_fraction", 0.0),
+                "viewport_min": view.get("min_time"),
+                "viewport_max": view.get("max_time"),
+                "follow_active": bool(vars(self).get("transcript_playback_follow_active", False)),
+                "viewport_moved": bool(viewport_moved),
+                "redraw_type": redraw_type,
+                "render_center_time": vars(self).get("transcript_timeline_center_time"),
+                "center_playhead_x": center_playhead_x,
+                "position_slider_value": position_slider_value,
+                "slider_feedback_blocked": bool(
+                    vars(self).get("_updating_transcript_timeline_pan_slider", False)
+                ),
+            }
+        )
 
 
     def _center_transcript_timeline_pan_on_selected(self) -> None:
@@ -7383,7 +9489,7 @@ class App(ctk.CTk):
         min_time, max_time = self._get_transcript_timeline_bounds()
 
         if min_time is None or max_time is None:
-            self._set_transcript_timeline_pan_slider(0.0)
+            self._set_transcript_timeline_view_fraction(0.0)
             return
 
         full_duration = max(1.0, max_time - min_time)
@@ -7396,7 +9502,7 @@ class App(ctk.CTk):
         zoom_level = max(1.0, min(10.0, zoom_level))
 
         if zoom_level <= 1.05:
-            self._set_transcript_timeline_pan_slider(0.0)
+            self._set_transcript_timeline_view_fraction(0.0)
             return
 
         playhead_seconds = getattr(self, "transcript_playhead_seconds", None)
@@ -7409,7 +9515,7 @@ class App(ctk.CTk):
         max_pan_seconds = max(0.0, full_duration - visible_duration)
 
         if max_pan_seconds <= 0:
-            self._set_transcript_timeline_pan_slider(0.0)
+            self._set_transcript_timeline_view_fraction(0.0)
             return
 
         center_time = min_time + full_duration / 2
@@ -7430,19 +9536,54 @@ class App(ctk.CTk):
 
         target_visible_min = center_time - visible_duration / 2
         fraction = (target_visible_min - min_time) / max_pan_seconds
-        self._set_transcript_timeline_pan_slider(fraction)
+        self._set_transcript_timeline_view_fraction(fraction)
+
+    def _position_slider_fraction_to_seconds(self, value) -> Optional[float]:
+        try:
+            fraction = max(0.0, min(1.0, float(value) / 100.0))
+        except Exception:
+            fraction = 0.0
+        min_time, max_time = self._get_transcript_timeline_bounds()
+        media_duration = self._get_linked_media_duration_seconds()
+        if isinstance(media_duration, (int, float)) and media_duration > 0:
+            return float(media_duration) * fraction
+        if min_time is None or max_time is None:
+            return None
+        return float(min_time) + (float(max_time) - float(min_time)) * fraction
+
+    def _on_transcript_position_scrub_press(self, event) -> None:
+        self.transcript_position_scrubbing = True
+        self._begin_transcript_authoritative_scrub()
+
+    def _on_transcript_position_scrub_release(self, event) -> None:
+        if not getattr(self, "transcript_position_scrubbing", False):
+            return
+        current_value = getattr(self, "transcript_position_fraction", 0.0) * 100.0
+        seconds = self._position_slider_fraction_to_seconds(current_value)
+        if seconds is None:
+            self.transcript_position_scrubbing = False
+            return
+        self._finish_transcript_authoritative_scrub(seconds)
 
     def _on_transcript_timeline_pan_changed(self, value) -> None:
-        """Pan the zoomed transcript timeline left/right."""
+        """Preview a concrete playhead position from the Position scrubber."""
         if getattr(self, "_updating_transcript_timeline_pan_slider", False):
             return
 
+        seconds = self._position_slider_fraction_to_seconds(value)
+        if seconds is None:
+            return
         try:
             fraction = float(value) / 100.0
         except Exception:
             fraction = 0.0
-
-        self.transcript_timeline_pan_fraction = max(0.0, min(1.0, fraction))
+        self.transcript_position_fraction = max(0.0, min(1.0, fraction))
+        if getattr(self, "transcript_position_scrubbing", False):
+            self._preview_transcript_authoritative_scrub(seconds)
+            return
+        self.transcript_playhead_seconds = seconds
+        self.transcript_timeline_center_time = seconds
+        self.transcript_timeline_center_lock_active = False
         self._refresh_transcript_timeline()
 
 
@@ -7465,7 +9606,7 @@ class App(ctk.CTk):
             elif previous_zoom_level <= 1.05:
                 self._center_transcript_timeline_pan_on_selected()
         else:
-            self._set_transcript_timeline_pan_slider(0.0)
+            self._set_transcript_timeline_view_fraction(0.0)
 
         if hasattr(self, "transcript_timeline_zoom_value_label"):
             if zoom_level <= 1.05:
@@ -7480,7 +9621,7 @@ class App(ctk.CTk):
     def _reset_transcript_timeline_zoom(self) -> None:
         """Reset timeline zoom to full transcript view."""
         self.transcript_timeline_zoom_level = 1.0
-        self._set_transcript_timeline_pan_slider(0.0)
+        self._set_transcript_timeline_view_fraction(0.0)
 
         if hasattr(self, "transcript_timeline_zoom_slider"):
             self.transcript_timeline_zoom_slider.set(1.0)
@@ -7493,25 +9634,13 @@ class App(ctk.CTk):
 
     def _refresh_transcript_timeline(self) -> None:
         """Draw a simple timestamp-based transcript timeline."""
-        if not hasattr(self, "transcript_timeline_canvas"):
+        if "transcript_timeline_canvas" not in vars(self):
             return
 
         canvas = self.transcript_timeline_canvas
         canvas.delete("all")
 
         width = max(canvas.winfo_width(), 300)
-
-        if not self.transcript_segments:
-            canvas.configure(height=70)
-            canvas.create_text(
-                14,
-                34,
-                text="Import a transcript to show timeline blocks.",
-                anchor="w",
-                fill=COLORS["text_muted"],
-                font=("Cascadia Mono", 10)
-            )
-            return
 
         min_time, max_time = self._get_transcript_timeline_bounds()
 
@@ -7554,29 +9683,45 @@ class App(ctk.CTk):
 
         if zoom_level > 1.05:
             visible_duration = max(1.0, full_duration / zoom_level)
-            max_pan_seconds = max(0.0, full_duration - visible_duration)
 
             try:
-                pan_fraction = float(getattr(self, "transcript_timeline_pan_fraction", 0.0))
+                pan_fraction = float(getattr(self, "transcript_timeline_view_fraction", 0.0))
             except Exception:
                 pan_fraction = 0.0
 
             pan_fraction = max(0.0, min(1.0, pan_fraction))
-            visible_min = full_min_time + max_pan_seconds * pan_fraction
+            if getattr(self, "transcript_timeline_center_lock_active", False):
+                locked_center = getattr(self, "transcript_timeline_center_time", center_time)
+                try:
+                    center_time = float(locked_center)
+                except Exception:
+                    center_time = full_min_time + full_duration * pan_fraction
+                visible_min = center_time - visible_duration / 2.0
+                pan_fraction = max(
+                    0.0,
+                    min(1.0, (center_time - full_min_time) / full_duration),
+                )
+                self.transcript_timeline_view_fraction = pan_fraction
+            else:
+                center_time = full_min_time + full_duration * pan_fraction
+                visible_min = center_time - visible_duration / 2.0
             visible_max = visible_min + visible_duration
 
-            min_time = max(full_min_time, visible_min)
-            max_time = min(full_max_time, visible_max)
+            min_time = visible_min
+            max_time = visible_max
 
             if hasattr(self, "transcript_timeline_pan_label"):
                 self.transcript_timeline_pan_label.configure(
                     text=f"Position: {pan_fraction * 100:.0f}%"
                 )
         else:
+            self.transcript_timeline_view_fraction = 0.0
             if hasattr(self, "transcript_timeline_pan_label"):
                 self.transcript_timeline_pan_label.configure(text="Position: Full")
 
         speakers = self._get_timeline_speakers()
+        if not speakers:
+            speakers = ["Media"]
         lane_height = 28
         top_margin = 26
         bottom_margin = 16
@@ -7593,6 +9738,9 @@ class App(ctk.CTk):
             "max_time": max_time,
             "full_min_time": full_min_time,
             "full_max_time": full_max_time,
+            "media_duration": self._get_linked_media_duration_seconds(),
+            "transcript_duration": self._get_transcript_duration_seconds(),
+            "center_lock": bool(getattr(self, "transcript_timeline_center_lock_active", False)),
             "left_margin": left_margin,
             "right_margin": right_margin,
             "top_margin": top_margin,
@@ -7602,6 +9750,19 @@ class App(ctk.CTk):
             "width": width,
             "duration": duration,
         }
+        warning_text = self._transcript_media_duration_warning()
+        if warning_text and hasattr(self, "transcript_waveform_status_label"):
+            self.transcript_waveform_status_label.configure(
+                text="Duration mismatch",
+                text_color=COLORS["warning"],
+            )
+        elif hasattr(self, "transcript_waveform_status_label"):
+            try:
+                current_status = self.transcript_waveform_status_label.cget("text")
+            except Exception:
+                current_status = ""
+            if current_status == "Duration mismatch":
+                self._update_transcript_waveform_status()
         selected_index = getattr(self, "selected_transcript_segment_index", None)
 
         speaker_palette = [
@@ -7667,7 +9828,10 @@ class App(ctk.CTk):
         selected_marker_time = self._get_transcript_playhead_time()
 
         if selected_marker_time is not None and min_time <= selected_marker_time <= max_time:
-            marker_x = left_margin + ((selected_marker_time - min_time) / duration) * timeline_width
+            if getattr(self, "transcript_timeline_center_lock_active", False):
+                marker_x = left_margin + timeline_width / 2.0
+            else:
+                marker_x = left_margin + ((selected_marker_time - min_time) / duration) * timeline_width
             marker_color = "#38BDF8"
 
             canvas.create_polygon(
@@ -7691,7 +9855,7 @@ class App(ctk.CTk):
                 tags=("transcript_playhead_marker",)
             )
 
-        # Speaker lanes
+        # Speaker/media lanes
         for speaker in speakers:
             lane = speaker_to_lane[speaker]
             y = top_margin + lane * lane_height + lane_height // 2
@@ -7714,6 +9878,7 @@ class App(ctk.CTk):
             )
 
         # Segment blocks
+        media_duration = self._get_linked_media_duration_seconds()
         for segment_index, segment in enumerate(self.transcript_segments):
             start_seconds = self._transcript_time_to_seconds(segment.start)
             end_seconds = self._transcript_time_to_seconds(segment.end)
@@ -7745,7 +9910,13 @@ class App(ctk.CTk):
             y2 = y + 8
 
             is_selected = selected_index == segment_index
-            outline = "#FFFFFF" if is_selected else color
+            out_of_range = (
+                isinstance(media_duration, (int, float))
+                and media_duration > 0
+                and start_seconds >= float(media_duration)
+            )
+            fill_color = "#475569" if out_of_range else color
+            outline = "#FFFFFF" if is_selected else ("#F59E0B" if out_of_range else color)
             outline_width = 2 if is_selected else 1
 
             tag = f"timeline_segment_{segment_index}"
@@ -7755,11 +9926,21 @@ class App(ctk.CTk):
                 y1,
                 x2,
                 y2,
-                fill=color,
+                fill=fill_color,
                 outline=outline,
                 width=outline_width,
                 tags=(tag,)
             )
+            if out_of_range:
+                canvas.create_line(
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    fill="#F59E0B",
+                    width=1,
+                    tags=(tag,),
+                )
 
             if x2 - x1 > 38:
                 canvas.create_text(
@@ -8141,8 +10322,15 @@ class App(ctk.CTk):
 
         if previous_media_path != new_media_path and hasattr(self, "_clear_transcript_waveform"):
             self._clear_transcript_waveform(refresh=True)
+            self.transcript_media_duration_seconds = None
+            self.transcript_media_duration_cache_key = None
+            self.transcript_playback_follow_active = False
 
         self.linked_transcript_media_path = new_media_path
+        if new_media_path:
+            self.active_media_file_path = self._normalise_session_file_path(new_media_path)
+        else:
+            self.active_media_file_path = ""
         self._update_transcript_media_status()
 
         if log and media_path:
@@ -8853,50 +11041,48 @@ class App(ctk.CTk):
         description.grid(row=1, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 10))
 
         file_var = tk.StringVar(value="")
-        linked_media_file = getattr(self, "linked_transcript_media_path", None)
-        if linked_media_file and os.path.exists(linked_media_file):
-            file_var.set(linked_media_file)
+        media_options = self._session_media_options()
+        media_label_to_path = {label: path for label, path in media_options}
+        default_media_path = self._default_session_media_path()
+        selected_label = ""
+        for label, path in media_options:
+            if default_media_path and os.path.abspath(path) == os.path.abspath(default_media_path):
+                selected_label = label
+                break
+        if not selected_label and len(media_options) == 1:
+            selected_label = media_options[0][0]
+        media_label_var = tk.StringVar(value=selected_label)
+        if selected_label:
+            file_var.set(media_label_to_path[selected_label])
 
-        file_entry = ctk.CTkEntry(
+        def on_media_selected(label: str) -> None:
+            file_var.set(media_label_to_path.get(label, ""))
+
+        ctk.CTkLabel(
             content,
-            textvariable=file_var,
-            height=34,
-            fg_color=COLORS["bg_input"],
-            border_color=COLORS["border"],
-            corner_radius=6,
-        )
-        file_entry.grid(row=2, column=0, sticky="ew", padx=(14, 8), pady=(0, 8))
-
-        def browse_file() -> None:
-            filename = filedialog.askopenfilename(
-                title="Choose audio or video file for Online ASR",
-                filetypes=[
-                    ("Media files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg *.mp4 *.mkv *.webm *.mov *.avi"),
-                    ("Audio files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
-                    ("Video files", "*.mp4 *.mkv *.webm *.mov *.avi"),
-                    ("All files", "*.*"),
-                ],
-            )
-            if filename:
-                file_var.set(filename)
-                self._add_session_file(
-                    filename,
-                    self._session_file_kind_for_path(filename),
-                    select=True,
-                )
-
-        browse_button = ctk.CTkButton(
-            content,
-            text="Browse",
-            command=browse_file,
-            width=88,
-            height=34,
+            text="Media file",
             font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["accent_secondary"],
-            hover_color=COLORS["border"],
-            corner_radius=8,
-        )
-        browse_button.grid(row=2, column=1, sticky="e", padx=(0, 14), pady=(0, 8))
+            text_color=COLORS["text_secondary"],
+            anchor="w",
+        ).grid(row=2, column=0, sticky="w", padx=14, pady=(0, 4))
+
+        if media_options:
+            file_selector = ctk.CTkComboBox(
+                content,
+                values=[label for label, _path in media_options],
+                variable=media_label_var,
+                command=on_media_selected,
+                height=34,
+            )
+            file_selector.grid(row=3, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
+        else:
+            ctk.CTkLabel(
+                content,
+                text="Add media with FILES + or drag/drop first.",
+                font=ctk.CTkFont(size=11),
+                text_color="#ffc107",
+                anchor="w",
+            ).grid(row=3, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
 
         status_var = tk.StringVar(value="Ready. Choose a local media file, then press Transcribe.")
         status_label = ctk.CTkLabel(
@@ -8906,10 +11092,10 @@ class App(ctk.CTk):
             text_color=COLORS["text_muted"],
             anchor="w",
         )
-        status_label.grid(row=3, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 12))
+        status_label.grid(row=4, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 12))
 
         actions = ctk.CTkFrame(content, fg_color="transparent")
-        actions.grid(row=4, column=0, columnspan=2, sticky="e", padx=14, pady=(0, 12))
+        actions.grid(row=5, column=0, columnspan=2, sticky="e", padx=14, pady=(0, 12))
 
         def close_dialog() -> None:
             self.online_asr_window = None
@@ -8937,7 +11123,6 @@ class App(ctk.CTk):
                 file_var.get(),
                 status_var=status_var,
                 start_button=start_button,
-                browse_button=browse_button,
                 close_button=close_button,
                 dialog=dialog,
             ),
@@ -10242,16 +12427,81 @@ class App(ctk.CTk):
 
         return result[:40]
 
-    def local_asr_transcribe_clicked(self) -> None:
+    def _asr_language_completion_lines(
+        self,
+        metadata: Dict[str, Any],
+        *,
+        requested_language: Optional[str] = None,
+    ) -> List[str]:
+        requested = (
+            requested_language
+            or metadata.get("requested_language")
+            or ""
+        )
+        requested = str(requested or "").strip()
+        if requested and requested.lower() not in {"auto", "auto-detect", "auto detect"}:
+            return [f"Language used/requested: {requested}"]
+
+        language = metadata.get("language") or "unknown"
+        lines = [f"Detected language: {language}"]
+        probability = metadata.get("language_probability")
+        if probability is not None:
+            try:
+                lines.append(f"Language confidence: {float(probability):.2%}")
+            except Exception:
+                lines.append(f"Language confidence: {probability}")
+        return lines
+
+    def _asr_language_log_fragment(
+        self,
+        metadata: Dict[str, Any],
+        *,
+        requested_language: Optional[str] = None,
+    ) -> str:
+        requested = (
+            requested_language
+            or metadata.get("requested_language")
+            or ""
+        )
+        requested = str(requested or "").strip()
+        if requested and requested.lower() not in {"auto", "auto-detect", "auto detect"}:
+            return f"language={requested}"
+
+        language = metadata.get("language") or "unknown"
+        probability = metadata.get("language_probability")
+        if probability is None:
+            return f"language={language}"
+        try:
+            probability_text = f"{float(probability):.2%}"
+        except Exception:
+            probability_text = str(probability)
+        return f"language={language}, confidence={probability_text}"
+
+    def local_asr_transcribe_clicked(
+        self,
+        media_file: str = "",
+        *,
+        force_full: bool = False,
+    ) -> None:
         """Transcribe a local audio/video file using the selected local ASR engine."""
         asr_defaults = load_asr_defaults()
 
-        asr_settings = ask_asr_settings(
-            self,
-            asr_defaults,
-            title="Local ASR",
-            action_label="Start ASR",
-        )
+        if force_full:
+            asr_settings = dict(asr_defaults)
+            asr_settings["probe_seconds"] = 0
+            asr_settings["auto_probe_seconds"] = 0
+            asr_settings["calibration_probe_seconds"] = 0
+            asr_settings["media_file"] = media_file
+        else:
+            media_options = self._session_media_options()
+            asr_settings = ask_asr_settings(
+                self,
+                asr_defaults,
+                title="Local ASR",
+                action_label="Start ASR",
+                media_options=media_options,
+                selected_media_path=self._default_session_media_path(),
+            )
 
         if not asr_settings:
             return
@@ -10319,7 +12569,8 @@ class App(ctk.CTk):
         else:
             asr_mode_label = f"probe first {probe_seconds}s" if probe_seconds else "full transcription"
 
-        linked_media_file = getattr(self, "linked_transcript_media_path", None)
+        media_file = media_file or asr_settings.get("media_file", "")
+        linked_media_file = media_file or getattr(self, "linked_transcript_media_path", None)
 
         if linked_media_file and os.path.exists(linked_media_file):
             media_file = linked_media_file
@@ -10335,15 +12586,11 @@ class App(ctk.CTk):
                     "The linked media file could not be found. Choose the media file again."
                 )
 
-            media_file = filedialog.askopenfilename(
-                title=f"Choose audio or video file for Local ASR {asr_mode_label}",
-                filetypes=[
-                    ("Media files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg *.mp4 *.mkv *.webm *.mov *.avi"),
-                    ("Audio files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
-                    ("Video files", "*.mp4 *.mkv *.webm *.mov *.avi"),
-                    ("All files", "*.*"),
-                ],
+            messagebox.showwarning(
+                "No FILES Media",
+                "Add a media file with FILES + or drag/drop before starting Local ASR.",
             )
+            return
 
         if not media_file:
             return
@@ -10791,7 +13038,76 @@ class App(ctk.CTk):
                 metadata["asr_topic_resolver_remote_used"] = bool(full_asr_topic_result.get("remote_used"))
 
                 def on_success() -> None:
-                    self.transcript_segments = segments
+                    timing_mode = str(
+                        vars(self).get("local_asr_timing_mode_after_completion", "") or ""
+                    )
+                    self.local_asr_timing_mode_after_completion = ""
+                    blank_timing_segments = bool(
+                        vars(self).get("local_asr_blank_text_after_completion", False)
+                    )
+                    self.local_asr_blank_text_after_completion = False
+                    timing_source_segments = (
+                        self._build_subtitle_timing_cues(
+                            segments,
+                            media_duration_seconds=(
+                                metadata.get("duration")
+                                or metadata.get("duration_seconds")
+                                or self._get_linked_media_duration_seconds()
+                            ),
+                            word_timestamps=metadata.get("word_timestamps"),
+                        )
+                        if timing_mode in {"draft", "blank"}
+                        else segments
+                    )
+                    if timing_mode in {"draft", "blank"}:
+                        timing_media_duration = (
+                            metadata.get("duration")
+                            or metadata.get("duration_seconds")
+                            or self._get_linked_media_duration_seconds()
+                        )
+                        timing_report = self._subtitle_timing_quality_report(
+                            timing_source_segments,
+                            media_duration_seconds=timing_media_duration,
+                        )
+                        timing_warnings = self._subtitle_timing_quality_warnings(timing_report)
+                        metadata["subtitle_timing_quality"] = timing_report
+                        metadata["subtitle_timing_quality_warnings"] = list(timing_warnings)
+                        if timing_warnings:
+                            choice = self._ask_low_quality_subtitle_timing_choice(
+                                timing_report,
+                                timing_warnings,
+                            )
+                            metadata["subtitle_timing_quality_choice"] = choice
+                            if choice == "raw":
+                                timing_source_segments = list(segments)
+                                metadata["subtitle_timing_quality"] = (
+                                    self._subtitle_timing_quality_report(
+                                        timing_source_segments,
+                                        media_duration_seconds=timing_media_duration,
+                                    )
+                                )
+                                self.log_message(
+                                    "Subtitle timing evidence was low quality; using raw ASR segments.",
+                                    "warning",
+                                )
+                            elif choice == "cancel":
+                                self.log_message(
+                                    "Subtitle timing update cancelled after low-quality timing warning.",
+                                    "warning",
+                                )
+                                return
+                            else:
+                                self.log_message(
+                                    "Subtitle timing evidence warning: "
+                                    + "; ".join(timing_warnings),
+                                    "warning",
+                                )
+                    if blank_timing_segments:
+                        self.transcript_segments = (
+                            self._blank_text_preserving_transcript_boundaries(timing_source_segments)
+                        )
+                    else:
+                        self.transcript_segments = timing_source_segments
                     self.last_youtube_video_info = None
                     self.last_asr_metadata = metadata
                     self._set_linked_transcript_media(media_file)
@@ -10799,26 +13115,36 @@ class App(ctk.CTk):
                     prompt_note = " with phrase hints" if initial_prompt else ""
                     language_note = f", language={language_code}" if language_code else ", language=auto-detect"
                     probe_note = f"probe first {probe_seconds}s " if probe_seconds else ""
+                    source_kind = (
+                        "blank subtitle timings from Local ASR"
+                        if blank_timing_segments
+                        else "draft subtitle timings from Local ASR"
+                        if timing_mode == "draft"
+                        else "transcript"
+                    )
 
                     self.last_transcript_source = (
-                        f"Local ASR {probe_note}transcript from {os.path.basename(media_file)} "
+                        f"Local ASR {probe_note}{source_kind} from {os.path.basename(media_file)} "
                         f"using {engine_label} {model_name}{language_note}{prompt_note}"
                     )
 
                     self._refresh_transcript_display()
                     self.evidence_button.configure(state="normal")
 
-                    language = metadata.get("language") or "unknown"
-                    probability = metadata.get("language_probability")
-
-                    if probability is not None:
-                        probability_text = f"{probability:.2%}"
-                    else:
-                        probability_text = "unknown"
+                    language_lines = self._asr_language_completion_lines(
+                        metadata,
+                        requested_language=language_code,
+                    )
+                    language_log_fragment = self._asr_language_log_fragment(
+                        metadata,
+                        requested_language=language_code,
+                    )
+                    language_block = "\n".join(language_lines)
 
                     self.log_message(
-                        f"Local ASR {'probe ' if probe_seconds else ''}complete: {len(segments):,} segment(s), "
-                        f"language={language}, confidence={probability_text}",
+                        f"Local ASR {'probe ' if probe_seconds else ''}complete: "
+                        f"{len(self.transcript_segments):,} segment(s), "
+                        f"{language_log_fragment}",
                         "success",
                     )
 
@@ -10840,18 +13166,20 @@ class App(ctk.CTk):
                         completion_message = (
                             f"Probe transcribed first {probe_seconds} seconds:\n\n"
                             f"{os.path.basename(media_file)}\n\n"
-                            f"Segments: {len(segments):,}\n"
-                            f"Detected language: {language}\n"
-                            f"Language confidence: {probability_text}\n\n"
+                            f"Segments: {len(self.transcript_segments):,}\n"
+                            f"{language_block}\n\n"
                             "Review the probe transcript. If it is acceptable, run full Local ASR."
                         )
                     else:
-                        completion_title = "Local ASR Complete"
+                        completion_title = (
+                            "Subtitle Timings Complete"
+                            if blank_timing_segments
+                            else "Local ASR Complete"
+                        )
                         completion_message = (
                             f"Transcribed file:\n\n{os.path.basename(media_file)}\n\n"
-                            f"Segments: {len(segments):,}\n"
-                            f"Detected language: {language}\n"
-                            f"Language confidence: {probability_text}"
+                            f"Segments: {len(self.transcript_segments):,}\n"
+                            f"{language_block}"
                         )
 
                     messagebox.showinfo(completion_title, completion_message)
@@ -10863,6 +13191,8 @@ class App(ctk.CTk):
                 error_text = str(error)
 
                 def on_error() -> None:
+                    self.local_asr_timing_mode_after_completion = ""
+                    self.local_asr_blank_text_after_completion = False
                     self.log_message(f"Local ASR failed: {error_text}", "error")
                     messagebox.showerror("Local ASR Error", error_text)
 
@@ -10925,10 +13255,7 @@ class App(ctk.CTk):
             return
 
         try:
-            if export_type == "txt":
-                self._export_readable_transcript_txt(self.transcript_segments, filename)
-            else:
-                exporter(self.transcript_segments, filename)
+            exporter(self.transcript_segments, filename)
             self.transcript_has_unsaved_edits = False
             self._refresh_session_files_list()
 
@@ -12238,14 +14565,14 @@ class App(ctk.CTk):
         if not answer:
             return
 
-        self._stop_transcript_playback_process()
-        self._update_transcript_playback_buttons(False)
         self.transcript_segments = []
         self.transcript_playhead_seconds = None
+        self.selected_transcript_segment_index = None
         self.last_transcript_source = None
         self.transcript_has_unsaved_edits = False
-        self._set_linked_transcript_media(None)
+        self.active_transcript_file_path = ""
         self._refresh_transcript_display()
+        self._refresh_transcript_timeline()
         self._refresh_session_files_list()
         self.log_message("Transcript cleared.", "muted")
 

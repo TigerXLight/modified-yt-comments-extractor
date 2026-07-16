@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import tkinter as tk
 from typing import Callable, Mapping, Optional, Sequence
 
 import customtkinter as ctk
@@ -382,6 +383,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
         validate_provider_key: Optional[
             Callable[[str], ProviderKeyValidationRecord]
         ] = None,
+        youtube_migration_action: Optional[Callable[[], object]] = None,
         browser_opener: Optional[Callable[[str], object]] = None,
         added_entry_ids: Sequence[str] = (),
         on_added_entry_ids_change: Optional[Callable[[tuple[str, ...]], None]] = None,
@@ -404,6 +406,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._validation_records = normalize_validation_records(validation_records)
         self._on_validation_records_change = on_validation_records_change
         self._validate_provider_key = validate_provider_key
+        self._youtube_migration_action = youtube_migration_action
         self._browser_opener = browser_opener
         self._validation_busy_provider_id = ""
         self._current_credential_entry_id = ""
@@ -413,6 +416,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._add_provider_click_bind_id: Optional[str] = None
         self._add_provider_escape_bind_id: Optional[str] = None
         self._add_provider_origin_button: Optional[object] = None
+        self._details_mousewheel_remainder = 0.0
         self._section_header_rows: dict[str, int] = {}
         self._add_provider_search_index: dict[str, str] = {}
         self._last_add_provider_render_key: tuple[str, str, tuple[str, ...]] = (
@@ -669,18 +673,55 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self.list_panel.grid_columnconfigure(0, weight=1)
         self.list_panel.grid_columnconfigure(1, weight=1, minsize=260)
 
-        self.details_panel = ctk.CTkScrollableFrame(
+        self.details_shell = ctk.CTkFrame(
             body,
             fg_color=COLORS["bg_card"],
             corner_radius=8,
         )
-        self.details_panel.grid(
+        self.details_shell.grid(
             row=0,
             column=1,
             sticky="nsew",
             padx=(8, 0),
         )
+        self.details_shell.grid_rowconfigure(0, weight=1)
+        self.details_shell.grid_columnconfigure(0, weight=1)
+
+        self.details_canvas = tk.Canvas(
+            self.details_shell,
+            bg=COLORS["bg_card"],
+            highlightthickness=0,
+            borderwidth=0,
+            takefocus=True,
+        )
+        self.details_canvas.grid(row=0, column=0, sticky="nsew")
+        self.details_scrollbar = ctk.CTkScrollbar(
+            self.details_shell,
+            orientation="vertical",
+            command=self.details_canvas.yview,
+        )
+        self.details_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.details_canvas.configure(yscrollcommand=self.details_scrollbar.set)
+
+        self.details_panel = ctk.CTkFrame(
+            self.details_canvas,
+            fg_color=COLORS["bg_card"],
+            corner_radius=8,
+        )
+        self._details_canvas_window = self.details_canvas.create_window(
+            (0, 0),
+            window=self.details_panel,
+            anchor="nw",
+        )
         self.details_panel.grid_columnconfigure(0, weight=1)
+        self.details_panel.bind("<Configure>", self._on_details_inner_configure)
+        self.details_canvas.bind("<Configure>", self._on_details_canvas_configure)
+        self.details_panel.bind(
+            "<Configure>",
+            lambda event: self._update_details_wraplength(getattr(event, "width", 0)),
+            add="+",
+        )
+        self._configure_details_scroll_surface()
 
         self.warning_label = ctk.CTkLabel(
             self.list_panel,
@@ -919,7 +960,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
             text="Key input",
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=COLORS["text_secondary"],
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=10, pady=(8, 2))
+        ).grid(row=0, column=0, sticky="w", padx=10, pady=(8, 2))
 
         self.credential_entry = _create_masked_credential_entry(
             self.credential_action_panel,
@@ -931,7 +972,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
             row=1,
             column=0,
             sticky="ew",
-            padx=(10, 6),
+            padx=10,
             pady=(4, 8),
         )
         self.credential_save_button = ctk.CTkButton(
@@ -943,10 +984,11 @@ class AccessKeysWindow(ctk.CTkToplevel):
             hover_color=COLORS["accent_hover"],
         )
         self.credential_save_button.grid(
-            row=1,
-            column=1,
-            padx=(0, 6),
-            pady=(4, 8),
+            row=2,
+            column=0,
+            sticky="ew",
+            padx=10,
+            pady=(0, 6),
         )
         self.credential_clear_button = ctk.CTkButton(
             self.credential_action_panel,
@@ -957,10 +999,11 @@ class AccessKeysWindow(ctk.CTkToplevel):
             hover_color=COLORS["border"],
         )
         self.credential_clear_button.grid(
-            row=1,
-            column=2,
-            padx=(0, 10),
-            pady=(4, 8),
+            row=3,
+            column=0,
+            sticky="ew",
+            padx=10,
+            pady=(0, 8),
         )
         self.credential_validate_button = ctk.CTkButton(
             self.credential_action_panel,
@@ -971,9 +1014,8 @@ class AccessKeysWindow(ctk.CTkToplevel):
             hover_color=COLORS["accent_hover"],
         )
         self.credential_validate_button.grid(
-            row=2,
+            row=4,
             column=0,
-            columnspan=3,
             sticky="ew",
             padx=10,
             pady=(0, 8),
@@ -986,13 +1028,28 @@ class AccessKeysWindow(ctk.CTkToplevel):
             justify="left",
         )
         self.credential_action_status_label.grid(
-            row=3,
+            row=5,
             column=0,
-            columnspan=3,
             sticky="ew",
             padx=10,
             pady=(0, 8),
         )
+        self.youtube_migration_button = ctk.CTkButton(
+            self.credential_action_panel,
+            text="Migrate legacy YouTube key",
+            command=self._run_youtube_migration_action,
+            height=30,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+        )
+        self.youtube_migration_button.grid(
+            row=6,
+            column=0,
+            sticky="ew",
+            padx=10,
+            pady=(0, 8),
+        )
+        self.youtube_migration_button.grid_remove()
         self.credential_action_panel.grid_remove()
 
         self.hide_provider_button = ctk.CTkButton(
@@ -1012,6 +1069,255 @@ class AccessKeysWindow(ctk.CTkToplevel):
             pady=(4, 14),
         )
         self.hide_provider_button.grid_remove()
+
+    def _details_scroll_canvas(self):
+        return getattr(self, "details_canvas", None)
+
+    def _details_scrollbar(self):
+        return getattr(self, "details_scrollbar", None)
+
+    def _configure_details_scroll_surface(self) -> None:
+        canvas = self._details_scroll_canvas()
+        scrollbar = self._details_scrollbar()
+        if canvas is not None and scrollbar is not None:
+            try:
+                canvas.configure(yscrollcommand=scrollbar.set)
+                scrollbar.configure(command=canvas.yview)
+            except Exception:
+                pass
+        for widget in (self, canvas):
+            if widget is not None:
+                try:
+                    widget.bind("<MouseWheel>", self._on_access_keys_mousewheel, add="+")
+                    widget.bind("<Button-4>", self._on_access_keys_mousewheel, add="+")
+                    widget.bind("<Button-5>", self._on_access_keys_mousewheel, add="+")
+                    widget.bind("<Prior>", self._on_details_page_up, add="+")
+                    widget.bind("<Next>", self._on_details_page_down, add="+")
+                    widget.bind("<Home>", self._on_details_home, add="+")
+                    widget.bind("<End>", self._on_details_end, add="+")
+                except Exception:
+                    pass
+
+    def _bind_details_scroll_children(self, widget: object = None) -> None:
+        # Wheel routing is scoped to this Toplevel via _on_access_keys_mousewheel.
+        # Child widgets keep their own bindings, but pointer location decides
+        # which scroll surface moves.
+        return
+
+    def _bind_details_mousewheel(self, _event: object = None) -> None:
+        self._details_mousewheel_remainder = 0.0
+
+    def _unbind_details_mousewheel(self, _event: object = None) -> None:
+        self._details_mousewheel_remainder = 0.0
+
+    def _on_details_inner_configure(self, _event: object = None) -> None:
+        canvas = self._details_scroll_canvas()
+        if canvas is None:
+            return
+        try:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        except Exception:
+            pass
+
+    def _on_details_canvas_configure(self, event: object = None) -> None:
+        canvas = self._details_scroll_canvas()
+        if canvas is None:
+            return
+        width = getattr(event, "width", None)
+        try:
+            width = int(width if width is not None else canvas.winfo_width())
+            canvas.itemconfigure(self._details_canvas_window, width=max(1, width))
+            self._update_details_wraplength(width)
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        except Exception:
+            pass
+
+    def _is_descendant_widget(self, widget: object, ancestor: object) -> bool:
+        while widget is not None:
+            if widget is ancestor:
+                return True
+            try:
+                widget = widget.master
+            except Exception:
+                break
+        return False
+
+    def _widget_under_pointer(self, event: object) -> object:
+        try:
+            x = int(self.winfo_pointerx())
+            y = int(self.winfo_pointery())
+            widget = self.winfo_containing(x, y)
+            if widget is not None:
+                return widget
+        except Exception:
+            pass
+        return getattr(event, "widget", None)
+
+    def _canvas_for_scroll_target(self, target: object) -> object:
+        if target is None:
+            return None
+        for surface in (
+            getattr(self, "details_canvas", None),
+            getattr(self, "details_panel", None),
+            getattr(self, "details_shell", None),
+        ):
+            if surface is not None and self._is_descendant_widget(target, surface):
+                return self._details_scroll_canvas()
+        for surface in (
+            getattr(self, "add_provider_popup", None),
+            getattr(self, "add_provider_results", None),
+        ):
+            if surface is not None and self._is_descendant_widget(target, surface):
+                return getattr(getattr(self, "add_provider_results", None), "_parent_canvas", None)
+        if self._is_descendant_widget(target, getattr(self, "list_panel", None)):
+            return getattr(getattr(self, "list_panel", None), "_parent_canvas", None)
+        return None
+
+    def _on_access_keys_mousewheel(self, event) -> str:
+        target = self._widget_under_pointer(event)
+        canvas = self._canvas_for_scroll_target(target)
+        if canvas is None:
+            return "break"
+        units = self._mousewheel_units(event)
+        if units:
+            self._scroll_canvas_units(canvas, units)
+        return "break"
+
+    def _on_details_mousewheel(self, event) -> str:
+        canvas = self._details_scroll_canvas()
+        if canvas is None:
+            return "break"
+        units = self._mousewheel_units(event)
+        if units:
+            self._scroll_canvas_units(canvas, units)
+        return "break"
+
+    def _mousewheel_units(self, event) -> int:
+        delta = getattr(event, "delta", 0)
+        number = getattr(event, "num", None)
+        if number == 4:
+            return -3
+        elif number == 5:
+            return 3
+        self._details_mousewheel_remainder += -float(delta or 0) / 120.0
+        notches = int(self._details_mousewheel_remainder)
+        if notches:
+            self._details_mousewheel_remainder -= float(notches)
+        return notches * 3
+
+    def _scroll_details_canvas_units(self, units: int) -> None:
+        canvas = self._details_scroll_canvas()
+        self._scroll_canvas_units(canvas, units)
+
+    def _scroll_canvas_units(self, canvas: object, units: int) -> None:
+        if canvas is None or not units:
+            return
+        try:
+            top, bottom = canvas.yview()
+        except Exception:
+            top, bottom = (0.0, 1.0)
+        if units < 0 and top <= 0.0:
+            return
+        if units > 0 and bottom >= 1.0:
+            return
+        try:
+            canvas.yview_scroll(units, "units")
+            top, _bottom = canvas.yview()
+            canvas.yview_moveto(max(0.0, min(1.0, float(top))))
+        except Exception:
+            pass
+
+    def _on_details_page_up(self, _event: object = None) -> str:
+        canvas = self._details_scroll_canvas()
+        if canvas is not None:
+            try:
+                canvas.yview_scroll(-1, "pages")
+            except Exception:
+                pass
+        return "break"
+
+    def _on_details_page_down(self, _event: object = None) -> str:
+        canvas = self._details_scroll_canvas()
+        if canvas is not None:
+            try:
+                canvas.yview_scroll(1, "pages")
+            except Exception:
+                pass
+        return "break"
+
+    def _on_details_home(self, _event: object = None) -> str:
+        canvas = self._details_scroll_canvas()
+        if canvas is not None:
+            try:
+                canvas.yview_moveto(0.0)
+            except Exception:
+                pass
+        return "break"
+
+    def _reset_details_scroll_to_top(self) -> None:
+        canvas = self._details_scroll_canvas()
+        if canvas is None:
+            return
+        try:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        except Exception:
+            pass
+        try:
+            canvas.yview_moveto(0.0)
+        except Exception:
+            pass
+        try:
+            self.after_idle(self._reset_details_canvas_after_idle)
+        except Exception:
+            pass
+
+    def _reset_details_canvas_after_idle(self) -> None:
+        canvas = self._details_scroll_canvas()
+        if canvas is None:
+            return
+        try:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        except Exception:
+            pass
+        try:
+            canvas.yview_moveto(0.0)
+        except Exception:
+            pass
+
+    def _on_details_end(self, _event: object = None) -> str:
+        canvas = self._details_scroll_canvas()
+        if canvas is not None:
+            try:
+                canvas.yview_moveto(1.0)
+            except Exception:
+                pass
+        return "break"
+
+    def _update_details_wraplength(self, width: object = 0) -> int:
+        try:
+            available = int(width)
+        except Exception:
+            try:
+                available = int(self.details_panel.winfo_width())
+            except Exception:
+                available = 560
+        wraplength = max(220, min(720, available - 48))
+        for widget in (
+            getattr(self, "detail_placeholder", None),
+            getattr(self, "detail_title_label", None),
+            getattr(self, "credential_action_status_label", None),
+        ):
+            if widget is not None:
+                try:
+                    widget.configure(wraplength=wraplength)
+                except Exception:
+                    pass
+        for _label, value_widget in getattr(self, "_detail_rows", {}).values():
+            try:
+                value_widget.configure(wraplength=wraplength)
+            except Exception:
+                pass
+        return wraplength
 
     @staticmethod
     def _button_text(entry: AccessKeysEntryView) -> str:
@@ -1538,6 +1844,8 @@ class AccessKeysWindow(ctk.CTkToplevel):
                 padx=14,
                 pady=18,
             )
+            self._bind_details_scroll_children()
+            self._reset_details_scroll_to_top()
             return
 
         self.detail_placeholder.grid_remove()
@@ -1562,6 +1870,8 @@ class AccessKeysWindow(ctk.CTkToplevel):
                 widget.grid_remove()
         self.hide_provider_button.grid()
         self._render_credential_controls(entry)
+        self._bind_details_scroll_children()
+        self._reset_details_scroll_to_top()
 
     def _open_provider_link(self, label: str) -> None:
         entry_id = self._selected_entry_id
@@ -1589,14 +1899,28 @@ class AccessKeysWindow(ctk.CTkToplevel):
         )
         _set_entry_masked(self.credential_entry)
         if not credential_id:
+            is_youtube_entry = bool(entry and entry.entry_id == "source:youtube")
             self.credential_entry.delete(0, "end")
             _set_entry_masked(self.credential_entry)
+            if is_youtube_entry and vars(self).get("_youtube_migration_action") is not None:
+                self.credential_action_panel.grid()
+                self.credential_validate_button.configure(state="disabled")
+                if hasattr(self, "youtube_migration_button"):
+                    self.youtube_migration_button.grid()
+                self.credential_action_status_label.configure(
+                    text="Use this action to migrate a legacy saved YouTube key into secure storage. The key is never displayed here."
+                )
+                return
+            if hasattr(self, "youtube_migration_button"):
+                self.youtube_migration_button.grid_remove()
             self.credential_action_status_label.configure(text="")
             self.credential_validate_button.configure(state="disabled")
             self.credential_action_panel.grid_remove()
             return
 
         self.credential_action_panel.grid()
+        if hasattr(self, "youtube_migration_button"):
+            self.youtube_migration_button.grid_remove()
         self.credential_entry.delete(0, "end")
         _set_entry_masked(self.credential_entry)
         self.credential_validate_button.configure(
@@ -1610,6 +1934,19 @@ class AccessKeysWindow(ctk.CTkToplevel):
         )
         self.credential_action_status_label.configure(
             text=credential_detail_status_text(entry)
+        )
+
+    def _run_youtube_migration_action(self) -> None:
+        action = self._youtube_migration_action
+        if action is None:
+            self.credential_action_status_label.configure(
+                text="YouTube migration is unavailable in this window."
+            )
+            return
+        action()
+        self._refresh_runtime_statuses_after_credential_action()
+        self.credential_action_status_label.configure(
+            text="YouTube legacy migration action finished. Refresh status if needed."
         )
 
     @staticmethod
@@ -1784,6 +2121,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
             return
         self._hide_family_menu()
         self._hide_add_provider_popup()
+        self._unbind_details_mousewheel()
         if self._list_scroll_reset_after_id is not None:
             self.after_cancel(self._list_scroll_reset_after_id)
             self._list_scroll_reset_after_id = None

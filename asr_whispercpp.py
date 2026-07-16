@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 import re
+import json
 import shutil
 import subprocess
 import tempfile
 import time
+import hashlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -16,6 +18,14 @@ DEFAULT_WHISPERCPP_CLI = r"C:\whisper.cpp\build-vulkan\bin\Release\whisper-cli.e
 DEFAULT_WHISPERCPP_MODEL = r"C:\whisper.cpp\ggml-large-v3.bin"
 DEFAULT_WHISPERCPP_ROOT = r"C:\whisper.cpp"
 DEFAULT_WHISPERCPP_TIMEOUT_SECONDS = int(os.environ.get("ASR_WHISPERCPP_TIMEOUT", "120"))
+
+
+def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _seconds_to_timestamp(seconds: float) -> str:
@@ -367,6 +377,186 @@ def _parse_segments_from_srt(srt_text: str, speaker_name: str) -> List[Transcrip
     return segments
 
 
+def _seconds_from_whispercpp_offset(value: Any) -> Optional[float]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+        if number < 0:
+            return None
+        # whisper.cpp JSON offset fields are commonly centiseconds.
+        if number > 1000:
+            return number / 1000.0 if number > 100000 else number / 100.0
+        return number / 100.0
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if ":" in text:
+            return _timestamp_to_seconds(text)
+        try:
+            return _seconds_from_whispercpp_offset(float(text))
+        except Exception:
+            return None
+    return None
+
+
+def _whispercpp_item_seconds(item: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]]:
+    timestamps = item.get("timestamps")
+    if isinstance(timestamps, dict):
+        start = _seconds_from_whispercpp_offset(timestamps.get("from"))
+        end = _seconds_from_whispercpp_offset(timestamps.get("to"))
+        if start is not None or end is not None:
+            return start, end
+
+    offsets = item.get("offsets")
+    if isinstance(offsets, dict):
+        start = _seconds_from_whispercpp_offset(offsets.get("from"))
+        end = _seconds_from_whispercpp_offset(offsets.get("to"))
+        if start is not None or end is not None:
+            return start, end
+
+    start = _seconds_from_whispercpp_offset(item.get("start"))
+    end = _seconds_from_whispercpp_offset(item.get("end"))
+    return start, end
+
+
+def _is_control_token_text(value: str) -> bool:
+    text = str(value or "").strip()
+    return not text or text.startswith("<|") or text.endswith("|>")
+
+
+def _token_starts_new_word(value: str) -> bool:
+    return bool(value) and value[0].isspace()
+
+
+def _token_attaches_to_previous(value: str) -> bool:
+    text = str(value or "").strip()
+    return bool(text) and (
+        text in {".", ",", "?", "!", ";", ":", "%", ")", "]", "}", "'s", "n't", "'m", "'re", "'ve", "'ll", "'d"}
+        or text.startswith("'")
+    )
+
+
+def _reconstruct_words_from_whispercpp_tokens(
+    tokens: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    words: List[Dict[str, Any]] = []
+    current_text = ""
+    current_start: Optional[float] = None
+    current_end: Optional[float] = None
+    current_confidences: List[float] = []
+
+    def emit_current() -> None:
+        nonlocal current_text, current_start, current_end, current_confidences
+        text = current_text.strip()
+        if text and current_start is not None and current_end is not None and current_end > current_start:
+            confidence = None
+            if current_confidences:
+                confidence = sum(current_confidences) / len(current_confidences)
+            words.append(
+                {
+                    "start": float(current_start),
+                    "end": float(current_end),
+                    "text": text,
+                    "confidence": confidence,
+                }
+            )
+        current_text = ""
+        current_start = None
+        current_end = None
+        current_confidences = []
+
+    for token in tokens:
+        if not isinstance(token, dict):
+            continue
+        raw_text = str(token.get("text") or "").replace("\n", " ")
+        if _is_control_token_text(raw_text):
+            continue
+        token_text = raw_text.strip()
+        if not token_text:
+            continue
+        token_start, token_end = _whispercpp_item_seconds(token)
+        if token_start is None or token_end is None or token_end <= token_start:
+            continue
+        confidence = token.get("p")
+        token_confidence = (
+            float(confidence)
+            if isinstance(confidence, (int, float)) and not isinstance(confidence, bool)
+            else None
+        )
+
+        if current_text and _token_starts_new_word(raw_text) and not _token_attaches_to_previous(raw_text):
+            emit_current()
+
+        if not current_text:
+            current_text = token_text
+            current_start = float(token_start)
+        else:
+            current_text += token_text
+        current_end = float(token_end)
+        if token_confidence is not None:
+            current_confidences.append(token_confidence)
+
+    emit_current()
+    return words
+
+
+def _parse_whispercpp_json(
+    json_text: str,
+    speaker_name: str,
+) -> Tuple[List[TranscriptSegment], List[Dict[str, Any]]]:
+    try:
+        payload = json.loads(json_text or "{}")
+    except Exception:
+        return [], []
+
+    transcription = payload.get("transcription")
+    if not isinstance(transcription, list):
+        transcription = payload.get("segments")
+    if not isinstance(transcription, list):
+        return [], []
+
+    segments: List[TranscriptSegment] = []
+    word_timestamps: List[Dict[str, Any]] = []
+
+    for entry in transcription:
+        if not isinstance(entry, dict):
+            continue
+        start_seconds, end_seconds = _whispercpp_item_seconds(entry)
+        text = " ".join(str(entry.get("text") or "").split())
+
+        if (
+            text
+            and start_seconds is not None
+            and end_seconds is not None
+            and end_seconds > start_seconds
+        ):
+            segments.append(
+                TranscriptSegment(
+                    speaker=speaker_name,
+                    start=_seconds_to_timestamp(start_seconds),
+                    end=_seconds_to_timestamp(end_seconds),
+                    text=text,
+                )
+            )
+
+        tokens = entry.get("tokens")
+        if not isinstance(tokens, list):
+            continue
+        word_timestamps.extend(_reconstruct_words_from_whispercpp_tokens(tokens))
+
+    return segments, word_timestamps
+
+
+def _append_whispercpp_json_flags(command: List[str]) -> None:
+    existing = set(command)
+    if "-oj" not in existing and "--output-json" not in existing:
+        command.append("-oj")
+    if "-ojf" not in existing and "--output-json-full" not in existing:
+        command.append("-ojf")
+
+
 def transcribe_media_file_with_whispercpp_vulkan(
     media_path: str,
     speaker_name: str = "ASR",
@@ -402,6 +592,8 @@ def transcribe_media_file_with_whispercpp_vulkan(
             probe_seconds=probe_seconds,
             audio_filter=audio_filter,
         )
+        normalized_pcm_sha256 = _sha256_file(wav_path)
+        model_sha256 = _sha256_file(model_path)
 
         command = [
             str(cli_path),
@@ -418,6 +610,7 @@ def transcribe_media_file_with_whispercpp_vulkan(
             command += ["--prompt", str(prompt)]
 
         command += list(extra_flags or [])
+        _append_whispercpp_json_flags(command)
 
         command += [
             "-otxt",
@@ -455,12 +648,25 @@ def transcribe_media_file_with_whispercpp_vulkan(
 
         srt_path = output_base.with_suffix(".srt")
         segments: List[TranscriptSegment] = []
+        word_timestamps: List[Dict[str, Any]] = []
+
+        json_path = output_base.with_suffix(".json")
+        if json_path.exists():
+            json_segments, word_timestamps = _parse_whispercpp_json(
+                json_path.read_text(encoding="utf-8", errors="replace"),
+                speaker_name=speaker_name,
+            )
+        else:
+            json_segments = []
 
         if srt_path.exists():
             segments = _parse_segments_from_srt(
                 srt_path.read_text(encoding="utf-8", errors="replace"),
                 speaker_name=speaker_name,
             )
+
+        if not segments and json_segments:
+            segments = json_segments
 
         if not segments:
             combined_output_text = stdout_text + "\n" + stderr_text
@@ -497,6 +703,9 @@ def transcribe_media_file_with_whispercpp_vulkan(
             "engine": "whisper.cpp Vulkan",
             "source_file": str(source_path),
             "source_file_name": source_path.name,
+            "source_file_sha256": _sha256_file(source_path),
+            "normalized_pcm_sha256": normalized_pcm_sha256,
+            "model_sha256": model_sha256,
             "model_name": requested_model_name,
             "device": "vulkan",
             "compute_type": "",
@@ -511,6 +720,14 @@ def transcribe_media_file_with_whispercpp_vulkan(
             "beam_size": 5,
             "audio_filter": audio_filter,
             "segment_count": len(segments),
+            "word_timestamps": word_timestamps,
+            "word_timestamp_count": len(word_timestamps),
+            "word_timestamp_source": (
+                "whisper.cpp json-full" if word_timestamps else ""
+            ),
+            "subtitle_timing_capability": (
+                "word_token_timestamps" if word_timestamps else "segment_timestamps"
+            ),
             "elapsed_seconds": elapsed_seconds,
             "duration_for_speed_seconds": duration_for_speed,
             "processing_speed_x_realtime": processing_speed,
@@ -523,6 +740,16 @@ def transcribe_media_file_with_whispercpp_vulkan(
             "whispercpp_model_name": requested_model_name,
             "whispercpp_timeout_seconds": DEFAULT_WHISPERCPP_TIMEOUT_SECONDS,
             "whispercpp_extra_flags": list(extra_flags or []),
+            "sanitized_command_manifest": {
+                "runner": "asr_whispercpp",
+                "source_file_name": source_path.name,
+                "model_file_name": model_path.name,
+                "language": language or "",
+                "probe_seconds": int(probe_seconds or 0),
+                "audio_filter": audio_filter or "",
+                "extra_flags": list(extra_flags or []),
+                "structured_output": "json-full",
+            },
             "whispercpp_stdout_tail": stdout_text[-4000:],
             "whispercpp_stderr_tail": stderr_text[-4000:],
         }

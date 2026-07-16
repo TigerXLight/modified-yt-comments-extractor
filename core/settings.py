@@ -7,6 +7,7 @@ for secure API key storage.
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Optional
@@ -84,6 +85,7 @@ class AppSettings:
     # UI preferences
     window_width: int = WINDOW_DEFAULT_WIDTH
     window_height: int = WINDOW_DEFAULT_HEIGHT
+    sidebar_width: int = 320
 
     def to_dict(self, include_api_key: bool = False) -> dict:
         """
@@ -251,8 +253,15 @@ class SettingsManager:
             if legacy_api_key:
                 data["api_key"] = legacy_api_key
 
-            with open(self.settings_file, 'w', encoding='utf-8') as f:
+            self.settings_file.parent.mkdir(parents=True, exist_ok=True)
+            tmp_file = self.settings_file.with_name(
+                f"{self.settings_file.name}.tmp"
+            )
+            with open(tmp_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            tmp_file.replace(self.settings_file)
 
             return True
 

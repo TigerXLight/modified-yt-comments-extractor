@@ -2,6 +2,7 @@ import os
 import tempfile
 
 import main
+import asr_whispercpp
 from main import App
 from transcript_tools import TranscriptSegment
 
@@ -85,10 +86,13 @@ def test_local_asr_whispercpp_selection_reaches_existing_dispatch_wrapper() -> N
             "initial_prompt": "Caltheris",
             "device": "vulkan",
             "compute_type": "",
+            "media_file": media_file,
         }
         main.load_asr_defaults = lambda: {}
         main.save_asr_defaults = lambda **kwargs: saved.append(dict(kwargs))
-        main.filedialog.askopenfilename = lambda **_kwargs: media_file
+        main.filedialog.askopenfilename = lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Local ASR should use FILES media, not File Explorer")
+        )
         main.threading.Thread = ImmediateThread
         main.messagebox = FakeMessageBox
         FakeMessageBox.infos = []
@@ -131,7 +135,35 @@ def test_local_asr_whispercpp_selection_reaches_existing_dispatch_wrapper() -> N
     assert saved[0]["profile_name"] == "Best-tested local profile"
     assert app.last_asr_metadata["selected_asr_engine"] == "whispercpp_vulkan"
     assert "using whisper.cpp / Vulkan large-v3" in app.last_transcript_source
+    assert FakeMessageBox.infos
+    assert "Language used/requested: en" in FakeMessageBox.infos[0][1]
+    assert "Detected language" not in FakeMessageBox.infos[0][1]
+    assert "Language confidence" not in FakeMessageBox.infos[0][1]
     assert not FakeMessageBox.errors
+
+
+def test_local_asr_language_completion_lines_for_auto_detect_confidence() -> None:
+    app = _app()
+
+    lines = App._asr_language_completion_lines(
+        app,
+        {"language": "en", "language_probability": 0.875},
+        requested_language=None,
+    )
+
+    assert lines == ["Detected language: en", "Language confidence: 87.50%"]
+
+
+def test_local_asr_language_completion_lines_for_auto_detect_without_confidence() -> None:
+    app = _app()
+
+    lines = App._asr_language_completion_lines(
+        app,
+        {"language": "en"},
+        requested_language=None,
+    )
+
+    assert lines == ["Detected language: en"]
 
 
 def test_auto_probe_with_selected_whispercpp_does_not_add_faster_whisper_fallback() -> None:
@@ -149,9 +181,80 @@ def test_auto_probe_with_selected_whispercpp_does_not_add_faster_whisper_fallbac
     assert {candidate["compute_type"] for candidate in candidates} == {""}
 
 
+def test_whispercpp_json_full_parser_extracts_word_timestamps() -> None:
+    payload = """
+    {
+      "transcription": [
+        {
+          "text": " Alpha beta.",
+          "timestamps": {"from": "00:00:00,100", "to": "00:00:00,900"},
+          "tokens": [
+            {
+              "text": " Alpha",
+              "timestamps": {"from": "00:00:00,100", "to": "00:00:00,400"},
+              "p": 0.91
+            },
+            {
+              "text": " beta",
+              "timestamps": {"from": "00:00:00,500", "to": "00:00:00,800"},
+              "p": 0.88
+            },
+            {
+              "text": ".",
+              "timestamps": {"from": "00:00:00,800", "to": "00:00:00,900"},
+              "p": 0.92
+            }
+          ]
+        }
+      ]
+    }
+    """
+
+    segments, words = asr_whispercpp._parse_whispercpp_json(payload, "Speaker 1")
+
+    assert len(segments) == 1
+    assert segments[0].start == "00:00:00.100"
+    assert segments[0].end == "00:00:00.900"
+    assert [word["text"] for word in words] == ["Alpha", "beta."]
+    assert words[0]["start"] == 0.1
+    assert words[1]["end"] == 0.9
+
+
+def test_whispercpp_token_reconstruction_joins_subword_names_and_contractions() -> None:
+    tokens = [
+        {"text": " Sh", "timestamps": {"from": "00:00:00,000", "to": "00:00:00,100"}},
+        {"text": "ows", "timestamps": {"from": "00:00:00,100", "to": "00:00:00,200"}},
+        {"text": "mith", "timestamps": {"from": "00:00:00,200", "to": "00:00:00,300"}},
+        {"text": " I", "timestamps": {"from": "00:00:00,500", "to": "00:00:00,600"}},
+        {"text": "'m", "timestamps": {"from": "00:00:00,600", "to": "00:00:00,700"}},
+        {"text": " Cal", "timestamps": {"from": "00:00:01,000", "to": "00:00:01,100"}},
+        {"text": "ther", "timestamps": {"from": "00:00:01,100", "to": "00:00:01,200"}},
+        {"text": "is", "timestamps": {"from": "00:00:01,200", "to": "00:00:01,300"}},
+    ]
+
+    words = asr_whispercpp._reconstruct_words_from_whispercpp_tokens(tokens)
+
+    assert [word["text"] for word in words] == ["Showsmith", "I'm", "Caltheris"]
+
+
+def test_whispercpp_command_requests_json_full_structured_output() -> None:
+    command = ["whisper-cli.exe", "-m", "model.bin"]
+
+    asr_whispercpp._append_whispercpp_json_flags(command)
+    asr_whispercpp._append_whispercpp_json_flags(command)
+
+    assert command.count("-oj") == 1
+    assert command.count("-ojf") == 1
+
+
 def run_self_test() -> None:
     test_local_asr_whispercpp_selection_reaches_existing_dispatch_wrapper()
+    test_local_asr_language_completion_lines_for_auto_detect_confidence()
+    test_local_asr_language_completion_lines_for_auto_detect_without_confidence()
     test_auto_probe_with_selected_whispercpp_does_not_add_faster_whisper_fallback()
+    test_whispercpp_json_full_parser_extracts_word_timestamps()
+    test_whispercpp_token_reconstruction_joins_subword_names_and_contractions()
+    test_whispercpp_command_requests_json_full_structured_output()
 
 
 if __name__ == "__main__":

@@ -139,6 +139,17 @@ class _FakeActionButton:
         self.options.update(kwargs)
 
 
+class _FakeWrapWidget:
+    def __init__(self) -> None:
+        self.options: dict[str, object] = {}
+
+    def configure(self, **kwargs: object) -> None:
+        self.options.update(kwargs)
+
+    def winfo_width(self) -> int:
+        return 540
+
+
 class _FakePanel:
     def __init__(self) -> None:
         self.visible = False
@@ -282,20 +293,19 @@ def test_catalog_controller_and_details() -> None:
     assert controller.selected_entry(no_match) is None
 
 
-def test_sidebar_button_preserves_api_key_entry() -> None:
+def test_sidebar_uses_keys_section_without_api_key_block() -> None:
     main_source = Path("main.py").read_text(encoding="utf-8")
-    api_section = _function_source(main_source, "_create_api_section")
-    assert 'placeholder_text="Enter API key"' in api_section
-    assert 'show="*"' in api_section
-    assert "command=self._save_youtube_api_key_secure" in api_section
-    assert "command=self._migrate_youtube_api_key" in api_section
-    assert "command=self._clear_youtube_api_key" in api_section
+    sidebar = _function_source(main_source, "_create_sidebar")
+    keys_section = _function_source(main_source, "_create_access_keys_section")
+    assert "_create_api_section" not in sidebar
+    assert "_create_access_keys_section(first=True)" in sidebar
+    assert "KEYS" in keys_section
     assert "_toggle_api_key_visibility" not in main_source
     assert "toggle_api_key_button" not in main_source
     assert "api_key_visible" not in main_source
     assert 'show=""' not in main_source
-    assert "text=ACCESS_KEYS_BUTTON_TEXT" in api_section
-    assert "command=self.open_access_keys_window" in api_section
+    assert 'text="KEYS"' in keys_section
+    assert "command=self.open_access_keys_window" in keys_section
 
     open_method = _function_source(
         main_source,
@@ -308,7 +318,7 @@ def test_sidebar_button_preserves_api_key_entry() -> None:
     assert "settings_manager=self.settings_manager" in open_method
     assert "youtube_configured=bool(" in open_method
     assert "credential_store=credential_store" in open_method
-    assert "self.api_key_entry.get().strip()" in open_method
+    assert "youtube_migration_action=self._migrate_youtube_api_key" in open_method
     assert "get_api_key" not in open_method
     assert "set_api_key" not in open_method
     assert "delete_api_key" not in open_method
@@ -536,6 +546,109 @@ def test_provider_links_render_only_applicable_user_facing_labels() -> None:
     nebula = entry("planned:source:nebula", "Nebula")
     nebula_links = dict(access_keys_dialog._provider_links(nebula))
     assert nebula_links == {"Provider website": "https://nebula.tv/"}
+
+
+def test_details_wraplength_tracks_available_width() -> None:
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    window.details_panel = _FakeWrapWidget()
+    window.detail_placeholder = _FakeWrapWidget()
+    window.detail_title_label = _FakeWrapWidget()
+    window.credential_action_status_label = _FakeWrapWidget()
+    status_value = _FakeWrapWidget()
+    data_use_value = _FakeWrapWidget()
+    window._detail_rows = {
+        "Status": (_FakeWrapWidget(), status_value),
+        "Data use": (_FakeWrapWidget(), data_use_value),
+    }
+
+    wrap = AccessKeysWindow._update_details_wraplength(window, 360)
+
+    assert wrap == 312
+    assert status_value.options["wraplength"] == 312
+    assert data_use_value.options["wraplength"] == 312
+    assert window.detail_title_label.options["wraplength"] == 312
+
+
+class _FakeScrollChild:
+    def __init__(self, children: list[object] | None = None) -> None:
+        self.bindings: list[str] = []
+        self._children = children or []
+        self.master = None
+        for child in self._children:
+            try:
+                child.master = self
+            except Exception:
+                pass
+
+    def bind(self, event: str, _callback: object, add: object = None) -> None:
+        self.bindings.append(event)
+
+    def winfo_children(self) -> list[object]:
+        return list(self._children)
+
+
+class _FakeDetailsCanvas(_FakeScrollChild):
+    def __init__(self) -> None:
+        super().__init__()
+        self.view = (0.0, 0.5)
+        self.scrolls: list[tuple[int, str]] = []
+        self.moves: list[float] = []
+
+    def configure(self, **_kwargs: object) -> None:
+        pass
+
+    def yview(self) -> tuple[float, float]:
+        return self.view
+
+    def yview_scroll(self, units: int, what: str) -> None:
+        self.scrolls.append((units, what))
+        top = max(0.0, min(1.0, self.view[0] + units * 0.05))
+        self.view = (top, min(1.0, top + 0.5))
+
+    def yview_moveto(self, value: float) -> None:
+        self.moves.append(value)
+        top = max(0.0, min(1.0, float(value)))
+        self.view = (top, min(1.0, top + 0.5))
+
+
+def test_details_scroll_routes_child_wheel_events_and_clamps_edges() -> None:
+    link = _FakeScrollChild()
+    label = _FakeScrollChild([link])
+    canvas = _FakeDetailsCanvas()
+    scrollbar = _FakeWrapWidget()
+    window = AccessKeysWindow.__new__(AccessKeysWindow)
+    window.details_panel = _FakeScrollChild([label])
+    window.details_shell = _FakeScrollChild([window.details_panel])
+    window.details_canvas = canvas
+    window._details_mousewheel_remainder = 0.0
+    window._details_scroll_canvas = lambda: canvas
+    window._details_scrollbar = lambda: scrollbar
+    window.bindings = []
+    window.bind = lambda event, _callback, add=None: window.bindings.append(event)
+    window.winfo_pointerx = lambda: 0
+    window.winfo_pointery = lambda: 0
+    window.winfo_containing = lambda _x, _y: link
+
+    AccessKeysWindow._configure_details_scroll_surface(window)
+
+    assert "<MouseWheel>" in window.bindings
+    assert "<MouseWheel>" not in label.bindings
+    assert "<MouseWheel>" not in link.bindings
+
+    event = type("Event", (), {"delta": -120, "num": None})()
+    AccessKeysWindow._on_access_keys_mousewheel(window, event)
+    assert canvas.scrolls[-1] == (3, "units")
+
+    canvas.view = (0.0, 0.5)
+    AccessKeysWindow._scroll_details_canvas_units(window, -3)
+    assert canvas.scrolls[-1] == (3, "units")
+
+    canvas.view = (0.5, 1.0)
+    AccessKeysWindow._scroll_details_canvas_units(window, 3)
+    assert canvas.scrolls[-1] == (3, "units")
+
+    AccessKeysWindow._reset_details_scroll_to_top(window)
+    assert 0.0 in canvas.moves
 
 
 def test_add_provider_popup_closes_on_escape_outside_click_and_same_plus() -> None:
@@ -1024,7 +1137,9 @@ def test_static_selector_and_no_flicker_design() -> None:
     # native-menu flash seen in the screen recording.
     assert "ctk.CTkOptionMenu(" not in source
     assert "tk.Menu(" not in source
-    assert "import tkinter as tk" not in source
+    assert "import tkinter as tk" in source
+    assert "self.details_canvas = tk.Canvas(" in source
+    assert "self.details_panel = ctk.CTkFrame(" in source
     assert MY_PROVIDERS_HEADING in source
     assert VIDEO_SOCIAL_CATEGORY_LABEL in source
     assert "Local credential presence/provenance status" not in source
@@ -1155,10 +1270,10 @@ def test_static_selector_and_no_flicker_design() -> None:
         "Copy key",
         "Save key",
         "Clear key",
-        "Migrate",
         "Test connection",
     ):
         assert forbidden_action not in source
+    assert "Migrate legacy YouTube key" in source
 
     lifecycle_source = inspect.getsource(
         open_or_focus_access_keys_window
@@ -1170,12 +1285,14 @@ def test_static_selector_and_no_flicker_design() -> None:
 
 def run_self_test() -> None:
     test_catalog_controller_and_details()
-    test_sidebar_button_preserves_api_key_entry()
+    test_sidebar_uses_keys_section_without_api_key_block()
     test_my_providers_subset_and_status_semantics()
     test_add_and_remove_provider_metadata_only()
     test_provider_row_text_is_compact_and_status_sentence_stays_in_details()
     test_provider_links_use_injected_browser_opener_only_on_explicit_click()
     test_provider_links_render_only_applicable_user_facing_labels()
+    test_details_wraplength_tracks_available_width()
+    test_details_scroll_routes_child_wheel_events_and_clamps_edges()
     test_add_provider_popup_closes_on_escape_outside_click_and_same_plus()
     test_add_provider_search_uses_cached_metadata_and_skips_unchanged_render()
     test_single_window_lifecycle()

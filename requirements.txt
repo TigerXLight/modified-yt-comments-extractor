@@ -11,3 +11,5 @@ keyring>=24.0.0
 faster-whisper==1.2.1
 python-vlc==3.0.21203
 elevenlabs>=2.58.0,<3
+tkinterdnd2==0.6.2
+webrtcvad-wheels==2.0.14

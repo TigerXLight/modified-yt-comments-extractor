@@ -178,6 +178,53 @@ def test_readiness_report_uses_one_coherent_whispercpp_selected_configuration() 
     assert "compute=whisper.cpp" not in text
 
 
+def test_start_asr_footer_wraps_action_buttons_without_clipping() -> None:
+    layout = asr_settings_dialog.asr_footer_button_layout("Start ASR")
+
+    assert set(layout) == {
+        "check",
+        "auto_probe",
+        "self_test",
+        "probe",
+        "cancel",
+        "save",
+    }
+    assert layout["auto_probe"]["row"] == 0
+    assert layout["self_test"]["row"] == 0
+    assert layout["probe"]["row"] == 0
+    assert layout["cancel"]["row"] == 1
+    assert layout["save"]["row"] == 1
+    assert asr_settings_dialog.LOCAL_ASR_START_FOOTER_BUTTON_TEXT == "Start Full"
+    assert int(layout["save"]["width"]) >= 120
+
+
+def test_save_footer_stays_single_row() -> None:
+    layout = asr_settings_dialog.asr_footer_button_layout("Save")
+
+    assert set(layout) == {"check", "cancel", "save"}
+    assert {spec["row"] for spec in layout.values()} == {0}
+
+
+def test_media_selector_defaults_to_active_media_and_requires_choice_for_many() -> None:
+    options = (
+        ("1. first.mp4", "C:/media/first.mp4"),
+        ("2. second.wav", "C:/media/second.wav"),
+    )
+
+    assert (
+        asr_settings_dialog.initial_media_selector_label(
+            options,
+            "C:/media/second.wav",
+        )
+        == "2. second.wav"
+    )
+    assert asr_settings_dialog.initial_media_selector_label(options, "") == ""
+    assert (
+        asr_settings_dialog.initial_media_selector_label((options[0],), "")
+        == "1. first.mp4"
+    )
+
+
 def run_self_test() -> None:
     test_best_tested_profile_normalizes_to_real_whispercpp_runner_settings()
     test_legacy_vulkan_values_infer_whispercpp_engine()
@@ -186,6 +233,9 @@ def run_self_test() -> None:
     test_asr_check_finishes_through_ui_thread_callback()
     test_stale_or_destroyed_check_callback_does_not_update_dialog()
     test_readiness_report_uses_one_coherent_whispercpp_selected_configuration()
+    test_start_asr_footer_wraps_action_buttons_without_clipping()
+    test_save_footer_stays_single_row()
+    test_media_selector_defaults_to_active_media_and_requires_choice_for_many()
 
 
 if __name__ == "__main__":

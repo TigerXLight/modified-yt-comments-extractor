@@ -1,4 +1,8 @@
 import threading
+import inspect
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 import main
@@ -106,10 +110,20 @@ class FakeSettingsManager:
     def __init__(self, settings: AppSettings) -> None:
         self.settings = settings
         self.load_calls = 0
+        self.saved_settings: list[AppSettings] = []
 
     def load(self) -> AppSettings:
         self.load_calls += 1
         return self.settings
+
+    def load_preferences_only(self) -> AppSettings:
+        self.load_calls += 1
+        return self.settings
+
+    def save(self, settings: AppSettings) -> bool:
+        self.saved_settings.append(settings)
+        self.settings = settings
+        return True
 
 
 class FakeThread:
@@ -357,6 +371,47 @@ def test_load_settings_never_preloads_youtube_credential() -> None:
             raise AssertionError(f"settings load count mismatch for {storage_name}")
 
 
+def test_load_settings_does_not_require_removed_api_key_entry() -> None:
+    settings = AppSettings(
+        api_key=STORED_KEY_SENTINEL,
+        access_keys_added_provider_ids=("asr:elevenlabs_scribe",),
+    )
+    app = _make_load_settings_app(settings)
+    delattr(app, "api_key_entry")
+
+    App._load_settings(app)
+
+    assert app.settings_manager.load_calls == 1
+    assert app.access_keys_added_provider_ids == ("asr:elevenlabs_scribe",)
+    assert "api_key_entry" not in app.__dict__
+
+
+def test_save_settings_does_not_require_removed_api_key_entry() -> None:
+    app = App.__new__(App)
+    app.settings_manager = FakeSettingsManager(AppSettings(api_key=STORED_KEY_SENTINEL))
+    app.spam_filter_var = FakeVar(True)
+    app.spam_threshold_var = FakeVar(0.25)
+    app.exclude_creator_var = FakeVar(True)
+    app.filter_words_entry = FakeApiKeyEntry("review term")
+    app.sort_var = FakeVar(main.SortOption.DATE_NEWEST.display_name)
+    app._get_min_likes = lambda: 2
+    app._get_max_comments = lambda: 50
+    app._blacklist_patterns = "spam"
+    app._whitelist_patterns = "allow"
+    app._get_online_asr_provider_id = lambda: "elevenlabs_scribe"
+    app._get_access_keys_added_provider_ids = lambda: ("asr:elevenlabs_scribe",)
+    app.access_keys_validation_states = {"elevenlabs_scribe": "not_validated"}
+    app.log_messages = []
+    app.log_message = lambda message, level="info": app.log_messages.append((message, level))
+
+    assert App._save_settings(app) is True
+
+    saved = app.settings_manager.saved_settings[-1]
+    assert saved.api_key == ""
+    assert saved.access_keys_added_provider_ids == ("asr:elevenlabs_scribe",)
+    assert saved.online_asr_provider_id == "elevenlabs_scribe"
+
+
 def test_status_refresh_does_not_populate_youtube_entry() -> None:
     service = FakeYouTubeService(
         YouTubeCredentialActionStatus.SAVED,
@@ -454,12 +509,132 @@ def test_youtube_reveal_toggle_is_removed() -> None:
     assert 'show=""' not in main_source
 
 
+def test_access_keys_added_providers_persist_without_plaintext_key() -> None:
+    settings = AppSettings(
+        api_key=STORED_KEY_SENTINEL,
+        access_keys_added_provider_ids=("asr:elevenlabs_scribe",),
+    )
+    app = App.__new__(App)
+    app.settings_manager = FakeSettingsManager(settings)
+    app.access_keys_added_provider_ids = ()
+
+    App._set_access_keys_added_provider_ids(
+        app,
+        (
+            "asr:elevenlabs_scribe",
+            "asr:elevenlabs_scribe",
+            "asr:assemblyai",
+        ),
+    )
+
+    saved = app.settings_manager.saved_settings[-1]
+    assert saved.access_keys_added_provider_ids == (
+        "asr:elevenlabs_scribe",
+        "asr:assemblyai",
+    )
+    assert saved.api_key == ""
+
+
+def test_access_keys_added_providers_survive_recreated_app_lifecycle() -> None:
+    settings = AppSettings(
+        api_key=STORED_KEY_SENTINEL,
+        access_keys_added_provider_ids=("asr:elevenlabs_scribe",),
+    )
+    first_app = App.__new__(App)
+    first_app.settings_manager = FakeSettingsManager(settings)
+    first_app.access_keys_added_provider_ids = ()
+    App._set_access_keys_added_provider_ids(
+        first_app,
+        ("asr:elevenlabs_scribe", "asr:assemblyai"),
+    )
+    persisted = first_app.settings_manager.saved_settings[-1]
+
+    recreated_app = App.__new__(App)
+    recreated_app.settings_manager = FakeSettingsManager(persisted)
+    recreated_app.access_keys_added_provider_ids = tuple(
+        getattr(
+            recreated_app.settings_manager.load_preferences_only(),
+            "access_keys_added_provider_ids",
+            (),
+        )
+    )
+    assert App._get_access_keys_added_provider_ids(recreated_app) == (
+        "asr:elevenlabs_scribe",
+        "asr:assemblyai",
+    )
+
+    App._set_access_keys_added_provider_ids(recreated_app, ("asr:assemblyai",))
+    hidden_saved = recreated_app.settings_manager.saved_settings[-1]
+    assert hidden_saved.access_keys_added_provider_ids == ("asr:assemblyai",)
+    assert hidden_saved.api_key == ""
+
+
+def test_access_keys_added_providers_persist_across_process_boundary() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        settings_path = str(Path(tmpdir) / "settings.json")
+        writer = (
+            "from core.settings import SettingsManager, AppSettings; "
+            f"m=SettingsManager({settings_path!r}, keyring_module=None); "
+            "m.save(AppSettings(access_keys_added_provider_ids=('asr:elevenlabs_scribe','asr:assemblyai')))"
+        )
+        reader_updater = (
+            "from core.settings import SettingsManager; "
+            f"m=SettingsManager({settings_path!r}, keyring_module=None); "
+            "s=m.load_preferences_only(); "
+            "assert s.access_keys_added_provider_ids == ('asr:elevenlabs_scribe','asr:assemblyai'), s.access_keys_added_provider_ids; "
+            "s.access_keys_added_provider_ids=('asr:assemblyai',); "
+            "s.api_key=''; "
+            "m.save(s)"
+        )
+        final_reader = (
+            "from core.settings import SettingsManager; "
+            f"m=SettingsManager({settings_path!r}, keyring_module=None); "
+            "s=m.load_preferences_only(); "
+            "assert s.access_keys_added_provider_ids == ('asr:assemblyai',), s.access_keys_added_provider_ids; "
+            "assert s.api_key == ''"
+        )
+
+        for script in (writer, reader_updater, final_reader):
+            subprocess.run(
+                [sys.executable, "-c", script],
+                check=True,
+                cwd=str(Path.cwd()),
+            )
+
+
+def test_sidebar_uses_native_paned_window_without_custom_drag_handle() -> None:
+    source = Path("main.py").read_text(encoding="utf-8")
+
+    assert "tk.PanedWindow(" in source
+    assert "opaqueresize=False" in source
+    assert 'parent = getattr(self, "content_paned_window", self)' in source
+    assert "parent.add(\n                self.sidebar" in source
+    assert "_on_sidebar_paned_sash_release" in source
+    assert "_create_sidebar_resize_handle" not in source
+    assert "sidebar_resize_handle" not in source
+    assert "_on_sidebar_resize_drag" not in source
+
+
+def test_files_export_dialog_removes_evidence_package_and_combines_selected_text() -> None:
+    source = inspect.getsource(App.open_files_export_dialog)
+
+    assert "Evidence package" not in source
+    assert "self.export_evidence_folder" not in source
+    assert "combine_selected_txt" in source
+    assert "combine_selected_csv" in source
+    assert "combine_selected_excel" in source
+    assert "Combined FILES Text Export" in source
+    assert "SESSION_FILE_KIND_TRANSCRIPT" in source
+
+
 def run_self_test() -> None:
     test_export_allowed_helper()
     test_direct_export_blocks_save_dialog_while_fetching()
     test_direct_export_blocks_save_dialog_without_data()
     test_youtube_credential_actions_keep_entry_masked()
     test_load_settings_never_preloads_youtube_credential()
+    test_load_settings_does_not_require_removed_api_key_entry()
+    test_save_settings_does_not_require_removed_api_key_entry()
     test_status_refresh_does_not_populate_youtube_entry()
     test_youtube_api_key_resolution_prefers_draft_without_ui_preload()
     test_youtube_api_key_resolution_uses_stored_key_without_ui_preload()
@@ -467,6 +642,11 @@ def run_self_test() -> None:
     test_start_fetching_prefers_typed_draft_key()
     test_start_fetching_without_any_key_remains_invalid()
     test_youtube_reveal_toggle_is_removed()
+    test_access_keys_added_providers_persist_without_plaintext_key()
+    test_access_keys_added_providers_survive_recreated_app_lifecycle()
+    test_access_keys_added_providers_persist_across_process_boundary()
+    test_sidebar_uses_native_paned_window_without_custom_drag_handle()
+    test_files_export_dialog_removes_evidence_package_and_combines_selected_text()
 
 
 if __name__ == "__main__":

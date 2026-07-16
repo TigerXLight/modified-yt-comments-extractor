@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import threading
-from typing import Dict, Optional
+from typing import Dict, Optional, Sequence, Tuple
 
 import customtkinter as ctk
 from tkinter import messagebox
@@ -41,6 +41,25 @@ ASR_ENGINE_VALUES = [
     ASR_ENGINE_LABELS[ASR_ENGINE_WHISPERCPP_VULKAN],
     ASR_ENGINE_LABELS[ASR_ENGINE_FASTER_WHISPER],
 ]
+LOCAL_ASR_START_FOOTER_BUTTON_TEXT = "Start Full"
+
+
+def asr_footer_button_layout(action_label: str) -> Dict[str, Dict[str, object]]:
+    """Return responsive footer grid specs for ASR settings actions."""
+    if action_label == "Start ASR":
+        return {
+            "check": {"row": 0, "column": 0, "sticky": "w", "width": 140},
+            "auto_probe": {"row": 0, "column": 1, "sticky": "ew", "width": 126},
+            "self_test": {"row": 0, "column": 2, "sticky": "ew", "width": 118},
+            "probe": {"row": 0, "column": 3, "sticky": "ew", "width": 104},
+            "cancel": {"row": 1, "column": 2, "sticky": "e", "width": 110},
+            "save": {"row": 1, "column": 3, "sticky": "ew", "width": 132},
+        }
+    return {
+        "check": {"row": 0, "column": 0, "sticky": "w", "width": 140},
+        "cancel": {"row": 0, "column": 1, "sticky": "e", "width": 110},
+        "save": {"row": 0, "column": 2, "sticky": "ew", "width": 140},
+    }
 
 ASR_PROFILES = {
     ASR_BEST_TESTED_PROFILE: {
@@ -113,6 +132,21 @@ def best_tested_asr_profile_settings() -> Dict[str, str]:
     return local_asr_settings_from_selection(resolve_local_asr_selection({"engine": ASR_ENGINE_WHISPERCPP_VULKAN}))
 
 
+def initial_media_selector_label(
+    media_options: Sequence[Tuple[str, str]],
+    selected_media_path: str = "",
+) -> str:
+    """Return the initial FILES-backed media selector label."""
+    options = tuple(media_options or ())
+    selected_media_path = os.path.abspath(selected_media_path) if selected_media_path else ""
+    for label, path in options:
+        if selected_media_path and os.path.abspath(path) == selected_media_path:
+            return label
+    if len(options) == 1:
+        return options[0][0]
+    return ""
+
+
 def normalize_asr_settings(settings: Dict[str, str]) -> Dict[str, str]:
     """Normalize ASR settings so engine/device/compute agree."""
     selection = resolve_local_asr_selection(settings or {})
@@ -133,6 +167,8 @@ class AsrSettingsDialog(ctk.CTkToplevel):
         defaults: Dict[str, str],
         title: str = "Local ASR Settings",
         action_label: str = "Save",
+        media_options: Sequence[Tuple[str, str]] = (),
+        selected_media_path: str = "",
     ) -> None:
         super().__init__(parent)
 
@@ -146,6 +182,11 @@ class AsrSettingsDialog(ctk.CTkToplevel):
         self._asr_check_busy = False
         self._asr_check_generation = 0
         self._asr_check_destroyed = False
+        self.media_options = tuple(media_options or ())
+        self.media_label_to_path = {
+            label: path
+            for label, path in self.media_options
+        }
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -181,6 +222,31 @@ class AsrSettingsDialog(ctk.CTkToplevel):
         }
 
         row = 0
+
+        if action_label == "Start ASR":
+            media_labels = [label for label, _path in self.media_options]
+            selected_label = initial_media_selector_label(
+                self.media_options,
+                selected_media_path,
+            )
+            self.media_var = ctk.StringVar(value=selected_label)
+            self._label(body, row, "Media file")
+            if media_labels:
+                self.media_combo = ctk.CTkComboBox(
+                    body,
+                    values=media_labels,
+                    variable=self.media_var,
+                )
+                self.media_combo.grid(row=row, column=1, sticky="ew", padx=(12, 0), pady=8)
+            else:
+                self.media_combo = ctk.CTkLabel(
+                    body,
+                    text="Add media with FILES + or drag/drop first",
+                    text_color="#ffc107",
+                    anchor="w",
+                )
+                self.media_combo.grid(row=row, column=1, sticky="ew", padx=(12, 0), pady=8)
+            row += 1
 
         self._label(body, row, "Engine/backend")
         self.engine_combo = ctk.CTkComboBox(
@@ -344,68 +410,97 @@ class AsrSettingsDialog(ctk.CTkToplevel):
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
-        footer.grid_columnconfigure(0, weight=1)
+        layout = asr_footer_button_layout(action_label)
+        for column in range(4):
+            footer.grid_columnconfigure(column, weight=1 if column == 0 else 0)
 
         self.check_button = ctk.CTkButton(
             footer,
             text="Update ASR Check",
             command=self._check_asr_setup,
-            width=140,
+            width=int(layout["check"]["width"]),
             fg_color="#3a3a3a",
         )
-        self.check_button.grid(row=0, column=0, sticky="w")
+        self.check_button.grid(
+            row=int(layout["check"]["row"]),
+            column=int(layout["check"]["column"]),
+            sticky=str(layout["check"]["sticky"]),
+        )
 
         if action_label == "Start ASR":
             auto_probe_button = ctk.CTkButton(
                 footer,
                 text="Auto Probe 30s",
                 command=lambda: self._accept_auto_probe(30),
-                width=140,
+                width=int(layout["auto_probe"]["width"]),
                 fg_color="#6a4a1f",
             )
-            auto_probe_button.grid(row=0, column=1, padx=(8, 0))
+            auto_probe_button.grid(
+                row=int(layout["auto_probe"]["row"]),
+                column=int(layout["auto_probe"]["column"]),
+                sticky=str(layout["auto_probe"]["sticky"]),
+                padx=(8, 0),
+            )
 
             calibration_button = ctk.CTkButton(
                 footer,
                 text="Self-Test 15s",
                 command=lambda: self._accept_calibration_probe(15),
-                width=130,
+                width=int(layout["self_test"]["width"]),
                 fg_color="#345a7a",
             )
-            calibration_button.grid(row=0, column=2, padx=(8, 0))
+            calibration_button.grid(
+                row=int(layout["self_test"]["row"]),
+                column=int(layout["self_test"]["column"]),
+                sticky=str(layout["self_test"]["sticky"]),
+                padx=(8, 0),
+            )
 
             probe_button = ctk.CTkButton(
                 footer,
                 text="Probe 60s",
                 command=lambda: self._accept_probe(60),
-                width=120,
+                width=int(layout["probe"]["width"]),
                 fg_color="#5a5a5a",
             )
-            probe_button.grid(row=0, column=3, padx=(8, 0))
-            cancel_column = 4
-            save_column = 5
-            save_text = "Start Full ASR"
+            probe_button.grid(
+                row=int(layout["probe"]["row"]),
+                column=int(layout["probe"]["column"]),
+                sticky=str(layout["probe"]["sticky"]),
+                padx=(8, 0),
+            )
+            save_text = LOCAL_ASR_START_FOOTER_BUTTON_TEXT
         else:
-            cancel_column = 1
-            save_column = 2
             save_text = action_label
 
         cancel_button = ctk.CTkButton(
             footer,
             text="Cancel",
             command=self._cancel,
-            width=110,
+            width=int(layout["cancel"]["width"]),
             fg_color="#3a3a3a",
         )
-        cancel_button.grid(row=0, column=cancel_column, padx=(8, 0))
+        cancel_button.grid(
+            row=int(layout["cancel"]["row"]),
+            column=int(layout["cancel"]["column"]),
+            sticky=str(layout["cancel"]["sticky"]),
+            padx=(8, 0),
+            pady=(8, 0) if action_label == "Start ASR" else 0,
+        )
 
         save_button = ctk.CTkButton(
             footer,
             text=save_text,
             command=self._accept,
-            width=140,
+            width=int(layout["save"]["width"]),
         )
-        save_button.grid(row=0, column=save_column, padx=(8, 0))
+        save_button.grid(
+            row=int(layout["save"]["row"]),
+            column=int(layout["save"]["column"]),
+            sticky=str(layout["save"]["sticky"]),
+            padx=(8, 0),
+            pady=(8, 0) if action_label == "Start ASR" else 0,
+        )
 
         self._sync_engine_controls()
 
@@ -616,6 +711,18 @@ class AsrSettingsDialog(ctk.CTkToplevel):
             )
             return None
 
+        media_file = ""
+        if hasattr(self, "media_var"):
+            selected_label = (self.media_var.get() or "").strip()
+            media_file = self.media_label_to_path.get(selected_label, "")
+            if not media_file:
+                messagebox.showerror(
+                    "Media File Required",
+                    "Add a media file to FILES, then choose it here.",
+                    parent=self,
+                )
+                return None
+
         return {
             "engine": engine,
             "profile_name": self.profile_var.get() or "Custom",
@@ -625,6 +732,7 @@ class AsrSettingsDialog(ctk.CTkToplevel):
             "initial_prompt": initial_prompt,
             "device": device,
             "compute_type": compute_type,
+            "media_file": media_file,
         }
 
     def _find_vlc_installation(self) -> str:
@@ -909,12 +1017,16 @@ def ask_asr_settings(
     defaults: Dict[str, str],
     title: str = "Local ASR Settings",
     action_label: str = "Save",
+    media_options: Sequence[Tuple[str, str]] = (),
+    selected_media_path: str = "",
 ) -> Optional[Dict[str, str]]:
     dialog = AsrSettingsDialog(
         parent,
         defaults=defaults,
         title=title,
         action_label=action_label,
+        media_options=media_options,
+        selected_media_path=selected_media_path,
     )
     parent.wait_window(dialog)
     return dialog.result
