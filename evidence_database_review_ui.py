@@ -228,6 +228,53 @@ def build_evidence_database_review_window_controller(
     )
 
 
+def build_synthetic_demo_review_window_controller() -> EvidenceDatabaseReviewWindowController:
+    """Build a review-only controller from the synthetic fixture dataset."""
+    from evidence_database_demo_fixture import build_synthetic_evidence_database_demo_fixture
+
+    fixture = build_synthetic_evidence_database_demo_fixture()
+    return build_evidence_database_review_window_controller(
+        session=fixture.session,
+        registered_roots=(fixture.root,),
+        preview_result=fixture.preview_result,
+        apply_plan=fixture.apply_plan,
+        warnings=("synthetic_fixture_only",),
+    )
+
+
+def write_synthetic_demo_review_export_file(export_path: str) -> Any:
+    """Write the synthetic review-session demo export to an explicit JSON path."""
+    from evidence_database_demo_fixture import build_synthetic_evidence_database_demo_fixture
+    from evidence_database_review_io import write_evidence_database_review_export_file
+
+    fixture = build_synthetic_evidence_database_demo_fixture()
+    return write_evidence_database_review_export_file(
+        export_path=export_path,
+        session=fixture.session,
+        preview_request=fixture.preview_request,
+        preview_result=fixture.preview_result,
+        decisions=fixture.decisions,
+        apply_plan=fixture.apply_plan,
+        roots=(fixture.root,),
+        taxonomy_versions=(fixture.taxonomy_version,),
+        records=fixture.records,
+        export_id="synthetic_demo_export",
+    )
+
+
+def build_review_window_controller_from_import_bundle(
+    bundle: Any,
+) -> EvidenceDatabaseReviewWindowController:
+    """Build a review-only controller from a validated imported review bundle."""
+    return build_evidence_database_review_window_controller(
+        session=bundle.session,
+        registered_roots=bundle.index_manifest.database_roots,
+        preview_result=bundle.preview_result,
+        apply_plan=bundle.apply_plan,
+        warnings=("imported_review_session",),
+    )
+
+
 def create_evidence_database_review_window(parent: Any, state: EvidenceDatabaseReviewWindowState) -> Any:
     """Create a minimal review-only window without scanning or applying changes."""
     import tkinter as tk

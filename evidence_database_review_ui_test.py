@@ -1,3 +1,6 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from evidence_database_index import (
     EvidenceClassificationState,
     EvidenceClassificationValue,
@@ -18,11 +21,15 @@ from evidence_database_review_ui import (
     EVIDENCE_DATABASE_REVIEW_DRY_RUN_WARNING,
     EVIDENCE_DATABASE_REVIEW_UI_SCHEMA_VERSION,
     EvidenceDatabaseReviewWindowController,
+    build_review_window_controller_from_import_bundle,
     build_evidence_database_review_window_controller,
     build_evidence_database_review_window_state,
     build_evidence_database_review_window_text,
+    build_synthetic_demo_review_window_controller,
     review_ui_stable_json_dumps,
+    write_synthetic_demo_review_export_file,
 )
+from evidence_database_review_io import read_evidence_database_review_export_file
 
 
 def _sample_record(
@@ -157,6 +164,39 @@ def run_self_test() -> None:
     assert review_ui_stable_json_dumps(controller.to_dict()) == review_ui_stable_json_dumps(
         controller.to_dict()
     )
+
+    demo_controller = build_synthetic_demo_review_window_controller()
+    demo_dict = demo_controller.to_dict()
+    assert demo_dict["registered_root_count"] == 1
+    assert demo_dict["preview_record_count"] == 6
+    assert demo_dict["apply_plan_entry_count"] == 3
+    assert demo_dict["broad_scan_performed"] is False
+    assert demo_dict["file_operation_performed"] is False
+    assert demo_dict["classification_changes_executed"] is False
+    assert "synthetic_fixture_only" in demo_dict["warnings"]
+    assert "- user_confirmed: 1" in demo_controller.to_text()
+
+    with TemporaryDirectory() as temp_dir:
+        export_path = Path(temp_dir) / "synthetic_demo_review.json"
+        export_result = write_synthetic_demo_review_export_file(str(export_path))
+        assert export_result.export_path == str(export_path)
+        imported = read_evidence_database_review_export_file(str(export_path))
+        assert imported.ok is True
+        assert imported.bundle is not None
+        imported_controller = build_review_window_controller_from_import_bundle(
+            imported.bundle
+        )
+        imported_dict = imported_controller.to_dict()
+        assert imported_dict["registered_root_count"] == 1
+        assert imported_dict["preview_record_count"] == 6
+        assert imported_dict["apply_plan_entry_count"] == 3
+        assert imported_dict["broad_scan_performed"] is False
+        assert imported_dict["file_operation_performed"] is False
+        assert imported_dict["classification_changes_executed"] is False
+        assert "imported_review_session" in imported_dict["warnings"]
+        assert sorted(path.name for path in Path(temp_dir).iterdir()) == [
+            "synthetic_demo_review.json"
+        ]
 
 
 if __name__ == "__main__":
