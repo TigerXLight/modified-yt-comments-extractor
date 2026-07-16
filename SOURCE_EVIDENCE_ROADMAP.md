@@ -101,7 +101,7 @@ Planned access mode labels:
 ## Operational Site-Capture REV4 Local Scaffold
 
 - Local/mocked implementation exists for operational capture contracts, status codes, action-log hash chains, dependency/license audit metadata, a localhost fixture server, lazy browser-runner wrappers, supplied-HTML article/page/snapshot/comment/livechat/media helpers, localhost-only explicit media-download tests, mock-only archive-provider checks, ArchiveBox command planning, and source UI capture-plan wiring.
-- The source UI can build a deterministic local capture plan from the selected source, Webpage/Comments/Livechat controls, and screenshot intent settings.
+- The source UI can build a deterministic local capture plan from the selected source, Webpage/Comments/Livechat controls, and screenshot intent settings. The controller plan now includes deterministic in-memory `ACTION_LOG` artifact metadata with chained events and a sanitized JSONL hash for review, without writing files or executing capture.
 - This is not approval for live website capture. It does not access real external websites, browser profiles, cookies, accounts, comments, media, archive services, or ArchiveBox instances.
 - It does not run real scraping, live browser automation, screenshots, external downloads, archive checks/submissions, ArchiveBox execution, provider calls, credential use, or evidence-database work.
 - The next live/manual site-smoke or real-site adapter step remains separately approval-gated and should use local fixtures/mocks first.

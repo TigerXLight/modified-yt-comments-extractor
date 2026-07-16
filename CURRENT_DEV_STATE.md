@@ -175,6 +175,7 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
     - No live page fetching, scraping, browser automation, screenshots, archive checks/submissions, downloads, ArchiveBox execution, credential storage, provider calls, or network behavior.
   - Operational site-capture REV4 scaffolds:
     - Local/mocked contracts, action logs, dependency audit, localhost fixture server, lazy browser runner wrapper, supplied-HTML article/page/snapshot/comment/livechat/media/archive helpers, localhost-only media download tests, ArchiveBox command planning, and source UI capture-plan wiring are implemented through `48daf04`.
+    - Capture-plan controller results now include deterministic in-memory `ACTION_LOG` artifact metadata, a chained declaration event, and a sanitized JSONL hash for review. This remains MODEL_ONLY / LOCALHOST_FIXTURE_TESTED and does not write files, fetch pages, run browsers, create screenshots, download media, call archives/providers, or use credentials.
     - These scaffolds perform no live external website access, scraping, real browser-profile/cookie use, screenshots, external media download, archive check/submission, ArchiveBox execution, credential use, provider calls, or evidence-database work.
   - Future adapters:
     - Reddit.
