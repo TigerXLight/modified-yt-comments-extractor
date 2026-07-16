@@ -13,6 +13,9 @@ from capture_contracts import (
     ARTIFACT_TYPE_FINAL_DOM,
     ARTIFACT_TYPE_LIVECHAT_JSONL,
     ARTIFACT_TYPE_LIVECHAT_TEXT,
+    ARTIFACT_TYPE_MEDIA_COMPONENT,
+    ARTIFACT_TYPE_MEDIA_FILE,
+    ARTIFACT_TYPE_MEDIA_INVENTORY,
     ARTIFACT_TYPE_MHTML,
     ARTIFACT_TYPE_PAGE_OUTLINE,
     ARTIFACT_TYPE_RAW_HTML,
@@ -93,6 +96,41 @@ def test_operational_capture_plan_declares_livechat_artifacts_without_execution(
     assert result.action_events[1].request_summary["artifact_types"] == tuple(artifact_types)
 
 
+def test_operational_capture_plan_declares_media_download_and_mux_artifacts_without_execution() -> None:
+    row = build_source_resource_row(MSN_URL)
+    selected_ids = tuple(item.resource_id for item in row.video_audio_resources[:2])
+    discussion = build_discussion_capture_options(
+        (row,),
+        selected_row_id=row.row_id,
+        webpage_selected=False,
+        comments_selected=False,
+        comments_screenshot_requested=False,
+        livechat_selected=False,
+        livechat_screenshot_requested=False,
+    )
+
+    result = build_operational_capture_plan(
+        row=row,
+        discussion=discussion,
+        selected_media_resource_ids=selected_ids,
+        mux_plan_requested=True,
+    )
+    artifact_types = [artifact.artifact_type for artifact in result.declared_artifacts]
+
+    assert result.selected_modes == ("media",)
+    assert artifact_types == [
+        ARTIFACT_TYPE_MEDIA_INVENTORY,
+        ARTIFACT_TYPE_MEDIA_FILE,
+        ARTIFACT_TYPE_MEDIA_FILE,
+        ARTIFACT_TYPE_MEDIA_COMPONENT,
+    ]
+    assert result.declared_artifacts[0].metadata["selected_resource_ids"] == selected_ids
+    assert result.declared_artifacts[1].metadata["download_execution"] == "not executed"
+    assert result.declared_artifacts[-1].metadata["mock_command_plan_only"] is True
+    assert result.action_events[1].request_summary["artifact_types"] == tuple(artifact_types)
+    assert result.action_events[0].request_summary["mux_plan_requested"] is True
+
+
 def test_operational_capture_plan_message_is_user_facing_and_local_only() -> None:
     row = build_source_resource_row(MSN_URL)
     discussion = build_discussion_capture_options(
@@ -147,6 +185,7 @@ def test_operational_capture_plan_action_log_artifact_is_deterministic_and_sanit
 def run_self_test() -> None:
     test_operational_capture_plan_records_modes_without_execution()
     test_operational_capture_plan_declares_livechat_artifacts_without_execution()
+    test_operational_capture_plan_declares_media_download_and_mux_artifacts_without_execution()
     test_operational_capture_plan_message_is_user_facing_and_local_only()
     test_operational_capture_plan_action_log_artifact_is_deterministic_and_sanitized()
 

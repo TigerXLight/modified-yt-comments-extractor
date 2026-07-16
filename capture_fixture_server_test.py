@@ -33,7 +33,14 @@ def test_fixture_catalog_contains_required_rev4_routes() -> None:
         "livechat_dom",
         "livechat_iframe",
         "livechat_websocket",
+        "media_basic",
+        "media_dash",
+        "media_hls",
+        "media_iframe",
         "media_playback",
+        "media_separate_av",
+        "media_signed",
+        "media_srcset",
         "archive_status",
     ):
         assert fixture_id in fixture_ids

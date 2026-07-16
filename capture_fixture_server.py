@@ -285,10 +285,62 @@ CAPTURE_FIXTURES: tuple[CaptureFixture, ...] = (
         body=_html("Livechat Iframe Fixture", "<iframe src=\"/livechat/dom\" title=\"livechat\"></iframe>"),
     ),
     CaptureFixture(
+        fixture_id="media_basic",
+        route="/media/basic",
+        expected="direct DOM media references",
+        body=_html(
+            "Media Basic Fixture",
+            """
+            <video src="/media/sample-video.mp4" poster="/media/poster.jpg" type="video/mp4"></video>
+            <audio src="/media/sample-audio.m4a" type="audio/mp4"></audio>
+            <img src="/media/still.jpg" alt="Fixture still">
+            """,
+        ),
+    ),
+    CaptureFixture(
+        fixture_id="media_srcset",
+        route="/media/srcset",
+        expected="picture/srcset references",
+        body=_html(
+            "Media Srcset Fixture",
+            """
+            <picture>
+              <source srcset="/media/still-large.webp 2x, /media/still-small.webp 1x" type="image/webp">
+              <img src="/media/still.jpg" alt="Responsive still">
+            </picture>
+            """,
+        ),
+    ),
+    CaptureFixture(
+        fixture_id="media_css",
+        route="/media/css",
+        expected="CSS media reference fixture for future parser coverage",
+        body=_html("Media CSS Fixture", "<div class=\"hero\" style=\"background-image:url('/media/still.jpg')\">Hero</div>"),
+    ),
+    CaptureFixture(
+        fixture_id="media_iframe",
+        route="/media/iframe",
+        expected="iframe/embed/object media candidates",
+        body=_html(
+            "Media Iframe Fixture",
+            """
+            <iframe src="/media/player-frame.html" title="fixture player"></iframe>
+            <embed src="/media/embedded-player.swf" type="application/x-shockwave-flash">
+            <object data="/media/object-video.mp4" type="video/mp4"></object>
+            """,
+        ),
+    ),
+    CaptureFixture(
         fixture_id="media_playback",
         route="/media/playback",
         expected="playback-triggered discovery",
-        body=_html("Media Playback Fixture", "<video controls src=\"/media/sample-video.mp4\"></video>"),
+        body=_html(
+            "Media Playback Fixture",
+            """
+            <video controls data-playback-required="true" src="/media/sample-video.mp4"></video>
+            <script type="application/json" id="playback-events">[{"event_id":"playback-1","url":"/media/segment-1.m4s","mime_type":"video/iso.segment","component_role":"video"}]</script>
+            """,
+        ),
     ),
     CaptureFixture(
         fixture_id="media_blob",
@@ -303,10 +355,73 @@ CAPTURE_FIXTURES: tuple[CaptureFixture, ...] = (
         body=_html("MediaSource Fixture", "<video controls data-fixture=\"mse\"></video>"),
     ),
     CaptureFixture(
+        fixture_id="media_hls",
+        route="/media/hls",
+        expected="synthetic HLS manifest reference",
+        body=_html("Media HLS Fixture", "<video controls><source src=\"/media/playlist.m3u8\" type=\"application/vnd.apple.mpegurl\" data-presentation-id=\"hls-main\"></video>"),
+    ),
+    CaptureFixture(
+        fixture_id="media_dash",
+        route="/media/dash",
+        expected="synthetic DASH manifest reference",
+        body=_html("Media DASH Fixture", "<video controls><source src=\"/media/manifest.mpd\" type=\"application/dash+xml\" data-presentation-id=\"dash-main\"></video>"),
+    ),
+    CaptureFixture(
+        fixture_id="media_separate_av",
+        route="/media/separate-av",
+        expected="separate audio/video components",
+        body=_html(
+            "Separate A/V Fixture",
+            """
+            <video data-component-role="video" data-presentation-id="presentation-1">
+              <source src="/media/video-track.mp4" type="video/mp4" data-component-role="video" data-codec="avc1" data-resolution="1920x1080">
+            </video>
+            <audio data-component-role="audio" data-presentation-id="presentation-1">
+              <source src="/media/audio-track.m4a" type="audio/mp4" data-component-role="audio" data-language="en">
+            </audio>
+            """,
+        ),
+    ),
+    CaptureFixture(
+        fixture_id="media_signed",
+        route="/media/signed",
+        expected="signed expiring URL metadata",
+        body=_html(
+            "Signed Media Fixture",
+            "<video src=\"/media/signed-video.mp4?sig=fixture\" data-signed-url=\"true\" data-expiry-hint=\"2026-07-16T12:00:00Z\"></video>",
+        ),
+    ),
+    CaptureFixture(
+        fixture_id="media_drm_simulated",
+        route="/media/drm-simulated",
+        expected="simulated protected output marker",
+        body=_html("DRM Simulated Media Fixture", "<video data-fixture=\"mse\" data-drm-state=\"suspected\"></video>"),
+    ),
+    CaptureFixture(
         fixture_id="media_audio_video_split",
         route="/media/audio-video-split",
         expected="separate audio/video components",
         body=_html("Split Media Fixture", "<video data-video-track=\"v1\" data-audio-track=\"a1\"></video>"),
+    ),
+    CaptureFixture(
+        fixture_id="media_player_frame",
+        route="/media/player-frame.html",
+        expected="local player iframe fixture",
+        body=_html("Player Frame", "<video src=\"/media/sample-video.mp4\"></video>"),
+    ),
+    CaptureFixture(
+        fixture_id="media_playlist_m3u8",
+        route="/media/playlist.m3u8",
+        expected="synthetic HLS manifest payload",
+        content_type="application/vnd.apple.mpegurl",
+        body="#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1280000\n/media/hls-video.m3u8\n",
+    ),
+    CaptureFixture(
+        fixture_id="media_manifest_mpd",
+        route="/media/manifest.mpd",
+        expected="synthetic DASH manifest payload",
+        content_type="application/dash+xml",
+        body="<MPD><Period><AdaptationSet mimeType=\"video/mp4\" /></Period></MPD>",
     ),
     CaptureFixture(
         fixture_id="sample_video_mp4",
@@ -321,6 +436,41 @@ CAPTURE_FIXTURES: tuple[CaptureFixture, ...] = (
         expected="tiny local fixture audio payload",
         content_type="audio/mp4",
         binary_body=b"fixture-audio-bytes",
+    ),
+    CaptureFixture(
+        fixture_id="sample_video_track_mp4",
+        route="/media/video-track.mp4",
+        expected="tiny local fixture video component",
+        content_type="video/mp4",
+        binary_body=b"fixture-video-component-bytes",
+    ),
+    CaptureFixture(
+        fixture_id="sample_audio_track_m4a",
+        route="/media/audio-track.m4a",
+        expected="tiny local fixture audio component",
+        content_type="audio/mp4",
+        binary_body=b"fixture-audio-component-bytes",
+    ),
+    CaptureFixture(
+        fixture_id="sample_still_jpg",
+        route="/media/still.jpg",
+        expected="tiny local fixture still payload",
+        content_type="image/jpeg",
+        binary_body=b"fixture-jpeg-bytes",
+    ),
+    CaptureFixture(
+        fixture_id="sample_poster_jpg",
+        route="/media/poster.jpg",
+        expected="tiny local fixture poster payload",
+        content_type="image/jpeg",
+        binary_body=b"fixture-poster-bytes",
+    ),
+    CaptureFixture(
+        fixture_id="sample_signed_video_mp4",
+        route="/media/signed-video.mp4",
+        expected="tiny local signed fixture media payload",
+        content_type="video/mp4",
+        binary_body=b"fixture-signed-video-bytes",
     ),
     CaptureFixture(
         fixture_id="archive_status",

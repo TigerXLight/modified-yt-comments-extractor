@@ -16,6 +16,9 @@ from capture_contracts import (
     ARTIFACT_TYPE_FINAL_DOM,
     ARTIFACT_TYPE_LIVECHAT_JSONL,
     ARTIFACT_TYPE_LIVECHAT_TEXT,
+    ARTIFACT_TYPE_MEDIA_COMPONENT,
+    ARTIFACT_TYPE_MEDIA_FILE,
+    ARTIFACT_TYPE_MEDIA_INVENTORY,
     ARTIFACT_TYPE_MHTML,
     ARTIFACT_TYPE_PAGE_OUTLINE,
     ARTIFACT_TYPE_RAW_HTML,
@@ -112,6 +115,8 @@ def _planned_capture_artifacts(
     selected_modes: tuple[str, ...],
     screenshot_intents: tuple[str, ...],
     timestamp_utc: str,
+    selected_media_resource_ids: tuple[str, ...] = (),
+    mux_plan_requested: bool = False,
 ) -> tuple[CaptureArtifact, ...]:
     artifacts: list[CaptureArtifact] = []
     if "webpage" in selected_modes:
@@ -226,6 +231,51 @@ def _planned_capture_artifacts(
                 ),
             )
         )
+    if selected_media_resource_ids:
+        artifacts.append(
+            _planned_artifact(
+                row=row,
+                artifact_type=ARTIFACT_TYPE_MEDIA_INVENTORY,
+                capture_method="planned_media_inventory",
+                relative_path="media/media_inventory.json",
+                timestamp_utc=timestamp_utc,
+                metadata={
+                    "discovery_execution": "not executed",
+                    "selected_resource_ids": selected_media_resource_ids,
+                },
+            )
+        )
+        for resource_id in selected_media_resource_ids:
+            artifacts.append(
+                _planned_artifact(
+                    row=row,
+                    artifact_type=ARTIFACT_TYPE_MEDIA_FILE,
+                    capture_method="planned_explicit_selected_media_download",
+                    relative_path=f"media/downloads/{resource_id}.bin",
+                    timestamp_utc=timestamp_utc,
+                    metadata={
+                        "download_execution": "not executed",
+                        "explicit_selected_resource_id": resource_id,
+                    },
+                )
+            )
+    if mux_plan_requested:
+        artifacts.append(
+            _planned_artifact(
+                row=row,
+                artifact_type=ARTIFACT_TYPE_MEDIA_COMPONENT,
+                capture_method="planned_separate_audio_video_mux_command",
+                relative_path="media/mux_plan.json",
+                timestamp_utc=timestamp_utc,
+                metadata={
+                    "ffmpeg_execution": "not executed",
+                    "yt_dlp_execution": "not executed",
+                    "mux_execution": "not executed",
+                    "mock_command_plan_only": True,
+                    "selected_resource_ids": selected_media_resource_ids,
+                },
+            )
+        )
     for intent in screenshot_intents:
         artifacts.append(
             _planned_artifact(
@@ -249,6 +299,8 @@ def build_operational_capture_plan(
     *,
     row: SourceResourceRowState,
     discussion: DiscussionCaptureOptions,
+    selected_media_resource_ids: tuple[str, ...] = (),
+    mux_plan_requested: bool = False,
     timestamp_utc: str = "2026-07-16T00:00:00Z",
 ) -> OperationalCapturePlanResult:
     selected_modes: list[str] = []
@@ -276,11 +328,15 @@ def build_operational_capture_plan(
     if not selected_modes:
         warnings.append("No active supported capture mode was selected.")
     selected_modes_tuple = tuple(selected_modes)
+    if (selected_media_resource_ids or mux_plan_requested) and "media" not in selected_modes:
+        selected_modes_tuple = selected_modes_tuple + ("media",)
     screenshot_intents_tuple = tuple(screenshot_intents)
     declared_artifacts = _planned_capture_artifacts(
         row=row,
         selected_modes=selected_modes_tuple,
         screenshot_intents=screenshot_intents_tuple,
+        selected_media_resource_ids=tuple(selected_media_resource_ids),
+        mux_plan_requested=mux_plan_requested,
         timestamp_utc=timestamp_utc,
     )
 
@@ -294,6 +350,8 @@ def build_operational_capture_plan(
         request_summary={
             "adapter_id": row.adapter_id,
             "canonical_url": row.canonical_url,
+            "mux_plan_requested": mux_plan_requested,
+            "selected_media_resource_ids": tuple(selected_media_resource_ids),
             "selected_modes": selected_modes_tuple,
             "screenshot_intents": screenshot_intents_tuple,
         },
@@ -390,7 +448,7 @@ def build_operational_capture_plan(
         source_title=row.title,
         adapter_id=row.adapter_id,
         canonical_url=row.canonical_url,
-        selected_modes=tuple(selected_modes),
+        selected_modes=selected_modes_tuple,
         screenshot_intents=tuple(screenshot_intents),
         action_events=action_events_tuple,
         declared_artifacts=declared_artifacts,
