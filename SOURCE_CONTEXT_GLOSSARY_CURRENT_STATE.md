@@ -51,6 +51,7 @@ Current helpers validate, normalize, classify, and assemble local metadata only.
 | Context/glossary skeleton | `context_glossary.py`, `context_glossary_test.py` | Local glossary normalization, deduplication, user-term handling, and context hint resolution. |
 | Context glossary CLI | `context_glossary_cli.py`, `context_glossary_cli_test.py` | Explicit-output-only CLI for manually supplied context/glossary JSON normalization and reporting. |
 | Source capture planning | `source_capture_plan.py`, `source_capture_plan_test.py` | Local source URL + adapter + capture option + context hint plan assembly. |
+| Source capture contract | `source_capture_contract.py`, `source_capture_contract_test.py` | Local capture-option contract records adapter support, execution mode, provenance, completeness status, and warnings for selected options without fetching, scraping, screenshots, archives, downloads, provider calls, credentials, or GUI behavior. |
 | Source capture plan CLI | `source_capture_plan_cli.py`, `source_capture_plan_cli_test.py` | Explicit-output-only inspection CLI for manually supplied source URL/context/glossary JSON. |
 | Source plan provenance | `source_plan_provenance.py`, `source_plan_provenance_test.py` | Local provenance records derived from Source Capture Plans without fetch/capture behavior. |
 | Evidence item queue schema | `evidence_item_queue.py`, `evidence_item_queue_test.py` | Immutable local queue-item/link/ASR-pairing metadata with explicit roles, lifecycle states, and Total Export include/exclude intent; no persistence, file operations, GUI, capture, ASR, archive, or export wiring. |
@@ -90,6 +91,7 @@ Local verification passed for:
 
 - Source adapter self-test.
 - Source capture plan self-test.
+- Source capture contract self-test.
 - Source plan provenance self-test.
 - Context glossary self-test.
 - YouTube URL utility self-test.
