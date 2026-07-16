@@ -4965,6 +4965,18 @@ class App(ctk.CTk):
     def _selected_discussion_row(self) -> SourceResourceRowState | None:
         return self._source_row_by_id(self.__dict__.get("selected_discussion_source_id", ""))
 
+    def _set_operational_capture_status(self, text: str, level: str = "muted") -> None:
+        """Expose non-executing source-capture plan state without starting workers."""
+        self.last_operational_capture_status = text
+        color_by_level = {
+            "error": COLORS["error"],
+            "success": COLORS["success"],
+            "warning": COLORS["warning"],
+        }
+        label = getattr(self, "url_status", None)
+        if label is not None and hasattr(label, "configure"):
+            label.configure(text=text, text_color=color_by_level.get(level, COLORS["text_muted"]))
+
     # =========================================================================
     # WINDOW SIZE HELPERS
     # =========================================================================
@@ -5581,6 +5593,7 @@ class App(ctk.CTk):
         extract_comments = self.extract_comments_var.get()
         extract_live_chat = self.extract_live_chat_var.get()
         if not extract_webpage and not extract_comments and not extract_live_chat:
+            self._set_operational_capture_status("Skipped: no selected source scopes.", "warning")
             messagebox.showerror(
                 "Selection Required",
                 "Please tick Webpage, Comments, Livechat, or a combination before pressing Go."
@@ -5608,12 +5621,16 @@ class App(ctk.CTk):
                     discussion=discussion,
                 )
                 self.last_operational_capture_plan = plan
+                self._set_operational_capture_status(
+                    "Fixture/model-only capture plan ready. Manual live-site smoke pending.",
+                    "success",
+                )
                 messagebox.showinfo(
                     "Discussion action scaffold",
                     format_operational_capture_plan_message(plan),
                 )
                 self.log_message(
-                    "Discussion action scaffold only; no fetch, screenshot, archive, or download executed.",
+                    "Discussion action scaffold only; no fetch, screenshot, archive, download, WARC/WACZ, or provider action executed.",
                     "muted",
                 )
                 return

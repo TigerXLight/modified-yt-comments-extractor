@@ -278,11 +278,18 @@ def test_operational_capture_plan_message_is_user_facing_and_local_only() -> Non
 
     assert "Operational site-capture plan" in message
     assert "Selected modes: webpage" in message
+    assert "Artifact declarations: 7" in message
+    assert "Artifact types:" in message
+    assert "RAW_HTML x1" in message
+    assert "Action event chain: 3 event(s), final hash " in message
     assert "Action log artifact: capture/" in message
+    assert "Operational status: fixture/model-only plan" in message
+    assert "Manual live-site smoke: pending separate approval" in message
     assert "Network actions performed: none" in message
     assert "Screenshots performed: none" in message
     assert "Downloads performed: none" in message
     assert "Archives performed: none" in message
+    assert "Live capture execution: unsupported in this scaffold" in message
 
 
 def test_operational_capture_plan_action_log_artifact_is_deterministic_and_sanitized() -> None:

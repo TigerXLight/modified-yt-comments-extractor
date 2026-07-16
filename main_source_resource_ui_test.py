@@ -71,6 +71,23 @@ class FakeEntry(FakeTextBox):
     pass
 
 
+class FakeFetchState:
+    def __init__(self) -> None:
+        self.is_fetching = False
+
+
+class FakeMessageBox:
+    def __init__(self) -> None:
+        self.infos: list[tuple[str, str]] = []
+        self.errors: list[tuple[str, str]] = []
+
+    def showinfo(self, title: str, message: str) -> None:
+        self.infos.append((title, message))
+
+    def showerror(self, title: str, message: str) -> None:
+        self.errors.append((title, message))
+
+
 def _make_intake_app(text: str) -> App:
     app = App.__new__(App)
     app._url_placeholder = "placeholder"
@@ -102,6 +119,14 @@ def _make_source_row_app() -> App:
     }
     app.log_messages = []
     app.log_message = lambda message, level="info": app.log_messages.append((message, level))
+    app.fetch_state = FakeFetchState()
+    app.url_status = FakeLabel()
+    app.extract_webpage_var = FakeVar(False)
+    app.extract_comments_var = FakeVar(True)
+    app.extract_live_chat_var = FakeVar(False)
+    app.webpage_screenshot_var = FakeVar(False)
+    app.comments_screenshot_var = FakeVar(False)
+    app.livechat_screenshot_var = FakeVar(False)
     app._refresh_source_resource_rows = lambda: setattr(app, "_rows_refreshed", True)
     app._refresh_discussion_source_controls = lambda: setattr(app, "_discussion_refreshed", True)
     return app
@@ -308,6 +333,52 @@ def test_start_fetching_msn_scaffold_returns_before_credential_resolution() -> N
     assert source.index('selected_discussion_row.adapter_id != "youtube"') < source.index(
         "_resolve_youtube_api_key_for_action"
     )
+    assert "_set_operational_capture_status" in source
+    assert "Fixture/model-only capture plan ready" in source
+
+
+def test_start_fetching_source_scaffold_builds_plan_preview_without_live_execution() -> None:
+    app = _make_source_row_app()
+    app.extract_webpage_var.set(True)
+    app.webpage_screenshot_var.set(True)
+    app.comments_screenshot_var.set(True)
+    fake_messagebox = FakeMessageBox()
+    original_messagebox = main.messagebox
+    main.messagebox = fake_messagebox
+    try:
+        App.start_fetching(app)
+    finally:
+        main.messagebox = original_messagebox
+
+    assert app.last_operational_capture_plan.selected_modes == ("webpage", "comments")
+    assert app.last_operational_capture_plan.screenshot_intents == ("webpage", "comments")
+    assert fake_messagebox.infos[0][0] == "Discussion action scaffold"
+    assert "Artifact declarations:" in fake_messagebox.infos[0][1]
+    assert "Action event chain:" in fake_messagebox.infos[0][1]
+    assert "Manual live-site smoke: pending separate approval" in fake_messagebox.infos[0][1]
+    assert app.last_operational_capture_status.startswith("Fixture/model-only")
+    assert app.url_status.config["text"].startswith("Fixture/model-only")
+    assert any("no fetch" in message for message, _level in app.log_messages)
+    assert any("WARC/WACZ" in message for message, _level in app.log_messages)
+
+
+def test_start_fetching_without_selected_scope_sets_skipped_status() -> None:
+    app = _make_source_row_app()
+    app.extract_webpage_var.set(False)
+    app.extract_comments_var.set(False)
+    app.extract_live_chat_var.set(False)
+    fake_messagebox = FakeMessageBox()
+    original_messagebox = main.messagebox
+    main.messagebox = fake_messagebox
+    try:
+        App.start_fetching(app)
+    finally:
+        main.messagebox = original_messagebox
+
+    assert fake_messagebox.errors[0][0] == "Selection Required"
+    assert app.last_operational_capture_status == "Skipped: no selected source scopes."
+    assert app.url_status.config["text"] == "Skipped: no selected source scopes."
+    assert "last_operational_capture_plan" not in app.__dict__
 
 
 def test_archivebox_icon_and_service_order_are_local_only() -> None:
@@ -379,6 +450,8 @@ def run_self_test() -> None:
     test_sidebar_order_places_updates_above_keys_export_files()
     test_transcript_toolbar_get_label_preserves_youtube_callback()
     test_start_fetching_msn_scaffold_returns_before_credential_resolution()
+    test_start_fetching_source_scaffold_builds_plan_preview_without_live_execution()
+    test_start_fetching_without_selected_scope_sets_skipped_status()
     test_archivebox_icon_and_service_order_are_local_only()
     test_discussion_layout_uses_webpage_parent_and_child_rows()
     test_main_blank_wheel_router_targets_main_without_stealing_text_scroll()

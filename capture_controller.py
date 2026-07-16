@@ -627,6 +627,24 @@ def build_operational_capture_plan(
 def format_operational_capture_plan_message(result: OperationalCapturePlanResult) -> str:
     modes = ", ".join(result.selected_modes) if result.selected_modes else "(none)"
     screenshots = ", ".join(result.screenshot_intents) if result.screenshot_intents else "(none)"
+    artifact_types = tuple(artifact.artifact_type for artifact in result.declared_artifacts)
+    artifact_counts: dict[str, int] = {}
+    for artifact_type in artifact_types:
+        artifact_counts[artifact_type] = artifact_counts.get(artifact_type, 0) + 1
+    artifact_summary = (
+        ", ".join(
+            f"{artifact_type} x{artifact_counts[artifact_type]}"
+            for artifact_type in sorted(artifact_counts)
+        )
+        if artifact_counts
+        else "(none)"
+    )
+    event_chain = (
+        f"{len(result.action_events)} event(s), final hash "
+        f"{result.action_events[-1].event_hash[:12]}..."
+        if result.action_events
+        else "(none)"
+    )
     action_log = (
         f"{result.action_log_artifact.relative_path} "
         f"({result.action_log_artifact.sha256[:12]}...)"
@@ -641,11 +659,17 @@ def format_operational_capture_plan_message(result: OperationalCapturePlanResult
             f"Adapter: {result.adapter_id}",
             f"Selected modes: {modes}",
             f"Screenshot intents: {screenshots}",
+            f"Artifact declarations: {len(result.declared_artifacts)}",
+            f"Artifact types: {artifact_summary}",
+            f"Action event chain: {event_chain}",
             f"Action log artifact: {action_log}",
+            "Operational status: fixture/model-only plan",
+            "Manual live-site smoke: pending separate approval",
             "Network actions performed: none",
             "Screenshots performed: none",
             "Downloads performed: none",
             "Archives performed: none",
+            "Live capture execution: unsupported in this scaffold",
             "Warnings:",
             warnings,
         ]
