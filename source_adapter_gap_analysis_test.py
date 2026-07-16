@@ -15,15 +15,17 @@ from source_adapter_gap_analysis import (
 def run_self_test() -> None:
     analysis = build_source_adapter_gap_analysis()
 
-    assert analysis.current_adapter_ids == ("youtube", "news_website")
+    assert analysis.current_adapter_ids == ("youtube", "msn", "news_website")
     assert "no fetch" in analysis.scope
 
     data = source_adapter_gap_analysis_to_dict(analysis)
-    assert data["implemented_adapter_count"] == 2
-    assert data["current_adapter_ids"] == ["youtube", "news_website"]
+    assert data["implemented_adapter_count"] == 3
+    assert data["current_adapter_ids"] == ["youtube", "msn", "news_website"]
 
     categories = {category["category_id"]: category for category in data["categories"]}
     assert categories["youtube"]["status"] == STATUS_IMPLEMENTED
+    assert categories["msn"]["status"] == STATUS_IMPLEMENTED
+    assert categories["msn"]["current_adapter_ids"] == ["msn"]
     assert categories["news_website"]["status"] == STATUS_IMPLEMENTED
     assert categories["social_video"]["status"] == STATUS_FUTURE_CANDIDATE
     assert "TikTok" in categories["social_video"]["example_platforms"]
@@ -43,7 +45,7 @@ def run_self_test() -> None:
 
     markdown = build_source_adapter_gap_analysis_markdown(analysis)
     assert "# Source Adapter / Preservation Gap Analysis" in markdown
-    assert "Current adapters: youtube, news_website" in markdown
+    assert "Current adapters: youtube, msn, news_website" in markdown
     assert "Newsletter / publication websites" in markdown
     assert "Self-hosted preservation backend" in markdown
     assert "does not fetch URLs" in markdown
@@ -56,8 +58,8 @@ def run_self_test() -> None:
 
     rendered_json = render_source_adapter_gap_analysis(analysis, output_format="json")
     parsed = json.loads(rendered_json)
-    assert parsed["implemented_adapter_count"] == 2
-    assert parsed["current_adapter_ids"] == ["youtube", "news_website"]
+    assert parsed["implemented_adapter_count"] == 3
+    assert parsed["current_adapter_ids"] == ["youtube", "msn", "news_website"]
 
     assert render_source_adapter_gap_analysis(analysis, output_format="markdown") == markdown
     assert render_source_adapter_gap_analysis(analysis, output_format="text") == text

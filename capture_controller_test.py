@@ -19,6 +19,7 @@ from capture_contracts import (
     ARTIFACT_TYPE_MHTML,
     ARTIFACT_TYPE_PAGE_OUTLINE,
     ARTIFACT_TYPE_RAW_HTML,
+    ARTIFACT_TYPE_RENDERED_RECORDING,
     ARTIFACT_TYPE_SCREENSHOT,
 )
 from source_resource_state import build_discussion_capture_options, build_source_resource_row
@@ -131,6 +132,45 @@ def test_operational_capture_plan_declares_media_download_and_mux_artifacts_with
     assert result.action_events[0].request_summary["mux_plan_requested"] is True
 
 
+def test_operational_capture_plan_declares_rendered_citation_artifacts_without_execution() -> None:
+    row = build_source_resource_row(MSN_URL)
+    discussion = build_discussion_capture_options(
+        (row,),
+        selected_row_id=row.row_id,
+        webpage_selected=False,
+        comments_selected=False,
+        comments_screenshot_requested=False,
+        livechat_selected=False,
+        livechat_screenshot_requested=False,
+    )
+
+    result = build_operational_capture_plan(
+        row=row,
+        discussion=discussion,
+        rendered_citation_requested=True,
+    )
+    artifact_types = [artifact.artifact_type for artifact in result.declared_artifacts]
+
+    assert result.selected_modes == ("rendered_citation",)
+    assert result.warnings == ()
+    assert artifact_types == [
+        ARTIFACT_TYPE_RENDERED_RECORDING,
+        ARTIFACT_TYPE_RENDERED_RECORDING,
+    ]
+    assert result.declared_artifacts[0].metadata["preferred_method"] == "browser_get_display_media"
+    assert result.declared_artifacts[0].metadata["user_authorization_required"] is True
+    assert result.declared_artifacts[0].metadata["recording_execution"] == "not executed"
+    assert result.declared_artifacts[0].metadata["protected_or_black_output_policy"] == "stop_and_report"
+    assert result.declared_artifacts[1].metadata["fixture_segments_only"] is True
+    assert result.action_events[1].request_summary["artifact_types"] == tuple(artifact_types)
+    assert result.action_events[0].request_summary["rendered_citation_requested"] is True
+    rendered = _action_log_jsonl(result.action_events)
+    assert "api_key" not in rendered
+    assert "write_performed\":false" in rendered
+    assert "playwright.chromium.launch" not in rendered
+    assert "requests.get" not in rendered
+
+
 def test_operational_capture_plan_message_is_user_facing_and_local_only() -> None:
     row = build_source_resource_row(MSN_URL)
     discussion = build_discussion_capture_options(
@@ -186,6 +226,7 @@ def run_self_test() -> None:
     test_operational_capture_plan_records_modes_without_execution()
     test_operational_capture_plan_declares_livechat_artifacts_without_execution()
     test_operational_capture_plan_declares_media_download_and_mux_artifacts_without_execution()
+    test_operational_capture_plan_declares_rendered_citation_artifacts_without_execution()
     test_operational_capture_plan_message_is_user_facing_and_local_only()
     test_operational_capture_plan_action_log_artifact_is_deterministic_and_sanitized()
 

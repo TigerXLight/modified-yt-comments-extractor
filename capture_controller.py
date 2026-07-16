@@ -22,6 +22,7 @@ from capture_contracts import (
     ARTIFACT_TYPE_MHTML,
     ARTIFACT_TYPE_PAGE_OUTLINE,
     ARTIFACT_TYPE_RAW_HTML,
+    ARTIFACT_TYPE_RENDERED_RECORDING,
     ARTIFACT_TYPE_SCREENSHOT,
     CaptureArtifact,
     build_capture_artifact,
@@ -117,6 +118,7 @@ def _planned_capture_artifacts(
     timestamp_utc: str,
     selected_media_resource_ids: tuple[str, ...] = (),
     mux_plan_requested: bool = False,
+    rendered_citation_requested: bool = False,
 ) -> tuple[CaptureArtifact, ...]:
     artifacts: list[CaptureArtifact] = []
     if "webpage" in selected_modes:
@@ -276,6 +278,39 @@ def _planned_capture_artifacts(
                 },
             )
         )
+    if rendered_citation_requested:
+        artifacts.extend(
+            (
+                _planned_artifact(
+                    row=row,
+                    artifact_type=ARTIFACT_TYPE_RENDERED_RECORDING,
+                    capture_method="planned_rendered_citation_metadata_manifest",
+                    relative_path="rendered_citation/rendered_citation_metadata.json",
+                    timestamp_utc=timestamp_utc,
+                    metadata={
+                        "capture_execution": "not executed",
+                        "operator_user_mediated": True,
+                        "preferred_method": "browser_get_display_media",
+                        "protected_or_black_output_policy": "stop_and_report",
+                        "recording_execution": "not executed",
+                        "user_authorization_required": True,
+                    },
+                ),
+                _planned_artifact(
+                    row=row,
+                    artifact_type=ARTIFACT_TYPE_RENDERED_RECORDING,
+                    capture_method="planned_rendered_citation_segment_manifest",
+                    relative_path="rendered_citation/segments.json",
+                    timestamp_utc=timestamp_utc,
+                    metadata={
+                        "capture_execution": "not executed",
+                        "fixture_segments_only": True,
+                        "recording_execution": "not executed",
+                        "segment_count": 0,
+                    },
+                ),
+            )
+        )
     for intent in screenshot_intents:
         artifacts.append(
             _planned_artifact(
@@ -301,6 +336,7 @@ def build_operational_capture_plan(
     discussion: DiscussionCaptureOptions,
     selected_media_resource_ids: tuple[str, ...] = (),
     mux_plan_requested: bool = False,
+    rendered_citation_requested: bool = False,
     timestamp_utc: str = "2026-07-16T00:00:00Z",
 ) -> OperationalCapturePlanResult:
     selected_modes: list[str] = []
@@ -325,11 +361,13 @@ def build_operational_capture_plan(
     if discussion.livechat_screenshot_active:
         screenshot_intents.append("livechat")
 
-    if not selected_modes:
+    if not selected_modes and not selected_media_resource_ids and not mux_plan_requested and not rendered_citation_requested:
         warnings.append("No active supported capture mode was selected.")
     selected_modes_tuple = tuple(selected_modes)
     if (selected_media_resource_ids or mux_plan_requested) and "media" not in selected_modes:
         selected_modes_tuple = selected_modes_tuple + ("media",)
+    if rendered_citation_requested and "rendered_citation" not in selected_modes:
+        selected_modes_tuple = selected_modes_tuple + ("rendered_citation",)
     screenshot_intents_tuple = tuple(screenshot_intents)
     declared_artifacts = _planned_capture_artifacts(
         row=row,
@@ -337,6 +375,7 @@ def build_operational_capture_plan(
         screenshot_intents=screenshot_intents_tuple,
         selected_media_resource_ids=tuple(selected_media_resource_ids),
         mux_plan_requested=mux_plan_requested,
+        rendered_citation_requested=rendered_citation_requested,
         timestamp_utc=timestamp_utc,
     )
 
@@ -351,6 +390,7 @@ def build_operational_capture_plan(
             "adapter_id": row.adapter_id,
             "canonical_url": row.canonical_url,
             "mux_plan_requested": mux_plan_requested,
+            "rendered_citation_requested": rendered_citation_requested,
             "selected_media_resource_ids": tuple(selected_media_resource_ids),
             "selected_modes": selected_modes_tuple,
             "screenshot_intents": screenshot_intents_tuple,
