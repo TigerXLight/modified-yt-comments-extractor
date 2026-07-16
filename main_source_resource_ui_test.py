@@ -276,6 +276,15 @@ def test_sidebar_order_places_updates_above_keys_export_files() -> None:
     assert "check_for_updates_clicked" in updates_source
 
 
+def test_evidence_database_review_has_no_visible_main_hook() -> None:
+    source = inspect.getsource(App)
+
+    assert "Evidence Database" not in source
+    assert "evidence_database_review" not in source
+    assert "build_synthetic_demo_review_window_controller" not in source
+    assert "create_evidence_database_review_window" not in source
+
+
 def test_transcript_toolbar_get_label_preserves_youtube_callback() -> None:
     source = inspect.getsource(App._create_transcript_section)
     reset_source = inspect.getsource(App.download_youtube_transcript_clicked)
