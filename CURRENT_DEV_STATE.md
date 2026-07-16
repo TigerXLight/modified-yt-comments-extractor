@@ -59,7 +59,8 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
 - Added an explicit-output-only context/glossary CLI for manually supplied source label, source URL, title, and user terms, rendering normalized hints and deduped glossary candidates as text, Markdown, or JSON without fetch/capture/network/provider/GUI behavior.
 - Added source adapter registry helpers for adapter `source_name` listing/name lookup plus regression coverage that adapters do not expose a misleading `.name` attribute.
 - Added a local-only source adapter capability report helper and explicit-output-only CLI for registered adapter metadata, rendering text, Markdown, or JSON without fetch/capture/network/archive/provider/credential-test/scraping/GUI behavior.
-- Added a metadata-only News Website source adapter skeleton for known Telegraph/MSN-style host suffixes; it performs URL recognition/normalization only and does not fetch, scrape, capture, archive-check, download, bypass access controls, or wire into the GUI.
+- Added a metadata-only News Website source adapter skeleton for known Telegraph-style host suffixes; it performs URL recognition/normalization only and does not fetch, scrape, capture, archive-check, download, bypass access controls, or wire into the GUI.
+- Added a local-only MSN source adapter and source-resource/archive/discussion UI scaffold: Enter-driven multi-URL intake, Shift+Enter newline, canonical visible-source dedupe, removable session source rows, title/hostname display, fixture image and video/audio resource windows, dry-run-only Download, fixture/mock Wayback and archive.ph status display, ArchiveBox local-software scaffold/icon, source archive auto-check preference state, selected-source discussion dropdown, Webpage/Comments/Livechat controls with independent Screenshot intent state, Transcript `Get` label preserving the prior callback, sidebar order `UPDATES`, `KEYS/ACCOUNTS`, `EXPORT`, `FILES`, and main-page wheel routing. It performs no live MSN fetching, live resource discovery, downloads, screenshots, browser automation, Wayback/archive.ph checks or submissions, ArchiveBox execution, credentials, provider calls, or network/API behavior.
 - Added a local-only source adapter/preservation gap analysis helper and explicit-output-only CLI covering current adapters plus future ExportComments-style platform categories, Substack/newsletter sites, review platforms, and ArchiveBox-style preservation backends without fetch/capture/network/archive execution/scraping/GUI behavior.
 - Added a local-only preservation backend plan helper and explicit-output-only CLI for manual local files, ArchiveBox-style self-hosted stores, and desired output formats such as HTML, PDF, PNG, TXT, JSON, WARC, media, and SQLite metadata without fetch/capture/network/archive execution/scraping/GUI behavior.
 - Total Export prepare CLI can list preservation backend/format metadata and explain preservation backend plans without package creation or fetch/capture/network/archive execution/scraping/GUI behavior.
@@ -167,8 +168,11 @@ Next feature area: Source URL ingestion and context/glossary pipeline:
     - Transcripts/captions partly supported through the existing transcript downloader.
     - Likes supported for normal comments/replies.
   - News Website adapter:
-    - Metadata-only known-host URL recognition/normalization for Telegraph/MSN-style news websites.
+    - Metadata-only known-host URL recognition/normalization for Telegraph-style news websites.
     - No fetching, scraping, archive checks, screenshots, media downloading, access bypass, credential storage, or GUI wiring.
+  - MSN adapter:
+    - Local fixture-backed article/resource/comment metadata scaffold plus GUI/controller presentation.
+    - No live page fetching, scraping, browser automation, screenshots, archive checks/submissions, downloads, ArchiveBox execution, credential storage, provider calls, or network behavior.
   - Future adapters:
     - Reddit.
     - Additional site-specific or site-family website adapters.

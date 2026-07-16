@@ -1,8 +1,8 @@
 # Project Current-State Handoff
 
-Date: 2026-07-14
+Date: 2026-07-16
 
-Checkpoint: `Add user-facing Online ASR action wiring` milestone
+Checkpoint: `Add local source resource and archive UI` milestone
 
 Branch: `v2.6.0-asr-engines`
 
@@ -16,7 +16,7 @@ It records the state needed for a future session to resume safely. It does not i
 
 - The working tree was clean when this handoff milestone started. Reconfirm with `git status --short` before applying any new patch.
 - Current branch: `v2.6.0-asr-engines`.
-- Current checkpoint: Online ASR action wiring milestone after `9be4ea8 Close ElevenLabs SDK transport milestone`.
+- Current checkpoint: `2bb9340 Add local source resource and archive UI`.
 - The user performs final local checks, commits, and pushes after reviewing each patch.
 - Codex should not commit unless the user explicitly changes that instruction.
 - Keep one milestone per patch.
@@ -42,6 +42,7 @@ Unless a later milestone is explicitly approved, do not add:
 - GUI wiring for the local-only preservation/evidence/report helpers.
 - Evidence queue persistence, background processing, or file operations.
 - Credential/provider work beyond the approved row 2C2 masked cloud-ASR Save/Clear controls, safe presence/provenance refresh, committed secure YouTube credential migration/legacy cleanup, local-only cloud-ASR credential-consumption prerequisite, explicit local ASR provider-action coordinator seam, local-only ASR connection-test coordinator seam, ElevenLabs Scribe v2 fake-transport-tested provider adapter, production-capable official SDK transport, one-call live verification, and explicit user-facing Online ASR action wiring. User-facing Test Connection wiring, OAuth, browser-profile integration, broader provider/API calls, automatic/background checks, account/quota/model calls, uploads beyond explicit selected-file transcription, network behavior beyond approved explicit provider actions, and future reveal/copy/export behavior remain separately approval-gated.
+- Operational source-resource work beyond the local fixture/UI scaffold. The current MSN/source-resource milestone is local presentation/controller state only; live HTTP/API retrieval, browser/DevTools/shadow-root execution, scraping, live comments, live resource enumeration, downloads, webpage/comment screenshots, archive checks/submissions, ArchiveBox execution, credentials, and provider/network behavior remain separately approval-gated.
 - Database-root scanning, automatic classification, sensitive-trait inference, reclassification execution, or file movement.
 - New runtime dependencies or hidden configuration for these milestones.
 
@@ -170,7 +171,8 @@ The repository now has a broad local Total Export foundation:
 - `context_glossary_cli.py`: explicit-output-only local context/glossary inspection CLI for manually supplied source label, source URL, title, and user terms.
 - `source_adapters.py`: local source adapter registry helpers use `source_name` for names/listing/lookup; adapters do not expose a `.name` attribute.
 - `source_adapter_capability_report.py` and CLI: local registered-adapter capability/credential/privacy/setup metadata reports without fetch/capture/network/archive/provider/credential-test/scraping/GUI behavior.
-- `NewsWebsiteSourceAdapter`: metadata-only known-host news website URL-recognition skeleton for Telegraph/MSN-style sources; no fetching, scraping, capture, archive checks, downloads, access bypass, or GUI wiring.
+- `NewsWebsiteSourceAdapter`: metadata-only known-host news website URL-recognition skeleton for Telegraph-style sources; no fetching, scraping, capture, archive checks, downloads, access bypass, or GUI wiring.
+- `MsnSourceAdapter` plus `source_resource_state.py` and narrow `main.py` wiring (`2bb9340`): local-only MSN source-resource/archive/discussion UI scaffold. It adds Enter-driven multi-URL intake, Shift+Enter newline, canonical visible-source dedupe, removable session source rows, clean title/hostname display, fixture image and video/audio resource windows, dry-run-only Download, fixture/mock Wayback and archive.ph status display, ArchiveBox local-software scaffold/icon, source archive auto-check preference state, selected-source discussion dropdown, Webpage/Comments/Livechat controls with independent Screenshot intent state, Transcript `Get` label preserving the previous callback, sidebar order `UPDATES`, `KEYS/ACCOUNTS`, `EXPORT`, `FILES`, and main-page wheel routing. It performs no live MSN fetching, resource discovery from live pages, actual downloads, screenshots, browser automation, Wayback/archive.ph checks or submissions, ArchiveBox execution, credentials, provider calls, or network/API behavior.
 - `source_capture_contract.py`: local-only capture-option contract records adapter support, execution mode, provenance, completeness status, and warnings for selected options; it does not fetch, scrape, capture screenshots, call archives/providers, download media, handle credentials, or wire into the GUI.
 - `source_adapter_gap_analysis.py` and CLI: local-only gap analysis over current adapters and future platform/preservation categories, including Substack/newsletter, review platforms, ExportComments-style social categories, and ArchiveBox-style preservation backends.
 - `preservation_backend_plan.py` and CLI: local-only preservation backend planning for manual local files, ArchiveBox-style self-hosted stores, and desired formats such as HTML, PDF, PNG, TXT, JSON, WARC, media, and SQLite metadata; no ArchiveBox execution, fetch/capture/network/archive calls, scraping, credential work, or GUI wiring.
@@ -395,9 +397,9 @@ Do not add provider/API/network calls to these verification chains.
 
 ## Safe Next Milestones
 
-1. Row 2A non-secret credential architecture/audit is complete at `ef92017`, row 2B read-only local credential status integration is complete at `7c1db2a`, row 2C1 secure credential-store infrastructure is complete at `29af218`, row 2C2 masked cloud-ASR Save/Clear controls are complete at `97de48d`, secure YouTube credential migration/legacy cleanup is complete at `3abb49d`, the local-only cloud-ASR credential-consumption prerequisite is complete at `a1cf07d`, the explicit provider-action coordinator seam is complete at `058af01`, the local-only connection-test coordinator seam is complete at `f709f8e`, the ElevenLabs Scribe v2 provider-specific fake-transport adapter is complete at `f21e578`, the production-capable official SDK transport is complete at `38aee73`, one-call live verification succeeded, and explicit user-facing Online ASR action wiring is complete.
-2. The exact next ordered provider boundary is user-facing Test Connection wiring. It remains separate from Online ASR transcription and must not silently expand into automatic/background provider checks, account/quota/model calls, broader provider/API behavior, OAuth/browser access, uploads beyond explicit selected-file transcription, or credential reveal/copy/export behavior.
-3. Do not expand that boundary into provider calls beyond the explicitly approved manual live check, OAuth, cloud ASR execution, browser behavior, uploads, network access, or future reveal/copy/export behavior without explicit approval. Any live provider/network access must be explicit/user-triggered, never automatic/background, and fake/local tests should precede manual live use.
+1. Row 2A non-secret credential architecture/audit is complete at `ef92017`, row 2B read-only local credential status integration is complete at `7c1db2a`, row 2C1 secure credential-store infrastructure is complete at `29af218`, row 2C2 masked cloud-ASR Save/Clear controls are complete at `97de48d`, secure YouTube credential migration/legacy cleanup is complete at `3abb49d`, the local-only cloud-ASR credential-consumption prerequisite is complete at `a1cf07d`, the explicit provider-action coordinator seam is complete at `058af01`, the local-only connection-test coordinator seam is complete at `f709f8e`, the ElevenLabs Scribe v2 provider-specific fake-transport adapter is complete at `f21e578`, the production-capable official SDK transport is complete at `38aee73`, one-call live verification succeeded, explicit user-facing Online ASR action wiring is complete, and the local MSN/source-resource/archive/discussion UI scaffold is complete at `2bb9340`.
+2. The exact next ordered source boundary is a separately approved site-specific operational implementation. It must not silently expand from the local scaffold into real HTTP/API retrieval, browser/DevTools/shadow-root execution, scraping, live comments, live resource enumeration, downloads, webpage/comment screenshots, archive checks/submissions, ArchiveBox execution, credentials, or provider/network behavior.
+3. Provider work beyond explicit Online ASR transcription and explicit key validation remains separately approval-gated: user-facing Test Connection wiring, automatic/background provider checks, account/quota/model calls, broader provider/API behavior, OAuth/browser access, uploads beyond explicit selected-file transcription, and credential reveal/copy/export behavior are not implied by the source-resource milestone.
 4. Do not begin later-row compatibility/reporting work by treating row 2C2 as approval for unresolved credential migration or provider/network layers.
 5. Create the next full external session handoff before beginning a substantially different feature area.
 6. Keep database scanning, automatic/sensitive classification, credential testing/provider access, archive/downloader/capture, and other networked behavior deferred until explicitly approved, opt-in where applicable, and covered by local/mocked tests.
@@ -408,7 +410,7 @@ Do not add provider/API/network calls to these verification chains.
 - Do not treat ElevenLabs as accepted; the manual Scribe v2 run remains below the 95% gate, and the SDK transport is production-capable but fake-tested/source-verified only, not live-verified.
 - Do not classify AWS Transcribe as quality-rejected; no score exists.
 - Do not silently replace transcript text or skip Term QA/user review.
-- Do not add network/provider/archive/downloader behavior under a local-report milestone.
+- Do not add network/provider/archive/downloader/source-capture behavior under a local-report or local-scaffold milestone.
 - Do not copy/build packages or extract ZIPs through preservation/evidence metadata helpers.
 - Do not infer remote deletion or unavailability from missing local records.
 - Do not expose or record secrets in docs, logs, manifests, reports, screenshots, or test fixtures.
