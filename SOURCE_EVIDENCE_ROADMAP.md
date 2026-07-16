@@ -551,8 +551,12 @@ Current implementation status:
 - USER_CONFIRMATION_REQUIRED: placement, classification, hierarchy-recognition, and reclassification helpers are dry-run proposal builders. They record basis/reason/confidence and preserve old/new path history, but never move files or apply a reclassification.
 - MODEL_ONLY: variable hierarchy recognition handles supplied fixture path strings for renamed, nested, missing, and unknown folder parts. It does not scan a real database root.
 - MODEL_ONLY: converters can create evidence index records from existing evidence queue items, source-resource rows, and Total Export manifests without mutating those source objects or validating files on disk.
-- UI_SCAFFOLD_ONLY: no database UI/controller surface has been added because the current app has no clean review hook for this layer yet.
-- Not implemented: broad folder scanning, real user-folder indexing, automatic classification, sensitive-attribute inference, file movement, live capture/download/archive/provider behavior, and evidence database migration.
+- MODEL_ONLY / LOCAL_FIXTURE_TESTED: `evidence_database_review.py` now provides review/session, root-registration, preview, decision, and non-executing apply-plan controller contracts.
+- LOCAL_FIXTURE_TESTED: root registration review uses explicitly supplied temp/test root paths, stores only root/config metadata, rejects missing and duplicate roots, and keeps broad scan disabled.
+- LOCAL_FIXTURE_TESTED: preview generation groups only explicitly supplied `EvidenceIndexRecord` objects by `unknown`, `not_evidenced`, `proposed`, `user_confirmed`, `rejected`, and `superseded`.
+- USER_CONFIRMATION_REQUIRED / DESTRUCTIVE_ACTION_NOT_IMPLEMENTED: review decisions and apply plans record intended accept/reject/unknown/not-evidenced/reclassification decisions with old/new path history, but execute no classification changes and no file moves.
+- UI_SCAFFOLD_ONLY: no database review window has been added because the current app has no clean review hook that avoids broader layout/runtime work.
+- Not implemented: broad folder scanning, real user-folder indexing, automatic classification execution, sensitive-attribute inference, file movement, live capture/download/archive/provider behavior, and evidence database migration.
 
 ## KEYS / Access & Keys Manager
 
