@@ -293,11 +293,12 @@ def test_start_fetching_msn_scaffold_returns_before_credential_resolution() -> N
 
     assert 'selected_discussion_row.adapter_id != "youtube"' in source
     assert "webpage_screenshot_requested=self.webpage_screenshot_var.get()" in source
-    assert "This local-only milestone does not fetch MSN comments/livechat" in source
+    assert "build_operational_capture_plan" in source
+    assert "format_operational_capture_plan_message" in source
+    assert "last_operational_capture_plan" in source
     assert source.index('selected_discussion_row.adapter_id != "youtube"') < source.index(
         "_resolve_youtube_api_key_for_action"
     )
-    assert "Screenshots performed: none" in source
 
 
 def test_archivebox_icon_and_service_order_are_local_only() -> None:

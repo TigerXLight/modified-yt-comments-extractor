@@ -133,6 +133,10 @@ from local_asr_capabilities import (
     ASR_ENGINE_WHISPERCPP_VULKAN,
     resolve_local_asr_selection,
 )
+from capture_controller import (
+    build_operational_capture_plan,
+    format_operational_capture_plan_message,
+)
 from source_resource_state import (
     ARCHIVE_SERVICE_ARCHIVEBOX,
     RESOURCE_KIND_IMAGE,
@@ -5599,20 +5603,14 @@ class App(ctk.CTk):
                 and not discussion.comments_selected
                 and not discussion.livechat_selected
             ):
-                active_modes = []
-                if discussion.webpage_active:
-                    active_modes.append("webpage")
-                if discussion.comments_selected and discussion.comments_supported:
-                    active_modes.append("comments")
-                if discussion.livechat_selected and discussion.livechat_supported:
-                    active_modes.append("livechat")
+                plan = build_operational_capture_plan(
+                    row=selected_discussion_row,
+                    discussion=discussion,
+                )
+                self.last_operational_capture_plan = plan
                 messagebox.showinfo(
                     "Discussion action scaffold",
-                    "This local-only milestone does not fetch MSN comments/livechat.\n\n"
-                    f"Source: {selected_discussion_row.title}\n"
-                    f"Selected modes: {', '.join(active_modes) if active_modes else '(none)'}\n"
-                    "Network actions performed: none\n"
-                    "Screenshots performed: none",
+                    format_operational_capture_plan_message(plan),
                 )
                 self.log_message(
                     "Discussion action scaffold only; no fetch, screenshot, archive, or download executed.",
