@@ -77,6 +77,7 @@ class AppSettings:
     online_asr_provider_id: str = ""
     access_keys_added_provider_ids: tuple[str, ...] = ()
     access_keys_validation_states: dict[str, dict[str, str]] = field(default_factory=dict)
+    source_archive_auto_check_enabled: bool = True
 
     # Date filter (optional)
     date_from: Optional[str] = None

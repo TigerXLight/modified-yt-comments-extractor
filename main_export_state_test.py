@@ -252,6 +252,7 @@ def _make_fetch_app(entry_value: str, stored_key: str = "") -> App:
     app._get_max_comments = lambda: None
     app.log_messages = []
     app.log_message = lambda message, level="info": app.log_messages.append((message, level))
+    app.extract_webpage_var = FakeVar(False)
     app.extract_comments_var = FakeVar(True)
     app.extract_live_chat_var = FakeVar(False)
     app.spam_filter_var = FakeVar(False)

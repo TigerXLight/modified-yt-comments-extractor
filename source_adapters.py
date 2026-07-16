@@ -9,7 +9,8 @@ from youtube_url_utils import extract_youtube_video_id, normalize_youtube_url
 from urllib.parse import urlsplit, urlunsplit
 
 
-NEWS_WEBSITE_HOST_SUFFIXES = ("telegraph.co.uk", "msn.com")
+NEWS_WEBSITE_HOST_SUFFIXES = ("telegraph.co.uk",)
+MSN_HOST_SUFFIXES = ("msn.com",)
 
 
 def _normalize_basic_url(url: str) -> str:
@@ -158,7 +159,7 @@ class NewsWebsiteSourceAdapter:
         supports_browser_capture=False,
         supports_manual_import=True,
         setup_hint=(
-            "Metadata-only Telegraph/MSN-style news website adapter skeleton. "
+            "Metadata-only Telegraph-style news website adapter skeleton. "
             "Future capture must remain site-specific or site-family-specific."
         ),
         test_connection_supported=False,
@@ -170,7 +171,7 @@ class NewsWebsiteSourceAdapter:
             "No cost or rate limits are used by this adapter skeleton because it performs no network calls."
         ),
         access_limitations=(
-            "This adapter is a metadata/URL-recognition skeleton only for known news website host suffixes. "
+            "This adapter is a metadata/URL-recognition skeleton only for known non-MSN news website host suffixes. "
             "It does not fetch pages, scrape comments, capture screenshots, inspect archives, "
             "download media, bypass access controls, or integrate with the GUI."
         ),
@@ -198,10 +199,66 @@ class NewsWebsiteSourceAdapter:
         return f"{parsed.netloc}{parsed.path}"
 
 
+class MsnSourceAdapter:
+    source_name = "msn"
+    capabilities = SourceCapabilities(
+        supports_comments=True,
+        supports_replies=True,
+        supports_timestamps=True,
+    )
+    metadata = SourceAdapterMetadata(
+        display_name="MSN",
+        platform_family=PLATFORM_NEWS_WEBSITE,
+        credential_type=CREDENTIAL_NONE,
+        credentials_required=False,
+        credentials_optional=False,
+        supports_browser_capture=False,
+        supports_manual_import=True,
+        setup_hint=(
+            "Local fixture-backed MSN article/resource/comment metadata scaffold. "
+            "Future capture must remain explicit and site-specific."
+        ),
+        test_connection_supported=False,
+        privacy_notes=(
+            "No request is made by this adapter scaffold; future browser/API capture may expose "
+            "article or comment access patterns to MSN or archive services."
+        ),
+        cost_or_rate_limit_notes=(
+            "No cost or rate limits are used by this adapter scaffold because it performs no network calls."
+        ),
+        access_limitations=(
+            "This adapter recognizes and canonicalizes representative MSN article URLs and supports "
+            "deterministic local fixture comments/resources only. It does not fetch pages, scrape comments, "
+            "capture screenshots, inspect archives, download media, bypass access controls, or execute browser automation."
+        ),
+    )
+
+    def can_handle(self, url: str) -> bool:
+        try:
+            parsed = urlsplit((url or "").strip())
+            if parsed.scheme.lower() not in ("http", "https"):
+                return False
+            return any(_host_matches_suffix(parsed.netloc, suffix) for suffix in MSN_HOST_SUFFIXES)
+        except ValueError:
+            return False
+
+    def normalize_url(self, url: str) -> str:
+        from source_resource_state import canonicalize_msn_url
+
+        return canonicalize_msn_url(url)
+
+    def extract_source_id(self, url: str) -> str:
+        normalized = self.normalize_url(url)
+        parsed = urlsplit(normalized)
+        return f"{parsed.netloc}{parsed.path}"
+
+
 YOUTUBE_SOURCE_ADAPTER = YouTubeSourceAdapter()
+MSN_SOURCE_ADAPTER = MsnSourceAdapter()
 NEWS_WEBSITE_SOURCE_ADAPTER = NewsWebsiteSourceAdapter()
 AVAILABLE_SOURCE_ADAPTERS: Sequence[SourceAdapter] = (
     YOUTUBE_SOURCE_ADAPTER,
+    MSN_SOURCE_ADAPTER,
     NEWS_WEBSITE_SOURCE_ADAPTER,
 )
 

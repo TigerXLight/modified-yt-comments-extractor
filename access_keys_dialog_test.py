@@ -297,14 +297,21 @@ def test_sidebar_uses_keys_section_without_api_key_block() -> None:
     main_source = Path("main.py").read_text(encoding="utf-8")
     sidebar = _function_source(main_source, "_create_sidebar")
     keys_section = _function_source(main_source, "_create_access_keys_section")
+    updates_section = _function_source(main_source, "_create_updates_section")
     assert "_create_api_section" not in sidebar
-    assert "_create_access_keys_section(first=True)" in sidebar
+    assert sidebar.index("_create_updates_section(first=True)") < sidebar.index(
+        "_create_access_keys_section()"
+    )
+    assert sidebar.index("_create_access_keys_section()") < sidebar.index(
+        "_create_export_section()"
+    )
+    assert 'text="UPDATES"' in updates_section
     assert "KEYS" in keys_section
     assert "_toggle_api_key_visibility" not in main_source
     assert "toggle_api_key_button" not in main_source
     assert "api_key_visible" not in main_source
     assert 'show=""' not in main_source
-    assert 'text="KEYS"' in keys_section
+    assert 'text="KEYS/ACCOUNTS"' in keys_section
     assert "command=self.open_access_keys_window" in keys_section
 
     open_method = _function_source(

@@ -21,7 +21,7 @@ import time
 import webbrowser
 from dataclasses import dataclass
 from tkinter import filedialog, messagebox, simpledialog
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import customtkinter as ctk
 import tkinter as tk
@@ -132,6 +132,20 @@ from youtube_credential_migration import (
 from local_asr_capabilities import (
     ASR_ENGINE_WHISPERCPP_VULKAN,
     resolve_local_asr_selection,
+)
+from source_resource_state import (
+    ARCHIVE_SERVICE_ARCHIVEBOX,
+    RESOURCE_KIND_IMAGE,
+    RESOURCE_KIND_VIDEO_AUDIO,
+    SourceResourceRowState,
+    build_discussion_capture_options,
+    build_discussion_selection_state,
+    build_resource_download_dry_run,
+    parse_source_url_intake,
+    remove_source_resource_row,
+    resource_dialog_state_for_row,
+    select_all_resources,
+    clear_resource_selection,
 )
 
 
@@ -560,6 +574,13 @@ class App(ctk.CTk):
         self.online_asr_provider_selection_status: str = ""
         self.access_keys_added_provider_ids: tuple[str, ...] = ()
         self.access_keys_validation_states: dict[str, dict[str, str]] = {}
+        self.source_resource_rows: List[SourceResourceRowState] = []
+        self.selected_discussion_source_id: str = ""
+        self.source_archive_auto_check_enabled: bool = True
+        self.source_screenshot_preferences: dict[str, dict[str, bool]] = {}
+        self._archivebox_icon: ctk.CTkImage | None = None
+        self._main_pointer_wheel_bound: bool = False
+        self.source_resource_selections: dict[str, tuple[str, ...]] = {}
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
@@ -577,6 +598,7 @@ class App(ctk.CTk):
         self._create_content_paned_window()
         self._create_sidebar()
         self._create_main_content()
+        self._bind_main_pointer_wheel_router()
         self._bind_final_file_drop_targets()
         self._log_file_drag_drop_startup_state()
 
@@ -715,8 +737,11 @@ class App(ctk.CTk):
         )
         self.sidebar_scroll.pack(fill="both", expand=True, padx=0, pady=0)
 
+        # Global actions stay pinned in the sidebar above FILES.
+        self._create_updates_section(first=True)
+
         # Access & Keys section owns credential management.
-        self._create_access_keys_section(first=True)
+        self._create_access_keys_section()
 
         # Export/package entry point
         self._create_export_section()
@@ -915,14 +940,11 @@ class App(ctk.CTk):
 
     def _create_access_keys_section(self, first: bool = False) -> None:
         """Create the Access & Keys entry point without duplicating API-key fields."""
-        if not first:
-            separator = ctk.CTkFrame(self.sidebar_scroll, height=1, fg_color=COLORS["border"])
-            separator.pack(fill="x", padx=20, pady=(15, 12))
         keys_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
-        keys_frame.pack(fill="x", padx=20, pady=(15 if first else 0, 10))
+        keys_frame.pack(fill="x", padx=20, pady=(15 if first else 0, 6))
         self.access_keys_button = ctk.CTkButton(
             keys_frame,
-            text="KEYS",
+            text="KEYS/ACCOUNTS",
             height=34,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=COLORS["accent_secondary"],
@@ -933,12 +955,30 @@ class App(ctk.CTk):
         )
         self.access_keys_button.pack(fill="x")
 
+    def _create_updates_section(self, first: bool = False) -> None:
+        """Create the Updates sidebar entry point."""
+        if not first:
+            separator = ctk.CTkFrame(self.sidebar_scroll, height=1, fg_color=COLORS["border"])
+            separator.pack(fill="x", padx=20, pady=(15, 8))
+        updates_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
+        updates_frame.pack(fill="x", padx=20, pady=(15 if first else 0, 6))
+        self.update_button = ctk.CTkButton(
+            updates_frame,
+            text="UPDATES",
+            command=self.check_for_updates_clicked,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+        )
+        self.update_button.pack(fill="x")
+
     def _create_export_section(self) -> None:
         """Create the consolidated export/package sidebar entry point."""
-        separator = ctk.CTkFrame(self.sidebar_scroll, height=1, fg_color=COLORS["border"])
-        separator.pack(fill="x", padx=20, pady=(15, 12))
         export_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
-        export_frame.pack(fill="x", padx=20)
+        export_frame.pack(fill="x", padx=20, pady=(0, 10))
 
         self.evidence_button = ctk.CTkButton(
             export_frame,
@@ -2606,7 +2646,7 @@ class App(ctk.CTk):
 
         url_label = ctk.CTkLabel(
             url_frame,
-            text="Source URLs (YouTube currently supported)",
+            text="Source URLs",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS["text_primary"]
         )
@@ -2614,7 +2654,7 @@ class App(ctk.CTk):
 
         self.url_entry = ctk.CTkTextbox(
             url_frame,
-            height=70,
+            height=112,
             font=ctk.CTkFont(size=13),
             fg_color=COLORS["bg_input"],
             border_color=COLORS["border"],
@@ -2624,12 +2664,35 @@ class App(ctk.CTk):
         self.url_entry.pack(fill="x")
 
         # Placeholder handling
-        self._url_placeholder = "Paste Source URLs here (YouTube currently supported, one per line)...\n\nSupported formats:\n• youtube.com/watch?v=...\n• youtu.be/...\n• youtube.com/shorts/..."
+        self._url_placeholder = (
+            "Paste Source URLs here...\n\n"
+            "Supported formats:\n"
+            "- youtube.com/watch?v=...\n"
+            "- youtu.be/...\n"
+            "- youtube.com/shorts/...\n"
+            "- msn.com news article URLs"
+        )
         self.url_entry.insert("1.0", self._url_placeholder)
         self.url_entry.configure(text_color=COLORS["text_muted"])
         self.url_entry.bind("<FocusIn>", self._on_url_focus_in)
         self.url_entry.bind("<FocusOut>", self._on_url_focus_out)
         self.url_entry.bind("<KeyRelease>", self._validate_urls_live)
+        self.url_entry.bind("<Return>", self._on_source_url_enter)
+        self.url_entry.bind("<Shift-Return>", self._on_source_url_shift_enter)
+        self.url_entry.bind("<Shift-KeyPress-Return>", self._on_source_url_shift_enter)
+
+        self.source_hint_label = ctk.CTkLabel(
+            url_frame,
+            text=(
+                "Press Enter to add URLs. Separate multiple URLs with spaces, "
+                "commas, or new lines. Shift+Enter inserts a new line."
+            ),
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            wraplength=820,
+            justify="left",
+        )
+        self.source_hint_label.pack(fill="x", anchor="w", pady=(6, 0))
 
         # URL status
         self.url_status = ctk.CTkLabel(
@@ -2639,6 +2702,16 @@ class App(ctk.CTk):
             text_color=COLORS["text_muted"]
         )
         self.url_status.pack(anchor="e", pady=(2, 0))
+
+        self.source_rows_frame = ctk.CTkFrame(
+            url_card,
+            fg_color=COLORS["bg_input"],
+            corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        self.source_rows_frame.pack(fill="x", padx=20, pady=(4, 12))
+        self._refresh_source_resource_rows()
 
         # Filter words section
         filter_words_frame = ctk.CTkFrame(url_card, fg_color="transparent")
@@ -2678,11 +2751,31 @@ class App(ctk.CTk):
         action_area = ctk.CTkFrame(url_card, fg_color="transparent")
         action_area.pack(fill="x", padx=20, pady=(0, 20))
 
-        # Main row: Go / Comments / Livechat / exports
+        # The discussion selector sits above Go. The action columns remain
+        # visible by placing exports on their own responsive row.
         action_frame = ctk.CTkFrame(action_area, fg_color="transparent")
         action_frame.pack(fill="x")
+        for column in range(4):
+            action_frame.grid_columnconfigure(column, weight=0)
+        action_frame.grid_columnconfigure(4, weight=1)
 
-        # Go button
+        self.discussion_source_var = ctk.StringVar(value="")
+        self.discussion_source_menu = ctk.CTkOptionMenu(
+            action_frame,
+            variable=self.discussion_source_var,
+            values=[""],
+            command=self._on_discussion_source_selected,
+            width=288,
+            height=30,
+            fg_color=COLORS["bg_input"],
+            button_color=COLORS["accent_secondary"],
+            button_hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+        )
+        self.discussion_source_menu.grid(
+            row=0, column=0, columnspan=4, sticky="ew", pady=(0, 4)
+        )
+
         self.fetch_button = ctk.CTkButton(
             action_frame,
             text="▶ Go",
@@ -2693,44 +2786,109 @@ class App(ctk.CTk):
             fg_color=COLORS["accent"],
             hover_color=COLORS["accent_hover"],
             text_color="#000000",
-            corner_radius=8
+            corner_radius=8,
         )
-        self.fetch_button.pack(side="left")
+        self.fetch_button.grid(row=2, column=0, sticky="nw", pady=(6, 0))
 
-        # Extraction choice checkboxes
-        mode_frame = ctk.CTkFrame(action_frame, fg_color="transparent")
-        mode_frame.pack(side="left", padx=(14, 0))
+        webpage_column = ctk.CTkFrame(action_frame, fg_color="transparent")
+        webpage_column.grid(row=2, column=1, sticky="nw", padx=(14, 0), pady=(6, 0))
+        comments_column = ctk.CTkFrame(action_frame, fg_color="transparent")
+        comments_column.grid(row=2, column=2, sticky="nw", padx=(14, 0), pady=(6, 0))
+        livechat_column = ctk.CTkFrame(action_frame, fg_color="transparent")
+        livechat_column.grid(row=2, column=3, sticky="nw", padx=(10, 0), pady=(6, 0))
 
+        self.extract_webpage_var = ctk.BooleanVar(value=False)
         self.extract_comments_var = ctk.BooleanVar(value=True)
         self.extract_live_chat_var = ctk.BooleanVar(value=False)
+        self.webpage_screenshot_var = ctk.BooleanVar(value=False)
+        self.comments_screenshot_var = ctk.BooleanVar(value=False)
+        self.livechat_screenshot_var = ctk.BooleanVar(value=False)
+
+        self.webpage_checkbox = ctk.CTkCheckBox(
+            webpage_column,
+            text="Webpage",
+            variable=self.extract_webpage_var,
+            command=self._on_discussion_mode_changed,
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_primary"],
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            border_color=COLORS["border"],
+            checkmark_color="#000000",
+        )
+        self.webpage_checkbox.pack(anchor="w")
+        self.webpage_screenshot_checkbox = ctk.CTkCheckBox(
+            webpage_column,
+            text="Screenshot",
+            variable=self.webpage_screenshot_var,
+            command=self._on_discussion_mode_changed,
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_secondary"],
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            border_color=COLORS["border"],
+            checkmark_color="#000000",
+        )
+        self.webpage_screenshot_checkbox.pack(anchor="w", pady=(4, 0))
+        self.webpage_screenshot_tooltip_text = (
+            "Capture a screenshot of the selected webpage. "
+            "Requires a future browser-capture implementation."
+        )
 
         self.comments_checkbox = ctk.CTkCheckBox(
-            mode_frame,
+            comments_column,
             text="Comments",
             variable=self.extract_comments_var,
+            command=self._on_discussion_mode_changed,
             font=ctk.CTkFont(size=12),
             text_color=COLORS["text_primary"],
             fg_color=COLORS["accent"],
             hover_color=COLORS["accent_hover"],
             border_color=COLORS["border"],
-            checkmark_color="#000000"
+            checkmark_color="#000000",
         )
-        self.comments_checkbox.pack(side="left", padx=(0, 10))
+        self.comments_checkbox.pack(anchor="w")
+        self.comments_screenshot_checkbox = ctk.CTkCheckBox(
+            comments_column,
+            text="Screenshot",
+            variable=self.comments_screenshot_var,
+            command=self._on_discussion_mode_changed,
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_secondary"],
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            border_color=COLORS["border"],
+            checkmark_color="#000000",
+        )
+        self.comments_screenshot_checkbox.pack(anchor="w", pady=(4, 0))
 
         self.live_chat_checkbox = ctk.CTkCheckBox(
-            mode_frame,
+            livechat_column,
             text="Livechat",
             variable=self.extract_live_chat_var,
+            command=self._on_discussion_mode_changed,
             font=ctk.CTkFont(size=12),
             text_color=COLORS["text_primary"],
             fg_color=COLORS["accent"],
             hover_color=COLORS["accent_hover"],
             border_color=COLORS["border"],
-            checkmark_color="#000000"
+            checkmark_color="#000000",
         )
-        self.live_chat_checkbox.pack(side="left")
+        self.live_chat_checkbox.pack(anchor="w")
+        self.livechat_screenshot_checkbox = ctk.CTkCheckBox(
+            livechat_column,
+            text="Screenshot",
+            variable=self.livechat_screenshot_var,
+            command=self._on_discussion_mode_changed,
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_secondary"],
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            border_color=COLORS["border"],
+            checkmark_color="#000000",
+        )
+        self.livechat_screenshot_checkbox.pack(anchor="w", pady=(4, 0))
 
-        # Cancel button hidden by default
         self.cancel_button = ctk.CTkButton(
             action_frame,
             text="⏹ Cancel",
@@ -2740,13 +2898,15 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=14, weight="bold"),
             fg_color=COLORS["error"],
             hover_color=COLORS["accent_hover"],
-            corner_radius=8
+            corner_radius=8,
         )
-        # Do not pack yet
 
-        # Export buttons
+        export_frame = ctk.CTkFrame(action_frame, fg_color="transparent")
+        export_frame.grid(
+            row=3, column=0, columnspan=5, sticky="e", pady=(10, 0)
+        )
         self.export_excel_button = ctk.CTkButton(
-            action_frame,
+            export_frame,
             text="📊 Excel",
             command=self.export_excel,
             width=90,
@@ -2755,12 +2915,11 @@ class App(ctk.CTk):
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
             corner_radius=8,
-            state="disabled"
+            state="disabled",
         )
         self.export_excel_button.pack(side="right")
-
         self.export_button = ctk.CTkButton(
-            action_frame,
+            export_frame,
             text="📥 CSV",
             command=self.export_csv,
             width=90,
@@ -2769,12 +2928,11 @@ class App(ctk.CTk):
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
             corner_radius=8,
-            state="disabled"
+            state="disabled",
         )
         self.export_button.pack(side="right", padx=(0, 10))
-
         self.export_txt_button = ctk.CTkButton(
-            action_frame,
+            export_frame,
             text="📝 TXT",
             command=self.export_txt,
             width=90,
@@ -2783,30 +2941,92 @@ class App(ctk.CTk):
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
             corner_radius=8,
-            state="disabled"
+            state="disabled",
         )
         self.export_txt_button.pack(side="right", padx=(0, 10))
 
-        # Second row: update tools only. Export/package actions live under FILES -> EXPORT.
-        tools_frame = ctk.CTkFrame(action_area, fg_color="transparent")
-        tools_frame.pack(fill="x", pady=(10, 0))
-
-        self.update_button = ctk.CTkButton(
-            tools_frame,
-            text="🔄 Updates",
-            command=self.check_for_updates_clicked,
-            width=105,
-            height=34,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["accent_secondary"],
-            hover_color=COLORS["border"],
-            corner_radius=8
-        )
-        self.update_button.pack(side="right")
         self.evidence_button = self.sidebar_evidence_button
         self.screenshot_button = _NoOpSidebarControl()
         self.open_last_package_button = _NoOpSidebarControl()
         self.clear_screenshots_button = _NoOpSidebarControl()
+        self._refresh_discussion_source_controls()
+
+        self.url_card = url_card
+        url_card.bind("<Configure>", self._on_url_card_configure, add="+")
+
+    def _on_url_card_configure(self, event=None) -> None:
+        """Keep Source URL helper text inside the available card width."""
+        try:
+            width = max(220, int(getattr(event, "width", self.url_card.winfo_width())) - 40)
+            self.source_hint_label.configure(wraplength=width)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _widget_is_descendant(widget: object, ancestor: object) -> bool:
+        current = widget
+        while current is not None:
+            if current is ancestor:
+                return True
+            current = getattr(current, "master", None)
+        return False
+
+    def _bind_main_pointer_wheel_router(self) -> None:
+        """Route wheel events from blank main-workspace areas to the main page."""
+        if self.__dict__.get("_main_pointer_wheel_bound", False):
+            return
+        self._main_pointer_wheel_bound = True
+        try:
+            self.bind_all("<MouseWheel>", self._route_main_pointer_wheel, add="+")
+            self.bind_all("<Button-4>", self._route_main_pointer_wheel, add="+")
+            self.bind_all("<Button-5>", self._route_main_pointer_wheel, add="+")
+        except Exception:
+            self._main_pointer_wheel_bound = False
+
+    def _route_main_pointer_wheel(self, event) -> str | None:
+        try:
+            target = self.winfo_containing(self.winfo_pointerx(), self.winfo_pointery())
+        except Exception:
+            target = getattr(event, "widget", None)
+        if target is None:
+            return None
+        try:
+            if target.winfo_toplevel() is not self:
+                return None
+        except Exception:
+            return None
+        if self._widget_is_descendant(target, getattr(self, "sidebar_scroll", None)):
+            return None
+        in_main_frame = self._widget_is_descendant(
+            target, getattr(self, "main_frame", None)
+        )
+        in_main_workspace = self._widget_is_descendant(
+            target, getattr(self, "main_workspace", None)
+        )
+        if not in_main_frame and not in_main_workspace:
+            return None
+
+        # Preserve native scrolling for text editors and explicitly scrollable children.
+        current = target
+        while current is not None and current is not getattr(self, "main_frame", None):
+            class_name = current.__class__.__name__
+            if class_name in {"Text", "CTkTextbox", "CTkScrollableFrame", "Listbox"}:
+                return None
+            current = getattr(current, "master", None)
+
+        interactive_names = {
+            "Button", "CTkButton", "Entry", "CTkEntry", "CTkOptionMenu",
+            "CTkCheckBox", "CTkSlider", "Scale", "Scrollbar", "CTkScrollbar",
+        }
+        if target.__class__.__name__ in interactive_names:
+            return None
+        return self._scroll_main_frame_with_mousewheel(event)
+
+    def _bind_main_blank_scroll_targets(self, root_widget: object) -> None:
+        """Refresh dynamic main-area widgets without overriding child scrollers."""
+        # The root-level pointer router handles these widgets. This method is a
+        # deliberate hook for dynamic source-row refreshes and test coverage.
+        _ = root_widget
 
     def _create_progress_section(self) -> None:
         """Create the progress indicator section."""
@@ -2895,7 +3115,7 @@ class App(ctk.CTk):
 
         self.transcript_youtube_button = ctk.CTkButton(
             button_row,
-            text="⬇ YouTube",
+            text="Get",
             command=self.download_youtube_transcript_clicked,
             width=105,
             height=32,
@@ -2904,10 +3124,16 @@ class App(ctk.CTk):
             hover_color=COLORS["border"],
             corner_radius=8
         )
+        self.transcript_get_tooltip_text = (
+            "Get transcript or source content. Current runtime support remains limited."
+        )
         self.transcript_youtube_button.pack(side="left", padx=(8, 0))
 
+        asr_button_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
+        asr_button_row.pack(fill="x", padx=15, pady=(0, 8))
+
         self.transcript_asr_button_wrap = ctk.CTkFrame(
-            button_row,
+            asr_button_row,
             fg_color="transparent",
             width=150,
             height=36
@@ -3119,7 +3345,7 @@ class App(ctk.CTk):
         )
 
         self._create_asr_action_control(
-            button_row,
+            asr_button_row,
             text=ONLINE_ASR_BUTTON_TEXT,
             command=self.online_asr_transcribe_clicked,
             settings_command=self.open_online_asr_settings_clicked,
@@ -3130,7 +3356,7 @@ class App(ctk.CTk):
 
 
         self.transcript_media_button = ctk.CTkButton(
-            button_row,
+            asr_button_row,
             text="🎞 Media",
             command=self.choose_transcript_media_file,
             width=95,
@@ -3145,7 +3371,7 @@ class App(ctk.CTk):
         self.transcript_media_button.pack_forget()
 
         self.transcript_media_status_label = ctk.CTkLabel(
-            button_row,
+            asr_button_row,
             text="No media",
             font=ctk.CTkFont(size=10),
             text_color=COLORS["text_muted"]
@@ -3153,7 +3379,7 @@ class App(ctk.CTk):
         self.transcript_media_status_label.pack(side="left", padx=(8, 0))
 
         self.transcript_media_clear_button = ctk.CTkButton(
-            button_row,
+            asr_button_row,
             text="✕",
             command=self.clear_transcript_media_link,
             width=28,
@@ -3212,8 +3438,11 @@ class App(ctk.CTk):
         )
         self.transcript_edit_segment_button.pack(side="left", padx=(8, 0))
 
+        transcript_merge_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
+        transcript_merge_row.pack(fill="x", padx=15, pady=(0, 8))
+
         self.transcript_merge_up_button = ctk.CTkButton(
-            self.transcript_edit_segment_button.master,
+            transcript_merge_row,
             text="↑ Merge Up",
             command=self.merge_selected_transcript_segment_up,
             width=115,
@@ -3227,7 +3456,7 @@ class App(ctk.CTk):
         self.transcript_merge_up_button.pack(side="left", padx=(8, 0))
 
         self.transcript_merge_down_button = ctk.CTkButton(
-            self.transcript_edit_segment_button.master,
+            transcript_merge_row,
             text="↓ Merge Down",
             command=self.merge_selected_transcript_segment_down,
             width=130,
@@ -3241,7 +3470,7 @@ class App(ctk.CTk):
         self.transcript_merge_down_button.pack(side="left", padx=(8, 0))
 
         self.transcript_clear_button = ctk.CTkButton(
-            transcript_edit_row,
+            transcript_merge_row,
             text="Clear",
             command=self.clear_transcript,
             width=70,
@@ -4223,7 +4452,26 @@ class App(ctk.CTk):
             self.url_status.configure(text="", text_color=COLORS["text_muted"])
             return
 
-        valid_count, invalid_count, status_msg = URLValidator.get_validation_summary(current_text)
+        intake = parse_source_url_intake(
+            current_text,
+            existing_rows=getattr(self, "source_resource_rows", ()),
+            archive_auto_check_enabled=getattr(
+                self,
+                "source_archive_auto_check_enabled",
+                True,
+            ),
+        )
+        valid_count = len(intake.rows)
+        invalid_count = len(intake.invalid_tokens)
+        if valid_count == 0 and invalid_count == 0:
+            status_msg = ""
+        elif valid_count == 0:
+            status_msg = "No supported source URLs detected"
+        elif invalid_count == 0:
+            suffix = "s" if valid_count != 1 else ""
+            status_msg = f"{valid_count} source URL{suffix} ready to add"
+        else:
+            status_msg = f"{valid_count} ready, {invalid_count} invalid/unsupported"
 
         if valid_count == 0:
             color = COLORS["warning"]
@@ -4233,6 +4481,485 @@ class App(ctk.CTk):
             color = COLORS["warning"]
 
         self.url_status.configure(text=status_msg, text_color=color)
+
+    def _on_source_url_shift_enter(self, _event: Any = None) -> str:
+        self.url_entry.insert("insert", "\n")
+        return "break"
+
+    def _on_source_url_enter(self, _event: Any = None) -> str:
+        current_text = self.url_entry.get("1.0", "end").strip()
+        if current_text == self._url_placeholder.strip() or not current_text:
+            return "break"
+        intake = parse_source_url_intake(
+            current_text,
+            existing_rows=getattr(self, "source_resource_rows", ()),
+            archive_auto_check_enabled=getattr(
+                self,
+                "source_archive_auto_check_enabled",
+                True,
+            ),
+        )
+        if intake.rows:
+            self.source_resource_rows.extend(intake.rows)
+            self._refresh_source_resource_rows()
+            self._refresh_discussion_source_controls()
+            self.log_message(
+                f"Added {len(intake.rows)} source row(s). Network actions performed: none.",
+                "success",
+            )
+        if intake.duplicate_raw_urls:
+            self.log_message(
+                f"Ignored {len(intake.duplicate_raw_urls)} duplicate source URL(s).",
+                "muted",
+            )
+        self.url_entry.delete("1.0", "end")
+        if intake.remaining_text:
+            self.url_entry.insert("1.0", intake.remaining_text)
+            self.url_entry.configure(text_color=COLORS["text_primary"])
+        else:
+            self.url_entry.configure(text_color=COLORS["text_primary"])
+        if intake.invalid_tokens:
+            self.url_status.configure(
+                text=f"{len(intake.invalid_tokens)} invalid/unsupported token(s) retained",
+                text_color=COLORS["warning"],
+            )
+        elif intake.rows:
+            self.url_status.configure(
+                text=f"Added {len(intake.rows)} source URL(s)",
+                text_color=COLORS["success"],
+            )
+        else:
+            self.url_status.configure(text="", text_color=COLORS["text_muted"])
+        return "break"
+
+    def _archive_status_color(self, color_name: str) -> str:
+        return {
+            "green": COLORS["success"],
+            "red": COLORS["error"],
+            "amber": COLORS["warning"],
+            "gray": COLORS["accent_secondary"],
+        }.get(color_name, COLORS["accent_secondary"])
+
+    def _resource_count_text(
+        self,
+        label: str,
+        resources: Sequence[Any],
+    ) -> str:
+        return f"{label} ({len(resources)})" if resources else label
+
+    def _archive_status_label_text(self, archive_status: Any) -> str:
+        if archive_status.status == "available":
+            return archive_status.saved_date or "Date unavailable"
+        return archive_status.label
+
+    def _ensure_archivebox_icon(self) -> ctk.CTkImage | None:
+        if self.__dict__.get("_archivebox_icon") is not None:
+            return self._archivebox_icon
+        try:
+            if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+                asset_base_dir = sys._MEIPASS
+            else:
+                asset_base_dir = os.path.dirname(os.path.abspath(__file__))
+            icon_path = os.path.join(asset_base_dir, "assets", "ui", "archivebox_icon.png")
+            image = Image.open(icon_path).convert("RGBA")
+            self._archivebox_icon = ctk.CTkImage(
+                light_image=image,
+                dark_image=image,
+                size=(22, 22),
+            )
+        except Exception as error:
+            logger.warning("Could not load ArchiveBox icon: %s", error)
+            self._archivebox_icon = None
+        return self._archivebox_icon
+
+    @staticmethod
+    def _archive_service_button_text(service_id: str) -> str:
+        if service_id == "internet_archive_wayback":
+            return "Wayback"
+        if service_id == "archive_today":
+            return "archive.ph"
+        if service_id == ARCHIVE_SERVICE_ARCHIVEBOX:
+            return "AB"
+        return service_id
+
+    def _refresh_source_resource_rows(self) -> None:
+        frame = getattr(self, "source_rows_frame", None)
+        if frame is None:
+            return
+        for child in frame.winfo_children():
+            child.destroy()
+        rows = list(getattr(self, "source_resource_rows", ()))
+        if not rows:
+            empty = ctk.CTkLabel(
+                frame,
+                text="No source rows yet. Press Enter in Source URLs to add local source rows.",
+                font=ctk.CTkFont(size=11),
+                text_color=COLORS["text_muted"],
+                justify="left",
+                anchor="w",
+            )
+            empty.pack(fill="x", anchor="w", padx=10, pady=8)
+            return
+
+        archivebox_icon = self._ensure_archivebox_icon()
+        for row_index, row in enumerate(rows):
+            row_frame = ctk.CTkFrame(frame, fg_color="transparent")
+            row_frame.pack(fill="x", padx=8, pady=(8 if row_index == 0 else 4, 6))
+            row_frame.grid_columnconfigure(0, weight=1)
+
+            title_button = ctk.CTkButton(
+                row_frame,
+                text=row.title,
+                command=lambda row_id=row.row_id: self._show_source_row_details(row_id),
+                height=28,
+                anchor="w",
+                fg_color="transparent",
+                hover_color=COLORS["bg_card"],
+                text_color=COLORS["text_primary"],
+                font=ctk.CTkFont(size=12, weight="bold"),
+            )
+            title_button.grid(row=0, column=0, sticky="ew")
+            title_button.tooltip_text = row.canonical_url
+
+            detail = ctk.CTkLabel(
+                row_frame,
+                text=row.domain,
+                font=ctk.CTkFont(size=10),
+                text_color=COLORS["text_muted"],
+                anchor="w",
+            )
+            detail.grid(row=1, column=0, sticky="ew", padx=(2, 0))
+            detail.tooltip_text = row.canonical_url
+
+            actions = ctk.CTkFrame(row_frame, fg_color="transparent")
+            actions.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+            actions.grid_columnconfigure(0, weight=1)
+
+            images_button = ctk.CTkButton(
+                actions,
+                text="▧",
+                command=lambda row_id=row.row_id: self._open_source_resource_window(
+                    row_id, RESOURCE_KIND_IMAGE
+                ),
+                width=34,
+                height=28,
+                fg_color=COLORS["accent_secondary"],
+                hover_color=COLORS["border"],
+            )
+            images_button.tooltip_text = "Images and GIFs"
+            images_button.grid(row=0, column=1, padx=(0, 6), sticky="n")
+
+            media_button = ctk.CTkButton(
+                actions,
+                text="▶",
+                command=lambda row_id=row.row_id: self._open_source_resource_window(
+                    row_id, RESOURCE_KIND_VIDEO_AUDIO
+                ),
+                width=34,
+                height=28,
+                fg_color=COLORS["accent_secondary"],
+                hover_color=COLORS["border"],
+            )
+            media_button.tooltip_text = "Video and audio"
+            media_button.grid(row=0, column=2, padx=(0, 6), sticky="n")
+
+            next_action_column = 3
+            for archive_status in row.archive_statuses:
+                button_text = self._archive_service_button_text(archive_status.service_id)
+                button_kwargs: dict[str, Any] = {}
+                if archive_status.service_id == ARCHIVE_SERVICE_ARCHIVEBOX:
+                    button_kwargs["image"] = archivebox_icon
+                    button_kwargs["text"] = button_text if archivebox_icon is None else ""
+                    button_kwargs["width"] = 38
+                else:
+                    button_kwargs["text"] = button_text
+                    button_kwargs["width"] = 94
+                archive_button = ctk.CTkButton(
+                    actions,
+                    command=lambda status=archive_status: self._show_archive_status(status),
+                    height=28,
+                    fg_color=self._archive_status_color(archive_status.color_name),
+                    hover_color=COLORS["border"],
+                    text_color="#000000",
+                    **button_kwargs,
+                )
+                archive_button.grid(
+                    row=0,
+                    column=next_action_column,
+                    padx=(0, 6),
+                    sticky="n",
+                )
+                archive_button.tooltip_text = (
+                    "ArchiveBox"
+                    if archive_status.service_id == ARCHIVE_SERVICE_ARCHIVEBOX
+                    else archive_status.tooltip
+                )
+                if archive_status.service_id != ARCHIVE_SERVICE_ARCHIVEBOX:
+                    status_label = ctk.CTkLabel(
+                        actions,
+                        text=self._archive_status_label_text(archive_status),
+                        font=ctk.CTkFont(size=9),
+                        text_color=COLORS["text_primary"],
+                        justify="center",
+                    )
+                    status_label.grid(
+                        row=1,
+                        column=next_action_column,
+                        padx=(0, 6),
+                        pady=(1, 0),
+                        sticky="n",
+                    )
+                next_action_column += 1
+
+            remove_button = ctk.CTkButton(
+                actions,
+                text="×",
+                command=lambda row_id=row.row_id: self._remove_source_resource_row_clicked(row_id),
+                width=28,
+                height=28,
+                fg_color="transparent",
+                hover_color=COLORS["error"],
+                text_color=COLORS["text_secondary"],
+            )
+            remove_button.tooltip_text = "Remove source"
+            remove_button.grid(
+                row=0,
+                column=next_action_column,
+                padx=(0, 0),
+                sticky="n",
+            )
+
+        self._bind_main_blank_scroll_targets(frame)
+
+    def _source_row_by_id(self, row_id: str) -> SourceResourceRowState | None:
+        for row in self.__dict__.get("source_resource_rows", ()):
+            if row.row_id == row_id:
+                return row
+        return None
+
+    def _remove_source_resource_row_clicked(self, row_id: str) -> None:
+        rows, selected = remove_source_resource_row(
+            tuple(self.__dict__.get("source_resource_rows", ())),
+            row_id,
+            selected_row_id=self.__dict__.get("selected_discussion_source_id", ""),
+        )
+        self.source_resource_rows = list(rows)
+        self.selected_discussion_source_id = selected
+        self.source_resource_selections.pop(row_id, None)
+        self.source_screenshot_preferences.pop(row_id, None)
+        self._refresh_source_resource_rows()
+        self._refresh_discussion_source_controls()
+        self.log_message("Removed local source row. Network actions performed: none.", "muted")
+
+    def _show_source_row_details(self, row_id: str) -> None:
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            return
+        messagebox.showinfo(
+            "Source details",
+            "\n".join(
+                [
+                    row.title,
+                    f"Adapter: {row.adapter_display_name}",
+                    f"Canonical URL: {row.canonical_url}",
+                    f"Provenance: {row.provenance}",
+                    "Network actions performed: none",
+                ]
+            ),
+        )
+
+    def _show_archive_status(self, archive_status: Any) -> None:
+        if archive_status.service_id == ARCHIVE_SERVICE_ARCHIVEBOX:
+            details = [
+                "ArchiveBox local webpage archive scaffold",
+                "ArchiveBox execution performed: none",
+                "Files written: none",
+                "Network actions performed: none",
+            ]
+            messagebox.showinfo("ArchiveBox", "\n".join(details))
+            return
+
+        status_text = self._archive_status_label_text(archive_status)
+        details = [
+            f"{archive_status.service_id}: {status_text}",
+            "Archive checks performed: none",
+            "Archive submissions performed: none",
+        ]
+        messagebox.showinfo("Archive status", "\n".join(details))
+
+    def _open_source_resource_window(self, row_id: str, resource_kind: str) -> None:
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            return
+        state = resource_dialog_state_for_row(row, resource_kind)
+        window = ctk.CTkToplevel(self)
+        window.title("Images" if resource_kind == RESOURCE_KIND_IMAGE else "Video & Audio")
+        window.geometry("640x460")
+        window.transient(self)
+        window.grab_set()
+
+        header = ctk.CTkLabel(
+            window,
+            text=f"{row.title}\n{row.domain}",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS["text_primary"],
+            justify="left",
+        )
+        header.pack(anchor="w", padx=16, pady=(14, 8))
+        list_frame = ctk.CTkScrollableFrame(window, fg_color=COLORS["bg_input"])
+        list_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+        selected_ids: set[str] = set(state.selected_resource_ids)
+        vars_by_id: dict[str, Any] = {}
+        if not state.resources:
+            empty = ctk.CTkLabel(
+                list_frame,
+                text="No fixture resources are available for this source.",
+                text_color=COLORS["text_muted"],
+            )
+            empty.pack(anchor="w", padx=8, pady=8)
+        for item in state.resources:
+            item_var = ctk.BooleanVar(value=item.resource_id in selected_ids)
+            vars_by_id[item.resource_id] = item_var
+            row_text = f"{item.display_name} ({item.extension or item.media_type})"
+            if item.width and item.height:
+                row_text = f"{row_text} - {item.width}x{item.height}"
+            if item.duration_seconds:
+                row_text = f"{row_text} - {item.duration_seconds:g}s"
+            checkbox = ctk.CTkCheckBox(
+                list_frame,
+                text=row_text,
+                variable=item_var,
+                state="normal" if item.selectable else "disabled",
+                font=ctk.CTkFont(size=12),
+                text_color=COLORS["text_primary"],
+            )
+            checkbox.pack(anchor="w", padx=8, pady=5)
+        status_label = ctk.CTkLabel(
+            window,
+            text="0 selected",
+            text_color=COLORS["text_muted"],
+            font=ctk.CTkFont(size=11),
+        )
+        status_label.pack(anchor="w", padx=16)
+
+        def current_state() -> Any:
+            selected = tuple(
+                resource_id for resource_id, var in vars_by_id.items() if var.get()
+            )
+            return state.__class__(
+                source_row_id=state.source_row_id,
+                resource_kind=state.resource_kind,
+                resources=state.resources,
+                selected_resource_ids=selected,
+                committed_resource_ids=state.committed_resource_ids,
+            )
+
+        def refresh_count() -> None:
+            status_label.configure(text=f"{current_state().selection_count} selected")
+
+        def select_all() -> None:
+            selected_state = select_all_resources(state)
+            for resource_id, var in vars_by_id.items():
+                var.set(resource_id in selected_state.selected_resource_ids)
+            refresh_count()
+
+        def clear_all() -> None:
+            cleared_state = clear_resource_selection(state)
+            for resource_id, var in vars_by_id.items():
+                var.set(resource_id in cleared_state.selected_resource_ids)
+            refresh_count()
+
+        def download_dry_run() -> None:
+            selected_state = current_state()
+            dry_run = build_resource_download_dry_run(selected_state)
+            self.source_resource_selections[row.row_id] = selected_state.selected_resource_ids
+            messagebox.showinfo("Download dry run", dry_run.message)
+            self.log_message(
+                f"Dry-run resource download plan: {dry_run.selected_count} selected; downloads performed: none.",
+                "muted",
+            )
+
+        button_row = ctk.CTkFrame(window, fg_color="transparent")
+        button_row.pack(fill="x", padx=16, pady=(8, 14))
+        ctk.CTkButton(button_row, text="All", width=80, command=select_all).pack(side="left")
+        ctk.CTkButton(button_row, text="Clear all", width=90, command=clear_all).pack(side="left", padx=(8, 0))
+        ctk.CTkButton(button_row, text="Cancel", width=90, command=window.destroy).pack(side="right")
+        ctk.CTkButton(button_row, text="Download", width=105, command=download_dry_run).pack(side="right", padx=(0, 8))
+        refresh_count()
+
+    def _on_discussion_source_selected(self, selected_label: str) -> None:
+        self._store_current_source_screenshot_preferences()
+        mapping = self.__dict__.get("_discussion_source_label_to_id", {})
+        self.selected_discussion_source_id = mapping.get(selected_label, "")
+        self._load_source_screenshot_preferences(self.selected_discussion_source_id)
+        self._refresh_discussion_source_controls()
+
+    def _on_discussion_mode_changed(self) -> None:
+        self._store_current_source_screenshot_preferences()
+        self._refresh_discussion_source_controls()
+
+    def _store_current_source_screenshot_preferences(self) -> None:
+        row_id = self.__dict__.get("selected_discussion_source_id", "")
+        if not row_id:
+            return
+        self.source_screenshot_preferences[row_id] = {
+            "webpage": bool(self.extract_webpage_var.get()),
+            "webpage_screenshot": bool(self.webpage_screenshot_var.get()),
+            "comments_screenshot": bool(self.comments_screenshot_var.get()),
+            "livechat_screenshot": bool(self.livechat_screenshot_var.get()),
+        }
+
+    def _load_source_screenshot_preferences(self, row_id: str) -> None:
+        prefs = self.source_screenshot_preferences.get(row_id, {})
+        self.extract_webpage_var.set(bool(prefs.get("webpage", False)))
+        self.webpage_screenshot_var.set(bool(prefs.get("webpage_screenshot", False)))
+        self.comments_screenshot_var.set(bool(prefs.get("comments_screenshot", False)))
+        self.livechat_screenshot_var.set(bool(prefs.get("livechat_screenshot", False)))
+
+    def _refresh_discussion_source_controls(self) -> None:
+        if not hasattr(self, "discussion_source_menu"):
+            return
+        rows = tuple(self.__dict__.get("source_resource_rows", ()))
+        previous_selected_row_id = self.__dict__.get("selected_discussion_source_id", "")
+        selection = build_discussion_selection_state(
+            rows,
+            previous_selected_row_id,
+        )
+        self.selected_discussion_source_id = selection.selected_row_id
+        if selection.selected_row_id != previous_selected_row_id:
+            self._load_source_screenshot_preferences(selection.selected_row_id)
+        label_by_id = dict(selection.options)
+        label_to_id = {label: row_id for row_id, label in selection.options}
+        self._discussion_source_label_to_id = label_to_id
+        values = list(label_to_id) or [""]
+        self.discussion_source_menu.configure(values=values)
+        selected_label = label_by_id.get(selection.selected_row_id, "")
+        self.discussion_source_var.set(selected_label)
+        has_source = bool(selection.selected_row_id)
+        self.discussion_source_menu.configure(state="normal" if has_source else "disabled")
+        self.fetch_button.configure(state="normal" if has_source else "disabled")
+        self.webpage_checkbox.configure(state="normal" if has_source else "disabled")
+        webpage_active = bool(self.extract_webpage_var.get()) and has_source
+        self.webpage_screenshot_checkbox.configure(
+            state="normal" if webpage_active else "disabled"
+        )
+        self.comments_checkbox.configure(
+            state="normal" if has_source and selection.comments_supported else "disabled"
+        )
+        self.live_chat_checkbox.configure(
+            state="normal" if has_source and selection.livechat_supported else "disabled"
+        )
+        comments_active = bool(self.extract_comments_var.get()) and selection.comments_supported
+        livechat_active = bool(self.extract_live_chat_var.get()) and selection.livechat_supported
+        self.comments_screenshot_checkbox.configure(
+            state="normal" if has_source and comments_active else "disabled"
+        )
+        self.livechat_screenshot_checkbox.configure(
+            state="normal" if has_source and livechat_active else "disabled"
+        )
+
+    def _selected_discussion_row(self) -> SourceResourceRowState | None:
+        return self._source_row_by_id(self.__dict__.get("selected_discussion_source_id", ""))
 
     # =========================================================================
     # WINDOW SIZE HELPERS
@@ -4389,6 +5116,11 @@ class App(ctk.CTk):
             self.access_keys_validation_states = dict(
                 getattr(settings, "access_keys_validation_states", {}) or {}
             )
+            self.source_archive_auto_check_enabled = bool(
+                getattr(settings, "source_archive_auto_check_enabled", True)
+            )
+            if self.__dict__.get("source_resource_rows"):
+                self._refresh_source_resource_rows()
 
         except Exception as e:
             logger.error(f"Failed to load settings: {e}")
@@ -4411,6 +5143,9 @@ class App(ctk.CTk):
                 access_keys_added_provider_ids=self._get_access_keys_added_provider_ids(),
                 access_keys_validation_states=dict(
                     getattr(self, "access_keys_validation_states", {}) or {}
+                ),
+                source_archive_auto_check_enabled=bool(
+                    self.__dict__.get("source_archive_auto_check_enabled", True)
                 ),
             )
             saved = self.settings_manager.save(settings)
@@ -4837,14 +5572,63 @@ class App(ctk.CTk):
         if self.fetch_state.is_fetching:
             return
 
-        # Get and validate inputs
-        api_key = self._resolve_youtube_api_key_for_action()
+        selected_discussion_row = self._selected_discussion_row()
+        extract_webpage = self.extract_webpage_var.get()
+        extract_comments = self.extract_comments_var.get()
+        extract_live_chat = self.extract_live_chat_var.get()
+        if not extract_webpage and not extract_comments and not extract_live_chat:
+            messagebox.showerror(
+                "Selection Required",
+                "Please tick Webpage, Comments, Livechat, or a combination before pressing Go."
+            )
+            return
 
-        current_text = self.url_entry.get("1.0", "end").strip()
-        if current_text == self._url_placeholder.strip():
-            current_text = ""
+        if selected_discussion_row is not None:
+            discussion = build_discussion_capture_options(
+                tuple(getattr(self, "source_resource_rows", ())),
+                selected_row_id=selected_discussion_row.row_id,
+                webpage_selected=extract_webpage,
+                comments_selected=extract_comments,
+                livechat_selected=extract_live_chat,
+                webpage_screenshot_requested=self.webpage_screenshot_var.get(),
+                comments_screenshot_requested=self.comments_screenshot_var.get(),
+                livechat_screenshot_requested=self.livechat_screenshot_var.get(),
+            )
+            if selected_discussion_row.adapter_id != "youtube" or (
+                discussion.webpage_active
+                and not discussion.comments_selected
+                and not discussion.livechat_selected
+            ):
+                active_modes = []
+                if discussion.webpage_active:
+                    active_modes.append("webpage")
+                if discussion.comments_selected and discussion.comments_supported:
+                    active_modes.append("comments")
+                if discussion.livechat_selected and discussion.livechat_supported:
+                    active_modes.append("livechat")
+                messagebox.showinfo(
+                    "Discussion action scaffold",
+                    "This local-only milestone does not fetch MSN comments/livechat.\n\n"
+                    f"Source: {selected_discussion_row.title}\n"
+                    f"Selected modes: {', '.join(active_modes) if active_modes else '(none)'}\n"
+                    "Network actions performed: none\n"
+                    "Screenshots performed: none",
+                )
+                self.log_message(
+                    "Discussion action scaffold only; no fetch, screenshot, archive, or download executed.",
+                    "muted",
+                )
+                return
+            current_text = selected_discussion_row.canonical_url
+        else:
+            current_text = self.url_entry.get("1.0", "end").strip()
+            if current_text == self._url_placeholder.strip():
+                current_text = ""
 
         valid_urls, _ = URLValidator.parse_url_list(current_text)
+
+        # Get and validate inputs
+        api_key = self._resolve_youtube_api_key_for_action()
 
         # Validate API key
         api_result = APIKeyValidator.validate(api_key)
@@ -4876,8 +5660,14 @@ class App(ctk.CTk):
 
         # Update UI state
         self.fetch_state.start()
-        self.fetch_button.pack_forget()
-        self.cancel_button.pack(side="left")
+        if hasattr(self.fetch_button, "grid_remove"):
+            self.fetch_button.grid_remove()
+        else:
+            self.fetch_button.pack_forget()
+        if hasattr(self.cancel_button, "grid"):
+            self.cancel_button.grid(row=2, column=0, sticky="w", pady=(6, 0))
+        else:
+            self.cancel_button.pack(side="left")
         self.export_button.configure(state="disabled")
         self.export_excel_button.configure(state="disabled")
         self.export_txt_button.configure(state="disabled")
@@ -4919,17 +5709,6 @@ class App(ctk.CTk):
             self.log_message(f"Filtering for words: {', '.join(filter_words)}", "muted")
         if max_comments:
             self.log_message(f"Max {max_comments} comments per video", "muted")
-
-        # Start fetch thread
-        extract_comments = self.extract_comments_var.get()
-        extract_live_chat = self.extract_live_chat_var.get()
-
-        if not extract_comments and not extract_live_chat:
-            messagebox.showerror(
-                "Selection Required",
-                "Please tick Comments, Livechat, or both before pressing Go."
-            )
-            return
 
         self._fetch_thread_ref = threading.Thread(
             target=self._fetch_thread,
@@ -5067,8 +5846,14 @@ class App(ctk.CTk):
     def _reset_fetch_ui(self) -> None:
         """Reset UI after fetch completes or is cancelled."""
         self.fetch_state.stop()
-        self.cancel_button.pack_forget()
-        self.fetch_button.pack(side="left")
+        if hasattr(self.cancel_button, "grid_remove"):
+            self.cancel_button.grid_remove()
+        else:
+            self.cancel_button.pack_forget()
+        if hasattr(self.fetch_button, "grid"):
+            self.fetch_button.grid(row=2, column=0, sticky="w", pady=(6, 0))
+        else:
+            self.fetch_button.pack(side="left")
 
     def _guard_export_allowed(
         self,
@@ -5552,7 +6337,7 @@ class App(ctk.CTk):
             result = check_for_updates(APP_VERSION)
 
             def show_result():
-                self.update_button.configure(state="normal", text="🔄 Updates")
+                self.update_button.configure(state="normal", text="UPDATES")
 
                 if not result.ok:
                     messagebox.showwarning(
@@ -7670,23 +8455,27 @@ class App(ctk.CTk):
             pass
 
     def _scroll_main_frame_with_mousewheel(self, event) -> str:
-        """Let mouse wheel scroll the main app even after sync controls are focused."""
+        """Scroll the main app at a normal Windows wheel speed."""
         try:
             canvas = self.main_frame._parent_canvas
         except Exception:
             return "break"
 
         delta = getattr(event, "delta", 0)
+        lines_per_notch = 5
 
         if delta:
-            units = -1 * int(delta / 120)
+            notches = int(delta / 120)
+            if notches:
+                units = -lines_per_notch * notches
+            else:
+                # Preserve high-resolution wheel/touchpad input without making
+                # a full Windows wheel notch crawl by only one line.
+                units = -1 if delta > 0 else 1
         else:
             # Linux/X11 fallback if ever used.
             button_number = getattr(event, "num", None)
-            units = -1 if button_number == 4 else 1
-
-        if units == 0:
-            units = -1 if delta > 0 else 1
+            units = -lines_per_notch if button_number == 4 else lines_per_notch
 
         try:
             canvas.yview_scroll(units, "units")
@@ -10572,7 +11361,7 @@ class App(ctk.CTk):
                 def reset_button() -> None:
                     self.transcript_youtube_button.configure(
                         state="normal",
-                        text="⬇ YouTube"
+                        text="Get"
                     )
 
                 self.after(0, reset_button)
