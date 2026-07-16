@@ -187,9 +187,26 @@ class EvidenceDatabasePreviewRequest:
 
 
 @dataclass(frozen=True)
+class EvidenceDatabasePreviewRow:
+    item_id: str
+    display_name: str = ""
+    classification_value: EvidenceClassificationValue = EvidenceClassificationValue.UNKNOWN
+    database_root_id: str = ""
+    taxonomy_version_id: str = ""
+    placement_proposal_count: int = 0
+    reclassification_proposal_count: int = 0
+    user_confirmation_required: bool = True
+    warnings: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceDatabasePreviewResult:
     request_id: str
     grouped_record_ids: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    rows: tuple[EvidenceDatabasePreviewRow, ...] = ()
     record_count: int = 0
     supplied_records_only: bool = True
     broad_scan_performed: bool = False
@@ -427,7 +444,60 @@ def build_empty_preview_result(
     return EvidenceDatabasePreviewResult(
         request_id=request.stable_request_id,
         grouped_record_ids={value.value: () for value in EvidenceClassificationValue},
+        rows=(),
         record_count=0,
+        supplied_records_only=True,
+        broad_scan_performed=False,
+        file_operation_performed=False,
+        warnings=warnings,
+    )
+
+
+def build_preview_result_from_records(
+    request: EvidenceDatabasePreviewRequest,
+    records: tuple[EvidenceIndexRecord, ...],
+    *,
+    warnings: tuple[str, ...] = (),
+) -> EvidenceDatabasePreviewResult:
+    allowed_ids = set(request.record_ids)
+    include_values = set(request.include_classification_values)
+    rows: list[EvidenceDatabasePreviewRow] = []
+    grouped: dict[str, list[str]] = {value.value: [] for value in EvidenceClassificationValue}
+    for record in records:
+        item_id = preview_record_id(record)
+        if allowed_ids and item_id not in allowed_ids:
+            continue
+        classification_value = record.classification_state.classification_value
+        if classification_value.value not in include_values:
+            continue
+        grouped.setdefault(classification_value.value, []).append(item_id)
+        row_warnings: list[str] = []
+        if record.classification_state.sensitive_dimensions_present:
+            row_warnings.append("sensitive_dimensions_require_review")
+        if record.classification_state.user_confirmation_required:
+            row_warnings.append("user_confirmation_required")
+        rows.append(
+            EvidenceDatabasePreviewRow(
+                item_id=item_id,
+                display_name=record.identity.display_name,
+                classification_value=classification_value,
+                database_root_id=record.database_root_id,
+                taxonomy_version_id=record.taxonomy_version_id,
+                placement_proposal_count=len(record.placement_proposals),
+                reclassification_proposal_count=len(record.reclassification_proposals),
+                user_confirmation_required=record.classification_state.user_confirmation_required,
+                warnings=tuple(row_warnings),
+            )
+        )
+    grouped_record_ids = {
+        key: tuple(sorted(value))
+        for key, value in sorted(grouped.items())
+    }
+    return EvidenceDatabasePreviewResult(
+        request_id=request.stable_request_id,
+        grouped_record_ids=grouped_record_ids,
+        rows=tuple(sorted(rows, key=lambda row: (row.classification_value.value, row.item_id))),
+        record_count=len(rows),
         supplied_records_only=True,
         broad_scan_performed=False,
         file_operation_performed=False,

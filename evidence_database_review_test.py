@@ -5,7 +5,10 @@ from evidence_database_index import (
     CLASSIFICATION_SUPERSEDED,
     CLASSIFICATION_UNKNOWN,
     CLASSIFICATION_USER_CONFIRMED,
+    EvidenceClassificationState,
     EvidenceClassificationValue,
+    EvidenceIndexRecord,
+    build_placement_proposal,
     build_evidence_item_identity,
 )
 from evidence_database_review import (
@@ -20,6 +23,7 @@ from evidence_database_review import (
     EvidenceDatabaseApplyResult,
     EvidenceDatabasePreviewRequest,
     EvidenceDatabasePreviewResult,
+    EvidenceDatabasePreviewRow,
     EvidenceDatabaseRootRegistrationResult,
     EvidenceDatabaseReviewDecision,
     EvidenceDatabaseReviewDecisionType,
@@ -28,6 +32,7 @@ from evidence_database_review import (
     build_dry_run_apply_result,
     build_empty_preview_result,
     build_non_executing_apply_plan,
+    build_preview_result_from_records,
     build_review_session,
     review_stable_json_dumps,
     review_database_root_registration,
@@ -116,6 +121,77 @@ def run_self_test() -> None:
         "unknown": 0,
         "user_confirmed": 0,
     }
+
+    preview_records = []
+    for value in EvidenceClassificationValue:
+        record_identity = build_evidence_item_identity(
+            display_name=f"{value.value} item",
+            source_url=f"https://example.test/{value.value}",
+        )
+        placement = build_placement_proposal(
+            item_id=record_identity.item_id,
+            database_root_id="root_1",
+            current_path=f"old/{value.value}",
+            proposed_path=f"new/{value.value}",
+        )
+        preview_records.append(
+            EvidenceIndexRecord(
+                identity=record_identity,
+                database_root_id="root_1",
+                taxonomy_version_id="taxonomy_user_v1",
+                classification_state=EvidenceClassificationState(
+                    classification_value=value,
+                    user_confirmation_required=(value is not EvidenceClassificationValue.USER_CONFIRMED),
+                    sensitive_dimensions_present=(
+                        ("religion_identity_status",)
+                        if value is EvidenceClassificationValue.UNKNOWN
+                        else ()
+                    ),
+                ),
+                placement_proposals=(placement,),
+            )
+        )
+    grouped_preview = build_preview_result_from_records(
+        EvidenceDatabasePreviewRequest(
+            session_id=session.session_id,
+            root_id="root_1",
+        ),
+        tuple(preview_records),
+    )
+    assert grouped_preview.record_count == 6
+    assert grouped_preview.supplied_records_only is True
+    assert grouped_preview.broad_scan_performed is False
+    assert grouped_preview.file_operation_performed is False
+    assert all(isinstance(row, EvidenceDatabasePreviewRow) for row in grouped_preview.rows)
+    assert grouped_preview.to_dict()["group_counts"] == {
+        "not_evidenced": 1,
+        "proposed": 1,
+        "rejected": 1,
+        "superseded": 1,
+        "unknown": 1,
+        "user_confirmed": 1,
+    }
+    unknown_row = [
+        row
+        for row in grouped_preview.rows
+        if row.classification_value is EvidenceClassificationValue.UNKNOWN
+    ][0]
+    assert unknown_row.placement_proposal_count == 1
+    assert "sensitive_dimensions_require_review" in unknown_row.warnings
+    assert "user_confirmation_required" in unknown_row.warnings
+
+    selected_preview = build_preview_result_from_records(
+        EvidenceDatabasePreviewRequest(
+            session_id=session.session_id,
+            root_id="root_1",
+            record_ids=(preview_records[2].identity.item_id,),
+        ),
+        tuple(preview_records),
+    )
+    assert selected_preview.record_count == 1
+    assert selected_preview.rows[0].item_id == preview_records[2].identity.item_id
+    assert sum(len(ids) for ids in selected_preview.grouped_record_ids.values()) == 1
+    assert selected_preview.broad_scan_performed is False
 
     identity = build_evidence_item_identity(
         display_name="Example",
