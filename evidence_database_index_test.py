@@ -8,6 +8,7 @@ from evidence_database_index import (
     EvidenceClassificationState,
     EvidenceClassificationValue,
     EvidenceDatabaseRoot,
+    EvidenceHierarchyRecognitionResult,
     EvidenceIndexManifest,
     EvidenceIndexRecord,
     EvidenceItemIdentity,
@@ -25,6 +26,7 @@ from evidence_database_index import (
     evidence_index_manifest_with_hash,
     evidence_index_payload_sha256,
     read_evidence_index_file,
+    recognize_variable_hierarchy,
     stable_evidence_id,
     stable_json_dumps,
     write_evidence_index_file_atomic,
@@ -422,6 +424,82 @@ def run_self_test() -> None:
         "sensitive_classification_requires_explicit_evidence_or_user_confirmation",
     )
     assert unsafe_dry_run.no_files_moved is True
+
+    hierarchy_basis = build_evidence_basis(
+        item_id=identity.item_id,
+        basis_type="local_fixture_path",
+        evidence_text="Old Topic/Direct/June 2026/MSN/example.txt",
+        confidence="local_fixture_only",
+    )
+    renamed_hierarchy = recognize_variable_hierarchy(
+        identity=identity,
+        database_root_id=root.root_id,
+        source_path=r"Old Topic\Direct\June 2026\MSN\example.txt",
+        expected_dimension_order=("topic", "directness", "month", "source_outlet"),
+        known_dimension_values={
+            "topic": ("Corrected Topic",),
+            "directness": ("Direct", "Indirect"),
+            "source_outlet": ("MSN", "Telegraph"),
+        },
+        rename_suggestions={"Old Topic": "Corrected Topic"},
+        basis=hierarchy_basis,
+    )
+    assert isinstance(renamed_hierarchy, EvidenceHierarchyRecognitionResult)
+    assert renamed_hierarchy.normalized_path == "Old Topic/Direct/June 2026/MSN/example.txt"
+    assert renamed_hierarchy.recognized_dimensions["topic"] == "Corrected Topic"
+    assert renamed_hierarchy.renamed_parts == {"Old Topic": "Corrected Topic"}
+    assert renamed_hierarchy.unknown_parts == ("example.txt",)
+    assert renamed_hierarchy.proposed_path == "Corrected Topic/Direct/June 2026/MSN/example.txt"
+    assert renamed_hierarchy.path_record is not None
+    assert renamed_hierarchy.path_record.file_operation_performed is False
+    assert renamed_hierarchy.placement_proposal is not None
+    assert renamed_hierarchy.placement_proposal.file_operation_performed is False
+    assert renamed_hierarchy.reclassification_proposal is not None
+    assert renamed_hierarchy.reclassification_proposal.old_new_path_history_preserved is True
+    assert renamed_hierarchy.no_files_moved is True
+    assert "renamed_folder:Old Topic->Corrected Topic" in renamed_hierarchy.warnings
+    assert "extra_path_parts_present" in renamed_hierarchy.warnings
+
+    nested_hierarchy = recognize_variable_hierarchy(
+        identity=identity,
+        database_root_id=root.root_id,
+        source_path="Corrected Topic/Indirect/June 2026/Telegraph/nested/source.txt",
+        expected_dimension_order=("topic", "directness", "month", "source_outlet"),
+        known_dimension_values={
+            "topic": ("Corrected Topic",),
+            "directness": ("Direct", "Indirect"),
+            "source_outlet": ("MSN", "Telegraph"),
+        },
+    )
+    assert nested_hierarchy.recognized_dimensions["directness"] == "Indirect"
+    assert nested_hierarchy.unknown_parts == ("nested", "source.txt")
+    assert nested_hierarchy.proposed_path.endswith("Telegraph/nested/source.txt")
+
+    missing_hierarchy = recognize_variable_hierarchy(
+        identity=identity,
+        database_root_id=root.root_id,
+        source_path="Corrected Topic/Direct",
+        expected_dimension_order=("topic", "directness", "month", "source_outlet"),
+    )
+    assert missing_hierarchy.missing_dimensions == ("month", "source_outlet")
+    assert "missing_dimension:month" in missing_hierarchy.warnings
+    assert missing_hierarchy.file_operation_performed is False
+
+    unknown_hierarchy = recognize_variable_hierarchy(
+        identity=identity,
+        database_root_id=root.root_id,
+        source_path="Unexpected Topic/Direct/June 2026/Unknown Outlet",
+        expected_dimension_order=("topic", "directness", "month", "source_outlet"),
+        known_dimension_values={
+            "topic": ("Corrected Topic",),
+            "directness": ("Direct", "Indirect"),
+            "source_outlet": ("MSN", "Telegraph"),
+        },
+    )
+    assert unknown_hierarchy.unknown_parts == ("Unexpected Topic", "Unknown Outlet")
+    assert "unknown_value:topic:Unexpected Topic" in unknown_hierarchy.warnings
+    assert "unknown_value:source_outlet:Unknown Outlet" in unknown_hierarchy.warnings
+    assert unknown_hierarchy.to_dict()["no_files_moved"] is True
 
 
 if __name__ == "__main__":

@@ -321,6 +321,28 @@ class EvidenceDryRunProposalResult:
         return _value_for_dict(self)
 
 
+@dataclass(frozen=True)
+class EvidenceHierarchyRecognitionResult:
+    source_path: str
+    normalized_path: str
+    path_parts: tuple[str, ...] = ()
+    expected_dimension_order: tuple[str, ...] = ()
+    recognized_dimensions: dict[str, str] = field(default_factory=dict)
+    missing_dimensions: tuple[str, ...] = ()
+    unknown_parts: tuple[str, ...] = ()
+    renamed_parts: dict[str, str] = field(default_factory=dict)
+    proposed_path: str = ""
+    path_record: EvidencePathRecord | None = None
+    placement_proposal: EvidencePlacementProposal | None = None
+    reclassification_proposal: EvidenceReclassificationProposal | None = None
+    warnings: tuple[str, ...] = ()
+    file_operation_performed: bool = False
+    no_files_moved: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
 def evidence_index_payload_sha256(manifest: EvidenceIndexManifest) -> str:
     return hashlib.sha256(stable_json_dumps(manifest.payload_dict()).encode("utf-8")).hexdigest()
 
@@ -951,4 +973,137 @@ def build_dry_run_proposal_result(
         no_files_moved=True,
         user_confirmation_required=True,
         warnings=tuple(warnings),
+    )
+
+
+def _normalize_fixture_path(value: str) -> str:
+    return _clean(value).replace("\\", "/").strip("/")
+
+
+def _split_fixture_path(value: str) -> tuple[str, ...]:
+    normalized = _normalize_fixture_path(value)
+    return tuple(part for part in normalized.split("/") if part)
+
+
+def _normalized_value_map(values: dict[str, str]) -> dict[str, str]:
+    return {
+        _clean(key).casefold(): _clean(value)
+        for key, value in values.items()
+        if _clean(key) and _clean(value)
+    }
+
+
+def recognize_variable_hierarchy(
+    *,
+    identity: EvidenceItemIdentity,
+    database_root_id: str,
+    source_path: str,
+    expected_dimension_order: tuple[str, ...],
+    known_dimension_values: dict[str, tuple[str, ...]] | None = None,
+    rename_suggestions: dict[str, str] | None = None,
+    basis: EvidenceBasis | None = None,
+    reason: str = "variable hierarchy dry-run recognition",
+    confidence: str = "local_fixture_only",
+) -> EvidenceHierarchyRecognitionResult:
+    """Recognize supplied fixture path parts without scanning or moving files."""
+
+    parts = _split_fixture_path(source_path)
+    expected = tuple(_clean(item) for item in expected_dimension_order if _clean(item))
+    known_values = known_dimension_values or {}
+    rename_map = _normalized_value_map(rename_suggestions or {})
+    recognized: dict[str, str] = {}
+    missing: list[str] = []
+    unknown_parts: list[str] = []
+    renamed: dict[str, str] = {}
+    proposed_parts: list[str] = []
+    warnings: list[str] = []
+
+    for index, dimension in enumerate(expected):
+        if index >= len(parts):
+            missing.append(dimension)
+            warnings.append(f"missing_dimension:{dimension}")
+            continue
+        raw_part = parts[index]
+        normalized_part = rename_map.get(raw_part.casefold(), raw_part)
+        if normalized_part != raw_part:
+            renamed[raw_part] = normalized_part
+            warnings.append(f"renamed_folder:{raw_part}->{normalized_part}")
+        allowed = known_values.get(dimension)
+        if allowed:
+            allowed_lookup = {_clean(value).casefold(): _clean(value) for value in allowed}
+            canonical = allowed_lookup.get(normalized_part.casefold())
+            if canonical:
+                normalized_part = canonical
+            else:
+                unknown_parts.append(raw_part)
+                warnings.append(f"unknown_value:{dimension}:{raw_part}")
+        recognized[dimension] = normalized_part
+        proposed_parts.append(normalized_part)
+
+    extra_parts = parts[len(expected) :]
+    if extra_parts:
+        unknown_parts.extend(extra_parts)
+        warnings.append("extra_path_parts_present")
+        proposed_parts.extend(extra_parts)
+
+    proposed_path = "/".join(proposed_parts)
+    normalized_path = "/".join(parts)
+    evidence_basis = basis or build_evidence_basis(
+        item_id=identity.item_id,
+        basis_type="local_fixture_path",
+        evidence_text=normalized_path,
+        confidence=confidence,
+    )
+    path_record = EvidencePathRecord(
+        path_record_id=stable_evidence_id("path", identity.item_id, normalized_path, proposed_path),
+        item_id=identity.item_id,
+        current_path=normalized_path,
+        proposed_path=proposed_path,
+        path_role="hierarchy_proposal",
+        history_note="Variable hierarchy dry-run recognition; no file operation performed.",
+        file_operation_performed=False,
+    )
+    placement = build_placement_proposal(
+        item_id=identity.item_id,
+        database_root_id=database_root_id,
+        current_path=normalized_path,
+        proposed_path=proposed_path,
+        basis_ids=(evidence_basis.basis_id,),
+        reason=reason,
+        confidence=confidence,
+    )
+    previous_classification = EvidenceClassificationState(
+        classification_value=EvidenceClassificationValue.UNKNOWN,
+        notes="Existing hierarchy observed from supplied fixture path only.",
+    )
+    proposed_classification = build_classification_state(
+        classification_value=EvidenceClassificationValue.PROPOSED,
+        dimensions=recognized,
+        notes="Dry-run hierarchy proposal; user confirmation required.",
+    )
+    reclassification = build_reclassification_proposal(
+        item_id=identity.item_id,
+        previous_path=normalized_path,
+        proposed_path=proposed_path,
+        previous_classification=previous_classification,
+        proposed_classification=proposed_classification,
+        basis_ids=(evidence_basis.basis_id,),
+        reason=reason,
+    )
+    return EvidenceHierarchyRecognitionResult(
+        source_path=source_path,
+        normalized_path=normalized_path,
+        path_parts=parts,
+        expected_dimension_order=expected,
+        recognized_dimensions=recognized,
+        missing_dimensions=tuple(missing),
+        unknown_parts=tuple(unknown_parts),
+        renamed_parts=renamed,
+        proposed_path=proposed_path,
+        path_record=path_record,
+        placement_proposal=placement,
+        reclassification_proposal=reclassification,
+        warnings=tuple(warnings),
+        file_operation_performed=False,
+        no_files_moved=True,
     )
