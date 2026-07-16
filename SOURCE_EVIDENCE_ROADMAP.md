@@ -544,7 +544,15 @@ Possible future actions:
 - Preserve original manifests and evidence files.
 - Write reclassification notes and history.
 
-This database taxonomy is planning-only. It does not add folder scanning, file movement, reclassification, or storage behavior in the current app.
+Current implementation status:
+
+- MODEL_ONLY / LOCAL_FIXTURE_TESTED: `evidence_database_taxonomy.py` and `evidence_database_index.py` now provide local-only contracts for database roots, taxonomy versions, stable item IDs, path history, classification states, evidence basis, dry-run placement/reclassification proposals, index records, and index manifests.
+- LOCAL_FIXTURE_TESTED: the evidence index store writes atomic JSON with temp-file plus replace semantics for a selected temp/test root, validates deterministic payload hashes, and supports append/update records. Tests use temporary directories only.
+- USER_CONFIRMATION_REQUIRED: placement, classification, hierarchy-recognition, and reclassification helpers are dry-run proposal builders. They record basis/reason/confidence and preserve old/new path history, but never move files or apply a reclassification.
+- MODEL_ONLY: variable hierarchy recognition handles supplied fixture path strings for renamed, nested, missing, and unknown folder parts. It does not scan a real database root.
+- MODEL_ONLY: converters can create evidence index records from existing evidence queue items, source-resource rows, and Total Export manifests without mutating those source objects or validating files on disk.
+- UI_SCAFFOLD_ONLY: no database UI/controller surface has been added because the current app has no clean review hook for this layer yet.
+- Not implemented: broad folder scanning, real user-folder indexing, automatic classification, sensitive-attribute inference, file movement, live capture/download/archive/provider behavior, and evidence database migration.
 
 ## KEYS / Access & Keys Manager
 
