@@ -1107,3 +1107,185 @@ def recognize_variable_hierarchy(
         file_operation_performed=False,
         no_files_moved=True,
     )
+
+
+def _enum_or_string(value: Any) -> str:
+    if isinstance(value, Enum):
+        return value.value
+    return _clean(value)
+
+
+def evidence_index_record_from_queue_item(
+    queue_item: Any,
+    *,
+    database_root_id: str = "",
+    taxonomy_version_id: str = "",
+) -> EvidenceIndexRecord:
+    queue_item_id = _clean(getattr(queue_item, "item_id", ""))
+    display_name = _clean(getattr(queue_item, "display_name", "")) or queue_item_id
+    source_url = _clean(getattr(queue_item, "source_url", ""))
+    local_path = _normalize_fixture_path(getattr(queue_item, "local_path", ""))
+    role = _enum_or_string(getattr(queue_item, "item_role", ""))
+    status = _enum_or_string(getattr(queue_item, "item_status", ""))
+    identity = build_evidence_item_identity(
+        display_name=display_name,
+        source_url=source_url,
+        local_path_hint=local_path,
+        queue_item_id=queue_item_id,
+        item_id=queue_item_id,
+    )
+    basis = build_evidence_basis(
+        item_id=identity.item_id,
+        basis_type="evidence_item_queue",
+        source_url=source_url,
+        evidence_text=display_name,
+        user_note=_clean(getattr(queue_item, "user_notes", "")),
+        confidence="existing_queue_metadata",
+    )
+    path_records: list[EvidencePathRecord] = []
+    if local_path:
+        path_records.append(
+            EvidencePathRecord(
+                path_record_id=stable_evidence_id("path", identity.item_id, local_path),
+                item_id=identity.item_id,
+                current_path=local_path,
+                path_role="queue_local_path",
+                history_note="Existing queue local path captured without scanning or moving.",
+                file_operation_performed=False,
+            )
+        )
+    classification = build_classification_state(
+        classification_value=EvidenceClassificationValue.PROPOSED,
+        dimensions={
+            "queue_item_role": role,
+            "queue_item_status": status,
+            "media_type": _clean(getattr(queue_item, "media_type", "")),
+            "mime_type": _clean(getattr(queue_item, "mime_type", "")),
+        },
+        source_evidenced=True,
+        notes="Derived from existing evidence queue metadata; user review still required.",
+    )
+    return EvidenceIndexRecord(
+        identity=identity,
+        database_root_id=database_root_id,
+        taxonomy_version_id=taxonomy_version_id,
+        path_records=tuple(path_records),
+        classification_state=classification,
+        evidence_basis=(basis,),
+    )
+
+
+def evidence_index_record_from_source_resource_row(
+    row: Any,
+    *,
+    database_root_id: str = "",
+    taxonomy_version_id: str = "",
+) -> EvidenceIndexRecord:
+    row_id = _clean(getattr(row, "row_id", ""))
+    canonical_url = _clean(getattr(row, "canonical_url", ""))
+    raw_url = _clean(getattr(row, "raw_url", ""))
+    title = _clean(getattr(row, "title", "")) or canonical_url or raw_url or row_id
+    identity = build_evidence_item_identity(
+        display_name=title,
+        source_url=canonical_url or raw_url,
+        source_row_id=row_id,
+        item_id=row_id,
+    )
+    resource_counts = {
+        "image_resource_count": str(len(getattr(row, "image_resources", ()) or ())),
+        "video_audio_resource_count": str(len(getattr(row, "video_audio_resources", ()) or ())),
+    }
+    basis = build_evidence_basis(
+        item_id=identity.item_id,
+        basis_type="source_resource_row",
+        source_url=identity.source_url,
+        evidence_text=title,
+        confidence="existing_source_resource_metadata",
+    )
+    classification = build_classification_state(
+        classification_value=EvidenceClassificationValue.PROPOSED,
+        dimensions={
+            "adapter_id": _clean(getattr(row, "adapter_id", "")),
+            "adapter_display_name": _clean(getattr(row, "adapter_display_name", "")),
+            "domain": _clean(getattr(row, "domain", "")),
+            **resource_counts,
+        },
+        source_evidenced=True,
+        notes="Derived from existing source-resource row metadata; no resource download performed.",
+    )
+    return EvidenceIndexRecord(
+        identity=identity,
+        database_root_id=database_root_id,
+        taxonomy_version_id=taxonomy_version_id,
+        classification_state=classification,
+        evidence_basis=(basis,),
+    )
+
+
+def evidence_index_record_from_total_export_manifest(
+    manifest: Any,
+    *,
+    manifest_path: str = "",
+    database_root_id: str = "",
+    taxonomy_version_id: str = "",
+) -> EvidenceIndexRecord:
+    package_id = _clean(getattr(manifest, "package_id", ""))
+    output_folder = _normalize_fixture_path(getattr(manifest, "output_folder", ""))
+    normalized_manifest_path = _normalize_fixture_path(manifest_path)
+    identity = build_evidence_item_identity(
+        display_name=package_id or "Total Export package",
+        local_path_hint=output_folder,
+        export_package_id=package_id,
+        manifest_path=normalized_manifest_path,
+    )
+    assets = tuple(getattr(manifest, "assets", ()) or ())
+    basis = build_evidence_basis(
+        item_id=identity.item_id,
+        basis_type="total_export_manifest",
+        source_url="; ".join(_tuple_str(getattr(manifest, "source_urls", ()))),
+        evidence_text=package_id,
+        confidence="existing_manifest_metadata",
+    )
+    path_records: list[EvidencePathRecord] = []
+    if normalized_manifest_path:
+        path_records.append(
+            EvidencePathRecord(
+                path_record_id=stable_evidence_id("path", identity.item_id, normalized_manifest_path),
+                item_id=identity.item_id,
+                current_path=normalized_manifest_path,
+                path_role="manifest_path",
+                history_note="Existing manifest path captured without package mutation.",
+                file_operation_performed=False,
+            )
+        )
+    for asset in assets:
+        asset_path = _normalize_fixture_path(getattr(asset, "path", ""))
+        if asset_path:
+            path_records.append(
+                EvidencePathRecord(
+                    path_record_id=stable_evidence_id("path", identity.item_id, asset_path),
+                    item_id=identity.item_id,
+                    current_path=asset_path,
+                    path_role=f"manifest_asset:{_clean(getattr(asset, 'asset_type', ''))}",
+                    history_note="Registered manifest asset path captured without file validation or movement.",
+                    file_operation_performed=False,
+                )
+            )
+    classification = build_classification_state(
+        classification_value=EvidenceClassificationValue.PROPOSED,
+        dimensions={
+            "total_export_package_id": package_id,
+            "asset_count": str(len(assets)),
+            "capture_option_count": str(len(getattr(manifest, "capture_options", ()) or ())),
+        },
+        source_evidenced=True,
+        notes="Derived from existing Total Export manifest metadata; no package files changed.",
+    )
+    return EvidenceIndexRecord(
+        identity=identity,
+        database_root_id=database_root_id,
+        taxonomy_version_id=taxonomy_version_id,
+        path_records=tuple(path_records),
+        classification_state=classification,
+        evidence_basis=(basis,),
+    )

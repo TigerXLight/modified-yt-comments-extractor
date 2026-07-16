@@ -25,15 +25,21 @@ from evidence_database_index import (
     build_reclassification_proposal,
     evidence_index_manifest_with_hash,
     evidence_index_payload_sha256,
+    evidence_index_record_from_queue_item,
+    evidence_index_record_from_source_resource_row,
+    evidence_index_record_from_total_export_manifest,
     read_evidence_index_file,
     recognize_variable_hierarchy,
     stable_evidence_id,
     stable_json_dumps,
     write_evidence_index_file_atomic,
 )
+from evidence_item_queue import EvidenceItemRole, EvidenceItemStatus, EvidenceQueueItem
 from evidence_schema import PrimarySourceStatus, SourceRole
 from pathlib import Path
+from source_resource_state import build_source_resource_row
 from tempfile import TemporaryDirectory
+from total_export_manifest import ExportAsset, TotalExportManifest
 
 
 def _assert_timestamp(value: str) -> None:
@@ -500,6 +506,75 @@ def run_self_test() -> None:
     assert "unknown_value:topic:Unexpected Topic" in unknown_hierarchy.warnings
     assert "unknown_value:source_outlet:Unknown Outlet" in unknown_hierarchy.warnings
     assert unknown_hierarchy.to_dict()["no_files_moved"] is True
+
+    queue_item = EvidenceQueueItem(
+        item_id="queue_media_1",
+        item_role=EvidenceItemRole.LOCAL_MEDIA,
+        display_name="short.mp4",
+        source_url="https://example.test/source",
+        local_path=r"T:\fixture\short.mp4",
+        media_type="video",
+        mime_type="video/mp4",
+        file_hash="abc123",
+        item_status=EvidenceItemStatus.READY,
+        user_notes="fixture note",
+    )
+    queue_record = evidence_index_record_from_queue_item(
+        queue_item,
+        database_root_id=root.root_id,
+        taxonomy_version_id=taxonomy.taxonomy_version_id,
+    )
+    assert queue_record.identity.item_id == "queue_media_1"
+    assert queue_record.identity.queue_item_id == "queue_media_1"
+    assert queue_record.path_records[0].current_path == "T:/fixture/short.mp4"
+    assert queue_record.path_records[0].file_operation_performed is False
+    assert queue_record.classification_state.dimensions["queue_item_role"] == "LOCAL_MEDIA"
+    assert queue_record.classification_state.dimensions["queue_item_status"] == "READY"
+    assert queue_record.evidence_basis[0].basis_type == "evidence_item_queue"
+
+    source_row = build_source_resource_row(
+        raw_url="https://www.msn.com/en-us/news/example?ocid=tracking",
+        title="Fixture MSN Story",
+    )
+    source_record = evidence_index_record_from_source_resource_row(
+        source_row,
+        database_root_id=root.root_id,
+        taxonomy_version_id=taxonomy.taxonomy_version_id,
+    )
+    assert source_record.identity.source_row_id == source_row.row_id
+    assert source_record.identity.source_url == source_row.canonical_url
+    assert source_record.classification_state.dimensions["adapter_id"] == "msn"
+    assert source_record.classification_state.dimensions["domain"] == "www.msn.com"
+    assert source_record.evidence_basis[0].basis_type == "source_resource_row"
+
+    manifest = TotalExportManifest(
+        package_id="fixture_package",
+        source_urls=["https://example.test/source"],
+        output_folder=r"T:\package\fixture_package",
+        capture_options=["comments"],
+        assets=[
+            ExportAsset(asset_type="text_export", path=r"metadata\TOTAL_EXPORT_SUMMARY.txt"),
+            ExportAsset(asset_type="media", path="media/source.mp4"),
+        ],
+    )
+    manifest_record = evidence_index_record_from_total_export_manifest(
+        manifest,
+        manifest_path=r"T:\package\fixture_package\fixture_manifest.json",
+        database_root_id=root.root_id,
+        taxonomy_version_id=taxonomy.taxonomy_version_id,
+    )
+    assert manifest_record.identity.export_package_id == "fixture_package"
+    assert manifest_record.identity.local_path_hint == "T:/package/fixture_package"
+    assert manifest_record.identity.manifest_path.endswith("fixture_manifest.json")
+    assert [item.current_path for item in manifest_record.path_records] == [
+        "T:/package/fixture_package/fixture_manifest.json",
+        "metadata/TOTAL_EXPORT_SUMMARY.txt",
+        "media/source.mp4",
+    ]
+    assert all(item.file_operation_performed is False for item in manifest_record.path_records)
+    assert manifest_record.classification_state.dimensions["asset_count"] == "2"
+    assert manifest_record.classification_state.dimensions["capture_option_count"] == "1"
+    assert manifest_record.evidence_basis[0].basis_type == "total_export_manifest"
 
 
 if __name__ == "__main__":
