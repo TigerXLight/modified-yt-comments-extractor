@@ -98,26 +98,61 @@ CAPTURE_FIXTURES: tuple[CaptureFixture, ...] = (
         expected="threaded comments",
         body=_html(
             "Comments Static Fixture",
-            "<section id=\"comments\"><article data-comment-id=\"c1\">First comment</article><article data-comment-id=\"c2\">Reply comment</article></section>",
+            """
+            <section id="comments">
+              <article data-comment-id="c1" data-thread-id="t1" data-author="Alice"
+                data-posted-at="2026-07-16T10:00:00Z" data-reactions="3"
+                data-reply-count="1" data-permalink="/comments/c1" data-source-order="1">
+                First comment
+              </article>
+              <article data-comment-id="c2" data-thread-id="t1" data-author="Bob"
+                data-parent-id="c1" data-depth="1" data-posted-at="2026-07-16T10:01:00Z"
+                data-permalink="/comments/c2" data-source-order="2">
+                Reply comment
+              </article>
+            </section>
+            """,
         ),
     ),
     CaptureFixture(
         fixture_id="comments_load_more",
         route="/comments/load-more",
         expected="load-more loop",
-        body=_html("Load More Comments Fixture", "<button>Load more</button><section id=\"comments\"></section>"),
+        body=_html(
+            "Load More Comments Fixture",
+            """
+            <section id="comments">
+              <article data-comment-id="lm1" data-loaded-order="1">Loaded first page</article>
+            </section>
+            <button id="load-more" data-load-more="true">Load more</button>
+            """,
+        ),
     ),
     CaptureFixture(
         fixture_id="comments_cursor",
         route="/comments/cursor",
         expected="cursor exhaustion",
-        body=_html("Cursor Comments Fixture", "<script type=\"application/json\" id=\"cursor-state\">{\"cursor\":\"end\"}</script>"),
+        body=_html(
+            "Cursor Comments Fixture",
+            """
+            <article data-comment-id="cur1" data-loaded-order="2">Cursor page comment</article>
+            <script type="application/json" id="cursor-state">{"cursor":"end","stop_reason":"cursor_exhausted"}</script>
+            """,
+        ),
     ),
     CaptureFixture(
         fixture_id="comments_infinite",
         route="/comments/infinite",
         expected="no-new-ID stop",
-        body=_html("Infinite Comments Fixture", "<section id=\"infinite-comments\" data-stop=\"no-new-id\"></section>"),
+        body=_html(
+            "Infinite Comments Fixture",
+            """
+            <section id="infinite-comments" data-stop="no-new-id">
+              <article data-comment-id="inf1" data-loaded-order="3">Infinite first</article>
+              <article data-comment-id="inf2" data-loaded-order="4">Infinite second</article>
+            </section>
+            """,
+        ),
     ),
     CaptureFixture(
         fixture_id="comments_iframe",
@@ -129,31 +164,92 @@ CAPTURE_FIXTURES: tuple[CaptureFixture, ...] = (
         fixture_id="comments_shadow_open",
         route="/comments/shadow-open",
         expected="open root",
-        body=_html("Open Shadow Fixture", "<div id=\"shadow-host\" data-shadow=\"open\">Open shadow host</div>"),
+        body=_html(
+            "Open Shadow Fixture",
+            "<div id=\"shadow-host\" data-shadow=\"open\"><article data-comment-id=\"sh-open-1\">Open shadow comment</article></div>",
+        ),
     ),
     CaptureFixture(
         fixture_id="comments_shadow_closed",
         route="/comments/shadow-closed",
         expected="early hook/extension fallback",
-        body=_html("Closed Shadow Fixture", "<div id=\"shadow-host\" data-shadow=\"closed\">Closed shadow host</div>"),
+        body=_html(
+            "Closed Shadow Fixture",
+            """
+            <div id="shadow-host" data-shadow="closed">Closed shadow host</div>
+            <script type="application/json" id="closed-shadow-comments">{"comments":[{"id":"sh-closed-1","text":"Closed shadow payload comment","capture_method":"adapter_scoped_payload"}]}</script>
+            """,
+        ),
     ),
     CaptureFixture(
         fixture_id="comments_virtualized",
         route="/comments/virtualized",
         expected="recycled DOM incremental persistence",
-        body=_html("Virtualized Comments Fixture", "<section data-virtualized=\"true\"><article data-comment-id=\"visible-1\">Visible recycled row</article></section>"),
+        body=_html(
+            "Virtualized Comments Fixture",
+            """
+            <section data-virtualized="true">
+              <article data-comment-id="visible-1" data-loaded-order="1">Visible recycled row</article>
+              <article data-comment-id="visible-1" data-loaded-order="2">Visible recycled duplicate</article>
+              <article data-comment-id="visible-2" data-loaded-order="3">Second persisted row</article>
+            </section>
+            """,
+        ),
     ),
     CaptureFixture(
         fixture_id="comments_disappearing",
         route="/comments/disappearing",
         expected="tombstones/first-last seen",
-        body=_html("Disappearing Comments Fixture", "<section data-disappearing=\"true\"></section>"),
+        body=_html(
+            "Disappearing Comments Fixture",
+            """
+            <section data-disappearing="true">
+              <article data-comment-id="gone-1" data-state="deleted">Comment deleted by author</article>
+            </section>
+            """,
+        ),
     ),
     CaptureFixture(
         fixture_id="comments_encoded",
         route="/comments/encoded",
         expected="page-decoded structured state",
-        body=_html("Encoded Comments Fixture", "<script type=\"application/json\" id=\"encoded-comments\">{\"comments\":[\"encoded\"]}</script>"),
+        body=_html(
+            "Encoded Comments Fixture",
+            """
+            <script type="application/json" id="encoded-comments">{"comments":[{"id":"encoded-1","author":"Encoded User","text":"Encoded decoded comment","permalink":"/comments/encoded-1"}]}</script>
+            """,
+        ),
+    ),
+    CaptureFixture(
+        fixture_id="comments_scroll_container",
+        route="/comments/scroll-container",
+        expected="nested scrollable container",
+        body=_html(
+            "Nested Container Comments Fixture",
+            """
+            <div id="comments-scroll-container" data-scroll-container="true">
+              <article data-comment-id="nested-1">Nested container comment</article>
+            </div>
+            """,
+        ),
+    ),
+    CaptureFixture(
+        fixture_id="comments_login_required",
+        route="/comments/login-required",
+        expected="login required detected without bypass",
+        body=_html(
+            "Login Required Comments Fixture",
+            "<main data-login-required=\"true\"><h1>Sign in to view comments</h1></main>",
+        ),
+    ),
+    CaptureFixture(
+        fixture_id="comments_challenge",
+        route="/comments/challenge",
+        expected="challenge detected without bypass",
+        body=_html(
+            "Challenge Comments Fixture",
+            "<main data-challenge-required=\"true\"><h1>Challenge required</h1></main>",
+        ),
     ),
     CaptureFixture(
         fixture_id="challenge",
@@ -165,13 +261,28 @@ CAPTURE_FIXTURES: tuple[CaptureFixture, ...] = (
         fixture_id="livechat_dom",
         route="/livechat/dom",
         expected="bounded DOM mutation stream",
-        body=_html("Livechat DOM Fixture", "<section id=\"livechat\"><p data-event-id=\"m1\">Hello chat</p></section>"),
+        body=_html(
+            "Livechat DOM Fixture",
+            """
+            <section id="livechat" data-duration-limit-seconds="120" data-message-limit="100">
+              <p data-event-id="m1" data-author="Alice" data-timestamp="00:01" data-service-timestamp="1.0">Hello chat</p>
+              <p data-event-id="m2" data-author="Bob" data-timestamp="00:02" data-event-type="reconnect">Reconnected</p>
+              <p data-event-id="m3" data-author="Mod" data-event-type="removed" data-removed="true">Removed message</p>
+            </section>
+            """,
+        ),
     ),
     CaptureFixture(
         fixture_id="livechat_websocket",
         route="/livechat/websocket",
         expected="bounded WebSocket stream",
         body=_html("Livechat WebSocket Fixture", "<script>window.fixtureWebSocketRoute='/ws/livechat';</script>"),
+    ),
+    CaptureFixture(
+        fixture_id="livechat_iframe",
+        route="/livechat/iframe",
+        expected="frame-hosted bounded livechat",
+        body=_html("Livechat Iframe Fixture", "<iframe src=\"/livechat/dom\" title=\"livechat\"></iframe>"),
     ),
     CaptureFixture(
         fixture_id="media_playback",

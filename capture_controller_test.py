@@ -7,8 +7,12 @@ from capture_contracts import ARTIFACT_TYPE_ACTION_LOG
 from capture_contracts import (
     ARTIFACT_TYPE_ACCESSIBILITY_TREE,
     ARTIFACT_TYPE_ARTICLE_TEXT,
+    ARTIFACT_TYPE_COMMENTS_JSONL,
+    ARTIFACT_TYPE_COMMENTS_TEXT,
     ARTIFACT_TYPE_DOM_SNAPSHOT,
     ARTIFACT_TYPE_FINAL_DOM,
+    ARTIFACT_TYPE_LIVECHAT_JSONL,
+    ARTIFACT_TYPE_LIVECHAT_TEXT,
     ARTIFACT_TYPE_MHTML,
     ARTIFACT_TYPE_PAGE_OUTLINE,
     ARTIFACT_TYPE_RAW_HTML,
@@ -50,6 +54,8 @@ def test_operational_capture_plan_records_modes_without_execution() -> None:
         ARTIFACT_TYPE_ACCESSIBILITY_TREE,
         ARTIFACT_TYPE_ARTICLE_TEXT,
         ARTIFACT_TYPE_PAGE_OUTLINE,
+        ARTIFACT_TYPE_COMMENTS_JSONL,
+        ARTIFACT_TYPE_COMMENTS_TEXT,
         ARTIFACT_TYPE_SCREENSHOT,
         ARTIFACT_TYPE_SCREENSHOT,
     ]
@@ -58,6 +64,33 @@ def test_operational_capture_plan_records_modes_without_execution() -> None:
     assert result.action_log_artifact.metadata["network_actions_performed"] == "none"
     assert "no fetch" in result.scope
     assert "api_key" not in repr(result.to_dict())
+
+
+def test_operational_capture_plan_declares_livechat_artifacts_without_execution() -> None:
+    row = build_source_resource_row("https://www.youtube.com/watch?v=aB3_dE-9xYz")
+    discussion = build_discussion_capture_options(
+        (row,),
+        selected_row_id=row.row_id,
+        webpage_selected=False,
+        comments_selected=False,
+        comments_screenshot_requested=False,
+        livechat_selected=True,
+        livechat_screenshot_requested=True,
+    )
+
+    result = build_operational_capture_plan(row=row, discussion=discussion)
+    artifact_types = [artifact.artifact_type for artifact in result.declared_artifacts]
+
+    assert result.selected_modes == ("livechat",)
+    assert artifact_types == [
+        ARTIFACT_TYPE_LIVECHAT_JSONL,
+        ARTIFACT_TYPE_LIVECHAT_TEXT,
+        ARTIFACT_TYPE_SCREENSHOT,
+    ]
+    assert result.declared_artifacts[0].metadata["text_events_primary"] is True
+    assert result.declared_artifacts[0].metadata["screenshot_frames_complete_chat_capture"] is False
+    assert result.declared_artifacts[-1].metadata["screenshot_intent"] == "livechat"
+    assert result.action_events[1].request_summary["artifact_types"] == tuple(artifact_types)
 
 
 def test_operational_capture_plan_message_is_user_facing_and_local_only() -> None:
@@ -113,6 +146,7 @@ def test_operational_capture_plan_action_log_artifact_is_deterministic_and_sanit
 
 def run_self_test() -> None:
     test_operational_capture_plan_records_modes_without_execution()
+    test_operational_capture_plan_declares_livechat_artifacts_without_execution()
     test_operational_capture_plan_message_is_user_facing_and_local_only()
     test_operational_capture_plan_action_log_artifact_is_deterministic_and_sanitized()
 

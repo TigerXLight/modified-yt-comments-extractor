@@ -10,8 +10,12 @@ from capture_contracts import (
     ARTIFACT_TYPE_ACCESSIBILITY_TREE,
     ARTIFACT_TYPE_ACTION_LOG,
     ARTIFACT_TYPE_ARTICLE_TEXT,
+    ARTIFACT_TYPE_COMMENTS_JSONL,
+    ARTIFACT_TYPE_COMMENTS_TEXT,
     ARTIFACT_TYPE_DOM_SNAPSHOT,
     ARTIFACT_TYPE_FINAL_DOM,
+    ARTIFACT_TYPE_LIVECHAT_JSONL,
+    ARTIFACT_TYPE_LIVECHAT_TEXT,
     ARTIFACT_TYPE_MHTML,
     ARTIFACT_TYPE_PAGE_OUTLINE,
     ARTIFACT_TYPE_RAW_HTML,
@@ -162,6 +166,63 @@ def _planned_capture_artifacts(
                     capture_method="planned_visible_page_outline",
                     relative_path="page/outline.json",
                     timestamp_utc=timestamp_utc,
+                ),
+            )
+        )
+    if "comments" in selected_modes:
+        artifacts.extend(
+            (
+                _planned_artifact(
+                    row=row,
+                    artifact_type=ARTIFACT_TYPE_COMMENTS_JSONL,
+                    capture_method="planned_comments_structured_jsonl",
+                    relative_path="comments/comments.jsonl",
+                    timestamp_utc=timestamp_utc,
+                    metadata={
+                        "dedupe_required": True,
+                        "nested_replies_supported": True,
+                        "text_output_must_not_mix_with_article": True,
+                    },
+                ),
+                _planned_artifact(
+                    row=row,
+                    artifact_type=ARTIFACT_TYPE_COMMENTS_TEXT,
+                    capture_method="planned_comments_review_text",
+                    relative_path="comments/comments.txt",
+                    timestamp_utc=timestamp_utc,
+                    metadata={
+                        "human_review_output": True,
+                        "text_output_must_not_mix_with_article": True,
+                    },
+                ),
+            )
+        )
+    if "livechat" in selected_modes:
+        artifacts.extend(
+            (
+                _planned_artifact(
+                    row=row,
+                    artifact_type=ARTIFACT_TYPE_LIVECHAT_JSONL,
+                    capture_method="planned_livechat_events_jsonl",
+                    relative_path="livechat/livechat.jsonl",
+                    timestamp_utc=timestamp_utc,
+                    metadata={
+                        "bounded_capture_metadata_required": True,
+                        "dedupe_required": True,
+                        "screenshot_frames_complete_chat_capture": False,
+                        "text_events_primary": True,
+                    },
+                ),
+                _planned_artifact(
+                    row=row,
+                    artifact_type=ARTIFACT_TYPE_LIVECHAT_TEXT,
+                    capture_method="planned_livechat_review_text",
+                    relative_path="livechat/livechat.txt",
+                    timestamp_utc=timestamp_utc,
+                    metadata={
+                        "human_review_output": True,
+                        "screenshot_frames_complete_chat_capture": False,
+                    },
                 ),
             )
         )

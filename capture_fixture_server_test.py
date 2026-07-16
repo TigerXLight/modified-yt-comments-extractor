@@ -20,8 +20,18 @@ def test_fixture_catalog_contains_required_rev4_routes() -> None:
 
     for fixture_id in (
         "article_static",
+        "comments_challenge",
+        "comments_cursor",
+        "comments_iframe",
+        "comments_load_more",
+        "comments_login_required",
+        "comments_scroll_container",
+        "comments_shadow_closed",
+        "comments_shadow_open",
         "comments_virtualized",
         "comments_encoded",
+        "livechat_dom",
+        "livechat_iframe",
         "livechat_websocket",
         "media_playback",
         "archive_status",
