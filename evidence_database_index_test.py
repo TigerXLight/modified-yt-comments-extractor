@@ -15,13 +15,18 @@ from evidence_database_index import (
     EvidencePlacementProposal,
     EvidenceReclassificationProposal,
     EvidenceTaxonomyVersion,
+    append_or_update_evidence_index_record,
     build_evidence_item_identity,
     evidence_index_manifest_with_hash,
     evidence_index_payload_sha256,
+    read_evidence_index_file,
     stable_evidence_id,
     stable_json_dumps,
+    write_evidence_index_file_atomic,
 )
 from evidence_schema import PrimarySourceStatus, SourceRole
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 def _assert_timestamp(value: str) -> None:
@@ -208,6 +213,77 @@ def run_self_test() -> None:
     assert "selenium" not in rendered
     assert "scan(" not in rendered
     assert "move(" not in rendered
+
+    with TemporaryDirectory() as temp_dir:
+        index_path = Path(temp_dir) / "evidence_index.json"
+        missing = read_evidence_index_file(str(index_path))
+        assert missing.status == "missing"
+        assert missing.ok is False
+        assert missing.errors == ("index_file_missing",)
+
+        write_result = write_evidence_index_file_atomic(manifest, str(index_path))
+        assert write_result.ok is True
+        assert write_result.status == "ok"
+        assert write_result.payload_sha256 == manifest_hash
+        assert index_path.is_file()
+        assert not index_path.with_name(".evidence_index.json.tmp").exists()
+
+        loaded = read_evidence_index_file(str(index_path))
+        assert loaded.ok is True
+        assert loaded.manifest is not None
+        assert loaded.manifest.manifest_id == manifest.manifest_id
+        assert loaded.manifest.payload_sha256 == manifest_hash
+        assert loaded.manifest.records[0].identity.item_id == identity.item_id
+        assert loaded.to_dict()["ok"] is True
+        assert "manifest" not in loaded.to_dict()
+
+        second_identity = build_evidence_item_identity(
+            display_name="Second Article",
+            source_url="https://example.test/second",
+        )
+        second_record = EvidenceIndexRecord(identity=second_identity)
+        appended = append_or_update_evidence_index_record(manifest, second_record)
+        assert [item.identity.item_id for item in appended.records] == [
+            identity.item_id,
+            second_identity.item_id,
+        ]
+        updated_record = EvidenceIndexRecord(
+            identity=identity,
+            classification_state=EvidenceClassificationState(
+                classification_value=EvidenceClassificationValue.USER_CONFIRMED,
+                dimensions={"source_outlet": "Example Outlet"},
+                user_confirmed=True,
+                source_evidenced=True,
+                user_confirmation_required=False,
+            ),
+        )
+        updated = append_or_update_evidence_index_record(appended, updated_record)
+        assert len(updated.records) == 2
+        assert updated.records[0].classification_state.classification_value == (
+            EvidenceClassificationValue.USER_CONFIRMED
+        )
+
+        bad_path = Path(temp_dir) / "bad.json"
+        bad_path.write_text("{not-json", encoding="utf-8")
+        bad = read_evidence_index_file(str(bad_path))
+        assert bad.status == "invalid"
+        assert bad.errors[0].startswith("index_read_failed:")
+
+        before_failure = index_path.read_text(encoding="utf-8")
+
+        def failing_replace(_src: str, _dst: str) -> None:
+            raise OSError("simulated replace failure")
+
+        failed_write = write_evidence_index_file_atomic(
+            updated,
+            str(index_path),
+            replace_func=failing_replace,
+        )
+        assert failed_write.status == "write_failed"
+        assert failed_write.ok is False
+        assert failed_write.errors == ("index_write_failed:OSError",)
+        assert index_path.read_text(encoding="utf-8") == before_failure
+        assert not index_path.with_name(".evidence_index.json.tmp").exists()
 
 
 if __name__ == "__main__":
