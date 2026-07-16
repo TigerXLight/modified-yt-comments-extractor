@@ -13,6 +13,7 @@ from evidence_database_index import (
     CLASSIFICATION_UNKNOWN,
     CLASSIFICATION_USER_CONFIRMED,
     EvidenceClassificationValue,
+    EvidenceDatabaseRoot,
     EvidenceIndexRecord,
     stable_evidence_id,
 )
@@ -35,6 +36,10 @@ DECISION_REQUEST_RECLASSIFICATION = "request_reclassification"
 
 APPLY_RESULT_STATUS_DRY_RUN = "dry_run_not_executed"
 APPLY_RESULT_STATUS_REJECTED = "rejected"
+
+ROOT_REGISTRATION_STATUS_READY = "ready"
+ROOT_REGISTRATION_STATUS_MISSING_ROOT = "missing_root"
+ROOT_REGISTRATION_STATUS_DUPLICATE_ROOT = "duplicate_root"
 
 
 class _StringEnum(str, Enum):
@@ -100,6 +105,32 @@ class EvidenceDatabaseRootRegistrationDraft:
             self.label,
             self.taxonomy_version_id,
         )
+
+
+@dataclass(frozen=True)
+class EvidenceDatabaseRootRegistrationResult:
+    status: str
+    draft_id: str = ""
+    root: EvidenceDatabaseRoot | None = None
+    root_id: str = ""
+    duplicate_root_id: str = ""
+    root_exists: bool = False
+    broad_scan_allowed: bool = False
+    broad_scan_performed: bool = False
+    file_operation_performed: bool = False
+    warnings: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
+    created_at_utc: str = field(default_factory=utc_now_iso)
+    scope: str = EVIDENCE_DATABASE_REVIEW_SCOPE
+
+    @property
+    def ok(self) -> bool:
+        return self.status == ROOT_REGISTRATION_STATUS_READY
+
+    def to_dict(self) -> dict[str, Any]:
+        data = _value_for_dict(self)
+        data["ok"] = self.ok
+        return data
 
 
 @dataclass(frozen=True)
@@ -279,6 +310,112 @@ def build_review_session(
         selected_root_id=selected_root_id,
         taxonomy_version_id=taxonomy_version_id,
         registered_root_ids=registered_root_ids,
+    )
+
+
+def _normalize_root_path(value: str) -> str:
+    return _clean(value).replace("\\", "/").rstrip("/")
+
+
+def _root_id_for_path(value: str) -> str:
+    return stable_evidence_id("root", _normalize_root_path(value).casefold())
+
+
+def review_database_root_registration(
+    draft: EvidenceDatabaseRootRegistrationDraft,
+    *,
+    existing_roots: tuple[EvidenceDatabaseRoot, ...] = (),
+    path_exists_func: Any | None = None,
+) -> EvidenceDatabaseRootRegistrationResult:
+    normalized_path = _normalize_root_path(draft.root_path)
+    root_id = _root_id_for_path(normalized_path)
+    warnings = list(draft.warnings)
+    if draft.broad_scan_allowed:
+        warnings.append("broad_scan_disabled_for_review_controller")
+
+    existing_by_path = {
+        _normalize_root_path(root.root_path).casefold(): root
+        for root in existing_roots
+    }
+    existing_by_id = {root.root_id: root for root in existing_roots}
+    duplicate = existing_by_path.get(normalized_path.casefold()) or existing_by_id.get(root_id)
+    if duplicate is not None:
+        return EvidenceDatabaseRootRegistrationResult(
+            status=ROOT_REGISTRATION_STATUS_DUPLICATE_ROOT,
+            draft_id=draft.stable_draft_id,
+            root_id=root_id,
+            duplicate_root_id=duplicate.root_id,
+            root_exists=True,
+            broad_scan_allowed=False,
+            warnings=tuple(warnings),
+            errors=("duplicate_database_root",),
+        )
+
+    exists_checker = path_exists_func
+    if exists_checker is None:
+        from pathlib import Path
+
+        exists_checker = lambda path: Path(path).is_dir()
+    root_exists = bool(exists_checker(draft.root_path))
+    if not root_exists:
+        return EvidenceDatabaseRootRegistrationResult(
+            status=ROOT_REGISTRATION_STATUS_MISSING_ROOT,
+            draft_id=draft.stable_draft_id,
+            root_id=root_id,
+            root_exists=False,
+            broad_scan_allowed=False,
+            warnings=tuple(warnings),
+            errors=("database_root_missing_or_not_directory",),
+        )
+
+    root = EvidenceDatabaseRoot(
+        root_id=root_id,
+        root_path=normalized_path,
+        label=draft.label,
+        taxonomy_version_id=draft.taxonomy_version_id,
+        dry_run_required=True,
+        moves_require_explicit_approval=True,
+        broad_scan_allowed=False,
+        notes="Registered through review controller metadata only; no scan performed.",
+    )
+    return EvidenceDatabaseRootRegistrationResult(
+        status=ROOT_REGISTRATION_STATUS_READY,
+        draft_id=draft.stable_draft_id,
+        root=root,
+        root_id=root.root_id,
+        root_exists=True,
+        broad_scan_allowed=False,
+        broad_scan_performed=False,
+        file_operation_performed=False,
+        warnings=tuple(warnings),
+    )
+
+
+def review_session_with_registered_root(
+    session: EvidenceDatabaseReviewSession,
+    registration: EvidenceDatabaseRootRegistrationResult,
+) -> EvidenceDatabaseReviewSession:
+    if not registration.ok or not registration.root_id:
+        return session
+    existing = tuple(item for item in session.registered_root_ids if item)
+    if registration.root_id in existing:
+        registered = existing
+    else:
+        registered = existing + (registration.root_id,)
+    return EvidenceDatabaseReviewSession(
+        session_id=session.session_id,
+        selected_root_id=registration.root_id,
+        taxonomy_version_id=(
+            registration.root.taxonomy_version_id if registration.root else session.taxonomy_version_id
+        ),
+        registered_root_ids=registered,
+        review_mode=session.review_mode,
+        dry_run_only=True,
+        user_confirmation_required=True,
+        destructive_actions_enabled=False,
+        broad_scan_allowed=False,
+        created_at_utc=session.created_at_utc,
+        scope=session.scope,
     )
 
 

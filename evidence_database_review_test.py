@@ -13,10 +13,14 @@ from evidence_database_review import (
     DECISION_ACCEPT_PROPOSAL,
     DECISION_MARK_NOT_EVIDENCED,
     EVIDENCE_DATABASE_REVIEW_SCOPE,
+    ROOT_REGISTRATION_STATUS_DUPLICATE_ROOT,
+    ROOT_REGISTRATION_STATUS_MISSING_ROOT,
+    ROOT_REGISTRATION_STATUS_READY,
     EvidenceDatabaseApplyPlan,
     EvidenceDatabaseApplyResult,
     EvidenceDatabasePreviewRequest,
     EvidenceDatabasePreviewResult,
+    EvidenceDatabaseRootRegistrationResult,
     EvidenceDatabaseReviewDecision,
     EvidenceDatabaseReviewDecisionType,
     EvidenceDatabaseReviewSession,
@@ -26,7 +30,11 @@ from evidence_database_review import (
     build_non_executing_apply_plan,
     build_review_session,
     review_stable_json_dumps,
+    review_database_root_registration,
+    review_session_with_registered_root,
 )
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 def _assert_timestamp(value: str) -> None:
@@ -181,6 +189,62 @@ def run_self_test() -> None:
     assert "selenium" not in rendered
     assert "scan(" not in rendered
     assert "move(" not in rendered
+
+    with TemporaryDirectory() as temp_dir:
+        root_dir = Path(temp_dir) / "Evidence Root"
+        root_dir.mkdir()
+        valid_draft = EvidenceDatabaseRootRegistrationDraft(
+            root_path=str(root_dir),
+            label="Review root",
+            taxonomy_version_id="taxonomy_user_v1",
+            broad_scan_allowed=True,
+        )
+        registration = review_database_root_registration(valid_draft)
+        assert isinstance(registration, EvidenceDatabaseRootRegistrationResult)
+        assert registration.status == ROOT_REGISTRATION_STATUS_READY
+        assert registration.ok is True
+        assert registration.root is not None
+        assert registration.root.root_path.endswith("Evidence Root")
+        assert registration.root.dry_run_required is True
+        assert registration.root.moves_require_explicit_approval is True
+        assert registration.root.broad_scan_allowed is False
+        assert registration.broad_scan_allowed is False
+        assert registration.broad_scan_performed is False
+        assert registration.file_operation_performed is False
+        assert registration.warnings == ("broad_scan_disabled_for_review_controller",)
+        assert registration.to_dict()["ok"] is True
+
+        updated_session = review_session_with_registered_root(session, registration)
+        assert updated_session.selected_root_id == registration.root_id
+        assert updated_session.registered_root_ids == ("root_1", registration.root_id)
+        assert updated_session.broad_scan_allowed is False
+        assert updated_session.destructive_actions_enabled is False
+
+        duplicate = review_database_root_registration(
+            EvidenceDatabaseRootRegistrationDraft(
+                root_path=str(root_dir).replace("\\", "/"),
+                label="Duplicate",
+            ),
+            existing_roots=(registration.root,),
+        )
+        assert duplicate.status == ROOT_REGISTRATION_STATUS_DUPLICATE_ROOT
+        assert duplicate.ok is False
+        assert duplicate.duplicate_root_id == registration.root_id
+        assert duplicate.errors == ("duplicate_database_root",)
+        assert duplicate.broad_scan_performed is False
+
+        missing = review_database_root_registration(
+            EvidenceDatabaseRootRegistrationDraft(
+                root_path=str(Path(temp_dir) / "missing"),
+                label="Missing",
+            )
+        )
+        assert missing.status == ROOT_REGISTRATION_STATUS_MISSING_ROOT
+        assert missing.ok is False
+        assert missing.root is None
+        assert missing.errors == ("database_root_missing_or_not_directory",)
+        assert missing.broad_scan_performed is False
+        assert list(root_dir.iterdir()) == []
 
 
 if __name__ == "__main__":
