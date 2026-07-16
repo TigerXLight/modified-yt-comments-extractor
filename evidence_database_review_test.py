@@ -9,6 +9,7 @@ from evidence_database_index import (
     EvidenceClassificationValue,
     EvidenceIndexRecord,
     build_placement_proposal,
+    build_reclassification_proposal,
     build_evidence_item_identity,
 )
 from evidence_database_review import (
@@ -20,6 +21,7 @@ from evidence_database_review import (
     ROOT_REGISTRATION_STATUS_MISSING_ROOT,
     ROOT_REGISTRATION_STATUS_READY,
     EvidenceDatabaseApplyPlan,
+    EvidenceDatabaseApplyPlanEntry,
     EvidenceDatabaseApplyResult,
     EvidenceDatabasePreviewRequest,
     EvidenceDatabasePreviewResult,
@@ -31,12 +33,14 @@ from evidence_database_review import (
     EvidenceDatabaseRootRegistrationDraft,
     build_dry_run_apply_result,
     build_empty_preview_result,
+    build_apply_plan_from_decisions,
     build_non_executing_apply_plan,
     build_preview_result_from_records,
     build_review_session,
     review_stable_json_dumps,
     review_database_root_registration,
     review_session_with_registered_root,
+    record_review_decision,
 )
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -244,6 +248,102 @@ def run_self_test() -> None:
     assert result.warnings == (
         "dry_run_only_no_changes_executed",
         "file_movement_not_implemented",
+    )
+
+    reclass_record_identity = build_evidence_item_identity(
+        display_name="Reclass item",
+        source_url="https://example.test/reclass",
+    )
+    reclass_proposal = build_reclassification_proposal(
+        item_id=reclass_record_identity.item_id,
+        previous_path="old/topic/item",
+        proposed_path="new/topic/item",
+        previous_classification=EvidenceClassificationState(
+            classification_value=EvidenceClassificationValue.UNKNOWN,
+        ),
+        proposed_classification=EvidenceClassificationState(
+            classification_value=EvidenceClassificationValue.PROPOSED,
+        ),
+        reason="review-only proposal",
+    )
+    reclass_record = EvidenceIndexRecord(
+        identity=reclass_record_identity,
+        classification_state=EvidenceClassificationState(
+            classification_value=EvidenceClassificationValue.UNKNOWN,
+        ),
+        reclassification_proposals=(reclass_proposal,),
+    )
+    accept_decision = record_review_decision(
+        decision_type=EvidenceDatabaseReviewDecisionType.ACCEPT_PROPOSAL,
+        item_id=reclass_record_identity.item_id,
+        proposal_id=reclass_proposal.proposal_id,
+        target_classification_value=EvidenceClassificationValue.PROPOSED,
+        note="accept in review",
+        user_confirmed=True,
+    )
+    reject_decision = record_review_decision(
+        decision_type=EvidenceDatabaseReviewDecisionType.REJECT_PROPOSAL,
+        item_id=reclass_record_identity.item_id,
+        proposal_id=reclass_proposal.proposal_id,
+        note="reject alternate",
+    )
+    unknown_decision = record_review_decision(
+        decision_type=EvidenceDatabaseReviewDecisionType.MARK_UNKNOWN,
+        item_id=reclass_record_identity.item_id,
+        user_confirmed=True,
+    )
+    not_evidenced_decision = record_review_decision(
+        decision_type=EvidenceDatabaseReviewDecisionType.MARK_NOT_EVIDENCED,
+        item_id=reclass_record_identity.item_id,
+        user_confirmed=True,
+    )
+    request_reclass_decision = record_review_decision(
+        decision_type=EvidenceDatabaseReviewDecisionType.REQUEST_RECLASSIFICATION,
+        item_id=reclass_record_identity.item_id,
+        target_classification_value=EvidenceClassificationValue.PROPOSED,
+        note="request a reviewed path update",
+    )
+    rich_plan = build_apply_plan_from_decisions(
+        session_id=session.session_id,
+        decisions=(
+            accept_decision,
+            reject_decision,
+            unknown_decision,
+            not_evidenced_decision,
+            request_reclass_decision,
+        ),
+        records=(reclass_record,),
+    )
+    assert rich_plan.dry_run is True
+    assert rich_plan.execute_file_moves is False
+    assert rich_plan.execute_classification_changes is False
+    assert rich_plan.file_operation_performed is False
+    assert rich_plan.destructive_action_not_implemented is True
+    assert rich_plan.user_confirmation_required is True
+    assert len(rich_plan.entries) == 5
+    assert all(isinstance(entry, EvidenceDatabaseApplyPlanEntry) for entry in rich_plan.entries)
+    first_entry = rich_plan.entries[0]
+    assert first_entry.previous_path == "old/topic/item"
+    assert first_entry.proposed_path == "new/topic/item"
+    assert first_entry.old_new_path_history_preserved is True
+    assert first_entry.file_operation_performed is False
+    assert first_entry.classification_change_executed is False
+    assert first_entry.target_classification_value is EvidenceClassificationValue.PROPOSED
+    assert rich_plan.entries[1].target_classification_value is EvidenceClassificationValue.REJECTED
+    assert rich_plan.entries[2].target_classification_value is EvidenceClassificationValue.UNKNOWN
+    assert rich_plan.entries[3].target_classification_value is EvidenceClassificationValue.NOT_EVIDENCED
+    assert rich_plan.entries[4].decision_type is (
+        EvidenceDatabaseReviewDecisionType.REQUEST_RECLASSIFICATION
+    )
+    assert rich_plan.to_dict()["entries"][0]["old_new_path_history_preserved"] is True
+    rich_result = build_dry_run_apply_result(rich_plan)
+    assert rich_result.applied is False
+    assert rich_result.file_operations_performed is False
+    assert rich_result.classification_changes_executed is False
+    assert rich_result.applied_decision_ids == (
+        accept_decision.stable_decision_id,
+        unknown_decision.stable_decision_id,
+        not_evidenced_decision.stable_decision_id,
     )
 
     rendered = review_stable_json_dumps(

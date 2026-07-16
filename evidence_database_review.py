@@ -259,10 +259,30 @@ class EvidenceDatabaseReviewDecision:
 
 
 @dataclass(frozen=True)
+class EvidenceDatabaseApplyPlanEntry:
+    decision_id: str
+    item_id: str
+    decision_type: EvidenceDatabaseReviewDecisionType
+    previous_path: str = ""
+    proposed_path: str = ""
+    previous_classification_value: EvidenceClassificationValue = EvidenceClassificationValue.UNKNOWN
+    target_classification_value: EvidenceClassificationValue = EvidenceClassificationValue.UNKNOWN
+    old_new_path_history_preserved: bool = True
+    file_operation_performed: bool = False
+    classification_change_executed: bool = False
+    user_confirmation_required: bool = True
+    note: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceDatabaseApplyPlan:
     plan_id: str
     session_id: str = ""
     decisions: tuple[EvidenceDatabaseReviewDecision, ...] = ()
+    entries: tuple[EvidenceDatabaseApplyPlanEntry, ...] = ()
     dry_run: bool = True
     execute_file_moves: bool = False
     execute_classification_changes: bool = False
@@ -279,6 +299,7 @@ class EvidenceDatabaseApplyPlan:
             "decisions": [decision.to_dict() for decision in self.decisions],
             "destructive_action_not_implemented": self.destructive_action_not_implemented,
             "dry_run": self.dry_run,
+            "entries": [entry.to_dict() for entry in self.entries],
             "execute_classification_changes": self.execute_classification_changes,
             "execute_file_moves": self.execute_file_moves,
             "file_operation_performed": self.file_operation_performed,
@@ -505,6 +526,115 @@ def build_preview_result_from_records(
     )
 
 
+def record_review_decision(
+    *,
+    decision_type: EvidenceDatabaseReviewDecisionType,
+    item_id: str,
+    proposal_id: str = "",
+    target_classification_value: EvidenceClassificationValue = EvidenceClassificationValue.UNKNOWN,
+    note: str = "",
+    user_confirmed: bool = False,
+    decision_id: str = "",
+) -> EvidenceDatabaseReviewDecision:
+    return EvidenceDatabaseReviewDecision(
+        decision_type=decision_type,
+        item_id=item_id,
+        proposal_id=proposal_id,
+        target_classification_value=target_classification_value,
+        note=note,
+        user_confirmed=user_confirmed,
+        decision_id=decision_id,
+    )
+
+
+def _decision_target_value(
+    decision: EvidenceDatabaseReviewDecision,
+) -> EvidenceClassificationValue:
+    if decision.decision_type is EvidenceDatabaseReviewDecisionType.MARK_UNKNOWN:
+        return EvidenceClassificationValue.UNKNOWN
+    if decision.decision_type is EvidenceDatabaseReviewDecisionType.MARK_NOT_EVIDENCED:
+        return EvidenceClassificationValue.NOT_EVIDENCED
+    if decision.decision_type is EvidenceDatabaseReviewDecisionType.REJECT_PROPOSAL:
+        return EvidenceClassificationValue.REJECTED
+    return decision.target_classification_value
+
+
+def _proposal_paths_for_decision(
+    decision: EvidenceDatabaseReviewDecision,
+    record: EvidenceIndexRecord | None,
+) -> tuple[str, str]:
+    if record is None:
+        return "", ""
+    for proposal in record.reclassification_proposals:
+        if not decision.proposal_id or proposal.proposal_id == decision.proposal_id:
+            return proposal.previous_path, proposal.proposed_path
+    for proposal in record.placement_proposals:
+        if not decision.proposal_id or proposal.proposal_id == decision.proposal_id:
+            return proposal.current_path, proposal.proposed_path
+    if record.path_records:
+        path = record.path_records[0]
+        return path.current_path or path.previous_path, path.proposed_path
+    return "", ""
+
+
+def build_apply_plan_from_decisions(
+    *,
+    session_id: str,
+    decisions: tuple[EvidenceDatabaseReviewDecision, ...],
+    records: tuple[EvidenceIndexRecord, ...],
+    plan_id: str = "",
+    warnings: tuple[str, ...] = (),
+) -> EvidenceDatabaseApplyPlan:
+    record_by_id = {record.identity.item_id: record for record in records}
+    entries: list[EvidenceDatabaseApplyPlanEntry] = []
+    for decision in decisions:
+        record = record_by_id.get(decision.item_id)
+        previous_path, proposed_path = _proposal_paths_for_decision(decision, record)
+        previous_value = (
+            record.classification_state.classification_value
+            if record is not None
+            else EvidenceClassificationValue.UNKNOWN
+        )
+        entries.append(
+            EvidenceDatabaseApplyPlanEntry(
+                decision_id=decision.stable_decision_id,
+                item_id=decision.item_id,
+                decision_type=decision.decision_type,
+                previous_path=previous_path,
+                proposed_path=proposed_path,
+                previous_classification_value=previous_value,
+                target_classification_value=_decision_target_value(decision),
+                old_new_path_history_preserved=True,
+                file_operation_performed=False,
+                classification_change_executed=False,
+                user_confirmation_required=decision.user_confirmation_required,
+                note=decision.note,
+            )
+        )
+    return EvidenceDatabaseApplyPlan(
+        plan_id=plan_id
+        or stable_evidence_id(
+            "applyplan",
+            session_id,
+            *(decision.stable_decision_id for decision in decisions),
+            *(entry.previous_path for entry in entries),
+            *(entry.proposed_path for entry in entries),
+        ),
+        session_id=session_id,
+        decisions=decisions,
+        entries=tuple(entries),
+        dry_run=True,
+        execute_file_moves=False,
+        execute_classification_changes=False,
+        file_operation_performed=False,
+        destructive_action_not_implemented=True,
+        user_confirmation_required=any(
+            decision.user_confirmation_required for decision in decisions
+        ),
+        warnings=warnings,
+    )
+
+
 def build_non_executing_apply_plan(
     *,
     session_id: str,
@@ -521,6 +651,7 @@ def build_non_executing_apply_plan(
         ),
         session_id=session_id,
         decisions=decisions,
+        entries=(),
         dry_run=True,
         execute_file_moves=False,
         execute_classification_changes=False,
