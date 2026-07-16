@@ -63,6 +63,7 @@ class EvidenceDatabaseReviewWindowState:
     preview_group_counts: tuple[EvidenceDatabaseReviewGroupSummary, ...] = field(default_factory=tuple)
     selected_decision_count: int = 0
     apply_plan_entry_count: int = 0
+    apply_plan_target_counts: tuple[EvidenceDatabaseReviewGroupSummary, ...] = field(default_factory=tuple)
     dry_run_only: bool = True
     supplied_records_only: bool = True
     broad_scan_performed: bool = False
@@ -86,6 +87,9 @@ class EvidenceDatabaseReviewWindowState:
             "dry_run_only": self.dry_run_only,
             "dry_run_warning": self.dry_run_warning,
             "file_operation_performed": self.file_operation_performed,
+            "apply_plan_target_counts": [
+                item.to_dict() for item in self.apply_plan_target_counts
+            ],
             "preview_group_counts": [item.to_dict() for item in self.preview_group_counts],
             "preview_record_count": self.preview_record_count,
             "registered_root_count": self.registered_root_count,
@@ -115,6 +119,24 @@ def _preview_group_summaries(
     return tuple(summaries)
 
 
+def _apply_plan_target_summaries(
+    apply_plan: EvidenceDatabaseApplyPlan | None,
+) -> tuple[EvidenceDatabaseReviewGroupSummary, ...]:
+    counts = {value.value: 0 for value in EvidenceClassificationValue}
+    if apply_plan is not None:
+        for entry in apply_plan.entries:
+            counts[entry.target_classification_value.value] = (
+                counts.get(entry.target_classification_value.value, 0) + 1
+            )
+    return tuple(
+        EvidenceDatabaseReviewGroupSummary(
+            classification_value=value,
+            row_count=counts.get(value.value, 0),
+        )
+        for value in EvidenceClassificationValue
+    )
+
+
 def build_evidence_database_review_window_state(
     *,
     session: EvidenceDatabaseReviewSession,
@@ -138,6 +160,7 @@ def build_evidence_database_review_window_state(
         preview_group_counts=_preview_group_summaries(preview_result),
         selected_decision_count=len(apply_plan.decisions) if apply_plan is not None else 0,
         apply_plan_entry_count=len(apply_plan.entries) if apply_plan is not None else 0,
+        apply_plan_target_counts=_apply_plan_target_summaries(apply_plan),
         dry_run_only=session.dry_run_only and (apply_plan.dry_run if apply_plan is not None else True),
         supplied_records_only=(
             preview_result.supplied_records_only if preview_result is not None else True
@@ -182,6 +205,13 @@ def build_evidence_database_review_window_text(
             "Apply plan:",
             f"- Decisions: {state.selected_decision_count}",
             f"- Entries: {state.apply_plan_entry_count}",
+            "Apply plan targets by state:",
+        ]
+    )
+    for summary in state.apply_plan_target_counts:
+        lines.append(f"- {summary.classification_value.value}: {summary.row_count}")
+    lines.extend(
+        [
             f"- Dry run only: {_yes_no(state.dry_run_only)}",
             f"- Supplied records only: {_yes_no(state.supplied_records_only)}",
             f"- Broad scan performed: {_yes_no(state.broad_scan_performed)}",

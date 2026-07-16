@@ -12,6 +12,7 @@ from evidence_database_review import (
     EvidenceDatabasePreviewRequest,
     EvidenceDatabaseReviewDecisionType,
     build_apply_plan_from_decisions,
+    build_empty_preview_result,
     build_preview_result_from_records,
     build_review_session,
     record_review_decision,
@@ -131,6 +132,14 @@ def run_self_test() -> None:
         {"classification_value": "rejected", "row_count": 0},
         {"classification_value": "superseded", "row_count": 0},
     ]
+    assert state_dict["apply_plan_target_counts"] == [
+        {"classification_value": "unknown", "row_count": 0},
+        {"classification_value": "not_evidenced", "row_count": 0},
+        {"classification_value": "user_confirmed", "row_count": 0},
+        {"classification_value": "proposed", "row_count": 1},
+        {"classification_value": "rejected", "row_count": 0},
+        {"classification_value": "superseded", "row_count": 0},
+    ]
     assert state_dict["dry_run_warning"].startswith("Evidence Database review is dry-run only")
     assert state_dict["broad_scan_performed"] is False
     assert state_dict["file_operation_performed"] is False
@@ -145,6 +154,7 @@ def run_self_test() -> None:
     assert "Registered roots: 2" in text
     assert "- unknown: 1" in text
     assert "- proposed: 1" in text
+    assert "Apply plan targets by state:" in text
     assert "- Broad scan performed: no" in text
     assert "- File operation performed: no" in text
     assert "- Classification changes executed: no" in text
@@ -197,6 +207,117 @@ def run_self_test() -> None:
         assert sorted(path.name for path in Path(temp_dir).iterdir()) == [
             "synthetic_demo_review.json"
         ]
+
+    empty_session = build_review_session(
+        selected_root_id="missing_root_metadata",
+        taxonomy_version_id="taxonomy_user_v1",
+        session_id="reviewsession_empty_fixture",
+    )
+    empty_preview_request = EvidenceDatabasePreviewRequest(
+        session_id=empty_session.session_id,
+        root_id=empty_session.selected_root_id,
+        request_id="preview_empty_fixture",
+    )
+    empty_preview = build_empty_preview_result(empty_preview_request)
+    empty_controller = build_evidence_database_review_window_controller(
+        session=empty_session,
+        preview_result=empty_preview,
+    )
+    empty_dict = empty_controller.to_dict()
+    assert empty_dict["registered_root_count"] == 0
+    assert empty_dict["selected_root_id"] == "missing_root_metadata"
+    assert empty_dict["preview_record_count"] == 0
+    assert empty_dict["dry_run_warning"].startswith("Evidence Database review is dry-run only")
+    assert "Warning: Evidence Database review is dry-run only." in empty_controller.to_text()
+    assert "- (none)" in empty_controller.to_text()
+
+    duplicate_preview = build_preview_result_from_records(
+        EvidenceDatabasePreviewRequest(
+            session_id=session.session_id,
+            root_id="root_1",
+        ),
+        (unknown_record, unknown_record),
+    )
+    duplicate_controller = build_evidence_database_review_window_controller(
+        session=session,
+        preview_result=duplicate_preview,
+    )
+    assert duplicate_controller.to_dict()["preview_record_count"] == 2
+    duplicate_unknown_counts = [
+        item
+        for item in duplicate_controller.to_dict()["preview_group_counts"]
+        if item["classification_value"] == "unknown"
+    ]
+    assert duplicate_unknown_counts == [{"classification_value": "unknown", "row_count": 2}]
+
+    proposed_only_preview = build_preview_result_from_records(
+        EvidenceDatabasePreviewRequest(
+            session_id=session.session_id,
+            root_id="root_1",
+        ),
+        (proposed_record,),
+    )
+    proposed_only_controller = build_evidence_database_review_window_controller(
+        session=session,
+        preview_result=proposed_only_preview,
+    )
+    assert proposed_only_controller.to_dict()["preview_group_counts"] == [
+        {"classification_value": "unknown", "row_count": 0},
+        {"classification_value": "not_evidenced", "row_count": 0},
+        {"classification_value": "user_confirmed", "row_count": 0},
+        {"classification_value": "proposed", "row_count": 1},
+        {"classification_value": "rejected", "row_count": 0},
+        {"classification_value": "superseded", "row_count": 0},
+    ]
+
+    rejected_record = _sample_record(
+        display_name="Rejected item",
+        classification_value=EvidenceClassificationValue.REJECTED,
+    )
+    superseded_record = _sample_record(
+        display_name="Superseded item",
+        classification_value=EvidenceClassificationValue.SUPERSEDED,
+    )
+    rejected_decision = record_review_decision(
+        decision_type=EvidenceDatabaseReviewDecisionType.REJECT_PROPOSAL,
+        item_id=rejected_record.identity.item_id,
+        proposal_id=rejected_record.placement_proposals[0].proposal_id,
+        target_classification_value=EvidenceClassificationValue.REJECTED,
+        user_confirmed=True,
+    )
+    superseded_decision = record_review_decision(
+        decision_type=EvidenceDatabaseReviewDecisionType.REQUEST_RECLASSIFICATION,
+        item_id=superseded_record.identity.item_id,
+        proposal_id=superseded_record.placement_proposals[0].proposal_id,
+        target_classification_value=EvidenceClassificationValue.SUPERSEDED,
+        user_confirmed=True,
+    )
+    rejected_superseded_plan = build_apply_plan_from_decisions(
+        session_id=session.session_id,
+        decisions=(rejected_decision, superseded_decision),
+        records=(rejected_record, superseded_record),
+    )
+    rejected_superseded_controller = build_evidence_database_review_window_controller(
+        session=session,
+        preview_result=build_preview_result_from_records(
+            EvidenceDatabasePreviewRequest(session_id=session.session_id, root_id="root_1"),
+            (rejected_record, superseded_record),
+        ),
+        apply_plan=rejected_superseded_plan,
+    )
+    rejected_superseded_dict = rejected_superseded_controller.to_dict()
+    assert rejected_superseded_dict["apply_plan_target_counts"] == [
+        {"classification_value": "unknown", "row_count": 0},
+        {"classification_value": "not_evidenced", "row_count": 0},
+        {"classification_value": "user_confirmed", "row_count": 0},
+        {"classification_value": "proposed", "row_count": 0},
+        {"classification_value": "rejected", "row_count": 1},
+        {"classification_value": "superseded", "row_count": 1},
+    ]
+    rejected_superseded_text = rejected_superseded_controller.to_text()
+    assert "Apply plan targets by state:" in rejected_superseded_text
+    assert "- rejected: 1" in rejected_superseded_text
+    assert "- superseded: 1" in rejected_superseded_text
 
 
 if __name__ == "__main__":
