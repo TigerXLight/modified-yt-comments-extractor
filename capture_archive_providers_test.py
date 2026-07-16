@@ -1,5 +1,6 @@
 from capture_archive_providers import (
     ARCHIVE_OPERATION_CHECK,
+    ARCHIVE_OPERATION_COMMAND_PLAN,
     ARCHIVE_OPERATION_SUBMIT,
     ARCHIVE_PROVIDER_ARCHIVEBOX,
     ARCHIVE_PROVIDER_ARCHIVE_TODAY,
@@ -20,7 +21,10 @@ def test_archive_provider_catalog_matches_rev4_schema_shape() -> None:
         ARCHIVE_PROVIDER_ARCHIVEBOX,
     }
     assert ARCHIVE_OPERATION_CHECK in providers[ARCHIVE_PROVIDER_WAYBACK].operations
+    assert "SUBMISSION_STARTED" in providers[ARCHIVE_PROVIDER_WAYBACK].statuses
+    assert "WIP" in providers[ARCHIVE_PROVIDER_ARCHIVE_TODAY].statuses
     assert ARCHIVE_OPERATION_SUBMIT in providers[ARCHIVE_PROVIDER_ARCHIVEBOX].operations
+    assert ARCHIVE_OPERATION_COMMAND_PLAN in providers[ARCHIVE_PROVIDER_ARCHIVEBOX].operations
     assert providers[ARCHIVE_PROVIDER_ARCHIVE_TODAY].challenge_mode == "user_handoff"
 
     data = archive_provider_catalog_to_dict()

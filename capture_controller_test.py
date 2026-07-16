@@ -6,6 +6,7 @@ from capture_controller import (
 from capture_contracts import ARTIFACT_TYPE_ACTION_LOG
 from capture_contracts import (
     ARTIFACT_TYPE_ACCESSIBILITY_TREE,
+    ARTIFACT_TYPE_ARCHIVE_RESULT,
     ARTIFACT_TYPE_ARTICLE_TEXT,
     ARTIFACT_TYPE_COMMENTS_JSONL,
     ARTIFACT_TYPE_COMMENTS_TEXT,
@@ -171,6 +172,53 @@ def test_operational_capture_plan_declares_rendered_citation_artifacts_without_e
     assert "requests.get" not in rendered
 
 
+def test_operational_capture_plan_declares_archive_artifacts_without_execution() -> None:
+    row = build_source_resource_row(MSN_URL)
+    discussion = build_discussion_capture_options(
+        (row,),
+        selected_row_id=row.row_id,
+        webpage_selected=False,
+        comments_selected=False,
+        comments_screenshot_requested=False,
+        livechat_selected=False,
+        livechat_screenshot_requested=False,
+    )
+
+    result = build_operational_capture_plan(
+        row=row,
+        discussion=discussion,
+        archive_check_requested=True,
+        archive_submit_requested=True,
+        archivebox_plan_requested=True,
+    )
+    artifact_types = [artifact.artifact_type for artifact in result.declared_artifacts]
+    methods = [artifact.capture_method for artifact in result.declared_artifacts]
+
+    assert result.selected_modes == ("archive_check", "archive_submit", "archivebox_plan")
+    assert result.warnings == ()
+    assert artifact_types == [
+        ARTIFACT_TYPE_ARCHIVE_RESULT,
+        ARTIFACT_TYPE_ARCHIVE_RESULT,
+        ARTIFACT_TYPE_ARCHIVE_RESULT,
+    ]
+    assert methods == [
+        "planned_archive_provider_check",
+        "planned_archive_submit_intent",
+        "planned_archivebox_command_plan",
+    ]
+    assert result.declared_artifacts[0].metadata["archive_check_never_submits"] is True
+    assert result.declared_artifacts[1].metadata["explicit_user_selection_required"] is True
+    assert result.declared_artifacts[2].metadata["command_plan_only"] is True
+    assert result.action_events[0].request_summary["archive_check_requested"] is True
+    assert result.action_events[0].request_summary["archive_submit_requested"] is True
+    assert result.action_events[0].request_summary["archivebox_plan_requested"] is True
+    rendered = _action_log_jsonl(result.action_events)
+    assert "requests.get" not in rendered
+    assert "requests.post" not in rendered
+    assert "archivebox add" not in rendered
+    assert "write_performed\":false" in rendered
+
+
 def test_operational_capture_plan_message_is_user_facing_and_local_only() -> None:
     row = build_source_resource_row(MSN_URL)
     discussion = build_discussion_capture_options(
@@ -227,6 +275,7 @@ def run_self_test() -> None:
     test_operational_capture_plan_declares_livechat_artifacts_without_execution()
     test_operational_capture_plan_declares_media_download_and_mux_artifacts_without_execution()
     test_operational_capture_plan_declares_rendered_citation_artifacts_without_execution()
+    test_operational_capture_plan_declares_archive_artifacts_without_execution()
     test_operational_capture_plan_message_is_user_facing_and_local_only()
     test_operational_capture_plan_action_log_artifact_is_deterministic_and_sanitized()
 

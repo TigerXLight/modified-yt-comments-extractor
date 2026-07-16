@@ -9,6 +9,7 @@ from capture_action_log import ACTOR_TYPE_APPLICATION, CaptureActionLogEvent, bu
 from capture_contracts import (
     ARTIFACT_TYPE_ACCESSIBILITY_TREE,
     ARTIFACT_TYPE_ACTION_LOG,
+    ARTIFACT_TYPE_ARCHIVE_RESULT,
     ARTIFACT_TYPE_ARTICLE_TEXT,
     ARTIFACT_TYPE_COMMENTS_JSONL,
     ARTIFACT_TYPE_COMMENTS_TEXT,
@@ -119,6 +120,9 @@ def _planned_capture_artifacts(
     selected_media_resource_ids: tuple[str, ...] = (),
     mux_plan_requested: bool = False,
     rendered_citation_requested: bool = False,
+    archive_check_requested: bool = False,
+    archive_submit_requested: bool = False,
+    archivebox_plan_requested: bool = False,
 ) -> tuple[CaptureArtifact, ...]:
     artifacts: list[CaptureArtifact] = []
     if "webpage" in selected_modes:
@@ -311,6 +315,55 @@ def _planned_capture_artifacts(
                 ),
             )
         )
+    if archive_check_requested:
+        artifacts.append(
+            _planned_artifact(
+                row=row,
+                artifact_type=ARTIFACT_TYPE_ARCHIVE_RESULT,
+                capture_method="planned_archive_provider_check",
+                relative_path="archive/archive_status_check.json",
+                timestamp_utc=timestamp_utc,
+                metadata={
+                    "archive_check_execution": "not executed",
+                    "archive_check_never_submits": True,
+                    "provider_scope": ("wayback", "archive_today"),
+                    "submission_execution": "not executed",
+                },
+            )
+        )
+    if archive_submit_requested:
+        artifacts.append(
+            _planned_artifact(
+                row=row,
+                artifact_type=ARTIFACT_TYPE_ARCHIVE_RESULT,
+                capture_method="planned_archive_submit_intent",
+                relative_path="archive/archive_submit_plan.json",
+                timestamp_utc=timestamp_utc,
+                metadata={
+                    "archive_submit_execution": "not executed",
+                    "explicit_user_selection_required": True,
+                    "provider_scope": ("wayback", "archive_today"),
+                    "separate_from_check": True,
+                },
+            )
+        )
+    if archivebox_plan_requested:
+        artifacts.append(
+            _planned_artifact(
+                row=row,
+                artifact_type=ARTIFACT_TYPE_ARCHIVE_RESULT,
+                capture_method="planned_archivebox_command_plan",
+                relative_path="archive/archivebox_command_plan.json",
+                timestamp_utc=timestamp_utc,
+                metadata={
+                    "archivebox_execution": "not executed",
+                    "command_plan_only": True,
+                    "docker_execution": "not executed",
+                    "remote_archivebox_execution": "not executed",
+                    "wsl_execution": "not executed",
+                },
+            )
+        )
     for intent in screenshot_intents:
         artifacts.append(
             _planned_artifact(
@@ -337,6 +390,9 @@ def build_operational_capture_plan(
     selected_media_resource_ids: tuple[str, ...] = (),
     mux_plan_requested: bool = False,
     rendered_citation_requested: bool = False,
+    archive_check_requested: bool = False,
+    archive_submit_requested: bool = False,
+    archivebox_plan_requested: bool = False,
     timestamp_utc: str = "2026-07-16T00:00:00Z",
 ) -> OperationalCapturePlanResult:
     selected_modes: list[str] = []
@@ -361,13 +417,26 @@ def build_operational_capture_plan(
     if discussion.livechat_screenshot_active:
         screenshot_intents.append("livechat")
 
-    if not selected_modes and not selected_media_resource_ids and not mux_plan_requested and not rendered_citation_requested:
+    archive_requested = archive_check_requested or archive_submit_requested or archivebox_plan_requested
+    if (
+        not selected_modes
+        and not selected_media_resource_ids
+        and not mux_plan_requested
+        and not rendered_citation_requested
+        and not archive_requested
+    ):
         warnings.append("No active supported capture mode was selected.")
     selected_modes_tuple = tuple(selected_modes)
     if (selected_media_resource_ids or mux_plan_requested) and "media" not in selected_modes:
         selected_modes_tuple = selected_modes_tuple + ("media",)
     if rendered_citation_requested and "rendered_citation" not in selected_modes:
         selected_modes_tuple = selected_modes_tuple + ("rendered_citation",)
+    if archive_check_requested and "archive_check" not in selected_modes:
+        selected_modes_tuple = selected_modes_tuple + ("archive_check",)
+    if archive_submit_requested and "archive_submit" not in selected_modes:
+        selected_modes_tuple = selected_modes_tuple + ("archive_submit",)
+    if archivebox_plan_requested and "archivebox_plan" not in selected_modes:
+        selected_modes_tuple = selected_modes_tuple + ("archivebox_plan",)
     screenshot_intents_tuple = tuple(screenshot_intents)
     declared_artifacts = _planned_capture_artifacts(
         row=row,
@@ -376,6 +445,9 @@ def build_operational_capture_plan(
         selected_media_resource_ids=tuple(selected_media_resource_ids),
         mux_plan_requested=mux_plan_requested,
         rendered_citation_requested=rendered_citation_requested,
+        archive_check_requested=archive_check_requested,
+        archive_submit_requested=archive_submit_requested,
+        archivebox_plan_requested=archivebox_plan_requested,
         timestamp_utc=timestamp_utc,
     )
 
@@ -389,6 +461,9 @@ def build_operational_capture_plan(
         request_summary={
             "adapter_id": row.adapter_id,
             "canonical_url": row.canonical_url,
+            "archive_check_requested": archive_check_requested,
+            "archive_submit_requested": archive_submit_requested,
+            "archivebox_plan_requested": archivebox_plan_requested,
             "mux_plan_requested": mux_plan_requested,
             "rendered_citation_requested": rendered_citation_requested,
             "selected_media_resource_ids": tuple(selected_media_resource_ids),
