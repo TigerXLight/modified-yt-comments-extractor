@@ -336,6 +336,14 @@ def validate_evidence_database_review_export_payload(payload: Any) -> tuple[str,
         if not isinstance(record, dict):
             errors.append("index_record_not_object")
             continue
+        identity = record.get("identity", {})
+        if not isinstance(identity, dict):
+            errors.append("index_record_identity_not_object")
+        elif not str(identity.get("item_id", "")).strip():
+            errors.append("index_record_missing_item_id")
+        classification_state = record.get("classification_state", {})
+        if not isinstance(classification_state, dict):
+            errors.append("index_record_classification_state_not_object")
         for path in record.get("path_records", []):
             if isinstance(path, dict) and _bool(path.get("file_operation_performed", False)):
                 errors.append("index_path_file_operation_performed")

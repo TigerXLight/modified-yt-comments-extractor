@@ -1,8 +1,10 @@
 import json
+import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from evidence_database_demo_fixture import build_synthetic_evidence_database_demo_fixture
+from evidence_database_index import stable_json_dumps
 from evidence_database_review_io import (
     EVIDENCE_DATABASE_REVIEW_EXPORT_SCHEMA_VERSION,
     build_evidence_database_review_export_payload,
@@ -12,6 +14,16 @@ from evidence_database_review_io import (
     validate_evidence_database_review_export_payload,
     write_evidence_database_review_export_file,
 )
+
+
+def _rehash_payload(payload: dict[str, object]) -> dict[str, object]:
+    updated = dict(payload)
+    without_hash = dict(updated)
+    without_hash.pop("payload_sha256", None)
+    updated["payload_sha256"] = hashlib.sha256(
+        stable_json_dumps(without_hash).encode("utf-8")
+    ).hexdigest()
+    return updated
 
 
 def run_self_test() -> None:
@@ -150,6 +162,71 @@ def run_self_test() -> None:
     secret_key_import = import_evidence_database_review_export_payload(secret_key_payload)
     assert secret_key_import.ok is False
     assert "secret_like_key_present" in secret_key_import.errors
+
+    schema_payload = json.loads(export_text)
+    schema_payload["schema_version"] = "evidence-database-review-export-v0"
+    schema_payload = _rehash_payload(schema_payload)
+    schema_import = import_evidence_database_review_export_payload(schema_payload)
+    assert schema_import.ok is False
+    assert schema_import.errors == ("unsupported_schema_version",)
+
+    missing_hash_payload = json.loads(export_text)
+    missing_hash_payload.pop("payload_sha256")
+    missing_hash_import = import_evidence_database_review_export_payload(
+        missing_hash_payload
+    )
+    assert missing_hash_import.ok is False
+    assert "payload_sha256_mismatch" in missing_hash_import.errors
+
+    incorrect_hash_payload = json.loads(export_text)
+    incorrect_hash_payload["payload_sha256"] = "0" * 64
+    incorrect_hash_import = import_evidence_database_review_export_payload(
+        incorrect_hash_payload
+    )
+    assert incorrect_hash_import.ok is False
+    assert incorrect_hash_import.errors == ("payload_sha256_mismatch",)
+
+    compatible_extra_payload = json.loads(export_text)
+    compatible_extra_payload["future_notes"] = {
+        "ignored_by_current_importer": True,
+        "fixture_note": "fixture-only",
+    }
+    compatible_extra_payload = _rehash_payload(compatible_extra_payload)
+    compatible_extra_import = import_evidence_database_review_export_payload(
+        compatible_extra_payload
+    )
+    assert compatible_extra_import.ok is True
+    assert compatible_extra_import.bundle is not None
+    assert compatible_extra_import.bundle.preview_result.record_count == 6
+
+    malformed_record_payload = json.loads(export_text)
+    malformed_record_payload["index_manifest"]["records"][0]["identity"] = {}
+    malformed_record_payload = _rehash_payload(malformed_record_payload)
+    malformed_record_import = import_evidence_database_review_export_payload(
+        malformed_record_payload
+    )
+    assert malformed_record_import.ok is False
+    assert "index_record_missing_item_id" in malformed_record_import.errors
+
+    malformed_state_payload = json.loads(export_text)
+    malformed_state_payload["index_manifest"]["records"][0]["classification_state"] = []
+    malformed_state_payload = _rehash_payload(malformed_state_payload)
+    malformed_state_import = import_evidence_database_review_export_payload(
+        malformed_state_payload
+    )
+    assert malformed_state_import.ok is False
+    assert "index_record_classification_state_not_object" in malformed_state_import.errors
+
+    nested_secret_payload = json.loads(export_text)
+    nested_secret_payload["index_manifest"]["records"][0]["identity"][
+        "api_key"
+    ] = "not-a-real-key"
+    nested_secret_payload = _rehash_payload(nested_secret_payload)
+    nested_secret_import = import_evidence_database_review_export_payload(
+        nested_secret_payload
+    )
+    assert nested_secret_import.ok is False
+    assert nested_secret_import.errors == ("secret_like_key_present",)
 
 
 if __name__ == "__main__":
