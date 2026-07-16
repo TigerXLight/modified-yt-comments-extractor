@@ -306,6 +306,21 @@ class EvidenceIndexStoreResult:
         }
 
 
+@dataclass(frozen=True)
+class EvidenceDryRunProposalResult:
+    identity: EvidenceItemIdentity
+    classification_state: EvidenceClassificationState
+    evidence_basis: tuple[EvidenceBasis, ...] = ()
+    placement_proposal: EvidencePlacementProposal | None = None
+    reclassification_proposal: EvidenceReclassificationProposal | None = None
+    no_files_moved: bool = True
+    user_confirmation_required: bool = True
+    warnings: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
 def evidence_index_payload_sha256(manifest: EvidenceIndexManifest) -> str:
     return hashlib.sha256(stable_json_dumps(manifest.payload_dict()).encode("utf-8")).hexdigest()
 
@@ -719,4 +734,221 @@ def append_or_update_evidence_index_record(
         created_at_utc=manifest.created_at_utc,
         updated_at_utc=utc_now_iso(),
         scope=manifest.scope,
+    )
+
+
+def build_evidence_basis(
+    *,
+    item_id: str,
+    basis_type: str,
+    source_url: str = "",
+    source_role: SourceRole = SourceRole.UNKNOWN_SOURCE_ROLE,
+    source_status: PrimarySourceStatus = PrimarySourceStatus.MANUAL_SOURCE_NOTE,
+    evidence_text: str = "",
+    user_note: str = "",
+    confidence: str = "",
+    sensitive_basis_confirmed: bool = False,
+    basis_id: str = "",
+) -> EvidenceBasis:
+    stable_basis_id = basis_id or stable_evidence_id(
+        "basis",
+        item_id,
+        basis_type,
+        source_url,
+        source_role.value,
+        source_status.value,
+        evidence_text,
+        user_note,
+        confidence,
+    )
+    return EvidenceBasis(
+        basis_id=stable_basis_id,
+        item_id=item_id,
+        basis_type=basis_type,
+        source_url=source_url,
+        source_role=source_role,
+        source_status=source_status,
+        evidence_text=evidence_text,
+        user_note=user_note,
+        confidence=confidence,
+        sensitive_basis_confirmed=sensitive_basis_confirmed,
+    )
+
+
+def build_classification_state(
+    *,
+    classification_value: EvidenceClassificationValue = EvidenceClassificationValue.UNKNOWN,
+    dimensions: dict[str, str] | None = None,
+    user_confirmed: bool = False,
+    source_evidenced: bool = False,
+    sensitive_dimensions_present: tuple[str, ...] = (),
+    notes: str = "",
+) -> EvidenceClassificationState:
+    dimensions = dimensions or {}
+    cleaned_sensitive = tuple(
+        dimension for dimension in sensitive_dimensions_present if _clean(dimension)
+    )
+    requires_confirmation = not user_confirmed
+    final_value = classification_value
+    final_notes = notes
+    if (
+        cleaned_sensitive
+        and classification_value
+        in {
+            EvidenceClassificationValue.PROPOSED,
+            EvidenceClassificationValue.USER_CONFIRMED,
+        }
+        and not (user_confirmed or source_evidenced)
+    ):
+        final_value = EvidenceClassificationValue.UNKNOWN
+        requires_confirmation = True
+        final_notes = (
+            (notes + " " if notes else "")
+            + "Sensitive classification kept unknown; explicit evidence or user confirmation required."
+        )
+    return EvidenceClassificationState(
+        classification_value=final_value,
+        dimensions={_clean(key): _clean(value) for key, value in dimensions.items()},
+        user_confirmed=user_confirmed,
+        source_evidenced=source_evidenced,
+        sensitive_dimensions_present=cleaned_sensitive,
+        weak_inference_prohibited=True,
+        user_confirmation_required=requires_confirmation,
+        notes=final_notes,
+    )
+
+
+def build_placement_proposal(
+    *,
+    item_id: str,
+    database_root_id: str,
+    current_path: str = "",
+    proposed_path: str = "",
+    basis_ids: tuple[str, ...] = (),
+    reason: str = "",
+    confidence: str = "",
+    status: str = PROPOSAL_STATUS_DRY_RUN,
+    proposal_id: str = "",
+) -> EvidencePlacementProposal:
+    stable_proposal_id = proposal_id or stable_evidence_id(
+        "place",
+        item_id,
+        database_root_id,
+        current_path,
+        proposed_path,
+        reason,
+        confidence,
+    )
+    return EvidencePlacementProposal(
+        proposal_id=stable_proposal_id,
+        item_id=item_id,
+        database_root_id=database_root_id,
+        current_path=current_path,
+        proposed_path=proposed_path,
+        basis_ids=basis_ids,
+        status=status,
+        reason=reason,
+        confidence=confidence,
+        user_confirmation_required=True,
+        file_operation_performed=False,
+    )
+
+
+def build_reclassification_proposal(
+    *,
+    item_id: str,
+    previous_path: str = "",
+    proposed_path: str = "",
+    previous_classification: EvidenceClassificationState | None = None,
+    proposed_classification: EvidenceClassificationState | None = None,
+    basis_ids: tuple[str, ...] = (),
+    reason: str = "",
+    status: str = PROPOSAL_STATUS_USER_CONFIRMATION_REQUIRED,
+    proposal_id: str = "",
+) -> EvidenceReclassificationProposal:
+    previous = previous_classification or EvidenceClassificationState()
+    proposed = proposed_classification or EvidenceClassificationState(
+        classification_value=EvidenceClassificationValue.PROPOSED
+    )
+    stable_proposal_id = proposal_id or stable_evidence_id(
+        "reclass",
+        item_id,
+        previous_path,
+        proposed_path,
+        previous.classification_value.value,
+        proposed.classification_value.value,
+        reason,
+    )
+    return EvidenceReclassificationProposal(
+        proposal_id=stable_proposal_id,
+        item_id=item_id,
+        previous_path=previous_path,
+        proposed_path=proposed_path,
+        previous_classification=previous,
+        proposed_classification=proposed,
+        basis_ids=basis_ids,
+        status=status,
+        reason=reason,
+        old_new_path_history_preserved=True,
+        user_confirmation_required=True,
+        file_operation_performed=False,
+    )
+
+
+def build_dry_run_proposal_result(
+    *,
+    identity: EvidenceItemIdentity,
+    database_root_id: str,
+    current_path: str,
+    proposed_path: str,
+    dimensions: dict[str, str],
+    basis: EvidenceBasis,
+    previous_classification: EvidenceClassificationState | None = None,
+    sensitive_dimensions_present: tuple[str, ...] = (),
+    source_evidenced: bool = False,
+    user_confirmed: bool = False,
+    reason: str = "",
+    confidence: str = "",
+) -> EvidenceDryRunProposalResult:
+    classification = build_classification_state(
+        classification_value=(
+            EvidenceClassificationValue.USER_CONFIRMED
+            if user_confirmed
+            else EvidenceClassificationValue.PROPOSED
+        ),
+        dimensions=dimensions,
+        user_confirmed=user_confirmed,
+        source_evidenced=source_evidenced,
+        sensitive_dimensions_present=sensitive_dimensions_present,
+    )
+    placement = build_placement_proposal(
+        item_id=identity.item_id,
+        database_root_id=database_root_id,
+        current_path=current_path,
+        proposed_path=proposed_path,
+        basis_ids=(basis.basis_id,),
+        reason=reason,
+        confidence=confidence,
+    )
+    reclassification = build_reclassification_proposal(
+        item_id=identity.item_id,
+        previous_path=current_path,
+        proposed_path=proposed_path,
+        previous_classification=previous_classification,
+        proposed_classification=classification,
+        basis_ids=(basis.basis_id,),
+        reason=reason,
+    )
+    warnings: list[str] = []
+    if classification.classification_value is EvidenceClassificationValue.UNKNOWN:
+        warnings.append("sensitive_classification_requires_explicit_evidence_or_user_confirmation")
+    return EvidenceDryRunProposalResult(
+        identity=identity,
+        classification_state=classification,
+        evidence_basis=(basis,),
+        placement_proposal=placement,
+        reclassification_proposal=reclassification,
+        no_files_moved=True,
+        user_confirmation_required=True,
+        warnings=tuple(warnings),
     )

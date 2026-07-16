@@ -16,7 +16,12 @@ from evidence_database_index import (
     EvidenceReclassificationProposal,
     EvidenceTaxonomyVersion,
     append_or_update_evidence_index_record,
+    build_classification_state,
+    build_dry_run_proposal_result,
+    build_evidence_basis,
     build_evidence_item_identity,
+    build_placement_proposal,
+    build_reclassification_proposal,
     evidence_index_manifest_with_hash,
     evidence_index_payload_sha256,
     read_evidence_index_file,
@@ -284,6 +289,139 @@ def run_self_test() -> None:
         assert failed_write.errors == ("index_write_failed:OSError",)
         assert index_path.read_text(encoding="utf-8") == before_failure
         assert not index_path.with_name(".evidence_index.json.tmp").exists()
+
+    weak_sensitive = build_classification_state(
+        classification_value=EvidenceClassificationValue.PROPOSED,
+        dimensions={"religion_identity_status": "known from weak clue"},
+        sensitive_dimensions_present=("religion_identity_status",),
+        source_evidenced=False,
+        user_confirmed=False,
+    )
+    assert weak_sensitive.classification_value is EvidenceClassificationValue.UNKNOWN
+    assert weak_sensitive.user_confirmation_required is True
+    assert weak_sensitive.weak_inference_prohibited is True
+    assert "explicit evidence" in weak_sensitive.notes
+
+    evidenced_sensitive = build_classification_state(
+        classification_value=EvidenceClassificationValue.PROPOSED,
+        dimensions={"religion_identity_status": "explicitly stated"},
+        sensitive_dimensions_present=("religion_identity_status",),
+        source_evidenced=True,
+        user_confirmed=False,
+    )
+    assert evidenced_sensitive.classification_value is EvidenceClassificationValue.PROPOSED
+    assert evidenced_sensitive.source_evidenced is True
+
+    confirmed = build_classification_state(
+        classification_value=EvidenceClassificationValue.USER_CONFIRMED,
+        dimensions={"source_outlet": "Example Outlet"},
+        user_confirmed=True,
+    )
+    assert confirmed.classification_value is EvidenceClassificationValue.USER_CONFIRMED
+    assert confirmed.user_confirmation_required is False
+
+    not_evidenced = build_classification_state(
+        classification_value=EvidenceClassificationValue.NOT_EVIDENCED,
+        dimensions={"relationship_category": "not evidenced"},
+    )
+    assert not_evidenced.classification_value is EvidenceClassificationValue.NOT_EVIDENCED
+
+    rejected = build_classification_state(
+        classification_value=EvidenceClassificationValue.REJECTED,
+        dimensions={"source_outlet": "Rejected outlet proposal"},
+    )
+    assert rejected.classification_value is EvidenceClassificationValue.REJECTED
+
+    superseded = build_classification_state(
+        classification_value=EvidenceClassificationValue.SUPERSEDED,
+        dimensions={"source_outlet": "Old outlet label"},
+    )
+    assert superseded.classification_value is EvidenceClassificationValue.SUPERSEDED
+
+    generated_basis = build_evidence_basis(
+        item_id=identity.item_id,
+        basis_type="source_metadata",
+        source_url=identity.source_url,
+        source_role=SourceRole.SECONDARY_OUTSIDE_PERSPECTIVE,
+        source_status=PrimarySourceStatus.SECONDARY_FRAMING_ONLY,
+        evidence_text="Outlet label appears in supplied metadata.",
+        confidence="metadata_explicit",
+    )
+    assert generated_basis.basis_id == build_evidence_basis(
+        item_id=identity.item_id,
+        basis_type="source_metadata",
+        source_url=identity.source_url,
+        source_role=SourceRole.SECONDARY_OUTSIDE_PERSPECTIVE,
+        source_status=PrimarySourceStatus.SECONDARY_FRAMING_ONLY,
+        evidence_text="Outlet label appears in supplied metadata.",
+        confidence="metadata_explicit",
+    ).basis_id
+
+    generated_placement = build_placement_proposal(
+        item_id=identity.item_id,
+        database_root_id=root.root_id,
+        current_path=path.current_path,
+        proposed_path=path.proposed_path,
+        basis_ids=(generated_basis.basis_id,),
+        reason="Explicit metadata supports source outlet label.",
+        confidence="metadata_explicit",
+    )
+    assert generated_placement.file_operation_performed is False
+    assert generated_placement.status == "dry_run"
+
+    generated_reclassification = build_reclassification_proposal(
+        item_id=identity.item_id,
+        previous_path=path.current_path,
+        proposed_path=path.proposed_path,
+        previous_classification=classification,
+        proposed_classification=evidenced_sensitive,
+        basis_ids=(generated_basis.basis_id,),
+        reason="Explicit source evidence supports a reviewable change.",
+    )
+    assert generated_reclassification.file_operation_performed is False
+    assert generated_reclassification.old_new_path_history_preserved is True
+    assert generated_reclassification.status == "user_confirmation_required"
+
+    dry_run = build_dry_run_proposal_result(
+        identity=identity,
+        database_root_id=root.root_id,
+        current_path=path.current_path,
+        proposed_path=path.proposed_path,
+        dimensions={"source_outlet": "Example Outlet"},
+        basis=generated_basis,
+        previous_classification=classification,
+        source_evidenced=True,
+        reason="Explicit metadata supports source outlet label.",
+        confidence="metadata_explicit",
+    )
+    assert dry_run.no_files_moved is True
+    assert dry_run.placement_proposal is not None
+    assert dry_run.placement_proposal.file_operation_performed is False
+    assert dry_run.reclassification_proposal is not None
+    assert dry_run.reclassification_proposal.file_operation_performed is False
+    assert dry_run.classification_state.classification_value is EvidenceClassificationValue.PROPOSED
+    assert dry_run.to_dict()["no_files_moved"] is True
+
+    unsafe_dry_run = build_dry_run_proposal_result(
+        identity=identity,
+        database_root_id=root.root_id,
+        current_path=path.current_path,
+        proposed_path=path.proposed_path,
+        dimensions={"religion_identity_status": "guessed from weak clue"},
+        basis=generated_basis,
+        previous_classification=classification,
+        sensitive_dimensions_present=("religion_identity_status",),
+        source_evidenced=False,
+        user_confirmed=False,
+        reason="Weak clue must not classify sensitive identity.",
+    )
+    assert unsafe_dry_run.classification_state.classification_value is (
+        EvidenceClassificationValue.UNKNOWN
+    )
+    assert unsafe_dry_run.warnings == (
+        "sensitive_classification_requires_explicit_evidence_or_user_confirmation",
+    )
+    assert unsafe_dry_run.no_files_moved is True
 
 
 if __name__ == "__main__":
