@@ -555,7 +555,8 @@ Current implementation status:
 - LOCAL_FIXTURE_TESTED: root registration review uses explicitly supplied temp/test root paths, stores only root/config metadata, rejects missing and duplicate roots, and keeps broad scan disabled.
 - LOCAL_FIXTURE_TESTED: preview generation groups only explicitly supplied `EvidenceIndexRecord` objects by `unknown`, `not_evidenced`, `proposed`, `user_confirmed`, `rejected`, and `superseded`.
 - USER_CONFIRMATION_REQUIRED / DESTRUCTIVE_ACTION_NOT_IMPLEMENTED: review decisions and apply plans record intended accept/reject/unknown/not-evidenced/reclassification decisions with old/new path history, but execute no classification changes and no file moves.
-- UI_SCAFFOLD_ONLY: no database review window has been added because the current app has no clean review hook that avoids broader layout/runtime work.
+- UI_SCAFFOLD_ONLY / LOCAL_FIXTURE_TESTED: `evidence_database_review_ui.py` adds a standalone review-window/controller scaffold with dry-run warnings, registered-root counts, preview row counts by state, selected decision/apply-plan summaries, and destructive-action-not-implemented status.
+- UI_SCAFFOLD_ONLY: visible `main.py` placement remains deferred because the current UPDATES, KEYS/ACCOUNTS, EXPORT, FILES sidebar order and FILES/EXPORT workflows are protected; adding a button there would require broader layout/runtime work.
 - Not implemented: broad folder scanning, real user-folder indexing, automatic classification execution, sensitive-attribute inference, file movement, live capture/download/archive/provider behavior, and evidence database migration.
 
 ## KEYS / Access & Keys Manager
