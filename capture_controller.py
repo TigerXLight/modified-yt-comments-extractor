@@ -25,6 +25,8 @@ from capture_contracts import (
     ARTIFACT_TYPE_RAW_HTML,
     ARTIFACT_TYPE_RENDERED_RECORDING,
     ARTIFACT_TYPE_SCREENSHOT,
+    ARTIFACT_TYPE_WACZ,
+    ARTIFACT_TYPE_WARC,
     CaptureArtifact,
     build_capture_artifact,
 )
@@ -123,6 +125,8 @@ def _planned_capture_artifacts(
     archive_check_requested: bool = False,
     archive_submit_requested: bool = False,
     archivebox_plan_requested: bool = False,
+    warc_requested: bool = False,
+    wacz_requested: bool = False,
 ) -> tuple[CaptureArtifact, ...]:
     artifacts: list[CaptureArtifact] = []
     if "webpage" in selected_modes:
@@ -364,6 +368,38 @@ def _planned_capture_artifacts(
                 },
             )
         )
+    if warc_requested:
+        artifacts.append(
+            _planned_artifact(
+                row=row,
+                artifact_type=ARTIFACT_TYPE_WARC,
+                capture_method="planned_warc_fixture_manifest",
+                relative_path="archive/warc_manifest.json",
+                timestamp_utc=timestamp_utc,
+                metadata={
+                    "capture_execution": "not executed",
+                    "fixture_or_synthetic_records_only": True,
+                    "header_secret_redaction_required": True,
+                    "warc_capture_execution": "not executed",
+                },
+            )
+        )
+    if wacz_requested:
+        artifacts.append(
+            _planned_artifact(
+                row=row,
+                artifact_type=ARTIFACT_TYPE_WACZ,
+                capture_method="planned_wacz_fixture_manifest",
+                relative_path="archive/wacz_manifest.json",
+                timestamp_utc=timestamp_utc,
+                metadata={
+                    "package_execution": "not executed",
+                    "synthetic_fixture_manifest_only": True,
+                    "wacz_packaging_execution": "not executed",
+                    "warc_component_references_only": True,
+                },
+            )
+        )
     for intent in screenshot_intents:
         artifacts.append(
             _planned_artifact(
@@ -393,6 +429,8 @@ def build_operational_capture_plan(
     archive_check_requested: bool = False,
     archive_submit_requested: bool = False,
     archivebox_plan_requested: bool = False,
+    warc_requested: bool = False,
+    wacz_requested: bool = False,
     timestamp_utc: str = "2026-07-16T00:00:00Z",
 ) -> OperationalCapturePlanResult:
     selected_modes: list[str] = []
@@ -417,7 +455,13 @@ def build_operational_capture_plan(
     if discussion.livechat_screenshot_active:
         screenshot_intents.append("livechat")
 
-    archive_requested = archive_check_requested or archive_submit_requested or archivebox_plan_requested
+    archive_requested = (
+        archive_check_requested
+        or archive_submit_requested
+        or archivebox_plan_requested
+        or warc_requested
+        or wacz_requested
+    )
     if (
         not selected_modes
         and not selected_media_resource_ids
@@ -437,6 +481,10 @@ def build_operational_capture_plan(
         selected_modes_tuple = selected_modes_tuple + ("archive_submit",)
     if archivebox_plan_requested and "archivebox_plan" not in selected_modes:
         selected_modes_tuple = selected_modes_tuple + ("archivebox_plan",)
+    if warc_requested and "warc" not in selected_modes:
+        selected_modes_tuple = selected_modes_tuple + ("warc",)
+    if wacz_requested and "wacz" not in selected_modes:
+        selected_modes_tuple = selected_modes_tuple + ("wacz",)
     screenshot_intents_tuple = tuple(screenshot_intents)
     declared_artifacts = _planned_capture_artifacts(
         row=row,
@@ -448,6 +496,8 @@ def build_operational_capture_plan(
         archive_check_requested=archive_check_requested,
         archive_submit_requested=archive_submit_requested,
         archivebox_plan_requested=archivebox_plan_requested,
+        warc_requested=warc_requested,
+        wacz_requested=wacz_requested,
         timestamp_utc=timestamp_utc,
     )
 
@@ -469,6 +519,8 @@ def build_operational_capture_plan(
             "selected_media_resource_ids": tuple(selected_media_resource_ids),
             "selected_modes": selected_modes_tuple,
             "screenshot_intents": screenshot_intents_tuple,
+            "wacz_requested": wacz_requested,
+            "warc_requested": warc_requested,
         },
         warnings=tuple(warnings),
     )

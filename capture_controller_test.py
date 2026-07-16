@@ -22,6 +22,8 @@ from capture_contracts import (
     ARTIFACT_TYPE_RAW_HTML,
     ARTIFACT_TYPE_RENDERED_RECORDING,
     ARTIFACT_TYPE_SCREENSHOT,
+    ARTIFACT_TYPE_WACZ,
+    ARTIFACT_TYPE_WARC,
 )
 from source_resource_state import build_discussion_capture_options, build_source_resource_row
 
@@ -219,6 +221,45 @@ def test_operational_capture_plan_declares_archive_artifacts_without_execution()
     assert "write_performed\":false" in rendered
 
 
+def test_operational_capture_plan_declares_warc_wacz_artifacts_without_execution() -> None:
+    row = build_source_resource_row(MSN_URL)
+    discussion = build_discussion_capture_options(
+        (row,),
+        selected_row_id=row.row_id,
+        webpage_selected=False,
+        comments_selected=False,
+        comments_screenshot_requested=False,
+        livechat_selected=False,
+        livechat_screenshot_requested=False,
+    )
+
+    result = build_operational_capture_plan(
+        row=row,
+        discussion=discussion,
+        warc_requested=True,
+        wacz_requested=True,
+    )
+    artifact_types = [artifact.artifact_type for artifact in result.declared_artifacts]
+    methods = [artifact.capture_method for artifact in result.declared_artifacts]
+
+    assert result.selected_modes == ("warc", "wacz")
+    assert result.warnings == ()
+    assert artifact_types == [ARTIFACT_TYPE_WARC, ARTIFACT_TYPE_WACZ]
+    assert methods == ["planned_warc_fixture_manifest", "planned_wacz_fixture_manifest"]
+    assert result.declared_artifacts[0].metadata["warc_capture_execution"] == "not executed"
+    assert result.declared_artifacts[0].metadata["header_secret_redaction_required"] is True
+    assert result.declared_artifacts[1].metadata["wacz_packaging_execution"] == "not executed"
+    assert result.declared_artifacts[1].metadata["warc_component_references_only"] is True
+    assert result.action_events[0].request_summary["warc_requested"] is True
+    assert result.action_events[0].request_summary["wacz_requested"] is True
+    rendered = _action_log_jsonl(result.action_events)
+    assert "Authorization" not in rendered
+    assert "Cookie" not in rendered
+    assert "warcio" not in rendered
+    assert "subprocess" not in rendered
+    assert "write_performed\":false" in rendered
+
+
 def test_operational_capture_plan_message_is_user_facing_and_local_only() -> None:
     row = build_source_resource_row(MSN_URL)
     discussion = build_discussion_capture_options(
@@ -276,6 +317,7 @@ def run_self_test() -> None:
     test_operational_capture_plan_declares_media_download_and_mux_artifacts_without_execution()
     test_operational_capture_plan_declares_rendered_citation_artifacts_without_execution()
     test_operational_capture_plan_declares_archive_artifacts_without_execution()
+    test_operational_capture_plan_declares_warc_wacz_artifacts_without_execution()
     test_operational_capture_plan_message_is_user_facing_and_local_only()
     test_operational_capture_plan_action_log_artifact_is_deterministic_and_sanitized()
 
