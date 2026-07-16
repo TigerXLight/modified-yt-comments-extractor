@@ -21,6 +21,7 @@ class CaptureFixture:
     status: str = "REQUIRED"
     content_type: str = "text/html; charset=utf-8"
     body: str = ""
+    binary_body: bytes = b""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -31,6 +32,10 @@ class CaptureFixture:
             "route": self.route,
             "status": self.status,
         }
+
+    @property
+    def payload(self) -> bytes:
+        return self.binary_body if self.binary_body else self.body.encode("utf-8")
 
 
 def _html(title: str, body: str) -> str:
@@ -190,6 +195,20 @@ CAPTURE_FIXTURES: tuple[CaptureFixture, ...] = (
         body=_html("Split Media Fixture", "<video data-video-track=\"v1\" data-audio-track=\"a1\"></video>"),
     ),
     CaptureFixture(
+        fixture_id="sample_video_mp4",
+        route="/media/sample-video.mp4",
+        expected="tiny local fixture media payload",
+        content_type="video/mp4",
+        binary_body=b"fixture-video-bytes",
+    ),
+    CaptureFixture(
+        fixture_id="sample_audio_m4a",
+        route="/media/sample-audio.m4a",
+        expected="tiny local fixture audio payload",
+        content_type="audio/mp4",
+        binary_body=b"fixture-audio-bytes",
+    ),
+    CaptureFixture(
         fixture_id="archive_status",
         route="/archive/status",
         expected="mock archive status responses",
@@ -225,7 +244,7 @@ class _CaptureFixtureRequestHandler(BaseHTTPRequestHandler):
 
     def _send_fixture(self, fixture: CaptureFixture, *, body: bool) -> None:
         status_code = 500 if fixture.route == "/error/500" else 200
-        payload = fixture.body.encode("utf-8")
+        payload = fixture.payload
         self.send_response(status_code)
         self.send_header("Content-Type", fixture.content_type)
         self.send_header("Content-Length", str(len(payload)))
