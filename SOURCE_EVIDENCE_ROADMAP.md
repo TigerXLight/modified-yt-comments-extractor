@@ -557,6 +557,8 @@ Current implementation status:
 - USER_CONFIRMATION_REQUIRED / DESTRUCTIVE_ACTION_NOT_IMPLEMENTED: review decisions and apply plans record intended accept/reject/unknown/not-evidenced/reclassification decisions with old/new path history, but execute no classification changes and no file moves.
 - UI_SCAFFOLD_ONLY / LOCAL_FIXTURE_TESTED: `evidence_database_review_ui.py` adds a standalone review-window/controller scaffold with dry-run warnings, registered-root counts, preview row counts by state, selected decision/apply-plan summaries, and destructive-action-not-implemented status.
 - UI_SCAFFOLD_ONLY: visible `main.py` placement remains deferred because the current UPDATES, KEYS/ACCOUNTS, EXPORT, FILES sidebar order and FILES/EXPORT workflows are protected; adding a button there would require broader layout/runtime work.
+- SYNTHETIC_FIXTURE_ONLY / LOCAL_FIXTURE_TESTED: `evidence_database_demo_fixture.py` provides safe synthetic demo records across `unknown`, `not_evidenced`, `proposed`, `user_confirmed`, `rejected`, and `superseded`; all paths and URLs are synthetic/demo-only and no sensitive classification dimensions are assigned.
+- IMPORT_EXPORT_ONLY / DESTRUCTIVE_ACTION_NOT_IMPLEMENTED: `evidence_database_review_io.py` exports review sessions as deterministic JSON with payload hashes and imports/validates them without executing imported decisions, scanning folders, moving files, or applying classification changes.
 - Not implemented: broad folder scanning, real user-folder indexing, automatic classification execution, sensitive-attribute inference, file movement, live capture/download/archive/provider behavior, and evidence database migration.
 
 ## KEYS / Access & Keys Manager
