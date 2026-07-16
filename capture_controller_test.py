@@ -4,6 +4,16 @@ from capture_controller import (
     format_operational_capture_plan_message,
 )
 from capture_contracts import ARTIFACT_TYPE_ACTION_LOG
+from capture_contracts import (
+    ARTIFACT_TYPE_ACCESSIBILITY_TREE,
+    ARTIFACT_TYPE_ARTICLE_TEXT,
+    ARTIFACT_TYPE_DOM_SNAPSHOT,
+    ARTIFACT_TYPE_FINAL_DOM,
+    ARTIFACT_TYPE_MHTML,
+    ARTIFACT_TYPE_PAGE_OUTLINE,
+    ARTIFACT_TYPE_RAW_HTML,
+    ARTIFACT_TYPE_SCREENSHOT,
+)
 from source_resource_state import build_discussion_capture_options, build_source_resource_row
 
 
@@ -30,7 +40,20 @@ def test_operational_capture_plan_records_modes_without_execution() -> None:
     assert any("Livechat mode is selected" in warning for warning in result.warnings)
     assert result.action_events[0].result == "MODEL_ONLY"
     assert result.action_events[1].previous_event_hash == result.action_events[0].event_hash
-    assert result.action_events[1].artifact_ids == (result.action_log_artifact.artifact_id,)
+    assert result.action_events[2].previous_event_hash == result.action_events[1].event_hash
+    assert result.action_events[2].artifact_ids == (result.action_log_artifact.artifact_id,)
+    assert [artifact.artifact_type for artifact in result.declared_artifacts] == [
+        ARTIFACT_TYPE_RAW_HTML,
+        ARTIFACT_TYPE_FINAL_DOM,
+        ARTIFACT_TYPE_MHTML,
+        ARTIFACT_TYPE_DOM_SNAPSHOT,
+        ARTIFACT_TYPE_ACCESSIBILITY_TREE,
+        ARTIFACT_TYPE_ARTICLE_TEXT,
+        ARTIFACT_TYPE_PAGE_OUTLINE,
+        ARTIFACT_TYPE_SCREENSHOT,
+        ARTIFACT_TYPE_SCREENSHOT,
+    ]
+    assert result.declared_artifacts[-1].metadata["screenshot_intent"] == "comments"
     assert result.action_log_artifact.artifact_type == ARTIFACT_TYPE_ACTION_LOG
     assert result.action_log_artifact.metadata["network_actions_performed"] == "none"
     assert "no fetch" in result.scope
@@ -83,6 +106,7 @@ def test_operational_capture_plan_action_log_artifact_is_deterministic_and_sanit
     assert "api_key" not in rendered
     assert "authorization" not in rendered.lower()
     assert "write_performed\":false" in rendered
+    assert "operational_capture_artifacts_declared" in rendered
     assert "playwright.chromium.launch" not in rendered
     assert "requests.get" not in rendered
 

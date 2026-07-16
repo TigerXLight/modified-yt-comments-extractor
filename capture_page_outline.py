@@ -44,6 +44,7 @@ class PageOutlineResult:
     video_count: int = 0
     audio_count: int = 0
     media_references: tuple[PageMediaReference, ...] = ()
+    outline_lines: tuple[str, ...] = ()
     text_sample: str = ""
     warnings: tuple[str, ...] = ()
     scope: str = PAGE_OUTLINE_SCOPE
@@ -55,6 +56,7 @@ class PageOutlineResult:
             "image_count": self.image_count,
             "link_count": self.link_count,
             "media_references": [reference.to_dict() for reference in self.media_references],
+            "outline_lines": list(self.outline_lines),
             "scope": self.scope,
             "source_url": self.source_url,
             "text_sample": self.text_sample,
@@ -77,9 +79,13 @@ class _PageOutlineParser(HTMLParser):
         self.video_count = 0
         self.audio_count = 0
         self.media_references: list[PageMediaReference] = []
+        self.outline_lines: list[str] = []
         self.text_parts: list[str] = []
         self._in_title = False
         self._ignored_depth = 0
+        self._section_stack: list[tuple[str, str]] = []
+        self._text_tag = ""
+        self._text_parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         lowered = tag.lower()
@@ -89,11 +95,18 @@ class _PageOutlineParser(HTMLParser):
             self._ignored_depth += 1
         if lowered == "title":
             self._in_title = True
+        section_label = _section_label(lowered, attr_map)
+        if section_label:
+            self.outline_lines.append(f"{'  ' * len(self._section_stack)}[{section_label}]")
+            self._section_stack.append((lowered, section_label))
         if lowered.startswith("h") and len(lowered) == 2 and lowered[1].isdigit():
             level = int(lowered[1])
             if 1 <= level <= 6:
                 self.current_heading_level = level
                 self.heading_parts = []
+        if lowered in {"p", "li", "blockquote", "figcaption"}:
+            self._text_tag = lowered
+            self._text_parts = []
         if lowered == "a":
             self.link_count += 1
         if lowered == "img":
@@ -126,8 +139,19 @@ class _PageOutlineParser(HTMLParser):
             text = _normalize_text(" ".join(self.heading_parts))
             if text:
                 self.headings.append(PageHeading(level=self.current_heading_level, text=text))
+                self.outline_lines.append(
+                    f"{'  ' * len(self._section_stack)}H{self.current_heading_level}: {text}"
+                )
             self.current_heading_level = 0
             self.heading_parts = []
+        if self._text_tag and lowered == self._text_tag:
+            text = _normalize_text(" ".join(self._text_parts))
+            if text:
+                self.outline_lines.append(f"{'  ' * len(self._section_stack)}{text}")
+            self._text_tag = ""
+            self._text_parts = []
+        if self._section_stack and lowered == self._section_stack[-1][0]:
+            self._section_stack.pop()
         if self.current_tag_stack:
             self.current_tag_stack.pop()
 
@@ -141,12 +165,39 @@ class _PageOutlineParser(HTMLParser):
             self.title_parts.append(text)
         if self.current_heading_level:
             self.heading_parts.append(text)
+        if self._text_tag:
+            self._text_parts.append(text)
         if not self._in_title:
             self.text_parts.append(text)
 
 
 def _normalize_text(value: str) -> str:
     return " ".join(str(value or "").split())
+
+
+def _section_label(tag: str, attrs: dict[str, str]) -> str:
+    if tag == "header":
+        return "Header"
+    if tag == "nav":
+        return "Navigation"
+    if tag == "main":
+        return "Main"
+    if tag == "article":
+        return "Article"
+    if tag == "footer":
+        return "Footer"
+    if tag == "aside":
+        return "Aside"
+    attr_text = " ".join(attrs.values()).lower()
+    if tag == "section" and any(token in attr_text for token in ("comment", "discussion", "reply")):
+        return "Comments"
+    if tag == "section":
+        return "Section"
+    return ""
+
+
+def format_page_outline_text(result: PageOutlineResult) -> str:
+    return "\n".join(result.outline_lines)
 
 
 def build_page_outline_from_html(html: str, *, source_url: str = "") -> PageOutlineResult:
@@ -171,6 +222,7 @@ def build_page_outline_from_html(html: str, *, source_url: str = "") -> PageOutl
         video_count=parser.video_count,
         audio_count=parser.audio_count,
         media_references=tuple(parser.media_references),
+        outline_lines=tuple(parser.outline_lines),
         text_sample=text_sample,
         warnings=tuple(warnings),
     )

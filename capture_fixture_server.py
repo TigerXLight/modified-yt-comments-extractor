@@ -74,7 +74,10 @@ CAPTURE_FIXTURES: tuple[CaptureFixture, ...] = (
         expected="exclude chrome/ads/comments",
         body=_html(
             "Chrome Heavy Fixture",
-            "<nav>Navigation</nav><main><article><h1>Chrome Heavy Fixture</h1><p>Primary story.</p></article></main><aside>Advertisement</aside>",
+            "<nav>Navigation</nav>"
+            "<main><article><h1>Chrome Heavy Fixture</h1><p>Primary story.</p></article></main>"
+            "<aside class=\"advert\">Advertisement</aside>"
+            "<section id=\"comments\"><p>Fixture comment should not be article text.</p></section>",
         ),
     ),
     CaptureFixture(
