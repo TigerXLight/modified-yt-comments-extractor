@@ -559,6 +559,7 @@ Current implementation status:
 - UI_SCAFFOLD_ONLY: visible `main.py` placement remains deferred because the current UPDATES, KEYS/ACCOUNTS, EXPORT, FILES sidebar order and FILES/EXPORT workflows are protected; adding a button there would require broader layout/runtime work.
 - SYNTHETIC_FIXTURE_ONLY / LOCAL_FIXTURE_TESTED: `evidence_database_demo_fixture.py` provides safe synthetic demo records across `unknown`, `not_evidenced`, `proposed`, `user_confirmed`, `rejected`, and `superseded`; all paths and URLs are synthetic/demo-only and no sensitive classification dimensions are assigned.
 - IMPORT_EXPORT_ONLY / DESTRUCTIVE_ACTION_NOT_IMPLEMENTED: `evidence_database_review_io.py` exports review sessions as deterministic JSON with payload hashes and imports/validates them without executing imported decisions, scanning folders, moving files, or applying classification changes.
+- REGRESSION_HARDENED / LOCAL_FIXTURE_TESTED: import/export validation now covers schema/hash tampering, compatible unknown top-level fields, malformed records, destructive-looking flags, and nested secret-like keys; the review scaffold now covers empty/duplicate/sparse summaries, rejected/superseded apply-plan target counts, persistent dry-run warning text, and absence of a visible `main.py` Evidence Database hook.
 - Not implemented: broad folder scanning, real user-folder indexing, automatic classification execution, sensitive-attribute inference, file movement, live capture/download/archive/provider behavior, and evidence database migration.
 
 ## KEYS / Access & Keys Manager
