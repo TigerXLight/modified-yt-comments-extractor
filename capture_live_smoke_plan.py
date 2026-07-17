@@ -103,6 +103,30 @@ DEFAULT_LIVE_SMOKE_SCOPES = (
     MANUAL_ACTION_SCOPE_EXPORT_QUEUE,
 )
 
+MSN_MANUAL_SMOKE_SITE_LABEL = "MSN"
+MSN_MANUAL_SMOKE_SOURCE_URL = "https://www.msn.com/en-gb/news/uknews/twelve-arrested-over-terror-threat-at-islamic-festival/ar-AA27OIhw?"
+MSN_MANUAL_SMOKE_ADAPTER_FAMILY = "msn"
+MSN_MANUAL_SMOKE_APPROVED_SCOPES = (
+    MANUAL_ACTION_SCOPE_WEBPAGE,
+    MANUAL_ACTION_SCOPE_COMMENTS,
+    MANUAL_ACTION_SCOPE_MEDIA,
+    MANUAL_ACTION_SCOPE_EXPORT_QUEUE,
+)
+
+MANUAL_OBSERVATION_STATUS_OBSERVED = "observed"
+MANUAL_OBSERVATION_STATUS_NOT_OBSERVED = "not_observed"
+MANUAL_OBSERVATION_STATUS_BLOCKED = "blocked"
+MANUAL_OBSERVATION_STATUS_SKIPPED = "skipped"
+MANUAL_OBSERVATION_STATUS_NEEDS_FOLLOWUP = "needs_followup"
+
+MANUAL_OBSERVATION_RESULT_STATUSES = (
+    MANUAL_OBSERVATION_STATUS_OBSERVED,
+    MANUAL_OBSERVATION_STATUS_NOT_OBSERVED,
+    MANUAL_OBSERVATION_STATUS_BLOCKED,
+    MANUAL_OBSERVATION_STATUS_SKIPPED,
+    MANUAL_OBSERVATION_STATUS_NEEDS_FOLLOWUP,
+)
+
 
 def _sorted_dict(value: Mapping[str, Any]) -> dict[str, Any]:
     return {str(key): value[key] for key in sorted(value)}
@@ -155,6 +179,69 @@ class LiveSmokeTemplateValidation:
         return {
             "errors": list(self.errors),
             "is_valid": self.is_valid,
+            "warnings": list(self.warnings),
+        }
+
+
+@dataclass(frozen=True)
+class ManualLiveSmokeObservation:
+    observed_at_local_text: str
+    operator_label: str
+    site_label: str
+    source_url: str
+    action_scope_id: str
+    result_status: str
+    notes: str = ""
+    artifact_expectation: str = "metadata_only_no_files"
+    claims_automated_capture: bool = False
+    claims_archive_submission: bool = False
+    claims_downloaded_files: bool = False
+    claims_credentials_cookies_accounts: bool = False
+    claims_completed_live_verification: bool = False
+    schema_version: str = LIVE_SMOKE_PLAN_SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "action_scope_id": self.action_scope_id,
+            "artifact_expectation": self.artifact_expectation,
+            "automation_performed": False,
+            "claims_archive_submission": self.claims_archive_submission,
+            "claims_automated_capture": self.claims_automated_capture,
+            "claims_completed_live_verification": self.claims_completed_live_verification,
+            "claims_credentials_cookies_accounts": self.claims_credentials_cookies_accounts,
+            "claims_downloaded_files": self.claims_downloaded_files,
+            "execution_commands": [],
+            "manual_operator_only": True,
+            "notes": self.notes,
+            "observed_at_local_text": self.observed_at_local_text,
+            "operator_label": self.operator_label,
+            "provider_or_network_action": "none",
+            "result_status": self.result_status,
+            "schema_version": self.schema_version,
+            "site_label": self.site_label,
+            "source_url": self.source_url,
+            "user_review_required": True,
+        }
+
+
+@dataclass(frozen=True)
+class ManualLiveSmokeObservationImport:
+    is_accepted: bool
+    errors: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    observation: ManualLiveSmokeObservation | None = None
+    user_review_required: bool = True
+    manual_operator_only: bool = True
+    execution_commands: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "errors": list(self.errors),
+            "execution_commands": list(self.execution_commands),
+            "is_accepted": self.is_accepted,
+            "manual_operator_only": self.manual_operator_only,
+            "observation": self.observation.to_dict() if self.observation is not None else None,
+            "user_review_required": self.user_review_required,
             "warnings": list(self.warnings),
         }
 
@@ -455,6 +542,106 @@ def validate_live_smoke_plan_template(
         is_valid=not errors,
         errors=tuple(errors),
         warnings=tuple(warnings),
+    )
+
+
+def build_msn_manual_live_smoke_plan_template(
+    *,
+    approver_metadata: str = APPROVER_METADATA_REQUIRED_PLACEHOLDER,
+    safety_boundary_acknowledged: bool = False,
+    manual_action_scope_ids: Sequence[str] = MSN_MANUAL_SMOKE_APPROVED_SCOPES,
+) -> LiveSmokePlanTemplate:
+    return build_named_site_live_smoke_plan_template(
+        site_label=MSN_MANUAL_SMOKE_SITE_LABEL,
+        source_url=MSN_MANUAL_SMOKE_SOURCE_URL,
+        source_adapter_family=MSN_MANUAL_SMOKE_ADAPTER_FAMILY,
+        manual_action_scope_ids=manual_action_scope_ids,
+        approver_metadata=approver_metadata,
+        safety_boundary_acknowledged=safety_boundary_acknowledged,
+    )
+
+
+def validate_msn_manual_live_smoke_template(
+    template: LiveSmokePlanTemplate,
+) -> LiveSmokeTemplateValidation:
+    base = validate_live_smoke_plan_template(template)
+    errors = list(base.errors)
+    warnings = list(base.warnings)
+    if template.site_label != MSN_MANUAL_SMOKE_SITE_LABEL:
+        errors.append("MSN manual smoke site label must be exactly MSN")
+    if template.source_url != MSN_MANUAL_SMOKE_SOURCE_URL:
+        errors.append("MSN manual smoke source URL must be exactly https://www.msn.com/en-gb/news/uknews/twelve-arrested-over-terror-threat-at-islamic-festival/ar-AA27OIhw?")
+    if template.source_adapter_family != MSN_MANUAL_SMOKE_ADAPTER_FAMILY:
+        errors.append("MSN manual smoke adapter family must be msn")
+    if tuple(template.manual_action_scope_ids) != MSN_MANUAL_SMOKE_APPROVED_SCOPES:
+        errors.append(
+            "MSN manual smoke action/scope IDs must be exactly: "
+            + ", ".join(MSN_MANUAL_SMOKE_APPROVED_SCOPES)
+        )
+    return LiveSmokeTemplateValidation(
+        is_valid=not errors,
+        errors=tuple(errors),
+        warnings=tuple(warnings),
+    )
+
+
+def build_msn_manual_live_smoke_plan(
+    *, approval: LiveSmokeSiteApproval | None = None
+) -> LiveSmokePlan:
+    return build_live_smoke_plan(
+        candidate_site_label=MSN_MANUAL_SMOKE_SITE_LABEL,
+        source_url_placeholder=MSN_MANUAL_SMOKE_SOURCE_URL,
+        source_adapter_family=MSN_MANUAL_SMOKE_ADAPTER_FAMILY,
+        intended_scopes=MSN_MANUAL_SMOKE_APPROVED_SCOPES,
+        approval=approval,
+    )
+
+
+def validate_msn_manual_operator_observation(
+    observation: ManualLiveSmokeObservation,
+) -> LiveSmokeTemplateValidation:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if observation.site_label != MSN_MANUAL_SMOKE_SITE_LABEL:
+        errors.append("manual observation site label must be MSN")
+    if observation.source_url != MSN_MANUAL_SMOKE_SOURCE_URL:
+        errors.append("manual observation source URL must be https://www.msn.com/en-gb/news/uknews/twelve-arrested-over-terror-threat-at-islamic-festival/ar-AA27OIhw?")
+    if observation.action_scope_id not in MSN_MANUAL_SMOKE_APPROVED_SCOPES:
+        errors.append("manual observation action/scope is not approved for MSN")
+    if observation.result_status not in MANUAL_OBSERVATION_RESULT_STATUSES:
+        errors.append("manual observation result_status is unknown")
+    if not observation.observed_at_local_text.strip():
+        errors.append("manual observation observed_at_local_text is required")
+    if not observation.operator_label.strip():
+        errors.append("manual observation operator_label is required")
+    if observation.claims_automated_capture:
+        errors.append("manual observation must not claim automated capture")
+    if observation.claims_archive_submission:
+        errors.append("manual observation must not claim archive submission")
+    if observation.claims_downloaded_files:
+        errors.append("manual observation must not claim downloaded files")
+    if observation.claims_credentials_cookies_accounts:
+        errors.append("manual observation must not claim credentials/cookies/accounts")
+    if observation.claims_completed_live_verification:
+        errors.append("manual observation must not claim completed live verification")
+    if observation.artifact_expectation and observation.artifact_expectation != "metadata_only_no_files":
+        warnings.append("artifact expectation is metadata only; no file existence is claimed")
+    return LiveSmokeTemplateValidation(
+        is_valid=not errors,
+        errors=tuple(errors),
+        warnings=tuple(warnings),
+    )
+
+
+def import_msn_manual_operator_observation(
+    observation: ManualLiveSmokeObservation,
+) -> ManualLiveSmokeObservationImport:
+    validation = validate_msn_manual_operator_observation(observation)
+    return ManualLiveSmokeObservationImport(
+        is_accepted=validation.is_valid,
+        errors=validation.errors,
+        warnings=validation.warnings,
+        observation=observation if validation.is_valid else None,
     )
 
 

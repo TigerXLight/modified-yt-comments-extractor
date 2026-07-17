@@ -15,6 +15,12 @@ from capture_live_smoke_plan import (
     LIVE_SMOKE_STATUS_APPROVAL_REQUIRED,
     LIVE_SMOKE_STATUS_APPROVED_FOR_MANUAL_OPERATOR_ONLY,
     LIVE_SMOKE_STATUS_COMPLETED_MANUALLY,
+    MANUAL_OBSERVATION_STATUS_OBSERVED,
+    MANUAL_OBSERVATION_STATUS_BLOCKED,
+    MSN_MANUAL_SMOKE_ADAPTER_FAMILY,
+    MSN_MANUAL_SMOKE_APPROVED_SCOPES,
+    MSN_MANUAL_SMOKE_SITE_LABEL,
+    MSN_MANUAL_SMOKE_SOURCE_URL,
     MANUAL_ACTION_SCOPE_ARCHIVE,
     MANUAL_ACTION_SCOPE_COMMENTS,
     MANUAL_ACTION_SCOPE_EXPORT_QUEUE,
@@ -25,13 +31,19 @@ from capture_live_smoke_plan import (
     MANUAL_ACTION_SCOPE_WEBPAGE,
     SOURCE_URL_APPROVAL_REQUIRED_PLACEHOLDER,
     LiveSmokeSiteApproval,
+    ManualLiveSmokeObservation,
     build_imported_manual_live_smoke_plan,
     build_live_smoke_plan_from_template,
     build_live_smoke_plan,
+    build_msn_manual_live_smoke_plan,
+    build_msn_manual_live_smoke_plan_template,
     build_named_site_live_smoke_plan_template,
     live_smoke_plan_to_json,
+    import_msn_manual_operator_observation,
     manual_action_scope_catalog,
     validate_live_smoke_plan_template,
+    validate_msn_manual_live_smoke_template,
+    validate_msn_manual_operator_observation,
 )
 
 
@@ -364,6 +376,125 @@ def test_manual_action_scope_catalog_contains_expected_named_scopes() -> None:
     assert all(item.result_placeholder == "not_run" for item in catalog)
 
 
+
+def test_msn_manual_plan_template_validates_exact_site_url_and_actions() -> None:
+    template = build_msn_manual_live_smoke_plan_template(
+        approver_metadata="user approved MSN manual smoke planning only",
+        safety_boundary_acknowledged=True,
+    )
+    validation = validate_msn_manual_live_smoke_template(template)
+
+    assert validation.is_valid is True
+    assert validation.errors == ()
+    assert template.site_label == MSN_MANUAL_SMOKE_SITE_LABEL
+    assert template.source_url == MSN_MANUAL_SMOKE_SOURCE_URL
+    assert template.source_adapter_family == MSN_MANUAL_SMOKE_ADAPTER_FAMILY
+    assert template.manual_action_scope_ids == MSN_MANUAL_SMOKE_APPROVED_SCOPES
+    assert template.executable_by_application is False
+    assert template.execution_commands == ()
+
+
+def test_msn_manual_plan_rejects_non_msn_url_and_action_set_drift() -> None:
+    wrong_url = build_named_site_live_smoke_plan_template(
+        site_label=MSN_MANUAL_SMOKE_SITE_LABEL,
+        source_url="https://www.example.com/",
+        source_adapter_family=MSN_MANUAL_SMOKE_ADAPTER_FAMILY,
+        manual_action_scope_ids=MSN_MANUAL_SMOKE_APPROVED_SCOPES,
+        approver_metadata="user approved MSN manual smoke planning only",
+        safety_boundary_acknowledged=True,
+    )
+    extra_action = build_msn_manual_live_smoke_plan_template(
+        manual_action_scope_ids=MSN_MANUAL_SMOKE_APPROVED_SCOPES + (MANUAL_ACTION_SCOPE_ARCHIVE,),
+        approver_metadata="user approved MSN manual smoke planning only",
+        safety_boundary_acknowledged=True,
+    )
+    omitted_action = build_msn_manual_live_smoke_plan_template(
+        manual_action_scope_ids=MSN_MANUAL_SMOKE_APPROVED_SCOPES[:-1],
+        approver_metadata="user approved MSN manual smoke planning only",
+        safety_boundary_acknowledged=True,
+    )
+
+    assert "MSN manual smoke source URL must be exactly https://www.msn.com/en-gb/news/uknews/twelve-arrested-over-terror-threat-at-islamic-festival/ar-AA27OIhw?" in validate_msn_manual_live_smoke_template(wrong_url).errors
+    assert any("must be exactly" in error for error in validate_msn_manual_live_smoke_template(extra_action).errors)
+    assert any("must be exactly" in error for error in validate_msn_manual_live_smoke_template(omitted_action).errors)
+
+
+def test_msn_manual_plan_approval_is_manual_operator_only_not_executable() -> None:
+    approval = LiveSmokeSiteApproval(
+        site_label=MSN_MANUAL_SMOKE_SITE_LABEL,
+        source_url=MSN_MANUAL_SMOKE_SOURCE_URL,
+        approved_by="Fahad manual approval",
+        approved_at_utc="2026-07-17T06:45:00Z",
+        approved_actions=MSN_MANUAL_SMOKE_APPROVED_SCOPES,
+        approval_note="MSN only; no automation; no archive/WARC/rendered/livechat.",
+    )
+
+    plan = build_msn_manual_live_smoke_plan(approval=approval)
+
+    assert plan.approval_status == APPROVAL_STATUS_APPROVED_FOR_MANUAL_OPERATOR_ONLY
+    assert plan.workflow_status == LIVE_SMOKE_STATUS_APPROVED_FOR_MANUAL_OPERATOR_ONLY
+    assert plan.source_adapter_family == MSN_MANUAL_SMOKE_ADAPTER_FAMILY
+    assert plan.intended_scopes == MSN_MANUAL_SMOKE_APPROVED_SCOPES
+    assert plan.executable_by_application is False
+    assert plan.execution_commands == ()
+    assert plan.live_network_actions_performed == "none"
+    assert plan.artifact_files_created == "none"
+    assert plan.workflow_status != LIVE_SMOKE_STATUS_COMPLETED_MANUALLY
+
+
+def test_msn_manual_observation_import_accepts_approved_scope_as_metadata_only() -> None:
+    observation = ManualLiveSmokeObservation(
+        observed_at_local_text="2026-07-17 07:00 GMT+1",
+        operator_label="Fahad",
+        site_label=MSN_MANUAL_SMOKE_SITE_LABEL,
+        source_url=MSN_MANUAL_SMOKE_SOURCE_URL,
+        action_scope_id=MANUAL_ACTION_SCOPE_WEBPAGE,
+        result_status=MANUAL_OBSERVATION_STATUS_OBSERVED,
+        notes="Operator manually saw a webpage shell outside Codex.",
+    )
+
+    validation = validate_msn_manual_operator_observation(observation)
+    imported = import_msn_manual_operator_observation(observation)
+    data = imported.to_dict()
+
+    assert validation.is_valid is True
+    assert imported.is_accepted is True
+    assert imported.user_review_required is True
+    assert imported.manual_operator_only is True
+    assert imported.execution_commands == ()
+    assert data["observation"]["user_review_required"] is True
+    assert data["observation"]["manual_operator_only"] is True
+    assert data["observation"]["automation_performed"] is False
+    assert data["observation"]["provider_or_network_action"] == "none"
+    assert data["observation"]["artifact_expectation"] == "metadata_only_no_files"
+
+
+def test_msn_manual_observation_import_rejects_unapproved_site_scope_and_claims() -> None:
+    observation = ManualLiveSmokeObservation(
+        observed_at_local_text="2026-07-17 07:00 GMT+1",
+        operator_label="Fahad",
+        site_label="Other Site",
+        source_url="https://www.example.com/",
+        action_scope_id=MANUAL_ACTION_SCOPE_ARCHIVE,
+        result_status=MANUAL_OBSERVATION_STATUS_BLOCKED,
+        claims_archive_submission=True,
+        claims_downloaded_files=True,
+        claims_completed_live_verification=True,
+    )
+
+    imported = import_msn_manual_operator_observation(observation)
+
+    assert imported.is_accepted is False
+    assert imported.observation is None
+    assert "manual observation site label must be MSN" in imported.errors
+    assert "manual observation source URL must be https://www.msn.com/en-gb/news/uknews/twelve-arrested-over-terror-threat-at-islamic-festival/ar-AA27OIhw?" in imported.errors
+    assert "manual observation action/scope is not approved for MSN" in imported.errors
+    assert "manual observation must not claim archive submission" in imported.errors
+    assert "manual observation must not claim downloaded files" in imported.errors
+    assert "manual observation must not claim completed live verification" in imported.errors
+    assert imported.execution_commands == ()
+
+
 def run_self_test() -> None:
     test_default_live_smoke_plan_requires_approval_and_cannot_execute()
     test_site_approval_only_marks_manual_operator_review_not_execution()
@@ -381,6 +512,11 @@ def run_self_test() -> None:
     test_valid_named_site_template_builds_unapproved_manual_operator_plan()
     test_template_helper_path_cannot_produce_completed_manually()
     test_manual_action_scope_catalog_contains_expected_named_scopes()
+    test_msn_manual_plan_template_validates_exact_site_url_and_actions()
+    test_msn_manual_plan_rejects_non_msn_url_and_action_set_drift()
+    test_msn_manual_plan_approval_is_manual_operator_only_not_executable()
+    test_msn_manual_observation_import_accepts_approved_scope_as_metadata_only()
+    test_msn_manual_observation_import_rejects_unapproved_site_scope_and_claims()
 
 
 if __name__ == "__main__":
