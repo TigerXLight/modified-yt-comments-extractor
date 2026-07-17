@@ -665,6 +665,7 @@ def format_operational_capture_plan_message(result: OperationalCapturePlanResult
             f"Action log artifact: {action_log}",
             "Operational status: fixture/model-only plan",
             "Manual live-site smoke: pending separate approval",
+            "Manual live-smoke approval required: yes",
             "Network actions performed: none",
             "Screenshots performed: none",
             "Downloads performed: none",
