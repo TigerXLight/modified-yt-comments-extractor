@@ -24,17 +24,41 @@ APPROVAL_STATUS_APPROVAL_REQUIRED = "approval_required"
 APPROVAL_STATUS_APPROVED_FOR_MANUAL_OPERATOR_ONLY = "approved_for_manual_operator_only"
 
 SOURCE_URL_APPROVAL_REQUIRED_PLACEHOLDER = "APPROVAL_REQUIRED_SOURCE_URL"
+SITE_LABEL_APPROVAL_REQUIRED_PLACEHOLDER = "APPROVAL_REQUIRED_SITE_LABEL"
+APPROVER_METADATA_REQUIRED_PLACEHOLDER = "APPROVER_METADATA_REQUIRED"
 
 _PLACEHOLDER_VALUES = {
     "",
     "approval_required",
     "approval_required_source_url",
+    "approval_required_site_label",
+    "approver_metadata_required",
     "placeholder",
     "source_url_placeholder",
     "tbd",
     "to_be_approved",
     "unknown",
 }
+
+MANUAL_ACTION_SCOPE_WEBPAGE = "webpage_manual_review"
+MANUAL_ACTION_SCOPE_COMMENTS = "comments_manual_review"
+MANUAL_ACTION_SCOPE_LIVECHAT = "livechat_manual_review"
+MANUAL_ACTION_SCOPE_MEDIA = "media_manual_review"
+MANUAL_ACTION_SCOPE_RENDERED_CITATION = "rendered_citation_manual_note"
+MANUAL_ACTION_SCOPE_ARCHIVE = "archive_manual_note"
+MANUAL_ACTION_SCOPE_WARC_WACZ = "warc_wacz_manual_note"
+MANUAL_ACTION_SCOPE_EXPORT_QUEUE = "export_queue_metadata_review"
+
+MANUAL_ACTION_SCOPE_IDS = (
+    MANUAL_ACTION_SCOPE_WEBPAGE,
+    MANUAL_ACTION_SCOPE_COMMENTS,
+    MANUAL_ACTION_SCOPE_LIVECHAT,
+    MANUAL_ACTION_SCOPE_MEDIA,
+    MANUAL_ACTION_SCOPE_RENDERED_CITATION,
+    MANUAL_ACTION_SCOPE_ARCHIVE,
+    MANUAL_ACTION_SCOPE_WARC_WACZ,
+    MANUAL_ACTION_SCOPE_EXPORT_QUEUE,
+)
 
 LIVE_SMOKE_STATUS_DRAFT = "draft"
 LIVE_SMOKE_STATUS_APPROVAL_REQUIRED = "approval_required"
@@ -69,14 +93,14 @@ SAFETY_PROHIBITIONS = (
 )
 
 DEFAULT_LIVE_SMOKE_SCOPES = (
-    "webpage_snapshot_manual_review",
-    "comments_presence_manual_review",
-    "livechat_availability_manual_review",
-    "media_discovery_manual_review",
-    "rendered_citation_manual_operator_note",
-    "archive_availability_manual_note",
-    "warc_wacz_future_manual_note",
-    "export_queue_metadata_review",
+    MANUAL_ACTION_SCOPE_WEBPAGE,
+    MANUAL_ACTION_SCOPE_COMMENTS,
+    MANUAL_ACTION_SCOPE_LIVECHAT,
+    MANUAL_ACTION_SCOPE_MEDIA,
+    MANUAL_ACTION_SCOPE_RENDERED_CITATION,
+    MANUAL_ACTION_SCOPE_ARCHIVE,
+    MANUAL_ACTION_SCOPE_WARC_WACZ,
+    MANUAL_ACTION_SCOPE_EXPORT_QUEUE,
 )
 
 
@@ -119,6 +143,20 @@ def _approval_failure_reasons(
             "unknown approved manual action/scope: " + ", ".join(sorted(unknown_actions))
         )
     return tuple(reasons)
+
+
+@dataclass(frozen=True)
+class LiveSmokeTemplateValidation:
+    is_valid: bool
+    errors: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "errors": list(self.errors),
+            "is_valid": self.is_valid,
+            "warnings": list(self.warnings),
+        }
 
 
 @dataclass(frozen=True)
@@ -165,6 +203,47 @@ class LiveSmokeSiteApproval:
             "approved_by": self.approved_by,
             "site_label": self.site_label,
             "source_url": self.source_url,
+        }
+
+
+@dataclass(frozen=True)
+class LiveSmokePlanTemplate:
+    site_label: str = SITE_LABEL_APPROVAL_REQUIRED_PLACEHOLDER
+    source_url: str = SOURCE_URL_APPROVAL_REQUIRED_PLACEHOLDER
+    source_adapter_family: str = "site_adapter"
+    manual_action_scope_ids: tuple[str, ...] = DEFAULT_LIVE_SMOKE_SCOPES
+    approver_metadata: str = APPROVER_METADATA_REQUIRED_PLACEHOLDER
+    safety_boundary_acknowledged: bool = False
+    approval_status: str = APPROVAL_STATUS_NOT_APPROVED
+    workflow_status: str = LIVE_SMOKE_STATUS_APPROVAL_REQUIRED
+    execution_mode: str = "manual_operator_only"
+    execution_commands: tuple[str, ...] = ()
+    live_network_actions_performed: str = "none"
+    artifact_files_created: str = "none"
+    safety_prohibitions: tuple[str, ...] = SAFETY_PROHIBITIONS
+    schema_version: str = LIVE_SMOKE_PLAN_SCHEMA_VERSION
+
+    @property
+    def executable_by_application(self) -> bool:
+        return False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "approval_status": self.approval_status,
+            "approver_metadata": self.approver_metadata,
+            "artifact_files_created": self.artifact_files_created,
+            "executable_by_application": self.executable_by_application,
+            "execution_commands": list(self.execution_commands),
+            "execution_mode": self.execution_mode,
+            "live_network_actions_performed": self.live_network_actions_performed,
+            "manual_action_scope_ids": list(self.manual_action_scope_ids),
+            "safety_boundary_acknowledged": self.safety_boundary_acknowledged,
+            "safety_prohibitions": list(self.safety_prohibitions),
+            "schema_version": self.schema_version,
+            "site_label": self.site_label,
+            "source_adapter_family": self.source_adapter_family,
+            "source_url": self.source_url,
+            "workflow_status": self.workflow_status,
         }
 
 
@@ -238,7 +317,7 @@ class LiveSmokePlan:
 def build_default_live_smoke_checklist() -> tuple[LiveSmokeChecklistItem, ...]:
     return (
         LiveSmokeChecklistItem(
-            scope="webpage_snapshot_manual_review",
+            scope=MANUAL_ACTION_SCOPE_WEBPAGE,
             manual_instruction=(
                 "If separately approved, a human operator reviews webpage snapshot evidence "
                 "and records whether planned page artifacts match visible content."
@@ -247,7 +326,7 @@ def build_default_live_smoke_checklist() -> tuple[LiveSmokeChecklistItem, ...]:
             safety_boundary="manual review only; no automatic browser, screenshot, OCR, or network action",
         ),
         LiveSmokeChecklistItem(
-            scope="comments_presence_manual_review",
+            scope=MANUAL_ACTION_SCOPE_COMMENTS,
             manual_instruction=(
                 "If separately approved, a human operator notes whether comments appear available "
                 "and whether fixture-backed artifact declarations remain appropriate."
@@ -256,7 +335,7 @@ def build_default_live_smoke_checklist() -> tuple[LiveSmokeChecklistItem, ...]:
             safety_boundary="manual review only; no comment scraping, API call, login, or bypass",
         ),
         LiveSmokeChecklistItem(
-            scope="livechat_availability_manual_review",
+            scope=MANUAL_ACTION_SCOPE_LIVECHAT,
             manual_instruction=(
                 "If separately approved, a human operator notes livechat availability and boundedness; "
                 "one image must not be treated as complete livechat evidence."
@@ -265,7 +344,7 @@ def build_default_live_smoke_checklist() -> tuple[LiveSmokeChecklistItem, ...]:
             safety_boundary="manual review only; no live chat capture, scraping, API call, or bypass",
         ),
         LiveSmokeChecklistItem(
-            scope="media_discovery_manual_review",
+            scope=MANUAL_ACTION_SCOPE_MEDIA,
             manual_instruction=(
                 "If separately approved, a human operator records discovered media candidates without "
                 "triggering automatic download or mux execution."
@@ -274,7 +353,7 @@ def build_default_live_smoke_checklist() -> tuple[LiveSmokeChecklistItem, ...]:
             safety_boundary="manual review only; no external download, yt-dlp, FFmpeg, or media copying",
         ),
         LiveSmokeChecklistItem(
-            scope="rendered_citation_manual_operator_note",
+            scope=MANUAL_ACTION_SCOPE_RENDERED_CITATION,
             manual_instruction=(
                 "If separately approved, a human operator records whether rendered citation capture "
                 "would require consent-mediated display capture."
@@ -285,7 +364,7 @@ def build_default_live_smoke_checklist() -> tuple[LiveSmokeChecklistItem, ...]:
             ),
         ),
         LiveSmokeChecklistItem(
-            scope="archive_availability_manual_note",
+            scope=MANUAL_ACTION_SCOPE_ARCHIVE,
             manual_instruction=(
                 "If separately approved, a human operator records archive availability notes without "
                 "submitting URLs or executing ArchiveBox."
@@ -294,7 +373,7 @@ def build_default_live_smoke_checklist() -> tuple[LiveSmokeChecklistItem, ...]:
             safety_boundary="manual note only; no Wayback/archive.today/ArchiveBox calls or submissions",
         ),
         LiveSmokeChecklistItem(
-            scope="warc_wacz_future_manual_note",
+            scope=MANUAL_ACTION_SCOPE_WARC_WACZ,
             manual_instruction=(
                 "If separately approved, a human operator records whether future WARC/WACZ capture "
                 "would be relevant; no capture or packaging is performed."
@@ -303,7 +382,7 @@ def build_default_live_smoke_checklist() -> tuple[LiveSmokeChecklistItem, ...]:
             safety_boundary="manual note only; no real WARC capture or WACZ packaging",
         ),
         LiveSmokeChecklistItem(
-            scope="export_queue_metadata_review",
+            scope=MANUAL_ACTION_SCOPE_EXPORT_QUEUE,
             manual_instruction=(
                 "If separately approved, a human operator manually reviews whether metadata-only "
                 "queue/export records remain USER_REVIEW_REQUIRED."
@@ -311,6 +390,85 @@ def build_default_live_smoke_checklist() -> tuple[LiveSmokeChecklistItem, ...]:
             expected_artifact_declaration_type="EXPORT_METADATA_ONLY/QUEUE_METADATA_ONLY",
             safety_boundary="metadata review only; no package writes, queue persistence, file moves, or scans",
         ),
+    )
+
+
+def manual_action_scope_catalog() -> tuple[LiveSmokeChecklistItem, ...]:
+    return build_default_live_smoke_checklist()
+
+
+def build_named_site_live_smoke_plan_template(
+    *,
+    site_label: str = SITE_LABEL_APPROVAL_REQUIRED_PLACEHOLDER,
+    source_url: str = SOURCE_URL_APPROVAL_REQUIRED_PLACEHOLDER,
+    source_adapter_family: str = "site_adapter",
+    manual_action_scope_ids: Sequence[str] = DEFAULT_LIVE_SMOKE_SCOPES,
+    approver_metadata: str = APPROVER_METADATA_REQUIRED_PLACEHOLDER,
+    safety_boundary_acknowledged: bool = False,
+) -> LiveSmokePlanTemplate:
+    return LiveSmokePlanTemplate(
+        site_label=site_label.strip(),
+        source_url=source_url.strip(),
+        source_adapter_family=source_adapter_family.strip(),
+        manual_action_scope_ids=tuple(
+            scope.strip() for scope in manual_action_scope_ids if scope.strip()
+        ),
+        approver_metadata=approver_metadata.strip(),
+        safety_boundary_acknowledged=bool(safety_boundary_acknowledged),
+    )
+
+
+def validate_live_smoke_plan_template(
+    template: LiveSmokePlanTemplate,
+) -> LiveSmokeTemplateValidation:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not template.site_label.strip():
+        errors.append("missing site label")
+    elif _is_placeholder_value(template.site_label):
+        errors.append("placeholder site label")
+    if not template.source_url.strip():
+        errors.append("missing source URL")
+    elif _is_placeholder_value(template.source_url):
+        errors.append("placeholder source URL")
+    if not template.source_adapter_family.strip():
+        errors.append("missing adapter family")
+    if not template.manual_action_scope_ids:
+        errors.append("missing manual action/scope IDs")
+    known_scopes = set(MANUAL_ACTION_SCOPE_IDS)
+    unknown_scopes = tuple(
+        scope for scope in template.manual_action_scope_ids if scope not in known_scopes
+    )
+    if unknown_scopes:
+        errors.append("unknown manual action/scope IDs: " + ", ".join(sorted(unknown_scopes)))
+    if not template.approver_metadata.strip() or _is_placeholder_value(
+        template.approver_metadata
+    ):
+        errors.append("missing approver metadata")
+    if not template.safety_boundary_acknowledged:
+        errors.append("missing safety acknowledgement")
+    if template.execution_commands:
+        errors.append("execution commands are not allowed")
+    if template.approval_status != APPROVAL_STATUS_NOT_APPROVED:
+        warnings.append("template approval status is metadata only and should remain not_approved")
+    return LiveSmokeTemplateValidation(
+        is_valid=not errors,
+        errors=tuple(errors),
+        warnings=tuple(warnings),
+    )
+
+
+def build_live_smoke_plan_from_template(
+    template: LiveSmokePlanTemplate,
+) -> LiveSmokePlan:
+    validation = validate_live_smoke_plan_template(template)
+    if not validation.is_valid:
+        raise ValueError("; ".join(validation.errors))
+    return build_live_smoke_plan(
+        candidate_site_label=template.site_label,
+        source_url_placeholder=template.source_url,
+        source_adapter_family=template.source_adapter_family,
+        intended_scopes=template.manual_action_scope_ids,
     )
 
 
