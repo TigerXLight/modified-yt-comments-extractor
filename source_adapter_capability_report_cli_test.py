@@ -36,13 +36,15 @@ def run_self_test() -> None:
     assert code == 0
     assert stderr == ""
     parsed = json.loads(json_output)
-    assert parsed["adapter_count"] == 2
+    assert parsed["adapter_count"] == 3
     assert [item["adapter_id"] for item in parsed["source_adapters"]] == [
         "youtube",
+        "msn",
         "news_website",
     ]
     assert parsed["source_adapters"][0]["credential_type"] == "api_key"
     assert parsed["source_adapters"][1]["credential_type"] == "none"
+    assert parsed["source_adapters"][2]["credential_type"] == "none"
 
     code, filtered_json, stderr = _run_cli(
         ["--adapter", " YouTube ", "--adapter", "youtube", "--format", "json"]

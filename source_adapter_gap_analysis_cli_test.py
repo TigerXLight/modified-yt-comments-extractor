@@ -20,7 +20,7 @@ def run_self_test() -> None:
     assert code == 0
     assert stderr == ""
     assert "# Source Adapter / Preservation Gap Analysis" in markdown
-    assert "youtube, news_website" in markdown
+    assert "youtube, msn, news_website" in markdown
     assert "Substack" in markdown
     assert "ArchiveBox" in markdown
     assert "does not fetch URLs" in markdown
@@ -38,8 +38,8 @@ def run_self_test() -> None:
     assert code == 0
     assert stderr == ""
     parsed = json.loads(json_output)
-    assert parsed["implemented_adapter_count"] == 2
-    assert parsed["current_adapter_ids"] == ["youtube", "news_website"]
+    assert parsed["implemented_adapter_count"] == 3
+    assert parsed["current_adapter_ids"] == ["youtube", "msn", "news_website"]
     categories = {category["category_id"]: category for category in parsed["categories"]}
     assert "TikTok" in categories["social_video"]["example_platforms"]
     assert "Substack" in categories["newsletter_sites"]["example_platforms"]
@@ -66,7 +66,7 @@ def run_self_test() -> None:
         assert code == 0
         assert stdout == ""
         assert stderr == ""
-        assert "Current adapters: youtube, news_website" in output_path.read_text(
+        assert "Current adapters: youtube, msn, news_website" in output_path.read_text(
             encoding="utf-8"
         )
 

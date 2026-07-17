@@ -112,7 +112,7 @@ Planned access mode labels:
 - EXPORT_METADATA_ONLY / QUEUE_METADATA_ONLY / USER_REVIEW_REQUIRED connection helpers now convert planned operational-capture artifacts into Evidence Item Queue metadata, Total Export manifest assets/archive-result metadata, and Evidence Database review/index records. Artifact IDs, hashes, source URLs, scopes, action-log references, fixture/mock/model labels, and MANUAL_LIVE_SITE_SMOKE_PENDING status are preserved without writing artifact files, moving files, scanning roots, executing classification changes, or claiming live capture completion.
 - This is not approval for live website capture. It does not access real external websites, browser profiles, cookies, accounts, comments, media, archive services, or ArchiveBox instances.
 - It does not run real scraping, live browser automation, screenshots, external downloads, archive checks/submissions, ArchiveBox execution, provider calls, credential use, or evidence-database work.
-- The remaining REV4 boundary is full regression/documentation closeout and any separately approved live/manual site-smoke plan; any real-site adapter step remains separately approval-gated and should use local fixtures/mocks first.
+- REV4 full local regression/documentation closeout is complete for the fixture/model/UI/export metadata stack through Batch 6. The remaining REV4 boundary is any separately approved live/manual site-smoke plan plus later production hardening; any real-site adapter step remains separately approval-gated and should use local fixtures/mocks first. No LIVE_SITE_MANUALLY_VERIFIED claim is made.
 
 ## Source-Role / Evidence Hierarchy
 

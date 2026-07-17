@@ -125,8 +125,8 @@ def run_self_test() -> None:
         assert stderr == ""
         parsed_news = json.loads(news_json)
         assert parsed_news["status"] == "ready"
-        assert parsed_news["adapter_name"] == "news_website"
-        assert parsed_news["adapter_display_name"] == "News Website"
+        assert parsed_news["adapter_name"] == "msn"
+        assert parsed_news["adapter_display_name"] == "MSN"
         assert parsed_news["normalized_url"] == (
             "https://www.msn.com/en-gb/news/world/example-story/ar-AA123456"
         )
