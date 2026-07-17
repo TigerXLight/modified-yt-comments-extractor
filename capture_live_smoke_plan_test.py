@@ -11,9 +11,11 @@ from capture_contracts import (
 from capture_live_smoke_plan import (
     APPROVAL_STATUS_APPROVED_FOR_MANUAL_OPERATOR_ONLY,
     APPROVAL_STATUS_NOT_APPROVED,
+    DEFAULT_LIVE_SMOKE_SCOPES,
     LIVE_SMOKE_STATUS_APPROVAL_REQUIRED,
     LIVE_SMOKE_STATUS_APPROVED_FOR_MANUAL_OPERATOR_ONLY,
     LIVE_SMOKE_STATUS_COMPLETED_MANUALLY,
+    SOURCE_URL_APPROVAL_REQUIRED_PLACEHOLDER,
     LiveSmokeSiteApproval,
     build_imported_manual_live_smoke_plan,
     build_live_smoke_plan,
@@ -43,7 +45,10 @@ def test_site_approval_only_marks_manual_operator_review_not_execution() -> None
         source_url="https://example.invalid/manual-only",
         approved_by="manual reviewer",
         approved_at_utc="2026-07-17T12:00:00Z",
-        approved_actions=("manual page review", "manual comments note"),
+        approved_actions=(
+            "webpage_snapshot_manual_review",
+            "comments_presence_manual_review",
+        ),
     )
 
     plan = build_live_smoke_plan(
@@ -58,6 +63,86 @@ def test_site_approval_only_marks_manual_operator_review_not_execution() -> None
     assert plan.executable_by_application is False
     assert plan.execution_commands == ()
     assert any("manual operator" in note.lower() for note in plan.safety_notes)
+
+
+def test_approval_fails_without_named_site() -> None:
+    approval = LiveSmokeSiteApproval(
+        site_label="approval_required",
+        source_url="https://example.invalid/manual-only",
+        approved_by="manual reviewer",
+        approved_at_utc="2026-07-17T12:00:00Z",
+        approved_actions=("webpage_snapshot_manual_review",),
+    )
+
+    plan = build_live_smoke_plan(
+        candidate_site_label="approval_required",
+        source_url_placeholder="https://example.invalid/manual-only",
+        approval=approval,
+    )
+
+    assert plan.approval_status == APPROVAL_STATUS_NOT_APPROVED
+    assert plan.workflow_status == LIVE_SMOKE_STATUS_APPROVAL_REQUIRED
+    assert any("explicit named site label is required" in note for note in plan.safety_notes)
+
+
+def test_approval_fails_without_named_source_url() -> None:
+    approval = LiveSmokeSiteApproval(
+        site_label="Example News",
+        source_url=SOURCE_URL_APPROVAL_REQUIRED_PLACEHOLDER,
+        approved_by="manual reviewer",
+        approved_at_utc="2026-07-17T12:00:00Z",
+        approved_actions=("webpage_snapshot_manual_review",),
+    )
+
+    plan = build_live_smoke_plan(
+        candidate_site_label="Example News",
+        source_url_placeholder=SOURCE_URL_APPROVAL_REQUIRED_PLACEHOLDER,
+        approval=approval,
+    )
+
+    assert plan.approval_status == APPROVAL_STATUS_NOT_APPROVED
+    assert plan.workflow_status == LIVE_SMOKE_STATUS_APPROVAL_REQUIRED
+    assert any("explicit named source URL is required" in note for note in plan.safety_notes)
+
+
+def test_approval_fails_without_named_manual_actions() -> None:
+    approval = LiveSmokeSiteApproval(
+        site_label="Example News",
+        source_url="https://example.invalid/manual-only",
+        approved_by="manual reviewer",
+        approved_at_utc="2026-07-17T12:00:00Z",
+        approved_actions=(),
+    )
+
+    plan = build_live_smoke_plan(
+        candidate_site_label="Example News",
+        source_url_placeholder="https://example.invalid/manual-only",
+        approval=approval,
+    )
+
+    assert plan.approval_status == APPROVAL_STATUS_NOT_APPROVED
+    assert plan.workflow_status == LIVE_SMOKE_STATUS_APPROVAL_REQUIRED
+    assert any("at least one named manual action/scope is required" in note for note in plan.safety_notes)
+
+
+def test_approval_fails_for_unknown_manual_actions() -> None:
+    approval = LiveSmokeSiteApproval(
+        site_label="Example News",
+        source_url="https://example.invalid/manual-only",
+        approved_by="manual reviewer",
+        approved_at_utc="2026-07-17T12:00:00Z",
+        approved_actions=("webpage_snapshot_manual_review", "launch_live_browser"),
+    )
+
+    plan = build_live_smoke_plan(
+        candidate_site_label="Example News",
+        source_url_placeholder="https://example.invalid/manual-only",
+        approval=approval,
+    )
+
+    assert plan.approval_status == APPROVAL_STATUS_NOT_APPROVED
+    assert plan.workflow_status == LIVE_SMOKE_STATUS_APPROVAL_REQUIRED
+    assert any("unknown approved manual action/scope" in note for note in plan.safety_notes)
 
 
 def test_mismatched_approval_keeps_plan_not_approved() -> None:
@@ -76,7 +161,7 @@ def test_mismatched_approval_keeps_plan_not_approved() -> None:
 
     assert plan.approval_status == APPROVAL_STATUS_NOT_APPROVED
     assert plan.workflow_status == LIVE_SMOKE_STATUS_APPROVAL_REQUIRED
-    assert any("did not match" in note for note in plan.safety_notes)
+    assert any("does not match candidate site" in note for note in plan.safety_notes)
 
 
 def test_completed_manually_is_only_imported_manual_metadata() -> None:
@@ -103,6 +188,7 @@ def test_checklist_contains_expected_scopes_and_artifact_declaration_types() -> 
     items = {item.scope: item for item in plan.checklist_items}
 
     assert set(items) == set(plan.intended_scopes)
+    assert tuple(items) == DEFAULT_LIVE_SMOKE_SCOPES
     assert items["webpage_snapshot_manual_review"].expected_artifact_declaration_type == ARTIFACT_TYPE_RAW_HTML
     assert items["comments_presence_manual_review"].expected_artifact_declaration_type == ARTIFACT_TYPE_COMMENTS_JSONL
     assert items["livechat_availability_manual_review"].expected_artifact_declaration_type == ARTIFACT_TYPE_LIVECHAT_JSONL
@@ -155,6 +241,10 @@ def test_safety_prohibitions_are_visible_and_no_command_is_emitted() -> None:
 def run_self_test() -> None:
     test_default_live_smoke_plan_requires_approval_and_cannot_execute()
     test_site_approval_only_marks_manual_operator_review_not_execution()
+    test_approval_fails_without_named_site()
+    test_approval_fails_without_named_source_url()
+    test_approval_fails_without_named_manual_actions()
+    test_approval_fails_for_unknown_manual_actions()
     test_mismatched_approval_keeps_plan_not_approved()
     test_completed_manually_is_only_imported_manual_metadata()
     test_checklist_contains_expected_scopes_and_artifact_declaration_types()

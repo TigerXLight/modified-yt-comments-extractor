@@ -23,6 +23,19 @@ APPROVAL_STATUS_NOT_APPROVED = "not_approved"
 APPROVAL_STATUS_APPROVAL_REQUIRED = "approval_required"
 APPROVAL_STATUS_APPROVED_FOR_MANUAL_OPERATOR_ONLY = "approved_for_manual_operator_only"
 
+SOURCE_URL_APPROVAL_REQUIRED_PLACEHOLDER = "APPROVAL_REQUIRED_SOURCE_URL"
+
+_PLACEHOLDER_VALUES = {
+    "",
+    "approval_required",
+    "approval_required_source_url",
+    "placeholder",
+    "source_url_placeholder",
+    "tbd",
+    "to_be_approved",
+    "unknown",
+}
+
 LIVE_SMOKE_STATUS_DRAFT = "draft"
 LIVE_SMOKE_STATUS_APPROVAL_REQUIRED = "approval_required"
 LIVE_SMOKE_STATUS_APPROVED_FOR_MANUAL_OPERATOR_ONLY = "approved_for_manual_operator_only"
@@ -71,6 +84,43 @@ def _sorted_dict(value: Mapping[str, Any]) -> dict[str, Any]:
     return {str(key): value[key] for key in sorted(value)}
 
 
+def _is_placeholder_value(value: str) -> bool:
+    normalized = (value or "").strip().lower()
+    return normalized in _PLACEHOLDER_VALUES
+
+
+def _approval_failure_reasons(
+    *,
+    approval: "LiveSmokeSiteApproval",
+    site_label: str,
+    source_url: str,
+    intended_scopes: Sequence[str],
+) -> tuple[str, ...]:
+    reasons: list[str] = []
+    approved_actions = tuple(action.strip() for action in approval.approved_actions if action.strip())
+    intended_scope_set = set(intended_scopes)
+    if _is_placeholder_value(site_label) or _is_placeholder_value(approval.site_label):
+        reasons.append("explicit named site label is required")
+    if _is_placeholder_value(source_url) or _is_placeholder_value(approval.source_url):
+        reasons.append("explicit named source URL is required")
+    if not approval.approved_by.strip():
+        reasons.append("approved_by is required")
+    if not approval.approved_at_utc.strip():
+        reasons.append("approved_at_utc is required")
+    if approval.site_label != site_label:
+        reasons.append("approval site label does not match candidate site")
+    if approval.source_url != source_url:
+        reasons.append("approval source URL does not match candidate source URL")
+    if not approved_actions:
+        reasons.append("at least one named manual action/scope is required")
+    unknown_actions = tuple(action for action in approved_actions if action not in intended_scope_set)
+    if unknown_actions:
+        reasons.append(
+            "unknown approved manual action/scope: " + ", ".join(sorted(unknown_actions))
+        )
+    return tuple(reasons)
+
+
 @dataclass(frozen=True)
 class LiveSmokeSiteApproval:
     site_label: str
@@ -80,14 +130,31 @@ class LiveSmokeSiteApproval:
     approved_actions: tuple[str, ...] = ()
     approval_note: str = ""
 
-    def is_valid_for(self, *, site_label: str, source_url: str) -> bool:
-        return (
-            bool(self.site_label.strip())
-            and bool(self.source_url.strip())
-            and bool(self.approved_by.strip())
-            and bool(self.approved_at_utc.strip())
-            and self.site_label == site_label
-            and self.source_url == source_url
+    def validation_failures_for(
+        self,
+        *,
+        site_label: str,
+        source_url: str,
+        intended_scopes: Sequence[str],
+    ) -> tuple[str, ...]:
+        return _approval_failure_reasons(
+            approval=self,
+            site_label=site_label,
+            source_url=source_url,
+            intended_scopes=intended_scopes,
+        )
+
+    def is_valid_for(
+        self,
+        *,
+        site_label: str,
+        source_url: str,
+        intended_scopes: Sequence[str],
+    ) -> bool:
+        return not self.validation_failures_for(
+            site_label=site_label,
+            source_url=source_url,
+            intended_scopes=intended_scopes,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -261,7 +328,7 @@ def _default_safety_notes() -> tuple[str, ...]:
 def build_live_smoke_plan(
     *,
     candidate_site_label: str,
-    source_url_placeholder: str = "APPROVAL_REQUIRED_SOURCE_URL",
+    source_url_placeholder: str = SOURCE_URL_APPROVAL_REQUIRED_PLACEHOLDER,
     source_adapter_family: str = "site_adapter",
     intended_scopes: Sequence[str] = DEFAULT_LIVE_SMOKE_SCOPES,
     approval: LiveSmokeSiteApproval | None = None,
@@ -277,28 +344,32 @@ def build_live_smoke_plan(
     if not adapter_family:
         raise ValueError("source_adapter_family is required")
 
+    intended_scopes_tuple = tuple(scope.strip() for scope in intended_scopes if scope.strip())
     workflow_status = LIVE_SMOKE_STATUS_APPROVAL_REQUIRED
     approval_status = APPROVAL_STATUS_NOT_APPROVED
     safety_notes = list(_default_safety_notes())
     if blocked_reason:
         workflow_status = LIVE_SMOKE_STATUS_BLOCKED
         safety_notes.append(f"Blocked: {blocked_reason}")
-    elif approval is not None and approval.is_valid_for(
-        site_label=label,
-        source_url=url_placeholder,
-    ):
-        workflow_status = LIVE_SMOKE_STATUS_APPROVED_FOR_MANUAL_OPERATOR_ONLY
-        approval_status = APPROVAL_STATUS_APPROVED_FOR_MANUAL_OPERATOR_ONLY
-        safety_notes.append("Approved for manual operator notes only; no application execution.")
     elif approval is not None:
-        safety_notes.append("Approval metadata did not match the candidate site/source URL.")
+        failures = approval.validation_failures_for(
+            site_label=label,
+            source_url=url_placeholder,
+            intended_scopes=intended_scopes_tuple,
+        )
+        if failures:
+            safety_notes.append("Approval metadata is incomplete or invalid: " + "; ".join(failures))
+        else:
+            workflow_status = LIVE_SMOKE_STATUS_APPROVED_FOR_MANUAL_OPERATOR_ONLY
+            approval_status = APPROVAL_STATUS_APPROVED_FOR_MANUAL_OPERATOR_ONLY
+            safety_notes.append("Approved for manual operator notes only; no application execution.")
 
     return LiveSmokePlan(
         plan_id=stable_capture_id("live_smoke_plan", label, url_placeholder, adapter_family),
         candidate_site_label=label,
         source_url_placeholder=url_placeholder,
         source_adapter_family=adapter_family,
-        intended_scopes=tuple(intended_scopes),
+        intended_scopes=intended_scopes_tuple,
         checklist_items=build_default_live_smoke_checklist(),
         safety_notes=tuple(safety_notes),
         approval_status=approval_status,
