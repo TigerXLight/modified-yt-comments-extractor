@@ -645,6 +645,81 @@ def import_msn_manual_operator_observation(
     )
 
 
+
+
+def build_msn_article_manual_operator_observation_fixture(
+    *,
+    observed_at_local_text: str = "2026-07-17 14:44 GMT+1",
+    operator_label: str = "Fahad",
+) -> tuple[ManualLiveSmokeObservation, ...]:
+    """Return metadata-only manual observations from the approved MSN article smoke.
+
+    The source observation was operator-supplied outside the application.  This
+    helper intentionally records no file path, browser automation, screenshot,
+    download, archive, or provider action.
+    """
+    common = {
+        "observed_at_local_text": observed_at_local_text,
+        "operator_label": operator_label,
+        "site_label": MSN_MANUAL_SMOKE_SITE_LABEL,
+        "source_url": MSN_MANUAL_SMOKE_SOURCE_URL,
+        "artifact_expectation": "metadata_only_no_files",
+    }
+    return (
+        ManualLiveSmokeObservation(
+            **common,
+            action_scope_id=MANUAL_ACTION_SCOPE_WEBPAGE,
+            result_status=MANUAL_OBSERVATION_STATUS_OBSERVED,
+            notes=(
+                "Operator recording shows the MSN article page loaded in Firefox; "
+                "the article headline/body area and source page were visible after manual navigation. "
+                "No application browser automation, capture, download, or provider action is claimed."
+            ),
+        ),
+        ManualLiveSmokeObservation(
+            **common,
+            action_scope_id=MANUAL_ACTION_SCOPE_COMMENTS,
+            result_status=MANUAL_OBSERVATION_STATUS_OBSERVED,
+            notes=(
+                "Operator recording shows the comments panel/module visible with user comments. "
+                "This is manual observation metadata only; no scraping, login, API access, or bypass is claimed."
+            ),
+        ),
+        ManualLiveSmokeObservation(
+            **common,
+            action_scope_id=MANUAL_ACTION_SCOPE_MEDIA,
+            result_status=MANUAL_OBSERVATION_STATUS_OBSERVED,
+            notes=(
+                "Operator recording shows static article/recommendation/ad imagery on the page. "
+                "No media file download, playback capture, OCR, screenshot artifact, or muxing is claimed."
+            ),
+        ),
+        ManualLiveSmokeObservation(
+            **common,
+            action_scope_id=MANUAL_ACTION_SCOPE_EXPORT_QUEUE,
+            result_status=MANUAL_OBSERVATION_STATUS_OBSERVED,
+            notes=(
+                "Manual observation is suitable only for USER_REVIEW_REQUIRED export/queue metadata. "
+                "No artifact file existence, file move, automatic classification, or completed capture is claimed."
+            ),
+        ),
+    )
+
+
+def import_msn_article_manual_operator_observation_fixture(
+    *,
+    observed_at_local_text: str = "2026-07-17 14:44 GMT+1",
+    operator_label: str = "Fahad",
+) -> tuple[ManualLiveSmokeObservationImport, ...]:
+    return tuple(
+        import_msn_manual_operator_observation(observation)
+        for observation in build_msn_article_manual_operator_observation_fixture(
+            observed_at_local_text=observed_at_local_text,
+            operator_label=operator_label,
+        )
+    )
+
+
 def build_live_smoke_plan_from_template(
     template: LiveSmokePlanTemplate,
 ) -> LiveSmokePlan:

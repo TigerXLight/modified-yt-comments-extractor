@@ -40,6 +40,8 @@ from capture_live_smoke_plan import (
     build_named_site_live_smoke_plan_template,
     live_smoke_plan_to_json,
     import_msn_manual_operator_observation,
+    build_msn_article_manual_operator_observation_fixture,
+    import_msn_article_manual_operator_observation_fixture,
     manual_action_scope_catalog,
     validate_live_smoke_plan_template,
     validate_msn_manual_live_smoke_template,
@@ -495,6 +497,49 @@ def test_msn_manual_observation_import_rejects_unapproved_site_scope_and_claims(
     assert imported.execution_commands == ()
 
 
+def test_msn_article_manual_observation_fixture_imports_four_user_review_records() -> None:
+    observations = build_msn_article_manual_operator_observation_fixture()
+    imports = import_msn_article_manual_operator_observation_fixture()
+
+    assert tuple(observation.action_scope_id for observation in observations) == MSN_MANUAL_SMOKE_APPROVED_SCOPES
+    assert len(imports) == 4
+    for imported in imports:
+        assert imported.is_accepted is True
+        assert imported.user_review_required is True
+        assert imported.manual_operator_only is True
+        assert imported.execution_commands == ()
+        assert imported.observation is not None
+        data = imported.to_dict()
+        assert data["observation"]["source_url"] == MSN_MANUAL_SMOKE_SOURCE_URL
+        assert data["observation"]["site_label"] == MSN_MANUAL_SMOKE_SITE_LABEL
+        assert data["observation"]["artifact_expectation"] == "metadata_only_no_files"
+        assert data["observation"]["automation_performed"] is False
+        assert data["observation"]["provider_or_network_action"] == "none"
+        assert data["observation"]["user_review_required"] is True
+        assert data["observation"]["manual_operator_only"] is True
+        assert data["observation"]["execution_commands"] == []
+        assert "download" not in data["observation"]["artifact_expectation"].lower()
+
+
+def test_msn_article_manual_observation_fixture_does_not_claim_completion_or_files() -> None:
+    observations = build_msn_article_manual_operator_observation_fixture(
+        observed_at_local_text="2026-07-17 14:44 GMT+1",
+        operator_label="Fahad",
+    )
+
+    payload = [observation.to_dict() for observation in observations]
+    text = json.dumps(payload, sort_keys=True)
+    assert "completed_manually" not in text
+    assert "live-site verified" not in text.lower()
+    assert "LIVE_SITE_MANUALLY_VERIFIED" not in text
+    assert "metadata_only_no_files" in text
+    assert all(observation.claims_credentials_cookies_accounts is False for observation in observations)
+    assert all(observation.claims_downloaded_files is False for observation in observations)
+    assert all(observation.claims_automated_capture is False for observation in observations)
+    assert all(observation.claims_archive_submission is False for observation in observations)
+    assert all(observation.claims_completed_live_verification is False for observation in observations)
+
+
 def run_self_test() -> None:
     test_default_live_smoke_plan_requires_approval_and_cannot_execute()
     test_site_approval_only_marks_manual_operator_review_not_execution()
@@ -517,6 +562,8 @@ def run_self_test() -> None:
     test_msn_manual_plan_approval_is_manual_operator_only_not_executable()
     test_msn_manual_observation_import_accepts_approved_scope_as_metadata_only()
     test_msn_manual_observation_import_rejects_unapproved_site_scope_and_claims()
+    test_msn_article_manual_observation_fixture_imports_four_user_review_records()
+    test_msn_article_manual_observation_fixture_does_not_claim_completion_or_files()
 
 
 if __name__ == "__main__":
