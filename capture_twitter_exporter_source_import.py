@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import asdict, dataclass
 from typing import Any, Sequence
+
+from evidence_item_queue import EvidenceItemRole, EvidenceItemStatus, EvidenceQueueItem
 
 from capture_twitter_exporter_import import (
     TWITTER_EXPORTER_IMPORTER_NAME,
@@ -16,12 +19,29 @@ from capture_twitter_exporter_import_cli import build_twitter_exporter_import_cl
 
 
 TWITTER_EXPORTER_SOURCE_ROW_KIND = "twitter_exporter_local_import"
+TWITTER_EXPORTER_QUEUE_DRAFT_SCHEMA_VERSION = "twitter_exporter_source_queue_draft.v1"
 TWITTER_EXPORTER_SOURCE_IMPORT_SCOPE = (
     "Twitter/X exporter source-workflow local import preview only; explicit local files "
     "only; no X/Twitter API, browser capture, browser automation, extension automation, "
     "network, archive, download, screenshot/OCR, credential, broad folder scan, "
     "evidence file move, or automatic classification behavior"
 )
+TWITTER_EXPORTER_QUEUE_HANDOFF_SCOPE = (
+    "Twitter/X exporter source review to export/evidence queue draft metadata only; "
+    "explicit local user-supplied exporter files only; summary/counts only; no raw "
+    "tweet text, X/Twitter API, browser capture, browser automation, extension "
+    "automation, network, archive, download, screenshot/OCR, credential, evidence "
+    "file move, completed-evidence claim, or automatic classification behavior"
+)
+
+
+def _stable_json(value: dict[str, Any]) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _stable_id(prefix: str, data: dict[str, Any]) -> str:
+    digest = hashlib.sha256(_stable_json(data).encode("utf-8")).hexdigest()[:16]
+    return f"{prefix}_{digest}"
 
 
 @dataclass(frozen=True)
@@ -149,6 +169,233 @@ class TwitterExporterSourceImportReviewState:
             "total_warning_count": self.total_warning_count,
             "user_review_required": self.user_review_required,
         }
+
+
+@dataclass(frozen=True)
+class TwitterExporterQueueReviewDraft:
+    draft_id: str
+    draft_status: str
+    input_count: int
+    eligible_input_count: int
+    rejected_input_count: int
+    total_parsed_record_count: int
+    total_skipped_record_count: int
+    total_warning_count: int
+    total_error_count: int
+    queue_review_items: tuple[dict[str, Any], ...] = ()
+    queue_items: tuple[dict[str, Any], ...] = ()
+    rejected_files: tuple[dict[str, Any], ...] = ()
+    source_platform: str = TWITTER_EXPORTER_SOURCE_PLATFORM
+    source_kind: str = TWITTER_EXPORTER_SOURCE_KIND
+    importer_name: str = TWITTER_EXPORTER_IMPORTER_NAME
+    importer_source: str = TWITTER_EXPORTER_IMPORTER_SOURCE
+    source_row_kind: str = TWITTER_EXPORTER_SOURCE_ROW_KIND
+    review_status: str = TWITTER_EXPORTER_REVIEW_STATUS_USER_REVIEW_REQUIRED
+    provenance_status: str = TWITTER_EXPORTER_PROVENANCE_USER_SUPPLIED_LOCAL_EXPORT
+    user_review_required: bool = True
+    summary_only_preview: bool = True
+    queue_metadata_only: bool = True
+    live_verification_claimed: bool = False
+    api_capture_claimed: bool = False
+    browser_capture_claimed: bool = False
+    browser_automation_claimed: bool = False
+    extension_automation_claimed: bool = False
+    archive_claimed: bool = False
+    archive_provider_result_claimed: bool = False
+    screenshot_ocr_claimed: bool = False
+    screenshot_claimed: bool = False
+    ocr_claimed: bool = False
+    media_download_claimed: bool = False
+    downloaded_media_claimed: bool = False
+    automatic_classification_claimed: bool = False
+    automatic_classification: bool = False
+    evidence_files_completed_claimed: bool = False
+    evidence_file_move_claimed: bool = False
+    network_actions_performed: str = "none"
+    schema_version: str = TWITTER_EXPORTER_QUEUE_DRAFT_SCHEMA_VERSION
+    scope: str = TWITTER_EXPORTER_QUEUE_HANDOFF_SCOPE
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "api_capture_claimed": self.api_capture_claimed,
+            "archive_claimed": self.archive_claimed,
+            "archive_provider_result_claimed": self.archive_provider_result_claimed,
+            "automatic_classification": self.automatic_classification,
+            "automatic_classification_claimed": self.automatic_classification_claimed,
+            "browser_automation_claimed": self.browser_automation_claimed,
+            "browser_capture_claimed": self.browser_capture_claimed,
+            "downloaded_media_claimed": self.downloaded_media_claimed,
+            "draft_id": self.draft_id,
+            "draft_status": self.draft_status,
+            "eligible_input_count": self.eligible_input_count,
+            "evidence_file_move_claimed": self.evidence_file_move_claimed,
+            "evidence_files_completed_claimed": self.evidence_files_completed_claimed,
+            "extension_automation_claimed": self.extension_automation_claimed,
+            "importer_name": self.importer_name,
+            "importer_source": self.importer_source,
+            "input_count": self.input_count,
+            "live_verification_claimed": self.live_verification_claimed,
+            "media_download_claimed": self.media_download_claimed,
+            "network_actions_performed": self.network_actions_performed,
+            "ocr_claimed": self.ocr_claimed,
+            "provenance_status": self.provenance_status,
+            "queue_items": list(self.queue_items),
+            "queue_metadata_only": self.queue_metadata_only,
+            "queue_review_items": list(self.queue_review_items),
+            "rejected_files": list(self.rejected_files),
+            "rejected_input_count": self.rejected_input_count,
+            "review_status": self.review_status,
+            "schema_version": self.schema_version,
+            "scope": self.scope,
+            "screenshot_claimed": self.screenshot_claimed,
+            "screenshot_ocr_claimed": self.screenshot_ocr_claimed,
+            "source_kind": self.source_kind,
+            "source_platform": self.source_platform,
+            "source_row_kind": self.source_row_kind,
+            "summary_only_preview": self.summary_only_preview,
+            "total_error_count": self.total_error_count,
+            "total_parsed_record_count": self.total_parsed_record_count,
+            "total_skipped_record_count": self.total_skipped_record_count,
+            "total_warning_count": self.total_warning_count,
+            "user_review_required": self.user_review_required,
+        }
+
+
+def _queue_review_metadata_from_summary(
+    summary: TwitterExporterSourceImportFileSummary,
+) -> dict[str, Any]:
+    item_id = _stable_id(
+        "twitter_exporter_queue_draft_item",
+        {
+            "import_bundle_id": summary.import_bundle_id,
+            "input_file_name": summary.input_file_name,
+            "input_file_sha256": summary.input_file_sha256,
+            "input_index": summary.input_index,
+            "schema_version": TWITTER_EXPORTER_QUEUE_DRAFT_SCHEMA_VERSION,
+        },
+    )
+    return {
+        "api_capture_claimed": False,
+        "archive_member_count": summary.archive_member_count,
+        "archive_provider_result_claimed": False,
+        "automatic_classification": False,
+        "browser_automation_claimed": False,
+        "downloaded_media_claimed": False,
+        "evidence_file_move_claimed": False,
+        "evidence_files_completed_claimed": False,
+        "extension_automation_claimed": False,
+        "import_bundle_id": summary.import_bundle_id,
+        "import_status": summary.import_status,
+        "importer_name": summary.importer_name,
+        "importer_source": summary.importer_source,
+        "input_file_name": summary.input_file_name,
+        "input_file_sha256": summary.input_file_sha256,
+        "input_file_size_bytes": summary.input_file_size_bytes,
+        "input_index": summary.input_index,
+        "item_id": item_id,
+        "live_verification_claimed": False,
+        "local_path": "",
+        "media_download_claimed": False,
+        "ocr_claimed": False,
+        "parsed_record_count": summary.parsed_record_count,
+        "provenance_status": summary.provenance_status,
+        "queue_status": TWITTER_EXPORTER_REVIEW_STATUS_USER_REVIEW_REQUIRED,
+        "review_status": summary.review_status,
+        "schema_version": TWITTER_EXPORTER_QUEUE_DRAFT_SCHEMA_VERSION,
+        "screenshot_claimed": False,
+        "screenshot_ocr_claimed": False,
+        "skipped_record_count": summary.skipped_record_count,
+        "source_kind": summary.source_kind,
+        "source_platform": summary.source_platform,
+        "source_row_kind": summary.source_row_kind,
+        "summary_only_preview": True,
+        "user_review_required": True,
+        "validation_error_count": summary.validation_error_count,
+        "warning_count": summary.warning_count,
+        "warnings": list(summary.warnings),
+    }
+
+
+def _evidence_queue_item_from_review_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    item = EvidenceQueueItem(
+        item_id=str(metadata["item_id"]),
+        item_role=EvidenceItemRole.MANUAL_EVIDENCE_NOTE,
+        display_name=f"Twitter/X exporter review draft: {metadata['input_file_name']}",
+        local_path="",
+        file_hash=str(metadata["input_file_sha256"]),
+        file_size_bytes=int(metadata["input_file_size_bytes"]),
+        is_manual_import=True,
+        item_status=EvidenceItemStatus.NEEDS_REVIEW,
+        created_at_utc="",
+        updated_at_utc="",
+        user_notes=_stable_json(metadata),
+    )
+    return item.to_dict()
+
+
+def build_twitter_exporter_queue_review_draft(
+    state: TwitterExporterSourceImportReviewState,
+) -> TwitterExporterQueueReviewDraft:
+    eligible = tuple(summary for summary in state.file_summaries if summary.status == "ok")
+    rejected = tuple(summary for summary in state.file_summaries if summary.status != "ok")
+    review_items = tuple(_queue_review_metadata_from_summary(summary) for summary in eligible)
+    queue_items = tuple(_evidence_queue_item_from_review_metadata(item) for item in review_items)
+    rejected_files = tuple(
+        {
+            "input_file_name": summary.input_file_name,
+            "input_index": summary.input_index,
+            "status": summary.status,
+            "validation_error_count": summary.validation_error_count,
+            "validation_errors": list(summary.validation_errors),
+        }
+        for summary in rejected
+    )
+    draft_id = _stable_id(
+        "twitter_exporter_queue_draft",
+        {
+            "eligible_item_ids": tuple(item["item_id"] for item in review_items),
+            "input_count": state.input_count,
+            "schema_version": TWITTER_EXPORTER_QUEUE_DRAFT_SCHEMA_VERSION,
+            "total_error_count": state.total_error_count,
+        },
+    )
+    return TwitterExporterQueueReviewDraft(
+        draft_id=draft_id,
+        draft_status="USER_REVIEW_REQUIRED" if review_items else "NO_QUEUE_DRAFT_CREATED",
+        input_count=state.input_count,
+        eligible_input_count=len(eligible),
+        rejected_input_count=len(rejected),
+        total_parsed_record_count=state.total_parsed_record_count,
+        total_skipped_record_count=state.total_skipped_record_count,
+        total_warning_count=state.total_warning_count,
+        total_error_count=state.total_error_count,
+        queue_review_items=review_items,
+        queue_items=queue_items,
+        rejected_files=rejected_files,
+    )
+
+
+def build_twitter_exporter_queue_review_draft_summary(
+    draft: TwitterExporterQueueReviewDraft,
+) -> str:
+    return "\n".join(
+        [
+            "Twitter/X exporter queue review draft",
+            f"Draft status: {draft.draft_status}",
+            f"Review status: {draft.review_status}",
+            f"Provenance: {draft.provenance_status}",
+            f"Inputs: {draft.input_count}",
+            f"Eligible queue draft items: {draft.eligible_input_count}",
+            f"Rejected inputs: {draft.rejected_input_count}",
+            f"Parsed records: {draft.total_parsed_record_count}",
+            f"Skipped records: {draft.total_skipped_record_count}",
+            f"Warnings: {draft.total_warning_count}",
+            f"Errors: {draft.total_error_count}",
+            "Queue metadata only: yes",
+            "Network actions performed: none",
+            "Live/API/browser/extension/archive/download/OCR/classification/evidence-completion claims: none",
+        ]
+    )
 
 
 def _file_summary_from_cli_result(
@@ -288,6 +535,11 @@ __all__ = [
     "TWITTER_EXPORTER_SOURCE_ROW_KIND",
     "TwitterExporterSourceImportFileSummary",
     "TwitterExporterSourceImportReviewState",
+    "TwitterExporterQueueReviewDraft",
+    "TWITTER_EXPORTER_QUEUE_DRAFT_SCHEMA_VERSION",
+    "TWITTER_EXPORTER_QUEUE_HANDOFF_SCOPE",
+    "build_twitter_exporter_queue_review_draft",
+    "build_twitter_exporter_queue_review_draft_summary",
     "build_twitter_exporter_source_review_state",
     "build_twitter_exporter_source_row_summary",
     "import_twitter_exporter_local_paths_for_review",

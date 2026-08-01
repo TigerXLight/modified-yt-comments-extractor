@@ -5,6 +5,8 @@ from pathlib import Path
 
 from capture_twitter_exporter_source_import import (
     TWITTER_EXPORTER_SOURCE_ROW_KIND,
+    build_twitter_exporter_queue_review_draft,
+    build_twitter_exporter_queue_review_draft_summary,
     build_twitter_exporter_source_review_state,
     build_twitter_exporter_source_row_summary,
     import_twitter_exporter_local_paths_for_review,
@@ -123,6 +125,81 @@ def test_queue_metadata_compatibility_remains_review_only() -> None:
         assert queue["local_path"] == ""
 
 
+def test_source_review_builds_summary_only_queue_draft_without_record_payloads() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        source = _write(
+            Path(tmp) / "tweet.json",
+            json.dumps([{"id": "808", "text": "QUEUE DRAFT MUST NOT STORE THIS TEXT"}]),
+        )
+
+        state = preview_twitter_exporter_local_import_source((str(source),))
+        draft = build_twitter_exporter_queue_review_draft(state)
+        data = draft.to_dict()
+        summary = build_twitter_exporter_queue_review_draft_summary(draft)
+        queue_note = data["queue_items"][0]["user_notes"]
+
+        assert data["draft_status"] == "USER_REVIEW_REQUIRED"
+        assert data["review_status"] == "USER_REVIEW_REQUIRED"
+        assert data["provenance_status"] == "USER_SUPPLIED_LOCAL_EXPORT"
+        assert data["eligible_input_count"] == 1
+        assert data["queue_review_items"][0]["input_file_name"] == "tweet.json"
+        assert data["queue_items"][0]["item_status"] == "NEEDS_REVIEW"
+        assert data["queue_items"][0]["local_path"] == ""
+        assert data["queue_review_items"][0]["evidence_files_completed_claimed"] is False
+        assert data["queue_review_items"][0]["evidence_file_move_claimed"] is False
+        assert data["queue_review_items"][0]["api_capture_claimed"] is False
+        assert data["queue_review_items"][0]["browser_automation_claimed"] is False
+        assert data["queue_review_items"][0]["extension_automation_claimed"] is False
+        assert data["queue_review_items"][0]["archive_provider_result_claimed"] is False
+        assert data["queue_review_items"][0]["downloaded_media_claimed"] is False
+        assert data["queue_review_items"][0]["screenshot_ocr_claimed"] is False
+        assert data["queue_review_items"][0]["automatic_classification"] is False
+        assert "QUEUE DRAFT MUST NOT STORE THIS TEXT" not in summary
+        assert "QUEUE DRAFT MUST NOT STORE THIS TEXT" not in json.dumps(data, sort_keys=True)
+        assert "QUEUE DRAFT MUST NOT STORE THIS TEXT" not in queue_note
+
+
+def test_batch_queue_draft_ordering_and_counts_are_deterministic() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        first = _write(root / "first.csv", "tweet_id,text\n1,first\n")
+        second = _write(root / "second.jsonl", json.dumps({"id": "2", "text": "second"}) + "\n")
+
+        first_draft = build_twitter_exporter_queue_review_draft(
+            preview_twitter_exporter_local_import_source((str(first), str(second)))
+        ).to_dict()
+        second_draft = build_twitter_exporter_queue_review_draft(
+            preview_twitter_exporter_local_import_source((str(first), str(second)))
+        ).to_dict()
+
+        assert first_draft == second_draft
+        assert [item["input_file_name"] for item in first_draft["queue_review_items"]] == [
+            "first.csv",
+            "second.jsonl",
+        ]
+        assert first_draft["total_parsed_record_count"] == 2
+        assert first_draft["total_skipped_record_count"] == 0
+        assert first_draft["eligible_input_count"] == 2
+
+
+def test_error_only_source_review_does_not_create_queue_draft_item() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        unsupported = _write(Path(tmp) / "bad.exe", "unsupported")
+
+        draft = build_twitter_exporter_queue_review_draft(
+            preview_twitter_exporter_local_import_source((str(unsupported),))
+        ).to_dict()
+
+        assert draft["draft_status"] == "NO_QUEUE_DRAFT_CREATED"
+        assert draft["review_status"] == "USER_REVIEW_REQUIRED"
+        assert draft["eligible_input_count"] == 0
+        assert draft["rejected_input_count"] == 1
+        assert draft["queue_review_items"] == []
+        assert draft["queue_items"] == []
+        assert draft["rejected_files"][0]["input_file_name"] == "bad.exe"
+        assert draft["evidence_files_completed_claimed"] is False
+
+
 def test_missing_directory_unsafe_zip_and_unsupported_inputs_report_validation_errors() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -181,6 +258,9 @@ def run_self_test() -> None:
     test_batch_preview_preserves_input_order_and_independent_errors()
     test_source_row_summary_is_summary_only_and_does_not_dump_tweet_text()
     test_queue_metadata_compatibility_remains_review_only()
+    test_source_review_builds_summary_only_queue_draft_without_record_payloads()
+    test_batch_queue_draft_ordering_and_counts_are_deterministic()
+    test_error_only_source_review_does_not_create_queue_draft_item()
     test_missing_directory_unsafe_zip_and_unsupported_inputs_report_validation_errors()
     test_empty_batch_is_rejected_by_source_hook()
     test_source_review_json_is_deterministic_and_omits_record_payloads()

@@ -229,7 +229,9 @@ def test_source_url_section_layout_has_no_main_card_updates_and_has_required_con
     assert "Source URLs" in source
     assert "Submit" not in source
     assert 'text="Twitter/X Local Export"' in source
+    assert 'text="Add Review Draft"' in source
     assert "import_twitter_exporter_local_export_clicked" in source
+    assert "queue_twitter_exporter_review_draft_clicked" in source
 
 
 def test_source_row_layout_uses_compact_resource_icons_and_remove_button() -> None:
@@ -415,7 +417,7 @@ def test_twitter_exporter_import_review_action_is_summary_only_and_local() -> No
 
     assert state.review_status == "USER_REVIEW_REQUIRED"
     assert state.provenance_status == "USER_SUPPLIED_LOCAL_EXPORT"
-    assert state.queue_metadata_available is True
+    assert state.queue_metadata_available is False
     assert app.last_twitter_exporter_import_review_state == state
     assert app.url_status.config["text"].startswith("Twitter/X local export review:")
     assert "1 parsed" in app.url_status.config["text"]
@@ -457,6 +459,56 @@ def test_twitter_exporter_import_review_action_reports_invalid_files_safely() ->
     assert str(root) not in shown_text
     assert app.url_status.config["text_color"] == main.COLORS["warning"]
     assert "Network actions performed: none" in shown_text
+
+
+def test_twitter_exporter_queue_review_draft_action_uses_last_summary_only_state() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        source = Path(tmp) / "tweet.json"
+        source.write_text(
+            json.dumps([{"id": "1001", "text": "DO NOT QUEUE THIS TWEET BODY"}]),
+            encoding="utf-8",
+        )
+        app = _make_twitter_import_app()
+        fake_messagebox = FakeMessageBox()
+        original_messagebox = main.messagebox
+        main.messagebox = fake_messagebox
+        try:
+            App._run_twitter_exporter_local_import_review_action(app, (str(source),))
+            draft = App._run_twitter_exporter_queue_review_draft_action(app)
+        finally:
+            main.messagebox = original_messagebox
+
+    assert draft is app.last_twitter_exporter_queue_review_draft
+    assert draft.review_status == "USER_REVIEW_REQUIRED"
+    assert draft.provenance_status == "USER_SUPPLIED_LOCAL_EXPORT"
+    assert draft.eligible_input_count == 1
+    assert draft.queue_items[0]["item_status"] == "NEEDS_REVIEW"
+    assert draft.queue_items[0]["local_path"] == ""
+    assert app.url_status.config["text"].startswith("Twitter/X queue review draft:")
+    shown_text = fake_messagebox.infos[-1][1]
+    combined_log = "\n".join(message for message, _level in app.log_messages)
+    combined_draft = json.dumps(draft.to_dict(), sort_keys=True)
+    assert "DO NOT QUEUE THIS TWEET BODY" not in shown_text
+    assert "DO NOT QUEUE THIS TWEET BODY" not in combined_log
+    assert "DO NOT QUEUE THIS TWEET BODY" not in combined_draft
+    assert "Metadata/counts only" in combined_log
+    assert "evidence-completion claims: none" in shown_text
+
+
+def test_twitter_exporter_queue_review_draft_action_handles_missing_prior_import() -> None:
+    app = _make_twitter_import_app()
+    fake_messagebox = FakeMessageBox()
+    original_messagebox = main.messagebox
+    main.messagebox = fake_messagebox
+    try:
+        draft = App._run_twitter_exporter_queue_review_draft_action(app)
+    finally:
+        main.messagebox = original_messagebox
+
+    assert draft is None
+    assert "import a local export first" in app.url_status.config["text"]
+    assert "import a local export first" in fake_messagebox.infos[0][1]
+    assert "last_twitter_exporter_queue_review_draft" not in app.__dict__
 
 
 def test_archivebox_icon_and_service_order_are_local_only() -> None:
@@ -532,6 +584,8 @@ def run_self_test() -> None:
     test_start_fetching_without_selected_scope_sets_skipped_status()
     test_twitter_exporter_import_review_action_is_summary_only_and_local()
     test_twitter_exporter_import_review_action_reports_invalid_files_safely()
+    test_twitter_exporter_queue_review_draft_action_uses_last_summary_only_state()
+    test_twitter_exporter_queue_review_draft_action_handles_missing_prior_import()
     test_archivebox_icon_and_service_order_are_local_only()
     test_discussion_layout_uses_webpage_parent_and_child_rows()
     test_main_blank_wheel_router_targets_main_without_stealing_text_scroll()

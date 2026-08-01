@@ -138,6 +138,8 @@ from capture_controller import (
     format_operational_capture_plan_message,
 )
 from capture_twitter_exporter_source_import import (
+    build_twitter_exporter_queue_review_draft,
+    build_twitter_exporter_queue_review_draft_summary,
     build_twitter_exporter_source_row_summary,
     preview_twitter_exporter_local_import_source,
 )
@@ -2912,6 +2914,19 @@ class App(ctk.CTk):
             corner_radius=8,
         )
         self.twitter_exporter_import_button.pack(anchor="e")
+        self.twitter_exporter_queue_draft_button = ctk.CTkButton(
+            local_import_column,
+            text="Add Review Draft",
+            command=self.queue_twitter_exporter_review_draft_clicked,
+            width=178,
+            height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=8,
+        )
+        self.twitter_exporter_queue_draft_button.pack(anchor="e", pady=(4, 0))
 
         self.cancel_button = ctk.CTkButton(
             action_frame,
@@ -4574,13 +4589,16 @@ class App(ctk.CTk):
             return
         self._run_twitter_exporter_local_import_review_action(tuple(files))
 
+    def queue_twitter_exporter_review_draft_clicked(self) -> None:
+        self._run_twitter_exporter_queue_review_draft_action()
+
     def _run_twitter_exporter_local_import_review_action(
         self,
         input_paths: Sequence[str],
     ) -> Any:
         state = preview_twitter_exporter_local_import_source(
             input_paths,
-            as_queue_metadata=True,
+            as_queue_metadata=False,
         )
         self.last_twitter_exporter_import_review_state = state
         summary = build_twitter_exporter_source_row_summary(state)
@@ -4604,6 +4622,42 @@ class App(ctk.CTk):
         except Exception:
             logger.debug("Could not show Twitter/X local export review summary.", exc_info=True)
         return state
+
+    def _run_twitter_exporter_queue_review_draft_action(self) -> Any:
+        state = self.__dict__.get("last_twitter_exporter_import_review_state")
+        if state is None:
+            status = "Twitter/X queue review draft skipped: import a local export first."
+            if hasattr(self, "url_status"):
+                self.url_status.configure(text=status, text_color=COLORS["warning"])
+            self.log_message(f"{status} Network actions performed: none.", "warning")
+            try:
+                messagebox.showinfo("Twitter/X Queue Review Draft", status)
+            except Exception:
+                logger.debug("Could not show Twitter/X queue draft missing-state summary.", exc_info=True)
+            return None
+
+        draft = build_twitter_exporter_queue_review_draft(state)
+        self.last_twitter_exporter_queue_review_draft = draft
+        summary = build_twitter_exporter_queue_review_draft_summary(draft)
+        status = (
+            "Twitter/X queue review draft: "
+            f"{draft.eligible_input_count} draft item(s), "
+            f"{draft.rejected_input_count} rejected input(s), "
+            f"{draft.total_parsed_record_count} parsed, "
+            f"{draft.total_error_count} error(s)."
+        )
+        status_color = COLORS["warning"] if not draft.queue_items else COLORS["success"]
+        if hasattr(self, "url_status"):
+            self.url_status.configure(text=status, text_color=status_color)
+        self.log_message(
+            f"{status} Metadata/counts only; source files were not moved.",
+            "warning" if not draft.queue_items else "success",
+        )
+        try:
+            messagebox.showinfo("Twitter/X Queue Review Draft", summary)
+        except Exception:
+            logger.debug("Could not show Twitter/X queue draft summary.", exc_info=True)
+        return draft
 
     def _archive_status_color(self, color_name: str) -> str:
         return {
