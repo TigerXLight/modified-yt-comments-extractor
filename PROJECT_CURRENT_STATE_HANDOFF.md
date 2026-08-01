@@ -61,6 +61,7 @@ Existing YouTube comment/live-chat behavior, app exports, ASR runtime behavior, 
 ### Current Project Results
 
 - Best tested local/no-cloud result: whisper.cpp Vulkan large-v3-turbo with phrase prompt, about 74.19% strict 30-second reference accuracy.
+- Local ASR timeout hardening now scales whisper.cpp Vulkan subprocess timeout from normalized audio duration for long media, exposes `ASR_WHISPERCPP_TIMEOUT`, `ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER`, and `ASR_WHISPERCPP_MAX_TIMEOUT` as local operator controls, and keeps `whisper.cpp / Vulkan / large-v3` as the benchmark-backed local profile rather than recommending a downgrade after long-file timeout.
 - No tested local ASR path has met the 95% threshold.
 - Leading tested cloud candidate: ElevenLabs Scribe v2 with keyterms, 84.95%.
   - It preserved the Nicolas Cage reference phrase and found `Shadowsmith`, `Nicolas Cage`, and `Caltheris`.

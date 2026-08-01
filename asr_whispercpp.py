@@ -3,21 +3,175 @@ from __future__ import annotations
 import os
 import re
 import json
+import math
 import shutil
 import subprocess
 import tempfile
 import time
 import hashlib
+import wave
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from transcript_tools import TranscriptSegment
 
 
+def _env_int(name: str, default: int, *, min_value: Optional[int] = None) -> int:
+    try:
+        value = int(str(os.environ.get(name, str(default))).strip())
+    except Exception:
+        value = int(default)
+
+    if min_value is not None:
+        value = max(int(min_value), value)
+
+    return value
+
+
+def _env_float(name: str, default: float, *, min_value: Optional[float] = None) -> float:
+    try:
+        value = float(str(os.environ.get(name, str(default))).strip())
+    except Exception:
+        value = float(default)
+
+    if min_value is not None:
+        value = max(float(min_value), value)
+
+    return value
+
+
 DEFAULT_WHISPERCPP_CLI = r"C:\whisper.cpp\build-vulkan\bin\Release\whisper-cli.exe"
 DEFAULT_WHISPERCPP_MODEL = r"C:\whisper.cpp\ggml-large-v3.bin"
 DEFAULT_WHISPERCPP_ROOT = r"C:\whisper.cpp"
-DEFAULT_WHISPERCPP_TIMEOUT_SECONDS = int(os.environ.get("ASR_WHISPERCPP_TIMEOUT", "120"))
+DEFAULT_WHISPERCPP_TIMEOUT_SECONDS = _env_int("ASR_WHISPERCPP_TIMEOUT", 120, min_value=1)
+DEFAULT_WHISPERCPP_MAX_TIMEOUT_SECONDS = _env_int("ASR_WHISPERCPP_MAX_TIMEOUT", 21600, min_value=1)
+DEFAULT_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER = _env_float(
+    "ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER",
+    8.0,
+    min_value=0.0,
+)
+
+
+def _wav_duration_seconds(path: Path) -> Optional[float]:
+    try:
+        with wave.open(str(path), "rb") as handle:
+            frame_rate = float(handle.getframerate() or 0)
+            frame_count = float(handle.getnframes() or 0)
+    except Exception:
+        return None
+
+    if frame_rate <= 0 or frame_count < 0:
+        return None
+
+    return frame_count / frame_rate
+
+
+def build_whispercpp_timeout_policy(
+    *,
+    audio_duration_seconds: Optional[float] = None,
+    probe_seconds: Optional[int] = None,
+    model_name: str = "large-v3",
+) -> Dict[str, Any]:
+    """Return the local whisper.cpp timeout policy for this ASR run.
+
+    The old fixed 120 second timeout was too short for full large-v3/Vulkan
+    transcriptions of long media.  Keep the benchmark-backed profile, but scale
+    the timeout from the normalized audio duration when available.  Environment
+    variables remain opt-in controls for local operators.
+    """
+
+    base_timeout_seconds = _env_int(
+        "ASR_WHISPERCPP_TIMEOUT",
+        DEFAULT_WHISPERCPP_TIMEOUT_SECONDS,
+        min_value=1,
+    )
+    realtime_multiplier = _env_float(
+        "ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER",
+        DEFAULT_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER,
+        min_value=0.0,
+    )
+    max_timeout_seconds = _env_int(
+        "ASR_WHISPERCPP_MAX_TIMEOUT",
+        DEFAULT_WHISPERCPP_MAX_TIMEOUT_SECONDS,
+        min_value=base_timeout_seconds,
+    )
+
+    duration_basis_seconds: Optional[float] = None
+    duration_basis_source = ""
+
+    if audio_duration_seconds is not None and float(audio_duration_seconds) > 0:
+        duration_basis_seconds = float(audio_duration_seconds)
+        duration_basis_source = "normalized_audio"
+    elif probe_seconds is not None and int(probe_seconds or 0) > 0:
+        duration_basis_seconds = float(int(probe_seconds or 0))
+        duration_basis_source = "probe_seconds"
+
+    scaled_timeout_seconds: Optional[int] = None
+    if duration_basis_seconds and realtime_multiplier > 0:
+        scaled_timeout_seconds = int(math.ceil(duration_basis_seconds * realtime_multiplier))
+
+    timeout_seconds = base_timeout_seconds
+    timeout_source = "base"
+
+    if scaled_timeout_seconds and scaled_timeout_seconds > timeout_seconds:
+        timeout_seconds = scaled_timeout_seconds
+        timeout_source = "duration_scaled"
+
+    if timeout_seconds > max_timeout_seconds:
+        timeout_seconds = max_timeout_seconds
+        timeout_source = "capped_duration_scaled"
+
+    return {
+        "timeout_seconds": int(timeout_seconds),
+        "base_timeout_seconds": int(base_timeout_seconds),
+        "max_timeout_seconds": int(max_timeout_seconds),
+        "realtime_multiplier": float(realtime_multiplier),
+        "duration_basis_seconds": duration_basis_seconds,
+        "duration_basis_source": duration_basis_source,
+        "scaled_timeout_seconds": scaled_timeout_seconds,
+        "timeout_source": timeout_source,
+        "model_name": (model_name or "large-v3").strip() or "large-v3",
+        "long_media_scaled": bool(
+            scaled_timeout_seconds and scaled_timeout_seconds > base_timeout_seconds
+        ),
+        "environment_variables": [
+            "ASR_WHISPERCPP_TIMEOUT",
+            "ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER",
+            "ASR_WHISPERCPP_MAX_TIMEOUT",
+        ],
+        "guidance": (
+            "Long-media timeout scaling preserves the benchmark-backed "
+            "whisper.cpp Vulkan large-v3 profile; it does not imply the ASR "
+            "engine is broken or that the preferred profile should be downgraded."
+        ),
+    }
+
+
+def format_whispercpp_timeout_message(timeout_policy: Dict[str, Any]) -> str:
+    timeout_seconds = int(timeout_policy.get("timeout_seconds") or 0)
+    base_timeout_seconds = int(timeout_policy.get("base_timeout_seconds") or 0)
+    multiplier = timeout_policy.get("realtime_multiplier")
+    max_timeout_seconds = int(timeout_policy.get("max_timeout_seconds") or 0)
+    duration_basis_seconds = timeout_policy.get("duration_basis_seconds")
+    duration_source = str(timeout_policy.get("duration_basis_source") or "")
+
+    duration_text = ""
+    if duration_basis_seconds:
+        duration_text = (
+            f" Duration basis: {float(duration_basis_seconds):.1f}s"
+            + (f" ({duration_source})." if duration_source else ".")
+        )
+
+    return (
+        f"whisper.cpp Vulkan transcription timed out after {timeout_seconds}s."
+        f" Timeout policy: minimum={base_timeout_seconds}s, "
+        f"multiplier={multiplier}x realtime, maximum={max_timeout_seconds}s."
+        f"{duration_text} For long media, increase ASR_WHISPERCPP_TIMEOUT, "
+        "ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER, or "
+        "ASR_WHISPERCPP_MAX_TIMEOUT, or run a probe/segmented workflow. "
+        "This does not downgrade the benchmark-backed whisper.cpp Vulkan "
+        "large-v3 local profile."
+    )
 
 
 def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -594,6 +748,13 @@ def transcribe_media_file_with_whispercpp_vulkan(
         )
         normalized_pcm_sha256 = _sha256_file(wav_path)
         model_sha256 = _sha256_file(model_path)
+        normalized_audio_duration_seconds = _wav_duration_seconds(wav_path)
+        whispercpp_timeout_policy = build_whispercpp_timeout_policy(
+            audio_duration_seconds=normalized_audio_duration_seconds,
+            probe_seconds=probe_seconds,
+            model_name=requested_model_name,
+        )
+        whispercpp_timeout_seconds = int(whispercpp_timeout_policy["timeout_seconds"])
 
         command = [
             str(cli_path),
@@ -626,12 +787,11 @@ def transcribe_media_file_with_whispercpp_vulkan(
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=DEFAULT_WHISPERCPP_TIMEOUT_SECONDS,
+                timeout=whispercpp_timeout_seconds,
             )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(
-                f"whisper.cpp Vulkan transcription timed out after "
-                f"{DEFAULT_WHISPERCPP_TIMEOUT_SECONDS}s."
+                format_whispercpp_timeout_message(whispercpp_timeout_policy)
             ) from exc
 
         elapsed_seconds = max(0.0, time.perf_counter() - started_at)
@@ -730,6 +890,7 @@ def transcribe_media_file_with_whispercpp_vulkan(
             ),
             "elapsed_seconds": elapsed_seconds,
             "duration_for_speed_seconds": duration_for_speed,
+            "normalized_audio_duration_seconds": normalized_audio_duration_seconds,
             "processing_speed_x_realtime": processing_speed,
             "quality_score": (-elapsed_seconds + min(text_chars, 1000) / 20.0),
             "avg_logprob_mean": None,
@@ -738,7 +899,8 @@ def transcribe_media_file_with_whispercpp_vulkan(
             "whispercpp_cli": str(cli_path),
             "whispercpp_model": str(model_path),
             "whispercpp_model_name": requested_model_name,
-            "whispercpp_timeout_seconds": DEFAULT_WHISPERCPP_TIMEOUT_SECONDS,
+            "whispercpp_timeout_seconds": whispercpp_timeout_seconds,
+            "whispercpp_timeout_policy": whispercpp_timeout_policy,
             "whispercpp_extra_flags": list(extra_flags or []),
             "sanitized_command_manifest": {
                 "runner": "asr_whispercpp",
@@ -747,6 +909,8 @@ def transcribe_media_file_with_whispercpp_vulkan(
                 "language": language or "",
                 "probe_seconds": int(probe_seconds or 0),
                 "audio_filter": audio_filter or "",
+                "timeout_seconds": whispercpp_timeout_seconds,
+                "timeout_source": whispercpp_timeout_policy.get("timeout_source", ""),
                 "extra_flags": list(extra_flags or []),
                 "structured_output": "json-full",
             },

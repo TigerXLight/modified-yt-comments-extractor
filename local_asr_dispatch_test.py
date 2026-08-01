@@ -247,6 +247,71 @@ def test_whispercpp_command_requests_json_full_structured_output() -> None:
     assert command.count("-ojf") == 1
 
 
+def _with_whispercpp_timeout_env(values: dict[str, str | None]):
+    original = {key: os.environ.get(key) for key in values}
+
+    for key, value in values.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+
+    def restore() -> None:
+        for key, value in original.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    return restore
+
+
+def test_whispercpp_timeout_policy_scales_for_long_large_v3_media() -> None:
+    restore = _with_whispercpp_timeout_env(
+        {
+            "ASR_WHISPERCPP_TIMEOUT": "120",
+            "ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER": "8",
+            "ASR_WHISPERCPP_MAX_TIMEOUT": "99999",
+        }
+    )
+
+    try:
+        policy = asr_whispercpp.build_whispercpp_timeout_policy(
+            audio_duration_seconds=600.0,
+            model_name="large-v3",
+        )
+    finally:
+        restore()
+
+    assert policy["base_timeout_seconds"] == 120
+    assert policy["timeout_seconds"] == 4800
+    assert policy["duration_basis_source"] == "normalized_audio"
+    assert policy["timeout_source"] == "duration_scaled"
+    assert policy["long_media_scaled"] is True
+    assert "large-v3" in policy["guidance"]
+    assert "small" not in policy["guidance"].lower()
+
+
+def test_whispercpp_timeout_message_is_configurable_without_profile_downgrade() -> None:
+    policy = {
+        "timeout_seconds": 4800,
+        "base_timeout_seconds": 120,
+        "realtime_multiplier": 8.0,
+        "max_timeout_seconds": 21600,
+        "duration_basis_seconds": 600.0,
+        "duration_basis_source": "normalized_audio",
+    }
+
+    message = asr_whispercpp.format_whispercpp_timeout_message(policy)
+
+    assert "timed out after 4800s" in message
+    assert "ASR_WHISPERCPP_TIMEOUT" in message
+    assert "ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER" in message
+    assert "ASR_WHISPERCPP_MAX_TIMEOUT" in message
+    assert "large-v3" in message
+    assert "small" not in message.lower()
+
+
 def run_self_test() -> None:
     test_local_asr_whispercpp_selection_reaches_existing_dispatch_wrapper()
     test_local_asr_language_completion_lines_for_auto_detect_confidence()
@@ -255,6 +320,8 @@ def run_self_test() -> None:
     test_whispercpp_json_full_parser_extracts_word_timestamps()
     test_whispercpp_token_reconstruction_joins_subword_names_and_contractions()
     test_whispercpp_command_requests_json_full_structured_output()
+    test_whispercpp_timeout_policy_scales_for_long_large_v3_media()
+    test_whispercpp_timeout_message_is_configurable_without_profile_downgrade()
 
 
 if __name__ == "__main__":
