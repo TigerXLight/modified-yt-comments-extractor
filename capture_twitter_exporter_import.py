@@ -278,7 +278,7 @@ def _decode_text(data: bytes) -> tuple[str, tuple[str, ...]]:
 
 
 def _clean_key(key: str) -> str:
-    return str(key or "").strip().lower().replace(" ", "_").replace("-", "_")
+    return re.sub(r"[^a-z0-9]", "", str(key or "").strip().lower())
 
 
 def _first(mapping: Mapping[str, Any], *keys: str) -> str:
@@ -332,41 +332,98 @@ def _record_from_mapping(
     member_name: str,
     row_index: int,
 ) -> TwitterExporterRecord:
-    url = _first(mapping, "url", "tweet_url", "permalink", "link")
-    tweet_id = _first(mapping, "tweet_id", "id", "id_str", "status_id") or _tweet_id_from_url(url)
-    text = _first(mapping, "text", "full_text", "content", "tweet", "body")
-    author_handle = _first(mapping, "author_handle", "username", "screen_name", "handle")
+    url = _first(mapping, "url", "tweet_url", "tweeturl", "permalink", "link", "href", "expanded_url")
+    tweet_id = _first(
+        mapping,
+        "tweet_id",
+        "tweetid",
+        "id",
+        "id_str",
+        "idstr",
+        "status_id",
+        "statusid",
+        "rest_id",
+    ) or _tweet_id_from_url(url)
+    text = _first(mapping, "text", "full_text", "fulltext", "content", "tweet", "body", "tweet_text", "tweettext")
+    author_handle = _first(
+        mapping,
+        "author_handle",
+        "authorhandle",
+        "username",
+        "screen_name",
+        "screenname",
+        "handle",
+        "user_screen_name",
+        "userscreenname",
+    )
     if author_handle.startswith("@"):
         author_handle = author_handle[1:]
+    list_name = _first(mapping, "list_name", "listname", "list", "list_title", "listtitle")
+    list_id = _first(mapping, "list_id", "listid")
     record_values = {
         "author_handle": author_handle,
-        "created_at_text": _first(mapping, "created_at", "created_at_text", "date", "time", "timestamp"),
+        "created_at_text": _first(
+            mapping,
+            "created_at",
+            "createdat",
+            "created_at_text",
+            "date",
+            "datetime",
+            "time",
+            "timestamp",
+        ),
         "text": text,
         "tweet_id": tweet_id,
         "url": url,
     }
     missing = tuple(key for key in ("tweet_id", "text", "author_handle", "created_at_text", "url") if not record_values[key])
     confidence = "high" if tweet_id and text else "medium" if text or url else "low"
+    record_type = _first(mapping, "record_type", "recordtype", "type", "kind")
+    if not record_type:
+        if list_name or list_id:
+            record_type = "list_item"
+        elif author_handle or _first(mapping, "author_id", "authorid", "user_id", "userid", "user_id_str", "useridstr"):
+            record_type = "user" if not (tweet_id or text or url) else "tweet"
+        else:
+            record_type = "unknown"
     return TwitterExporterRecord(
         record_id=_stable_record_id(record=record_values, member_name=member_name, row_index=row_index),
-        record_type=_first(mapping, "record_type", "type") or "tweet",
+        record_type=record_type,
         tweet_id=tweet_id,
-        conversation_id=_first(mapping, "conversation_id", "conversation_id_str"),
+        conversation_id=_first(mapping, "conversation_id", "conversationid", "conversation_id_str", "conversationidstr"),
         author_handle=author_handle,
-        author_display_name=_first(mapping, "author_display_name", "name", "display_name", "author"),
-        author_id=_first(mapping, "author_id", "user_id", "user_id_str"),
+        author_display_name=_first(
+            mapping,
+            "author_display_name",
+            "authordisplayname",
+            "name",
+            "display_name",
+            "displayname",
+            "author",
+            "user_name",
+            "username_display",
+        ),
+        author_id=_first(mapping, "author_id", "authorid", "user_id", "userid", "user_id_str", "useridstr"),
         created_at_text=record_values["created_at_text"],
         text=text,
         url=url,
-        reply_to=_first(mapping, "reply_to", "in_reply_to_status_id", "parent_id"),
-        quote_tweet_id=_first(mapping, "quote_tweet_id", "quoted_status_id"),
-        repost_of=_first(mapping, "repost_of", "retweeted_status_id", "retweet_of"),
-        like_count=_int_or_none(_first(mapping, "like_count", "likes", "favorite_count")),
-        retweet_count=_int_or_none(_first(mapping, "retweet_count", "retweets", "repost_count")),
-        reply_count=_int_or_none(_first(mapping, "reply_count", "replies")),
-        view_count=_int_or_none(_first(mapping, "view_count", "views")),
-        list_name=_first(mapping, "list_name", "list"),
-        list_id=_first(mapping, "list_id"),
+        reply_to=_first(
+            mapping,
+            "reply_to",
+            "replyto",
+            "in_reply_to_status_id",
+            "inreplytostatusid",
+            "parent_id",
+            "parentid",
+        ),
+        quote_tweet_id=_first(mapping, "quote_tweet_id", "quotetweetid", "quoted_status_id", "quotedstatusid"),
+        repost_of=_first(mapping, "repost_of", "repostof", "retweeted_status_id", "retweetedstatusid", "retweet_of"),
+        like_count=_int_or_none(_first(mapping, "like_count", "likecount", "likes", "favorite_count", "favoritecount")),
+        retweet_count=_int_or_none(_first(mapping, "retweet_count", "retweetcount", "retweets", "repost_count", "repostcount")),
+        reply_count=_int_or_none(_first(mapping, "reply_count", "replycount", "replies")),
+        view_count=_int_or_none(_first(mapping, "view_count", "viewcount", "views")),
+        list_name=list_name,
+        list_id=list_id,
         raw_source_file_name=member_name,
         row_index=row_index,
         parse_confidence=confidence,
@@ -402,7 +459,7 @@ def _objects_from_json_payload(value: Any) -> tuple[Mapping[str, Any], ...]:
     if isinstance(value, list):
         return tuple(item for item in value if isinstance(item, Mapping))
     if isinstance(value, Mapping):
-        for key in ("tweets", "data", "items", "records", "statuses"):
+        for key in ("tweets", "data", "items", "records", "statuses", "rows", "list", "users"):
             nested = value.get(key)
             if isinstance(nested, list):
                 return tuple(item for item in nested if isinstance(item, Mapping))
@@ -439,6 +496,18 @@ def _parse_plain_text(text: str, *, member_name: str) -> tuple[TwitterExporterRe
     blocks = [block.strip() for block in re.split(r"\n\s*\n", text) if block.strip()]
     if not blocks and text.strip():
         blocks = [text.strip()]
+    if len(blocks) == 1:
+        parts = [
+            part.strip()
+            for part in re.split(
+                r"\n\s*(?:-{3,}|={3,})\s*\n|\n(?=(?:Tweet\s*ID|Status\s*ID)\s*:)",
+                blocks[0],
+                flags=re.IGNORECASE,
+            )
+            if part.strip()
+        ]
+        if len(parts) > 1:
+            blocks = parts
     return tuple(
         _record_from_text_block(block, member_name=member_name, row_index=index)
         for index, block in enumerate(blocks, start=1)

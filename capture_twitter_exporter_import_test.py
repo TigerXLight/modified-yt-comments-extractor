@@ -96,6 +96,87 @@ def test_json_and_jsonl_import_parse_records_deterministically_and_track_missing
         assert jsonl_bundle.to_dict() == import_twitter_exporter_local_file(jsonl_file).to_dict()
 
 
+def test_sanitized_nested_rows_json_shape_maps_exporter_fields() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        source = Path(tmp) / "rows.json"
+        source.write_text(
+            json.dumps(
+                {
+                    "rows": [
+                        {
+                            "tweetId": "1200",
+                            "fullText": "Sanitized nested row tweet.",
+                            "screenName": "row_user",
+                            "createdAt": "2026-08-01T10:00:00Z",
+                            "tweetUrl": "https://x.com/row_user/status/1200",
+                            "conversationId": "conversation-1200",
+                            "likeCount": "12",
+                            "retweetCount": "3",
+                            "replyCount": "2",
+                            "viewCount": "1,234",
+                            "listName": "Synthetic List",
+                            "listId": "list-1",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        data = import_twitter_exporter_local_file(source).to_dict()
+        record = data["records"][0]
+
+        assert data["parsed_record_count"] == 1
+        assert record["record_type"] == "list_item"
+        assert record["tweet_id"] == "1200"
+        assert record["author_handle"] == "row_user"
+        assert record["created_at_text"] == "2026-08-01T10:00:00Z"
+        assert record["conversation_id"] == "conversation-1200"
+        assert record["like_count"] == 12
+        assert record["retweet_count"] == 3
+        assert record["reply_count"] == 2
+        assert record["view_count"] == 1234
+        assert record["list_name"] == "Synthetic List"
+        assert record["list_id"] == "list-1"
+
+
+def test_sanitized_list_and_users_json_shapes_are_supported() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        list_file = Path(tmp) / "list.json"
+        users_file = Path(tmp) / "users.json"
+        list_file.write_text(
+            json.dumps(
+                {
+                    "list": [
+                        {
+                            "userId": "u-1",
+                            "name": "Synthetic User",
+                            "screenName": "@synthetic_member",
+                            "listTitle": "Observed List Shape",
+                            "listId": "list-2",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        users_file.write_text(
+            json.dumps({"users": [{"userId": "u-2", "screenName": "only_user"}]}),
+            encoding="utf-8",
+        )
+
+        list_record = import_twitter_exporter_local_file(list_file).to_dict()["records"][0]
+        user_record = import_twitter_exporter_local_file(users_file).to_dict()["records"][0]
+
+        assert list_record["record_type"] == "list_item"
+        assert list_record["author_handle"] == "synthetic_member"
+        assert list_record["author_display_name"] == "Synthetic User"
+        assert list_record["list_name"] == "Observed List Shape"
+        assert user_record["record_type"] == "user"
+        assert user_record["author_id"] == "u-2"
+        assert user_record["author_handle"] == "only_user"
+
+
 def test_csv_and_tsv_import_handle_quoted_text_and_common_columns() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         csv_file = _write(
@@ -116,6 +197,49 @@ def test_csv_and_tsv_import_handle_quoted_text_and_common_columns() -> None:
         assert csv_bundle.to_dict()["records"][0]["like_count"] == 1234
         assert tsv_bundle.to_dict()["records"][0]["tweet_id"] == "777"
         assert tsv_bundle.to_dict()["records"][0]["retweet_count"] == 12
+
+
+def test_sanitized_camel_case_csv_export_columns_are_mapped() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        csv_file = _write(
+            Path(tmp) / "tweet 2.csv",
+            "tweetId,fullText,screenName,createdAt,tweetUrl,listName,listId,viewCount\n"
+            '888,"Sanitized CSV row",csv_member,2026-08-01,https://x.com/csv/status/888,List A,list-a,"2,468"\n',
+        )
+
+        record = import_twitter_exporter_local_file(csv_file).to_dict()["records"][0]
+
+        assert record["tweet_id"] == "888"
+        assert record["text"] == "Sanitized CSV row"
+        assert record["author_handle"] == "csv_member"
+        assert record["created_at_text"] == "2026-08-01"
+        assert record["url"] == "https://x.com/csv/status/888"
+        assert record["record_type"] == "list_item"
+        assert record["list_name"] == "List A"
+        assert record["list_id"] == "list-a"
+        assert record["view_count"] == 2468
+
+
+def test_sanitized_plain_text_separator_shape_parses_multiple_records() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        txt_file = _write(
+            Path(tmp) / "tweet.txt",
+            "Tweet ID: 901\n"
+            "Handle: @first_user\n"
+            "Text: First sanitized text\n"
+            "URL: https://x.com/first_user/status/901\n"
+            "-----\n"
+            "Tweet ID: 902\n"
+            "Handle: @second_user\n"
+            "Text: Second sanitized text\n"
+            "URL: https://x.com/second_user/status/902\n",
+        )
+
+        data = import_twitter_exporter_local_file(txt_file).to_dict()
+
+        assert data["parsed_record_count"] == 2
+        assert [record["tweet_id"] for record in data["records"]] == ["901", "902"]
+        assert [record["author_handle"] for record in data["records"]] == ["first_user", "second_user"]
 
 
 def test_zip_import_parses_supported_members_in_deterministic_order() -> None:
@@ -238,7 +362,11 @@ def test_unsupported_missing_and_directory_inputs_fail_cleanly() -> None:
 def run_self_test() -> None:
     test_plain_text_import_builds_local_review_bundle_without_live_claims()
     test_json_and_jsonl_import_parse_records_deterministically_and_track_missing_fields()
+    test_sanitized_nested_rows_json_shape_maps_exporter_fields()
+    test_sanitized_list_and_users_json_shapes_are_supported()
     test_csv_and_tsv_import_handle_quoted_text_and_common_columns()
+    test_sanitized_camel_case_csv_export_columns_are_mapped()
+    test_sanitized_plain_text_separator_shape_parses_multiple_records()
     test_zip_import_parses_supported_members_in_deterministic_order()
     test_zip_path_traversal_and_absolute_members_are_rejected()
     test_zip_unsupported_binary_member_is_skipped_with_warning()
