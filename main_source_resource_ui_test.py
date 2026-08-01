@@ -1,4 +1,7 @@
 import inspect
+import json
+import tempfile
+from pathlib import Path
 
 import main
 from core.settings import AppSettings, SettingsManager
@@ -160,6 +163,14 @@ def _make_settings_app(settings: AppSettings) -> App:
     return app
 
 
+def _make_twitter_import_app() -> App:
+    app = App.__new__(App)
+    app.url_status = FakeLabel()
+    app.log_messages = []
+    app.log_message = lambda message, level="info": app.log_messages.append((message, level))
+    return app
+
+
 def test_enter_source_url_intake_adds_rows_and_retains_invalid_text() -> None:
     app = _make_intake_app(f"bad words {MSN_URL}, {YOUTUBE_URL}")
 
@@ -217,6 +228,8 @@ def test_source_url_section_layout_has_no_main_card_updates_and_has_required_con
     assert "_on_source_url_enter" in source
     assert "Source URLs" in source
     assert "Submit" not in source
+    assert 'text="Twitter/X Local Export"' in source
+    assert "import_twitter_exporter_local_export_clicked" in source
 
 
 def test_source_row_layout_uses_compact_resource_icons_and_remove_button() -> None:
@@ -381,6 +394,71 @@ def test_start_fetching_without_selected_scope_sets_skipped_status() -> None:
     assert "last_operational_capture_plan" not in app.__dict__
 
 
+def test_twitter_exporter_import_review_action_is_summary_only_and_local() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        source = Path(tmp) / "tweet.json"
+        source.write_text(
+            json.dumps([{"id": "909", "text": "DO NOT SHOW THIS TWEET BODY"}]),
+            encoding="utf-8",
+        )
+        app = _make_twitter_import_app()
+        fake_messagebox = FakeMessageBox()
+        original_messagebox = main.messagebox
+        main.messagebox = fake_messagebox
+        try:
+            state = App._run_twitter_exporter_local_import_review_action(
+                app,
+                (str(source),),
+            )
+        finally:
+            main.messagebox = original_messagebox
+
+    assert state.review_status == "USER_REVIEW_REQUIRED"
+    assert state.provenance_status == "USER_SUPPLIED_LOCAL_EXPORT"
+    assert state.queue_metadata_available is True
+    assert app.last_twitter_exporter_import_review_state == state
+    assert app.url_status.config["text"].startswith("Twitter/X local export review:")
+    assert "1 parsed" in app.url_status.config["text"]
+    shown_text = fake_messagebox.infos[0][1]
+    combined_log = "\n".join(message for message, _level in app.log_messages)
+    assert "tweet.json" in shown_text
+    assert "USER_REVIEW_REQUIRED" in shown_text
+    assert "USER_SUPPLIED_LOCAL_EXPORT" in shown_text
+    assert "Network actions performed: none" in shown_text
+    assert "DO NOT SHOW THIS TWEET BODY" not in shown_text
+    assert "DO NOT SHOW THIS TWEET BODY" not in combined_log
+    assert "Source files were not moved" in combined_log
+
+
+def test_twitter_exporter_import_review_action_reports_invalid_files_safely() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        unsupported = root / "bad.exe"
+        unsupported.write_text("not supported", encoding="utf-8")
+        missing = root / "missing.txt"
+        app = _make_twitter_import_app()
+        fake_messagebox = FakeMessageBox()
+        original_messagebox = main.messagebox
+        main.messagebox = fake_messagebox
+        try:
+            state = App._run_twitter_exporter_local_import_review_action(
+                app,
+                (str(unsupported), str(missing)),
+            )
+        finally:
+            main.messagebox = original_messagebox
+
+    shown_text = fake_messagebox.infos[0][1]
+    assert state.total_error_count == 2
+    assert "bad.exe" in shown_text
+    assert "missing.txt" in shown_text
+    assert "Unsupported Twitter exporter import file type" in shown_text
+    assert "does not exist" in shown_text
+    assert str(root) not in shown_text
+    assert app.url_status.config["text_color"] == main.COLORS["warning"]
+    assert "Network actions performed: none" in shown_text
+
+
 def test_archivebox_icon_and_service_order_are_local_only() -> None:
     source = inspect.getsource(App._refresh_source_resource_rows)
     loader = inspect.getsource(App._ensure_archivebox_icon)
@@ -452,6 +530,8 @@ def run_self_test() -> None:
     test_start_fetching_msn_scaffold_returns_before_credential_resolution()
     test_start_fetching_source_scaffold_builds_plan_preview_without_live_execution()
     test_start_fetching_without_selected_scope_sets_skipped_status()
+    test_twitter_exporter_import_review_action_is_summary_only_and_local()
+    test_twitter_exporter_import_review_action_reports_invalid_files_safely()
     test_archivebox_icon_and_service_order_are_local_only()
     test_discussion_layout_uses_webpage_parent_and_child_rows()
     test_main_blank_wheel_router_targets_main_without_stealing_text_scroll()

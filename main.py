@@ -137,6 +137,10 @@ from capture_controller import (
     build_operational_capture_plan,
     format_operational_capture_plan_message,
 )
+from capture_twitter_exporter_source_import import (
+    build_twitter_exporter_source_row_summary,
+    preview_twitter_exporter_local_import_source,
+)
 from source_resource_state import (
     ARCHIVE_SERVICE_ARCHIVEBOX,
     RESOURCE_KIND_IMAGE,
@@ -2800,6 +2804,8 @@ class App(ctk.CTk):
         comments_column.grid(row=2, column=2, sticky="nw", padx=(14, 0), pady=(6, 0))
         livechat_column = ctk.CTkFrame(action_frame, fg_color="transparent")
         livechat_column.grid(row=2, column=3, sticky="nw", padx=(10, 0), pady=(6, 0))
+        local_import_column = ctk.CTkFrame(action_frame, fg_color="transparent")
+        local_import_column.grid(row=2, column=4, sticky="ne", padx=(10, 0), pady=(6, 0))
 
         self.extract_webpage_var = ctk.BooleanVar(value=False)
         self.extract_comments_var = ctk.BooleanVar(value=True)
@@ -2892,6 +2898,20 @@ class App(ctk.CTk):
             checkmark_color="#000000",
         )
         self.livechat_screenshot_checkbox.pack(anchor="w", pady=(4, 0))
+
+        self.twitter_exporter_import_button = ctk.CTkButton(
+            local_import_column,
+            text="Twitter/X Local Export",
+            command=self.import_twitter_exporter_local_export_clicked,
+            width=178,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=8,
+        )
+        self.twitter_exporter_import_button.pack(anchor="e")
 
         self.cancel_button = ctk.CTkButton(
             action_frame,
@@ -4535,6 +4555,55 @@ class App(ctk.CTk):
         else:
             self.url_status.configure(text="", text_color=COLORS["text_muted"])
         return "break"
+
+    def _twitter_exporter_local_filetypes(self) -> list[tuple[str, str]]:
+        return [
+            ("Twitter/X exporter files", "*.txt *.json *.jsonl *.csv *.tsv *.zip"),
+            ("Text files", "*.txt"),
+            ("JSON files", "*.json *.jsonl"),
+            ("CSV/TSV files", "*.csv *.tsv"),
+            ("ZIP archives", "*.zip"),
+        ]
+
+    def import_twitter_exporter_local_export_clicked(self) -> None:
+        files = filedialog.askopenfilenames(
+            title="Import Twitter/X Exporter Local Files",
+            filetypes=self._twitter_exporter_local_filetypes(),
+        )
+        if not files:
+            return
+        self._run_twitter_exporter_local_import_review_action(tuple(files))
+
+    def _run_twitter_exporter_local_import_review_action(
+        self,
+        input_paths: Sequence[str],
+    ) -> Any:
+        state = preview_twitter_exporter_local_import_source(
+            input_paths,
+            as_queue_metadata=True,
+        )
+        self.last_twitter_exporter_import_review_state = state
+        summary = build_twitter_exporter_source_row_summary(state)
+        status = (
+            "Twitter/X local export review: "
+            f"{state.input_count} file(s), "
+            f"{state.total_parsed_record_count} parsed, "
+            f"{state.total_skipped_record_count} skipped, "
+            f"{state.total_warning_count} warning(s), "
+            f"{state.total_error_count} error(s)."
+        )
+        status_color = COLORS["warning"] if state.total_error_count else COLORS["success"]
+        if hasattr(self, "url_status"):
+            self.url_status.configure(text=status, text_color=status_color)
+        self.log_message(
+            f"{status} Network actions performed: none. Source files were not moved.",
+            "warning" if state.total_error_count else "success",
+        )
+        try:
+            messagebox.showinfo("Twitter/X Local Export Review", summary)
+        except Exception:
+            logger.debug("Could not show Twitter/X local export review summary.", exc_info=True)
+        return state
 
     def _archive_status_color(self, color_name: str) -> str:
         return {
