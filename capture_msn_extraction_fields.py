@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
@@ -20,10 +22,14 @@ from capture_live_smoke_plan import (
     MSN_MANUAL_SMOKE_SOURCE_URL,
     ManualLiveSmokeObservationImport,
 )
+from evidence_item_queue import EvidenceItemRole, EvidenceItemStatus, EvidenceQueueItem
 
 
 MSN_EXTRACTION_FIELD_SCHEMA_VERSION = "msn_extraction_fields.v1"
+MSN_EXPORT_QUEUE_REVIEW_ITEM_SCHEMA_VERSION = "msn_extraction_export_review_item.v1"
 MSN_EXTRACTION_FIELD_STATUS_USER_REVIEW_REQUIRED = "user_review_required"
+MSN_EXPORT_QUEUE_REVIEW_STATUS_USER_REVIEW_REQUIRED = "USER_REVIEW_REQUIRED"
+MSN_EXPORT_QUEUE_REVIEW_PROVENANCE_MANUAL_OPERATOR_ONLY = "MANUAL_OPERATOR_ONLY"
 MSN_ARTICLE_FIELD_KIND = "article_semantic_text"
 MSN_COMMENTS_FIELD_KIND = "comments_thread_records"
 MSN_COMMENT_FIELD_KIND = "comment_thread_record"
@@ -50,11 +56,31 @@ MSN_REJECTED_MANUAL_CLAIM_FIELDS = (
     "claims_completed_live_verification",
     "claims_credentials_cookies_accounts",
     "claims_downloaded_files",
+    "claims_file_artifacts",
     "claims_file_exists",
     "claims_file_existence",
     "claims_network_capture",
     "claims_ocr",
     "claims_screenshot",
+)
+
+MSN_REJECTED_TRUE_REVIEW_FIELDS = (
+    "archive_provider_result_claimed",
+    "artifact_file_claimed",
+    "artifact_files_claimed",
+    "automatic_classification",
+    "automatic_classification_performed",
+    "browser_automation_claimed",
+    "downloaded_files_claimed",
+    "downloaded_media_claimed",
+    "file_existence_claimed",
+    "live_verification_claimed",
+    "media_files_claimed",
+    "muxing_claimed",
+    "network_capture_claimed",
+    "ocr_claimed",
+    "playback_capture_claimed",
+    "screenshot_claimed",
 )
 
 
@@ -148,6 +174,86 @@ class MsnArticleCommentExtractionFieldBundle:
         }
 
 
+@dataclass(frozen=True)
+class MsnExtractionExportQueueReviewItem:
+    item_id: str
+    site_label: str
+    source_url: str
+    source_kind: str
+    review_status: str
+    provenance_status: str
+    article_section: Mapping[str, Any]
+    comments_section: Mapping[str, Any]
+    media_section: Mapping[str, Any]
+    export_review_section: Mapping[str, Any]
+    approved_manual_scope_ids: tuple[str, ...]
+    observed_manual_scope_ids: tuple[str, ...]
+    warnings: tuple[str, ...] = ()
+    validation_errors: tuple[str, ...] = ()
+    manual_operator_only: bool = True
+    user_review_required: bool = True
+    artifact_files_claimed: bool = False
+    file_existence_claimed: bool = False
+    live_verification_claimed: bool = False
+    automatic_classification: bool = False
+    browser_automation_claimed: bool = False
+    network_capture_claimed: bool = False
+    archive_provider_result_claimed: bool = False
+    downloaded_media_claimed: bool = False
+    screenshot_claimed: bool = False
+    ocr_claimed: bool = False
+    schema_version: str = MSN_EXPORT_QUEUE_REVIEW_ITEM_SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "approved_manual_scope_ids": list(self.approved_manual_scope_ids),
+            "archive_provider_result_claimed": self.archive_provider_result_claimed,
+            "article_section": _dict_value(dict(self.article_section)),
+            "artifact_files_claimed": self.artifact_files_claimed,
+            "automatic_classification": self.automatic_classification,
+            "browser_automation_claimed": self.browser_automation_claimed,
+            "comments_section": _dict_value(dict(self.comments_section)),
+            "downloaded_media_claimed": self.downloaded_media_claimed,
+            "export_review_section": _dict_value(dict(self.export_review_section)),
+            "file_existence_claimed": self.file_existence_claimed,
+            "item_id": self.item_id,
+            "live_verification_claimed": self.live_verification_claimed,
+            "manual_operator_only": self.manual_operator_only,
+            "media_section": _dict_value(dict(self.media_section)),
+            "network_capture_claimed": self.network_capture_claimed,
+            "observed_manual_scope_ids": list(self.observed_manual_scope_ids),
+            "ocr_claimed": self.ocr_claimed,
+            "provenance_status": self.provenance_status,
+            "review_status": self.review_status,
+            "schema_version": self.schema_version,
+            "screenshot_claimed": self.screenshot_claimed,
+            "site_label": self.site_label,
+            "source_kind": self.source_kind,
+            "source_url": self.source_url,
+            "user_review_required": self.user_review_required,
+            "validation_errors": list(self.validation_errors),
+            "warnings": list(self.warnings),
+        }
+
+    def to_evidence_queue_item(self) -> EvidenceQueueItem:
+        return EvidenceQueueItem(
+            item_id=self.item_id,
+            item_role=EvidenceItemRole.MANUAL_EVIDENCE_NOTE,
+            display_name=f"{self.site_label} extraction review metadata",
+            source_url=self.source_url,
+            local_path="",
+            item_status=EvidenceItemStatus.NEEDS_REVIEW,
+            created_at_utc="",
+            updated_at_utc="",
+            user_notes=json.dumps(
+                self.to_dict(),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        )
+
+
 def _dict_value(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_dict_value(item) for item in value]
@@ -192,6 +298,15 @@ def _observation_to_mapping(value: ManualLiveSmokeObservationImport | Mapping[st
             return {}
         return value.observation.to_dict()
     return value
+
+
+def _stable_json(value: Mapping[str, Any]) -> str:
+    return json.dumps(_dict_value(dict(value)), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _stable_review_item_id(data: Mapping[str, Any]) -> str:
+    digest = hashlib.sha256(_stable_json(data).encode("utf-8")).hexdigest()[:16]
+    return f"msn_extraction_review_{digest}"
 
 
 def _validate_manual_observation_mappings(
@@ -572,12 +687,207 @@ def build_msn_manual_observation_extraction_review_bundle(
     )
 
 
+def _tri_state_from_manual_status(status: str) -> bool | str:
+    if status == "observed":
+        return True
+    if status == "not_observed":
+        return False
+    return "unknown"
+
+
+def _has_article_text(article: Mapping[str, Any]) -> bool:
+    return bool(str(article.get("text") or "").strip())
+
+
+def _has_extracted_comments(comments: Mapping[str, Any]) -> bool:
+    return int(comments.get("comment_count") or 0) > 0 and bool(comments.get("thread_records") or ())
+
+
+def _section_content_source(section: Mapping[str, Any]) -> str:
+    return str(section.get("content_source") or MSN_EXTRACTION_PROVENANCE_MANUAL_OBSERVATION_ONLY)
+
+
+def _article_review_section(article: Mapping[str, Any]) -> dict[str, Any]:
+    has_text = _has_article_text(article)
+    requires_manual = bool(article.get("requires_manual_source_content") or not has_text)
+    missing = []
+    if requires_manual:
+        missing.append("local_supplied_article_source_content")
+    return {
+        "article_content_source": _section_content_source(article),
+        "article_requires_manual_source_content": requires_manual,
+        "article_status": str(article.get("status") or ""),
+        "field_kind": str(article.get("field_kind") or MSN_ARTICLE_FIELD_KIND),
+        "has_article_text": has_text,
+        "local_supplied_content_present": _section_content_source(article)
+        == MSN_EXTRACTION_PROVENANCE_LOCAL_SUPPLIED_OPERATOR_CONTENT
+        and has_text,
+        "missing_content_indicators": missing,
+        "separated_from_comments": bool(article.get("separated_from_comments", True)),
+        "user_review_required": True,
+    }
+
+
+def _comments_review_section(comments: Mapping[str, Any]) -> dict[str, Any]:
+    has_comments = _has_extracted_comments(comments)
+    requires_manual = bool(comments.get("requires_manual_source_content") or not has_comments)
+    missing = []
+    if requires_manual:
+        missing.append("local_supplied_comment_source_content")
+    observed_value = comments.get("comments_present_observed")
+    if observed_value is True:
+        observed: bool | str = True
+    elif observed_value is False and comments.get("manual_observation_status") == "not_observed":
+        observed = False
+    else:
+        observed = "unknown"
+    return {
+        "article_text_included": bool(comments.get("article_text_included", False)),
+        "comment_count": int(comments.get("comment_count") or 0) if has_comments else 0,
+        "comments_content_source": _section_content_source(comments),
+        "comments_panel_observed": observed,
+        "comments_requires_manual_source_content": requires_manual,
+        "comments_status": str(comments.get("status") or ""),
+        "field_kind": str(comments.get("field_kind") or MSN_COMMENTS_FIELD_KIND),
+        "has_extracted_comments": has_comments,
+        "local_supplied_content_present": _section_content_source(comments)
+        == MSN_EXTRACTION_PROVENANCE_LOCAL_SUPPLIED_OPERATOR_CONTENT
+        and has_comments,
+        "missing_content_indicators": missing,
+        "separated_from_article": bool(comments.get("separated_from_article", True)),
+        "user_review_required": True,
+    }
+
+
+def _media_review_section(media: Mapping[str, Any]) -> dict[str, Any]:
+    manual_status = str(media.get("manual_observation_status") or "")
+    return {
+        "downloaded_media_claimed": False,
+        "field_kind": str(media.get("field_kind") or MSN_MEDIA_FIELD_KIND),
+        "manual_observation_status": manual_status or "unknown",
+        "media_downloaded": False,
+        "media_files_claimed": False,
+        "muxing_claimed": False,
+        "playback_capture_claimed": False,
+        "static_media_observed": _tri_state_from_manual_status(manual_status),
+        "user_review_required": True,
+    }
+
+
+def _export_review_section(export_review: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "artifact_files_claimed": False,
+        "automatic_classification": False,
+        "field_kind": str(export_review.get("field_kind") or MSN_EXPORT_REVIEW_FIELD_KIND),
+        "file_existence_claimed": False,
+        "live_verification_claimed": False,
+        "manual_operator_only": True,
+        "queue_status": MSN_EXPORT_QUEUE_REVIEW_STATUS_USER_REVIEW_REQUIRED,
+        "user_review_required": True,
+    }
+
+
+def _validate_bundle_for_export_review_item(
+    bundle: MsnArticleCommentExtractionFieldBundle,
+) -> tuple[str, ...]:
+    data = bundle.to_dict()
+    errors: list[str] = []
+    if data["site_label"] != MSN_MANUAL_SMOKE_SITE_LABEL:
+        errors.append("MSN export review item rejects non-MSN site labels")
+    if data["source_url"] != MSN_MANUAL_SMOKE_SOURCE_URL:
+        errors.append("MSN export review item rejects unapproved source URL")
+    for scope in data["manual_observation_scopes"]:
+        if scope not in MSN_MANUAL_SMOKE_APPROVED_SCOPES:
+            errors.append(f"MSN export review item rejects unapproved scope: {scope}")
+    if bool(data.get("artifact_files_claimed")):
+        errors.append("MSN export review item rejects artifact file claims")
+
+    def scan_claims(value: Any, path: str = "bundle") -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if (
+                    key in MSN_REJECTED_MANUAL_CLAIM_FIELDS
+                    or key in MSN_REJECTED_TRUE_REVIEW_FIELDS
+                ) and bool(item):
+                    errors.append(f"MSN export review item rejects unsafe claim {path}.{key}")
+                scan_claims(item, f"{path}.{key}")
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                scan_claims(item, f"{path}[{index}]")
+
+    scan_claims(data)
+    return tuple(dict.fromkeys(errors))
+
+
+def build_export_review_item_from_msn_extraction_bundle(
+    bundle: MsnArticleCommentExtractionFieldBundle,
+    *,
+    validation_errors: Iterable[str] = (),
+) -> MsnExtractionExportQueueReviewItem:
+    validation = tuple(validation_errors) + _validate_bundle_for_export_review_item(bundle)
+    if validation:
+        raise ValueError("; ".join(tuple(dict.fromkeys(validation))))
+
+    data = bundle.to_dict()
+    article_section = _article_review_section(data["article"])
+    comments_section = _comments_review_section(data["comments"])
+    media_section = _media_review_section(data["media"])
+    export_review_section = _export_review_section(data["export_review"])
+    observed_scopes = tuple(sorted(str(scope) for scope in data["manual_observation_scopes"]))
+    approved_scopes = tuple(sorted(str(scope) for scope in data["approved_manual_scopes"]))
+    stable_basis = {
+        "approved_manual_scope_ids": approved_scopes,
+        "article_section": article_section,
+        "comments_section": comments_section,
+        "export_review_section": export_review_section,
+        "media_section": media_section,
+        "observed_manual_scope_ids": observed_scopes,
+        "site_label": data["site_label"],
+        "source_kind": "msn_article_manual_operator_extraction_review",
+        "source_url": data["source_url"],
+    }
+    warnings = (
+        "USER_REVIEW_REQUIRED",
+        "MANUAL_OPERATOR_ONLY",
+        "Metadata-only manual observations do not prove extracted article/comment content.",
+    )
+    return MsnExtractionExportQueueReviewItem(
+        item_id=_stable_review_item_id(stable_basis),
+        site_label=data["site_label"],
+        source_url=data["source_url"],
+        source_kind="msn_article_manual_operator_extraction_review",
+        review_status=MSN_EXPORT_QUEUE_REVIEW_STATUS_USER_REVIEW_REQUIRED,
+        provenance_status=MSN_EXPORT_QUEUE_REVIEW_PROVENANCE_MANUAL_OPERATOR_ONLY,
+        article_section=article_section,
+        comments_section=comments_section,
+        media_section=media_section,
+        export_review_section=export_review_section,
+        approved_manual_scope_ids=approved_scopes,
+        observed_manual_scope_ids=observed_scopes,
+        warnings=tuple(sorted(warnings)),
+    )
+
+
+def convert_msn_extraction_bundle_to_export_queue_review_item(
+    bundle: MsnArticleCommentExtractionFieldBundle,
+) -> MsnExtractionExportQueueReviewItem:
+    return build_export_review_item_from_msn_extraction_bundle(bundle)
+
+
+def msn_extraction_review_bundle_to_evidence_queue_item(
+    bundle: MsnArticleCommentExtractionFieldBundle,
+) -> EvidenceQueueItem:
+    return build_export_review_item_from_msn_extraction_bundle(bundle).to_evidence_queue_item()
+
+
 def msn_extraction_review_bundle_to_export_queue_metadata(
     bundle: MsnArticleCommentExtractionFieldBundle,
 ) -> dict[str, Any]:
     data = bundle.to_dict()
+    review_item = build_export_review_item_from_msn_extraction_bundle(bundle)
     return {
         "artifact_file_claimed": False,
+        "artifact_files_claimed": False,
         "article_status": data["article"].get("status", ""),
         "automatic_classification_performed": False,
         "browser_or_download_command": "",
@@ -588,6 +898,7 @@ def msn_extraction_review_bundle_to_export_queue_metadata(
         "manual_operator_only": True,
         "network_actions_performed": "none",
         "provider_or_archive_action": "none",
+        "queue_review_item": review_item.to_dict(),
         "source_url": data["source_url"],
         "user_review_required": True,
     }
@@ -628,10 +939,14 @@ __all__ = [
     "MSN_EXTRACTION_FIELD_STATUS_USER_REVIEW_REQUIRED",
     "MsnArticleCommentExtractionFieldBundle",
     "MsnCommentThreadRecordField",
+    "MsnExtractionExportQueueReviewItem",
     "article_result_to_msn_fields",
+    "build_export_review_item_from_msn_extraction_bundle",
     "build_msn_article_comment_extraction_field_bundle",
     "build_msn_manual_observation_extraction_review_bundle",
     "comments_result_to_msn_fields",
+    "convert_msn_extraction_bundle_to_export_queue_review_item",
     "extract_msn_article_comment_fields_from_supplied_html",
+    "msn_extraction_review_bundle_to_evidence_queue_item",
     "msn_extraction_review_bundle_to_export_queue_metadata",
 ]
