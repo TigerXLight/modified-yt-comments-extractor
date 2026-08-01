@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
-from capture_article import ArticleExtractionResult, extract_article_text_from_html
+from capture_article import (
+    ARTICLE_STATUS_EMPTY,
+    ArticleExtractionResult,
+    extract_article_text_from_html,
+)
 from capture_comments import CommentCaptureResult, CommentRecord, extract_comments_from_html
 from capture_live_smoke_plan import (
     MANUAL_ACTION_SCOPE_COMMENTS,
@@ -23,10 +27,34 @@ MSN_EXTRACTION_FIELD_STATUS_USER_REVIEW_REQUIRED = "user_review_required"
 MSN_ARTICLE_FIELD_KIND = "article_semantic_text"
 MSN_COMMENTS_FIELD_KIND = "comments_thread_records"
 MSN_COMMENT_FIELD_KIND = "comment_thread_record"
+MSN_MEDIA_FIELD_KIND = "manual_static_media_observation"
+MSN_EXPORT_REVIEW_FIELD_KIND = "export_review_metadata"
+MSN_EXTRACTION_STATUS_NEEDS_MANUAL_SOURCE_CONTENT = "needs_manual_source_content"
+MSN_EXTRACTION_STATUS_LOCAL_SUPPLIED_CONTENT = "local_supplied_content"
+MSN_EXTRACTION_STATUS_MANUAL_OBSERVATION_LINKED = "manual_observation_linked"
+MSN_EXTRACTION_PROVENANCE_MANUAL_OBSERVATION_ONLY = "manual_observation_metadata_only"
+MSN_EXTRACTION_PROVENANCE_LOCAL_SUPPLIED_OPERATOR_CONTENT = "local_supplied_operator_content"
 MSN_EXTRACTION_FIELD_SCOPE = (
     "MSN article/comment extraction field metadata for supplied local HTML and imported "
     "manual operator observations only; no fetch, browser, screenshot, OCR, archive, "
     "download, provider, credential, scraping, external process, or GUI behavior"
+)
+
+MSN_REJECTED_MANUAL_CLAIM_FIELDS = (
+    "claims_archive_check",
+    "claims_archive_checks",
+    "claims_archive_submission",
+    "claims_automated_capture",
+    "claims_automatic_evidence_classification",
+    "claims_browser_automation",
+    "claims_completed_live_verification",
+    "claims_credentials_cookies_accounts",
+    "claims_downloaded_files",
+    "claims_file_exists",
+    "claims_file_existence",
+    "claims_network_capture",
+    "claims_ocr",
+    "claims_screenshot",
 )
 
 
@@ -83,6 +111,8 @@ class MsnArticleCommentExtractionFieldBundle:
     source_url: str
     article: Mapping[str, Any]
     comments: Mapping[str, Any]
+    media: Mapping[str, Any] | None = None
+    export_review: Mapping[str, Any] | None = None
     manual_observation_scopes: tuple[str, ...] = ()
     manual_observation_count: int = 0
     user_review_required: bool = True
@@ -104,9 +134,11 @@ class MsnArticleCommentExtractionFieldBundle:
             "artifact_files_claimed": self.artifact_files_claimed,
             "automation_performed": self.automation_performed,
             "comments": _dict_value(dict(self.comments)),
+            "export_review": _dict_value(dict(self.export_review or {})),
             "manual_observation_count": self.manual_observation_count,
             "manual_observation_scopes": list(self.manual_observation_scopes),
             "manual_operator_only": self.manual_operator_only,
+            "media": _dict_value(dict(self.media or {})),
             "network_actions_performed": self.network_actions_performed,
             "schema_version": self.schema_version,
             "scope": self.scope,
@@ -152,6 +184,60 @@ def _accepted_manual_observation_scopes(
             continue
         scopes.append(observation.action_scope_id)
     return tuple(dict.fromkeys(scopes))
+
+
+def _observation_to_mapping(value: ManualLiveSmokeObservationImport | Mapping[str, Any]) -> Mapping[str, Any]:
+    if isinstance(value, ManualLiveSmokeObservationImport):
+        if not value.is_accepted or value.observation is None:
+            return {}
+        return value.observation.to_dict()
+    return value
+
+
+def _validate_manual_observation_mappings(
+    manual_observation_imports: Iterable[ManualLiveSmokeObservationImport | Mapping[str, Any]],
+) -> tuple[tuple[Mapping[str, Any], ...], tuple[str, ...]]:
+    accepted: list[Mapping[str, Any]] = []
+    errors: list[str] = []
+    for index, raw in enumerate(manual_observation_imports, start=1):
+        observation = _observation_to_mapping(raw)
+        if not observation:
+            continue
+        site_label = str(observation.get("site_label") or "")
+        source_url = str(observation.get("source_url") or "")
+        action_scope_id = str(observation.get("action_scope_id") or "")
+        if site_label != MSN_MANUAL_SMOKE_SITE_LABEL:
+            errors.append(f"manual observation {index}: non-MSN site label rejected")
+        if source_url != MSN_MANUAL_SMOKE_SOURCE_URL:
+            errors.append(f"manual observation {index}: unapproved MSN source URL rejected")
+        if action_scope_id not in MSN_MANUAL_SMOKE_APPROVED_SCOPES:
+            errors.append(f"manual observation {index}: unapproved scope rejected: {action_scope_id}")
+        for claim_field in MSN_REJECTED_MANUAL_CLAIM_FIELDS:
+            if bool(observation.get(claim_field)):
+                errors.append(f"manual observation {index}: rejected claim {claim_field}")
+        accepted.append(observation)
+    return tuple(accepted), tuple(errors)
+
+
+def _observed_status_by_scope(
+    observations: Iterable[Mapping[str, Any]],
+    scope_id: str,
+) -> str:
+    for observation in observations:
+        if observation.get("action_scope_id") == scope_id:
+            return str(observation.get("result_status") or "")
+    return "unknown"
+
+
+def _manual_notes_for_scope(
+    observations: Iterable[Mapping[str, Any]],
+    scope_id: str,
+) -> tuple[str, ...]:
+    return tuple(
+        str(observation.get("notes") or "")
+        for observation in observations
+        if observation.get("action_scope_id") == scope_id and observation.get("notes")
+    )
 
 
 def _comment_to_msn_field(comment: CommentRecord) -> MsnCommentThreadRecordField:
@@ -232,6 +318,164 @@ def comments_result_to_msn_fields(
     }
 
 
+def _metadata_only_article_fields(
+    *,
+    source_url: str,
+    observations: tuple[Mapping[str, Any], ...],
+) -> dict[str, Any]:
+    return {
+        "comments_region_status": "not_extracted",
+        "content_source": MSN_EXTRACTION_PROVENANCE_MANUAL_OBSERVATION_ONLY,
+        "field_kind": MSN_ARTICLE_FIELD_KIND,
+        "manual_notes": list(_manual_notes_for_scope(observations, MANUAL_ACTION_SCOPE_WEBPAGE)),
+        "manual_observation_status": _observed_status_by_scope(
+            observations,
+            MANUAL_ACTION_SCOPE_WEBPAGE,
+        ),
+        "manual_operator_only": True,
+        "network_actions_performed": "none",
+        "requires_manual_source_content": True,
+        "separated_from_comments": True,
+        "source_channel": "webpage_article",
+        "source_url": source_url,
+        "status": MSN_EXTRACTION_STATUS_NEEDS_MANUAL_SOURCE_CONTENT,
+        "text": "",
+        "title": "",
+        "user_review_required": True,
+        "warnings": [
+            "Manual MSN webpage observation exists, but no local supplied article HTML/text was provided.",
+        ],
+    }
+
+
+def _metadata_only_comments_fields(
+    *,
+    source_url: str,
+    observations: tuple[Mapping[str, Any], ...],
+) -> dict[str, Any]:
+    comments_status = _observed_status_by_scope(observations, MANUAL_ACTION_SCOPE_COMMENTS)
+    return {
+        "article_text_included": False,
+        "comment_count": 0,
+        "comments_present_observed": comments_status == "observed",
+        "content_source": MSN_EXTRACTION_PROVENANCE_MANUAL_OBSERVATION_ONLY,
+        "field_kind": MSN_COMMENTS_FIELD_KIND,
+        "manual_notes": list(_manual_notes_for_scope(observations, MANUAL_ACTION_SCOPE_COMMENTS)),
+        "manual_observation_status": comments_status,
+        "manual_operator_only": True,
+        "network_actions_performed": "none",
+        "requires_manual_source_content": True,
+        "separated_from_article": True,
+        "source_channel": "comments_module",
+        "source_url": source_url,
+        "status": MSN_EXTRACTION_STATUS_NEEDS_MANUAL_SOURCE_CONTENT,
+        "thread_records": [],
+        "user_review_required": True,
+        "warnings": [
+            "Manual MSN comments observation exists, but no local supplied comment records/HTML were provided.",
+        ],
+    }
+
+
+def _media_review_fields(observations: tuple[Mapping[str, Any], ...]) -> dict[str, Any]:
+    media_status = _observed_status_by_scope(observations, MANUAL_ACTION_SCOPE_MEDIA)
+    return {
+        "downloaded_files_claimed": False,
+        "field_kind": MSN_MEDIA_FIELD_KIND,
+        "manual_notes": list(_manual_notes_for_scope(observations, MANUAL_ACTION_SCOPE_MEDIA)),
+        "manual_observation_status": media_status,
+        "manual_operator_only": True,
+        "media_status": MSN_EXTRACTION_STATUS_MANUAL_OBSERVATION_LINKED,
+        "network_actions_performed": "none",
+        "playback_capture_claimed": False,
+        "static_media_observed": media_status == "observed",
+        "user_review_required": True,
+    }
+
+
+def _export_review_fields(observations: tuple[Mapping[str, Any], ...]) -> dict[str, Any]:
+    return {
+        "artifact_file_claimed": False,
+        "automatic_classification_performed": False,
+        "export_queue_status": MSN_EXTRACTION_FIELD_STATUS_USER_REVIEW_REQUIRED,
+        "field_kind": MSN_EXPORT_REVIEW_FIELD_KIND,
+        "file_existence_claimed": False,
+        "manual_notes": list(_manual_notes_for_scope(observations, MANUAL_ACTION_SCOPE_EXPORT_QUEUE)),
+        "manual_observation_status": _observed_status_by_scope(
+            observations,
+            MANUAL_ACTION_SCOPE_EXPORT_QUEUE,
+        ),
+        "manual_operator_only": True,
+        "network_actions_performed": "none",
+        "user_review_required": True,
+    }
+
+
+def _article_fields_from_supplied_text(
+    *,
+    supplied_article_text: str,
+    source_url: str,
+) -> dict[str, Any]:
+    text = str(supplied_article_text or "").strip()
+    result = ArticleExtractionResult(
+        source_url=source_url,
+        status=MSN_EXTRACTION_STATUS_LOCAL_SUPPLIED_CONTENT if text else ARTICLE_STATUS_EMPTY,
+        text=text,
+        method="local_supplied_operator_text",
+        confidence=1.0 if text else 0.0,
+        warnings=() if text else ("No local supplied article text was provided.",),
+    )
+    fields = article_result_to_msn_fields(result, source_url=source_url)
+    fields["content_source"] = MSN_EXTRACTION_PROVENANCE_LOCAL_SUPPLIED_OPERATOR_CONTENT
+    fields["requires_manual_source_content"] = False if text else True
+    return fields
+
+
+def _comments_fields_from_supplied_records(
+    *,
+    supplied_comment_records: Iterable[CommentRecord | Mapping[str, Any]],
+    source_url: str,
+) -> dict[str, Any]:
+    comments: list[CommentRecord] = []
+    for index, record in enumerate(supplied_comment_records, start=1):
+        if isinstance(record, CommentRecord):
+            comments.append(record)
+            continue
+        comments.append(
+            CommentRecord(
+                comment_id=str(record.get("comment_id") or record.get("id") or f"comment-{index}"),
+                text=str(record.get("text") or ""),
+                author=str(record.get("author") or ""),
+                parent_id=str(record.get("parent_id") or ""),
+                depth=int(record.get("depth") or 0),
+                thread_id=str(record.get("thread_id") or ""),
+                posted_at=str(record.get("posted_at") or ""),
+                observed_at=str(record.get("observed_at") or ""),
+                reaction_count=int(record.get("reaction_count") or 0),
+                reply_count=int(record.get("reply_count") or 0),
+                permalink=str(record.get("permalink") or ""),
+                source_order=int(record.get("source_order") or index),
+                loaded_order=int(record.get("loaded_order") or index),
+                status=str(record.get("status") or ""),
+                capture_method=str(record.get("capture_method") or "local_supplied_operator_content"),
+                raw_reference=str(record.get("raw_reference") or ""),
+            )
+        )
+    result = CommentCaptureResult(
+        source_url=source_url,
+        status=MSN_EXTRACTION_STATUS_LOCAL_SUPPLIED_CONTENT,
+        completeness="user_review_required",
+        comments=tuple(comments),
+        capture_routes=("local_supplied_operator_content",),
+        warnings=(),
+    )
+    fields = comments_result_to_msn_fields(result, source_url=source_url)
+    fields["content_source"] = MSN_EXTRACTION_PROVENANCE_LOCAL_SUPPLIED_OPERATOR_CONTENT
+    fields["requires_manual_source_content"] = False
+    fields["comments_present_observed"] = bool(comments)
+    return fields
+
+
 def build_msn_article_comment_extraction_field_bundle(
     article_result: ArticleExtractionResult,
     comments_result: CommentCaptureResult,
@@ -248,6 +492,105 @@ def build_msn_article_comment_extraction_field_bundle(
         manual_observation_scopes=accepted_scopes,
         manual_observation_count=len(accepted_scopes),
     )
+
+
+def build_msn_manual_observation_extraction_review_bundle(
+    *,
+    manual_observation_imports: Iterable[ManualLiveSmokeObservationImport | Mapping[str, Any]],
+    source_url: str = MSN_MANUAL_SMOKE_SOURCE_URL,
+    site_label: str = MSN_MANUAL_SMOKE_SITE_LABEL,
+    supplied_html: str = "",
+    supplied_article_text: str = "",
+    supplied_comments_html: str = "",
+    supplied_comment_records: Iterable[CommentRecord | Mapping[str, Any]] = (),
+) -> MsnArticleCommentExtractionFieldBundle:
+    """Link imported MSN manual observations to extraction/review metadata.
+
+    Manual observations alone never become extracted article/comment content.
+    Local supplied HTML/text/comment records can populate the existing
+    extraction fields, but the resulting bundle remains manual-operator-only
+    and user-review-required.
+    """
+
+    if site_label != MSN_MANUAL_SMOKE_SITE_LABEL:
+        raise ValueError("MSN manual observation integration rejects non-MSN site labels")
+    source_url = _validate_msn_source_url(source_url)
+    observations, errors = _validate_manual_observation_mappings(manual_observation_imports)
+    if errors:
+        raise ValueError("; ".join(errors))
+    accepted_scopes = tuple(
+        dict.fromkeys(str(observation.get("action_scope_id") or "") for observation in observations)
+    )
+    invalid_scopes = tuple(scope for scope in accepted_scopes if scope not in MSN_MANUAL_SMOKE_APPROVED_SCOPES)
+    if invalid_scopes:
+        raise ValueError("MSN manual observation integration rejects unapproved scopes")
+
+    article: dict[str, Any]
+    comments: dict[str, Any]
+    if supplied_html:
+        article = article_result_to_msn_fields(
+            extract_article_text_from_html(supplied_html, source_url=source_url),
+            source_url=source_url,
+        )
+        article["content_source"] = MSN_EXTRACTION_PROVENANCE_LOCAL_SUPPLIED_OPERATOR_CONTENT
+        article["requires_manual_source_content"] = False
+        comments_source = supplied_comments_html or supplied_html
+        comments = comments_result_to_msn_fields(
+            extract_comments_from_html(comments_source, source_url=source_url),
+            source_url=source_url,
+        )
+        comments["content_source"] = MSN_EXTRACTION_PROVENANCE_LOCAL_SUPPLIED_OPERATOR_CONTENT
+        comments["requires_manual_source_content"] = False
+        comments["comments_present_observed"] = bool(comments.get("thread_records"))
+    else:
+        article = (
+            _article_fields_from_supplied_text(
+                supplied_article_text=supplied_article_text,
+                source_url=source_url,
+            )
+            if supplied_article_text
+            else _metadata_only_article_fields(source_url=source_url, observations=observations)
+        )
+        supplied_records_tuple = tuple(supplied_comment_records)
+        comments = (
+            _comments_fields_from_supplied_records(
+                supplied_comment_records=supplied_records_tuple,
+                source_url=source_url,
+            )
+            if supplied_records_tuple
+            else _metadata_only_comments_fields(source_url=source_url, observations=observations)
+        )
+
+    return MsnArticleCommentExtractionFieldBundle(
+        source_url=source_url,
+        article=article,
+        comments=comments,
+        media=_media_review_fields(observations),
+        export_review=_export_review_fields(observations),
+        manual_observation_scopes=accepted_scopes,
+        manual_observation_count=len(accepted_scopes),
+    )
+
+
+def msn_extraction_review_bundle_to_export_queue_metadata(
+    bundle: MsnArticleCommentExtractionFieldBundle,
+) -> dict[str, Any]:
+    data = bundle.to_dict()
+    return {
+        "artifact_file_claimed": False,
+        "article_status": data["article"].get("status", ""),
+        "automatic_classification_performed": False,
+        "browser_or_download_command": "",
+        "comments_status": data["comments"].get("status", ""),
+        "export_queue_status": MSN_EXTRACTION_FIELD_STATUS_USER_REVIEW_REQUIRED,
+        "file_existence_claimed": False,
+        "manual_observation_scopes": data["manual_observation_scopes"],
+        "manual_operator_only": True,
+        "network_actions_performed": "none",
+        "provider_or_archive_action": "none",
+        "source_url": data["source_url"],
+        "user_review_required": True,
+    }
 
 
 def extract_msn_article_comment_fields_from_supplied_html(
@@ -287,6 +630,8 @@ __all__ = [
     "MsnCommentThreadRecordField",
     "article_result_to_msn_fields",
     "build_msn_article_comment_extraction_field_bundle",
+    "build_msn_manual_observation_extraction_review_bundle",
     "comments_result_to_msn_fields",
     "extract_msn_article_comment_fields_from_supplied_html",
+    "msn_extraction_review_bundle_to_export_queue_metadata",
 ]
