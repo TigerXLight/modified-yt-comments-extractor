@@ -13965,6 +13965,15 @@ class App(ctk.CTk):
                         "muted",
                     )
 
+                    timeout_policy_status = str(
+                        metadata.get("whispercpp_timeout_policy_status") or ""
+                    ).strip()
+                    if timeout_policy_status:
+                        self.log_message(
+                            f"ASR timeout policy: {timeout_policy_status}",
+                            "muted",
+                        )
+
                     if probe_seconds:
                         completion_title = "Local ASR Probe Complete"
                         completion_message = (

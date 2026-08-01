@@ -682,3 +682,4 @@ Evidence bundle JSON input validation now has a batched helper/CLI audit proving
 `total_export_package_inspect_test.py` now centralizes package inspection status assertions while preserving manifest discovery, validity, inventory, standard-file, warning, and missing-asset diagnostics.
 
 `total_export_validation_test.py` now centralizes exact validation error-code assertions while preserving valid, informational, relative-path, missing-asset, size/hash mismatch, and manifest-read coverage.
+- Local ASR whisper.cpp/Vulkan timeout handling now includes duration-scaled execution plus UI/log-friendly status metadata and clearer long-media retry guidance; `large-v3` remains the benchmark-backed local recommendation.

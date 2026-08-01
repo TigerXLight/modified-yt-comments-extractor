@@ -300,16 +300,37 @@ def test_whispercpp_timeout_message_is_configurable_without_profile_downgrade() 
         "max_timeout_seconds": 21600,
         "duration_basis_seconds": 600.0,
         "duration_basis_source": "normalized_audio",
+        "timeout_source": "duration_scaled",
     }
 
     message = asr_whispercpp.format_whispercpp_timeout_message(policy)
 
-    assert "timed out after 4800s" in message
+    assert "timed out" in message
+    assert "effective=1.33h" in message
+    assert "duration basis=10.0m from normalized_audio" in message
     assert "ASR_WHISPERCPP_TIMEOUT" in message
     assert "ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER" in message
     assert "ASR_WHISPERCPP_MAX_TIMEOUT" in message
     assert "large-v3" in message
+    assert "not that ASR is broken" in message
     assert "small" not in message.lower()
+
+
+def test_whispercpp_timeout_policy_status_is_ui_log_friendly() -> None:
+    policy = asr_whispercpp.build_whispercpp_timeout_policy(
+        audio_duration_seconds=125.0,
+        model_name="large-v3",
+    )
+
+    status = asr_whispercpp.describe_whispercpp_timeout_policy(policy)
+
+    assert status == policy["status_line"]
+    assert "whisper.cpp Vulkan timeout policy" in status
+    assert "effective=" in status
+    assert "minimum=" in status
+    assert "maximum=" in status
+    assert "duration basis=2.1m from normalized_audio" in status
+    assert "large-v3" not in status
 
 
 def run_self_test() -> None:
@@ -322,6 +343,7 @@ def run_self_test() -> None:
     test_whispercpp_command_requests_json_full_structured_output()
     test_whispercpp_timeout_policy_scales_for_long_large_v3_media()
     test_whispercpp_timeout_message_is_configurable_without_profile_downgrade()
+    test_whispercpp_timeout_policy_status_is_ui_log_friendly()
 
 
 if __name__ == "__main__":
