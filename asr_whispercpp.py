@@ -16,6 +16,18 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from transcript_tools import TranscriptSegment
 
 
+WHISPERCPP_TEMP_CLEANUP_SCOPE = "invocation_owned_temp_wav_and_exact_output_prefix"
+WHISPERCPP_OUTPUT_SUFFIXES = (".txt", ".srt", ".vtt", ".json")
+
+
+class WhisperCppTranscriptionError(RuntimeError):
+    """RuntimeError with fixed non-secret cleanup metadata for failed runs."""
+
+    def __init__(self, message: str, cleanup_metadata: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(message)
+        self.cleanup_metadata = dict(cleanup_metadata or {})
+
+
 def _env_int(name: str, default: int, *, min_value: Optional[int] = None) -> int:
     try:
         value = int(str(os.environ.get(name, str(default))).strip())
@@ -210,6 +222,130 @@ def format_whispercpp_timeout_message(timeout_policy: Dict[str, Any]) -> str:
         "not that ASR is broken, and it does not downgrade the benchmark-backed "
         "whisper.cpp Vulkan large-v3 local profile."
     )
+
+
+def _empty_whispercpp_cleanup_metadata(*, attempted: bool = False) -> Dict[str, Any]:
+    return {
+        "whispercpp_temp_cleanup_attempted": bool(attempted),
+        "whispercpp_temp_cleanup_cleaned_count": 0,
+        "whispercpp_temp_cleanup_preserved_partial_count": 0,
+        "whispercpp_temp_cleanup_errors": [],
+        "whispercpp_partial_output_available": False,
+        "whispercpp_partial_output_status": "",
+        "whispercpp_partial_output_names": [],
+        "whispercpp_source_media_preserved": True,
+        "whispercpp_cleanup_scope": WHISPERCPP_TEMP_CLEANUP_SCOPE,
+    }
+
+
+def _whispercpp_output_paths_for_base(output_base: Path) -> Tuple[Path, ...]:
+    """Return exact invocation-owned output paths for a whisper.cpp output base."""
+
+    return tuple(Path(output_base).with_suffix(suffix) for suffix in WHISPERCPP_OUTPUT_SUFFIXES)
+
+
+def _is_invocation_owned_whispercpp_wav(wav_path: Path, source_path: Path) -> bool:
+    try:
+        wav_resolved = Path(wav_path).expanduser().resolve()
+        source_resolved = Path(source_path).expanduser().resolve()
+    except Exception:
+        return False
+
+    return (
+        wav_resolved != source_resolved
+        and wav_resolved.name.startswith("ytce_whispercpp_")
+        and wav_resolved.suffix.lower() == ".wav"
+    )
+
+
+def _cleanup_whispercpp_invocation_temp_paths(
+    *,
+    source_path: Path,
+    wav_path: Optional[Path],
+    output_base: Path,
+    preserve_non_empty_outputs: bool,
+    unlink_func: Optional[Callable[[Path], None]] = None,
+) -> Dict[str, Any]:
+    """Clean only files owned by one whisper.cpp invocation.
+
+    This intentionally avoids scanning the temp directory.  Output cleanup is
+    limited to the exact suffixes derived from this invocation's output prefix.
+    """
+
+    metadata = _empty_whispercpp_cleanup_metadata(attempted=True)
+    cleaned_count = 0
+    preserved_names: List[str] = []
+    errors: List[str] = []
+    unlink = unlink_func or (lambda path: path.unlink(missing_ok=True))
+
+    def remove_path(path: Path) -> None:
+        nonlocal cleaned_count
+        try:
+            unlink(path)
+            cleaned_count += 1
+        except Exception as exc:
+            errors.append(f"{Path(path).name}: {exc.__class__.__name__}")
+
+    if wav_path is not None and _is_invocation_owned_whispercpp_wav(wav_path, source_path):
+        wav_candidate = Path(wav_path)
+        if wav_candidate.exists():
+            remove_path(wav_candidate)
+
+    for output_path in _whispercpp_output_paths_for_base(output_base):
+        if not output_path.exists():
+            continue
+
+        try:
+            size_bytes = output_path.stat().st_size
+        except Exception as exc:
+            errors.append(f"{output_path.name}: stat {exc.__class__.__name__}")
+            continue
+
+        if preserve_non_empty_outputs and size_bytes > 0:
+            preserved_names.append(output_path.name)
+            continue
+
+        remove_path(output_path)
+
+    metadata.update(
+        {
+            "whispercpp_temp_cleanup_cleaned_count": cleaned_count,
+            "whispercpp_temp_cleanup_preserved_partial_count": len(preserved_names),
+            "whispercpp_temp_cleanup_errors": errors,
+            "whispercpp_partial_output_available": bool(preserved_names),
+            "whispercpp_partial_output_status": (
+                "user_review_required" if preserved_names else ""
+            ),
+            "whispercpp_partial_output_names": preserved_names,
+        }
+    )
+    return metadata
+
+
+def _format_whispercpp_cleanup_summary(cleanup_metadata: Dict[str, Any]) -> str:
+    cleaned_count = int(cleanup_metadata.get("whispercpp_temp_cleanup_cleaned_count") or 0)
+    partial_count = int(
+        cleanup_metadata.get("whispercpp_temp_cleanup_preserved_partial_count") or 0
+    )
+    error_count = len(cleanup_metadata.get("whispercpp_temp_cleanup_errors") or [])
+    summary = (
+        f"Cleaned {cleaned_count} invocation-owned temp files; "
+        f"preserved {partial_count} partial outputs for review. "
+        "Source media was not removed."
+    )
+    if error_count:
+        summary += f" Cleanup recorded {error_count} bounded errors."
+    return summary
+
+
+def _emit_whispercpp_cleanup_status(
+    status_callback: Optional[Callable[[str], None]],
+    *,
+    prefix: str,
+    cleanup_metadata: Dict[str, Any],
+) -> None:
+    if status_callback:
+        status_callback(f"{prefix} {_format_whispercpp_cleanup_summary(cleanup_metadata)}")
 
 
 def format_whispercpp_progress_status(
@@ -896,6 +1032,19 @@ def transcribe_media_file_with_whispercpp_vulkan(
     wav_path: Optional[Path] = None
     output_base = Path(tempfile.mktemp(prefix="ytce_whispercpp_out_"))
     started_at = time.perf_counter()
+    cleanup_done = False
+
+    def perform_cleanup(*, preserve_non_empty_outputs: bool) -> Dict[str, Any]:
+        nonlocal cleanup_done
+        if cleanup_done:
+            return _empty_whispercpp_cleanup_metadata(attempted=False)
+        cleanup_done = True
+        return _cleanup_whispercpp_invocation_temp_paths(
+            source_path=source_path,
+            wav_path=wav_path,
+            output_base=output_base,
+            preserve_non_empty_outputs=preserve_non_empty_outputs,
+        )
 
     try:
         wav_path = _make_wav_for_whispercpp(
@@ -947,17 +1096,49 @@ def transcribe_media_file_with_whispercpp_vulkan(
                 cancel_check=cancel_check,
             )
         except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(
+            cleanup_metadata = perform_cleanup(preserve_non_empty_outputs=True)
+            _emit_whispercpp_cleanup_status(
+                status_callback,
+                prefix="Local ASR timed out.",
+                cleanup_metadata=cleanup_metadata,
+            )
+            raise WhisperCppTranscriptionError(
                 format_whispercpp_timeout_message(whispercpp_timeout_policy)
+                + " "
+                + _format_whispercpp_cleanup_summary(cleanup_metadata),
+                cleanup_metadata,
             ) from exc
+        except RuntimeError as exc:
+            message = str(exc)
+            if "cancelled by operator" in message:
+                cleanup_metadata = perform_cleanup(preserve_non_empty_outputs=True)
+                _emit_whispercpp_cleanup_status(
+                    status_callback,
+                    prefix="Local ASR cancelled.",
+                    cleanup_metadata=cleanup_metadata,
+                )
+                raise WhisperCppTranscriptionError(
+                    message + " " + _format_whispercpp_cleanup_summary(cleanup_metadata),
+                    cleanup_metadata,
+                ) from exc
+            raise
 
         elapsed_seconds = max(0.0, time.perf_counter() - started_at)
 
         if result.returncode != 0:
             error_text = (result.stderr or result.stdout or "").strip()
-            raise RuntimeError(
+            cleanup_metadata = perform_cleanup(preserve_non_empty_outputs=True)
+            _emit_whispercpp_cleanup_status(
+                status_callback,
+                prefix="Local ASR failed.",
+                cleanup_metadata=cleanup_metadata,
+            )
+            raise WhisperCppTranscriptionError(
                 "whisper.cpp Vulkan transcription failed."
                 + (f"\n\n{error_text}" if error_text else "")
+                + "\n\n"
+                + _format_whispercpp_cleanup_summary(cleanup_metadata),
+                cleanup_metadata,
             )
 
         stdout_text = result.stdout or ""
@@ -1093,24 +1274,13 @@ def transcribe_media_file_with_whispercpp_vulkan(
             "whispercpp_stdout_tail": stdout_text[-4000:],
             "whispercpp_stderr_tail": stderr_text[-4000:],
         }
+        metadata.update(perform_cleanup(preserve_non_empty_outputs=False))
 
         return segments, metadata
 
     finally:
-        if wav_path is not None:
+        if not cleanup_done:
             try:
-                source_resolved = Path(source_path).expanduser().resolve()
-                wav_resolved = Path(wav_path).expanduser().resolve()
-
-                # Only delete temporary WAV files created by this helper.
-                # Never delete calibration WAVs or user/source WAV files.
-                if wav_resolved != source_resolved and wav_resolved.name.startswith("ytce_whispercpp_"):
-                    wav_resolved.unlink(missing_ok=True)
-            except Exception:
-                pass
-
-        for suffix in (".txt", ".srt", ".vtt", ".json"):
-            try:
-                output_base.with_suffix(suffix).unlink(missing_ok=True)
+                perform_cleanup(preserve_non_empty_outputs=True)
             except Exception:
                 pass

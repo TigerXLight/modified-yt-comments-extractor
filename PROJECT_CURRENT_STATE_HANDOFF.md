@@ -61,7 +61,7 @@ Existing YouTube comment/live-chat behavior, app exports, ASR runtime behavior, 
 ### Current Project Results
 
 - Best tested local/no-cloud result: whisper.cpp Vulkan large-v3-turbo with phrase prompt, about 74.19% strict 30-second reference accuracy.
-- Local ASR timeout hardening now scales whisper.cpp Vulkan subprocess timeout from normalized audio duration for long media, exposes `ASR_WHISPERCPP_TIMEOUT`, `ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER`, and `ASR_WHISPERCPP_MAX_TIMEOUT` as local operator controls, surfaces effective timeout/progress status for long runs, and keeps `whisper.cpp / Vulkan / large-v3` as the benchmark-backed local profile rather than recommending a downgrade after long-file timeout.
+- Local ASR timeout hardening now scales whisper.cpp Vulkan subprocess timeout from normalized audio duration for long media, exposes `ASR_WHISPERCPP_TIMEOUT`, `ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER`, and `ASR_WHISPERCPP_MAX_TIMEOUT` as local operator controls, surfaces effective timeout/progress status for long runs, and keeps `whisper.cpp / Vulkan / large-v3` as the benchmark-backed local profile rather than recommending a downgrade after long-file timeout. Failed-run temp hygiene is bounded to the current invocation's generated WAV and exact whisper.cpp output prefix: empty stubs are cleaned, non-empty partial outputs are preserved as `user_review_required`, cleanup metadata/errors are recorded, source media is preserved, and no broad temp scan is performed.
 - No tested local ASR path has met the 95% threshold.
 - Leading tested cloud candidate: ElevenLabs Scribe v2 with keyterms, 84.95%.
   - It preserved the Nicolas Cage reference phrase and found `Shadowsmith`, `Nicolas Cage`, and `Caltheris`.
@@ -682,4 +682,4 @@ Evidence bundle JSON input validation now has a batched helper/CLI audit proving
 `total_export_package_inspect_test.py` now centralizes package inspection status assertions while preserving manifest discovery, validity, inventory, standard-file, warning, and missing-asset diagnostics.
 
 `total_export_validation_test.py` now centralizes exact validation error-code assertions while preserving valid, informational, relative-path, missing-asset, size/hash mismatch, and manifest-read coverage.
-- Local ASR whisper.cpp/Vulkan timeout handling now includes duration-scaled execution plus UI/log-friendly status metadata and clearer long-media retry guidance; `large-v3` remains the benchmark-backed local recommendation.
+- Local ASR whisper.cpp/Vulkan timeout handling now includes duration-scaled execution plus UI/log-friendly status metadata, clearer long-media retry guidance, and bounded failed-run temp cleanup that preserves source media and marks non-empty partial outputs as `user_review_required`; `large-v3` remains the benchmark-backed local recommendation.
