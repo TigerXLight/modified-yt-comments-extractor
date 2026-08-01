@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from faster_whisper import WhisperModel
 
@@ -177,6 +177,8 @@ def transcribe_media_file(
     condition_on_previous_text: Optional[bool] = None,
     hotwords: Optional[str] = None,
     audio_filter: Optional[str] = None,
+    status_callback: Optional[Callable[[str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> Tuple[List[TranscriptSegment], Dict[str, Any]]:
     """
     Transcribe a local audio/video file with the selected local ASR runner.
@@ -205,6 +207,8 @@ def transcribe_media_file(
             probe_seconds=probe_seconds,
             audio_filter=audio_filter,
             model_name=model_name,
+            status_callback=status_callback,
+            cancel_check=cancel_check,
         )
 
     is_probe = bool(probe_seconds and int(probe_seconds) > 0)

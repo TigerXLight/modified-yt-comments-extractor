@@ -101,6 +101,9 @@ def test_local_asr_whispercpp_selection_reaches_existing_dispatch_wrapper() -> N
 
         def fake_transcribe(media_path: str, **kwargs: object):
             calls.append({"media_path": media_path, **kwargs})
+            status_callback = kwargs.get("status_callback")
+            if callable(status_callback):
+                status_callback("whisper.cpp Vulkan still running: elapsed=30.0s")
             return (
                 [TranscriptSegment("Speaker 1", "00:00:00,000", "00:00:01,000", "Hello")],
                 {
@@ -131,6 +134,8 @@ def test_local_asr_whispercpp_selection_reaches_existing_dispatch_wrapper() -> N
     assert calls[0]["model_name"] == "large-v3"
     assert calls[0]["device"] == "vulkan"
     assert calls[0]["compute_type"] == ""
+    assert callable(calls[0]["status_callback"])
+    assert any("still running" in message for message, _level in app.log_messages)
     assert saved[0]["engine"] == "whispercpp_vulkan"
     assert saved[0]["profile_name"] == "Best-tested local profile"
     assert app.last_asr_metadata["selected_asr_engine"] == "whispercpp_vulkan"
@@ -333,6 +338,133 @@ def test_whispercpp_timeout_policy_status_is_ui_log_friendly() -> None:
     assert "large-v3" not in status
 
 
+
+def test_whispercpp_progress_status_reports_elapsed_remaining_without_downgrade() -> None:
+    policy = {
+        "timeout_seconds": 4800,
+        "base_timeout_seconds": 120,
+        "realtime_multiplier": 8.0,
+        "max_timeout_seconds": 21600,
+        "duration_basis_seconds": 600.0,
+        "duration_basis_source": "normalized_audio",
+        "timeout_source": "duration_scaled",
+    }
+
+    status = asr_whispercpp.format_whispercpp_progress_status(
+        policy,
+        elapsed_seconds=90.0,
+    )
+
+    assert "still running" in status
+    assert "elapsed=1.5m" in status
+    assert "remaining before timeout=" in status
+    assert "effective timeout=1.33h" in status
+    assert "large-v3/Vulkan" in status
+    assert "small" not in status.lower()
+
+
+def test_whispercpp_command_runner_emits_heartbeat_and_returns_completed_result() -> None:
+    class FakeProcess:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.returncode = 0
+            self.calls = 0
+            self.terminated = False
+            self.killed = False
+
+        def communicate(self, timeout: object = None):  # noqa: ANN001
+            self.calls += 1
+            if self.calls == 1:
+                raise asr_whispercpp.subprocess.TimeoutExpired(["whisper"], timeout)
+            return ("ok stdout", "")
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def kill(self) -> None:
+            self.killed = True
+
+    original_popen = asr_whispercpp.subprocess.Popen
+    messages: list[str] = []
+
+    try:
+        asr_whispercpp.subprocess.Popen = FakeProcess  # type: ignore[assignment]
+        policy = {
+            "timeout_seconds": 120,
+            "base_timeout_seconds": 120,
+            "realtime_multiplier": 8.0,
+            "max_timeout_seconds": 21600,
+            "duration_basis_seconds": None,
+            "duration_basis_source": "",
+            "timeout_source": "base",
+            "progress_interval_seconds": 1,
+        }
+
+        result = asr_whispercpp._run_whispercpp_command_with_progress(
+            ["whisper-cli.exe", "-m", "model.bin"],
+            cwd=".",
+            timeout_seconds=120,
+            timeout_policy=policy,
+            status_callback=messages.append,
+        )
+    finally:
+        asr_whispercpp.subprocess.Popen = original_popen  # type: ignore[assignment]
+
+    assert result.returncode == 0
+    assert result.stdout == "ok stdout"
+    assert any("process started" in message for message in messages)
+    assert any("still running" in message for message in messages)
+
+
+def test_whispercpp_command_runner_cancellation_is_not_success() -> None:
+    class FakeProcess:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.returncode = None
+            self.terminated = False
+            self.killed = False
+
+        def communicate(self, timeout: object = None):  # noqa: ANN001
+            return ("", "")
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def kill(self) -> None:
+            self.killed = True
+
+    original_popen = asr_whispercpp.subprocess.Popen
+
+    try:
+        asr_whispercpp.subprocess.Popen = FakeProcess  # type: ignore[assignment]
+        policy = {
+            "timeout_seconds": 120,
+            "base_timeout_seconds": 120,
+            "realtime_multiplier": 8.0,
+            "max_timeout_seconds": 21600,
+            "duration_basis_seconds": None,
+            "duration_basis_source": "",
+            "timeout_source": "base",
+            "progress_interval_seconds": 1,
+        }
+
+        try:
+            asr_whispercpp._run_whispercpp_command_with_progress(
+                ["whisper-cli.exe", "-m", "model.bin"],
+                cwd=".",
+                timeout_seconds=120,
+                timeout_policy=policy,
+                cancel_check=lambda: True,
+            )
+        except RuntimeError as exc:
+            message = str(exc)
+        else:
+            raise AssertionError("Cancellation must not return a successful result")
+    finally:
+        asr_whispercpp.subprocess.Popen = original_popen  # type: ignore[assignment]
+
+    assert "cancelled by operator" in message
+    assert "complete" in message
+
+
 def run_self_test() -> None:
     test_local_asr_whispercpp_selection_reaches_existing_dispatch_wrapper()
     test_local_asr_language_completion_lines_for_auto_detect_confidence()
@@ -344,6 +476,9 @@ def run_self_test() -> None:
     test_whispercpp_timeout_policy_scales_for_long_large_v3_media()
     test_whispercpp_timeout_message_is_configurable_without_profile_downgrade()
     test_whispercpp_timeout_policy_status_is_ui_log_friendly()
+    test_whispercpp_progress_status_reports_elapsed_remaining_without_downgrade()
+    test_whispercpp_command_runner_emits_heartbeat_and_returns_completed_result()
+    test_whispercpp_command_runner_cancellation_is_not_success()
 
 
 if __name__ == "__main__":

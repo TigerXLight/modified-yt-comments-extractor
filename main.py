@@ -13820,6 +13820,15 @@ class App(ctk.CTk):
                         )
                     )
 
+                def local_asr_status_callback(status_message: str) -> None:
+                    self.after(
+                        0,
+                        lambda status_message=status_message: self.log_message(
+                            status_message,
+                            "muted",
+                        ),
+                    )
+
                 segments, metadata = transcribe_media_file(
                     media_file,
                     model_name=model_name,
@@ -13831,6 +13840,11 @@ class App(ctk.CTk):
                     vad_filter=True,
                     beam_size=5,
                     probe_seconds=probe_seconds,
+                    status_callback=(
+                        local_asr_status_callback
+                        if engine == ASR_ENGINE_WHISPERCPP_VULKAN
+                        else None
+                    ),
                 )
 
                 metadata["selected_asr_engine"] = engine

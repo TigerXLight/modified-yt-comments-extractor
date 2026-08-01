@@ -11,7 +11,7 @@ import time
 import hashlib
 import wave
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from transcript_tools import TranscriptSegment
 
@@ -49,6 +49,11 @@ DEFAULT_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER = _env_float(
     "ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER",
     8.0,
     min_value=0.0,
+)
+DEFAULT_WHISPERCPP_PROGRESS_INTERVAL_SECONDS = _env_int(
+    "ASR_WHISPERCPP_PROGRESS_INTERVAL",
+    30,
+    min_value=1,
 )
 
 
@@ -134,10 +139,12 @@ def build_whispercpp_timeout_policy(
         "long_media_scaled": bool(
             scaled_timeout_seconds and scaled_timeout_seconds > base_timeout_seconds
         ),
+        "progress_interval_seconds": int(DEFAULT_WHISPERCPP_PROGRESS_INTERVAL_SECONDS),
         "environment_variables": [
             "ASR_WHISPERCPP_TIMEOUT",
             "ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER",
             "ASR_WHISPERCPP_MAX_TIMEOUT",
+            "ASR_WHISPERCPP_PROGRESS_INTERVAL",
         ],
         "guidance": (
             "Long-media timeout scaling preserves the benchmark-backed "
@@ -203,6 +210,123 @@ def format_whispercpp_timeout_message(timeout_policy: Dict[str, Any]) -> str:
         "not that ASR is broken, and it does not downgrade the benchmark-backed "
         "whisper.cpp Vulkan large-v3 local profile."
     )
+
+
+def format_whispercpp_progress_status(
+    timeout_policy: Dict[str, Any],
+    *,
+    elapsed_seconds: float,
+) -> str:
+    """Return a long-run heartbeat line for UI/log status messages."""
+
+    timeout_seconds = int(timeout_policy.get("timeout_seconds") or 0)
+    elapsed_seconds = max(0.0, float(elapsed_seconds or 0.0))
+    remaining_seconds = max(0.0, float(timeout_seconds) - elapsed_seconds)
+
+    return (
+        "whisper.cpp Vulkan still running: "
+        f"elapsed={_format_whispercpp_duration(elapsed_seconds)}, "
+        f"remaining before timeout={_format_whispercpp_duration(remaining_seconds)}, "
+        f"effective timeout={_format_whispercpp_duration(timeout_seconds)}. "
+        "This is expected for long large-v3/Vulkan media; the UI remains responsive "
+        "and the run will stop only on completion, operator cancellation, or timeout."
+    )
+
+
+def _run_whispercpp_command_with_progress(
+    command: List[str],
+    *,
+    cwd: str,
+    timeout_seconds: int,
+    timeout_policy: Dict[str, Any],
+    status_callback: Optional[Callable[[str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run whisper.cpp while emitting local heartbeat status updates.
+
+    This deliberately uses no parsing of live whisper.cpp output. It only reports
+    elapsed time against the configured timeout policy so long local large-v3
+    runs do not look frozen in the UI/log.
+    """
+
+    started_at = time.perf_counter()
+    progress_interval_seconds = int(
+        timeout_policy.get("progress_interval_seconds")
+        or DEFAULT_WHISPERCPP_PROGRESS_INTERVAL_SECONDS
+    )
+    progress_interval_seconds = max(1, progress_interval_seconds)
+
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    if status_callback:
+        status_callback(
+            "whisper.cpp Vulkan process started. "
+            + describe_whispercpp_timeout_policy(timeout_policy)
+        )
+
+    while True:
+        elapsed_seconds = max(0.0, time.perf_counter() - started_at)
+
+        if cancel_check and cancel_check():
+            try:
+                process.terminate()
+            except Exception:
+                pass
+            try:
+                stdout_text, stderr_text = process.communicate(timeout=5)
+            except Exception:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+                stdout_text, stderr_text = process.communicate()
+            raise RuntimeError(
+                "whisper.cpp Vulkan transcription cancelled by operator before completion. "
+                "No transcript output is being treated as complete."
+            )
+
+        remaining_seconds = max(0.0, float(timeout_seconds) - elapsed_seconds)
+        if remaining_seconds <= 0:
+            try:
+                process.kill()
+            except Exception:
+                pass
+            try:
+                stdout_text, stderr_text = process.communicate()
+            except Exception:
+                stdout_text, stderr_text = "", ""
+            raise subprocess.TimeoutExpired(
+                command,
+                timeout_seconds,
+                output=stdout_text,
+                stderr=stderr_text,
+            )
+
+        try:
+            stdout_text, stderr_text = process.communicate(
+                timeout=min(float(progress_interval_seconds), remaining_seconds)
+            )
+            return subprocess.CompletedProcess(
+                command,
+                process.returncode,
+                stdout_text,
+                stderr_text,
+            )
+        except subprocess.TimeoutExpired:
+            if status_callback:
+                status_callback(
+                    format_whispercpp_progress_status(
+                        timeout_policy,
+                        elapsed_seconds=max(0.0, time.perf_counter() - started_at),
+                    )
+                )
+            continue
 
 
 def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -751,6 +875,8 @@ def transcribe_media_file_with_whispercpp_vulkan(
     audio_filter: Optional[str] = None,
     model_name: str = "large-v3",
     extra_flags: Optional[List[str]] = None,
+    status_callback: Optional[Callable[[str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> Tuple[List[TranscriptSegment], Dict[str, Any]]:
     source_path = Path(media_path).expanduser().resolve()
 
@@ -812,13 +938,13 @@ def transcribe_media_file_with_whispercpp_vulkan(
         ]
 
         try:
-            result = subprocess.run(
+            result = _run_whispercpp_command_with_progress(
                 command,
                 cwd=str(cli_path.parent),
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=whispercpp_timeout_seconds,
+                timeout_seconds=whispercpp_timeout_seconds,
+                timeout_policy=whispercpp_timeout_policy,
+                status_callback=status_callback,
+                cancel_check=cancel_check,
             )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(
@@ -936,6 +1062,10 @@ def transcribe_media_file_with_whispercpp_vulkan(
                 "status_line",
                 describe_whispercpp_timeout_policy(whispercpp_timeout_policy),
             ),
+            "whispercpp_progress_interval_seconds": int(
+                whispercpp_timeout_policy.get("progress_interval_seconds") or 0
+            ),
+            "whispercpp_long_run_status_supported": True,
             "whispercpp_timeout_operator_guidance": (
                 "For long media, configure ASR_WHISPERCPP_TIMEOUT, "
                 "ASR_WHISPERCPP_TIMEOUT_REALTIME_MULTIPLIER, or "
@@ -954,6 +1084,9 @@ def transcribe_media_file_with_whispercpp_vulkan(
                 "timeout_seconds": whispercpp_timeout_seconds,
                 "timeout_source": whispercpp_timeout_policy.get("timeout_source", ""),
                 "timeout_policy_status": whispercpp_timeout_policy.get("status_line", ""),
+                "progress_interval_seconds": int(
+                    whispercpp_timeout_policy.get("progress_interval_seconds") or 0
+                ),
                 "extra_flags": list(extra_flags or []),
                 "structured_output": "json-full",
             },
