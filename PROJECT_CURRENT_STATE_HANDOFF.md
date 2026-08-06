@@ -325,6 +325,7 @@ See `SOURCE_PRESERVATION_CURRENT_STATE.md` for the detailed preservation helper/
 | Preservation plans/seeds | `total_export_preservation_plan.py`, plan CLI, `preservation_metadata_seed_report.py` | Plan helper/CLI, seed, and seed-report tests |
 | Evidence manifest | `total_export_evidence_manifest.py`, `total_export_evidence_manifest_cli.py` | Evidence manifest helper and CLI tests |
 | Evidence item queue schema | `evidence_item_queue.py` | `evidence_item_queue_test.py` |
+| Behavior/activity log schema | `evidence_activity_log.py` | `evidence_activity_log_test.py`; MODEL_ONLY deterministic review-required activity metadata, privacy policy defaults, stable summaries, and no runtime logging, telemetry, persistence, file reads/checks/moves, raw payloads, full local paths, classification, or completion claims |
 | Access & Keys metadata schema | `access_keys_metadata.py` | `access_keys_metadata_test.py` |
 | Access & Keys catalog/view/window | `access_keys_catalog.py`, `access_keys_view_model.py`, `access_keys_dialog.py`, narrow `main.py` wiring | `access_keys_catalog_test.py`, `access_keys_view_model_test.py`, `access_keys_dialog_test.py`, `main_export_state_test.py`; includes short-family scroll-reset regression |
 | Credential architecture/security audit | `credential_architecture.py`, `CREDENTIAL_SECURITY_AUDIT.md` | `credential_architecture_test.py`; stable non-secret descriptors/policies/redaction/status helpers |

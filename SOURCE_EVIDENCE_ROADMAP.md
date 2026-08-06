@@ -362,7 +362,8 @@ Current local implementation note:
 - The behavior log should not store secrets, API keys, cookies, passwords, private session tokens, or hidden browser credentials.
 - Transcript or subtitle edit logging should prefer version IDs, timestamps, file hashes, and optional user notes rather than silently exposing unrelated private text.
 - The user should be able to review, export, clear, or disable future local activity logging where appropriate.
-- This is planning-only and does not add tracking, analytics, telemetry, file watching, network access, or GUI behavior now.
+- Current local implementation provides MODEL_ONLY `evidence_activity_log.py` records and summaries for deterministic behavior/activity metadata. The schema records activity/actor types, item IDs, source URL hash/host presence, before/after state hashes, changed-field counts, note/evidence-basis presence, export package IDs, database-root presence, stable summary IDs, JSON/text projections, and a default privacy policy without storing raw source URLs in rendered output, raw notes, raw evidence basis text, raw payloads, secrets, full local paths, file-state fields, file reads/checks/moves, telemetry, persistence, runtime logging, automatic classification, or protected-attribute inference.
+- Runtime tracking, analytics, telemetry, file watching, persistence/storage, network access, GUI review/export/clear/disable controls, and any file hash/version capture remain future explicit milestones.
 
 Planned behavior/activity fields:
 
