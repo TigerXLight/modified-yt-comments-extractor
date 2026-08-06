@@ -7,7 +7,9 @@ from evidence_item_queue import (
     EvidenceLinkOrigin,
     EvidenceQueueItem,
     SourceRoleReviewMetadata,
+    build_source_role_review_ui_summary,
     queue_source_role_reviews_to_claim_notes,
+    queue_source_role_reviews_to_ui_rows,
 )
 from evidence_schema import CurrentnessStatus, PrimarySourceStatus, SourceRole
 from total_export_manifest import TotalExportManifest
@@ -207,7 +209,7 @@ def run_self_test() -> None:
     assert nonexistent_removed_dict["item_status"] == "REMOVED_FROM_WORKING_SET"
 
     source_role_review = SourceRoleReviewMetadata(
-        claim_text="The local source directly states a bounded claim.",
+        claim_text="RAW EVIDENCE PAYLOAD SHOULD NOT APPEAR IN UI SUMMARY.",
         claim_type="authored_statement",
         claim_source_role=SourceRole.PRIMARY_ORIGINAL_AUTHORED,
         source_role_scope="Only the quoted authored statement.",
@@ -220,12 +222,31 @@ def run_self_test() -> None:
         evidence_basis="Manual review of explicitly supplied source text.",
         reviewer_notes="USER_REVIEW_REQUIRED before export acceptance.",
     )
+    tertiary_review = SourceRoleReviewMetadata(
+        claim_text="ANOTHER RAW CLAIM PAYLOAD SHOULD STAY HIDDEN.",
+        claim_type="propagated_claim",
+        claim_source_role=SourceRole.TERTIARY_PROPAGATED_SOURCE,
+        source_role_scope="Only a repeated unattributed claim.",
+        source_role_limitation="Not a primary source.",
+        currentness_status=CurrentnessStatus.UNKNOWN,
+        primary_source_status=PrimarySourceStatus.TERTIARY_PROPAGATED_CLAIM,
+        source_chain_gap=True,
+        closed_loop_reporting_flag=True,
+        evidence_basis="Manual source-role note.",
+    )
     source_review_item = EvidenceQueueItem(
         item_id="source-review-1",
         item_role=EvidenceItemRole.SOURCE_URL,
         source_url="https://example.test/source",
+        local_path=r"T:\Evidence\do-not-display-this-full-path.txt",
         item_status=EvidenceItemStatus.NEEDS_REVIEW,
         source_role_reviews=(source_role_review,),
+    )
+    second_review_item = EvidenceQueueItem(
+        item_id="source-review-2",
+        item_role=EvidenceItemRole.MANUAL_EVIDENCE_NOTE,
+        item_status=EvidenceItemStatus.NEEDS_REVIEW,
+        source_role_reviews=(tertiary_review,),
     )
     review_dict = source_review_item.to_dict()["source_role_reviews"][0]
     assert review_dict["claim_source_role"] == "PRIMARY_ORIGINAL_AUTHORED"
@@ -248,18 +269,19 @@ def run_self_test() -> None:
             excluded,
             nonexistent_removed,
             source_review_item,
+            second_review_item,
         ),
         links=(explicit_link, derived_link),
         asr_pairings=(local_only_pairing, incomplete_pairing),
     )
     queue_dict = queue.to_dict()
-    assert len(queue_dict["items"]) == 10
+    assert len(queue_dict["items"]) == 11
     assert queue_dict["items"][0]["item_role"] == "SOURCE_URL"
     assert queue_dict["links"][1]["link_origin"] == "DERIVED_FROM_APP_STATE"
     assert queue_dict["asr_pairings"][0]["reference_accuracy_percent"] == 74.19
     assert queue_dict["asr_pairings"][1]["reference_accuracy_percent"] is None
     claim_notes = queue_source_role_reviews_to_claim_notes(queue)
-    assert len(claim_notes) == 1
+    assert len(claim_notes) == 2
     claim_note_dict = claim_notes[0].to_dict()
     assert claim_note_dict["claim_text"] == source_role_review.claim_text
     assert claim_note_dict["claim_source_role"] == "PRIMARY_ORIGINAL_AUTHORED"
@@ -267,6 +289,57 @@ def run_self_test() -> None:
     assert claim_note_dict["currentness_status"] == "CURRENT"
     assert claim_note_dict["captured_at_utc"] == "2026-08-06T10:05:00Z"
     assert claim_note_dict["verification_notes"] == source_role_review.reviewer_notes
+    second_claim_note_dict = claim_notes[1].to_dict()
+    assert second_claim_note_dict["claim_source_role"] == "TERTIARY_PROPAGATED_SOURCE"
+    assert second_claim_note_dict["source_chain_gap"] is True
+    assert second_claim_note_dict["closed_loop_reporting_flag"] is True
+
+    ui_rows = queue_source_role_reviews_to_ui_rows(queue)
+    second_ui_rows = queue_source_role_reviews_to_ui_rows(queue)
+    assert [row.to_dict() for row in ui_rows] == [row.to_dict() for row in second_ui_rows]
+    assert [row.queue_item_id for row in ui_rows] == ["source-review-1", "source-review-2"]
+    first_ui_row = ui_rows[0].to_dict()
+    assert first_ui_row["review_status"] == "USER_REVIEW_REQUIRED"
+    assert first_ui_row["source_role"] == "PRIMARY_ORIGINAL_AUTHORED"
+    assert first_ui_row["claim_text_recorded"] is True
+    assert first_ui_row["claim_text_display"] == "not shown in summary; open the source item for manual review"
+    assert first_ui_row["evidence_basis_recorded"] is True
+    assert first_ui_row["reviewer_notes_recorded"] is True
+    assert first_ui_row["automatic_classification"] is False
+    assert first_ui_row["sensitive_inference_prohibited"] is True
+    assert first_ui_row["raw_evidence_payload_included"] is False
+    assert first_ui_row["full_local_path_included"] is False
+    assert first_ui_row["completed_evidence_claimed"] is False
+    assert first_ui_row["verified_evidence_claimed"] is False
+    assert first_ui_row["live_capture_claimed"] is False
+    assert first_ui_row["api_provider_capture_claimed"] is False
+    assert first_ui_row["browser_automation_claimed"] is False
+    assert first_ui_row["archive_download_ocr_warc_wacz_claimed"] is False
+
+    ui_summary = build_source_role_review_ui_summary(queue)
+    assert "Source-role / claim-level review metadata" in ui_summary
+    assert "Review rows: 2" in ui_summary
+    assert "USER_REVIEW_REQUIRED" in ui_summary
+    assert "source-review-1" in ui_summary
+    assert "source-review-2" in ui_summary
+    for unsafe_text in (
+        "RAW EVIDENCE PAYLOAD",
+        "ANOTHER RAW CLAIM PAYLOAD",
+        r"T:\Evidence",
+        "completed evidence",
+        "verified evidence",
+        "automatic classification",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+    ):
+        assert unsafe_text not in ui_summary
 
     manifest = TotalExportManifest(
         package_id="queue-source-role-review",

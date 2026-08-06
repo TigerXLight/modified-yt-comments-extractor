@@ -146,6 +146,41 @@ class SourceRoleReviewMetadata:
 
 
 @dataclass(frozen=True)
+class SourceRoleReviewUIRow:
+    queue_item_id: str
+    queue_item_role: str
+    review_index: int
+    review_status: str = "USER_REVIEW_REQUIRED"
+    claim_type: str = ""
+    claim_text_recorded: bool = False
+    claim_text_display: str = "not shown in summary; open the source item for manual review"
+    source_role: SourceRole = SourceRole.UNKNOWN_SOURCE_ROLE
+    source_role_scope: str = ""
+    source_role_limitation: str = ""
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN
+    primary_source_status: PrimarySourceStatus = PrimarySourceStatus.MANUAL_SOURCE_NOTE
+    source_chain_gap: bool = False
+    closed_loop_reporting_flag: bool = False
+    evidence_basis_recorded: bool = False
+    reviewer_notes_recorded: bool = False
+    review_required: bool = True
+    user_confirmed: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    raw_evidence_payload_included: bool = False
+    full_local_path_included: bool = False
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    live_capture_claimed: bool = False
+    api_provider_capture_claimed: bool = False
+    browser_automation_claimed: bool = False
+    archive_download_ocr_warc_wacz_claimed: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceQueueItem:
     item_id: str
     item_role: EvidenceItemRole
@@ -201,3 +236,60 @@ def queue_source_role_reviews_to_claim_notes(
         for review in item.source_role_reviews:
             notes.append(review.to_claim_evidence_note())
     return tuple(notes)
+
+
+def queue_source_role_reviews_to_ui_rows(
+    queue: EvidenceItemQueue,
+) -> tuple[SourceRoleReviewUIRow, ...]:
+    rows: list[SourceRoleReviewUIRow] = []
+    for item in queue.items:
+        for review_index, review in enumerate(item.source_role_reviews):
+            rows.append(
+                SourceRoleReviewUIRow(
+                    queue_item_id=item.item_id,
+                    queue_item_role=item.item_role.value,
+                    review_index=review_index,
+                    claim_type=review.claim_type,
+                    claim_text_recorded=bool(review.claim_text),
+                    source_role=review.claim_source_role,
+                    source_role_scope=review.source_role_scope,
+                    source_role_limitation=review.source_role_limitation,
+                    currentness_status=review.currentness_status,
+                    primary_source_status=review.primary_source_status,
+                    source_chain_gap=review.source_chain_gap,
+                    closed_loop_reporting_flag=review.closed_loop_reporting_flag,
+                    evidence_basis_recorded=bool(review.evidence_basis),
+                    reviewer_notes_recorded=bool(review.reviewer_notes),
+                    review_required=review.review_required,
+                    user_confirmed=review.user_confirmed,
+                    automatic_classification=review.automatic_classification,
+                    sensitive_inference_prohibited=review.sensitive_inference_prohibited,
+                )
+            )
+    return tuple(rows)
+
+
+def build_source_role_review_ui_summary(queue: EvidenceItemQueue) -> str:
+    rows = queue_source_role_reviews_to_ui_rows(queue)
+    lines = [
+        "Source-role / claim-level review metadata",
+        f"Review rows: {len(rows)}",
+        "Status: USER_REVIEW_REQUIRED",
+        "Metadata only: yes",
+        "Auto-classify flag: false",
+        "Sensitive inference prohibited: true",
+        "Runtime/capture/completion claim flags: false",
+    ]
+    if not rows:
+        lines.append("- (none)")
+    for row in rows:
+        lines.append(
+            "- "
+            f"{row.queue_item_id} [{row.queue_item_role}] "
+            f"role={row.source_role.value}; "
+            f"primary_status={row.primary_source_status.value}; "
+            f"currentness={row.currentness_status.value}; "
+            f"claim_text_recorded={str(row.claim_text_recorded).lower()}; "
+            "claim_text_display=not shown"
+        )
+    return "\n".join(lines)
