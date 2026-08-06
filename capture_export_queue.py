@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -54,6 +55,7 @@ from total_export_manifest import (
     ASSET_ARCHIVE_RESULT,
     ASSET_EXTRACTED_TEXT,
     ASSET_HTML_SNAPSHOT,
+    ASSET_MANIFEST,
     ASSET_MEDIA,
     ASSET_RAW_SIDECAR,
     ASSET_SCREENSHOT,
@@ -184,6 +186,30 @@ def _artifact_metadata_note(
     )
 
 
+def _execution_gate_metadata_note(plan: OperationalCapturePlanResult) -> str:
+    gate_plan = plan.execution_gate_plan
+    return _stable_note(
+        {
+            "application_execution_allowed": False,
+            "automatic_classification": False,
+            "command_count": gate_plan.command_count if gate_plan is not None else 0,
+            "execution": "not executed",
+            "execution_gate_plan_id": gate_plan.plan_id if gate_plan is not None else "",
+            "execution_gate_request_count": len(gate_plan.requests) if gate_plan is not None else 0,
+            "execution_gate_status": gate_plan.status if gate_plan is not None else "APPROVAL_REQUIRED",
+            "execution_state": gate_plan.execution_state if gate_plan is not None else "EXECUTION_GATED",
+            "file_move_allowed": False,
+            "live_network_allowed": False,
+            "manual_live_site_smoke_pending": True,
+            "provider_call_allowed": False,
+            "raw_payload_included": False,
+            "source_row_id": plan.source_row_id,
+            "total_export_metadata_only": True,
+            "user_review_required": True,
+        }
+    )
+
+
 def _all_plan_artifacts(plan: OperationalCapturePlanResult) -> tuple[CaptureArtifact, ...]:
     if plan.action_log_artifact is None:
         return plan.declared_artifacts
@@ -246,6 +272,34 @@ def operational_capture_plan_to_evidence_queue(
                 notes="Metadata-only link from selected source to planned artifact; no file operation performed.",
             )
         )
+    if plan.execution_gate_plan is not None and plan.execution_gate_plan.requests:
+        gate_item_id = stable_evidence_id(
+            "queue_execution_gate",
+            plan.execution_gate_plan.plan_id,
+        )
+        items.append(
+            EvidenceQueueItem(
+                item_id=gate_item_id,
+                item_role=EvidenceItemRole.MANUAL_EVIDENCE_NOTE,
+                display_name="Execution gate approval plan",
+                source_url=plan.canonical_url,
+                linked_source_id=plan.source_row_id,
+                total_export_include=True,
+                total_export_output_kind=ASSET_MANIFEST,
+                total_export_output_path=f"capture/{plan.source_row_id}/execution_gate_plan.json",
+                item_status=EvidenceItemStatus.NEEDS_REVIEW,
+                user_notes=_execution_gate_metadata_note(plan),
+            )
+        )
+        links.append(
+            EvidenceItemLink(
+                source_item_id=source_item_id,
+                target_item_id=gate_item_id,
+                relationship="planned_execution_gate_approval_metadata",
+                link_origin=EvidenceLinkOrigin.DERIVED_FROM_APP_STATE,
+                notes="Metadata-only link from selected source to execution-gate approval plan; no runtime action emitted.",
+            )
+        )
     return EvidenceItemQueue(items=tuple(items), links=tuple(links))
 
 
@@ -282,6 +336,11 @@ def operational_capture_plan_to_total_export_manifest(
                 "artifact_type": artifact.artifact_type,
                 "capture_method": artifact.capture_method,
                 "execution": "not executed",
+                "execution_gate_status": (
+                    plan.execution_gate_plan.status
+                    if plan.execution_gate_plan is not None
+                    else "APPROVAL_REQUIRED"
+                ),
                 "manual_live_site_smoke_pending": True,
                 "non_executing_status": PLAN_STATUS_NON_EXECUTING,
                 "relative_path": artifact.relative_path,
@@ -290,17 +349,57 @@ def operational_capture_plan_to_total_export_manifest(
                 "user_review_required": True,
             }
         )
+    if plan.execution_gate_plan is not None and plan.execution_gate_plan.requests:
+        gate_note = _execution_gate_metadata_note(plan)
+        gate_payload = plan.execution_gate_plan.to_dict()
+        gate_sha = hashlib.sha256(
+            json.dumps(gate_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        assets.append(
+            ExportAsset(
+                asset_type=ASSET_MANIFEST,
+                path=f"capture/{plan.source_row_id}/execution_gate_plan.json",
+                description=gate_note,
+                source_url=plan.canonical_url,
+                created_at_utc=plan.action_events[-1].timestamp_utc if plan.action_events else "",
+                sha256=gate_sha,
+                size_bytes=len(json.dumps(gate_payload, sort_keys=True).encode("utf-8")),
+            )
+        )
+        archive_results.append(
+            {
+                "execution": "not executed",
+                "execution_gate_plan_id": plan.execution_gate_plan.plan_id,
+                "execution_gate_request_count": len(plan.execution_gate_plan.requests),
+                "execution_gate_status": plan.execution_gate_plan.status,
+                "non_executing_status": PLAN_STATUS_NON_EXECUTING,
+                "provider_call_performed": False,
+                "relative_path": f"capture/{plan.source_row_id}/execution_gate_plan.json",
+                "submission_performed": False,
+                "user_review_required": True,
+            }
+        )
     return TotalExportManifest(
         package_id=safe_id,
         source_urls=[plan.canonical_url],
         output_folder=output_folder,
         capture_options=list(plan.selected_modes)
-        + [f"screenshot:{item}" for item in plan.screenshot_intents],
+        + [f"screenshot:{item}" for item in plan.screenshot_intents]
+        + (
+            ["execution_gate:approval_required"]
+            if plan.execution_gate_plan is not None and plan.execution_gate_plan.requests
+            else []
+        ),
         assets=assets,
         archive_results=archive_results,
         notes=_stable_note(
             {
                 "export_metadata_only": True,
+                "execution_gate_status": (
+                    plan.execution_gate_plan.status
+                    if plan.execution_gate_plan is not None
+                    else "APPROVAL_REQUIRED"
+                ),
                 "manual_live_site_smoke_pending": True,
                 "non_executing_status": PLAN_STATUS_NON_EXECUTING,
                 "source_row_id": plan.source_row_id,

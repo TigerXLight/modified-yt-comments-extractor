@@ -15,7 +15,7 @@ from capture_export_queue import (
 from evidence_database_index import EvidenceClassificationValue
 from evidence_item_queue import EvidenceItemRole, EvidenceItemStatus
 from source_resource_state import build_discussion_capture_options, build_source_resource_row
-from total_export_manifest import ASSET_EXTRACTED_TEXT, ASSET_HTML_SNAPSHOT, ASSET_RAW_SIDECAR
+from total_export_manifest import ASSET_EXTRACTED_TEXT, ASSET_HTML_SNAPSHOT, ASSET_MANIFEST, ASSET_RAW_SIDECAR
 
 
 MSN_URL = "https://www.msn.com/en-gb/news/world/special-dj-by-taku-inoue/ar-AA123456"
@@ -41,11 +41,11 @@ def test_operational_capture_plan_converts_to_evidence_queue_without_file_claims
     queue = operational_capture_plan_to_evidence_queue(plan)
     queue_dict = queue.to_dict()
 
-    assert len(queue.items) == len(plan.declared_artifacts) + 2  # source row + artifacts + action log
+    assert len(queue.items) == len(plan.declared_artifacts) + 3  # source row + artifacts + action log + execution gate
     assert queue.items[0].item_role is EvidenceItemRole.SOURCE_URL
     assert queue.items[0].source_url == plan.canonical_url
     assert queue.items[0].item_status is EvidenceItemStatus.NEEDS_REVIEW
-    assert len(queue.links) == len(plan.declared_artifacts) + 1
+    assert len(queue.links) == len(plan.declared_artifacts) + 2
     assert all(item.local_path == "" for item in queue.items)
     assert all(item.item_status is EvidenceItemStatus.NEEDS_REVIEW for item in queue.items)
 
@@ -63,6 +63,10 @@ def test_operational_capture_plan_converts_to_evidence_queue_without_file_claims
         and item.total_export_output_kind == ASSET_RAW_SIDECAR
         for item in artifact_items
     )
+    assert queue.items[-1].display_name == "Execution gate approval plan"
+    assert queue.items[-1].total_export_output_kind == ASSET_MANIFEST
+    assert "execution_gate_status" in queue.items[-1].user_notes
+    assert "application_execution_allowed" in queue.items[-1].user_notes
     rendered = repr(queue_dict)
     assert "api_key" not in rendered
     assert "Cookie" not in rendered
@@ -82,16 +86,20 @@ def test_operational_capture_plan_converts_to_total_export_manifest_metadata_onl
     assert manifest.source_urls == [plan.canonical_url]
     assert "webpage" in manifest.capture_options
     assert "comments" in manifest.capture_options
-    assert len(manifest.assets) == len(plan.declared_artifacts) + 1
+    assert "execution_gate:approval_required" in manifest.capture_options
+    assert len(manifest.assets) == len(plan.declared_artifacts) + 2
     assert len(manifest.archive_results) == len(manifest.assets)
     assert manifest.assets[0].asset_type == ASSET_HTML_SNAPSHOT
     assert manifest.assets[0].path == "page/raw.html"
     assert plan.declared_artifacts[0].artifact_id in manifest.assets[0].description
     assert any(asset.asset_type == ASSET_EXTRACTED_TEXT for asset in manifest.assets)
-    assert manifest.assets[-1].asset_type == ASSET_RAW_SIDECAR
-    assert manifest.archive_results[-1]["artifact_type"] == ARTIFACT_TYPE_ACTION_LOG
-    assert manifest.archive_results[-1]["non_executing_status"] == PLAN_STATUS_NON_EXECUTING
-    assert manifest.archive_results[-1]["manual_live_site_smoke_pending"] is True
+    assert manifest.assets[-2].asset_type == ASSET_RAW_SIDECAR
+    assert manifest.assets[-1].asset_type == ASSET_MANIFEST
+    assert manifest.archive_results[-2]["artifact_type"] == ARTIFACT_TYPE_ACTION_LOG
+    assert manifest.archive_results[-2]["non_executing_status"] == PLAN_STATUS_NON_EXECUTING
+    assert manifest.archive_results[-2]["manual_live_site_smoke_pending"] is True
+    assert manifest.archive_results[-1]["execution_gate_status"] == "APPROVAL_REQUIRED"
+    assert manifest.archive_results[-1]["provider_call_performed"] is False
     assert "export_metadata_only" in manifest.notes
     assert "not executed" in repr(manifest_dict)
     assert "LIVE_SITE_MANUALLY_VERIFIED" not in repr(manifest_dict)
@@ -137,10 +145,12 @@ def test_connection_result_includes_review_preview_and_preserves_action_log_hash
     assert connection.review_preview.record_count == len(connection.evidence_index_records)
     assert "USER_REVIEW_REQUIRED" in connection.review_preview.warnings
     assert "MANUAL_LIVE_SITE_SMOKE_PENDING" in connection.review_preview.warnings
-    assert connection.queue.items[-1].file_hash == plan.action_log_artifact.sha256
-    assert connection.total_export_manifest.assets[-1].sha256 == plan.action_log_artifact.sha256
-    assert plan.action_log_artifact.artifact_id in connection.queue.items[-1].user_notes
-    assert plan.action_log_artifact.artifact_id in connection.total_export_manifest.assets[-1].description
+    assert connection.queue.items[-2].file_hash == plan.action_log_artifact.sha256
+    assert connection.total_export_manifest.assets[-2].sha256 == plan.action_log_artifact.sha256
+    assert plan.action_log_artifact.artifact_id in connection.queue.items[-2].user_notes
+    assert plan.action_log_artifact.artifact_id in connection.total_export_manifest.assets[-2].description
+    assert connection.queue.items[-1].display_name == "Execution gate approval plan"
+    assert connection.total_export_manifest.assets[-1].asset_type == ASSET_MANIFEST
     assert data["scope"].startswith("operational capture export/queue metadata only")
     assert "file_operation_performed" not in repr(data["queue"])
     assert "not executed" in repr(data)
@@ -156,6 +166,8 @@ def test_artifact_types_preserved_in_queue_and_manifest() -> None:
     for artifact_type in (ARTIFACT_TYPE_RAW_HTML, ARTIFACT_TYPE_COMMENTS_JSONL, ARTIFACT_TYPE_ACTION_LOG):
         assert artifact_type in queue_notes
         assert artifact_type in manifest_notes
+    assert "execution_gate_status" in queue_notes
+    assert "execution_gate_status" in manifest_notes
     assert "completed_live_capture" not in queue_notes
     assert "completed_live_capture" not in manifest_notes
 

@@ -53,6 +53,14 @@ def test_operational_capture_plan_records_modes_without_execution() -> None:
     assert result.action_events[1].previous_event_hash == result.action_events[0].event_hash
     assert result.action_events[2].previous_event_hash == result.action_events[1].event_hash
     assert result.action_events[2].artifact_ids == (result.action_log_artifact.artifact_id,)
+    assert result.action_events[3].previous_event_hash == result.action_events[2].event_hash
+    assert result.action_events[3].action_type == "execution_gate_plan_recorded"
+    assert result.execution_gate_plan is not None
+    assert result.execution_gate_plan.approval_required is True
+    assert {request.action_kind.value for request in result.execution_gate_plan.requests} == {
+        "BROWSER_AUTOMATION",
+        "LIVE_SITE_CAPTURE",
+    }
     assert [artifact.artifact_type for artifact in result.declared_artifacts] == [
         ARTIFACT_TYPE_RAW_HTML,
         ARTIFACT_TYPE_FINAL_DOM,
@@ -89,6 +97,11 @@ def test_operational_capture_plan_declares_livechat_artifacts_without_execution(
     artifact_types = [artifact.artifact_type for artifact in result.declared_artifacts]
 
     assert result.selected_modes == ("livechat",)
+    assert result.execution_gate_plan is not None
+    assert {request.action_kind.value for request in result.execution_gate_plan.requests} == {
+        "BROWSER_AUTOMATION",
+        "LIVE_SITE_CAPTURE",
+    }
     assert artifact_types == [
         ARTIFACT_TYPE_LIVECHAT_JSONL,
         ARTIFACT_TYPE_LIVECHAT_TEXT,
@@ -122,6 +135,10 @@ def test_operational_capture_plan_declares_media_download_and_mux_artifacts_with
     artifact_types = [artifact.artifact_type for artifact in result.declared_artifacts]
 
     assert result.selected_modes == ("media",)
+    assert result.execution_gate_plan is not None
+    assert [request.action_kind.value for request in result.execution_gate_plan.requests] == [
+        "MEDIA_DOWNLOAD",
+    ]
     assert artifact_types == [
         ARTIFACT_TYPE_MEDIA_INVENTORY,
         ARTIFACT_TYPE_MEDIA_FILE,
@@ -155,7 +172,11 @@ def test_operational_capture_plan_declares_rendered_citation_artifacts_without_e
     artifact_types = [artifact.artifact_type for artifact in result.declared_artifacts]
 
     assert result.selected_modes == ("rendered_citation",)
-    assert result.warnings == ()
+    assert result.execution_gate_plan is not None
+    assert [request.action_kind.value for request in result.execution_gate_plan.requests] == [
+        "RENDERED_RECORDING",
+    ]
+    assert any("Execution-gated operations require" in warning for warning in result.warnings)
     assert artifact_types == [
         ARTIFACT_TYPE_RENDERED_RECORDING,
         ARTIFACT_TYPE_RENDERED_RECORDING,
@@ -197,7 +218,13 @@ def test_operational_capture_plan_declares_archive_artifacts_without_execution()
     methods = [artifact.capture_method for artifact in result.declared_artifacts]
 
     assert result.selected_modes == ("archive_check", "archive_submit", "archivebox_plan")
-    assert result.warnings == ()
+    assert result.execution_gate_plan is not None
+    assert {request.action_kind.value for request in result.execution_gate_plan.requests} == {
+        "ARCHIVEBOX_EXECUTION",
+        "ARCHIVE_CHECK",
+        "ARCHIVE_SUBMIT",
+    }
+    assert any("Execution-gated operations require" in warning for warning in result.warnings)
     assert artifact_types == [
         ARTIFACT_TYPE_ARCHIVE_RESULT,
         ARTIFACT_TYPE_ARCHIVE_RESULT,
@@ -243,7 +270,12 @@ def test_operational_capture_plan_declares_warc_wacz_artifacts_without_execution
     methods = [artifact.capture_method for artifact in result.declared_artifacts]
 
     assert result.selected_modes == ("warc", "wacz")
-    assert result.warnings == ()
+    assert result.execution_gate_plan is not None
+    assert {request.action_kind.value for request in result.execution_gate_plan.requests} == {
+        "WACZ_PACKAGE",
+        "WARC_CAPTURE",
+    }
+    assert any("Execution-gated operations require" in warning for warning in result.warnings)
     assert artifact_types == [ARTIFACT_TYPE_WARC, ARTIFACT_TYPE_WACZ]
     assert methods == ["planned_warc_fixture_manifest", "planned_wacz_fixture_manifest"]
     assert result.declared_artifacts[0].metadata["warc_capture_execution"] == "not executed"
@@ -281,8 +313,11 @@ def test_operational_capture_plan_message_is_user_facing_and_local_only() -> Non
     assert "Artifact declarations: 7" in message
     assert "Artifact types:" in message
     assert "RAW_HTML x1" in message
-    assert "Action event chain: 3 event(s), final hash " in message
+    assert "Action event chain: 4 event(s), final hash " in message
     assert "Action log artifact: capture/" in message
+    assert "Execution gate status: APPROVAL_REQUIRED" in message
+    assert "Execution-gated actions: LIVE_SITE_CAPTURE" in message
+    assert "Execution gate requests: 1" in message
     assert "Operational status: fixture/model-only plan" in message
     assert "Manual live-site smoke: pending separate approval" in message
     assert "Manual live-smoke approval required: yes" in message
@@ -290,7 +325,7 @@ def test_operational_capture_plan_message_is_user_facing_and_local_only() -> Non
     assert "Screenshots performed: none" in message
     assert "Downloads performed: none" in message
     assert "Archives performed: none" in message
-    assert "Live capture execution: unsupported in this scaffold" in message
+    assert "Live capture execution: approval-gated; no runtime action emitted" in message
 
 
 def test_operational_capture_plan_action_log_artifact_is_deterministic_and_sanitized() -> None:
@@ -315,6 +350,8 @@ def test_operational_capture_plan_action_log_artifact_is_deterministic_and_sanit
     assert "authorization" not in rendered.lower()
     assert "write_performed\":false" in rendered
     assert "operational_capture_artifacts_declared" in rendered
+    assert "execution_gate_plan_recorded" in rendered
+    assert "APPROVAL_REQUIRED" in rendered
     assert "playwright.chromium.launch" not in rendered
     assert "requests.get" not in rendered
 

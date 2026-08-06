@@ -30,6 +30,13 @@ from capture_contracts import (
     CaptureArtifact,
     build_capture_artifact,
 )
+from capture_execution_gate import (
+    ExecutionActionKind,
+    ExecutionGatePlan,
+    build_execution_gate_plan,
+    build_execution_gate_request,
+    execution_gate_plan_to_action_log_events,
+)
 from capture_status import COMPLETENESS_COMPLETE, FIDELITY_RAW, OPERATIONAL_STATUS_MODEL_ONLY
 from source_resource_state import DiscussionCaptureOptions, SourceResourceRowState
 
@@ -52,6 +59,7 @@ class OperationalCapturePlanResult:
     action_events: tuple[CaptureActionLogEvent, ...] = ()
     declared_artifacts: tuple[CaptureArtifact, ...] = ()
     action_log_artifact: CaptureArtifact | None = None
+    execution_gate_plan: ExecutionGatePlan | None = None
     warnings: tuple[str, ...] = ()
     scope: str = CAPTURE_CONTROLLER_SCOPE
 
@@ -62,6 +70,9 @@ class OperationalCapturePlanResult:
             if self.action_log_artifact is not None
             else None,
             "declared_artifacts": [artifact.to_dict() for artifact in self.declared_artifacts],
+            "execution_gate_plan": self.execution_gate_plan.to_dict()
+            if self.execution_gate_plan is not None
+            else None,
             "adapter_id": self.adapter_id,
             "canonical_url": self.canonical_url,
             "operational_status": self.operational_status,
@@ -80,6 +91,105 @@ def _action_log_jsonl(events: tuple[CaptureActionLogEvent, ...]) -> str:
 
 def _action_log_sha256(events: tuple[CaptureActionLogEvent, ...]) -> str:
     return hashlib.sha256(_action_log_jsonl(events).encode("utf-8")).hexdigest()
+
+
+def _execution_gate_requests_for_plan(
+    *,
+    row: SourceResourceRowState,
+    selected_modes: tuple[str, ...],
+    screenshot_intents: tuple[str, ...],
+    selected_media_resource_ids: tuple[str, ...] = (),
+    mux_plan_requested: bool = False,
+    rendered_citation_requested: bool = False,
+    archive_check_requested: bool = False,
+    archive_submit_requested: bool = False,
+    archivebox_plan_requested: bool = False,
+    warc_requested: bool = False,
+    wacz_requested: bool = False,
+) -> tuple:
+    requests = []
+    if any(mode in selected_modes for mode in ("webpage", "comments", "livechat")):
+        requests.append(
+            build_execution_gate_request(
+                action_kind=ExecutionActionKind.LIVE_SITE_CAPTURE,
+                source_label=row.title,
+                source_url=row.canonical_url,
+                intended_scope="selected source webpage/comments/livechat capture",
+            )
+        )
+    if screenshot_intents:
+        requests.append(
+            build_execution_gate_request(
+                action_kind=ExecutionActionKind.BROWSER_AUTOMATION,
+                source_label=row.title,
+                source_url=row.canonical_url,
+                intended_scope="faithful screenshot or dynamic page capture",
+            )
+        )
+    if selected_media_resource_ids or mux_plan_requested:
+        requests.append(
+            build_execution_gate_request(
+                action_kind=ExecutionActionKind.MEDIA_DOWNLOAD,
+                source_label=row.title,
+                source_url=row.canonical_url,
+                intended_scope="selected media download or mux planning",
+            )
+        )
+    if rendered_citation_requested:
+        requests.append(
+            build_execution_gate_request(
+                action_kind=ExecutionActionKind.RENDERED_RECORDING,
+                source_label=row.title,
+                source_url=row.canonical_url,
+                intended_scope="user-mediated rendered citation recording",
+            )
+        )
+    if archive_check_requested:
+        requests.append(
+            build_execution_gate_request(
+                action_kind=ExecutionActionKind.ARCHIVE_CHECK,
+                source_label=row.title,
+                source_url=row.canonical_url,
+                intended_scope="archive availability check",
+            )
+        )
+    if archive_submit_requested:
+        requests.append(
+            build_execution_gate_request(
+                action_kind=ExecutionActionKind.ARCHIVE_SUBMIT,
+                source_label=row.title,
+                source_url=row.canonical_url,
+                intended_scope="archive provider submission",
+            )
+        )
+    if archivebox_plan_requested:
+        requests.append(
+            build_execution_gate_request(
+                action_kind=ExecutionActionKind.ARCHIVEBOX_EXECUTION,
+                source_label=row.title,
+                source_url=row.canonical_url,
+                intended_scope="ArchiveBox execution plan",
+            )
+        )
+    if warc_requested:
+        requests.append(
+            build_execution_gate_request(
+                action_kind=ExecutionActionKind.WARC_CAPTURE,
+                source_label=row.title,
+                source_url=row.canonical_url,
+                intended_scope="WARC capture execution",
+            )
+        )
+    if wacz_requested:
+        requests.append(
+            build_execution_gate_request(
+                action_kind=ExecutionActionKind.WACZ_PACKAGE,
+                source_label=row.title,
+                source_url=row.canonical_url,
+                intended_scope="WACZ package generation",
+            )
+        )
+    return tuple(requests)
 
 
 def _planned_artifact(
@@ -486,6 +596,24 @@ def build_operational_capture_plan(
     if wacz_requested and "wacz" not in selected_modes:
         selected_modes_tuple = selected_modes_tuple + ("wacz",)
     screenshot_intents_tuple = tuple(screenshot_intents)
+    execution_gate_requests = _execution_gate_requests_for_plan(
+        row=row,
+        selected_modes=selected_modes_tuple,
+        screenshot_intents=screenshot_intents_tuple,
+        selected_media_resource_ids=tuple(selected_media_resource_ids),
+        mux_plan_requested=mux_plan_requested,
+        rendered_citation_requested=rendered_citation_requested,
+        archive_check_requested=archive_check_requested,
+        archive_submit_requested=archive_submit_requested,
+        archivebox_plan_requested=archivebox_plan_requested,
+        warc_requested=warc_requested,
+        wacz_requested=wacz_requested,
+    )
+    execution_gate_plan = build_execution_gate_plan(execution_gate_requests)
+    if execution_gate_requests:
+        warnings.append(
+            "Execution-gated operations require explicit user approval before runtime."
+        )
     declared_artifacts = _planned_capture_artifacts(
         row=row,
         selected_modes=selected_modes_tuple,
@@ -585,6 +713,16 @@ def build_operational_capture_plan(
         warnings=tuple(warnings),
     )
     action_events.append(artifact_event)
+    previous_hash = artifact_event.event_hash
+    if execution_gate_plan.requests:
+        gate_event = execution_gate_plan_to_action_log_events(
+            execution_gate_plan,
+            session_id=f"source_row_{row.row_id}",
+            timestamp_utc=timestamp_utc,
+            previous_event_hash=previous_hash,
+        )[0]
+        action_events.append(gate_event)
+        previous_hash = gate_event.event_hash
     action_events_tuple = tuple(action_events)
     action_log_artifact = build_capture_artifact(
         session_id=f"source_row_{row.row_id}",
@@ -603,6 +741,8 @@ def build_operational_capture_plan(
         metadata={
             "execution": "not executed",
             "event_count": len(action_events_tuple),
+            "execution_gate_plan_id": execution_gate_plan.plan_id,
+            "execution_gate_request_count": len(execution_gate_plan.requests),
             "network_actions_performed": "none",
             "screenshots_performed": "none",
             "downloads_performed": "none",
@@ -620,6 +760,7 @@ def build_operational_capture_plan(
         action_events=action_events_tuple,
         declared_artifacts=declared_artifacts,
         action_log_artifact=action_log_artifact,
+        execution_gate_plan=execution_gate_plan,
         warnings=tuple(warnings),
     )
 
@@ -652,6 +793,14 @@ def format_operational_capture_plan_message(result: OperationalCapturePlanResult
         else "(none)"
     )
     warnings = "\n".join(f"- {warning}" for warning in result.warnings) if result.warnings else "- (none)"
+    gate_plan = result.execution_gate_plan
+    gate_actions = (
+        ", ".join(request.action_kind.value for request in gate_plan.requests)
+        if gate_plan is not None and gate_plan.requests
+        else "(none)"
+    )
+    gate_status = gate_plan.status if gate_plan is not None else "APPROVAL_REQUIRED"
+    gate_count = len(gate_plan.requests) if gate_plan is not None else 0
     return "\n".join(
         [
             "Operational site-capture plan",
@@ -663,6 +812,9 @@ def format_operational_capture_plan_message(result: OperationalCapturePlanResult
             f"Artifact types: {artifact_summary}",
             f"Action event chain: {event_chain}",
             f"Action log artifact: {action_log}",
+            f"Execution gate status: {gate_status}",
+            f"Execution-gated actions: {gate_actions}",
+            f"Execution gate requests: {gate_count}",
             "Operational status: fixture/model-only plan",
             "Manual live-site smoke: pending separate approval",
             "Manual live-smoke approval required: yes",
@@ -670,7 +822,7 @@ def format_operational_capture_plan_message(result: OperationalCapturePlanResult
             "Screenshots performed: none",
             "Downloads performed: none",
             "Archives performed: none",
-            "Live capture execution: unsupported in this scaffold",
+            "Live capture execution: approval-gated; no runtime action emitted",
             "Warnings:",
             warnings,
         ]
