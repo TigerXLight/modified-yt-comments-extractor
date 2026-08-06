@@ -729,6 +729,55 @@ class YouTubeEvidenceQueueReviewFlowSummary:
 
 
 @dataclass(frozen=True)
+class EvidenceItemQueueReviewSummary:
+    summary_id: str
+    status: str
+    review_status: str = "USER_REVIEW_REQUIRED"
+    metadata_only: bool = True
+    user_review_required: bool = True
+    queue_item_count: int = 0
+    link_count: int = 0
+    asr_pairing_count: int = 0
+    manual_media_source_chain_link_count: int = 0
+    manual_publisher_framing_correction_count: int = 0
+    total_export_included_count: int = 0
+    total_export_excluded_count: int = 0
+    manual_import_count: int = 0
+    source_url_recorded_count: int = 0
+    local_path_recorded_count: int = 0
+    file_hash_recorded_count: int = 0
+    item_ids: tuple[str, ...] = ()
+    item_roles: tuple[str, ...] = ()
+    item_statuses: tuple[str, ...] = ()
+    role_counts: tuple[dict[str, Any], ...] = ()
+    status_counts: tuple[dict[str, Any], ...] = ()
+    source_role_review_count: int = 0
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    final_evidence_state_recorded: bool = False
+    file_existence_claimed: bool = False
+    file_content_read: bool = False
+    broad_folder_scan_performed: bool = False
+    evidence_file_move_performed: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    raw_evidence_payload_included: bool = False
+    raw_media_payload_included: bool = False
+    raw_transcript_payload_included: bool = False
+    full_local_path_included: bool = False
+    runtime_or_capture_invoked: bool = False
+    live_fetch_or_api_call_performed: bool = False
+    browser_automation_claimed: bool = False
+    note: str = (
+        "Evidence Item Queue review metadata only; no storage, file checks, "
+        "runtime execution, or final-evidence state is recorded."
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceQueueItem:
     item_id: str
     item_role: EvidenceItemRole
@@ -787,6 +836,144 @@ class EvidenceItemQueue:
             note.to_dict() for note in self.manual_publisher_framing_corrections
         ]
         return data
+
+
+def _sorted_evidence_queue_items(
+    queue: EvidenceItemQueue,
+) -> tuple[EvidenceQueueItem, ...]:
+    return tuple(
+        sorted(
+            queue.items,
+            key=lambda item: (
+                item.item_id,
+                item.item_role.value,
+                item.item_status.value,
+            ),
+        )
+    )
+
+
+def _count_rows(values: tuple[str, ...], label: str) -> tuple[dict[str, Any], ...]:
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return tuple(
+        {label: value, "count": counts[value]}
+        for value in sorted(counts)
+    )
+
+
+def _safe_evidence_queue_review_rows(
+    queue: EvidenceItemQueue,
+) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {
+            "file_hash_recorded": bool(item.file_hash),
+            "item_id": item.item_id,
+            "item_role": item.item_role.value,
+            "item_status": item.item_status.value,
+            "linked_item_count": len(item.linked_item_ids),
+            "local_path_recorded": bool(item.local_path),
+            "manual_import": item.is_manual_import,
+            "source_role_review_count": len(item.source_role_reviews),
+            "source_url_recorded": bool(item.source_url),
+            "total_export_include": item.total_export_include,
+            "total_export_output_kind_recorded": bool(item.total_export_output_kind),
+        }
+        for item in _sorted_evidence_queue_items(queue)
+    )
+
+
+def evidence_item_queue_review_summary_id(queue: EvidenceItemQueue) -> str:
+    payload = {
+        "asr_pairing_count": len(queue.asr_pairings),
+        "link_count": len(queue.links),
+        "manual_media_source_chain_link_count": len(
+            queue.manual_media_source_chain_links
+        ),
+        "manual_publisher_framing_correction_count": len(
+            queue.manual_publisher_framing_corrections
+        ),
+        "queue_review_kind": "evidence_item_queue_metadata",
+        "rows": list(_safe_evidence_queue_review_rows(queue)),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "evidence_item_queue_review_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def build_evidence_item_queue_review_summary(
+    queue: EvidenceItemQueue,
+) -> EvidenceItemQueueReviewSummary:
+    items = _sorted_evidence_queue_items(queue)
+    item_roles = tuple(item.item_role.value for item in items)
+    item_statuses = tuple(item.item_status.value for item in items)
+    total_export_included_count = sum(1 for item in items if item.total_export_include)
+    return EvidenceItemQueueReviewSummary(
+        summary_id=evidence_item_queue_review_summary_id(queue),
+        status="USER_REVIEW_REQUIRED" if items else "NO_EVIDENCE_QUEUE_ITEMS",
+        queue_item_count=len(items),
+        link_count=len(queue.links),
+        asr_pairing_count=len(queue.asr_pairings),
+        manual_media_source_chain_link_count=len(
+            queue.manual_media_source_chain_links
+        ),
+        manual_publisher_framing_correction_count=len(
+            queue.manual_publisher_framing_corrections
+        ),
+        total_export_included_count=total_export_included_count,
+        total_export_excluded_count=len(items) - total_export_included_count,
+        manual_import_count=sum(1 for item in items if item.is_manual_import),
+        source_url_recorded_count=sum(1 for item in items if item.source_url),
+        local_path_recorded_count=sum(1 for item in items if item.local_path),
+        file_hash_recorded_count=sum(1 for item in items if item.file_hash),
+        item_ids=tuple(item.item_id for item in items),
+        item_roles=item_roles,
+        item_statuses=item_statuses,
+        role_counts=_count_rows(item_roles, "item_role"),
+        status_counts=_count_rows(item_statuses, "item_status"),
+        source_role_review_count=sum(
+            len(item.source_role_reviews) for item in items
+        ),
+    )
+
+
+def evidence_item_queue_review_summary_to_json(
+    summary: EvidenceItemQueueReviewSummary,
+) -> str:
+    return json.dumps(summary.to_dict(), indent=2, sort_keys=True)
+
+
+def build_evidence_item_queue_review_summary_text(
+    summary: EvidenceItemQueueReviewSummary,
+) -> str:
+    return "\n".join(
+        [
+            "Evidence Item Queue review summary",
+            f"Summary ID: {summary.summary_id}",
+            f"Status: {summary.status}",
+            f"Review status: {summary.review_status}",
+            f"Queue items: {summary.queue_item_count}",
+            f"Links: {summary.link_count}",
+            f"ASR pairings: {summary.asr_pairing_count}",
+            f"Manual media source-chain links: {summary.manual_media_source_chain_link_count}",
+            f"Manual publisher-framing corrections: {summary.manual_publisher_framing_correction_count}",
+            f"Total Export included: {summary.total_export_included_count}",
+            f"Total Export excluded: {summary.total_export_excluded_count}",
+            f"Manual imports: {summary.manual_import_count}",
+            f"Source URL records: {summary.source_url_recorded_count}",
+            f"Local path records: {summary.local_path_recorded_count}",
+            "Metadata only: yes",
+            "User review required: yes",
+            "File existence claim: false",
+            "File content read: false",
+            "Runtime/capture invoked: false",
+            "Auto-classify flag: false",
+            "Sensitive inference prohibited: true",
+            "Final-evidence claim flags: false",
+        ]
+    )
 
 
 def _normalized_youtube_output_kind(output_kind: str) -> str:

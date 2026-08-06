@@ -15,6 +15,8 @@ from evidence_item_queue import (
     SourceRoleReviewMetadata,
     build_closed_loop_source_chain_review_summary,
     build_closed_loop_source_chain_review_summary_text,
+    build_evidence_item_queue_review_summary,
+    build_evidence_item_queue_review_summary_text,
     build_manual_media_source_chain_review_summary,
     build_manual_media_source_chain_review_summary_text,
     build_manual_media_source_chain_review_flow_summary,
@@ -32,6 +34,8 @@ from evidence_item_queue import (
     build_youtube_evidence_workflow_review_summary,
     build_youtube_evidence_workflow_review_summary_text,
     closed_loop_source_chain_review_summary_to_json,
+    evidence_item_queue_review_summary_id,
+    evidence_item_queue_review_summary_to_json,
     manual_media_source_chain_links_to_ui_rows,
     manual_media_source_chain_links_to_action_log_events,
     manual_media_source_chain_receipt_id,
@@ -264,6 +268,121 @@ def run_self_test() -> None:
         "candidate_subtitle_or_transcript_item_id"
     ] == ""
     assert incomplete_pairing_dict["reference_accuracy_percent"] is None
+
+    queue_review = EvidenceItemQueue(
+        items=(source_url, local_media, reference_text, included, excluded),
+        links=(explicit_link, derived_link),
+        asr_pairings=(local_only_pairing, incomplete_pairing),
+    )
+    repeated_queue_review = EvidenceItemQueue(
+        items=(excluded, included, reference_text, local_media, source_url),
+        links=(derived_link, explicit_link),
+        asr_pairings=(incomplete_pairing, local_only_pairing),
+    )
+    queue_review_summary = build_evidence_item_queue_review_summary(queue_review)
+    repeated_queue_review_summary = build_evidence_item_queue_review_summary(
+        repeated_queue_review
+    )
+    assert queue_review_summary.to_dict() == repeated_queue_review_summary.to_dict()
+    assert evidence_item_queue_review_summary_id(queue_review).startswith(
+        "evidence_item_queue_review_"
+    )
+    queue_review_dict = queue_review_summary.to_dict()
+    assert queue_review_dict["summary_id"].startswith(
+        "evidence_item_queue_review_"
+    )
+    assert queue_review_dict["status"] == "USER_REVIEW_REQUIRED"
+    assert queue_review_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert queue_review_dict["metadata_only"] is True
+    assert queue_review_dict["user_review_required"] is True
+    assert queue_review_dict["queue_item_count"] == 5
+    assert queue_review_dict["link_count"] == 2
+    assert queue_review_dict["asr_pairing_count"] == 2
+    assert queue_review_dict["total_export_included_count"] == 1
+    assert queue_review_dict["total_export_excluded_count"] == 4
+    assert queue_review_dict["manual_import_count"] == 1
+    assert queue_review_dict["source_url_recorded_count"] == 1
+    assert queue_review_dict["local_path_recorded_count"] == 3
+    assert queue_review_dict["file_hash_recorded_count"] == 0
+    assert queue_review_dict["item_ids"] == [
+        "excluded-1",
+        "included-1",
+        "media-1",
+        "reference-1",
+        "source-1",
+    ]
+    assert queue_review_dict["role_counts"] == [
+        {"count": 1, "item_role": "LOCAL_MEDIA"},
+        {"count": 1, "item_role": "MANUAL_EVIDENCE_NOTE"},
+        {"count": 1, "item_role": "REFERENCE_TEXT"},
+        {"count": 1, "item_role": "SCREENSHOT"},
+        {"count": 1, "item_role": "SOURCE_URL"},
+    ]
+    assert queue_review_dict["status_counts"] == [
+        {"count": 3, "item_status": "ADDED"},
+        {"count": 1, "item_status": "EXCLUDED_FROM_EXPORT"},
+        {"count": 1, "item_status": "INCLUDED_IN_EXPORT"},
+    ]
+    assert queue_review_dict["file_existence_claimed"] is False
+    assert queue_review_dict["file_content_read"] is False
+    assert queue_review_dict["broad_folder_scan_performed"] is False
+    assert queue_review_dict["evidence_file_move_performed"] is False
+    assert queue_review_dict["runtime_or_capture_invoked"] is False
+    assert queue_review_dict["live_fetch_or_api_call_performed"] is False
+    assert queue_review_dict["browser_automation_claimed"] is False
+    assert queue_review_dict["automatic_classification"] is False
+    assert queue_review_dict["sensitive_inference_prohibited"] is True
+    assert queue_review_dict["raw_evidence_payload_included"] is False
+    assert queue_review_dict["raw_media_payload_included"] is False
+    assert queue_review_dict["raw_transcript_payload_included"] is False
+    assert queue_review_dict["full_local_path_included"] is False
+    assert queue_review_dict["completed_evidence_claimed"] is False
+    assert queue_review_dict["verified_evidence_claimed"] is False
+    assert queue_review_dict["final_evidence_state_recorded"] is False
+    rendered_queue_review = evidence_item_queue_review_summary_to_json(
+        queue_review_summary
+    )
+    rendered_queue_review_text = build_evidence_item_queue_review_summary_text(
+        queue_review_summary
+    )
+    assert "Evidence Item Queue review summary" in rendered_queue_review_text
+    assert "Queue items: 5" in rendered_queue_review_text
+    assert "File existence claim: false" in rendered_queue_review_text
+    assert "Runtime/capture invoked: false" in rendered_queue_review_text
+    for unsafe_text in (
+        r"T:\Evidence",
+        "reference_clip.mp4",
+        "reference.txt",
+        "page.png",
+        "RAW COMMENT PAYLOAD",
+        "RAW LIVECHAT PAYLOAD",
+        "RAW TRANSCRIPT PAYLOAD",
+        "RAW EVIDENCE PAYLOAD",
+        "completed evidence",
+        "verified evidence",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot path",
+        "OCR complete",
+        "archive complete",
+        "classified",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_queue_review
+        assert unsafe_text not in rendered_queue_review_text
+    empty_queue_review_summary = build_evidence_item_queue_review_summary(
+        EvidenceItemQueue()
+    )
+    empty_queue_review_dict = empty_queue_review_summary.to_dict()
+    assert empty_queue_review_dict["status"] == "NO_EVIDENCE_QUEUE_ITEMS"
+    assert empty_queue_review_dict["queue_item_count"] == 0
+    assert empty_queue_review_dict["file_existence_claimed"] is False
+    assert empty_queue_review_dict["completed_evidence_claimed"] is False
 
     youtube_outputs = (
         ExistingYouTubeOutputReviewMetadata(

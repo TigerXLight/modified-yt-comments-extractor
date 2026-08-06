@@ -463,7 +463,8 @@ Planned source-credit/witness fields:
 - Source URL items and local media/reference items must retain explicit, separate roles. The queue should support both evidence/source work and ASR work without blending their meanings.
 - Older local ASR/reference workflows must remain possible, including combinations of a YouTube URL, TXT reference file, source MP4/media file, and subtitle/transcript file.
 - ASR reference-accuracy work should preserve a clear pairing among media, reference text, subtitle/transcript output, engine/provider metadata, scoring window, and accuracy result.
-- This queue is planning-only. This roadmap item does not implement UI, storage, media parsing, subtitle editing, or ASR workflow changes.
+- Current local implementation provides immutable queue roles/statuses/links, ASR pairing metadata, Total Export include/exclude metadata, and `build_evidence_item_queue_review_summary(...)` for deterministic review-required summary/counts output over explicitly supplied queue records. The summary reports safe item IDs, role/status counts, link/pairing counts, include/exclude counts, manual-import counts, and source/path/hash presence counts only; it does not read files, display full local paths, scan folders, move evidence, invoke capture/runtime, run automatic classification, or claim file existence/final/completed/verified evidence.
+- Queue UI, persistence/storage, media parsing, subtitle editing, runtime item actions, and ASR workflow changes remain future explicit milestones.
 
 Planned item fields:
 
