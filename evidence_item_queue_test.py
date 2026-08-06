@@ -19,6 +19,8 @@ from evidence_item_queue import (
     build_source_role_review_flow_summary_text,
     closed_loop_source_chain_review_summary_to_json,
     manual_media_source_chain_links_to_ui_rows,
+    manual_media_source_chain_links_to_action_log_events,
+    manual_media_source_chain_receipt_id,
     manual_media_source_chain_review_summary_to_json,
     queue_source_role_reviews_to_action_log_events,
     queue_source_role_reviews_to_claim_notes,
@@ -511,6 +513,132 @@ def run_self_test() -> None:
     ):
         assert unsafe_text not in rendered_media_source_chain_summary
         assert unsafe_text not in rendered_media_source_chain_text
+
+    media_source_chain_receipt_id = manual_media_source_chain_receipt_id(queue)
+    repeated_media_source_chain_receipt_id = manual_media_source_chain_receipt_id(queue)
+    assert media_source_chain_receipt_id == repeated_media_source_chain_receipt_id
+    assert media_source_chain_receipt_id.startswith("manual_media_source_chain_receipt_")
+    media_source_chain_receipt_events = (
+        manual_media_source_chain_links_to_action_log_events(
+            queue,
+            session_id="manual-media-source-chain-session",
+            timestamp_utc="2026-08-06T12:10:00Z",
+        )
+    )
+    repeated_media_source_chain_receipt_events = (
+        manual_media_source_chain_links_to_action_log_events(
+            queue,
+            session_id="manual-media-source-chain-session",
+            timestamp_utc="2026-08-06T12:10:00Z",
+        )
+    )
+    assert [event.to_dict() for event in media_source_chain_receipt_events] == [
+        event.to_dict() for event in repeated_media_source_chain_receipt_events
+    ]
+    assert len(media_source_chain_receipt_events) == 1
+    media_source_chain_receipt_dict = media_source_chain_receipt_events[0].to_dict()
+    assert (
+        media_source_chain_receipt_dict["action_type"]
+        == "manual_media_source_chain_link_review"
+    )
+    assert media_source_chain_receipt_dict["result"] == "USER_REVIEW_REQUIRED"
+    assert media_source_chain_receipt_dict["target_id"] == media_source_chain_receipt_id
+    assert media_source_chain_receipt_dict["artifact_ids"] == list(
+        media_source_chain_summary.manual_link_ids
+    )
+    media_source_chain_receipt_summary = media_source_chain_receipt_dict[
+        "request_summary"
+    ]
+    assert media_source_chain_receipt_summary["metadata_only"] is True
+    assert media_source_chain_receipt_summary["review_required"] is True
+    assert media_source_chain_receipt_summary["review_status"] == "USER_REVIEW_REQUIRED"
+    assert media_source_chain_receipt_summary["manual_operator_supplied"] is True
+    assert media_source_chain_receipt_summary["manual_link_count"] == 4
+    assert media_source_chain_receipt_summary["automated_matching"] is False
+    assert media_source_chain_receipt_summary["fingerprint_matching"] is False
+    assert media_source_chain_receipt_summary["automatic_duplicate_detection"] is False
+    assert media_source_chain_receipt_summary["automatic_classification"] is False
+    assert media_source_chain_receipt_summary["sensitive_inference_prohibited"] is True
+    assert media_source_chain_receipt_summary["completed_evidence_claimed"] is False
+    assert media_source_chain_receipt_summary["runtime_or_completion_claimed"] is False
+    assert (
+        media_source_chain_receipt_summary["safe_metadata_rows"][0]["manual_link_id"]
+        == media_source_chain_summary.manual_link_ids[0]
+    )
+    assert (
+        media_source_chain_receipt_summary["safe_metadata_rows"][0]["relation_kind"]
+        == "SAME_MEDIA"
+    )
+    assert (
+        media_source_chain_receipt_summary["safe_metadata_rows"][3]["relation_kind"]
+        == "DERIVATIVE"
+    )
+    assert (
+        media_source_chain_receipt_summary["safe_metadata_rows"][0]["automated_matching"]
+        is False
+    )
+    assert (
+        media_source_chain_receipt_summary["safe_metadata_rows"][0][
+            "fingerprint_matching"
+        ]
+        is False
+    )
+    assert (
+        media_source_chain_receipt_summary["safe_metadata_rows"][0][
+            "automatic_duplicate_detection"
+        ]
+        is False
+    )
+    rendered_media_source_chain_receipt = action_log_event_to_json(
+        media_source_chain_receipt_events[0]
+    )
+    for unsafe_text in (
+        "RAW MEDIA PAYLOAD",
+        "RAW EVIDENCE PAYLOAD",
+        r"T:\Evidence",
+        "completed evidence",
+        "verified evidence",
+        "automatic match",
+        "fingerprint match",
+        "duplicate detected",
+        "classified",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_media_source_chain_receipt
+
+    assert (
+        manual_media_source_chain_links_to_action_log_events(
+            EvidenceItemQueue(items=(source_url, local_media)),
+            session_id="empty-manual-media-source-chain-session",
+            timestamp_utc="2026-08-06T12:10:00Z",
+        )
+        == ()
+    )
+    for kwargs, expected_message in (
+        ({"session_id": "", "timestamp_utc": "2026-08-06T12:10:00Z"}, "session_id"),
+        (
+            {"session_id": "manual-media-source-chain-session", "timestamp_utc": ""},
+            "timestamp_utc",
+        ),
+    ):
+        try:
+            manual_media_source_chain_links_to_action_log_events(queue, **kwargs)
+        except ValueError as exc:
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{expected_message} should be required")
     claim_notes = queue_source_role_reviews_to_claim_notes(queue)
     assert len(claim_notes) == 2
     claim_note_dict = claim_notes[0].to_dict()
