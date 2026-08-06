@@ -448,6 +448,11 @@ class OnlineASRProviderOption:
     credential_entry_id: str
 
 
+from online_asr_execution_gate import (
+    build_online_asr_execution_gate_plan,
+    render_online_asr_execution_gate_summary_text,
+)
+
 ONLINE_ASR_PROVIDER_OPTIONS: Tuple[OnlineASRProviderOption, ...] = (
     OnlineASRProviderOption(
         provider_id=ELEVENLABS_SCRIBE_PROVIDER_ID,
@@ -12348,6 +12353,29 @@ class App(ctk.CTk):
             return f"Online ASR failed safely: {status} / {diagnostic}"
         return f"Online ASR failed safely: {diagnostic}"
 
+    def _build_online_asr_provider_call_gate(self, media_file: str) -> tuple[object, object]:
+        """Build a metadata-only Online ASR provider-call gate without dispatching."""
+        option = self._online_asr_provider_option(self._get_online_asr_provider_id())
+        statuses = self._online_asr_credential_statuses()
+        plan, summary = build_online_asr_execution_gate_plan(
+            selected_provider=option,
+            provider_options=ONLINE_ASR_PROVIDER_OPTIONS,
+            credential_statuses=statuses,
+            media_file_selected=bool((media_file or "").strip()),
+            media_file_name=os.path.basename(media_file or ""),
+        )
+        self.last_online_asr_execution_gate_plan = plan
+        self.last_online_asr_execution_gate_summary = summary
+        return plan, summary
+
+    def _record_online_asr_provider_call_gate(self, media_file: str) -> tuple[object, object]:
+        """Record Online ASR gate metadata for UI/status review without secrets."""
+        plan, summary = self._build_online_asr_provider_call_gate(media_file)
+        self.last_online_asr_execution_gate_text = (
+            render_online_asr_execution_gate_summary_text(summary, plan=plan)
+        )
+        return plan, summary
+
     def _start_online_asr_transcription(
         self,
         media_file: str,
@@ -12365,6 +12393,21 @@ class App(ctk.CTk):
         if not media_file:
             if status_var is not None:
                 status_var.set("Choose a local media file before transcribing.")
+            return False
+
+        _gate_plan, gate_summary = self._record_online_asr_provider_call_gate(media_file)
+        if not getattr(gate_summary, "credential_configured", False):
+            message = (
+                "Online ASR requires a configured provider key/account in KEYS/ACCOUNTS "
+                "before any provider call can be dispatched."
+            )
+            if status_var is not None:
+                status_var.set(message)
+            self.log_message(message, "warning")
+            try:
+                self.open_online_asr_settings_clicked()
+            except Exception:
+                pass
             return False
 
         self._online_asr_set_busy(

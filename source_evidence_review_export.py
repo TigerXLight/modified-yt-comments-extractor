@@ -65,6 +65,7 @@ def build_source_evidence_review_manifest(
     reference_summary: ReferencePackIntakeSummary | None = None,
     queue_review_store_document: EvidenceItemQueueReviewStoreDocument | Mapping[str, Any] | None = None,
     workflow_state_metadata: Mapping[str, Any] | None = None,
+    online_asr_gate_summary: Mapping[str, Any] | Any | None = None,
     app_version: str = "",
 ) -> TotalExportManifest:
     assets: list[ExportAsset] = []
@@ -155,6 +156,21 @@ def build_source_evidence_review_manifest(
             )
         )
         capture_options.append("Source Evidence workflow state metadata")
+
+    if online_asr_gate_summary is not None:
+        online_asr_metadata = _value_for_dict(online_asr_gate_summary)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_RAW_SIDECAR,
+                description=(
+                    "Online ASR provider-call execution gate metadata; "
+                    "provider_call_allowed_without_user_approval=false."
+                ),
+                metadata=online_asr_metadata,
+                created_at_utc=created_at_utc,
+            )
+        )
+        capture_options.append("Online ASR execution gate metadata")
 
     notes = "\n".join(
         [

@@ -1,4 +1,6 @@
 import json
+from dataclasses import dataclass
+from enum import Enum
 
 from capture_execution_gate import build_execution_gate_plan, build_execution_gate_request
 from evidence_item_queue import EvidenceItemQueue, EvidenceItemRole, EvidenceItemStatus, EvidenceQueueItem
@@ -8,7 +10,25 @@ from source_evidence_review_export import (
     source_evidence_review_manifest_to_json,
 )
 from source_reference_intake import build_reference_pack_intake_summary
+from online_asr_execution_gate import build_online_asr_execution_gate_plan
 from total_export_manifest import ASSET_MANIFEST, ASSET_RAW_SIDECAR
+
+
+class FakeCredentialState(Enum):
+    CONFIGURED = "CONFIGURED"
+
+
+@dataclass(frozen=True)
+class FakeCredentialStatus:
+    state: FakeCredentialState
+
+
+@dataclass(frozen=True)
+class FakeOnlineASRProvider:
+    provider_id: str
+    display_name: str
+    model_id: str
+    credential_entry_id: str
 
 
 def run_self_test() -> None:
@@ -49,6 +69,23 @@ def run_self_test() -> None:
         timestamp_utc="2026-08-06T12:00:00Z",
         app_version="test",
     )
+    online_asr_provider = FakeOnlineASRProvider(
+        provider_id="elevenlabs_scribe",
+        display_name="ElevenLabs Scribe v2",
+        model_id="scribe_v2",
+        credential_entry_id="asr:elevenlabs_scribe",
+    )
+    _online_asr_plan, online_asr_summary = build_online_asr_execution_gate_plan(
+        selected_provider=online_asr_provider,
+        provider_options=(online_asr_provider,),
+        credential_statuses={
+            online_asr_provider.credential_entry_id: FakeCredentialStatus(
+                FakeCredentialState.CONFIGURED
+            )
+        },
+        media_file_selected=True,
+        media_file_name="clip.mp4",
+    )
 
     manifest = build_source_evidence_review_manifest(
         package_id="source-evidence-review",
@@ -58,6 +95,7 @@ def run_self_test() -> None:
         execution_gate_plan=gate_plan,
         reference_summary=reference_summary,
         queue_review_store_document=store_document,
+        online_asr_gate_summary=online_asr_summary,
         app_version="test",
     )
     manifest_dict = manifest.to_dict()
@@ -68,6 +106,7 @@ def run_self_test() -> None:
         "Evidence Item Queue review metadata",
         "Evidence Item Queue review store metadata",
         "Execution gate approval metadata",
+        "Online ASR execution gate metadata",
         "Source reference intake metadata",
     ]
     assert [asset["asset_type"] for asset in manifest_dict["assets"]] == [
@@ -76,6 +115,7 @@ def run_self_test() -> None:
         ASSET_RAW_SIDECAR,
         ASSET_RAW_SIDECAR,
         ASSET_MANIFEST,
+        ASSET_RAW_SIDECAR,
     ]
     assert all(asset["path"] == "" for asset in manifest_dict["assets"])
     assert all(len(asset["sha256"]) == 64 for asset in manifest_dict["assets"])
@@ -87,6 +127,8 @@ def run_self_test() -> None:
     assert r"C:\Users\fahad" not in encoded
     assert "clip.mp4" not in encoded
     assert "completed_evidence_claimed" not in encoded
+    assert "Online ASR provider-call execution gate metadata" in encoded
+    assert "provider_call_allowed_without_user_approval" in encoded
     assert json.loads(encoded) == manifest_dict
 
     repeated = build_source_evidence_review_manifest(
@@ -97,6 +139,7 @@ def run_self_test() -> None:
         execution_gate_plan=gate_plan,
         reference_summary=reference_summary,
         queue_review_store_document=store_document,
+        online_asr_gate_summary=online_asr_summary,
         app_version="test",
     )
     assert repeated.to_dict() == manifest_dict

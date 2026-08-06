@@ -340,6 +340,32 @@ def test_transcript_toolbar_get_label_preserves_youtube_callback() -> None:
     assert 'text="Get"' in reset_source
 
 
+def test_online_asr_is_key_gated_and_uses_matching_local_button_control() -> None:
+    transcript_source = inspect.getsource(App._create_transcript_section)
+    action_control_source = inspect.getsource(App._create_asr_action_control)
+    start_source = inspect.getsource(App._start_online_asr_transcription)
+    gate_source = inspect.getsource(App._record_online_asr_provider_call_gate)
+
+    assert "ONLINE_ASR_BUTTON_TEXT" in transcript_source
+    assert 'wrap_attr="transcript_online_asr_button_wrap"' in transcript_source
+    assert 'button_attr="transcript_online_asr_button"' in transcript_source
+    assert 'settings_attr="transcript_online_asr_settings_button"' in transcript_source
+    assert "ASR_ACTION_BUTTON_SPEC" in action_control_source
+    assert "button_width" in action_control_source
+    assert "button_height" in action_control_source
+    assert "cog_x" in action_control_source
+    assert "_record_online_asr_provider_call_gate" in start_source
+    assert "credential_configured" in start_source
+    assert "KEYS/ACCOUNTS" in start_source
+    assert "open_online_asr_settings_clicked" in start_source
+    assert "_dispatch_online_asr_provider_action" in start_source
+    main_source = Path("main.py").read_text(encoding="utf-8")
+    assert "build_online_asr_execution_gate_plan" in gate_source or "build_online_asr_execution_gate_plan" in main_source
+    assert "last_online_asr_execution_gate_plan" in gate_source or "last_online_asr_execution_gate_plan" in main_source
+    assert "last_online_asr_execution_gate_summary" in gate_source or "last_online_asr_execution_gate_summary" in main_source
+    assert "render_online_asr_execution_gate_summary_text" in gate_source or "render_online_asr_execution_gate_summary_text" in main_source
+
+
 def test_start_fetching_msn_scaffold_returns_before_credential_resolution() -> None:
     source = inspect.getsource(App.start_fetching)
 
@@ -771,6 +797,7 @@ def run_self_test() -> None:
     test_sidebar_spacing_is_compact_between_updates_keys_and_export()
     test_sidebar_order_places_updates_above_keys_export_files()
     test_transcript_toolbar_get_label_preserves_youtube_callback()
+    test_online_asr_is_key_gated_and_uses_matching_local_button_control()
     test_start_fetching_msn_scaffold_returns_before_credential_resolution()
     test_start_fetching_source_scaffold_builds_plan_preview_without_live_execution()
     test_start_fetching_without_selected_scope_sets_skipped_status()
