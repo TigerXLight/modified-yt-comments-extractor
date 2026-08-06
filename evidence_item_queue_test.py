@@ -19,6 +19,8 @@ from evidence_item_queue import (
     build_manual_media_source_chain_review_flow_summary,
     build_manual_media_source_chain_review_flow_summary_text,
     build_manual_publisher_framing_correction_review_summary,
+    build_manual_publisher_framing_correction_review_flow_summary,
+    build_manual_publisher_framing_correction_review_flow_summary_text,
     build_manual_publisher_framing_correction_review_summary_text,
     build_source_role_review_ui_summary,
     build_source_role_review_flow_summary,
@@ -30,6 +32,7 @@ from evidence_item_queue import (
     manual_media_source_chain_review_flow_summary_to_json,
     manual_media_source_chain_review_summary_to_json,
     manual_publisher_framing_correction_receipt_id,
+    manual_publisher_framing_correction_review_flow_summary_to_json,
     manual_publisher_framing_correction_review_summary_to_json,
     manual_publisher_framing_corrections_to_action_log_events,
     manual_publisher_framing_corrections_to_ui_rows,
@@ -867,6 +870,166 @@ def run_self_test() -> None:
     ):
         assert unsafe_text not in rendered_publisher_framing_receipt
 
+    publisher_framing_flow_summary = (
+        build_manual_publisher_framing_correction_review_flow_summary(
+            queue,
+            session_id="manual-publisher-framing-session",
+            timestamp_utc="2026-08-06T12:20:00Z",
+        )
+    )
+    repeated_publisher_framing_flow_summary = (
+        build_manual_publisher_framing_correction_review_flow_summary(
+            queue,
+            session_id="manual-publisher-framing-session",
+            timestamp_utc="2026-08-06T12:20:00Z",
+        )
+    )
+    assert (
+        publisher_framing_flow_summary.to_dict()
+        == repeated_publisher_framing_flow_summary.to_dict()
+    )
+    publisher_framing_flow_dict = publisher_framing_flow_summary.to_dict()
+    assert publisher_framing_flow_dict["flow_id"].startswith(
+        "manual_publisher_framing_flow_"
+    )
+    assert publisher_framing_flow_dict["status"] == "USER_REVIEW_REQUIRED"
+    assert publisher_framing_flow_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert publisher_framing_flow_dict["metadata_only"] is True
+    assert publisher_framing_flow_dict["manual_operator_supplied"] is True
+    assert publisher_framing_flow_dict["user_review_required"] is True
+    assert publisher_framing_flow_dict["correction_note_count"] == 2
+    assert publisher_framing_flow_dict["review_row_count"] == 2
+    assert publisher_framing_flow_dict["review_summary_count"] == 1
+    assert publisher_framing_flow_dict["provenance_receipt_count"] == 1
+    assert publisher_framing_flow_dict["correction_note_ids"] == list(
+        publisher_framing_summary.correction_note_ids
+    )
+    assert publisher_framing_flow_dict["queue_item_ids"] == ["media-2", "source-1"]
+    assert publisher_framing_flow_dict["related_item_ids"] == [
+        "source-1",
+        "media-1",
+    ]
+    assert publisher_framing_flow_dict["correction_kinds"] == [
+        "DISPUTED_FRAMING",
+        "SOURCE_AUTHOR_CORRECTION",
+    ]
+    assert publisher_framing_flow_dict["summary_ids"] == [
+        publisher_framing_summary.summary_id
+    ]
+    assert publisher_framing_flow_dict["receipt_ids"] == [
+        publisher_framing_receipt_id
+    ]
+    assert publisher_framing_flow_dict["receipt_event_ids"] == [
+        publisher_framing_receipt_dict["event_id"]
+    ]
+    assert publisher_framing_flow_dict["receipt_event_hashes"] == [
+        publisher_framing_receipt_dict["event_hash"]
+    ]
+    assert (
+        publisher_framing_flow_dict["automated_source_author_detection"] is False
+    )
+    assert (
+        publisher_framing_flow_dict["automatic_publisher_framing_analysis"]
+        is False
+    )
+    assert publisher_framing_flow_dict["automatic_correction"] is False
+    assert publisher_framing_flow_dict["automated_matching"] is False
+    assert publisher_framing_flow_dict["fingerprint_matching"] is False
+    assert (
+        publisher_framing_flow_dict["automatic_duplicate_detection"] is False
+    )
+    assert publisher_framing_flow_dict["automatic_classification"] is False
+    assert publisher_framing_flow_dict["sensitive_inference_prohibited"] is True
+    assert publisher_framing_flow_dict["raw_correction_payload_included"] is False
+    assert publisher_framing_flow_dict["raw_media_payload_included"] is False
+    assert publisher_framing_flow_dict["raw_evidence_payload_included"] is False
+    assert publisher_framing_flow_dict["full_local_path_included"] is False
+    assert publisher_framing_flow_dict["runtime_or_completion_claimed"] is False
+    assert publisher_framing_flow_dict["final_evidence_state_recorded"] is False
+    assert publisher_framing_flow_dict["completed_evidence_claimed"] is False
+    assert publisher_framing_flow_dict["verified_evidence_claimed"] is False
+    rendered_publisher_framing_flow_summary = (
+        manual_publisher_framing_correction_review_flow_summary_to_json(
+            publisher_framing_flow_summary
+        )
+    )
+    rendered_publisher_framing_flow_text = (
+        build_manual_publisher_framing_correction_review_flow_summary_text(
+            publisher_framing_flow_summary
+        )
+    )
+    assert (
+        "Manual publisher framing/source-author correction review flow summary"
+        in rendered_publisher_framing_flow_text
+    )
+    assert "Correction notes: 2" in rendered_publisher_framing_flow_text
+    assert "Review rows: 2" in rendered_publisher_framing_flow_text
+    assert "Provenance receipts: 1" in rendered_publisher_framing_flow_text
+    assert "Metadata only: yes" in rendered_publisher_framing_flow_text
+    assert "Manual/operator supplied: yes" in rendered_publisher_framing_flow_text
+    assert "Auto-correction flag: false" in rendered_publisher_framing_flow_text
+    for unsafe_text in (
+        "RAW CORRECTION PAYLOAD",
+        "RAW MEDIA PAYLOAD",
+        "RAW EVIDENCE PAYLOAD",
+        r"T:\Evidence",
+        "completed evidence",
+        "verified evidence",
+        "automatic correction",
+        "automatic analysis",
+        "source-author detected",
+        "classified",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_publisher_framing_flow_summary
+        assert unsafe_text not in rendered_publisher_framing_flow_text
+
+    single_publisher_framing_flow_summary = (
+        build_manual_publisher_framing_correction_review_flow_summary(
+            single_publisher_framing_queue,
+            session_id="single-manual-publisher-framing-session",
+            timestamp_utc="2026-08-06T12:21:00Z",
+        )
+    )
+    single_publisher_framing_flow_dict = (
+        single_publisher_framing_flow_summary.to_dict()
+    )
+    assert single_publisher_framing_flow_dict["status"] == "USER_REVIEW_REQUIRED"
+    assert single_publisher_framing_flow_dict["correction_note_count"] == 1
+    assert single_publisher_framing_flow_dict["review_row_count"] == 1
+    assert single_publisher_framing_flow_dict["provenance_receipt_count"] == 1
+    assert single_publisher_framing_flow_dict["correction_kinds"] == [
+        "SOURCE_AUTHOR_CORRECTION"
+    ]
+    assert (
+        single_publisher_framing_flow_dict["automated_source_author_detection"]
+        is False
+    )
+    assert (
+        single_publisher_framing_flow_dict[
+            "automatic_publisher_framing_analysis"
+        ]
+        is False
+    )
+    assert single_publisher_framing_flow_dict["automatic_correction"] is False
+    assert single_publisher_framing_flow_dict["automatic_classification"] is False
+    assert (
+        single_publisher_framing_flow_dict["sensitive_inference_prohibited"]
+        is True
+    )
+
     assert (
         manual_publisher_framing_corrections_to_action_log_events(
             EvidenceItemQueue(items=(source_url, local_media)),
@@ -1560,6 +1723,53 @@ def run_self_test() -> None:
     assert empty_publisher_framing_dict["automatic_classification"] is False
     assert empty_publisher_framing_dict["sensitive_inference_prohibited"] is True
     assert empty_publisher_framing_dict["completed_evidence_claimed"] is False
+    empty_publisher_framing_flow_summary = (
+        build_manual_publisher_framing_correction_review_flow_summary(
+            EvidenceItemQueue(items=(source_url, local_media)),
+            session_id="empty-manual-publisher-framing-session",
+            timestamp_utc="2026-08-06T12:20:00Z",
+        )
+    )
+    empty_publisher_framing_flow_dict = (
+        empty_publisher_framing_flow_summary.to_dict()
+    )
+    assert (
+        empty_publisher_framing_flow_dict["status"]
+        == "NO_MANUAL_PUBLISHER_FRAMING_CORRECTIONS"
+    )
+    assert (
+        empty_publisher_framing_flow_dict["review_status"]
+        == "USER_REVIEW_REQUIRED"
+    )
+    assert empty_publisher_framing_flow_dict["correction_note_count"] == 0
+    assert empty_publisher_framing_flow_dict["review_row_count"] == 0
+    assert empty_publisher_framing_flow_dict["review_summary_count"] == 0
+    assert empty_publisher_framing_flow_dict["provenance_receipt_count"] == 0
+    assert empty_publisher_framing_flow_dict["correction_note_ids"] == []
+    assert empty_publisher_framing_flow_dict["summary_ids"] == []
+    assert empty_publisher_framing_flow_dict["receipt_ids"] == []
+    assert empty_publisher_framing_flow_dict["metadata_only"] is True
+    assert empty_publisher_framing_flow_dict["manual_operator_supplied"] is True
+    assert empty_publisher_framing_flow_dict["user_review_required"] is True
+    assert (
+        empty_publisher_framing_flow_dict["automated_source_author_detection"]
+        is False
+    )
+    assert (
+        empty_publisher_framing_flow_dict[
+            "automatic_publisher_framing_analysis"
+        ]
+        is False
+    )
+    assert empty_publisher_framing_flow_dict["automatic_correction"] is False
+    assert empty_publisher_framing_flow_dict["automatic_classification"] is False
+    assert (
+        empty_publisher_framing_flow_dict["sensitive_inference_prohibited"]
+        is True
+    )
+    assert empty_publisher_framing_flow_dict["runtime_or_completion_claimed"] is False
+    assert empty_publisher_framing_flow_dict["final_evidence_state_recorded"] is False
+    assert empty_publisher_framing_flow_dict["completed_evidence_claimed"] is False
 
     manifest = TotalExportManifest(
         package_id="queue-source-role-review",

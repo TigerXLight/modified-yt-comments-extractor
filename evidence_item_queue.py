@@ -548,6 +548,51 @@ class ManualPublisherFramingCorrectionReviewSummary:
 
 
 @dataclass(frozen=True)
+class ManualPublisherFramingCorrectionReviewFlowSummary:
+    flow_id: str
+    status: str
+    review_status: str = "USER_REVIEW_REQUIRED"
+    metadata_only: bool = True
+    manual_operator_supplied: bool = True
+    user_review_required: bool = True
+    correction_note_count: int = 0
+    review_row_count: int = 0
+    review_summary_count: int = 0
+    provenance_receipt_count: int = 0
+    correction_note_ids: tuple[str, ...] = ()
+    queue_item_ids: tuple[str, ...] = ()
+    related_item_ids: tuple[str, ...] = ()
+    correction_kinds: tuple[str, ...] = ()
+    summary_ids: tuple[str, ...] = ()
+    receipt_ids: tuple[str, ...] = ()
+    receipt_event_ids: tuple[str, ...] = ()
+    receipt_event_hashes: tuple[str, ...] = ()
+    automated_source_author_detection: bool = False
+    automatic_publisher_framing_analysis: bool = False
+    automatic_correction: bool = False
+    automated_matching: bool = False
+    fingerprint_matching: bool = False
+    automatic_duplicate_detection: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    raw_correction_payload_included: bool = False
+    raw_media_payload_included: bool = False
+    raw_evidence_payload_included: bool = False
+    full_local_path_included: bool = False
+    runtime_or_completion_claimed: bool = False
+    final_evidence_state_recorded: bool = False
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    note: str = (
+        "Manual publisher-framing/source-author correction review metadata only; "
+        "no final-evidence state is recorded."
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceQueueItem:
     item_id: str
     item_role: EvidenceItemRole
@@ -909,6 +954,113 @@ def manual_publisher_framing_corrections_to_action_log_events(
         app_version=app_version,
     )
     return (event,)
+
+
+def manual_publisher_framing_correction_review_flow_id(
+    *,
+    rows: tuple[ManualPublisherFramingCorrectionReviewRow, ...],
+    summary_ids: tuple[str, ...],
+    receipt_ids: tuple[str, ...],
+) -> str:
+    payload = {
+        "receipt_ids": list(receipt_ids),
+        "review_flow_kind": "manual_publisher_framing_corrections",
+        "rows": list(_safe_manual_publisher_framing_correction_receipt_rows(rows)),
+        "summary_ids": list(summary_ids),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "manual_publisher_framing_flow_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def build_manual_publisher_framing_correction_review_flow_summary(
+    queue: EvidenceItemQueue,
+    *,
+    session_id: str,
+    timestamp_utc: str,
+    previous_event_hash: str = "",
+    actor_id: str = "",
+    app_version: str = "",
+) -> ManualPublisherFramingCorrectionReviewFlowSummary:
+    rows = manual_publisher_framing_corrections_to_ui_rows(queue)
+    summary = build_manual_publisher_framing_correction_review_summary(queue)
+    receipt_events = manual_publisher_framing_corrections_to_action_log_events(
+        queue,
+        session_id=session_id,
+        timestamp_utc=timestamp_utc,
+        previous_event_hash=previous_event_hash,
+        actor_id=actor_id,
+        app_version=app_version,
+    )
+    receipt_ids = tuple(event.target_id for event in receipt_events)
+    summary_ids = (summary.summary_id,) if rows else ()
+    return ManualPublisherFramingCorrectionReviewFlowSummary(
+        flow_id=manual_publisher_framing_correction_review_flow_id(
+            rows=rows,
+            summary_ids=summary_ids,
+            receipt_ids=receipt_ids,
+        ),
+        status=(
+            "USER_REVIEW_REQUIRED"
+            if rows
+            else "NO_MANUAL_PUBLISHER_FRAMING_CORRECTIONS"
+        ),
+        correction_note_count=len(rows),
+        review_row_count=len(rows),
+        review_summary_count=1 if rows else 0,
+        provenance_receipt_count=len(receipt_events),
+        correction_note_ids=summary.correction_note_ids,
+        queue_item_ids=summary.queue_item_ids,
+        related_item_ids=summary.related_item_ids,
+        correction_kinds=summary.correction_kinds,
+        summary_ids=summary_ids,
+        receipt_ids=receipt_ids,
+        receipt_event_ids=tuple(event.event_id for event in receipt_events),
+        receipt_event_hashes=tuple(event.event_hash for event in receipt_events),
+        automated_source_author_detection=False,
+        automatic_publisher_framing_analysis=False,
+        automatic_correction=False,
+        automated_matching=False,
+        fingerprint_matching=False,
+        automatic_duplicate_detection=False,
+        automatic_classification=False,
+        sensitive_inference_prohibited=True,
+    )
+
+
+def manual_publisher_framing_correction_review_flow_summary_to_json(
+    summary: ManualPublisherFramingCorrectionReviewFlowSummary,
+) -> str:
+    return json.dumps(summary.to_dict(), indent=2, sort_keys=True)
+
+
+def build_manual_publisher_framing_correction_review_flow_summary_text(
+    summary: ManualPublisherFramingCorrectionReviewFlowSummary,
+) -> str:
+    return "\n".join(
+        [
+            "Manual publisher framing/source-author correction review flow summary",
+            f"Flow ID: {summary.flow_id}",
+            f"Status: {summary.status}",
+            f"Review status: {summary.review_status}",
+            f"Correction notes: {summary.correction_note_count}",
+            f"Review rows: {summary.review_row_count}",
+            f"Review summaries: {summary.review_summary_count}",
+            f"Provenance receipts: {summary.provenance_receipt_count}",
+            "Metadata only: yes",
+            "Manual/operator supplied: yes",
+            "Automated source-author detection: false",
+            "Automated publisher-framing analysis: false",
+            "Auto-correction flag: false",
+            "Automated media matching: false",
+            "Fingerprint comparison: false",
+            "Automatic duplicate detection: false",
+            "Auto-classify flag: false",
+            "Sensitive inference prohibited: true",
+            "Runtime/completion claim flags: false",
+        ]
+    )
 
 
 def manual_media_source_chain_link_id(link: ManualMediaSourceChainLink) -> str:
