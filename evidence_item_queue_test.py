@@ -14,6 +14,8 @@ from evidence_item_queue import (
     build_closed_loop_source_chain_review_summary_text,
     build_manual_media_source_chain_review_summary,
     build_manual_media_source_chain_review_summary_text,
+    build_manual_media_source_chain_review_flow_summary,
+    build_manual_media_source_chain_review_flow_summary_text,
     build_source_role_review_ui_summary,
     build_source_role_review_flow_summary,
     build_source_role_review_flow_summary_text,
@@ -21,6 +23,7 @@ from evidence_item_queue import (
     manual_media_source_chain_links_to_ui_rows,
     manual_media_source_chain_links_to_action_log_events,
     manual_media_source_chain_receipt_id,
+    manual_media_source_chain_review_flow_summary_to_json,
     manual_media_source_chain_review_summary_to_json,
     queue_source_role_reviews_to_action_log_events,
     queue_source_role_reviews_to_claim_notes,
@@ -639,6 +642,151 @@ def run_self_test() -> None:
             assert expected_message in str(exc)
         else:
             raise AssertionError(f"{expected_message} should be required")
+    media_source_chain_flow_summary = build_manual_media_source_chain_review_flow_summary(
+        queue,
+        session_id="manual-media-source-chain-session",
+        timestamp_utc="2026-08-06T12:10:00Z",
+        previous_event_hash="previous-media-chain-hash",
+        actor_id="app",
+        app_version="test",
+    )
+    repeated_media_source_chain_flow_summary = (
+        build_manual_media_source_chain_review_flow_summary(
+            queue,
+            session_id="manual-media-source-chain-session",
+            timestamp_utc="2026-08-06T12:10:00Z",
+            previous_event_hash="previous-media-chain-hash",
+            actor_id="app",
+            app_version="test",
+        )
+    )
+    media_source_chain_flow_receipt_events = (
+        manual_media_source_chain_links_to_action_log_events(
+            queue,
+            session_id="manual-media-source-chain-session",
+            timestamp_utc="2026-08-06T12:10:00Z",
+            previous_event_hash="previous-media-chain-hash",
+            actor_id="app",
+            app_version="test",
+        )
+    )
+    assert (
+        media_source_chain_flow_summary.to_dict()
+        == repeated_media_source_chain_flow_summary.to_dict()
+    )
+    media_source_chain_flow_dict = media_source_chain_flow_summary.to_dict()
+    assert media_source_chain_flow_dict["flow_id"].startswith(
+        "manual_media_source_chain_flow_"
+    )
+    assert media_source_chain_flow_dict["status"] == "USER_REVIEW_REQUIRED"
+    assert media_source_chain_flow_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert media_source_chain_flow_dict["metadata_only"] is True
+    assert media_source_chain_flow_dict["manual_operator_supplied"] is True
+    assert media_source_chain_flow_dict["user_review_required"] is True
+    assert media_source_chain_flow_dict["manual_link_count"] == 4
+    assert media_source_chain_flow_dict["review_row_count"] == len(
+        media_source_chain_rows
+    )
+    assert media_source_chain_flow_dict["review_summary_count"] == 1
+    assert media_source_chain_flow_dict["provenance_receipt_count"] == 1
+    assert (
+        media_source_chain_flow_dict["manual_link_ids"]
+        == list(media_source_chain_summary.manual_link_ids)
+    )
+    assert media_source_chain_flow_dict["source_item_ids"] == [
+        "media-1",
+        "media-2",
+        "media-3",
+        "source-1",
+    ]
+    assert media_source_chain_flow_dict["target_item_ids"] == [
+        "media-2",
+        "source-1",
+        "media-4",
+        "media-1",
+    ]
+    assert media_source_chain_flow_dict["relation_kinds"] == [
+        "SAME_MEDIA",
+        "REPOST",
+        "OTHER",
+        "DERIVATIVE",
+    ]
+    assert media_source_chain_flow_dict["directions"] == [
+        "RELATED_UNDIRECTED",
+        "DERIVATIVE_TO_SOURCE",
+        "UNKNOWN",
+        "SOURCE_TO_DERIVATIVE",
+    ]
+    assert media_source_chain_flow_dict["summary_ids"] == [
+        media_source_chain_summary.summary_id
+    ]
+    assert media_source_chain_flow_dict["receipt_ids"] == [
+        media_source_chain_receipt_id
+    ]
+    assert media_source_chain_flow_dict["receipt_event_ids"] == [
+        media_source_chain_flow_receipt_events[0].event_id
+    ]
+    assert media_source_chain_flow_dict["receipt_event_hashes"] == [
+        media_source_chain_flow_receipt_events[0].event_hash
+    ]
+    assert media_source_chain_flow_dict["automated_matching"] is False
+    assert media_source_chain_flow_dict["fingerprint_matching"] is False
+    assert media_source_chain_flow_dict["automatic_duplicate_detection"] is False
+    assert media_source_chain_flow_dict["automatic_classification"] is False
+    assert media_source_chain_flow_dict["sensitive_inference_prohibited"] is True
+    assert media_source_chain_flow_dict["raw_media_payload_included"] is False
+    assert media_source_chain_flow_dict["raw_evidence_payload_included"] is False
+    assert media_source_chain_flow_dict["full_local_path_included"] is False
+    assert media_source_chain_flow_dict["runtime_or_completion_claimed"] is False
+    assert media_source_chain_flow_dict["final_evidence_state_recorded"] is False
+    assert media_source_chain_flow_dict["completed_evidence_claimed"] is False
+    assert media_source_chain_flow_dict["verified_evidence_claimed"] is False
+    rendered_media_source_chain_flow = (
+        manual_media_source_chain_review_flow_summary_to_json(
+            media_source_chain_flow_summary
+        )
+    )
+    rendered_media_source_chain_flow_text = (
+        build_manual_media_source_chain_review_flow_summary_text(
+            media_source_chain_flow_summary
+        )
+    )
+    assert (
+        "Manual media source-chain review flow summary"
+        in rendered_media_source_chain_flow_text
+    )
+    assert "Manual links: 4" in rendered_media_source_chain_flow_text
+    assert "Review rows: 4" in rendered_media_source_chain_flow_text
+    assert "Review summaries: 1" in rendered_media_source_chain_flow_text
+    assert "Provenance receipts: 1" in rendered_media_source_chain_flow_text
+    assert "Metadata only: yes" in rendered_media_source_chain_flow_text
+    assert "Manual/operator supplied: yes" in rendered_media_source_chain_flow_text
+    for unsafe_text in (
+        "RAW MEDIA PAYLOAD",
+        "RAW EVIDENCE PAYLOAD",
+        r"T:\Evidence",
+        "completed evidence",
+        "verified evidence",
+        "automatic match",
+        "fingerprint match",
+        "duplicate detected",
+        "classified",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_media_source_chain_flow
+        assert unsafe_text not in rendered_media_source_chain_flow_text
     claim_notes = queue_source_role_reviews_to_claim_notes(queue)
     assert len(claim_notes) == 2
     claim_note_dict = claim_notes[0].to_dict()
@@ -973,6 +1121,35 @@ def run_self_test() -> None:
     assert empty_media_source_chain_dict["automatic_classification"] is False
     assert empty_media_source_chain_dict["sensitive_inference_prohibited"] is True
     assert empty_media_source_chain_dict["completed_evidence_claimed"] is False
+    empty_media_source_chain_flow_summary = (
+        build_manual_media_source_chain_review_flow_summary(
+            EvidenceItemQueue(items=(source_url, local_media)),
+            session_id="empty-manual-media-source-chain-session",
+            timestamp_utc="2026-08-06T12:10:00Z",
+        )
+    )
+    empty_media_source_chain_flow_dict = empty_media_source_chain_flow_summary.to_dict()
+    assert (
+        empty_media_source_chain_flow_dict["status"]
+        == "NO_MANUAL_MEDIA_SOURCE_CHAIN_LINKS"
+    )
+    assert empty_media_source_chain_flow_dict["manual_link_count"] == 0
+    assert empty_media_source_chain_flow_dict["review_row_count"] == 0
+    assert empty_media_source_chain_flow_dict["review_summary_count"] == 0
+    assert empty_media_source_chain_flow_dict["provenance_receipt_count"] == 0
+    assert empty_media_source_chain_flow_dict["manual_link_ids"] == []
+    assert empty_media_source_chain_flow_dict["receipt_ids"] == []
+    assert empty_media_source_chain_flow_dict["metadata_only"] is True
+    assert empty_media_source_chain_flow_dict["manual_operator_supplied"] is True
+    assert empty_media_source_chain_flow_dict["user_review_required"] is True
+    assert empty_media_source_chain_flow_dict["automated_matching"] is False
+    assert empty_media_source_chain_flow_dict["fingerprint_matching"] is False
+    assert empty_media_source_chain_flow_dict["automatic_duplicate_detection"] is False
+    assert empty_media_source_chain_flow_dict["automatic_classification"] is False
+    assert empty_media_source_chain_flow_dict["sensitive_inference_prohibited"] is True
+    assert empty_media_source_chain_flow_dict["runtime_or_completion_claimed"] is False
+    assert empty_media_source_chain_flow_dict["final_evidence_state_recorded"] is False
+    assert empty_media_source_chain_flow_dict["completed_evidence_claimed"] is False
 
     manifest = TotalExportManifest(
         package_id="queue-source-role-review",

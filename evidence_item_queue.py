@@ -374,6 +374,48 @@ class ManualMediaSourceChainReviewSummary:
 
 
 @dataclass(frozen=True)
+class ManualMediaSourceChainReviewFlowSummary:
+    flow_id: str
+    status: str
+    review_status: str = "USER_REVIEW_REQUIRED"
+    metadata_only: bool = True
+    manual_operator_supplied: bool = True
+    user_review_required: bool = True
+    manual_link_count: int = 0
+    review_row_count: int = 0
+    review_summary_count: int = 0
+    provenance_receipt_count: int = 0
+    manual_link_ids: tuple[str, ...] = ()
+    source_item_ids: tuple[str, ...] = ()
+    target_item_ids: tuple[str, ...] = ()
+    relation_kinds: tuple[str, ...] = ()
+    directions: tuple[str, ...] = ()
+    summary_ids: tuple[str, ...] = ()
+    receipt_ids: tuple[str, ...] = ()
+    receipt_event_ids: tuple[str, ...] = ()
+    receipt_event_hashes: tuple[str, ...] = ()
+    automated_matching: bool = False
+    fingerprint_matching: bool = False
+    automatic_duplicate_detection: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    raw_media_payload_included: bool = False
+    raw_evidence_payload_included: bool = False
+    full_local_path_included: bool = False
+    runtime_or_completion_claimed: bool = False
+    final_evidence_state_recorded: bool = False
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    note: str = (
+        "Manual media source-chain review metadata only; no final-evidence "
+        "state is recorded."
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceQueueItem:
     item_id: str
     item_role: EvidenceItemRole
@@ -667,6 +709,108 @@ def manual_media_source_chain_links_to_action_log_events(
         app_version=app_version,
     )
     return (event,)
+
+
+def manual_media_source_chain_review_flow_id(
+    *,
+    rows: tuple[ManualMediaSourceChainReviewRow, ...],
+    summary_ids: tuple[str, ...],
+    receipt_ids: tuple[str, ...],
+) -> str:
+    payload = {
+        "receipt_ids": list(receipt_ids),
+        "review_flow_kind": "manual_media_source_chain_links",
+        "rows": list(_safe_manual_media_source_chain_receipt_rows(rows)),
+        "summary_ids": list(summary_ids),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "manual_media_source_chain_flow_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def build_manual_media_source_chain_review_flow_summary(
+    queue: EvidenceItemQueue,
+    *,
+    session_id: str,
+    timestamp_utc: str,
+    previous_event_hash: str = "",
+    actor_id: str = "",
+    app_version: str = "",
+) -> ManualMediaSourceChainReviewFlowSummary:
+    rows = manual_media_source_chain_links_to_ui_rows(queue)
+    summary = build_manual_media_source_chain_review_summary(queue)
+    receipt_events = manual_media_source_chain_links_to_action_log_events(
+        queue,
+        session_id=session_id,
+        timestamp_utc=timestamp_utc,
+        previous_event_hash=previous_event_hash,
+        actor_id=actor_id,
+        app_version=app_version,
+    )
+    receipt_ids = tuple(event.target_id for event in receipt_events)
+    summary_ids = (summary.summary_id,) if rows else ()
+    return ManualMediaSourceChainReviewFlowSummary(
+        flow_id=manual_media_source_chain_review_flow_id(
+            rows=rows,
+            summary_ids=summary_ids,
+            receipt_ids=receipt_ids,
+        ),
+        status=(
+            "USER_REVIEW_REQUIRED"
+            if rows
+            else "NO_MANUAL_MEDIA_SOURCE_CHAIN_LINKS"
+        ),
+        manual_link_count=len(rows),
+        review_row_count=len(rows),
+        review_summary_count=1 if rows else 0,
+        provenance_receipt_count=len(receipt_events),
+        manual_link_ids=summary.manual_link_ids,
+        source_item_ids=summary.source_item_ids,
+        target_item_ids=summary.target_item_ids,
+        relation_kinds=summary.relation_kinds,
+        directions=summary.directions,
+        summary_ids=summary_ids,
+        receipt_ids=receipt_ids,
+        receipt_event_ids=tuple(event.event_id for event in receipt_events),
+        receipt_event_hashes=tuple(event.event_hash for event in receipt_events),
+        automated_matching=False,
+        fingerprint_matching=False,
+        automatic_duplicate_detection=False,
+        automatic_classification=False,
+        sensitive_inference_prohibited=True,
+    )
+
+
+def manual_media_source_chain_review_flow_summary_to_json(
+    summary: ManualMediaSourceChainReviewFlowSummary,
+) -> str:
+    return json.dumps(summary.to_dict(), indent=2, sort_keys=True)
+
+
+def build_manual_media_source_chain_review_flow_summary_text(
+    summary: ManualMediaSourceChainReviewFlowSummary,
+) -> str:
+    return "\n".join(
+        [
+            "Manual media source-chain review flow summary",
+            f"Flow ID: {summary.flow_id}",
+            f"Status: {summary.status}",
+            f"Review status: {summary.review_status}",
+            f"Manual links: {summary.manual_link_count}",
+            f"Review rows: {summary.review_row_count}",
+            f"Review summaries: {summary.review_summary_count}",
+            f"Provenance receipts: {summary.provenance_receipt_count}",
+            "Metadata only: yes",
+            "Manual/operator supplied: yes",
+            "Automated media matching: false",
+            "Fingerprint comparison: false",
+            "Automatic duplicate detection: false",
+            "Auto-classify flag: false",
+            "Sensitive inference prohibited: true",
+            "Runtime/completion claim flags: false",
+        ]
+    )
 
 
 def queue_source_role_reviews_to_claim_notes(

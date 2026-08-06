@@ -211,7 +211,7 @@ Planned fields:
 
 Current local implementation note:
 
-- `evidence_item_queue.py` now provides `ManualMediaSourceChainLink`, `manual_media_source_chain_links_to_ui_rows(...)`, `build_manual_media_source_chain_review_summary(...)`, JSON/text summary helpers, `manual_media_source_chain_receipt_id(...)`, and `manual_media_source_chain_links_to_action_log_events(...)` for deterministic manual/operator-supplied links between media/source queue items and action-log/provenance receipt projection.
+- `evidence_item_queue.py` now provides `ManualMediaSourceChainLink`, `manual_media_source_chain_links_to_ui_rows(...)`, `build_manual_media_source_chain_review_summary(...)`, JSON/text summary helpers, `manual_media_source_chain_receipt_id(...)`, `manual_media_source_chain_links_to_action_log_events(...)`, and `build_manual_media_source_chain_review_flow_summary(...)` for deterministic manual/operator-supplied links between media/source queue items, action-log/provenance receipt projection, and summary/counts-only end-to-end review-flow metadata.
 - This is metadata-only and USER_REVIEW_REQUIRED. It records relation kind and direction while keeping automated matching, fingerprint matching, automatic duplicate detection, automatic classification, sensitive inference, raw media/evidence payloads, full local paths, live/API/browser/archive/download/OCR claims, and completed-evidence claims false or absent.
 - Fingerprinting, automated media matching, duplicate detection, visible manual-link editing, and source-author correction workflow remain future work.
 
