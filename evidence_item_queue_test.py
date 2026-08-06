@@ -8,10 +8,13 @@ from evidence_item_queue import (
     EvidenceQueueItem,
     SourceRoleReviewMetadata,
     build_source_role_review_ui_summary,
+    queue_source_role_reviews_to_action_log_events,
     queue_source_role_reviews_to_claim_notes,
     queue_source_role_reviews_to_ui_rows,
+    source_role_review_receipt_id,
 )
 from evidence_schema import CurrentnessStatus, PrimarySourceStatus, SourceRole
+from capture_action_log import action_log_event_to_json
 from total_export_manifest import TotalExportManifest
 
 
@@ -340,6 +343,88 @@ def run_self_test() -> None:
         "WACZ",
     ):
         assert unsafe_text not in ui_summary
+
+    receipt_id = source_role_review_receipt_id(queue)
+    second_receipt_id = source_role_review_receipt_id(queue)
+    assert receipt_id == second_receipt_id
+    assert receipt_id.startswith("source_role_review_receipt_")
+    receipt_events = queue_source_role_reviews_to_action_log_events(
+        queue,
+        session_id="source-role-review-session",
+        timestamp_utc="2026-08-06T11:00:00Z",
+    )
+    repeated_receipt_events = queue_source_role_reviews_to_action_log_events(
+        queue,
+        session_id="source-role-review-session",
+        timestamp_utc="2026-08-06T11:00:00Z",
+    )
+    assert [event.to_dict() for event in receipt_events] == [
+        event.to_dict() for event in repeated_receipt_events
+    ]
+    assert len(receipt_events) == 1
+    receipt_dict = receipt_events[0].to_dict()
+    assert receipt_dict["action_type"] == "source_role_review_metadata_receipt"
+    assert receipt_dict["result"] == "USER_REVIEW_REQUIRED"
+    assert receipt_dict["target_id"] == receipt_id
+    receipt_summary = receipt_dict["request_summary"]
+    assert receipt_summary["metadata_only"] is True
+    assert receipt_summary["review_required"] is True
+    assert receipt_summary["automatic_classification"] is False
+    assert receipt_summary["sensitive_inference_prohibited"] is True
+    assert receipt_summary["claim_note_count"] == len(claim_notes)
+    assert receipt_summary["ui_row_count"] == len(ui_rows)
+    assert receipt_summary["source_role_review_row_count"] == 2
+    assert receipt_summary["safe_metadata_rows"][0]["queue_item_id"] == "source-review-1"
+    assert receipt_summary["safe_metadata_rows"][1]["queue_item_id"] == "source-review-2"
+    assert receipt_summary["safe_metadata_rows"][0]["source_role"] == "PRIMARY_ORIGINAL_AUTHORED"
+    assert receipt_summary["safe_metadata_rows"][1]["source_role"] == "TERTIARY_PROPAGATED_SOURCE"
+    assert receipt_summary["safe_metadata_rows"][1]["source_chain_gap"] is True
+    assert receipt_summary["safe_metadata_rows"][1]["closed_loop_reporting_flag"] is True
+
+    rendered_receipt = action_log_event_to_json(receipt_events[0])
+    for unsafe_text in (
+        "RAW EVIDENCE PAYLOAD",
+        "ANOTHER RAW CLAIM PAYLOAD",
+        r"T:\Evidence",
+        "completed evidence",
+        "verified evidence",
+        "automatic classification",
+        "classified",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_receipt
+    assert "No completed or verified evidence claim is made." not in rendered_receipt
+
+    assert (
+        queue_source_role_reviews_to_action_log_events(
+            EvidenceItemQueue(items=(source_url, local_media)),
+            session_id="empty-source-role-review-session",
+            timestamp_utc="2026-08-06T11:00:00Z",
+        )
+        == ()
+    )
+    for kwargs, expected_message in (
+        ({"session_id": "", "timestamp_utc": "2026-08-06T11:00:00Z"}, "session_id"),
+        ({"session_id": "source-role-review-session", "timestamp_utc": ""}, "timestamp_utc"),
+    ):
+        try:
+            queue_source_role_reviews_to_action_log_events(queue, **kwargs)
+        except ValueError as exc:
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{expected_message} should be required")
 
     manifest = TotalExportManifest(
         package_id="queue-source-role-review",

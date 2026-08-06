@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from capture_action_log import (
+    ACTOR_TYPE_APPLICATION,
+    CaptureActionLogEvent,
+    build_action_log_event,
+)
 from evidence_schema import (
     ClaimEvidenceNote,
     CurrentnessStatus,
@@ -293,3 +300,96 @@ def build_source_role_review_ui_summary(queue: EvidenceItemQueue) -> str:
             "claim_text_display=not shown"
         )
     return "\n".join(lines)
+
+
+def _safe_source_role_review_receipt_rows(
+    rows: tuple[SourceRoleReviewUIRow, ...],
+) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {
+            "automatic_classification": row.automatic_classification,
+            "claim_text_recorded": row.claim_text_recorded,
+            "claim_type": row.claim_type,
+            "closed_loop_reporting_flag": row.closed_loop_reporting_flag,
+            "currentness_status": row.currentness_status.value,
+            "evidence_basis_recorded": row.evidence_basis_recorded,
+            "primary_source_status": row.primary_source_status.value,
+            "queue_item_id": row.queue_item_id,
+            "queue_item_role": row.queue_item_role,
+            "review_index": row.review_index,
+            "review_required": row.review_required,
+            "review_status": row.review_status,
+            "reviewer_notes_recorded": row.reviewer_notes_recorded,
+            "sensitive_inference_prohibited": row.sensitive_inference_prohibited,
+            "source_chain_gap": row.source_chain_gap,
+            "source_role": row.source_role.value,
+            "source_role_limitation_recorded": bool(row.source_role_limitation),
+            "source_role_scope_recorded": bool(row.source_role_scope),
+            "user_confirmed": row.user_confirmed,
+        }
+        for row in rows
+    )
+
+
+def source_role_review_receipt_id(queue: EvidenceItemQueue) -> str:
+    rows = queue_source_role_reviews_to_ui_rows(queue)
+    payload = {
+        "receipt_kind": "source_role_review_metadata",
+        "rows": list(_safe_source_role_review_receipt_rows(rows)),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "source_role_review_receipt_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def queue_source_role_reviews_to_action_log_events(
+    queue: EvidenceItemQueue,
+    *,
+    session_id: str,
+    timestamp_utc: str,
+    previous_event_hash: str = "",
+    actor_id: str = "",
+    app_version: str = "",
+) -> tuple[CaptureActionLogEvent, ...]:
+    if not session_id:
+        raise ValueError("session_id is required for source-role review receipts")
+    if not timestamp_utc:
+        raise ValueError("timestamp_utc is required for deterministic source-role review receipts")
+
+    rows = queue_source_role_reviews_to_ui_rows(queue)
+    if not rows:
+        return ()
+
+    claim_notes = queue_source_role_reviews_to_claim_notes(queue)
+    receipt_id = source_role_review_receipt_id(queue)
+    request_summary = {
+        "automatic_classification": False,
+        "claim_note_count": len(claim_notes),
+        "metadata_only": True,
+        "receipt_id": receipt_id,
+        "review_required": True,
+        "review_status": "USER_REVIEW_REQUIRED",
+        "runtime_or_completion_claimed": False,
+        "safe_metadata_rows": list(_safe_source_role_review_receipt_rows(rows)),
+        "sensitive_inference_prohibited": True,
+        "source_role_review_row_count": len(rows),
+        "ui_row_count": len(rows),
+    }
+    event = build_action_log_event(
+        session_id=session_id,
+        actor_type=ACTOR_TYPE_APPLICATION,
+        actor_id=actor_id,
+        action_type="source_role_review_metadata_receipt",
+        result="USER_REVIEW_REQUIRED",
+        timestamp_utc=timestamp_utc,
+        previous_event_hash=previous_event_hash,
+        target_id=receipt_id,
+        request_summary=request_summary,
+        warnings=(
+            "Metadata-only source-role review receipt; manual review required.",
+            "Review-only metadata; no final-evidence state is recorded.",
+        ),
+        app_version=app_version,
+    )
+    return (event,)
