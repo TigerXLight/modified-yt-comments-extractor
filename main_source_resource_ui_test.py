@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 import main
+from capture_twitter_exporter_review_flow import twitter_exporter_review_flow_to_json
 from core.settings import AppSettings, SettingsManager
 from main import App
 from source_resource_state import (
@@ -230,8 +231,10 @@ def test_source_url_section_layout_has_no_main_card_updates_and_has_required_con
     assert "Submit" not in source
     assert 'text="Twitter/X Local Export"' in source
     assert 'text="Add Review Draft"' in source
+    assert 'text="Review Flow Summary"' in source
     assert "import_twitter_exporter_local_export_clicked" in source
     assert "queue_twitter_exporter_review_draft_clicked" in source
+    assert "review_twitter_exporter_flow_summary_clicked" in source
 
 
 def test_source_row_layout_uses_compact_resource_icons_and_remove_button() -> None:
@@ -511,6 +514,157 @@ def test_twitter_exporter_queue_review_draft_action_handles_missing_prior_import
     assert "last_twitter_exporter_queue_review_draft" not in app.__dict__
 
 
+def test_twitter_exporter_review_flow_summary_action_is_counts_only() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        first = root / "tweet.json"
+        second = root / "tweet 2.jsonl"
+        first.write_text(
+            json.dumps([{"id": "2001", "text": "DO NOT DISPLAY FIRST BODY"}]),
+            encoding="utf-8",
+        )
+        second.write_text(
+            json.dumps({"id": "2002", "text": "DO NOT DISPLAY SECOND BODY"}) + "\n",
+            encoding="utf-8",
+        )
+        app = _make_twitter_import_app()
+        fake_messagebox = FakeMessageBox()
+        original_messagebox = main.messagebox
+        main.messagebox = fake_messagebox
+        try:
+            flow = App._run_twitter_exporter_review_flow_summary_action(
+                app,
+                (str(first), str(second)),
+            )
+        finally:
+            main.messagebox = original_messagebox
+
+    assert flow is app.last_twitter_exporter_review_flow
+    assert app.last_twitter_exporter_import_review_state is flow.source_review_state
+    assert app.last_twitter_exporter_queue_review_draft is flow.queue_draft
+    assert flow.review_status == "USER_REVIEW_REQUIRED"
+    assert flow.provenance_status == "USER_SUPPLIED_LOCAL_EXPORT"
+    assert flow.source_review_state.input_count == 2
+    assert flow.queue_draft.eligible_input_count == 2
+    assert len(flow.manifest_report.entries) == 2
+    assert len(flow.action_receipt.file_entries) == 2
+    assert app.url_status.config["text"].startswith("Twitter/X review flow summary:")
+    assert "USER_REVIEW_REQUIRED / USER_SUPPLIED_LOCAL_EXPORT" in app.url_status.config["text"]
+    shown_text = fake_messagebox.infos[0][1]
+    combined_log = "\n".join(message for message, _level in app.log_messages)
+    combined_state = twitter_exporter_review_flow_to_json(flow)
+    for safe_text in (shown_text, combined_state):
+        assert "tweet.json" in safe_text
+        assert "tweet 2.jsonl" in safe_text
+        assert "USER_REVIEW_REQUIRED" in safe_text
+        assert "USER_SUPPLIED_LOCAL_EXPORT" in safe_text
+        assert "DO NOT DISPLAY FIRST BODY" not in safe_text
+        assert "DO NOT DISPLAY SECOND BODY" not in safe_text
+        assert str(root) not in safe_text
+    assert "DO NOT DISPLAY FIRST BODY" not in combined_log
+    assert "DO NOT DISPLAY SECOND BODY" not in combined_log
+    assert str(root) not in combined_log
+    assert "Summary/counts only" in shown_text
+    assert "completed-evidence claims: none" in shown_text
+    for claim in (
+        "api_capture_claimed",
+        "archive_claimed",
+        "automatic_classification_claimed",
+        "browser_automation_claimed",
+        "completed_evidence_claimed",
+        "downloaded_media_claimed",
+        "live_verification_claimed",
+        "screenshot_ocr_claimed",
+        "warc_wacz_claimed",
+    ):
+        assert f'"{claim}": false' in combined_state
+
+
+def test_twitter_exporter_review_flow_summary_action_is_deterministic_for_batches() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        first = root / "one.csv"
+        second = root / "two.tsv"
+        first.write_text("id,text\n3001,DO NOT DISPLAY CSV BODY\n", encoding="utf-8")
+        second.write_text("id\ttext\n3002\tDO NOT DISPLAY TSV BODY\n", encoding="utf-8")
+        app = _make_twitter_import_app()
+        fake_messagebox = FakeMessageBox()
+        original_messagebox = main.messagebox
+        main.messagebox = fake_messagebox
+        try:
+            first_flow = App._run_twitter_exporter_review_flow_summary_action(
+                app,
+                (str(first), str(second)),
+            )
+            second_flow = App._run_twitter_exporter_review_flow_summary_action(
+                app,
+                (str(first), str(second)),
+            )
+        finally:
+            main.messagebox = original_messagebox
+
+    first_json = twitter_exporter_review_flow_to_json(first_flow)
+    second_json = twitter_exporter_review_flow_to_json(second_flow)
+    assert first_json == second_json
+    assert "DO NOT DISPLAY CSV BODY" not in first_json
+    assert "DO NOT DISPLAY TSV BODY" not in first_json
+    assert str(root) not in first_json
+    assert first_flow.file_summaries[0].input_file_name == "one.csv"
+    assert first_flow.file_summaries[1].input_file_name == "two.tsv"
+
+
+def test_twitter_exporter_review_flow_summary_action_handles_no_selection() -> None:
+    app = _make_twitter_import_app()
+    fake_messagebox = FakeMessageBox()
+    original_messagebox = main.messagebox
+    main.messagebox = fake_messagebox
+    try:
+        flow = App._run_twitter_exporter_review_flow_summary_action(app, ())
+    finally:
+        main.messagebox = original_messagebox
+
+    assert flow is None
+    assert "no local export files selected" in app.url_status.config["text"]
+    assert "no local export files selected" in fake_messagebox.infos[0][1]
+    assert "Network actions performed: none" in app.log_messages[0][0]
+    assert "last_twitter_exporter_review_flow" not in app.__dict__
+    assert "last_twitter_exporter_queue_review_draft" not in app.__dict__
+
+
+def test_twitter_exporter_review_flow_summary_action_reports_invalid_files_safely() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        unsupported = root / "raw.bin"
+        unsupported.write_bytes(b"\x00\x01")
+        missing = root / "missing.json"
+        app = _make_twitter_import_app()
+        fake_messagebox = FakeMessageBox()
+        original_messagebox = main.messagebox
+        main.messagebox = fake_messagebox
+        try:
+            flow = App._run_twitter_exporter_review_flow_summary_action(
+                app,
+                (str(unsupported), str(missing)),
+            )
+        finally:
+            main.messagebox = original_messagebox
+
+    shown_text = fake_messagebox.infos[0][1]
+    combined_log = "\n".join(message for message, _level in app.log_messages)
+    combined_state = twitter_exporter_review_flow_to_json(flow)
+    assert flow.status == "REVIEW_ERROR"
+    assert flow.source_review_state.total_error_count == 2
+    assert "raw.bin" in shown_text
+    assert "missing.json" in shown_text
+    assert "Unsupported Twitter exporter import file type" in shown_text
+    assert "does not exist" in shown_text
+    assert str(root) not in shown_text
+    assert str(root) not in combined_log
+    assert str(root) not in combined_state
+    assert "completed-evidence claims: none" in shown_text
+    assert app.url_status.config["text_color"] == main.COLORS["warning"]
+
+
 def test_archivebox_icon_and_service_order_are_local_only() -> None:
     source = inspect.getsource(App._refresh_source_resource_rows)
     loader = inspect.getsource(App._ensure_archivebox_icon)
@@ -586,6 +740,10 @@ def run_self_test() -> None:
     test_twitter_exporter_import_review_action_reports_invalid_files_safely()
     test_twitter_exporter_queue_review_draft_action_uses_last_summary_only_state()
     test_twitter_exporter_queue_review_draft_action_handles_missing_prior_import()
+    test_twitter_exporter_review_flow_summary_action_is_counts_only()
+    test_twitter_exporter_review_flow_summary_action_is_deterministic_for_batches()
+    test_twitter_exporter_review_flow_summary_action_handles_no_selection()
+    test_twitter_exporter_review_flow_summary_action_reports_invalid_files_safely()
     test_archivebox_icon_and_service_order_are_local_only()
     test_discussion_layout_uses_webpage_parent_and_child_rows()
     test_main_blank_wheel_router_targets_main_without_stealing_text_scroll()

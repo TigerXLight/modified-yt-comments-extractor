@@ -143,6 +143,10 @@ from capture_twitter_exporter_source_import import (
     build_twitter_exporter_source_row_summary,
     preview_twitter_exporter_local_import_source,
 )
+from capture_twitter_exporter_review_flow import (
+    build_twitter_exporter_local_review_flow,
+    build_twitter_exporter_review_flow_summary,
+)
 from source_resource_state import (
     ARCHIVE_SERVICE_ARCHIVEBOX,
     RESOURCE_KIND_IMAGE,
@@ -2927,6 +2931,19 @@ class App(ctk.CTk):
             corner_radius=8,
         )
         self.twitter_exporter_queue_draft_button.pack(anchor="e", pady=(4, 0))
+        self.twitter_exporter_review_flow_button = ctk.CTkButton(
+            local_import_column,
+            text="Review Flow Summary",
+            command=self.review_twitter_exporter_flow_summary_clicked,
+            width=178,
+            height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=8,
+        )
+        self.twitter_exporter_review_flow_button.pack(anchor="e", pady=(4, 0))
 
         self.cancel_button = ctk.CTkButton(
             action_frame,
@@ -4592,6 +4609,13 @@ class App(ctk.CTk):
     def queue_twitter_exporter_review_draft_clicked(self) -> None:
         self._run_twitter_exporter_queue_review_draft_action()
 
+    def review_twitter_exporter_flow_summary_clicked(self) -> None:
+        files = filedialog.askopenfilenames(
+            title="Twitter/X Review Flow Summary",
+            filetypes=self._twitter_exporter_local_filetypes(),
+        )
+        self._run_twitter_exporter_review_flow_summary_action(tuple(files))
+
     def _run_twitter_exporter_local_import_review_action(
         self,
         input_paths: Sequence[str],
@@ -4658,6 +4682,53 @@ class App(ctk.CTk):
         except Exception:
             logger.debug("Could not show Twitter/X queue draft summary.", exc_info=True)
         return draft
+
+    def _run_twitter_exporter_review_flow_summary_action(
+        self,
+        input_paths: Sequence[str],
+    ) -> Any:
+        if not input_paths:
+            status = "Twitter/X review flow skipped: no local export files selected."
+            if hasattr(self, "url_status"):
+                self.url_status.configure(text=status, text_color=COLORS["warning"])
+            self.log_message(f"{status} Network actions performed: none.", "warning")
+            try:
+                messagebox.showinfo("Twitter/X Review Flow Summary", status)
+            except Exception:
+                logger.debug("Could not show Twitter/X review flow missing-input summary.", exc_info=True)
+            return None
+
+        flow = build_twitter_exporter_local_review_flow(
+            input_paths,
+            session_id="ui-twitter-exporter-review-flow",
+            timestamp_utc="1970-01-01T00:00:00Z",
+            actor_id="ui",
+            app_version=APP_VERSION,
+        )
+        self.last_twitter_exporter_review_flow = flow
+        self.last_twitter_exporter_import_review_state = flow.source_review_state
+        self.last_twitter_exporter_queue_review_draft = flow.queue_draft
+        summary = build_twitter_exporter_review_flow_summary(flow)
+        status = (
+            "Twitter/X review flow summary: "
+            f"{flow.source_review_state.input_count} file(s), "
+            f"{flow.queue_draft.eligible_input_count} queue draft item(s), "
+            f"{len(flow.manifest_report.entries)} manifest/report item(s), "
+            f"{len(flow.action_receipt.file_entries)} receipt item(s). "
+            f"{flow.review_status} / {flow.provenance_status}."
+        )
+        status_color = COLORS["warning"] if flow.status != "USER_REVIEW_REQUIRED" else COLORS["success"]
+        if hasattr(self, "url_status"):
+            self.url_status.configure(text=status, text_color=status_color)
+        self.log_message(
+            f"{status} Summary/counts only; not live verified; not completed evidence.",
+            "warning" if flow.status != "USER_REVIEW_REQUIRED" else "success",
+        )
+        try:
+            messagebox.showinfo("Twitter/X Review Flow Summary", summary)
+        except Exception:
+            logger.debug("Could not show Twitter/X review flow summary.", exc_info=True)
+        return flow
 
     def _archive_status_color(self, color_name: str) -> str:
         return {
