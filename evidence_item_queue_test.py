@@ -29,7 +29,9 @@ from evidence_item_queue import (
     manual_media_source_chain_receipt_id,
     manual_media_source_chain_review_flow_summary_to_json,
     manual_media_source_chain_review_summary_to_json,
+    manual_publisher_framing_correction_receipt_id,
     manual_publisher_framing_correction_review_summary_to_json,
+    manual_publisher_framing_corrections_to_action_log_events,
     manual_publisher_framing_corrections_to_ui_rows,
     queue_source_role_reviews_to_action_log_events,
     queue_source_role_reviews_to_claim_notes,
@@ -721,6 +723,183 @@ def run_self_test() -> None:
     ):
         assert unsafe_text not in rendered_publisher_framing_summary
         assert unsafe_text not in rendered_publisher_framing_text
+
+    publisher_framing_receipt_id = manual_publisher_framing_correction_receipt_id(
+        queue
+    )
+    repeated_publisher_framing_receipt_id = (
+        manual_publisher_framing_correction_receipt_id(queue)
+    )
+    assert publisher_framing_receipt_id == repeated_publisher_framing_receipt_id
+    assert publisher_framing_receipt_id.startswith(
+        "manual_publisher_framing_receipt_"
+    )
+    publisher_framing_receipt_events = (
+        manual_publisher_framing_corrections_to_action_log_events(
+            queue,
+            session_id="manual-publisher-framing-session",
+            timestamp_utc="2026-08-06T12:20:00Z",
+        )
+    )
+    repeated_publisher_framing_receipt_events = (
+        manual_publisher_framing_corrections_to_action_log_events(
+            queue,
+            session_id="manual-publisher-framing-session",
+            timestamp_utc="2026-08-06T12:20:00Z",
+        )
+    )
+    assert [event.to_dict() for event in publisher_framing_receipt_events] == [
+        event.to_dict() for event in repeated_publisher_framing_receipt_events
+    ]
+    assert len(publisher_framing_receipt_events) == 1
+    publisher_framing_receipt_dict = publisher_framing_receipt_events[0].to_dict()
+    assert (
+        publisher_framing_receipt_dict["action_type"]
+        == "manual_publisher_framing_correction_review"
+    )
+    assert publisher_framing_receipt_dict["result"] == "USER_REVIEW_REQUIRED"
+    assert publisher_framing_receipt_dict["target_id"] == publisher_framing_receipt_id
+    assert publisher_framing_receipt_dict["artifact_ids"] == list(
+        publisher_framing_summary.correction_note_ids
+    )
+    publisher_framing_receipt_summary = publisher_framing_receipt_dict[
+        "request_summary"
+    ]
+    assert publisher_framing_receipt_summary["metadata_only"] is True
+    assert publisher_framing_receipt_summary["review_required"] is True
+    assert (
+        publisher_framing_receipt_summary["review_status"]
+        == "USER_REVIEW_REQUIRED"
+    )
+    assert publisher_framing_receipt_summary["manual_operator_supplied"] is True
+    assert publisher_framing_receipt_summary["correction_note_count"] == 2
+    assert (
+        publisher_framing_receipt_summary["automated_source_author_detection"]
+        is False
+    )
+    assert (
+        publisher_framing_receipt_summary["automatic_publisher_framing_analysis"]
+        is False
+    )
+    assert publisher_framing_receipt_summary["automatic_correction"] is False
+    assert publisher_framing_receipt_summary["automated_matching"] is False
+    assert publisher_framing_receipt_summary["fingerprint_matching"] is False
+    assert (
+        publisher_framing_receipt_summary["automatic_duplicate_detection"] is False
+    )
+    assert publisher_framing_receipt_summary["automatic_classification"] is False
+    assert (
+        publisher_framing_receipt_summary["sensitive_inference_prohibited"] is True
+    )
+    assert publisher_framing_receipt_summary["completed_evidence_claimed"] is False
+    assert publisher_framing_receipt_summary["verified_evidence_claimed"] is False
+    assert publisher_framing_receipt_summary["runtime_or_completion_claimed"] is False
+    assert (
+        publisher_framing_receipt_summary["safe_metadata_rows"][0][
+            "correction_kind"
+        ]
+        == "DISPUTED_FRAMING"
+    )
+    assert (
+        publisher_framing_receipt_summary["safe_metadata_rows"][1][
+            "correction_kind"
+        ]
+        == "SOURCE_AUTHOR_CORRECTION"
+    )
+    assert (
+        publisher_framing_receipt_summary["safe_metadata_rows"][0][
+            "automated_source_author_detection"
+        ]
+        is False
+    )
+    assert (
+        publisher_framing_receipt_summary["safe_metadata_rows"][0][
+            "automatic_publisher_framing_analysis"
+        ]
+        is False
+    )
+    single_publisher_framing_queue = EvidenceItemQueue(
+        items=(source_url, local_media),
+        manual_publisher_framing_corrections=(publisher_credit_correction,),
+    )
+    single_publisher_framing_events = (
+        manual_publisher_framing_corrections_to_action_log_events(
+            single_publisher_framing_queue,
+            session_id="single-manual-publisher-framing-session",
+            timestamp_utc="2026-08-06T12:21:00Z",
+        )
+    )
+    assert len(single_publisher_framing_events) == 1
+    single_publisher_framing_summary = single_publisher_framing_events[0].to_dict()[
+        "request_summary"
+    ]
+    assert single_publisher_framing_summary["correction_note_count"] == 1
+    assert single_publisher_framing_summary["safe_metadata_rows"][0][
+        "correction_kind"
+    ] == "SOURCE_AUTHOR_CORRECTION"
+    rendered_publisher_framing_receipt = action_log_event_to_json(
+        publisher_framing_receipt_events[0]
+    )
+    for unsafe_text in (
+        "RAW CORRECTION PAYLOAD",
+        "RAW MEDIA PAYLOAD",
+        "RAW EVIDENCE PAYLOAD",
+        r"T:\Evidence",
+        "completed evidence",
+        "verified evidence",
+        "automatic correction",
+        "automatic analysis",
+        "source-author detected",
+        "classified",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_publisher_framing_receipt
+
+    assert (
+        manual_publisher_framing_corrections_to_action_log_events(
+            EvidenceItemQueue(items=(source_url, local_media)),
+            session_id="empty-manual-publisher-framing-session",
+            timestamp_utc="2026-08-06T12:20:00Z",
+        )
+        == ()
+    )
+    for kwargs, expected_message in (
+        (
+            {
+                "session_id": "",
+                "timestamp_utc": "2026-08-06T12:20:00Z",
+            },
+            "session_id is required",
+        ),
+        (
+            {
+                "session_id": "manual-publisher-framing-session",
+                "timestamp_utc": "",
+            },
+            "timestamp_utc is required",
+        ),
+    ):
+        try:
+            manual_publisher_framing_corrections_to_action_log_events(
+                queue,
+                **kwargs,
+            )
+        except ValueError as exc:
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{expected_message} should be required")
 
     media_source_chain_receipt_id = manual_media_source_chain_receipt_id(queue)
     repeated_media_source_chain_receipt_id = manual_media_source_chain_receipt_id(queue)

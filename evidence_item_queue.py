@@ -794,6 +794,123 @@ def build_manual_publisher_framing_correction_review_summary_text(
     )
 
 
+def _safe_manual_publisher_framing_correction_receipt_rows(
+    rows: tuple[ManualPublisherFramingCorrectionReviewRow, ...],
+) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {
+            "automatic_classification": row.automatic_classification,
+            "automatic_correction": False,
+            "automatic_duplicate_detection": row.automatic_duplicate_detection,
+            "automatic_publisher_framing_analysis": False,
+            "automated_matching": row.automated_matching,
+            "automated_source_author_detection": (
+                row.automated_source_author_detection
+            ),
+            "competing_claim_recorded": row.competing_claim_recorded,
+            "correction_kind": row.correction_kind.value,
+            "correction_note_id": row.correction_note_id,
+            "correction_source_url_recorded": row.correction_source_url_recorded,
+            "correction_text_recorded": row.correction_text_recorded,
+            "disputed_framing_recorded": row.disputed_framing_recorded,
+            "fingerprint_matching": row.fingerprint_matching,
+            "metadata_only": row.metadata_only,
+            "note_category": row.note_category,
+            "provenance": row.provenance,
+            "queue_item_id": row.queue_item_id,
+            "related_item_id": row.related_item_id,
+            "review_status": row.review_status,
+            "sensitive_inference_prohibited": row.sensitive_inference_prohibited,
+            "source_author_name_recorded": row.source_author_name_recorded,
+            "source_author_url_recorded": row.source_author_url_recorded,
+            "user_review_required": row.user_review_required,
+        }
+        for row in rows
+    )
+
+
+def manual_publisher_framing_correction_receipt_id(
+    queue: EvidenceItemQueue,
+) -> str:
+    rows = manual_publisher_framing_corrections_to_ui_rows(queue)
+    payload = {
+        "receipt_kind": "manual_publisher_framing_correction_review",
+        "rows": list(_safe_manual_publisher_framing_correction_receipt_rows(rows)),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "manual_publisher_framing_receipt_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def manual_publisher_framing_corrections_to_action_log_events(
+    queue: EvidenceItemQueue,
+    *,
+    session_id: str,
+    timestamp_utc: str,
+    previous_event_hash: str = "",
+    actor_id: str = "",
+    app_version: str = "",
+) -> tuple[CaptureActionLogEvent, ...]:
+    if not session_id:
+        raise ValueError(
+            "session_id is required for manual publisher-framing correction receipts"
+        )
+    if not timestamp_utc:
+        raise ValueError(
+            "timestamp_utc is required for deterministic manual publisher-framing "
+            "correction receipts"
+        )
+
+    rows = manual_publisher_framing_corrections_to_ui_rows(queue)
+    if not rows:
+        return ()
+
+    summary = build_manual_publisher_framing_correction_review_summary(queue)
+    receipt_id = manual_publisher_framing_correction_receipt_id(queue)
+    request_summary = {
+        "automatic_classification": False,
+        "automatic_correction": False,
+        "automatic_duplicate_detection": False,
+        "automatic_publisher_framing_analysis": False,
+        "automated_matching": False,
+        "automated_source_author_detection": False,
+        "completed_evidence_claimed": False,
+        "correction_note_count": len(rows),
+        "fingerprint_matching": False,
+        "manual_operator_supplied": True,
+        "metadata_only": True,
+        "receipt_id": receipt_id,
+        "review_required": True,
+        "review_status": "USER_REVIEW_REQUIRED",
+        "runtime_or_completion_claimed": False,
+        "safe_metadata_rows": list(
+            _safe_manual_publisher_framing_correction_receipt_rows(rows)
+        ),
+        "sensitive_inference_prohibited": True,
+        "summary_id": summary.summary_id,
+        "verified_evidence_claimed": False,
+    }
+    event = build_action_log_event(
+        session_id=session_id,
+        actor_type=ACTOR_TYPE_APPLICATION,
+        actor_id=actor_id,
+        action_type="manual_publisher_framing_correction_review",
+        result="USER_REVIEW_REQUIRED",
+        timestamp_utc=timestamp_utc,
+        previous_event_hash=previous_event_hash,
+        target_id=receipt_id,
+        request_summary=request_summary,
+        artifact_ids=summary.correction_note_ids,
+        warnings=(
+            "Manual publisher-framing/source-author correction metadata; manual review required.",
+            "Review-only metadata; no final-evidence state is recorded.",
+        ),
+        app_version=app_version,
+    )
+    return (event,)
+
+
 def manual_media_source_chain_link_id(link: ManualMediaSourceChainLink) -> str:
     payload = {
         "created_at_utc": link.created_at_utc,
