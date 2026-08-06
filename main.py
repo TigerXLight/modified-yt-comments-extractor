@@ -5172,6 +5172,26 @@ class App(ctk.CTk):
         if label is not None and hasattr(label, "configure"):
             label.configure(text=text, text_color=color_by_level.get(level, COLORS["text_muted"]))
 
+    def save_last_source_evidence_workflow_review_bundle(self, output_directory: str) -> Any:
+        """Save the latest Source Evidence review metadata bundle to a chosen folder."""
+        from source_evidence_workflow_store import write_source_evidence_workflow_review_bundle
+
+        workflow_state = getattr(self, "last_source_evidence_workflow_state", None)
+        if workflow_state is None:
+            raise ValueError("No Source Evidence workflow state is available to save")
+        result = write_source_evidence_workflow_review_bundle(
+            workflow_state,
+            output_directory,
+        )
+        self.last_source_evidence_workflow_review_bundle = result
+        self.log_message(
+            "Source evidence review bundle saved: "
+            f"{result.file_count} metadata file(s), "
+            "review-required and execution-gated.",
+            "success",
+        )
+        return result
+
     def _record_operational_capture_review_metadata(self, plan: Any) -> Any:
         """Build app-facing review/export state for an execution-gated source plan."""
         try:

@@ -64,6 +64,7 @@ def build_source_evidence_review_manifest(
     execution_gate_plan: ExecutionGatePlan | None = None,
     reference_summary: ReferencePackIntakeSummary | None = None,
     queue_review_store_document: EvidenceItemQueueReviewStoreDocument | Mapping[str, Any] | None = None,
+    workflow_state_metadata: Mapping[str, Any] | None = None,
     app_version: str = "",
 ) -> TotalExportManifest:
     assets: list[ExportAsset] = []
@@ -143,6 +144,18 @@ def build_source_evidence_review_manifest(
         )
         capture_options.append("Evidence Item Queue review store metadata")
 
+    if workflow_state_metadata is not None:
+        workflow_metadata = _value_for_dict(workflow_state_metadata)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_RAW_SIDECAR,
+                description="Source Evidence workflow state metadata bundle sidecar.",
+                metadata=workflow_metadata,
+                created_at_utc=created_at_utc,
+            )
+        )
+        capture_options.append("Source Evidence workflow state metadata")
+
     notes = "\n".join(
         [
             "Source evidence review manifest metadata only.",
@@ -160,6 +173,46 @@ def build_source_evidence_review_manifest(
         archive_results=archive_results,
         notes=notes,
         app_version=app_version,
+    )
+
+
+def build_source_evidence_review_manifest_with_workflow_state(
+    manifest: TotalExportManifest,
+    *,
+    workflow_state_metadata: Mapping[str, Any],
+) -> TotalExportManifest:
+    """Return a manifest copy with a workflow-state metadata sidecar asset.
+
+    The added asset is metadata-only and pathless. It lets Total Export carry the
+    app-facing execution-gated workflow state without writing or claiming evidence
+    artifact files.
+    """
+    metadata = _value_for_dict(workflow_state_metadata)
+    workflow_asset = _metadata_asset(
+        asset_type=ASSET_RAW_SIDECAR,
+        description="Source Evidence workflow state metadata bundle sidecar.",
+        metadata=metadata,
+        created_at_utc=manifest.created_at_utc,
+    )
+    capture_options = sorted(
+        set(list(manifest.capture_options) + ["Source Evidence workflow state metadata"])
+    )
+    notes = manifest.notes
+    if "Source Evidence workflow state metadata sidecar included." not in notes:
+        notes = (notes + "\n" if notes else "") + "Source Evidence workflow state metadata sidecar included."
+    return TotalExportManifest(
+        package_id=manifest.package_id,
+        created_at_utc=manifest.created_at_utc,
+        source_urls=list(manifest.source_urls),
+        output_folder=manifest.output_folder,
+        capture_options=capture_options,
+        assets=list(manifest.assets) + [workflow_asset],
+        provenance_records=list(manifest.provenance_records),
+        claim_notes=list(manifest.claim_notes),
+        media_source_chain_notes=list(manifest.media_source_chain_notes),
+        archive_results=list(manifest.archive_results),
+        notes=notes,
+        app_version=manifest.app_version,
     )
 
 

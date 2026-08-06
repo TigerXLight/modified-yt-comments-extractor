@@ -392,6 +392,32 @@ def test_start_fetching_source_scaffold_builds_plan_preview_without_live_executi
     assert any("Source evidence review metadata ready" in message for message, _level in app.log_messages)
 
 
+
+
+def test_source_evidence_workflow_state_can_save_review_bundle() -> None:
+    app = _make_source_row_app()
+    app.extract_webpage_var.set(True)
+    app.webpage_screenshot_var.set(True)
+    fake_messagebox = FakeMessageBox()
+    original_messagebox = main.messagebox
+    main.messagebox = fake_messagebox
+    try:
+        App.start_fetching(app)
+    finally:
+        main.messagebox = original_messagebox
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        result = App.save_last_source_evidence_workflow_review_bundle(app, temp_dir)
+        assert result.file_count == 3
+        assert result.metadata_file_write_performed is True
+        assert result.evidence_file_move_performed is False
+        assert result.full_local_path_included is False
+        assert Path(temp_dir, "source_evidence_workflow_review_bundle.json").is_file()
+
+    assert app.last_source_evidence_workflow_review_bundle.bundle_id == result.bundle_id
+    assert any("review bundle saved" in message for message, _level in app.log_messages)
+
+
 def test_start_fetching_without_selected_scope_sets_skipped_status() -> None:
     app = _make_source_row_app()
     app.extract_webpage_var.set(False)
