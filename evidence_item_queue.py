@@ -988,6 +988,126 @@ def build_youtube_evidence_workflow_review_summary_text(
     )
 
 
+def youtube_evidence_queue_receipt_id(
+    *,
+    source_url: str,
+    video_id: str = "",
+    outputs: tuple[ExistingYouTubeOutputReviewMetadata, ...],
+) -> str:
+    queue = build_youtube_evidence_queue_from_existing_outputs(
+        source_url=source_url,
+        video_id=video_id,
+        outputs=outputs,
+    )
+    payload = {
+        "queue_item_ids": [item.item_id for item in queue.items],
+        "receipt_kind": "youtube_evidence_queue_metadata_review",
+        "source_url_recorded": bool(source_url.strip()),
+        "video_id_recorded": bool(video_id.strip()),
+        "youtube_output_records": list(_safe_youtube_output_records(outputs)),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "youtube_evidence_receipt_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def youtube_evidence_queue_metadata_to_action_log_events(
+    *,
+    source_url: str,
+    video_id: str = "",
+    outputs: tuple[ExistingYouTubeOutputReviewMetadata, ...],
+    session_id: str,
+    timestamp_utc: str,
+    previous_event_hash: str = "",
+    actor_id: str = "",
+    app_version: str = "",
+) -> tuple[CaptureActionLogEvent, ...]:
+    if not session_id:
+        raise ValueError("session_id is required for YouTube evidence queue receipts")
+    if not timestamp_utc:
+        raise ValueError(
+            "timestamp_utc is required for deterministic YouTube evidence queue receipts"
+        )
+
+    recorded_outputs = tuple(output for output in outputs if output.recorded)
+    if not recorded_outputs:
+        return ()
+
+    queue = build_youtube_evidence_queue_from_existing_outputs(
+        source_url=source_url,
+        video_id=video_id,
+        outputs=outputs,
+    )
+    summary = build_youtube_evidence_workflow_review_summary(
+        source_url=source_url,
+        video_id=video_id,
+        outputs=outputs,
+    )
+    receipt_id = youtube_evidence_queue_receipt_id(
+        source_url=source_url,
+        video_id=video_id,
+        outputs=outputs,
+    )
+    source_item_id = queue.items[0].item_id
+    queue_item_ids = tuple(item.item_id for item in queue.items)
+    request_summary = {
+        "api_capture_claimed": False,
+        "archive_download_ocr_warc_wacz_claimed": False,
+        "automatic_classification": False,
+        "browser_automation_claimed": False,
+        "completed_evidence_claimed": False,
+        "file_artifact_claimed": False,
+        "file_existence_claimed": False,
+        "full_local_path_included": False,
+        "live_fetch_or_api_call_performed": False,
+        "metadata_only": True,
+        "output_item_counts": list(summary.output_item_counts),
+        "output_kinds": list(summary.output_kinds),
+        "output_record_count": summary.output_record_count,
+        "output_review_ids": list(summary.output_review_ids),
+        "provenance": summary.provenance,
+        "queue_item_count": summary.queue_item_count,
+        "queue_item_ids": list(queue_item_ids),
+        "raw_comment_payload_included": False,
+        "raw_evidence_payload_included": False,
+        "raw_livechat_payload_included": False,
+        "raw_metadata_payload_included": False,
+        "raw_transcript_payload_included": False,
+        "receipt_id": receipt_id,
+        "recorded_output_count": summary.recorded_output_count,
+        "review_required": True,
+        "review_status": "USER_REVIEW_REQUIRED",
+        "runtime_invoked": False,
+        "safe_metadata_rows": list(_safe_youtube_output_records(outputs)),
+        "sensitive_inference_prohibited": True,
+        "source_item_id": source_item_id,
+        "source_url_recorded": summary.source_url_recorded,
+        "summary_id": summary.summary_id,
+        "verified_evidence_claimed": False,
+        "video_id_recorded": summary.video_id_recorded,
+    }
+    event = build_action_log_event(
+        session_id=session_id,
+        actor_type=ACTOR_TYPE_APPLICATION,
+        actor_id=actor_id,
+        action_type="youtube_evidence_queue_metadata_review",
+        result="USER_REVIEW_REQUIRED",
+        timestamp_utc=timestamp_utc,
+        previous_event_hash=previous_event_hash,
+        source_id=source_item_id,
+        target_id=receipt_id,
+        request_summary=request_summary,
+        artifact_ids=queue_item_ids,
+        warnings=(
+            "Existing YouTube output status/count metadata; manual review required.",
+            "Review-only metadata; no final-evidence state is recorded.",
+        ),
+        app_version=app_version,
+    )
+    return (event,)
+
+
 def manual_publisher_framing_correction_note_id(
     note: ManualPublisherFramingCorrectionNote,
 ) -> str:

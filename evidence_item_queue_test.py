@@ -45,6 +45,8 @@ from evidence_item_queue import (
     queue_source_role_reviews_to_ui_rows,
     source_role_review_flow_summary_to_json,
     source_role_review_receipt_id,
+    youtube_evidence_queue_metadata_to_action_log_events,
+    youtube_evidence_queue_receipt_id,
     youtube_evidence_source_item_id,
     youtube_evidence_workflow_review_summary_to_json,
     youtube_existing_output_review_id,
@@ -454,6 +456,155 @@ def run_self_test() -> None:
         assert "unsupported YouTube evidence output kind" in str(exc)
     else:
         raise AssertionError("unsupported YouTube output kind should fail closed")
+    youtube_receipt_id = youtube_evidence_queue_receipt_id(
+        source_url=youtube_source_url,
+        video_id="aB3_dE-9xYz",
+        outputs=youtube_outputs,
+    )
+    repeated_youtube_receipt_id = youtube_evidence_queue_receipt_id(
+        source_url=youtube_source_url,
+        video_id="aB3_dE-9xYz",
+        outputs=tuple(reversed(youtube_outputs)),
+    )
+    assert youtube_receipt_id == repeated_youtube_receipt_id
+    assert youtube_receipt_id.startswith("youtube_evidence_receipt_")
+    youtube_receipt_events = youtube_evidence_queue_metadata_to_action_log_events(
+        source_url=youtube_source_url,
+        video_id="aB3_dE-9xYz",
+        outputs=youtube_outputs,
+        session_id="youtube-evidence-session",
+        timestamp_utc="2026-08-06T13:00:00Z",
+    )
+    repeated_youtube_receipt_events = (
+        youtube_evidence_queue_metadata_to_action_log_events(
+            source_url=youtube_source_url,
+            video_id="aB3_dE-9xYz",
+            outputs=tuple(reversed(youtube_outputs)),
+            session_id="youtube-evidence-session",
+            timestamp_utc="2026-08-06T13:00:00Z",
+        )
+    )
+    assert [event.to_dict() for event in youtube_receipt_events] == [
+        event.to_dict() for event in repeated_youtube_receipt_events
+    ]
+    assert len(youtube_receipt_events) == 1
+    youtube_receipt_dict = youtube_receipt_events[0].to_dict()
+    assert youtube_receipt_dict["action_type"] == (
+        "youtube_evidence_queue_metadata_review"
+    )
+    assert youtube_receipt_dict["result"] == "USER_REVIEW_REQUIRED"
+    assert youtube_receipt_dict["source_id"] == youtube_queue_dict["items"][0][
+        "item_id"
+    ]
+    assert youtube_receipt_dict["target_id"] == youtube_receipt_id
+    assert youtube_receipt_dict["artifact_ids"] == list(
+        youtube_summary.queue_item_ids
+    )
+    youtube_receipt_summary = youtube_receipt_dict["request_summary"]
+    assert youtube_receipt_summary["metadata_only"] is True
+    assert youtube_receipt_summary["review_required"] is True
+    assert youtube_receipt_summary["review_status"] == "USER_REVIEW_REQUIRED"
+    assert (
+        youtube_receipt_summary["provenance"]
+        == "DERIVED_FROM_EXISTING_YOUTUBE_RUNTIME"
+    )
+    assert youtube_receipt_summary["runtime_invoked"] is False
+    assert youtube_receipt_summary["live_fetch_or_api_call_performed"] is False
+    assert youtube_receipt_summary["api_capture_claimed"] is False
+    assert youtube_receipt_summary["browser_automation_claimed"] is False
+    assert youtube_receipt_summary["raw_comment_payload_included"] is False
+    assert youtube_receipt_summary["raw_livechat_payload_included"] is False
+    assert youtube_receipt_summary["raw_transcript_payload_included"] is False
+    assert youtube_receipt_summary["raw_evidence_payload_included"] is False
+    assert youtube_receipt_summary["full_local_path_included"] is False
+    assert youtube_receipt_summary["file_artifact_claimed"] is False
+    assert youtube_receipt_summary["file_existence_claimed"] is False
+    assert youtube_receipt_summary["automatic_classification"] is False
+    assert youtube_receipt_summary["sensitive_inference_prohibited"] is True
+    assert youtube_receipt_summary["completed_evidence_claimed"] is False
+    assert youtube_receipt_summary["verified_evidence_claimed"] is False
+    assert youtube_receipt_summary["summary_id"] == youtube_summary.summary_id
+    assert youtube_receipt_summary["recorded_output_count"] == 4
+    assert youtube_receipt_summary["output_record_count"] == 5
+    assert youtube_receipt_summary["queue_item_count"] == 5
+    assert youtube_receipt_summary["output_kinds"] == [
+        "comments",
+        "livechat",
+        "metadata",
+        "replies",
+    ]
+    assert youtube_receipt_summary["output_item_counts"] == [3, 4, 1, 2]
+    assert youtube_receipt_summary["safe_metadata_rows"][0]["output_kind"] == (
+        "comments"
+    )
+    assert youtube_receipt_summary["safe_metadata_rows"][4]["output_kind"] == (
+        "transcript"
+    )
+    assert youtube_receipt_summary["safe_metadata_rows"][4]["recorded"] is False
+    rendered_youtube_receipt = action_log_event_to_json(youtube_receipt_events[0])
+    for unsafe_text in (
+        "RAW COMMENT PAYLOAD",
+        "RAW REPLY PAYLOAD",
+        "RAW LIVECHAT PAYLOAD",
+        "RAW TRANSCRIPT PAYLOAD",
+        "RAW EVIDENCE PAYLOAD",
+        r"T:\Evidence",
+        "final evidence",
+        "completed evidence",
+        "verified evidence",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+        "classified",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_youtube_receipt
+    assert (
+        youtube_evidence_queue_metadata_to_action_log_events(
+            source_url=youtube_source_url,
+            video_id="aB3_dE-9xYz",
+            outputs=(ExistingYouTubeOutputReviewMetadata(output_kind="comments"),),
+            session_id="empty-youtube-evidence-session",
+            timestamp_utc="2026-08-06T13:01:00Z",
+        )
+        == ()
+    )
+    for kwargs, expected_message in (
+        (
+            {
+                "session_id": "",
+                "timestamp_utc": "2026-08-06T13:00:00Z",
+            },
+            "session_id is required",
+        ),
+        (
+            {
+                "session_id": "youtube-evidence-session",
+                "timestamp_utc": "",
+            },
+            "timestamp_utc is required",
+        ),
+    ):
+        try:
+            youtube_evidence_queue_metadata_to_action_log_events(
+                source_url=youtube_source_url,
+                video_id="aB3_dE-9xYz",
+                outputs=youtube_outputs,
+                **kwargs,
+            )
+        except ValueError as exc:
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{expected_message} should be required")
 
     manual_same_media_link = ManualMediaSourceChainLink(
         source_item_id="media-1",
