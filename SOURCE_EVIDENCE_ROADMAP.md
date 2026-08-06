@@ -209,6 +209,12 @@ Planned fields:
 - Preserve evidence of competing claims without deciding who is correct.
 - Support source-chain gap recording where the original source is not cited or cannot be located.
 
+Current local implementation note:
+
+- `evidence_item_queue.py` now provides `ManualMediaSourceChainLink`, `manual_media_source_chain_links_to_ui_rows(...)`, `build_manual_media_source_chain_review_summary(...)`, and JSON/text summary helpers for deterministic manual/operator-supplied links between media/source queue items.
+- This is metadata-only and USER_REVIEW_REQUIRED. It records relation kind and direction while keeping automated matching, fingerprint matching, automatic duplicate detection, automatic classification, sensitive inference, raw media/evidence payloads, full local paths, live/API/browser/archive/download/OCR claims, and completed-evidence claims false or absent.
+- Fingerprinting, automated media matching, duplicate detection, visible manual-link editing, and source-author correction workflow remain future work.
+
 Planned fields:
 
 - `media_observed_on_url`
@@ -268,7 +274,7 @@ Planned fields:
 - Archive check.
 - Archive submit.
 - Video/media evidence, future only.
-- Media source-chain fields, future only.
+- Media source-chain fields, manual metadata only; acquisition/matching future.
 - Disputed framing/source-author correction notes, future only.
 - Source-role labels, future only.
 

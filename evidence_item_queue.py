@@ -58,6 +58,23 @@ class EvidenceLinkOrigin(_StringEnum):
     DERIVED_FROM_APP_STATE = "DERIVED_FROM_APP_STATE"
 
 
+class ManualMediaSourceChainRelationKind(_StringEnum):
+    SAME_MEDIA = "SAME_MEDIA"
+    DERIVATIVE = "DERIVATIVE"
+    EXCERPT = "EXCERPT"
+    REPOST = "REPOST"
+    RELATED = "RELATED"
+    UNKNOWN = "UNKNOWN"
+    OTHER = "OTHER"
+
+
+class ManualMediaSourceChainDirection(_StringEnum):
+    SOURCE_TO_DERIVATIVE = "SOURCE_TO_DERIVATIVE"
+    DERIVATIVE_TO_SOURCE = "DERIVATIVE_TO_SOURCE"
+    RELATED_UNDIRECTED = "RELATED_UNDIRECTED"
+    UNKNOWN = "UNKNOWN"
+
+
 def _value_for_dict(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value
@@ -103,6 +120,74 @@ class ASRPairingMetadata:
     reference_score_path: str = ""
     term_coverage_path: str = ""
     notes: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
+@dataclass(frozen=True)
+class ManualMediaSourceChainLink:
+    source_item_id: str
+    target_item_id: str
+    relation_kind: ManualMediaSourceChainRelationKind = (
+        ManualMediaSourceChainRelationKind.UNKNOWN
+    )
+    direction: ManualMediaSourceChainDirection = ManualMediaSourceChainDirection.UNKNOWN
+    review_status: str = "USER_REVIEW_REQUIRED"
+    provenance: str = "MANUAL_OPERATOR_SUPPLIED"
+    operator_note_category: str = ""
+    operator_note_recorded: bool = False
+    created_at_utc: str = ""
+    user_review_required: bool = True
+    automated_matching: bool = False
+    fingerprint_matching: bool = False
+    automatic_duplicate_detection: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    raw_media_payload_included: bool = False
+    raw_evidence_payload_included: bool = False
+    full_local_path_included: bool = False
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    live_capture_claimed: bool = False
+    api_provider_capture_claimed: bool = False
+    browser_automation_claimed: bool = False
+    archive_download_ocr_warc_wacz_claimed: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        data = _dataclass_to_dict(self)
+        data["manual_link_id"] = manual_media_source_chain_link_id(self)
+        return data
+
+
+@dataclass(frozen=True)
+class ManualMediaSourceChainReviewRow:
+    manual_link_id: str
+    source_item_id: str
+    target_item_id: str
+    relation_kind: ManualMediaSourceChainRelationKind = (
+        ManualMediaSourceChainRelationKind.UNKNOWN
+    )
+    direction: ManualMediaSourceChainDirection = ManualMediaSourceChainDirection.UNKNOWN
+    review_status: str = "USER_REVIEW_REQUIRED"
+    provenance: str = "MANUAL_OPERATOR_SUPPLIED"
+    operator_note_category: str = ""
+    operator_note_recorded: bool = False
+    user_review_required: bool = True
+    automated_matching: bool = False
+    fingerprint_matching: bool = False
+    automatic_duplicate_detection: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    raw_media_payload_included: bool = False
+    raw_evidence_payload_included: bool = False
+    full_local_path_included: bool = False
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    live_capture_claimed: bool = False
+    api_provider_capture_claimed: bool = False
+    browser_automation_claimed: bool = False
+    archive_download_ocr_warc_wacz_claimed: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return _dataclass_to_dict(self)
@@ -251,6 +336,44 @@ class ClosedLoopSourceChainReviewSummary:
 
 
 @dataclass(frozen=True)
+class ManualMediaSourceChainReviewSummary:
+    summary_id: str
+    status: str
+    review_status: str = "USER_REVIEW_REQUIRED"
+    metadata_only: bool = True
+    manual_operator_supplied: bool = True
+    user_review_required: bool = True
+    manual_link_count: int = 0
+    source_item_ids: tuple[str, ...] = ()
+    target_item_ids: tuple[str, ...] = ()
+    manual_link_ids: tuple[str, ...] = ()
+    relation_kinds: tuple[str, ...] = ()
+    directions: tuple[str, ...] = ()
+    provenance_values: tuple[str, ...] = ()
+    operator_note_count: int = 0
+    automated_matching: bool = False
+    fingerprint_matching: bool = False
+    automatic_duplicate_detection: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    raw_media_payload_included: bool = False
+    raw_evidence_payload_included: bool = False
+    full_local_path_included: bool = False
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    live_capture_claimed: bool = False
+    api_provider_capture_claimed: bool = False
+    browser_automation_claimed: bool = False
+    archive_download_ocr_warc_wacz_claimed: bool = False
+    note: str = (
+        "Manual/operator-supplied media source-chain links for review metadata only."
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceQueueItem:
     item_id: str
     item_role: EvidenceItemRole
@@ -293,9 +416,161 @@ class EvidenceItemQueue:
     items: tuple[EvidenceQueueItem, ...] = field(default_factory=tuple)
     links: tuple[EvidenceItemLink, ...] = field(default_factory=tuple)
     asr_pairings: tuple[ASRPairingMetadata, ...] = field(default_factory=tuple)
+    manual_media_source_chain_links: tuple[ManualMediaSourceChainLink, ...] = field(
+        default_factory=tuple
+    )
 
     def to_dict(self) -> Dict[str, Any]:
-        return _dataclass_to_dict(self)
+        data = _dataclass_to_dict(self)
+        data["manual_media_source_chain_links"] = [
+            link.to_dict() for link in self.manual_media_source_chain_links
+        ]
+        return data
+
+
+def manual_media_source_chain_link_id(link: ManualMediaSourceChainLink) -> str:
+    payload = {
+        "created_at_utc": link.created_at_utc,
+        "direction": link.direction.value,
+        "operator_note_category": link.operator_note_category,
+        "operator_note_recorded": link.operator_note_recorded,
+        "provenance": link.provenance,
+        "relation_kind": link.relation_kind.value,
+        "review_status": link.review_status,
+        "source_item_id": link.source_item_id,
+        "target_item_id": link.target_item_id,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "manual_media_source_chain_link_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def manual_media_source_chain_links_to_ui_rows(
+    queue: EvidenceItemQueue,
+) -> tuple[ManualMediaSourceChainReviewRow, ...]:
+    rows = tuple(
+        ManualMediaSourceChainReviewRow(
+            manual_link_id=manual_media_source_chain_link_id(link),
+            source_item_id=link.source_item_id,
+            target_item_id=link.target_item_id,
+            relation_kind=link.relation_kind,
+            direction=link.direction,
+            review_status=link.review_status,
+            provenance=link.provenance,
+            operator_note_category=link.operator_note_category,
+            operator_note_recorded=link.operator_note_recorded,
+            user_review_required=link.user_review_required,
+            automated_matching=link.automated_matching,
+            fingerprint_matching=link.fingerprint_matching,
+            automatic_duplicate_detection=link.automatic_duplicate_detection,
+            automatic_classification=link.automatic_classification,
+            sensitive_inference_prohibited=link.sensitive_inference_prohibited,
+            raw_media_payload_included=link.raw_media_payload_included,
+            raw_evidence_payload_included=link.raw_evidence_payload_included,
+            full_local_path_included=link.full_local_path_included,
+            completed_evidence_claimed=link.completed_evidence_claimed,
+            verified_evidence_claimed=link.verified_evidence_claimed,
+            live_capture_claimed=link.live_capture_claimed,
+            api_provider_capture_claimed=link.api_provider_capture_claimed,
+            browser_automation_claimed=link.browser_automation_claimed,
+            archive_download_ocr_warc_wacz_claimed=(
+                link.archive_download_ocr_warc_wacz_claimed
+            ),
+        )
+        for link in queue.manual_media_source_chain_links
+    )
+    return tuple(
+        sorted(
+            rows,
+            key=lambda row: (
+                row.source_item_id,
+                row.target_item_id,
+                row.relation_kind.value,
+                row.direction.value,
+                row.manual_link_id,
+            ),
+        )
+    )
+
+
+def _manual_media_source_chain_summary_rows(
+    rows: tuple[ManualMediaSourceChainReviewRow, ...],
+) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {
+            "direction": row.direction.value,
+            "manual_link_id": row.manual_link_id,
+            "operator_note_category": row.operator_note_category,
+            "operator_note_recorded": row.operator_note_recorded,
+            "provenance": row.provenance,
+            "relation_kind": row.relation_kind.value,
+            "review_status": row.review_status,
+            "source_item_id": row.source_item_id,
+            "target_item_id": row.target_item_id,
+        }
+        for row in rows
+    )
+
+
+def manual_media_source_chain_review_summary_id(
+    rows: tuple[ManualMediaSourceChainReviewRow, ...],
+) -> str:
+    payload = {
+        "review_summary_kind": "manual_media_source_chain_links",
+        "rows": list(_manual_media_source_chain_summary_rows(rows)),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "manual_media_source_chain_review_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def build_manual_media_source_chain_review_summary(
+    queue: EvidenceItemQueue,
+) -> ManualMediaSourceChainReviewSummary:
+    rows = manual_media_source_chain_links_to_ui_rows(queue)
+    return ManualMediaSourceChainReviewSummary(
+        summary_id=manual_media_source_chain_review_summary_id(rows),
+        status="USER_REVIEW_REQUIRED" if rows else "NO_MANUAL_MEDIA_SOURCE_CHAIN_LINKS",
+        manual_link_count=len(rows),
+        source_item_ids=tuple(row.source_item_id for row in rows),
+        target_item_ids=tuple(row.target_item_id for row in rows),
+        manual_link_ids=tuple(row.manual_link_id for row in rows),
+        relation_kinds=tuple(row.relation_kind.value for row in rows),
+        directions=tuple(row.direction.value for row in rows),
+        provenance_values=tuple(row.provenance for row in rows),
+        operator_note_count=sum(1 for row in rows if row.operator_note_recorded),
+    )
+
+
+def manual_media_source_chain_review_summary_to_json(
+    summary: ManualMediaSourceChainReviewSummary,
+) -> str:
+    return json.dumps(summary.to_dict(), indent=2, sort_keys=True)
+
+
+def build_manual_media_source_chain_review_summary_text(
+    summary: ManualMediaSourceChainReviewSummary,
+) -> str:
+    return "\n".join(
+        [
+            "Manual media source-chain review summary",
+            f"Summary ID: {summary.summary_id}",
+            f"Status: {summary.status}",
+            f"Review status: {summary.review_status}",
+            f"Manual links: {summary.manual_link_count}",
+            f"Operator-note records: {summary.operator_note_count}",
+            "Metadata only: yes",
+            "Manual/operator supplied: yes",
+            "Automated media matching: false",
+            "Fingerprint comparison: false",
+            "Automatic duplicate detection: false",
+            "Auto-classify flag: false",
+            "Sensitive inference prohibited: true",
+            "Runtime/completion claim flags: false",
+        ]
+    )
 
 
 def queue_source_role_reviews_to_claim_notes(

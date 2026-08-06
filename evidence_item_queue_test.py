@@ -6,13 +6,20 @@ from evidence_item_queue import (
     EvidenceItemStatus,
     EvidenceLinkOrigin,
     EvidenceQueueItem,
+    ManualMediaSourceChainDirection,
+    ManualMediaSourceChainLink,
+    ManualMediaSourceChainRelationKind,
     SourceRoleReviewMetadata,
     build_closed_loop_source_chain_review_summary,
     build_closed_loop_source_chain_review_summary_text,
+    build_manual_media_source_chain_review_summary,
+    build_manual_media_source_chain_review_summary_text,
     build_source_role_review_ui_summary,
     build_source_role_review_flow_summary,
     build_source_role_review_flow_summary_text,
     closed_loop_source_chain_review_summary_to_json,
+    manual_media_source_chain_links_to_ui_rows,
+    manual_media_source_chain_review_summary_to_json,
     queue_source_role_reviews_to_action_log_events,
     queue_source_role_reviews_to_claim_notes,
     queue_source_role_reviews_to_ui_rows,
@@ -64,6 +71,21 @@ def run_self_test() -> None:
     assert [origin.value for origin in EvidenceLinkOrigin] == [
         "EXPLICIT",
         "DERIVED_FROM_APP_STATE",
+    ]
+    assert [kind.value for kind in ManualMediaSourceChainRelationKind] == [
+        "SAME_MEDIA",
+        "DERIVATIVE",
+        "EXCERPT",
+        "REPOST",
+        "RELATED",
+        "UNKNOWN",
+        "OTHER",
+    ]
+    assert [direction.value for direction in ManualMediaSourceChainDirection] == [
+        "SOURCE_TO_DERIVATIVE",
+        "DERIVATIVE_TO_SOURCE",
+        "RELATED_UNDIRECTED",
+        "UNKNOWN",
     ]
 
     source_url = EvidenceQueueItem(
@@ -206,6 +228,55 @@ def run_self_test() -> None:
     ] == ""
     assert incomplete_pairing_dict["reference_accuracy_percent"] is None
 
+    manual_same_media_link = ManualMediaSourceChainLink(
+        source_item_id="media-1",
+        target_item_id="media-2",
+        relation_kind=ManualMediaSourceChainRelationKind.SAME_MEDIA,
+        direction=ManualMediaSourceChainDirection.RELATED_UNDIRECTED,
+        operator_note_category="manual_visual_review",
+        operator_note_recorded=True,
+        created_at_utc="2026-08-06T12:00:00Z",
+    )
+    manual_derivative_link = ManualMediaSourceChainLink(
+        source_item_id="source-1",
+        target_item_id="media-1",
+        relation_kind=ManualMediaSourceChainRelationKind.DERIVATIVE,
+        direction=ManualMediaSourceChainDirection.SOURCE_TO_DERIVATIVE,
+        operator_note_category="publisher_credit",
+        operator_note_recorded=True,
+        created_at_utc="2026-08-06T12:01:00Z",
+    )
+    manual_repost_link = ManualMediaSourceChainLink(
+        source_item_id="media-2",
+        target_item_id="source-1",
+        relation_kind=ManualMediaSourceChainRelationKind.REPOST,
+        direction=ManualMediaSourceChainDirection.DERIVATIVE_TO_SOURCE,
+        created_at_utc="2026-08-06T12:02:00Z",
+    )
+    manual_unknown_link = ManualMediaSourceChainLink(
+        source_item_id="media-3",
+        target_item_id="media-4",
+        relation_kind=ManualMediaSourceChainRelationKind.OTHER,
+        direction=ManualMediaSourceChainDirection.UNKNOWN,
+        created_at_utc="2026-08-06T12:03:00Z",
+    )
+    same_media_link_dict = manual_same_media_link.to_dict()
+    assert same_media_link_dict["manual_link_id"].startswith(
+        "manual_media_source_chain_link_"
+    )
+    assert same_media_link_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert same_media_link_dict["provenance"] == "MANUAL_OPERATOR_SUPPLIED"
+    assert same_media_link_dict["automated_matching"] is False
+    assert same_media_link_dict["fingerprint_matching"] is False
+    assert same_media_link_dict["automatic_duplicate_detection"] is False
+    assert same_media_link_dict["automatic_classification"] is False
+    assert same_media_link_dict["sensitive_inference_prohibited"] is True
+    assert same_media_link_dict["raw_media_payload_included"] is False
+    assert same_media_link_dict["raw_evidence_payload_included"] is False
+    assert same_media_link_dict["full_local_path_included"] is False
+    assert same_media_link_dict["completed_evidence_claimed"] is False
+    assert manual_same_media_link.to_dict() == same_media_link_dict
+
     nonexistent_removed = EvidenceQueueItem(
         item_id="removed-1",
         item_role=EvidenceItemRole.LOCAL_MEDIA,
@@ -282,6 +353,12 @@ def run_self_test() -> None:
         ),
         links=(explicit_link, derived_link),
         asr_pairings=(local_only_pairing, incomplete_pairing),
+        manual_media_source_chain_links=(
+            manual_unknown_link,
+            manual_repost_link,
+            manual_same_media_link,
+            manual_derivative_link,
+        ),
     )
     queue_dict = queue.to_dict()
     assert len(queue_dict["items"]) == 11
@@ -289,6 +366,151 @@ def run_self_test() -> None:
     assert queue_dict["links"][1]["link_origin"] == "DERIVED_FROM_APP_STATE"
     assert queue_dict["asr_pairings"][0]["reference_accuracy_percent"] == 74.19
     assert queue_dict["asr_pairings"][1]["reference_accuracy_percent"] is None
+    assert len(queue_dict["manual_media_source_chain_links"]) == 4
+    assert queue_dict["manual_media_source_chain_links"][0]["relation_kind"] == "OTHER"
+    assert queue_dict["manual_media_source_chain_links"][0][
+        "manual_link_id"
+    ].startswith("manual_media_source_chain_link_")
+
+    media_source_chain_rows = manual_media_source_chain_links_to_ui_rows(queue)
+    repeated_media_source_chain_rows = manual_media_source_chain_links_to_ui_rows(queue)
+    assert [row.to_dict() for row in media_source_chain_rows] == [
+        row.to_dict() for row in repeated_media_source_chain_rows
+    ]
+    assert [row.source_item_id for row in media_source_chain_rows] == [
+        "media-1",
+        "media-2",
+        "media-3",
+        "source-1",
+    ]
+    assert [row.target_item_id for row in media_source_chain_rows] == [
+        "media-2",
+        "source-1",
+        "media-4",
+        "media-1",
+    ]
+    assert [row.relation_kind.value for row in media_source_chain_rows] == [
+        "SAME_MEDIA",
+        "REPOST",
+        "OTHER",
+        "DERIVATIVE",
+    ]
+    assert [row.direction.value for row in media_source_chain_rows] == [
+        "RELATED_UNDIRECTED",
+        "DERIVATIVE_TO_SOURCE",
+        "UNKNOWN",
+        "SOURCE_TO_DERIVATIVE",
+    ]
+    first_media_source_chain_row = media_source_chain_rows[0].to_dict()
+    assert first_media_source_chain_row["review_status"] == "USER_REVIEW_REQUIRED"
+    assert first_media_source_chain_row["provenance"] == "MANUAL_OPERATOR_SUPPLIED"
+    assert first_media_source_chain_row["operator_note_recorded"] is True
+    assert first_media_source_chain_row["automated_matching"] is False
+    assert first_media_source_chain_row["fingerprint_matching"] is False
+    assert first_media_source_chain_row["automatic_duplicate_detection"] is False
+    assert first_media_source_chain_row["automatic_classification"] is False
+    assert first_media_source_chain_row["sensitive_inference_prohibited"] is True
+    assert first_media_source_chain_row["raw_media_payload_included"] is False
+    assert first_media_source_chain_row["raw_evidence_payload_included"] is False
+    assert first_media_source_chain_row["full_local_path_included"] is False
+    assert first_media_source_chain_row["completed_evidence_claimed"] is False
+    assert first_media_source_chain_row["verified_evidence_claimed"] is False
+    assert first_media_source_chain_row["live_capture_claimed"] is False
+    assert first_media_source_chain_row["api_provider_capture_claimed"] is False
+    assert first_media_source_chain_row["browser_automation_claimed"] is False
+    assert first_media_source_chain_row["archive_download_ocr_warc_wacz_claimed"] is False
+
+    media_source_chain_summary = build_manual_media_source_chain_review_summary(queue)
+    repeated_media_source_chain_summary = build_manual_media_source_chain_review_summary(
+        queue
+    )
+    assert (
+        media_source_chain_summary.to_dict()
+        == repeated_media_source_chain_summary.to_dict()
+    )
+    media_source_chain_summary_dict = media_source_chain_summary.to_dict()
+    assert media_source_chain_summary_dict["summary_id"].startswith(
+        "manual_media_source_chain_review_"
+    )
+    assert media_source_chain_summary_dict["status"] == "USER_REVIEW_REQUIRED"
+    assert media_source_chain_summary_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert media_source_chain_summary_dict["metadata_only"] is True
+    assert media_source_chain_summary_dict["manual_operator_supplied"] is True
+    assert media_source_chain_summary_dict["user_review_required"] is True
+    assert media_source_chain_summary_dict["manual_link_count"] == 4
+    assert media_source_chain_summary_dict["operator_note_count"] == 2
+    assert media_source_chain_summary_dict["source_item_ids"] == [
+        "media-1",
+        "media-2",
+        "media-3",
+        "source-1",
+    ]
+    assert media_source_chain_summary_dict["target_item_ids"] == [
+        "media-2",
+        "source-1",
+        "media-4",
+        "media-1",
+    ]
+    assert media_source_chain_summary_dict["relation_kinds"] == [
+        "SAME_MEDIA",
+        "REPOST",
+        "OTHER",
+        "DERIVATIVE",
+    ]
+    assert media_source_chain_summary_dict["directions"] == [
+        "RELATED_UNDIRECTED",
+        "DERIVATIVE_TO_SOURCE",
+        "UNKNOWN",
+        "SOURCE_TO_DERIVATIVE",
+    ]
+    assert media_source_chain_summary_dict["automated_matching"] is False
+    assert media_source_chain_summary_dict["fingerprint_matching"] is False
+    assert media_source_chain_summary_dict["automatic_duplicate_detection"] is False
+    assert media_source_chain_summary_dict["automatic_classification"] is False
+    assert media_source_chain_summary_dict["sensitive_inference_prohibited"] is True
+    assert media_source_chain_summary_dict["raw_media_payload_included"] is False
+    assert media_source_chain_summary_dict["raw_evidence_payload_included"] is False
+    assert media_source_chain_summary_dict["full_local_path_included"] is False
+    assert media_source_chain_summary_dict["completed_evidence_claimed"] is False
+    rendered_media_source_chain_summary = (
+        manual_media_source_chain_review_summary_to_json(media_source_chain_summary)
+    )
+    rendered_media_source_chain_text = (
+        build_manual_media_source_chain_review_summary_text(
+            media_source_chain_summary
+        )
+    )
+    assert "Manual media source-chain review summary" in rendered_media_source_chain_text
+    assert "Manual links: 4" in rendered_media_source_chain_text
+    assert "Operator-note records: 2" in rendered_media_source_chain_text
+    assert "Metadata only: yes" in rendered_media_source_chain_text
+    assert "Manual/operator supplied: yes" in rendered_media_source_chain_text
+    for unsafe_text in (
+        "RAW MEDIA PAYLOAD",
+        "RAW EVIDENCE PAYLOAD",
+        r"T:\Evidence",
+        "completed evidence",
+        "verified evidence",
+        "automatic match",
+        "fingerprint match",
+        "duplicate detected",
+        "classified",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_media_source_chain_summary
+        assert unsafe_text not in rendered_media_source_chain_text
     claim_notes = queue_source_role_reviews_to_claim_notes(queue)
     assert len(claim_notes) == 2
     claim_note_dict = claim_notes[0].to_dict()
@@ -608,6 +830,21 @@ def run_self_test() -> None:
     assert empty_closed_loop_dict["sensitive_inference_prohibited"] is True
     assert empty_closed_loop_dict["inference_performed"] is False
     assert empty_closed_loop_dict["completed_evidence_claimed"] is False
+    empty_media_source_chain_summary = build_manual_media_source_chain_review_summary(
+        EvidenceItemQueue(items=(source_url, local_media))
+    )
+    empty_media_source_chain_dict = empty_media_source_chain_summary.to_dict()
+    assert empty_media_source_chain_dict["status"] == "NO_MANUAL_MEDIA_SOURCE_CHAIN_LINKS"
+    assert empty_media_source_chain_dict["manual_link_count"] == 0
+    assert empty_media_source_chain_dict["metadata_only"] is True
+    assert empty_media_source_chain_dict["manual_operator_supplied"] is True
+    assert empty_media_source_chain_dict["user_review_required"] is True
+    assert empty_media_source_chain_dict["automated_matching"] is False
+    assert empty_media_source_chain_dict["fingerprint_matching"] is False
+    assert empty_media_source_chain_dict["automatic_duplicate_detection"] is False
+    assert empty_media_source_chain_dict["automatic_classification"] is False
+    assert empty_media_source_chain_dict["sensitive_inference_prohibited"] is True
+    assert empty_media_source_chain_dict["completed_evidence_claimed"] is False
 
     manifest = TotalExportManifest(
         package_id="queue-source-role-review",
