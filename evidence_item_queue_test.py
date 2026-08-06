@@ -7,9 +7,12 @@ from evidence_item_queue import (
     EvidenceLinkOrigin,
     EvidenceQueueItem,
     SourceRoleReviewMetadata,
+    build_closed_loop_source_chain_review_summary,
+    build_closed_loop_source_chain_review_summary_text,
     build_source_role_review_ui_summary,
     build_source_role_review_flow_summary,
     build_source_role_review_flow_summary_text,
+    closed_loop_source_chain_review_summary_to_json,
     queue_source_role_reviews_to_action_log_events,
     queue_source_role_reviews_to_claim_notes,
     queue_source_role_reviews_to_ui_rows,
@@ -516,6 +519,68 @@ def run_self_test() -> None:
         assert unsafe_text not in rendered_flow
         assert unsafe_text not in rendered_flow_text
 
+    closed_loop_summary = build_closed_loop_source_chain_review_summary(queue)
+    repeated_closed_loop_summary = build_closed_loop_source_chain_review_summary(queue)
+    assert closed_loop_summary.to_dict() == repeated_closed_loop_summary.to_dict()
+    closed_loop_dict = closed_loop_summary.to_dict()
+    assert closed_loop_dict["summary_id"].startswith("closed_loop_source_chain_review_")
+    assert closed_loop_dict["status"] == "USER_REVIEW_REQUIRED"
+    assert closed_loop_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert closed_loop_dict["metadata_only"] is True
+    assert closed_loop_dict["explicit_metadata_only"] is True
+    assert closed_loop_dict["user_review_required"] is True
+    assert closed_loop_dict["total_source_role_review_count"] == 2
+    assert closed_loop_dict["flagged_review_count"] == 1
+    assert closed_loop_dict["propagated_source_review_count"] == 1
+    assert closed_loop_dict["source_chain_gap_count"] == 1
+    assert closed_loop_dict["closed_loop_reporting_flag_count"] == 1
+    assert closed_loop_dict["flagged_queue_item_ids"] == ["source-review-2"]
+    assert closed_loop_dict["source_roles"] == ["TERTIARY_PROPAGATED_SOURCE"]
+    assert closed_loop_dict["primary_source_statuses"] == ["TERTIARY_PROPAGATED_CLAIM"]
+    assert closed_loop_dict["currentness_statuses"] == ["UNKNOWN"]
+    assert closed_loop_dict["automatic_classification"] is False
+    assert closed_loop_dict["sensitive_inference_prohibited"] is True
+    assert closed_loop_dict["inference_performed"] is False
+    assert closed_loop_dict["duplicate_detection_performed"] is False
+    assert closed_loop_dict["raw_evidence_payload_included"] is False
+    assert closed_loop_dict["full_local_path_included"] is False
+    assert closed_loop_dict["completed_evidence_claimed"] is False
+    rendered_closed_loop = closed_loop_source_chain_review_summary_to_json(
+        closed_loop_summary
+    )
+    rendered_closed_loop_text = build_closed_loop_source_chain_review_summary_text(
+        closed_loop_summary
+    )
+    assert "Closed-loop / propagated-source review summary" in rendered_closed_loop_text
+    assert "Flagged reviews: 1" in rendered_closed_loop_text
+    assert "Propagated-source reviews: 1" in rendered_closed_loop_text
+    assert "Source-chain gaps: 1" in rendered_closed_loop_text
+    assert "Closed-loop flags: 1" in rendered_closed_loop_text
+    assert "Explicit recorded flags only: yes" in rendered_closed_loop_text
+    for unsafe_text in (
+        "RAW EVIDENCE PAYLOAD",
+        "ANOTHER RAW CLAIM PAYLOAD",
+        r"T:\Evidence",
+        "completed evidence",
+        "verified evidence",
+        "classified",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_closed_loop
+        assert unsafe_text not in rendered_closed_loop_text
+
     empty_flow_summary = build_source_role_review_flow_summary(
         EvidenceItemQueue(items=(source_url, local_media)),
         session_id="empty-source-role-review-session",
@@ -530,6 +595,19 @@ def run_self_test() -> None:
     assert empty_flow_dict["provenance_receipt_count"] == 0
     assert empty_flow_dict["runtime_or_completion_claimed"] is False
     assert empty_flow_dict["final_evidence_state_recorded"] is False
+    empty_closed_loop_summary = build_closed_loop_source_chain_review_summary(
+        EvidenceItemQueue(items=(source_url, local_media))
+    )
+    empty_closed_loop_dict = empty_closed_loop_summary.to_dict()
+    assert empty_closed_loop_dict["status"] == "NO_CLOSED_LOOP_OR_PROPAGATED_SOURCE_FLAGS"
+    assert empty_closed_loop_dict["flagged_review_count"] == 0
+    assert empty_closed_loop_dict["propagated_source_review_count"] == 0
+    assert empty_closed_loop_dict["source_chain_gap_count"] == 0
+    assert empty_closed_loop_dict["closed_loop_reporting_flag_count"] == 0
+    assert empty_closed_loop_dict["automatic_classification"] is False
+    assert empty_closed_loop_dict["sensitive_inference_prohibited"] is True
+    assert empty_closed_loop_dict["inference_performed"] is False
+    assert empty_closed_loop_dict["completed_evidence_claimed"] is False
 
     manifest = TotalExportManifest(
         package_id="queue-source-role-review",

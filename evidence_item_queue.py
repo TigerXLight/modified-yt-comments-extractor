@@ -218,6 +218,39 @@ class SourceRoleReviewFlowSummary:
 
 
 @dataclass(frozen=True)
+class ClosedLoopSourceChainReviewSummary:
+    summary_id: str
+    status: str
+    review_status: str = "USER_REVIEW_REQUIRED"
+    metadata_only: bool = True
+    explicit_metadata_only: bool = True
+    user_review_required: bool = True
+    total_source_role_review_count: int = 0
+    flagged_review_count: int = 0
+    propagated_source_review_count: int = 0
+    source_chain_gap_count: int = 0
+    closed_loop_reporting_flag_count: int = 0
+    flagged_queue_item_ids: tuple[str, ...] = ()
+    source_roles: tuple[str, ...] = ()
+    primary_source_statuses: tuple[str, ...] = ()
+    currentness_statuses: tuple[str, ...] = ()
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    inference_performed: bool = False
+    duplicate_detection_performed: bool = False
+    raw_evidence_payload_included: bool = False
+    full_local_path_included: bool = False
+    completed_evidence_claimed: bool = False
+    note: str = (
+        "Summary-only review metadata based on explicit propagated-source, "
+        "source-chain-gap, and closed-loop flags already recorded on queue items."
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceQueueItem:
     item_id: str
     item_role: EvidenceItemRole
@@ -500,6 +533,113 @@ def build_source_role_review_flow_summary_text(
             f"UI rows: {summary.ui_row_count}",
             f"Provenance receipts: {summary.provenance_receipt_count}",
             "Metadata only: yes",
+            "Auto-classify flag: false",
+            "Sensitive inference prohibited: true",
+            "Runtime/completion claim flags: false",
+        ]
+    )
+
+
+def _closed_loop_source_chain_summary_rows(
+    rows: tuple[SourceRoleReviewUIRow, ...],
+) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {
+            "claim_type": row.claim_type,
+            "closed_loop_reporting_flag": row.closed_loop_reporting_flag,
+            "currentness_status": row.currentness_status.value,
+            "primary_source_status": row.primary_source_status.value,
+            "queue_item_id": row.queue_item_id,
+            "queue_item_role": row.queue_item_role,
+            "review_index": row.review_index,
+            "review_status": row.review_status,
+            "source_chain_gap": row.source_chain_gap,
+            "source_role": row.source_role.value,
+        }
+        for row in rows
+    )
+
+
+def closed_loop_source_chain_review_summary_id(
+    rows: tuple[SourceRoleReviewUIRow, ...],
+) -> str:
+    payload = {
+        "review_summary_kind": "closed_loop_source_chain_review",
+        "rows": list(_closed_loop_source_chain_summary_rows(rows)),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "closed_loop_source_chain_review_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def _is_closed_loop_source_chain_flagged(row: SourceRoleReviewUIRow) -> bool:
+    return (
+        row.source_role == SourceRole.TERTIARY_PROPAGATED_SOURCE
+        or row.primary_source_status == PrimarySourceStatus.TERTIARY_PROPAGATED_CLAIM
+        or row.source_chain_gap
+        or row.closed_loop_reporting_flag
+    )
+
+
+def build_closed_loop_source_chain_review_summary(
+    queue: EvidenceItemQueue,
+) -> ClosedLoopSourceChainReviewSummary:
+    rows = queue_source_role_reviews_to_ui_rows(queue)
+    flagged_rows = tuple(row for row in rows if _is_closed_loop_source_chain_flagged(row))
+    propagated_rows = tuple(
+        row
+        for row in rows
+        if (
+            row.source_role == SourceRole.TERTIARY_PROPAGATED_SOURCE
+            or row.primary_source_status == PrimarySourceStatus.TERTIARY_PROPAGATED_CLAIM
+        )
+    )
+    return ClosedLoopSourceChainReviewSummary(
+        summary_id=closed_loop_source_chain_review_summary_id(flagged_rows),
+        status=(
+            "USER_REVIEW_REQUIRED"
+            if flagged_rows
+            else "NO_CLOSED_LOOP_OR_PROPAGATED_SOURCE_FLAGS"
+        ),
+        total_source_role_review_count=len(rows),
+        flagged_review_count=len(flagged_rows),
+        propagated_source_review_count=len(propagated_rows),
+        source_chain_gap_count=sum(1 for row in rows if row.source_chain_gap),
+        closed_loop_reporting_flag_count=sum(
+            1 for row in rows if row.closed_loop_reporting_flag
+        ),
+        flagged_queue_item_ids=tuple(row.queue_item_id for row in flagged_rows),
+        source_roles=tuple(row.source_role.value for row in flagged_rows),
+        primary_source_statuses=tuple(
+            row.primary_source_status.value for row in flagged_rows
+        ),
+        currentness_statuses=tuple(row.currentness_status.value for row in flagged_rows),
+    )
+
+
+def closed_loop_source_chain_review_summary_to_json(
+    summary: ClosedLoopSourceChainReviewSummary,
+) -> str:
+    return json.dumps(summary.to_dict(), indent=2, sort_keys=True)
+
+
+def build_closed_loop_source_chain_review_summary_text(
+    summary: ClosedLoopSourceChainReviewSummary,
+) -> str:
+    return "\n".join(
+        [
+            "Closed-loop / propagated-source review summary",
+            f"Summary ID: {summary.summary_id}",
+            f"Status: {summary.status}",
+            f"Review status: {summary.review_status}",
+            f"Total source-role reviews: {summary.total_source_role_review_count}",
+            f"Flagged reviews: {summary.flagged_review_count}",
+            f"Propagated-source reviews: {summary.propagated_source_review_count}",
+            f"Source-chain gaps: {summary.source_chain_gap_count}",
+            f"Closed-loop flags: {summary.closed_loop_reporting_flag_count}",
+            "Metadata only: yes",
+            "Explicit recorded flags only: yes",
             "Auto-classify flag: false",
             "Sensitive inference prohibited: true",
             "Runtime/completion claim flags: false",
