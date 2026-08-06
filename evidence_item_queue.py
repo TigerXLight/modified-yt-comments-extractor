@@ -188,6 +188,36 @@ class SourceRoleReviewUIRow:
 
 
 @dataclass(frozen=True)
+class SourceRoleReviewFlowSummary:
+    flow_id: str
+    status: str
+    review_status: str = "USER_REVIEW_REQUIRED"
+    metadata_only: bool = True
+    user_review_required: bool = True
+    source_role_review_count: int = 0
+    claim_note_count: int = 0
+    ui_row_count: int = 0
+    provenance_receipt_count: int = 0
+    queue_item_ids: tuple[str, ...] = ()
+    source_roles: tuple[str, ...] = ()
+    primary_source_statuses: tuple[str, ...] = ()
+    currentness_statuses: tuple[str, ...] = ()
+    receipt_ids: tuple[str, ...] = ()
+    receipt_event_ids: tuple[str, ...] = ()
+    receipt_event_hashes: tuple[str, ...] = ()
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    raw_evidence_payload_included: bool = False
+    full_local_path_included: bool = False
+    runtime_or_completion_claimed: bool = False
+    final_evidence_state_recorded: bool = False
+    note: str = "Manual review metadata only; no final-evidence state is recorded."
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceQueueItem:
     item_id: str
     item_role: EvidenceItemRole
@@ -393,3 +423,85 @@ def queue_source_role_reviews_to_action_log_events(
         app_version=app_version,
     )
     return (event,)
+
+
+def source_role_review_flow_id(
+    *,
+    rows: tuple[SourceRoleReviewUIRow, ...],
+    receipt_ids: tuple[str, ...],
+) -> str:
+    payload = {
+        "receipt_ids": list(receipt_ids),
+        "review_flow_kind": "source_role_review_metadata",
+        "rows": list(_safe_source_role_review_receipt_rows(rows)),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "source_role_review_flow_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def build_source_role_review_flow_summary(
+    queue: EvidenceItemQueue,
+    *,
+    session_id: str,
+    timestamp_utc: str,
+    previous_event_hash: str = "",
+    actor_id: str = "",
+    app_version: str = "",
+) -> SourceRoleReviewFlowSummary:
+    rows = queue_source_role_reviews_to_ui_rows(queue)
+    claim_notes = queue_source_role_reviews_to_claim_notes(queue)
+    receipt_events = queue_source_role_reviews_to_action_log_events(
+        queue,
+        session_id=session_id,
+        timestamp_utc=timestamp_utc,
+        previous_event_hash=previous_event_hash,
+        actor_id=actor_id,
+        app_version=app_version,
+    )
+    receipt_ids = tuple(event.target_id for event in receipt_events)
+    return SourceRoleReviewFlowSummary(
+        flow_id=source_role_review_flow_id(rows=rows, receipt_ids=receipt_ids),
+        status="USER_REVIEW_REQUIRED" if rows else "NO_SOURCE_ROLE_REVIEWS",
+        source_role_review_count=len(rows),
+        claim_note_count=len(claim_notes),
+        ui_row_count=len(rows),
+        provenance_receipt_count=len(receipt_events),
+        queue_item_ids=tuple(row.queue_item_id for row in rows),
+        source_roles=tuple(row.source_role.value for row in rows),
+        primary_source_statuses=tuple(row.primary_source_status.value for row in rows),
+        currentness_statuses=tuple(row.currentness_status.value for row in rows),
+        receipt_ids=receipt_ids,
+        receipt_event_ids=tuple(event.event_id for event in receipt_events),
+        receipt_event_hashes=tuple(event.event_hash for event in receipt_events),
+        automatic_classification=False,
+        sensitive_inference_prohibited=True,
+    )
+
+
+def source_role_review_flow_summary_to_json(
+    summary: SourceRoleReviewFlowSummary,
+) -> str:
+    return json.dumps(summary.to_dict(), indent=2, sort_keys=True)
+
+
+def build_source_role_review_flow_summary_text(
+    summary: SourceRoleReviewFlowSummary,
+) -> str:
+    return "\n".join(
+        [
+            "Source-role review flow summary",
+            f"Flow ID: {summary.flow_id}",
+            f"Status: {summary.status}",
+            f"Review status: {summary.review_status}",
+            f"Review rows: {summary.source_role_review_count}",
+            f"Claim notes: {summary.claim_note_count}",
+            f"UI rows: {summary.ui_row_count}",
+            f"Provenance receipts: {summary.provenance_receipt_count}",
+            "Metadata only: yes",
+            "Auto-classify flag: false",
+            "Sensitive inference prohibited: true",
+            "Runtime/completion claim flags: false",
+        ]
+    )

@@ -151,8 +151,8 @@ Source status labels:
 
 Current local implementation note:
 
-- `evidence_item_queue.py` now provides `SourceRoleReviewMetadata` for review-required queue item source-role claims, `queue_source_role_reviews_to_claim_notes(...)` for deterministic mapping into existing Total Export `ClaimEvidenceNote` manifest records, `queue_source_role_reviews_to_ui_rows(...)` / `build_source_role_review_ui_summary(...)` for safe review/UI metadata rows and summary text, and `source_role_review_receipt_id(...)` / `queue_source_role_reviews_to_action_log_events(...)` for deterministic action-log/provenance receipt metadata.
-- This is a metadata-only bridge, review/UI hook, and receipt projection for queue/export review. It does not add visible editor workflow, automatic classification, sensitive-attribute inference, file scans, evidence moves, live capture, provider/network behavior, raw evidence payload display, full local path display, or completed-evidence claims.
+- `evidence_item_queue.py` now provides `SourceRoleReviewMetadata` for review-required queue item source-role claims, `queue_source_role_reviews_to_claim_notes(...)` for deterministic mapping into existing Total Export `ClaimEvidenceNote` manifest records, `queue_source_role_reviews_to_ui_rows(...)` / `build_source_role_review_ui_summary(...)` for safe review/UI metadata rows and summary text, `source_role_review_receipt_id(...)` / `queue_source_role_reviews_to_action_log_events(...)` for deterministic action-log/provenance receipt metadata, and `build_source_role_review_flow_summary(...)` / `build_source_role_review_flow_summary_text(...)` for summary/counts-only end-to-end review flow metadata.
+- This is a metadata-only bridge, review/UI hook, receipt projection, and end-to-end review summary for queue/export review. It does not add visible editor workflow, automatic classification, sensitive-attribute inference, file scans, evidence moves, live capture, provider/network behavior, raw evidence payload display, full local path display, or completed-evidence claims.
 
 ## Claim-Level And Temporal Source-Role Planning
 

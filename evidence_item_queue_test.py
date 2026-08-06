@@ -8,9 +8,12 @@ from evidence_item_queue import (
     EvidenceQueueItem,
     SourceRoleReviewMetadata,
     build_source_role_review_ui_summary,
+    build_source_role_review_flow_summary,
+    build_source_role_review_flow_summary_text,
     queue_source_role_reviews_to_action_log_events,
     queue_source_role_reviews_to_claim_notes,
     queue_source_role_reviews_to_ui_rows,
+    source_role_review_flow_summary_to_json,
     source_role_review_receipt_id,
 )
 from evidence_schema import CurrentnessStatus, PrimarySourceStatus, SourceRole
@@ -425,6 +428,108 @@ def run_self_test() -> None:
             assert expected_message in str(exc)
         else:
             raise AssertionError(f"{expected_message} should be required")
+
+    flow_summary = build_source_role_review_flow_summary(
+        queue,
+        session_id="source-role-review-session",
+        timestamp_utc="2026-08-06T11:00:00Z",
+        previous_event_hash="previous-review-hash",
+        actor_id="app",
+        app_version="test",
+    )
+    flow_receipt_events = queue_source_role_reviews_to_action_log_events(
+        queue,
+        session_id="source-role-review-session",
+        timestamp_utc="2026-08-06T11:00:00Z",
+        previous_event_hash="previous-review-hash",
+        actor_id="app",
+        app_version="test",
+    )
+    repeated_flow_summary = build_source_role_review_flow_summary(
+        queue,
+        session_id="source-role-review-session",
+        timestamp_utc="2026-08-06T11:00:00Z",
+        previous_event_hash="previous-review-hash",
+        actor_id="app",
+        app_version="test",
+    )
+    assert flow_summary.to_dict() == repeated_flow_summary.to_dict()
+    flow_dict = flow_summary.to_dict()
+    assert flow_dict["flow_id"].startswith("source_role_review_flow_")
+    assert flow_dict["status"] == "USER_REVIEW_REQUIRED"
+    assert flow_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert flow_dict["metadata_only"] is True
+    assert flow_dict["user_review_required"] is True
+    assert flow_dict["source_role_review_count"] == len(ui_rows)
+    assert flow_dict["claim_note_count"] == len(claim_notes)
+    assert flow_dict["ui_row_count"] == len(ui_rows)
+    assert flow_dict["provenance_receipt_count"] == len(receipt_events)
+    assert flow_dict["queue_item_ids"] == ["source-review-1", "source-review-2"]
+    assert flow_dict["source_roles"] == [
+        "PRIMARY_ORIGINAL_AUTHORED",
+        "TERTIARY_PROPAGATED_SOURCE",
+    ]
+    assert flow_dict["primary_source_statuses"] == [
+        "PRIMARY_SOURCE_LOCATED",
+        "TERTIARY_PROPAGATED_CLAIM",
+    ]
+    assert flow_dict["currentness_statuses"] == ["CURRENT", "UNKNOWN"]
+    assert flow_dict["receipt_ids"] == [receipt_id]
+    assert flow_dict["receipt_event_ids"] == [flow_receipt_events[0].event_id]
+    assert flow_dict["receipt_event_hashes"] == [flow_receipt_events[0].event_hash]
+    assert flow_dict["automatic_classification"] is False
+    assert flow_dict["sensitive_inference_prohibited"] is True
+    assert flow_dict["raw_evidence_payload_included"] is False
+    assert flow_dict["full_local_path_included"] is False
+    assert flow_dict["runtime_or_completion_claimed"] is False
+    assert flow_dict["final_evidence_state_recorded"] is False
+    rendered_flow = source_role_review_flow_summary_to_json(flow_summary)
+    rendered_flow_text = build_source_role_review_flow_summary_text(flow_summary)
+    assert "Source-role review flow summary" in rendered_flow_text
+    assert "Review rows: 2" in rendered_flow_text
+    assert "Claim notes: 2" in rendered_flow_text
+    assert "Provenance receipts: 1" in rendered_flow_text
+    assert "Metadata only: yes" in rendered_flow_text
+    assert "Auto-classify flag: false" in rendered_flow_text
+    for unsafe_text in (
+        "RAW EVIDENCE PAYLOAD",
+        "ANOTHER RAW CLAIM PAYLOAD",
+        r"T:\Evidence",
+        "completed evidence",
+        "verified evidence",
+        "automatic classification",
+        "classified",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_flow
+        assert unsafe_text not in rendered_flow_text
+
+    empty_flow_summary = build_source_role_review_flow_summary(
+        EvidenceItemQueue(items=(source_url, local_media)),
+        session_id="empty-source-role-review-session",
+        timestamp_utc="2026-08-06T11:00:00Z",
+    )
+    empty_flow_dict = empty_flow_summary.to_dict()
+    assert empty_flow_dict["status"] == "NO_SOURCE_ROLE_REVIEWS"
+    assert empty_flow_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert empty_flow_dict["source_role_review_count"] == 0
+    assert empty_flow_dict["claim_note_count"] == 0
+    assert empty_flow_dict["ui_row_count"] == 0
+    assert empty_flow_dict["provenance_receipt_count"] == 0
+    assert empty_flow_dict["runtime_or_completion_claimed"] is False
+    assert empty_flow_dict["final_evidence_state_recorded"] is False
 
     manifest = TotalExportManifest(
         package_id="queue-source-role-review",
