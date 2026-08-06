@@ -613,6 +613,8 @@ The aggregate `preservation_evidence_bundle_regression_test.py` suite now includ
 
 `preservation_evidence_bundle_regression_runner_test.py` now verifies a repeatable `--only` invocation containing every label except `evidence bundle regression runner behavior`, proving canonical output for the non-self suite without recursively invoking the runner behavior test.
 
+Source Evidence execution-gate and review-projection closeout: `capture_execution_gate.py` / `capture_execution_gate_cli.py` add LOCAL_ONLY / APPROVAL_REQUIRED plan metadata for gated live/manual/destructive boundaries, including live site capture, browser automation, archive checks/submissions, downloads, rendered recording, WARC/WACZ, ArchiveBox, ASR provider calls, broad folder scans, and evidence file moves. `evidence_item_queue_store.py` adds atomic JSON persistence for summary/counts-only queue review stores, and `source_evidence_review_export.py` projects queue review, execution-gate, and source-reference metadata into Total Export manifests. These helpers remain metadata-only and review-required; they emit no commands, perform no runtime execution, and make no raw-payload, full-local-path, file-existence, completed-evidence, provider/network, automatic-classification, or sensitive-inference claims.
+
 
 `preservation_evidence_bundle_regression_runner_test.py` now asserts `evidence bundle regression runner behavior` remains the final canonical label and that all-non-self targeted coverage exactly equals `EXPECTED_LABELS[:-1]`, preventing accidental recursive self-selection changes.
 
