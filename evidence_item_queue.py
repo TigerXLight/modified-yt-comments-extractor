@@ -75,6 +75,16 @@ class ManualMediaSourceChainDirection(_StringEnum):
     UNKNOWN = "UNKNOWN"
 
 
+class ManualPublisherFramingCorrectionKind(_StringEnum):
+    SOURCE_AUTHOR_CORRECTION = "SOURCE_AUTHOR_CORRECTION"
+    DISPUTED_FRAMING = "DISPUTED_FRAMING"
+    PUBLISHER_CREDIT_NOTE = "PUBLISHER_CREDIT_NOTE"
+    COMPETING_CLAIM = "COMPETING_CLAIM"
+    CONTEXT_CORRECTION = "CONTEXT_CORRECTION"
+    UNKNOWN = "UNKNOWN"
+    OTHER = "OTHER"
+
+
 def _value_for_dict(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value
@@ -179,6 +189,88 @@ class ManualMediaSourceChainReviewRow:
     automatic_duplicate_detection: bool = False
     automatic_classification: bool = False
     sensitive_inference_prohibited: bool = True
+    raw_media_payload_included: bool = False
+    raw_evidence_payload_included: bool = False
+    full_local_path_included: bool = False
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    live_capture_claimed: bool = False
+    api_provider_capture_claimed: bool = False
+    browser_automation_claimed: bool = False
+    archive_download_ocr_warc_wacz_claimed: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
+@dataclass(frozen=True)
+class ManualPublisherFramingCorrectionNote:
+    queue_item_id: str
+    related_item_id: str = ""
+    correction_kind: ManualPublisherFramingCorrectionKind = (
+        ManualPublisherFramingCorrectionKind.UNKNOWN
+    )
+    review_status: str = "USER_REVIEW_REQUIRED"
+    provenance: str = "MANUAL_OPERATOR_SUPPLIED"
+    source_author_name_recorded: bool = False
+    source_author_url_recorded: bool = False
+    correction_text_recorded: bool = False
+    correction_source_url_recorded: bool = False
+    disputed_framing_recorded: bool = False
+    competing_claim_recorded: bool = False
+    note_category: str = ""
+    created_at_utc: str = ""
+    user_review_required: bool = True
+    metadata_only: bool = True
+    automated_source_author_detection: bool = False
+    automated_matching: bool = False
+    fingerprint_matching: bool = False
+    automatic_duplicate_detection: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    raw_correction_payload_included: bool = False
+    raw_media_payload_included: bool = False
+    raw_evidence_payload_included: bool = False
+    full_local_path_included: bool = False
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    live_capture_claimed: bool = False
+    api_provider_capture_claimed: bool = False
+    browser_automation_claimed: bool = False
+    archive_download_ocr_warc_wacz_claimed: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        data = _dataclass_to_dict(self)
+        data["correction_note_id"] = manual_publisher_framing_correction_note_id(self)
+        return data
+
+
+@dataclass(frozen=True)
+class ManualPublisherFramingCorrectionReviewRow:
+    correction_note_id: str
+    queue_item_id: str
+    related_item_id: str = ""
+    correction_kind: ManualPublisherFramingCorrectionKind = (
+        ManualPublisherFramingCorrectionKind.UNKNOWN
+    )
+    review_status: str = "USER_REVIEW_REQUIRED"
+    provenance: str = "MANUAL_OPERATOR_SUPPLIED"
+    source_author_name_recorded: bool = False
+    source_author_url_recorded: bool = False
+    correction_text_recorded: bool = False
+    correction_source_url_recorded: bool = False
+    disputed_framing_recorded: bool = False
+    competing_claim_recorded: bool = False
+    note_category: str = ""
+    user_review_required: bool = True
+    metadata_only: bool = True
+    automated_source_author_detection: bool = False
+    automated_matching: bool = False
+    fingerprint_matching: bool = False
+    automatic_duplicate_detection: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    raw_correction_payload_included: bool = False
     raw_media_payload_included: bool = False
     raw_evidence_payload_included: bool = False
     full_local_path_included: bool = False
@@ -416,6 +508,46 @@ class ManualMediaSourceChainReviewFlowSummary:
 
 
 @dataclass(frozen=True)
+class ManualPublisherFramingCorrectionReviewSummary:
+    summary_id: str
+    status: str
+    review_status: str = "USER_REVIEW_REQUIRED"
+    metadata_only: bool = True
+    manual_operator_supplied: bool = True
+    user_review_required: bool = True
+    correction_note_count: int = 0
+    queue_item_ids: tuple[str, ...] = ()
+    related_item_ids: tuple[str, ...] = ()
+    correction_note_ids: tuple[str, ...] = ()
+    correction_kinds: tuple[str, ...] = ()
+    source_author_name_recorded_count: int = 0
+    source_author_url_recorded_count: int = 0
+    correction_text_recorded_count: int = 0
+    correction_source_url_recorded_count: int = 0
+    disputed_framing_recorded_count: int = 0
+    competing_claim_recorded_count: int = 0
+    automated_source_author_detection: bool = False
+    automated_matching: bool = False
+    fingerprint_matching: bool = False
+    automatic_duplicate_detection: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    raw_correction_payload_included: bool = False
+    raw_media_payload_included: bool = False
+    raw_evidence_payload_included: bool = False
+    full_local_path_included: bool = False
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    note: str = (
+        "Manual disputed-framing/source-author correction metadata only; "
+        "no final-evidence state is recorded."
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceQueueItem:
     item_id: str
     item_role: EvidenceItemRole
@@ -461,13 +593,205 @@ class EvidenceItemQueue:
     manual_media_source_chain_links: tuple[ManualMediaSourceChainLink, ...] = field(
         default_factory=tuple
     )
+    manual_publisher_framing_corrections: tuple[
+        ManualPublisherFramingCorrectionNote, ...
+    ] = field(default_factory=tuple)
 
     def to_dict(self) -> Dict[str, Any]:
         data = _dataclass_to_dict(self)
         data["manual_media_source_chain_links"] = [
             link.to_dict() for link in self.manual_media_source_chain_links
         ]
+        data["manual_publisher_framing_corrections"] = [
+            note.to_dict() for note in self.manual_publisher_framing_corrections
+        ]
         return data
+
+
+def manual_publisher_framing_correction_note_id(
+    note: ManualPublisherFramingCorrectionNote,
+) -> str:
+    payload = {
+        "competing_claim_recorded": note.competing_claim_recorded,
+        "correction_kind": note.correction_kind.value,
+        "correction_source_url_recorded": note.correction_source_url_recorded,
+        "correction_text_recorded": note.correction_text_recorded,
+        "created_at_utc": note.created_at_utc,
+        "disputed_framing_recorded": note.disputed_framing_recorded,
+        "note_category": note.note_category,
+        "provenance": note.provenance,
+        "queue_item_id": note.queue_item_id,
+        "related_item_id": note.related_item_id,
+        "review_status": note.review_status,
+        "source_author_name_recorded": note.source_author_name_recorded,
+        "source_author_url_recorded": note.source_author_url_recorded,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "manual_publisher_framing_correction_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def manual_publisher_framing_corrections_to_ui_rows(
+    queue: EvidenceItemQueue,
+) -> tuple[ManualPublisherFramingCorrectionReviewRow, ...]:
+    return tuple(
+        ManualPublisherFramingCorrectionReviewRow(
+            correction_note_id=manual_publisher_framing_correction_note_id(note),
+            queue_item_id=note.queue_item_id,
+            related_item_id=note.related_item_id,
+            correction_kind=note.correction_kind,
+            review_status=note.review_status,
+            provenance=note.provenance,
+            source_author_name_recorded=note.source_author_name_recorded,
+            source_author_url_recorded=note.source_author_url_recorded,
+            correction_text_recorded=note.correction_text_recorded,
+            correction_source_url_recorded=note.correction_source_url_recorded,
+            disputed_framing_recorded=note.disputed_framing_recorded,
+            competing_claim_recorded=note.competing_claim_recorded,
+            note_category=note.note_category,
+            user_review_required=note.user_review_required,
+            metadata_only=note.metadata_only,
+            automated_source_author_detection=note.automated_source_author_detection,
+            automated_matching=note.automated_matching,
+            fingerprint_matching=note.fingerprint_matching,
+            automatic_duplicate_detection=note.automatic_duplicate_detection,
+            automatic_classification=note.automatic_classification,
+            sensitive_inference_prohibited=note.sensitive_inference_prohibited,
+            raw_correction_payload_included=note.raw_correction_payload_included,
+            raw_media_payload_included=note.raw_media_payload_included,
+            raw_evidence_payload_included=note.raw_evidence_payload_included,
+            full_local_path_included=note.full_local_path_included,
+            completed_evidence_claimed=note.completed_evidence_claimed,
+            verified_evidence_claimed=note.verified_evidence_claimed,
+            live_capture_claimed=note.live_capture_claimed,
+            api_provider_capture_claimed=note.api_provider_capture_claimed,
+            browser_automation_claimed=note.browser_automation_claimed,
+            archive_download_ocr_warc_wacz_claimed=(
+                note.archive_download_ocr_warc_wacz_claimed
+            ),
+        )
+        for note in sorted(
+            queue.manual_publisher_framing_corrections,
+            key=lambda note: (
+                note.queue_item_id,
+                note.related_item_id,
+                note.correction_kind.value,
+                note.created_at_utc,
+                note.note_category,
+            ),
+        )
+    )
+
+
+def _manual_publisher_framing_summary_rows(
+    rows: tuple[ManualPublisherFramingCorrectionReviewRow, ...],
+) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {
+            "competing_claim_recorded": row.competing_claim_recorded,
+            "correction_kind": row.correction_kind.value,
+            "correction_note_id": row.correction_note_id,
+            "correction_source_url_recorded": row.correction_source_url_recorded,
+            "correction_text_recorded": row.correction_text_recorded,
+            "disputed_framing_recorded": row.disputed_framing_recorded,
+            "metadata_only": row.metadata_only,
+            "note_category": row.note_category,
+            "provenance": row.provenance,
+            "queue_item_id": row.queue_item_id,
+            "related_item_id": row.related_item_id,
+            "review_status": row.review_status,
+            "source_author_name_recorded": row.source_author_name_recorded,
+            "source_author_url_recorded": row.source_author_url_recorded,
+            "user_review_required": row.user_review_required,
+        }
+        for row in rows
+    )
+
+
+def manual_publisher_framing_correction_review_summary_id(
+    rows: tuple[ManualPublisherFramingCorrectionReviewRow, ...],
+) -> str:
+    payload = {
+        "review_summary_kind": "manual_publisher_framing_corrections",
+        "rows": list(_manual_publisher_framing_summary_rows(rows)),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "manual_publisher_framing_review_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def build_manual_publisher_framing_correction_review_summary(
+    queue: EvidenceItemQueue,
+) -> ManualPublisherFramingCorrectionReviewSummary:
+    rows = manual_publisher_framing_corrections_to_ui_rows(queue)
+    return ManualPublisherFramingCorrectionReviewSummary(
+        summary_id=manual_publisher_framing_correction_review_summary_id(rows),
+        status=(
+            "USER_REVIEW_REQUIRED"
+            if rows
+            else "NO_MANUAL_PUBLISHER_FRAMING_CORRECTIONS"
+        ),
+        correction_note_count=len(rows),
+        queue_item_ids=tuple(row.queue_item_id for row in rows),
+        related_item_ids=tuple(row.related_item_id for row in rows),
+        correction_note_ids=tuple(row.correction_note_id for row in rows),
+        correction_kinds=tuple(row.correction_kind.value for row in rows),
+        source_author_name_recorded_count=sum(
+            1 for row in rows if row.source_author_name_recorded
+        ),
+        source_author_url_recorded_count=sum(
+            1 for row in rows if row.source_author_url_recorded
+        ),
+        correction_text_recorded_count=sum(
+            1 for row in rows if row.correction_text_recorded
+        ),
+        correction_source_url_recorded_count=sum(
+            1 for row in rows if row.correction_source_url_recorded
+        ),
+        disputed_framing_recorded_count=sum(
+            1 for row in rows if row.disputed_framing_recorded
+        ),
+        competing_claim_recorded_count=sum(
+            1 for row in rows if row.competing_claim_recorded
+        ),
+    )
+
+
+def manual_publisher_framing_correction_review_summary_to_json(
+    summary: ManualPublisherFramingCorrectionReviewSummary,
+) -> str:
+    return json.dumps(summary.to_dict(), indent=2, sort_keys=True)
+
+
+def build_manual_publisher_framing_correction_review_summary_text(
+    summary: ManualPublisherFramingCorrectionReviewSummary,
+) -> str:
+    return "\n".join(
+        [
+            "Manual publisher framing/source-author correction review summary",
+            f"Summary ID: {summary.summary_id}",
+            f"Status: {summary.status}",
+            f"Review status: {summary.review_status}",
+            f"Correction notes: {summary.correction_note_count}",
+            f"Source-author names recorded: {summary.source_author_name_recorded_count}",
+            f"Source-author URLs recorded: {summary.source_author_url_recorded_count}",
+            f"Correction text recorded: {summary.correction_text_recorded_count}",
+            f"Correction source URLs recorded: {summary.correction_source_url_recorded_count}",
+            f"Disputed framing notes: {summary.disputed_framing_recorded_count}",
+            f"Competing claim notes: {summary.competing_claim_recorded_count}",
+            "Metadata only: yes",
+            "Manual/operator supplied: yes",
+            "Automated source-author detection: false",
+            "Automated media matching: false",
+            "Fingerprint comparison: false",
+            "Automatic duplicate detection: false",
+            "Auto-classify flag: false",
+            "Sensitive inference prohibited: true",
+            "Runtime/completion claim flags: false",
+        ]
+    )
 
 
 def manual_media_source_chain_link_id(link: ManualMediaSourceChainLink) -> str:

@@ -9,6 +9,8 @@ from evidence_item_queue import (
     ManualMediaSourceChainDirection,
     ManualMediaSourceChainLink,
     ManualMediaSourceChainRelationKind,
+    ManualPublisherFramingCorrectionKind,
+    ManualPublisherFramingCorrectionNote,
     SourceRoleReviewMetadata,
     build_closed_loop_source_chain_review_summary,
     build_closed_loop_source_chain_review_summary_text,
@@ -16,6 +18,8 @@ from evidence_item_queue import (
     build_manual_media_source_chain_review_summary_text,
     build_manual_media_source_chain_review_flow_summary,
     build_manual_media_source_chain_review_flow_summary_text,
+    build_manual_publisher_framing_correction_review_summary,
+    build_manual_publisher_framing_correction_review_summary_text,
     build_source_role_review_ui_summary,
     build_source_role_review_flow_summary,
     build_source_role_review_flow_summary_text,
@@ -25,6 +29,8 @@ from evidence_item_queue import (
     manual_media_source_chain_receipt_id,
     manual_media_source_chain_review_flow_summary_to_json,
     manual_media_source_chain_review_summary_to_json,
+    manual_publisher_framing_correction_review_summary_to_json,
+    manual_publisher_framing_corrections_to_ui_rows,
     queue_source_role_reviews_to_action_log_events,
     queue_source_role_reviews_to_claim_notes,
     queue_source_role_reviews_to_ui_rows,
@@ -91,6 +97,15 @@ def run_self_test() -> None:
         "DERIVATIVE_TO_SOURCE",
         "RELATED_UNDIRECTED",
         "UNKNOWN",
+    ]
+    assert [kind.value for kind in ManualPublisherFramingCorrectionKind] == [
+        "SOURCE_AUTHOR_CORRECTION",
+        "DISPUTED_FRAMING",
+        "PUBLISHER_CREDIT_NOTE",
+        "COMPETING_CLAIM",
+        "CONTEXT_CORRECTION",
+        "UNKNOWN",
+        "OTHER",
     ]
 
     source_url = EvidenceQueueItem(
@@ -265,6 +280,26 @@ def run_self_test() -> None:
         direction=ManualMediaSourceChainDirection.UNKNOWN,
         created_at_utc="2026-08-06T12:03:00Z",
     )
+    publisher_credit_correction = ManualPublisherFramingCorrectionNote(
+        queue_item_id="source-1",
+        related_item_id="media-1",
+        correction_kind=ManualPublisherFramingCorrectionKind.SOURCE_AUTHOR_CORRECTION,
+        source_author_name_recorded=True,
+        source_author_url_recorded=True,
+        correction_text_recorded=True,
+        correction_source_url_recorded=True,
+        note_category="publisher_credit_correction",
+        created_at_utc="2026-08-06T12:04:00Z",
+    )
+    disputed_framing_correction = ManualPublisherFramingCorrectionNote(
+        queue_item_id="media-2",
+        related_item_id="source-1",
+        correction_kind=ManualPublisherFramingCorrectionKind.DISPUTED_FRAMING,
+        disputed_framing_recorded=True,
+        competing_claim_recorded=True,
+        note_category="manual_disputed_context",
+        created_at_utc="2026-08-06T12:05:00Z",
+    )
     same_media_link_dict = manual_same_media_link.to_dict()
     assert same_media_link_dict["manual_link_id"].startswith(
         "manual_media_source_chain_link_"
@@ -281,6 +316,24 @@ def run_self_test() -> None:
     assert same_media_link_dict["full_local_path_included"] is False
     assert same_media_link_dict["completed_evidence_claimed"] is False
     assert manual_same_media_link.to_dict() == same_media_link_dict
+    publisher_credit_correction_dict = publisher_credit_correction.to_dict()
+    assert publisher_credit_correction_dict["correction_note_id"].startswith(
+        "manual_publisher_framing_correction_"
+    )
+    assert publisher_credit_correction_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert publisher_credit_correction_dict["provenance"] == "MANUAL_OPERATOR_SUPPLIED"
+    assert publisher_credit_correction_dict["metadata_only"] is True
+    assert publisher_credit_correction_dict["automated_source_author_detection"] is False
+    assert publisher_credit_correction_dict["automated_matching"] is False
+    assert publisher_credit_correction_dict["fingerprint_matching"] is False
+    assert publisher_credit_correction_dict["automatic_duplicate_detection"] is False
+    assert publisher_credit_correction_dict["automatic_classification"] is False
+    assert publisher_credit_correction_dict["sensitive_inference_prohibited"] is True
+    assert publisher_credit_correction_dict["raw_correction_payload_included"] is False
+    assert publisher_credit_correction_dict["raw_media_payload_included"] is False
+    assert publisher_credit_correction_dict["raw_evidence_payload_included"] is False
+    assert publisher_credit_correction_dict["full_local_path_included"] is False
+    assert publisher_credit_correction_dict["completed_evidence_claimed"] is False
 
     nonexistent_removed = EvidenceQueueItem(
         item_id="removed-1",
@@ -364,6 +417,10 @@ def run_self_test() -> None:
             manual_same_media_link,
             manual_derivative_link,
         ),
+        manual_publisher_framing_corrections=(
+            disputed_framing_correction,
+            publisher_credit_correction,
+        ),
     )
     queue_dict = queue.to_dict()
     assert len(queue_dict["items"]) == 11
@@ -376,6 +433,13 @@ def run_self_test() -> None:
     assert queue_dict["manual_media_source_chain_links"][0][
         "manual_link_id"
     ].startswith("manual_media_source_chain_link_")
+    assert len(queue_dict["manual_publisher_framing_corrections"]) == 2
+    assert queue_dict["manual_publisher_framing_corrections"][0][
+        "correction_kind"
+    ] == "DISPUTED_FRAMING"
+    assert queue_dict["manual_publisher_framing_corrections"][0][
+        "correction_note_id"
+    ].startswith("manual_publisher_framing_correction_")
 
     media_source_chain_rows = manual_media_source_chain_links_to_ui_rows(queue)
     repeated_media_source_chain_rows = manual_media_source_chain_links_to_ui_rows(queue)
@@ -516,6 +580,147 @@ def run_self_test() -> None:
     ):
         assert unsafe_text not in rendered_media_source_chain_summary
         assert unsafe_text not in rendered_media_source_chain_text
+
+    publisher_framing_rows = manual_publisher_framing_corrections_to_ui_rows(queue)
+    repeated_publisher_framing_rows = manual_publisher_framing_corrections_to_ui_rows(
+        queue
+    )
+    assert [row.to_dict() for row in publisher_framing_rows] == [
+        row.to_dict() for row in repeated_publisher_framing_rows
+    ]
+    assert [row.queue_item_id for row in publisher_framing_rows] == [
+        "media-2",
+        "source-1",
+    ]
+    assert [row.related_item_id for row in publisher_framing_rows] == [
+        "source-1",
+        "media-1",
+    ]
+    assert [row.correction_kind.value for row in publisher_framing_rows] == [
+        "DISPUTED_FRAMING",
+        "SOURCE_AUTHOR_CORRECTION",
+    ]
+    first_publisher_framing_row = publisher_framing_rows[0].to_dict()
+    assert first_publisher_framing_row["review_status"] == "USER_REVIEW_REQUIRED"
+    assert first_publisher_framing_row["provenance"] == "MANUAL_OPERATOR_SUPPLIED"
+    assert first_publisher_framing_row["metadata_only"] is True
+    assert first_publisher_framing_row["disputed_framing_recorded"] is True
+    assert first_publisher_framing_row["competing_claim_recorded"] is True
+    assert first_publisher_framing_row["automated_source_author_detection"] is False
+    assert first_publisher_framing_row["automated_matching"] is False
+    assert first_publisher_framing_row["fingerprint_matching"] is False
+    assert first_publisher_framing_row["automatic_duplicate_detection"] is False
+    assert first_publisher_framing_row["automatic_classification"] is False
+    assert first_publisher_framing_row["sensitive_inference_prohibited"] is True
+    assert first_publisher_framing_row["raw_correction_payload_included"] is False
+    assert first_publisher_framing_row["raw_media_payload_included"] is False
+    assert first_publisher_framing_row["raw_evidence_payload_included"] is False
+    assert first_publisher_framing_row["full_local_path_included"] is False
+    assert first_publisher_framing_row["completed_evidence_claimed"] is False
+    assert first_publisher_framing_row["verified_evidence_claimed"] is False
+    assert first_publisher_framing_row["live_capture_claimed"] is False
+    assert first_publisher_framing_row["api_provider_capture_claimed"] is False
+    assert first_publisher_framing_row["browser_automation_claimed"] is False
+    assert (
+        first_publisher_framing_row["archive_download_ocr_warc_wacz_claimed"]
+        is False
+    )
+
+    publisher_framing_summary = (
+        build_manual_publisher_framing_correction_review_summary(queue)
+    )
+    repeated_publisher_framing_summary = (
+        build_manual_publisher_framing_correction_review_summary(queue)
+    )
+    assert (
+        publisher_framing_summary.to_dict()
+        == repeated_publisher_framing_summary.to_dict()
+    )
+    publisher_framing_summary_dict = publisher_framing_summary.to_dict()
+    assert publisher_framing_summary_dict["summary_id"].startswith(
+        "manual_publisher_framing_review_"
+    )
+    assert publisher_framing_summary_dict["status"] == "USER_REVIEW_REQUIRED"
+    assert publisher_framing_summary_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert publisher_framing_summary_dict["metadata_only"] is True
+    assert publisher_framing_summary_dict["manual_operator_supplied"] is True
+    assert publisher_framing_summary_dict["user_review_required"] is True
+    assert publisher_framing_summary_dict["correction_note_count"] == 2
+    assert publisher_framing_summary_dict["queue_item_ids"] == ["media-2", "source-1"]
+    assert publisher_framing_summary_dict["related_item_ids"] == [
+        "source-1",
+        "media-1",
+    ]
+    assert publisher_framing_summary_dict["correction_kinds"] == [
+        "DISPUTED_FRAMING",
+        "SOURCE_AUTHOR_CORRECTION",
+    ]
+    assert publisher_framing_summary_dict["source_author_name_recorded_count"] == 1
+    assert publisher_framing_summary_dict["source_author_url_recorded_count"] == 1
+    assert publisher_framing_summary_dict["correction_text_recorded_count"] == 1
+    assert publisher_framing_summary_dict["correction_source_url_recorded_count"] == 1
+    assert publisher_framing_summary_dict["disputed_framing_recorded_count"] == 1
+    assert publisher_framing_summary_dict["competing_claim_recorded_count"] == 1
+    assert (
+        publisher_framing_summary_dict["automated_source_author_detection"] is False
+    )
+    assert publisher_framing_summary_dict["automated_matching"] is False
+    assert publisher_framing_summary_dict["fingerprint_matching"] is False
+    assert publisher_framing_summary_dict["automatic_duplicate_detection"] is False
+    assert publisher_framing_summary_dict["automatic_classification"] is False
+    assert publisher_framing_summary_dict["sensitive_inference_prohibited"] is True
+    assert publisher_framing_summary_dict["raw_correction_payload_included"] is False
+    assert publisher_framing_summary_dict["raw_media_payload_included"] is False
+    assert publisher_framing_summary_dict["raw_evidence_payload_included"] is False
+    assert publisher_framing_summary_dict["full_local_path_included"] is False
+    assert publisher_framing_summary_dict["completed_evidence_claimed"] is False
+    assert publisher_framing_summary_dict["verified_evidence_claimed"] is False
+    rendered_publisher_framing_summary = (
+        manual_publisher_framing_correction_review_summary_to_json(
+            publisher_framing_summary
+        )
+    )
+    rendered_publisher_framing_text = (
+        build_manual_publisher_framing_correction_review_summary_text(
+            publisher_framing_summary
+        )
+    )
+    assert (
+        "Manual publisher framing/source-author correction review summary"
+        in rendered_publisher_framing_text
+    )
+    assert "Correction notes: 2" in rendered_publisher_framing_text
+    assert "Source-author names recorded: 1" in rendered_publisher_framing_text
+    assert "Metadata only: yes" in rendered_publisher_framing_text
+    assert "Manual/operator supplied: yes" in rendered_publisher_framing_text
+    for unsafe_text in (
+        "RAW CORRECTION PAYLOAD",
+        "RAW MEDIA PAYLOAD",
+        "RAW EVIDENCE PAYLOAD",
+        r"T:\Evidence",
+        "completed evidence",
+        "verified evidence",
+        "automatic source author",
+        "automatic match",
+        "fingerprint match",
+        "duplicate detected",
+        "classified",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_publisher_framing_summary
+        assert unsafe_text not in rendered_publisher_framing_text
 
     media_source_chain_receipt_id = manual_media_source_chain_receipt_id(queue)
     repeated_media_source_chain_receipt_id = manual_media_source_chain_receipt_id(queue)
@@ -1150,6 +1355,32 @@ def run_self_test() -> None:
     assert empty_media_source_chain_flow_dict["runtime_or_completion_claimed"] is False
     assert empty_media_source_chain_flow_dict["final_evidence_state_recorded"] is False
     assert empty_media_source_chain_flow_dict["completed_evidence_claimed"] is False
+    empty_publisher_framing_summary = (
+        build_manual_publisher_framing_correction_review_summary(
+            EvidenceItemQueue(items=(source_url, local_media))
+        )
+    )
+    empty_publisher_framing_dict = empty_publisher_framing_summary.to_dict()
+    assert (
+        empty_publisher_framing_dict["status"]
+        == "NO_MANUAL_PUBLISHER_FRAMING_CORRECTIONS"
+    )
+    assert empty_publisher_framing_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert empty_publisher_framing_dict["correction_note_count"] == 0
+    assert empty_publisher_framing_dict["queue_item_ids"] == []
+    assert empty_publisher_framing_dict["correction_note_ids"] == []
+    assert empty_publisher_framing_dict["metadata_only"] is True
+    assert empty_publisher_framing_dict["manual_operator_supplied"] is True
+    assert empty_publisher_framing_dict["user_review_required"] is True
+    assert (
+        empty_publisher_framing_dict["automated_source_author_detection"] is False
+    )
+    assert empty_publisher_framing_dict["automated_matching"] is False
+    assert empty_publisher_framing_dict["fingerprint_matching"] is False
+    assert empty_publisher_framing_dict["automatic_duplicate_detection"] is False
+    assert empty_publisher_framing_dict["automatic_classification"] is False
+    assert empty_publisher_framing_dict["sensitive_inference_prohibited"] is True
+    assert empty_publisher_framing_dict["completed_evidence_claimed"] is False
 
     manifest = TotalExportManifest(
         package_id="queue-source-role-review",
