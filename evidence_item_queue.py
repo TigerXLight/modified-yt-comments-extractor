@@ -592,6 +592,87 @@ class ManualPublisherFramingCorrectionReviewFlowSummary:
         return _dataclass_to_dict(self)
 
 
+YOUTUBE_EVIDENCE_OUTPUT_KINDS = (
+    "metadata",
+    "comments",
+    "replies",
+    "livechat",
+    "transcript",
+    "captions",
+)
+
+
+@dataclass(frozen=True)
+class ExistingYouTubeOutputReviewMetadata:
+    output_kind: str
+    recorded: bool = False
+    item_count: int = 0
+    review_status: str = "USER_REVIEW_REQUIRED"
+    provenance: str = "DERIVED_FROM_EXISTING_YOUTUBE_RUNTIME"
+    metadata_only: bool = True
+    user_review_required: bool = True
+    raw_comment_payload_included: bool = False
+    raw_livechat_payload_included: bool = False
+    raw_transcript_payload_included: bool = False
+    raw_metadata_payload_included: bool = False
+    full_local_path_included: bool = False
+    file_artifact_claimed: bool = False
+    file_existence_claimed: bool = False
+    live_fetch_or_api_call_performed: bool = False
+    browser_automation_claimed: bool = False
+    archive_download_ocr_warc_wacz_claimed: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        data = _dataclass_to_dict(self)
+        data["youtube_output_review_id"] = youtube_existing_output_review_id(self)
+        return data
+
+
+@dataclass(frozen=True)
+class YouTubeEvidenceWorkflowReviewSummary:
+    summary_id: str
+    status: str
+    review_status: str = "USER_REVIEW_REQUIRED"
+    metadata_only: bool = True
+    provenance: str = "DERIVED_FROM_EXISTING_YOUTUBE_RUNTIME"
+    user_review_required: bool = True
+    source_url_recorded: bool = False
+    video_id_recorded: bool = False
+    output_record_count: int = 0
+    recorded_output_count: int = 0
+    queue_item_count: int = 0
+    output_review_ids: tuple[str, ...] = ()
+    output_kinds: tuple[str, ...] = ()
+    output_item_counts: tuple[int, ...] = ()
+    queue_item_ids: tuple[str, ...] = ()
+    source_item_ids: tuple[str, ...] = ()
+    raw_comment_payload_included: bool = False
+    raw_livechat_payload_included: bool = False
+    raw_transcript_payload_included: bool = False
+    raw_metadata_payload_included: bool = False
+    full_local_path_included: bool = False
+    file_artifact_claimed: bool = False
+    file_existence_claimed: bool = False
+    live_fetch_or_api_call_performed: bool = False
+    browser_automation_claimed: bool = False
+    archive_download_ocr_warc_wacz_claimed: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    note: str = (
+        "Existing YouTube runtime output metadata only; explicit evidence queue "
+        "items require manual review and do not record final-evidence state."
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
 @dataclass(frozen=True)
 class EvidenceQueueItem:
     item_id: str
@@ -651,6 +732,260 @@ class EvidenceItemQueue:
             note.to_dict() for note in self.manual_publisher_framing_corrections
         ]
         return data
+
+
+def _normalized_youtube_output_kind(output_kind: str) -> str:
+    normalized = output_kind.strip().lower().replace("_", "-").replace(" ", "-")
+    alias_map = {
+        "caption": "captions",
+        "captions": "captions",
+        "comment": "comments",
+        "comments": "comments",
+        "live-chat": "livechat",
+        "livechat": "livechat",
+        "metadata": "metadata",
+        "reply": "replies",
+        "replies": "replies",
+        "transcript": "transcript",
+        "transcripts": "transcript",
+    }
+    if normalized not in alias_map:
+        raise ValueError(f"unsupported YouTube evidence output kind: {output_kind!r}")
+    return alias_map[normalized]
+
+
+def _safe_youtube_output_records(
+    outputs: tuple[ExistingYouTubeOutputReviewMetadata, ...],
+) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {
+            "item_count": max(0, int(output.item_count)),
+            "output_kind": _normalized_youtube_output_kind(output.output_kind),
+            "recorded": bool(output.recorded),
+            "review_status": output.review_status,
+            "user_review_required": output.user_review_required,
+        }
+        for output in sorted(
+            outputs,
+            key=lambda output: (
+                _normalized_youtube_output_kind(output.output_kind),
+                max(0, int(output.item_count)),
+                bool(output.recorded),
+            ),
+        )
+    )
+
+
+def youtube_existing_output_review_id(
+    output: ExistingYouTubeOutputReviewMetadata,
+) -> str:
+    payload = {
+        "item_count": max(0, int(output.item_count)),
+        "output_kind": _normalized_youtube_output_kind(output.output_kind),
+        "recorded": bool(output.recorded),
+        "review_status": output.review_status,
+        "user_review_required": output.user_review_required,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "youtube_output_review_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def youtube_evidence_source_item_id(source_url: str, video_id: str = "") -> str:
+    payload = {
+        "source_url": source_url.strip(),
+        "video_id": video_id.strip(),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "youtube_source_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def _youtube_output_queue_item_id(
+    source_url: str,
+    video_id: str,
+    output: ExistingYouTubeOutputReviewMetadata,
+) -> str:
+    payload = {
+        "output_review_id": youtube_existing_output_review_id(output),
+        "source_url": source_url.strip(),
+        "video_id": video_id.strip(),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "youtube_evidence_item_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def _youtube_output_item_role(output_kind: str) -> EvidenceItemRole:
+    if _normalized_youtube_output_kind(output_kind) in {"captions", "transcript"}:
+        return EvidenceItemRole.TRANSCRIPT_FILE
+    return EvidenceItemRole.MANUAL_EVIDENCE_NOTE
+
+
+def build_youtube_evidence_queue_from_existing_outputs(
+    *,
+    source_url: str,
+    video_id: str = "",
+    outputs: tuple[ExistingYouTubeOutputReviewMetadata, ...],
+) -> EvidenceItemQueue:
+    source_item_id = youtube_evidence_source_item_id(source_url, video_id)
+    source_item = EvidenceQueueItem(
+        item_id=source_item_id,
+        item_role=EvidenceItemRole.SOURCE_URL,
+        display_name="YouTube source URL",
+        source_url=source_url.strip(),
+        item_status=EvidenceItemStatus.NEEDS_REVIEW,
+        total_export_include=False,
+    )
+    output_items: list[EvidenceQueueItem] = []
+    for output in sorted(
+        outputs,
+        key=lambda item: (
+            _normalized_youtube_output_kind(item.output_kind),
+            max(0, int(item.item_count)),
+            bool(item.recorded),
+        ),
+    ):
+        if not output.recorded:
+            continue
+        output_kind = _normalized_youtube_output_kind(output.output_kind)
+        output_items.append(
+            EvidenceQueueItem(
+                item_id=_youtube_output_queue_item_id(source_url, video_id, output),
+                item_role=_youtube_output_item_role(output_kind),
+                display_name=f"YouTube {output_kind} review metadata",
+                source_url=source_url.strip(),
+                linked_source_id=source_item_id,
+                item_status=EvidenceItemStatus.NEEDS_REVIEW,
+                total_export_include=False,
+                total_export_output_kind=f"youtube_{output_kind}_review_metadata",
+                total_export_exclusion_reason="Review-required metadata only.",
+            )
+        )
+    return EvidenceItemQueue(items=(source_item, *output_items))
+
+
+def youtube_evidence_workflow_review_summary_id(
+    *,
+    source_url: str,
+    video_id: str,
+    outputs: tuple[ExistingYouTubeOutputReviewMetadata, ...],
+    queue_item_ids: tuple[str, ...],
+) -> str:
+    payload = {
+        "output_records": list(_safe_youtube_output_records(outputs)),
+        "queue_item_ids": list(queue_item_ids),
+        "review_summary_kind": "youtube_existing_output_evidence_workflow",
+        "source_url_recorded": bool(source_url.strip()),
+        "video_id_recorded": bool(video_id.strip()),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "youtube_evidence_workflow_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def build_youtube_evidence_workflow_review_summary(
+    *,
+    source_url: str,
+    video_id: str = "",
+    outputs: tuple[ExistingYouTubeOutputReviewMetadata, ...],
+) -> YouTubeEvidenceWorkflowReviewSummary:
+    queue = build_youtube_evidence_queue_from_existing_outputs(
+        source_url=source_url,
+        video_id=video_id,
+        outputs=outputs,
+    )
+    recorded_outputs = tuple(output for output in outputs if output.recorded)
+    output_review_ids = tuple(
+        youtube_existing_output_review_id(output)
+        for output in sorted(
+            recorded_outputs,
+            key=lambda item: (
+                _normalized_youtube_output_kind(item.output_kind),
+                max(0, int(item.item_count)),
+                bool(item.recorded),
+            ),
+        )
+    )
+    queue_item_ids = tuple(item.item_id for item in queue.items)
+    return YouTubeEvidenceWorkflowReviewSummary(
+        summary_id=youtube_evidence_workflow_review_summary_id(
+            source_url=source_url,
+            video_id=video_id,
+            outputs=outputs,
+            queue_item_ids=queue_item_ids,
+        ),
+        status=(
+            "USER_REVIEW_REQUIRED"
+            if recorded_outputs
+            else "NO_YOUTUBE_OUTPUTS_RECORDED"
+        ),
+        source_url_recorded=bool(source_url.strip()),
+        video_id_recorded=bool(video_id.strip()),
+        output_record_count=len(outputs),
+        recorded_output_count=len(recorded_outputs),
+        queue_item_count=len(queue.items),
+        output_review_ids=output_review_ids,
+        output_kinds=tuple(
+            _normalized_youtube_output_kind(output.output_kind)
+            for output in sorted(
+                recorded_outputs,
+                key=lambda item: (
+                    _normalized_youtube_output_kind(item.output_kind),
+                    max(0, int(item.item_count)),
+                    bool(item.recorded),
+                ),
+            )
+        ),
+        output_item_counts=tuple(
+            max(0, int(output.item_count))
+            for output in sorted(
+                recorded_outputs,
+                key=lambda item: (
+                    _normalized_youtube_output_kind(item.output_kind),
+                    max(0, int(item.item_count)),
+                    bool(item.recorded),
+                ),
+            )
+        ),
+        queue_item_ids=queue_item_ids,
+        source_item_ids=(queue.items[0].item_id,),
+    )
+
+
+def youtube_evidence_workflow_review_summary_to_json(
+    summary: YouTubeEvidenceWorkflowReviewSummary,
+) -> str:
+    return json.dumps(summary.to_dict(), indent=2, sort_keys=True)
+
+
+def build_youtube_evidence_workflow_review_summary_text(
+    summary: YouTubeEvidenceWorkflowReviewSummary,
+) -> str:
+    return "\n".join(
+        [
+            "YouTube evidence workflow review summary",
+            f"Summary ID: {summary.summary_id}",
+            f"Status: {summary.status}",
+            f"Review status: {summary.review_status}",
+            f"Output records: {summary.output_record_count}",
+            f"Recorded outputs: {summary.recorded_output_count}",
+            f"Queue items: {summary.queue_item_count}",
+            "Metadata only: yes",
+            "Existing YouTube runtime metadata: yes",
+            "User review required: yes",
+            "Raw comment/livechat/transcript payloads: not included",
+            "File artifact/existence claim: false",
+            "Live/API/browser execution by this helper: false",
+            "Auto-classify flag: false",
+            "Sensitive inference prohibited: true",
+            "Final-evidence claim flags: false",
+        ]
+    )
 
 
 def manual_publisher_framing_correction_note_id(

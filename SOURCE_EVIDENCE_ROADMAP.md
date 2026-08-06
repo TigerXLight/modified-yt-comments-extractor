@@ -261,6 +261,11 @@ Planned fields:
 - Private, unavailable, restricted, or inaccessible videos should not be treated as downloadable targets.
 - Existing YouTube comments/livechat behavior must remain unchanged.
 
+Current local implementation note:
+
+- `ExistingYouTubeOutputReviewMetadata`, `build_youtube_evidence_queue_from_existing_outputs(...)`, and `build_youtube_evidence_workflow_review_summary(...)` add a local metadata-only bridge from explicitly supplied existing YouTube output status/counts into review-required Evidence Item Queue items and deterministic summary output. This records source URL/video-ID presence, output kinds/counts, safe queue item IDs, USER_REVIEW_REQUIRED status, and DERIVED_FROM_EXISTING_YOUTUBE_RUNTIME provenance without calling the YouTube runtime, changing exports, displaying raw comment/livechat/transcript payloads, recording full local paths, claiming artifact file existence, performing live/API/browser execution, running automatic classification, or claiming final-evidence state.
+- Runtime mapping from the existing YouTube extractor/export UI into the local queue metadata bridge remains future work.
+
 ## Capture Checkbox Roadmap
 
 - Posts.

@@ -6,6 +6,7 @@ from evidence_item_queue import (
     EvidenceItemStatus,
     EvidenceLinkOrigin,
     EvidenceQueueItem,
+    ExistingYouTubeOutputReviewMetadata,
     ManualMediaSourceChainDirection,
     ManualMediaSourceChainLink,
     ManualMediaSourceChainRelationKind,
@@ -25,6 +26,9 @@ from evidence_item_queue import (
     build_source_role_review_ui_summary,
     build_source_role_review_flow_summary,
     build_source_role_review_flow_summary_text,
+    build_youtube_evidence_queue_from_existing_outputs,
+    build_youtube_evidence_workflow_review_summary,
+    build_youtube_evidence_workflow_review_summary_text,
     closed_loop_source_chain_review_summary_to_json,
     manual_media_source_chain_links_to_ui_rows,
     manual_media_source_chain_links_to_action_log_events,
@@ -41,6 +45,9 @@ from evidence_item_queue import (
     queue_source_role_reviews_to_ui_rows,
     source_role_review_flow_summary_to_json,
     source_role_review_receipt_id,
+    youtube_evidence_source_item_id,
+    youtube_evidence_workflow_review_summary_to_json,
+    youtube_existing_output_review_id,
 )
 from evidence_schema import CurrentnessStatus, PrimarySourceStatus, SourceRole
 from capture_action_log import action_log_event_to_json
@@ -252,6 +259,201 @@ def run_self_test() -> None:
         "candidate_subtitle_or_transcript_item_id"
     ] == ""
     assert incomplete_pairing_dict["reference_accuracy_percent"] is None
+
+    youtube_outputs = (
+        ExistingYouTubeOutputReviewMetadata(
+            output_kind="comments",
+            recorded=True,
+            item_count=3,
+        ),
+        ExistingYouTubeOutputReviewMetadata(
+            output_kind="replies",
+            recorded=True,
+            item_count=2,
+        ),
+        ExistingYouTubeOutputReviewMetadata(
+            output_kind="live chat",
+            recorded=True,
+            item_count=4,
+        ),
+        ExistingYouTubeOutputReviewMetadata(
+            output_kind="metadata",
+            recorded=True,
+            item_count=1,
+        ),
+        ExistingYouTubeOutputReviewMetadata(
+            output_kind="transcript",
+            recorded=False,
+            item_count=0,
+        ),
+    )
+    youtube_output_dict = youtube_outputs[0].to_dict()
+    assert youtube_output_dict["youtube_output_review_id"].startswith(
+        "youtube_output_review_"
+    )
+    assert youtube_output_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert youtube_output_dict["provenance"] == "DERIVED_FROM_EXISTING_YOUTUBE_RUNTIME"
+    assert youtube_output_dict["metadata_only"] is True
+    assert youtube_output_dict["user_review_required"] is True
+    assert youtube_output_dict["raw_comment_payload_included"] is False
+    assert youtube_output_dict["raw_livechat_payload_included"] is False
+    assert youtube_output_dict["raw_transcript_payload_included"] is False
+    assert youtube_output_dict["full_local_path_included"] is False
+    assert youtube_output_dict["file_artifact_claimed"] is False
+    assert youtube_output_dict["file_existence_claimed"] is False
+    assert youtube_output_dict["live_fetch_or_api_call_performed"] is False
+    assert youtube_output_dict["browser_automation_claimed"] is False
+    assert youtube_output_dict["automatic_classification"] is False
+    assert youtube_output_dict["sensitive_inference_prohibited"] is True
+    assert youtube_output_dict["completed_evidence_claimed"] is False
+    assert youtube_output_dict["verified_evidence_claimed"] is False
+    assert youtube_existing_output_review_id(youtube_outputs[0]).startswith(
+        "youtube_output_review_"
+    )
+
+    youtube_source_url = "https://www.youtube.com/watch?v=aB3_dE-9xYz"
+    youtube_queue = build_youtube_evidence_queue_from_existing_outputs(
+        source_url=youtube_source_url,
+        video_id="aB3_dE-9xYz",
+        outputs=youtube_outputs,
+    )
+    repeated_youtube_queue = build_youtube_evidence_queue_from_existing_outputs(
+        source_url=youtube_source_url,
+        video_id="aB3_dE-9xYz",
+        outputs=tuple(reversed(youtube_outputs)),
+    )
+    assert youtube_queue.to_dict() == repeated_youtube_queue.to_dict()
+    youtube_queue_dict = youtube_queue.to_dict()
+    assert len(youtube_queue_dict["items"]) == 5
+    assert youtube_queue_dict["items"][0]["item_id"] == youtube_evidence_source_item_id(
+        youtube_source_url,
+        "aB3_dE-9xYz",
+    )
+    assert youtube_queue_dict["items"][0]["item_role"] == "SOURCE_URL"
+    assert youtube_queue_dict["items"][0]["item_status"] == "NEEDS_REVIEW"
+    assert youtube_queue_dict["items"][0]["total_export_include"] is False
+    assert [item["total_export_output_kind"] for item in youtube_queue_dict["items"][1:]] == [
+        "youtube_comments_review_metadata",
+        "youtube_livechat_review_metadata",
+        "youtube_metadata_review_metadata",
+        "youtube_replies_review_metadata",
+    ]
+    assert all(
+        item["local_path"] == "" for item in youtube_queue_dict["items"]
+    )
+    assert all(
+        item["item_status"] == "NEEDS_REVIEW"
+        for item in youtube_queue_dict["items"]
+    )
+
+    youtube_summary = build_youtube_evidence_workflow_review_summary(
+        source_url=youtube_source_url,
+        video_id="aB3_dE-9xYz",
+        outputs=youtube_outputs,
+    )
+    repeated_youtube_summary = build_youtube_evidence_workflow_review_summary(
+        source_url=youtube_source_url,
+        video_id="aB3_dE-9xYz",
+        outputs=tuple(reversed(youtube_outputs)),
+    )
+    assert youtube_summary.to_dict() == repeated_youtube_summary.to_dict()
+    youtube_summary_dict = youtube_summary.to_dict()
+    assert youtube_summary_dict["summary_id"].startswith(
+        "youtube_evidence_workflow_"
+    )
+    assert youtube_summary_dict["status"] == "USER_REVIEW_REQUIRED"
+    assert youtube_summary_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert youtube_summary_dict["metadata_only"] is True
+    assert youtube_summary_dict["provenance"] == "DERIVED_FROM_EXISTING_YOUTUBE_RUNTIME"
+    assert youtube_summary_dict["user_review_required"] is True
+    assert youtube_summary_dict["source_url_recorded"] is True
+    assert youtube_summary_dict["video_id_recorded"] is True
+    assert youtube_summary_dict["output_record_count"] == 5
+    assert youtube_summary_dict["recorded_output_count"] == 4
+    assert youtube_summary_dict["queue_item_count"] == 5
+    assert youtube_summary_dict["output_kinds"] == [
+        "comments",
+        "livechat",
+        "metadata",
+        "replies",
+    ]
+    assert youtube_summary_dict["output_item_counts"] == [3, 4, 1, 2]
+    assert youtube_summary_dict["source_item_ids"] == [
+        youtube_queue_dict["items"][0]["item_id"]
+    ]
+    assert youtube_summary_dict["raw_comment_payload_included"] is False
+    assert youtube_summary_dict["raw_livechat_payload_included"] is False
+    assert youtube_summary_dict["raw_transcript_payload_included"] is False
+    assert youtube_summary_dict["raw_metadata_payload_included"] is False
+    assert youtube_summary_dict["full_local_path_included"] is False
+    assert youtube_summary_dict["file_artifact_claimed"] is False
+    assert youtube_summary_dict["file_existence_claimed"] is False
+    assert youtube_summary_dict["live_fetch_or_api_call_performed"] is False
+    assert youtube_summary_dict["browser_automation_claimed"] is False
+    assert youtube_summary_dict["automatic_classification"] is False
+    assert youtube_summary_dict["sensitive_inference_prohibited"] is True
+    assert youtube_summary_dict["completed_evidence_claimed"] is False
+    assert youtube_summary_dict["verified_evidence_claimed"] is False
+    rendered_youtube_summary = youtube_evidence_workflow_review_summary_to_json(
+        youtube_summary
+    )
+    rendered_youtube_text = build_youtube_evidence_workflow_review_summary_text(
+        youtube_summary
+    )
+    assert "YouTube evidence workflow review summary" in rendered_youtube_text
+    assert "Output records: 5" in rendered_youtube_text
+    assert "Recorded outputs: 4" in rendered_youtube_text
+    assert "Queue items: 5" in rendered_youtube_text
+    assert "Raw comment/livechat/transcript payloads: not included" in (
+        rendered_youtube_text
+    )
+    for unsafe_text in (
+        "RAW COMMENT PAYLOAD",
+        "RAW LIVECHAT PAYLOAD",
+        "RAW TRANSCRIPT PAYLOAD",
+        "RAW EVIDENCE PAYLOAD",
+        r"T:\Evidence",
+        "completed evidence",
+        "verified evidence",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+        "classified",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_youtube_summary
+        assert unsafe_text not in rendered_youtube_text
+
+    empty_youtube_summary = build_youtube_evidence_workflow_review_summary(
+        source_url=youtube_source_url,
+        video_id="aB3_dE-9xYz",
+        outputs=(
+            ExistingYouTubeOutputReviewMetadata(
+                output_kind="comments",
+                recorded=False,
+            ),
+        ),
+    )
+    empty_youtube_summary_dict = empty_youtube_summary.to_dict()
+    assert empty_youtube_summary_dict["status"] == "NO_YOUTUBE_OUTPUTS_RECORDED"
+    assert empty_youtube_summary_dict["recorded_output_count"] == 0
+    assert empty_youtube_summary_dict["queue_item_count"] == 1
+    assert empty_youtube_summary_dict["completed_evidence_claimed"] is False
+    try:
+        ExistingYouTubeOutputReviewMetadata(output_kind="browser dump").to_dict()
+    except ValueError as exc:
+        assert "unsupported YouTube evidence output kind" in str(exc)
+    else:
+        raise AssertionError("unsupported YouTube output kind should fail closed")
 
     manual_same_media_link = ManualMediaSourceChainLink(
         source_item_id="media-1",
