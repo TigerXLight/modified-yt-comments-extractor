@@ -674,6 +674,61 @@ class YouTubeEvidenceWorkflowReviewSummary:
 
 
 @dataclass(frozen=True)
+class YouTubeEvidenceQueueReviewFlowSummary:
+    flow_id: str
+    status: str
+    review_status: str = "USER_REVIEW_REQUIRED"
+    metadata_only: bool = True
+    provenance: str = "DERIVED_FROM_EXISTING_YOUTUBE_RUNTIME"
+    user_review_required: bool = True
+    output_metadata_count: int = 0
+    recorded_output_count: int = 0
+    missing_output_count: int = 0
+    total_recorded_item_count: int = 0
+    queue_item_count: int = 0
+    workflow_summary_count: int = 0
+    provenance_receipt_count: int = 0
+    queue_item_ids: tuple[str, ...] = ()
+    output_review_ids: tuple[str, ...] = ()
+    output_kinds: tuple[str, ...] = ()
+    output_item_counts: tuple[int, ...] = ()
+    output_recorded_flags: tuple[bool, ...] = ()
+    summary_ids: tuple[str, ...] = ()
+    receipt_ids: tuple[str, ...] = ()
+    receipt_event_ids: tuple[str, ...] = ()
+    receipt_event_hashes: tuple[str, ...] = ()
+    source_url_recorded: bool = False
+    video_id_recorded: bool = False
+    runtime_invoked: bool = False
+    live_fetch_or_api_call_performed: bool = False
+    api_capture_claimed: bool = False
+    browser_automation_claimed: bool = False
+    raw_comment_payload_included: bool = False
+    raw_reply_payload_included: bool = False
+    raw_livechat_payload_included: bool = False
+    raw_transcript_payload_included: bool = False
+    raw_evidence_payload_included: bool = False
+    raw_media_payload_included: bool = False
+    raw_claim_text_included: bool = False
+    full_local_path_included: bool = False
+    file_artifact_claimed: bool = False
+    file_existence_claimed: bool = False
+    archive_download_ocr_warc_wacz_claimed: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    final_evidence_state_recorded: bool = False
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    note: str = (
+        "Existing YouTube output status/count metadata only; review required "
+        "and no final-evidence state is recorded."
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceQueueItem:
     item_id: str
     item_role: EvidenceItemRole
@@ -1106,6 +1161,139 @@ def youtube_evidence_queue_metadata_to_action_log_events(
         app_version=app_version,
     )
     return (event,)
+
+
+def youtube_evidence_queue_review_flow_id(
+    *,
+    queue_item_ids: tuple[str, ...],
+    output_records: tuple[dict[str, Any], ...],
+    summary_ids: tuple[str, ...],
+    receipt_ids: tuple[str, ...],
+) -> str:
+    payload = {
+        "output_records": list(output_records),
+        "queue_item_ids": list(queue_item_ids),
+        "receipt_ids": list(receipt_ids),
+        "review_flow_kind": "youtube_evidence_queue_metadata",
+        "summary_ids": list(summary_ids),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "youtube_evidence_review_flow_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def build_youtube_evidence_queue_review_flow_summary(
+    *,
+    source_url: str,
+    video_id: str = "",
+    outputs: tuple[ExistingYouTubeOutputReviewMetadata, ...],
+    session_id: str,
+    timestamp_utc: str,
+    previous_event_hash: str = "",
+    actor_id: str = "",
+    app_version: str = "",
+) -> YouTubeEvidenceQueueReviewFlowSummary:
+    queue = build_youtube_evidence_queue_from_existing_outputs(
+        source_url=source_url,
+        video_id=video_id,
+        outputs=outputs,
+    )
+    workflow_summary = build_youtube_evidence_workflow_review_summary(
+        source_url=source_url,
+        video_id=video_id,
+        outputs=outputs,
+    )
+    receipt_events = youtube_evidence_queue_metadata_to_action_log_events(
+        source_url=source_url,
+        video_id=video_id,
+        outputs=outputs,
+        session_id=session_id,
+        timestamp_utc=timestamp_utc,
+        previous_event_hash=previous_event_hash,
+        actor_id=actor_id,
+        app_version=app_version,
+    )
+    safe_output_records = _safe_youtube_output_records(outputs)
+    receipt_ids = tuple(event.target_id for event in receipt_events)
+    summary_ids = (workflow_summary.summary_id,)
+    queue_item_ids = tuple(item.item_id for item in queue.items)
+    return YouTubeEvidenceQueueReviewFlowSummary(
+        flow_id=youtube_evidence_queue_review_flow_id(
+            queue_item_ids=queue_item_ids,
+            output_records=safe_output_records,
+            summary_ids=summary_ids,
+            receipt_ids=receipt_ids,
+        ),
+        status=workflow_summary.status,
+        output_metadata_count=len(outputs),
+        recorded_output_count=workflow_summary.recorded_output_count,
+        missing_output_count=max(
+            0,
+            workflow_summary.output_record_count
+            - workflow_summary.recorded_output_count,
+        ),
+        total_recorded_item_count=sum(
+            int(record["item_count"])
+            for record in safe_output_records
+            if record["recorded"]
+        ),
+        queue_item_count=workflow_summary.queue_item_count,
+        workflow_summary_count=1,
+        provenance_receipt_count=len(receipt_events),
+        queue_item_ids=queue_item_ids,
+        output_review_ids=workflow_summary.output_review_ids,
+        output_kinds=tuple(record["output_kind"] for record in safe_output_records),
+        output_item_counts=tuple(
+            int(record["item_count"]) for record in safe_output_records
+        ),
+        output_recorded_flags=tuple(
+            bool(record["recorded"]) for record in safe_output_records
+        ),
+        summary_ids=summary_ids,
+        receipt_ids=receipt_ids,
+        receipt_event_ids=tuple(event.event_id for event in receipt_events),
+        receipt_event_hashes=tuple(event.event_hash for event in receipt_events),
+        source_url_recorded=workflow_summary.source_url_recorded,
+        video_id_recorded=workflow_summary.video_id_recorded,
+    )
+
+
+def youtube_evidence_queue_review_flow_summary_to_json(
+    summary: YouTubeEvidenceQueueReviewFlowSummary,
+) -> str:
+    return json.dumps(summary.to_dict(), indent=2, sort_keys=True)
+
+
+def build_youtube_evidence_queue_review_flow_summary_text(
+    summary: YouTubeEvidenceQueueReviewFlowSummary,
+) -> str:
+    return "\n".join(
+        [
+            "YouTube evidence queue review flow summary",
+            f"Flow ID: {summary.flow_id}",
+            f"Status: {summary.status}",
+            f"Review status: {summary.review_status}",
+            f"Output metadata records: {summary.output_metadata_count}",
+            f"Recorded outputs: {summary.recorded_output_count}",
+            f"Missing outputs: {summary.missing_output_count}",
+            f"Total recorded item count: {summary.total_recorded_item_count}",
+            f"Queue items: {summary.queue_item_count}",
+            f"Workflow summaries: {summary.workflow_summary_count}",
+            f"Provenance receipts: {summary.provenance_receipt_count}",
+            "Metadata only: yes",
+            "Existing YouTube runtime provenance: yes",
+            "User review required: yes",
+            "Runtime invoked by this helper: false",
+            "API/provider call flag: false",
+            "Browser automation flag: false",
+            "Raw comment/reply/livechat/transcript payloads: not included",
+            "File artifact/existence claim: false",
+            "Auto-classify flag: false",
+            "Sensitive inference prohibited: true",
+            "Final-evidence claim flags: false",
+        ]
+    )
 
 
 def manual_publisher_framing_correction_note_id(

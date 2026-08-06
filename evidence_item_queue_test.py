@@ -27,6 +27,8 @@ from evidence_item_queue import (
     build_source_role_review_flow_summary,
     build_source_role_review_flow_summary_text,
     build_youtube_evidence_queue_from_existing_outputs,
+    build_youtube_evidence_queue_review_flow_summary,
+    build_youtube_evidence_queue_review_flow_summary_text,
     build_youtube_evidence_workflow_review_summary,
     build_youtube_evidence_workflow_review_summary_text,
     closed_loop_source_chain_review_summary_to_json,
@@ -46,6 +48,7 @@ from evidence_item_queue import (
     source_role_review_flow_summary_to_json,
     source_role_review_receipt_id,
     youtube_evidence_queue_metadata_to_action_log_events,
+    youtube_evidence_queue_review_flow_summary_to_json,
     youtube_evidence_queue_receipt_id,
     youtube_evidence_source_item_id,
     youtube_evidence_workflow_review_summary_to_json,
@@ -605,6 +608,146 @@ def run_self_test() -> None:
             assert expected_message in str(exc)
         else:
             raise AssertionError(f"{expected_message} should be required")
+    youtube_flow_summary = build_youtube_evidence_queue_review_flow_summary(
+        source_url=youtube_source_url,
+        video_id="aB3_dE-9xYz",
+        outputs=youtube_outputs,
+        session_id="youtube-evidence-session",
+        timestamp_utc="2026-08-06T13:00:00Z",
+    )
+    repeated_youtube_flow_summary = build_youtube_evidence_queue_review_flow_summary(
+        source_url=youtube_source_url,
+        video_id="aB3_dE-9xYz",
+        outputs=tuple(reversed(youtube_outputs)),
+        session_id="youtube-evidence-session",
+        timestamp_utc="2026-08-06T13:00:00Z",
+    )
+    assert youtube_flow_summary.to_dict() == repeated_youtube_flow_summary.to_dict()
+    youtube_flow_dict = youtube_flow_summary.to_dict()
+    assert youtube_flow_dict["flow_id"].startswith("youtube_evidence_review_flow_")
+    assert youtube_flow_dict["status"] == "USER_REVIEW_REQUIRED"
+    assert youtube_flow_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert youtube_flow_dict["metadata_only"] is True
+    assert (
+        youtube_flow_dict["provenance"]
+        == "DERIVED_FROM_EXISTING_YOUTUBE_RUNTIME"
+    )
+    assert youtube_flow_dict["user_review_required"] is True
+    assert youtube_flow_dict["output_metadata_count"] == 5
+    assert youtube_flow_dict["recorded_output_count"] == 4
+    assert youtube_flow_dict["missing_output_count"] == 1
+    assert youtube_flow_dict["total_recorded_item_count"] == 10
+    assert youtube_flow_dict["queue_item_count"] == 5
+    assert youtube_flow_dict["workflow_summary_count"] == 1
+    assert youtube_flow_dict["provenance_receipt_count"] == 1
+    assert youtube_flow_dict["queue_item_ids"] == list(youtube_summary.queue_item_ids)
+    assert youtube_flow_dict["output_review_ids"] == list(
+        youtube_summary.output_review_ids
+    )
+    assert youtube_flow_dict["output_kinds"] == [
+        "comments",
+        "livechat",
+        "metadata",
+        "replies",
+        "transcript",
+    ]
+    assert youtube_flow_dict["output_item_counts"] == [3, 4, 1, 2, 0]
+    assert youtube_flow_dict["output_recorded_flags"] == [
+        True,
+        True,
+        True,
+        True,
+        False,
+    ]
+    assert youtube_flow_dict["summary_ids"] == [youtube_summary.summary_id]
+    assert youtube_flow_dict["receipt_ids"] == [youtube_receipt_id]
+    assert youtube_flow_dict["receipt_event_ids"] == [
+        youtube_receipt_dict["event_id"]
+    ]
+    assert youtube_flow_dict["receipt_event_hashes"] == [
+        youtube_receipt_dict["event_hash"]
+    ]
+    assert youtube_flow_dict["source_url_recorded"] is True
+    assert youtube_flow_dict["video_id_recorded"] is True
+    assert youtube_flow_dict["runtime_invoked"] is False
+    assert youtube_flow_dict["live_fetch_or_api_call_performed"] is False
+    assert youtube_flow_dict["api_capture_claimed"] is False
+    assert youtube_flow_dict["browser_automation_claimed"] is False
+    assert youtube_flow_dict["raw_comment_payload_included"] is False
+    assert youtube_flow_dict["raw_reply_payload_included"] is False
+    assert youtube_flow_dict["raw_livechat_payload_included"] is False
+    assert youtube_flow_dict["raw_transcript_payload_included"] is False
+    assert youtube_flow_dict["raw_evidence_payload_included"] is False
+    assert youtube_flow_dict["raw_media_payload_included"] is False
+    assert youtube_flow_dict["raw_claim_text_included"] is False
+    assert youtube_flow_dict["full_local_path_included"] is False
+    assert youtube_flow_dict["file_artifact_claimed"] is False
+    assert youtube_flow_dict["file_existence_claimed"] is False
+    assert youtube_flow_dict["archive_download_ocr_warc_wacz_claimed"] is False
+    assert youtube_flow_dict["automatic_classification"] is False
+    assert youtube_flow_dict["sensitive_inference_prohibited"] is True
+    assert youtube_flow_dict["final_evidence_state_recorded"] is False
+    assert youtube_flow_dict["completed_evidence_claimed"] is False
+    assert youtube_flow_dict["verified_evidence_claimed"] is False
+    rendered_youtube_flow = youtube_evidence_queue_review_flow_summary_to_json(
+        youtube_flow_summary
+    )
+    rendered_youtube_flow_text = build_youtube_evidence_queue_review_flow_summary_text(
+        youtube_flow_summary
+    )
+    assert "YouTube evidence queue review flow summary" in rendered_youtube_flow_text
+    assert "Output metadata records: 5" in rendered_youtube_flow_text
+    assert "Provenance receipts: 1" in rendered_youtube_flow_text
+    assert "Runtime invoked by this helper: false" in rendered_youtube_flow_text
+    assert "Raw comment/reply/livechat/transcript payloads: not included" in (
+        rendered_youtube_flow_text
+    )
+    for unsafe_text in (
+        "RAW COMMENT PAYLOAD",
+        "RAW REPLY PAYLOAD",
+        "RAW LIVECHAT PAYLOAD",
+        "RAW TRANSCRIPT PAYLOAD",
+        "RAW EVIDENCE PAYLOAD",
+        "RAW MEDIA PAYLOAD",
+        "RAW CLAIM TEXT",
+        r"T:\Evidence",
+        "final evidence",
+        "completed evidence",
+        "verified evidence",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot",
+        "OCR complete",
+        "archive complete",
+        "WARC",
+        "WACZ",
+        "classified",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_youtube_flow
+        assert unsafe_text not in rendered_youtube_flow_text
+    empty_youtube_flow_summary = build_youtube_evidence_queue_review_flow_summary(
+        source_url=youtube_source_url,
+        video_id="aB3_dE-9xYz",
+        outputs=(ExistingYouTubeOutputReviewMetadata(output_kind="comments"),),
+        session_id="empty-youtube-flow-session",
+        timestamp_utc="2026-08-06T13:02:00Z",
+    )
+    empty_youtube_flow_dict = empty_youtube_flow_summary.to_dict()
+    assert empty_youtube_flow_dict["status"] == "NO_YOUTUBE_OUTPUTS_RECORDED"
+    assert empty_youtube_flow_dict["recorded_output_count"] == 0
+    assert empty_youtube_flow_dict["missing_output_count"] == 1
+    assert empty_youtube_flow_dict["total_recorded_item_count"] == 0
+    assert empty_youtube_flow_dict["queue_item_count"] == 1
+    assert empty_youtube_flow_dict["provenance_receipt_count"] == 0
+    assert empty_youtube_flow_dict["receipt_ids"] == []
+    assert empty_youtube_flow_dict["completed_evidence_claimed"] is False
+    assert empty_youtube_flow_dict["verified_evidence_claimed"] is False
 
     manual_same_media_link = ManualMediaSourceChainLink(
         source_item_id="media-1",
