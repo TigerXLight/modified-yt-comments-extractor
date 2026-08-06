@@ -2,6 +2,7 @@ import json
 
 from capture_execution_gate import build_execution_gate_plan, build_execution_gate_request
 from evidence_item_queue import EvidenceItemQueue, EvidenceItemRole, EvidenceItemStatus, EvidenceQueueItem
+from evidence_item_queue_store import build_evidence_item_queue_review_store_document
 from source_evidence_review_export import (
     build_source_evidence_review_manifest,
     source_evidence_review_manifest_to_json,
@@ -42,6 +43,12 @@ def run_self_test() -> None:
     )
     gate_plan = build_execution_gate_plan((gate_request,))
     reference_summary = build_reference_pack_intake_summary(records=())
+    store_document = build_evidence_item_queue_review_store_document(
+        queue,
+        session_id="source-review-store",
+        timestamp_utc="2026-08-06T12:00:00Z",
+        app_version="test",
+    )
 
     manifest = build_source_evidence_review_manifest(
         package_id="source-evidence-review",
@@ -50,6 +57,7 @@ def run_self_test() -> None:
         queue=queue,
         execution_gate_plan=gate_plan,
         reference_summary=reference_summary,
+        queue_review_store_document=store_document,
         app_version="test",
     )
     manifest_dict = manifest.to_dict()
@@ -58,6 +66,7 @@ def run_self_test() -> None:
     assert manifest_dict["package_id"] == "source-evidence-review"
     assert manifest_dict["capture_options"] == [
         "Evidence Item Queue review metadata",
+        "Evidence Item Queue review store metadata",
         "Execution gate approval metadata",
         "Source reference intake metadata",
     ]
@@ -66,6 +75,7 @@ def run_self_test() -> None:
         ASSET_RAW_SIDECAR,
         ASSET_RAW_SIDECAR,
         ASSET_RAW_SIDECAR,
+        ASSET_MANIFEST,
     ]
     assert all(asset["path"] == "" for asset in manifest_dict["assets"])
     assert all(len(asset["sha256"]) == 64 for asset in manifest_dict["assets"])
@@ -86,6 +96,7 @@ def run_self_test() -> None:
         queue=queue,
         execution_gate_plan=gate_plan,
         reference_summary=reference_summary,
+        queue_review_store_document=store_document,
         app_version="test",
     )
     assert repeated.to_dict() == manifest_dict

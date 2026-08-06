@@ -137,6 +137,7 @@ from capture_controller import (
     build_operational_capture_plan,
     format_operational_capture_plan_message,
 )
+from source_evidence_workflow_state import build_source_evidence_workflow_state
 from capture_twitter_exporter_source_import import (
     build_twitter_exporter_queue_review_draft,
     build_twitter_exporter_queue_review_draft_summary,
@@ -5171,6 +5172,36 @@ class App(ctk.CTk):
         if label is not None and hasattr(label, "configure"):
             label.configure(text=text, text_color=color_by_level.get(level, COLORS["text_muted"]))
 
+    def _record_operational_capture_review_metadata(self, plan: Any) -> Any:
+        """Build app-facing review/export state for an execution-gated source plan."""
+        try:
+            workflow_state = build_source_evidence_workflow_state(
+                plan,
+                package_id=f"source_evidence_review_{plan.source_row_id}",
+                app_version=APP_VERSION,
+            )
+        except Exception as error:
+            logger.exception("Could not build source evidence workflow state")
+            self.last_source_evidence_workflow_error = str(error)
+            self.log_message(
+                "Source evidence review metadata could not be prepared; capture plan remains execution-gated.",
+                "warning",
+            )
+            return None
+
+        self.last_source_evidence_workflow_state = workflow_state
+        self.last_operational_capture_export_connection = workflow_state.connection
+        self.last_operational_capture_queue_review_store = workflow_state.queue_review_store_document
+        self.last_operational_capture_review_manifest = workflow_state.review_manifest
+        self.log_message(
+            "Source evidence review metadata ready: "
+            f"{workflow_state.queue_item_count} queue item(s), "
+            f"{workflow_state.review_manifest_asset_count} review manifest asset(s), "
+            f"{len(workflow_state.execution_gate_action_kinds)} execution-gated action(s).",
+            "muted",
+        )
+        return workflow_state
+
     # =========================================================================
     # WINDOW SIZE HELPERS
     # =========================================================================
@@ -5815,13 +5846,19 @@ class App(ctk.CTk):
                     discussion=discussion,
                 )
                 self.last_operational_capture_plan = plan
+                workflow_state = self._record_operational_capture_review_metadata(plan)
                 self._set_operational_capture_status(
-                    "Fixture/model-only capture plan ready. Manual live-site smoke pending.",
+                    "Fixture/model-only capture plan ready. Review/export metadata ready; manual live-site smoke pending.",
                     "success",
                 )
+                scaffold_message = format_operational_capture_plan_message(plan)
+                if workflow_state is not None:
+                    scaffold_message = "\n\n".join(
+                        (scaffold_message, workflow_state.to_summary_text())
+                    )
                 messagebox.showinfo(
                     "Discussion action scaffold",
-                    format_operational_capture_plan_message(plan),
+                    scaffold_message,
                 )
                 self.log_message(
                     "Discussion action scaffold only; no fetch, screenshot, archive, download, WARC/WACZ, or provider action executed.",

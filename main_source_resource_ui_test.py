@@ -352,6 +352,12 @@ def test_start_fetching_msn_scaffold_returns_before_credential_resolution() -> N
         "_resolve_youtube_api_key_for_action"
     )
     assert "_set_operational_capture_status" in source
+    assert "_record_operational_capture_review_metadata" in source
+    review_metadata_source = inspect.getsource(
+        main.App._record_operational_capture_review_metadata
+    )
+    assert "build_source_evidence_workflow_state" in review_metadata_source
+    assert "last_source_evidence_workflow_state" in review_metadata_source
     assert "Fixture/model-only capture plan ready" in source
 
 
@@ -373,11 +379,17 @@ def test_start_fetching_source_scaffold_builds_plan_preview_without_live_executi
     assert fake_messagebox.infos[0][0] == "Discussion action scaffold"
     assert "Artifact declarations:" in fake_messagebox.infos[0][1]
     assert "Action event chain:" in fake_messagebox.infos[0][1]
+    assert "Source Evidence workflow state" in fake_messagebox.infos[0][1]
     assert "Manual live-site smoke: pending separate approval" in fake_messagebox.infos[0][1]
     assert app.last_operational_capture_status.startswith("Fixture/model-only")
     assert app.url_status.config["text"].startswith("Fixture/model-only")
+    assert app.last_source_evidence_workflow_state.queue_item_count > 0
+    assert app.last_source_evidence_workflow_state.review_manifest_asset_count > 0
+    assert app.last_operational_capture_queue_review_store.metadata_only is True
+    assert app.last_operational_capture_review_manifest.assets
     assert any("no fetch" in message for message, _level in app.log_messages)
     assert any("WARC/WACZ" in message for message, _level in app.log_messages)
+    assert any("Source evidence review metadata ready" in message for message, _level in app.log_messages)
 
 
 def test_start_fetching_without_selected_scope_sets_skipped_status() -> None:

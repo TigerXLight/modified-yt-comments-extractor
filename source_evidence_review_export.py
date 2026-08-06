@@ -4,7 +4,7 @@ import hashlib
 import json
 from dataclasses import asdict, is_dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Mapping
 
 from capture_execution_gate import ExecutionGatePlan
 from evidence_item_queue import (
@@ -13,6 +13,7 @@ from evidence_item_queue import (
     build_evidence_item_queue_review_summary,
 )
 from source_reference_intake import ReferencePackIntakeSummary
+from evidence_item_queue_store import EvidenceItemQueueReviewStoreDocument
 from total_export_manifest import ASSET_MANIFEST, ASSET_RAW_SIDECAR, ExportAsset, TotalExportManifest
 
 
@@ -62,6 +63,7 @@ def build_source_evidence_review_manifest(
     queue: EvidenceItemQueue | None = None,
     execution_gate_plan: ExecutionGatePlan | None = None,
     reference_summary: ReferencePackIntakeSummary | None = None,
+    queue_review_store_document: EvidenceItemQueueReviewStoreDocument | Mapping[str, Any] | None = None,
     app_version: str = "",
 ) -> TotalExportManifest:
     assets: list[ExportAsset] = []
@@ -128,6 +130,18 @@ def build_source_evidence_review_manifest(
             )
         )
         capture_options.append("Source reference intake metadata")
+
+    if queue_review_store_document is not None:
+        store_metadata = _value_for_dict(queue_review_store_document)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_MANIFEST,
+                description="Evidence Item Queue review store document metadata.",
+                metadata=store_metadata,
+                created_at_utc=created_at_utc,
+            )
+        )
+        capture_options.append("Evidence Item Queue review store metadata")
 
     notes = "\n".join(
         [
