@@ -15,6 +15,8 @@ from evidence_item_queue import (
     SourceRoleReviewMetadata,
     build_closed_loop_source_chain_review_summary,
     build_closed_loop_source_chain_review_summary_text,
+    build_evidence_item_queue_review_activity_flow_summary,
+    build_evidence_item_queue_review_activity_flow_summary_text,
     build_evidence_item_queue_review_summary,
     build_evidence_item_queue_review_summary_text,
     build_manual_media_source_chain_review_summary,
@@ -35,7 +37,11 @@ from evidence_item_queue import (
     build_youtube_evidence_workflow_review_summary_text,
     closed_loop_source_chain_review_summary_to_json,
     evidence_item_queue_review_summary_id,
+    evidence_item_queue_review_activity_flow_summary_to_json,
     evidence_item_queue_review_summary_to_json,
+    evidence_item_queue_review_receipt_id,
+    evidence_item_queue_review_to_action_log_events,
+    evidence_item_queue_review_to_activity_records,
     manual_media_source_chain_links_to_ui_rows,
     manual_media_source_chain_links_to_action_log_events,
     manual_media_source_chain_receipt_id,
@@ -375,6 +381,235 @@ def run_self_test() -> None:
     ):
         assert unsafe_text not in rendered_queue_review
         assert unsafe_text not in rendered_queue_review_text
+
+    queue_review_receipt_id = evidence_item_queue_review_receipt_id(queue_review)
+    repeated_queue_review_receipt_id = evidence_item_queue_review_receipt_id(
+        repeated_queue_review
+    )
+    assert queue_review_receipt_id == repeated_queue_review_receipt_id
+    assert queue_review_receipt_id.startswith("evidence_item_queue_receipt_")
+
+    queue_review_receipts = evidence_item_queue_review_to_action_log_events(
+        queue_review,
+        session_id="queue-review-session",
+        timestamp_utc="2026-08-06T13:00:00Z",
+        previous_event_hash="previous-queue-review-hash",
+        actor_id="app",
+        app_version="test",
+    )
+    repeated_queue_review_receipts = evidence_item_queue_review_to_action_log_events(
+        repeated_queue_review,
+        session_id="queue-review-session",
+        timestamp_utc="2026-08-06T13:00:00Z",
+        previous_event_hash="previous-queue-review-hash",
+        actor_id="app",
+        app_version="test",
+    )
+    assert [event.to_dict() for event in queue_review_receipts] == [
+        event.to_dict() for event in repeated_queue_review_receipts
+    ]
+    assert len(queue_review_receipts) == 1
+    queue_review_receipt_dict = queue_review_receipts[0].to_dict()
+    assert (
+        queue_review_receipt_dict["action_type"]
+        == "evidence_item_queue_review_metadata_receipt"
+    )
+    assert queue_review_receipt_dict["result"] == "USER_REVIEW_REQUIRED"
+    assert queue_review_receipt_dict["target_id"] == queue_review_receipt_id
+    queue_review_receipt_summary = queue_review_receipt_dict["request_summary"]
+    assert queue_review_receipt_summary["metadata_only"] is True
+    assert queue_review_receipt_summary["review_required"] is True
+    assert queue_review_receipt_summary["queue_item_count"] == 5
+    assert queue_review_receipt_summary["link_count"] == 2
+    assert queue_review_receipt_summary["asr_pairing_count"] == 2
+    assert queue_review_receipt_summary["source_url_recorded_count"] == 1
+    assert queue_review_receipt_summary["storage_or_file_state_claimed"] is False
+    assert queue_review_receipt_summary["runtime_or_completion_claimed"] is False
+    assert queue_review_receipt_summary["automatic_classification"] is False
+    assert queue_review_receipt_summary["sensitive_inference_prohibited"] is True
+    rendered_queue_review_receipt = action_log_event_to_json(queue_review_receipts[0])
+    for unsafe_text in (
+        r"T:\Evidence",
+        "reference_clip.mp4",
+        "reference.txt",
+        "page.png",
+        "RAW COMMENT PAYLOAD",
+        "RAW LIVECHAT PAYLOAD",
+        "RAW TRANSCRIPT PAYLOAD",
+        "RAW EVIDENCE PAYLOAD",
+        "completed evidence",
+        "verified evidence",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot path",
+        "OCR complete",
+        "archive complete",
+        "classified",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_queue_review_receipt
+
+    queue_review_activity_records = evidence_item_queue_review_to_activity_records(
+        queue_review,
+        session_id="queue-review-session",
+        timestamp_utc="2026-08-06T13:00:00Z",
+        actor_label="operator",
+    )
+    assert len(queue_review_activity_records) == 1
+    activity_dict = queue_review_activity_records[0].to_dict()
+    assert activity_dict["activity_type"] == "EXPORT_QUEUE_REVIEWED"
+    assert activity_dict["actor_type"] == "APPLICATION"
+    assert activity_dict["review_status"] == "USER_REVIEW_REQUIRED"
+    assert activity_dict["metadata_only"] is True
+    assert activity_dict["file_read_performed"] is False
+    assert activity_dict["file_check_performed"] is False
+    assert activity_dict["file_move_performed"] is False
+    assert activity_dict["file_existence_claimed"] is False
+    assert activity_dict["raw_payload_included"] is False
+    assert activity_dict["full_local_path_included"] is False
+    assert activity_dict["automatic_classification"] is False
+    activity_metadata = activity_dict["metadata_summary"]
+    assert activity_metadata["item_reference_count"] == 5
+    assert activity_metadata["source_url_reference_count"] == 1
+    assert activity_metadata["storage_reference_recorded_count"] == 3
+    assert activity_metadata["digest_reference_recorded_count"] == 0
+    assert activity_metadata["external_runtime_invoked"] is False
+    assert "local_path_recorded_count" not in activity_metadata
+    assert "file_hash_recorded_count" not in activity_metadata
+
+    queue_review_flow = build_evidence_item_queue_review_activity_flow_summary(
+        queue_review,
+        session_id="queue-review-session",
+        timestamp_utc="2026-08-06T13:00:00Z",
+        previous_event_hash="previous-queue-review-hash",
+        actor_id="app",
+        actor_label="operator",
+        app_version="test",
+    )
+    repeated_queue_review_flow = (
+        build_evidence_item_queue_review_activity_flow_summary(
+            repeated_queue_review,
+            session_id="queue-review-session",
+            timestamp_utc="2026-08-06T13:00:00Z",
+            previous_event_hash="previous-queue-review-hash",
+            actor_id="app",
+            actor_label="operator",
+            app_version="test",
+        )
+    )
+    assert queue_review_flow.to_dict() == repeated_queue_review_flow.to_dict()
+    queue_review_flow_dict = queue_review_flow.to_dict()
+    assert queue_review_flow_dict["flow_id"].startswith(
+        "evidence_item_queue_activity_flow_"
+    )
+    assert queue_review_flow_dict["status"] == "USER_REVIEW_REQUIRED"
+    assert queue_review_flow_dict["queue_item_count"] == 5
+    assert queue_review_flow_dict["queue_summary_count"] == 1
+    assert queue_review_flow_dict["action_receipt_count"] == 1
+    assert queue_review_flow_dict["behavior_activity_record_count"] == 1
+    assert queue_review_flow_dict["summary_ids"] == [queue_review_summary.summary_id]
+    assert queue_review_flow_dict["receipt_ids"] == [queue_review_receipt_id]
+    assert queue_review_flow_dict["activity_types"] == ["EXPORT_QUEUE_REVIEWED"]
+    assert queue_review_flow_dict["runtime_or_completion_claimed"] is False
+    assert queue_review_flow_dict["file_read_performed"] is False
+    assert queue_review_flow_dict["file_check_performed"] is False
+    assert queue_review_flow_dict["file_move_performed"] is False
+    assert queue_review_flow_dict["file_existence_claimed"] is False
+    assert queue_review_flow_dict["completed_evidence_claimed"] is False
+    assert queue_review_flow_dict["verified_evidence_claimed"] is False
+    assert queue_review_flow_dict["live_fetch_or_api_call_performed"] is False
+    assert queue_review_flow_dict["browser_automation_claimed"] is False
+    assert queue_review_flow_dict["automatic_classification"] is False
+    assert queue_review_flow_dict["sensitive_inference_prohibited"] is True
+    rendered_queue_review_flow = (
+        evidence_item_queue_review_activity_flow_summary_to_json(queue_review_flow)
+    )
+    rendered_queue_review_flow_text = (
+        build_evidence_item_queue_review_activity_flow_summary_text(
+            queue_review_flow
+        )
+    )
+    assert "Evidence Item Queue review activity/provenance flow summary" in (
+        rendered_queue_review_flow_text
+    )
+    assert "Action receipts: 1" in rendered_queue_review_flow_text
+    assert "Behavior/activity records: 1" in rendered_queue_review_flow_text
+    for unsafe_text in (
+        r"T:\Evidence",
+        "reference_clip.mp4",
+        "reference.txt",
+        "page.png",
+        "RAW COMMENT PAYLOAD",
+        "RAW LIVECHAT PAYLOAD",
+        "RAW TRANSCRIPT PAYLOAD",
+        "RAW EVIDENCE PAYLOAD",
+        "completed evidence",
+        "verified evidence",
+        "live verified",
+        "API capture",
+        "browser automation",
+        "downloaded media",
+        "screenshot path",
+        "OCR complete",
+        "archive complete",
+        "classified",
+        "account",
+        "cookie",
+        "token",
+        "protected attribute",
+    ):
+        assert unsafe_text not in rendered_queue_review_flow
+        assert unsafe_text not in rendered_queue_review_flow_text
+
+    assert (
+        evidence_item_queue_review_to_action_log_events(
+            EvidenceItemQueue(),
+            session_id="empty-queue-review-session",
+            timestamp_utc="2026-08-06T13:00:00Z",
+        )
+        == ()
+    )
+    assert (
+        evidence_item_queue_review_to_activity_records(
+            EvidenceItemQueue(),
+            session_id="empty-queue-review-session",
+            timestamp_utc="2026-08-06T13:00:00Z",
+        )
+        == ()
+    )
+    empty_queue_review_flow = build_evidence_item_queue_review_activity_flow_summary(
+        EvidenceItemQueue(),
+        session_id="empty-queue-review-session",
+        timestamp_utc="2026-08-06T13:00:00Z",
+    )
+    empty_queue_review_flow_dict = empty_queue_review_flow.to_dict()
+    assert empty_queue_review_flow_dict["status"] == "NO_EVIDENCE_QUEUE_ITEMS"
+    assert empty_queue_review_flow_dict["queue_item_count"] == 0
+    assert empty_queue_review_flow_dict["action_receipt_count"] == 0
+    assert empty_queue_review_flow_dict["behavior_activity_record_count"] == 0
+    assert empty_queue_review_flow_dict["runtime_or_completion_claimed"] is False
+    assert empty_queue_review_flow_dict["file_existence_claimed"] is False
+    for kwargs, expected_message in (
+        ({"session_id": "", "timestamp_utc": "2026-08-06T13:00:00Z"}, "session_id"),
+        ({"session_id": "queue-review-session", "timestamp_utc": ""}, "timestamp_utc"),
+    ):
+        try:
+            evidence_item_queue_review_to_action_log_events(queue_review, **kwargs)
+        except ValueError as exc:
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{expected_message} should be required")
+        try:
+            evidence_item_queue_review_to_activity_records(queue_review, **kwargs)
+        except ValueError as exc:
+            assert expected_message in str(exc)
+        else:
+            raise AssertionError(f"{expected_message} should be required")
     empty_queue_review_summary = build_evidence_item_queue_review_summary(
         EvidenceItemQueue()
     )

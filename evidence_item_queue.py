@@ -11,6 +11,12 @@ from capture_action_log import (
     CaptureActionLogEvent,
     build_action_log_event,
 )
+from evidence_activity_log import (
+    ActivityActorType,
+    ActivityType,
+    BehaviorActivityRecord,
+    build_behavior_activity_record,
+)
 from evidence_schema import (
     ClaimEvidenceNote,
     CurrentnessStatus,
@@ -778,6 +784,50 @@ class EvidenceItemQueueReviewSummary:
 
 
 @dataclass(frozen=True)
+class EvidenceItemQueueReviewActivityFlowSummary:
+    flow_id: str
+    status: str
+    review_status: str = "USER_REVIEW_REQUIRED"
+    metadata_only: bool = True
+    user_review_required: bool = True
+    queue_item_count: int = 0
+    queue_summary_count: int = 0
+    action_receipt_count: int = 0
+    behavior_activity_record_count: int = 0
+    summary_ids: tuple[str, ...] = ()
+    receipt_ids: tuple[str, ...] = ()
+    receipt_event_ids: tuple[str, ...] = ()
+    receipt_event_hashes: tuple[str, ...] = ()
+    activity_ids: tuple[str, ...] = ()
+    activity_types: tuple[str, ...] = ()
+    metadata_activity_types: tuple[str, ...] = ()
+    runtime_or_completion_claimed: bool = False
+    file_read_performed: bool = False
+    file_check_performed: bool = False
+    file_move_performed: bool = False
+    file_existence_claimed: bool = False
+    completed_evidence_claimed: bool = False
+    verified_evidence_claimed: bool = False
+    final_evidence_state_recorded: bool = False
+    live_fetch_or_api_call_performed: bool = False
+    browser_automation_claimed: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+    raw_evidence_payload_included: bool = False
+    raw_media_payload_included: bool = False
+    raw_transcript_payload_included: bool = False
+    full_local_path_included: bool = False
+    note: str = (
+        "Evidence Item Queue review activity/provenance flow metadata only; "
+        "no runtime execution, file checking, persistence, or final-evidence "
+        "state is recorded."
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceQueueItem:
     item_id: str
     item_role: EvidenceItemRole
@@ -972,6 +1022,267 @@ def build_evidence_item_queue_review_summary_text(
             "Auto-classify flag: false",
             "Sensitive inference prohibited: true",
             "Final-evidence claim flags: false",
+        ]
+    )
+
+
+def _safe_queue_review_receipt_summary(
+    summary: EvidenceItemQueueReviewSummary,
+) -> dict[str, Any]:
+    return {
+        "asr_pairing_count": summary.asr_pairing_count,
+        "automatic_classification": False,
+        "browser_automation_claimed": False,
+        "completed_evidence_claimed": False,
+        "final_evidence_state_recorded": False,
+        "link_count": summary.link_count,
+        "live_fetch_or_api_call_performed": False,
+        "manual_import_count": summary.manual_import_count,
+        "manual_media_source_chain_link_count": (
+            summary.manual_media_source_chain_link_count
+        ),
+        "manual_publisher_framing_correction_count": (
+            summary.manual_publisher_framing_correction_count
+        ),
+        "metadata_only": True,
+        "queue_item_count": summary.queue_item_count,
+        "receipt_kind": "evidence_item_queue_review_metadata",
+        "review_required": True,
+        "review_status": summary.review_status,
+        "role_counts": list(summary.role_counts),
+        "runtime_or_completion_claimed": False,
+        "sensitive_inference_prohibited": True,
+        "source_role_review_count": summary.source_role_review_count,
+        "source_url_recorded_count": summary.source_url_recorded_count,
+        "status": summary.status,
+        "status_counts": list(summary.status_counts),
+        "storage_or_file_state_claimed": False,
+        "summary_id": summary.summary_id,
+        "total_export_excluded_count": summary.total_export_excluded_count,
+        "total_export_included_count": summary.total_export_included_count,
+        "verified_evidence_claimed": False,
+    }
+
+
+def evidence_item_queue_review_receipt_id(queue: EvidenceItemQueue) -> str:
+    summary = build_evidence_item_queue_review_summary(queue)
+    payload = _safe_queue_review_receipt_summary(summary)
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "evidence_item_queue_receipt_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def evidence_item_queue_review_to_action_log_events(
+    queue: EvidenceItemQueue,
+    *,
+    session_id: str,
+    timestamp_utc: str,
+    previous_event_hash: str = "",
+    actor_id: str = "",
+    app_version: str = "",
+) -> tuple[CaptureActionLogEvent, ...]:
+    if not session_id:
+        raise ValueError("session_id is required for Evidence Item Queue receipts")
+    if not timestamp_utc:
+        raise ValueError(
+            "timestamp_utc is required for deterministic Evidence Item Queue receipts"
+        )
+
+    summary = build_evidence_item_queue_review_summary(queue)
+    if summary.queue_item_count == 0:
+        return ()
+
+    receipt_id = evidence_item_queue_review_receipt_id(queue)
+    request_summary = {
+        **_safe_queue_review_receipt_summary(summary),
+        "receipt_id": receipt_id,
+    }
+    event = build_action_log_event(
+        session_id=session_id,
+        actor_type=ACTOR_TYPE_APPLICATION,
+        actor_id=actor_id,
+        action_type="evidence_item_queue_review_metadata_receipt",
+        result="USER_REVIEW_REQUIRED",
+        timestamp_utc=timestamp_utc,
+        previous_event_hash=previous_event_hash,
+        target_id=receipt_id,
+        request_summary=request_summary,
+        warnings=(
+            "Evidence Item Queue review metadata; manual review required.",
+            "Summary/counts only; no file, runtime, or final-evidence state is recorded.",
+        ),
+        app_version=app_version,
+    )
+    return (event,)
+
+
+def _safe_queue_review_activity_metadata(
+    summary: EvidenceItemQueueReviewSummary,
+) -> dict[str, Any]:
+    return {
+        "asr_pairing_count": summary.asr_pairing_count,
+        "automatic_classification": False,
+        "browser_automation_claimed": False,
+        "completion_claimed": False,
+        "digest_reference_recorded_count": summary.file_hash_recorded_count,
+        "external_runtime_invoked": False,
+        "item_reference_count": summary.queue_item_count,
+        "link_count": summary.link_count,
+        "manual_import_count": summary.manual_import_count,
+        "manual_media_source_chain_link_count": (
+            summary.manual_media_source_chain_link_count
+        ),
+        "manual_publisher_framing_correction_count": (
+            summary.manual_publisher_framing_correction_count
+        ),
+        "metadata_only": True,
+        "review_required": True,
+        "review_status": summary.review_status,
+        "source_role_review_count": summary.source_role_review_count,
+        "source_url_reference_count": summary.source_url_recorded_count,
+        "storage_reference_recorded_count": summary.local_path_recorded_count,
+        "summary_present": True,
+        "total_export_excluded_count": summary.total_export_excluded_count,
+        "total_export_included_count": summary.total_export_included_count,
+    }
+
+
+def evidence_item_queue_review_to_activity_records(
+    queue: EvidenceItemQueue,
+    *,
+    session_id: str,
+    timestamp_utc: str,
+    actor_label: str = "",
+) -> tuple[BehaviorActivityRecord, ...]:
+    if not session_id:
+        raise ValueError("session_id is required for Evidence Item Queue activity")
+    if not timestamp_utc:
+        raise ValueError(
+            "timestamp_utc is required for deterministic Evidence Item Queue activity"
+        )
+
+    summary = build_evidence_item_queue_review_summary(queue)
+    if summary.queue_item_count == 0:
+        return ()
+
+    record = build_behavior_activity_record(
+        session_id=session_id,
+        activity_type=ActivityType.EXPORT_QUEUE_REVIEWED,
+        actor_type=ActivityActorType.APPLICATION,
+        activity_time_utc=timestamp_utc,
+        actor_label=actor_label,
+        item_id=summary.summary_id,
+        changed_fields=(
+            "evidence_item_queue_review",
+            "export_queue_review_metadata",
+            "user_review_required",
+        ),
+        metadata_summary=_safe_queue_review_activity_metadata(summary),
+    )
+    return (record,)
+
+
+def evidence_item_queue_review_activity_flow_id(
+    *,
+    summary_ids: tuple[str, ...],
+    receipt_ids: tuple[str, ...],
+    activity_ids: tuple[str, ...],
+) -> str:
+    payload = {
+        "activity_ids": list(activity_ids),
+        "receipt_ids": list(receipt_ids),
+        "review_flow_kind": "evidence_item_queue_review_activity",
+        "summary_ids": list(summary_ids),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "evidence_item_queue_activity_flow_" + hashlib.sha256(
+        encoded.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def build_evidence_item_queue_review_activity_flow_summary(
+    queue: EvidenceItemQueue,
+    *,
+    session_id: str,
+    timestamp_utc: str,
+    previous_event_hash: str = "",
+    actor_id: str = "",
+    actor_label: str = "",
+    app_version: str = "",
+) -> EvidenceItemQueueReviewActivityFlowSummary:
+    summary = build_evidence_item_queue_review_summary(queue)
+    receipt_events = evidence_item_queue_review_to_action_log_events(
+        queue,
+        session_id=session_id,
+        timestamp_utc=timestamp_utc,
+        previous_event_hash=previous_event_hash,
+        actor_id=actor_id,
+        app_version=app_version,
+    )
+    activity_records = evidence_item_queue_review_to_activity_records(
+        queue,
+        session_id=session_id,
+        timestamp_utc=timestamp_utc,
+        actor_label=actor_label,
+    )
+    summary_ids = (summary.summary_id,) if summary.queue_item_count else ()
+    receipt_ids = tuple(event.target_id for event in receipt_events)
+    activity_ids = tuple(record.activity_id for record in activity_records)
+    return EvidenceItemQueueReviewActivityFlowSummary(
+        flow_id=evidence_item_queue_review_activity_flow_id(
+            summary_ids=summary_ids,
+            receipt_ids=receipt_ids,
+            activity_ids=activity_ids,
+        ),
+        status=(
+            "USER_REVIEW_REQUIRED"
+            if summary.queue_item_count
+            else "NO_EVIDENCE_QUEUE_ITEMS"
+        ),
+        queue_item_count=summary.queue_item_count,
+        queue_summary_count=1 if summary.queue_item_count else 0,
+        action_receipt_count=len(receipt_events),
+        behavior_activity_record_count=len(activity_records),
+        summary_ids=summary_ids,
+        receipt_ids=receipt_ids,
+        receipt_event_ids=tuple(event.event_id for event in receipt_events),
+        receipt_event_hashes=tuple(event.event_hash for event in receipt_events),
+        activity_ids=activity_ids,
+        activity_types=tuple(record.activity_type.value for record in activity_records),
+        metadata_activity_types=tuple(
+            record.activity_type.value for record in activity_records
+        ),
+    )
+
+
+def evidence_item_queue_review_activity_flow_summary_to_json(
+    summary: EvidenceItemQueueReviewActivityFlowSummary,
+) -> str:
+    return json.dumps(summary.to_dict(), indent=2, sort_keys=True)
+
+
+def build_evidence_item_queue_review_activity_flow_summary_text(
+    summary: EvidenceItemQueueReviewActivityFlowSummary,
+) -> str:
+    return "\n".join(
+        [
+            "Evidence Item Queue review activity/provenance flow summary",
+            f"Flow ID: {summary.flow_id}",
+            f"Status: {summary.status}",
+            f"Review status: {summary.review_status}",
+            f"Queue items: {summary.queue_item_count}",
+            f"Queue summaries: {summary.queue_summary_count}",
+            f"Action receipts: {summary.action_receipt_count}",
+            f"Behavior/activity records: {summary.behavior_activity_record_count}",
+            "Metadata only: yes",
+            "User review required: yes",
+            "Runtime/completion claim flags: false",
+            "File read/check/move/existence flags: false",
+            "Live/API/browser flags: false",
+            "Auto-classify flag: false",
+            "Sensitive inference prohibited: true",
+            "Raw payload/full local path flags: false",
         ]
     )
 

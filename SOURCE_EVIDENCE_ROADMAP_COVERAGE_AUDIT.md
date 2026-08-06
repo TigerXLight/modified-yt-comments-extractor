@@ -14,6 +14,11 @@ It is a checklist for future sessions so completed roadmap coverage is not dupli
 
 This is documentation only. It does not implement adapters, capture, downloads, archive checks, archive submission, browser automation, scraping, credential storage, GUI behavior, database scanning, file movement, or provider/API calls.
 
+## Latest Local-Only Coverage Reconciliation
+
+- MODEL_ONLY source reference intake now records the REV4 preparation pack plus supplied browser-extension ZIP references as architecture/licensing/security metadata in `source_reference_intake.py`. It preserves expected hashes, basenames, entry counts, inspected surfaces, high-level patterns, and explicit reference-only/prohibited-use flags only; it does not copy proprietary/minified code, execute extension code, use browser profiles/credentials, or call live services.
+- Evidence Item Queue review summaries now have a deterministic action-log / behavior-activity projection in `evidence_item_queue.py`: explicit queue review metadata can produce summary/counts-only `CaptureActionLogEvent` receipts, `BehaviorActivityRecord` rows, and an end-to-end activity/provenance flow summary while preserving USER_REVIEW_REQUIRED status and fixed false flags for file operations, runtime/live/API/browser execution, raw payloads, full paths, automatic classification, and final/completed/verified evidence claims.
+
 ## Coverage Audit
 
 | User requirement | Covered? | Where covered | Current state | Gap / next milestone | Do not duplicate? |
