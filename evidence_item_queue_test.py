@@ -6,7 +6,11 @@ from evidence_item_queue import (
     EvidenceItemStatus,
     EvidenceLinkOrigin,
     EvidenceQueueItem,
+    SourceRoleReviewMetadata,
+    queue_source_role_reviews_to_claim_notes,
 )
+from evidence_schema import CurrentnessStatus, PrimarySourceStatus, SourceRole
+from total_export_manifest import TotalExportManifest
 
 
 EXPECTED_ITEM_ROLES = [
@@ -202,6 +206,36 @@ def run_self_test() -> None:
     assert nonexistent_removed_dict["local_path"].endswith("removed.mp4")
     assert nonexistent_removed_dict["item_status"] == "REMOVED_FROM_WORKING_SET"
 
+    source_role_review = SourceRoleReviewMetadata(
+        claim_text="The local source directly states a bounded claim.",
+        claim_type="authored_statement",
+        claim_source_role=SourceRole.PRIMARY_ORIGINAL_AUTHORED,
+        source_role_scope="Only the quoted authored statement.",
+        source_role_limitation="Does not verify unrelated claims.",
+        authored_or_posted_at="2026-08-06T10:00:00Z",
+        captured_at_utc="2026-08-06T10:05:00Z",
+        temporal_gap_note="Captured five minutes after posting.",
+        currentness_status=CurrentnessStatus.CURRENT,
+        primary_source_status=PrimarySourceStatus.PRIMARY_SOURCE_LOCATED,
+        evidence_basis="Manual review of explicitly supplied source text.",
+        reviewer_notes="USER_REVIEW_REQUIRED before export acceptance.",
+    )
+    source_review_item = EvidenceQueueItem(
+        item_id="source-review-1",
+        item_role=EvidenceItemRole.SOURCE_URL,
+        source_url="https://example.test/source",
+        item_status=EvidenceItemStatus.NEEDS_REVIEW,
+        source_role_reviews=(source_role_review,),
+    )
+    review_dict = source_review_item.to_dict()["source_role_reviews"][0]
+    assert review_dict["claim_source_role"] == "PRIMARY_ORIGINAL_AUTHORED"
+    assert review_dict["currentness_status"] == "CURRENT"
+    assert review_dict["primary_source_status"] == "PRIMARY_SOURCE_LOCATED"
+    assert review_dict["review_required"] is True
+    assert review_dict["user_confirmed"] is False
+    assert review_dict["automatic_classification"] is False
+    assert review_dict["sensitive_inference_prohibited"] is True
+
     queue = EvidenceItemQueue(
         items=(
             source_url,
@@ -213,16 +247,36 @@ def run_self_test() -> None:
             included,
             excluded,
             nonexistent_removed,
+            source_review_item,
         ),
         links=(explicit_link, derived_link),
         asr_pairings=(local_only_pairing, incomplete_pairing),
     )
     queue_dict = queue.to_dict()
-    assert len(queue_dict["items"]) == 9
+    assert len(queue_dict["items"]) == 10
     assert queue_dict["items"][0]["item_role"] == "SOURCE_URL"
     assert queue_dict["links"][1]["link_origin"] == "DERIVED_FROM_APP_STATE"
     assert queue_dict["asr_pairings"][0]["reference_accuracy_percent"] == 74.19
     assert queue_dict["asr_pairings"][1]["reference_accuracy_percent"] is None
+    claim_notes = queue_source_role_reviews_to_claim_notes(queue)
+    assert len(claim_notes) == 1
+    claim_note_dict = claim_notes[0].to_dict()
+    assert claim_note_dict["claim_text"] == source_role_review.claim_text
+    assert claim_note_dict["claim_source_role"] == "PRIMARY_ORIGINAL_AUTHORED"
+    assert claim_note_dict["primary_source_status"] == "PRIMARY_SOURCE_LOCATED"
+    assert claim_note_dict["currentness_status"] == "CURRENT"
+    assert claim_note_dict["captured_at_utc"] == "2026-08-06T10:05:00Z"
+    assert claim_note_dict["verification_notes"] == source_role_review.reviewer_notes
+
+    manifest = TotalExportManifest(
+        package_id="queue-source-role-review",
+        source_urls=["https://example.test/source"],
+        claim_notes=list(claim_notes),
+        notes="Source-role review metadata only; USER_REVIEW_REQUIRED.",
+    )
+    manifest_dict = manifest.to_dict()
+    assert manifest_dict["claim_notes"][0]["claim_source_role"] == "PRIMARY_ORIGINAL_AUTHORED"
+    assert "automatic_classification" not in manifest_dict["claim_notes"][0]
 
 
 if __name__ == "__main__":

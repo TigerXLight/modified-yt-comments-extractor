@@ -149,6 +149,11 @@ Source status labels:
 - `TERTIARY_PROPAGATED_CLAIM`
 - `MANUAL_SOURCE_NOTE`
 
+Current local implementation note:
+
+- `evidence_item_queue.py` now provides `SourceRoleReviewMetadata` for review-required queue item source-role claims and `queue_source_role_reviews_to_claim_notes(...)` for deterministic mapping into existing Total Export `ClaimEvidenceNote` manifest records.
+- This is a metadata-only bridge for queue/export review. It does not add editor UI, automatic classification, sensitive-attribute inference, file scans, evidence moves, live capture, provider/network behavior, or completed-evidence claims.
+
 ## Claim-Level And Temporal Source-Role Planning
 
 - Self-authored social posts can be primary/original authored sources for what they directly show or state, such as appearance, hairstyle, clothing, tattoos, self-presentation, location claims, or authored statements.

@@ -4,7 +4,13 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from evidence_schema import utc_now_iso
+from evidence_schema import (
+    ClaimEvidenceNote,
+    CurrentnessStatus,
+    PrimarySourceStatus,
+    SourceRole,
+    utc_now_iso,
+)
 
 
 class _StringEnum(str, Enum):
@@ -96,6 +102,50 @@ class ASRPairingMetadata:
 
 
 @dataclass(frozen=True)
+class SourceRoleReviewMetadata:
+    claim_text: str = ""
+    claim_type: str = ""
+    claim_source_role: SourceRole = SourceRole.UNKNOWN_SOURCE_ROLE
+    source_role_scope: str = ""
+    source_role_limitation: str = ""
+    authored_or_posted_at: str = ""
+    captured_at_utc: str = ""
+    event_time_or_claim_time: str = ""
+    temporal_gap_note: str = ""
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN
+    primary_source_status: PrimarySourceStatus = PrimarySourceStatus.MANUAL_SOURCE_NOTE
+    source_chain_gap: bool = False
+    closed_loop_reporting_flag: bool = False
+    evidence_basis: str = ""
+    reviewer_notes: str = ""
+    review_required: bool = True
+    user_confirmed: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+
+    def to_dict(self) -> Dict[str, Any]:
+        return _dataclass_to_dict(self)
+
+    def to_claim_evidence_note(self) -> ClaimEvidenceNote:
+        return ClaimEvidenceNote(
+            claim_text=self.claim_text,
+            claim_type=self.claim_type,
+            claim_source_role=self.claim_source_role,
+            source_role_scope=self.source_role_scope,
+            source_role_limitation=self.source_role_limitation,
+            authored_or_posted_at=self.authored_or_posted_at,
+            captured_at_utc=self.captured_at_utc,
+            event_time_or_claim_time=self.event_time_or_claim_time,
+            temporal_gap_note=self.temporal_gap_note,
+            currentness_status=self.currentness_status,
+            primary_source_status=self.primary_source_status,
+            source_chain_gap=self.source_chain_gap,
+            closed_loop_reporting_flag=self.closed_loop_reporting_flag,
+            verification_notes=self.reviewer_notes or self.evidence_basis,
+        )
+
+
+@dataclass(frozen=True)
 class EvidenceQueueItem:
     item_id: str
     item_role: EvidenceItemRole
@@ -123,6 +173,7 @@ class EvidenceQueueItem:
     total_export_output_kind: str = ""
     total_export_output_path: str = ""
     total_export_exclusion_reason: str = ""
+    source_role_reviews: tuple[SourceRoleReviewMetadata, ...] = field(default_factory=tuple)
     item_status: EvidenceItemStatus = EvidenceItemStatus.ADDED
     created_at_utc: str = field(default_factory=utc_now_iso)
     updated_at_utc: str = field(default_factory=utc_now_iso)
@@ -140,3 +191,13 @@ class EvidenceItemQueue:
 
     def to_dict(self) -> Dict[str, Any]:
         return _dataclass_to_dict(self)
+
+
+def queue_source_role_reviews_to_claim_notes(
+    queue: EvidenceItemQueue,
+) -> tuple[ClaimEvidenceNote, ...]:
+    notes: list[ClaimEvidenceNote] = []
+    for item in queue.items:
+        for review in item.source_role_reviews:
+            notes.append(review.to_claim_evidence_note())
+    return tuple(notes)
