@@ -4,7 +4,7 @@ Date: 2026-07-11
 
 ## Purpose
 
-This document expands the roadmap-only `KEYS` / `Access & Keys` idea into a future UI, safety, and adapter-access specification.
+This document expands the roadmap-only `KEYS/ACCOUNTS` / `Access & Keys` idea into a UI, safety, and adapter-access specification.
 
 It is planning only. It does not implement UI, credential storage, key testing, OAuth/login flows, browser profile access, provider calls, source fetching, archive checks, browser automation, scraping, media downloading, or Total Export wiring.
 
@@ -12,10 +12,10 @@ The goal is to replace the current one-off sidebar `API KEY` field with a scalab
 
 ## Naming
 
-- Sidebar button: `KEYS`.
+- Sidebar button: `KEYS/ACCOUNTS`.
 - Window title: `Access & Keys`.
-- `KEYS` is shorter for the main UI.
-- `Access & Keys` is more accurate for the window because access may involve API keys, OAuth-style login, app passwords, browser profile settings, manual import, or no credentials.
+- `KEYS/ACCOUNTS` is the user-facing main-sidebar label. It keeps the earlier Keys purpose while making account/provider status visible without implying that every source is only an API-key field.
+- `Access & Keys` remains accurate for the dedicated window because access may involve API keys, OAuth-style login, app passwords, browser profile settings, manual import, provider/account status, or no credentials.
 
 The main sidebar should stay focused on Source URLs, capture options, exports, and current workflow controls. Detailed access configuration belongs in the dedicated window.
 
@@ -24,6 +24,20 @@ The main sidebar should stay focused on Source URLs, capture options, exports, a
 Current behavior includes a sidebar `API KEY` field that primarily fits the YouTube Data API workflow.
 
 Future source/provider coverage will not fit into one field because different adapters may need different access modes, privacy notes, cost/rate-limit warnings, setup steps, and connection-test behavior.
+
+
+## Implemented Online ASR KEYS/ACCOUNTS Review Chain
+
+As of the `635b3a1` release-section closeout, the Online ASR KEYS/ACCOUNTS review chain is implemented as metadata-only local review artifacts. The chain includes provider catalogue/app-state projection, safe workflow packages, closeout, verifier, next-session handoff, safety audit, release gate, release-gate persistence, and release-section closeout CLI/store wrappers.
+
+This review chain does not read credential values, test keys automatically, call providers, upload media, process raw media, serialize full local paths, or claim completed/verified transcription. It only records safe schema versions, component coverage, issue counts, selected provider IDs, package IDs, filenames, hashes, review status, and explicit execution-gated safety flags.
+
+The implemented catalogue UX distinction remains:
+
+- `KEYS/ACCOUNTS` shows only added/configured provider/account entries.
+- `Add a provider` is the searchable full catalogue surface.
+- Search inside `KEYS/ACCOUNTS` searches added providers only.
+- Search inside `Add a provider` searches the full catalogue.
 
 ## Access Modes
 
@@ -275,7 +289,7 @@ A future migration should be explicit and safe.
 Possible plan:
 
 1. Keep the existing sidebar field working until the Access & Keys window exists.
-2. Introduce `KEYS` button.
+2. Introduce `KEYS/ACCOUNTS` button.
 3. Show the current YouTube Data API key as a YouTube access entry if already configured.
 4. Avoid silently duplicating or exposing the key.
 5. Let the user clear or move the key only through explicit UI actions.

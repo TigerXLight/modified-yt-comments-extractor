@@ -750,9 +750,9 @@ Future adapter/provider metadata:
 
 UI wording notes:
 
-- Sidebar button: "KEYS".
+- Sidebar button: "KEYS/ACCOUNTS".
 - Window title: "Access & Keys".
-- "KEYS" is preferred over "API KEY" because future access may involve API keys, OAuth-style login, app passwords, browser profile settings, or no credentials.
+- "KEYS/ACCOUNTS" is preferred over "API KEY" because future access may involve API keys, OAuth-style login, app passwords, browser profile settings, provider/account readiness, or no credentials.
 - Do not imply every platform uses an API key.
 - Use searchable/filterable platform sections later so the UI does not become too large.
 - Do not list every possible service on the main screen; keep the main screen focused on Source URLs and selected capture options.
@@ -775,6 +775,22 @@ UI wording notes:
 - A corrective responsiveness pass moved heavy Local ASR imports and startup credential-status probing off initial window construction. Local ASR behavior remains unchanged; the heavy ASR engine modules load only when Local ASR is actually used.
 - User-facing key validation is explicit-only and uses the read-only ElevenLabs models-list request (`GET /v1/models` via the installed SDK `client.models.list(...)`) with `max_retries=0` and a bounded timeout. It uploads no media, performs no transcription, discards response content, and stores only fixed non-secret validation state. No live validation request was performed in this milestone.
 - Broader provider/API behavior remains approval-gated: no automatic/background checks, account/quota retention, model-list display, OAuth/browser access, credential reveal/copy/export behavior, or live validation beyond explicit user action is implied.
+
+## Online ASR KEYS/ACCOUNTS Review Release-Section Closeout
+
+The metadata-only Online ASR KEYS/ACCOUNTS review-release section is closed at `635b3a1`. It covers the safe review chain from provider/app-state metadata through workflow/package/activity persistence, smoke fixture generation, closeout, verifier, handoff, safety audit, release gate, release-gate persistence, and release-section closeout/store/CLI wrappers.
+
+The release-section closeout confirms these boundaries:
+
+- Review artifacts are local-only and metadata-only.
+- The main sidebar label is `KEYS/ACCOUNTS`; the dedicated window may remain `Access & Keys`.
+- Added-provider/account review is separate from full provider-catalog search.
+- Secret-like fields are rejected by CLI inputs.
+- Stored report results return safe filenames, hashes, byte counts, and output-directory roles rather than full local paths.
+- Provider calls, credential-value reads, raw media, live transcription runs, automatic/background validation, and completed/verified transcription claims remain false unless a later explicitly approved runtime milestone changes them.
+
+This closeout is not approval for broader provider/API behavior, OAuth/browser account access, account/quota/model calls, background checks, credential reveal/copy/export, arbitrary media upload, or live site/source capture.
+
 
 ## Current Session Files Sidebar State
 

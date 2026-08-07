@@ -406,6 +406,25 @@ git diff --check & git status --short
 
 Do not add provider/API/network calls to these verification chains.
 
+
+## Online ASR KEYS/ACCOUNTS Review-Release Section Closeout
+
+Current committed checkpoint: `635b3a1 Add Online ASR Keys Accounts release section closeout` on `v2.6.0-asr-engines`.
+
+This closes the metadata-only Online ASR KEYS/ACCOUNTS review-release section. The added chain covers safe provider/catalogue state, app-state review projection, workflow/package/activity persistence, smoke fixtures, closeout, verifier, next-session handoff, handoff verifier, safety audit, release gate, release-gate persistence, release-gate store CLI, release-section closeout, release-section closeout store, and release-section closeout store CLI.
+
+Boundary preserved across the chain:
+
+- `KEYS/ACCOUNTS` is the main sidebar label; `Access & Keys` remains the dedicated window title.
+- `KEYS/ACCOUNTS` lists added providers/accounts only; `Add a provider` is the searchable full catalogue.
+- All generated/persisted review outputs are local-only, metadata-only, user-review-required, and execution-gated.
+- Safe persistence reports expose filenames, hashes, byte counts, and directory roles, not full local paths.
+- CLI readers reject secret-like input fields.
+- No credential values are read, revealed, copied, exported, or stored in plaintext by this review chain.
+- No provider/API calls, background key tests, media uploads, raw media serialization, live transcription runs, archive/network behavior, browser automation, or completed/verified transcription claims are added.
+
+Working instruction for the next session: continue in roadmap order using larger section-level mega patches that bundle implementation, persistence, CLI, verifier/audit, tests, and documentation where practical. Avoid returning to long sequences of tiny two-file slices unless a failure needs an isolated corrective patch.
+
 ## Deferred General GUI Responsiveness
 
 - Access & Keys selection, filtering, hover, popup behavior, and short-family visibility passed focused tests and manual acceptance through `ee945fe`.
