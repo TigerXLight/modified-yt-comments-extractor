@@ -379,3 +379,9 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 - Coverage: provider execution manifest, capability registry, browser session profiles, archive queues/results, artifact normalization, evidence materialization, Total Export package assembly, release target/receipt runtime, KEYS/ACCOUNTS redaction, operator approvals, runbook export, live smoke readiness, provider healthcheck, failure triage, GUI action state, audit replay, source pipeline completion, and operational closeout.
 - KEYS/ACCOUNTS remains the preserved user-facing label.
 - Secret material remains outside committed artifacts; only redacted reference hashes are recorded.
+## Source Adapter Operator Runtime Handoff Bundle Closeout
+
+- Status: SOURCE_ADAPTER_OPERATOR_RUNTIME_HANDOFF_BUNDLE_CLOSEOUT_RECORDED
+- Commit scope: provider contract execution, named-site browser binding, archive execution/verification, capture artifact store, evidence queue/review gates, Total Export assembly/release bridge, release upload/file-library publish, KEYS/ACCOUNTS audit and added-provider runtime, GUI execution/result import, operator receipt import, live smoke receipt, provider health/retry, archive poll merge, release index publish, runbook script materialization, manual/live smoke closeout, and operator runtime handoff closeout.
+- KEYS/ACCOUNTS remains the canonical label for credential/account surfaces.
+- Credential material remains represented only by references and redacted hashes in receipts and ledgers.
