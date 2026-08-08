@@ -1,0 +1,11 @@
+from pathlib import Path
+text = Path("SOURCE_ADAPTER_RELEASE_ARCHIVE_DELIVERY_RUNTIME.md").read_text(encoding="utf-8")
+for phrase in [
+    "SOURCE_ADAPTER_RELEASE_ARCHIVE_DELIVERY_RUNTIME_BUILT",
+    "SOURCE_ADAPTER_RELEASE_ARCHIVE_DELIVERY_PLAN_READY",
+    "SOURCE_ADAPTER_RELEASE_ARCHIVE_DELIVERY_RECEIPTS_READY",
+    "SOURCE_ADAPTER_RELEASE_ARCHIVE_DELIVERY_RUNTIME_READY_FOR_OPERATOR_RECEIPT_CLOSEOUT",
+    "KEYS/ACCOUNTS",
+]:
+    assert phrase in text, phrase
+print("Source Adapter Release Archive Delivery Runtime docs self-test passed.")
