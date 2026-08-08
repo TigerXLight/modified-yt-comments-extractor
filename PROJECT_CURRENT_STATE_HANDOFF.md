@@ -719,3 +719,14 @@ The latest source-adapter runtime queue section is closed locally at `SOURCE_ADA
 Current handoff status: `SOURCE_ADAPTER_RUNTIME_QUEUE_CLOSEOUT_READY_FOR_OPERATOR_APPROVED_NAMED_SITE_SELECTION`.
 
 The next stage is operator named-site selection and approval-packet capture only. It must remain explicit and gated. This is not approval for live smoke execution, browser automation, network calls, API calls, archive provider submission, release upload, file-library mutation, credential storage, or GUI mutation. Preserve `KEYS/ACCOUNTS` wording and redacted credential-reference hashes in all future receipt metadata.
+
+## Source Adapter implementation bundle checkpoint - 2026-08-08
+
+The implementation bundle advances from operator-approved execution runtime into executable provider backend interfaces and GUI/controller execution bridge wiring. It adds:
+
+- `SOURCE_ADAPTER_PROVIDER_BACKEND_INTERFACES_BUILT` with 25 provider backend request/receipt rows.
+- `SOURCE_ADAPTER_GUI_CONTROLLER_EXECUTION_BRIDGE_BUILT` with four registered GUI/controller routes and five dispatch receipts.
+- `KEYS/ACCOUNTS` credential-reference handling with redacted hashes.
+- Explicit hygiene for generated operator receipt folders.
+
+Next implementation work should bind the concrete GUI buttons, including the Online ASR button requirement where relevant, and replace local provider backend handlers with provider-specific browser/archive/release/file-library implementations.

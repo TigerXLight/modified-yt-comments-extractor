@@ -823,3 +823,14 @@ This closeout is not approval for broader provider/API behavior, OAuth/browser a
 The handoff status is `SOURCE_ADAPTER_RUNTIME_QUEUE_CLOSEOUT_READY_FOR_OPERATOR_APPROVED_NAMED_SITE_SELECTION`. This means the next roadmap step is operator named-site selection and approval-packet capture, not automatic live execution.
 
 The boundary remains unchanged: no live smoke, no browser automation, no network calls, no API calls, no archive provider submission, no release upload, no file-library mutation, no credential storage, and no GUI mutation. The `KEYS/ACCOUNTS` label and redacted credential-reference handling must continue through any future operator-approved smoke receipt path.
+
+## Source Adapter implementation bundle checkpoint - 2026-08-08
+
+The implementation bundle advances from operator-approved execution runtime into executable provider backend interfaces and GUI/controller execution bridge wiring. It adds:
+
+- `SOURCE_ADAPTER_PROVIDER_BACKEND_INTERFACES_BUILT` with 25 provider backend request/receipt rows.
+- `SOURCE_ADAPTER_GUI_CONTROLLER_EXECUTION_BRIDGE_BUILT` with four registered GUI/controller routes and five dispatch receipts.
+- `KEYS/ACCOUNTS` credential-reference handling with redacted hashes.
+- Explicit hygiene for generated operator receipt folders.
+
+Next implementation work should bind the concrete GUI buttons, including the Online ASR button requirement where relevant, and replace local provider backend handlers with provider-specific browser/archive/release/file-library implementations.
