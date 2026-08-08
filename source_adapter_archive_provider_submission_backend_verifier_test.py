@@ -1,0 +1,7 @@
+from source_adapter_archive_provider_submission_backend import example_archive_provider_submission_backend_package
+from source_adapter_archive_provider_submission_backend_verifier import verify_source_adapter_archive_provider_submission_backend_package
+
+v = verify_source_adapter_archive_provider_submission_backend_package(example_archive_provider_submission_backend_package())
+assert v["verified"], v
+assert v["issue_count"] == 0, v
+print("Source Adapter Archive Provider Submission Backend verifier self-test passed.")
