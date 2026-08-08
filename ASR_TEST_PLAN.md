@@ -637,3 +637,8 @@ Decision:
 - No ASR code path was executed, no provider was called, no model was downloaded, and no credentials were read.
 - The Access/KEYS and Online ASR bridge remains a non-secret readiness summary, and the local benchmark guard remains whisper.cpp / Vulkan / large-v3.
 - `asr_tools_test.py` remains compile-check only.
+## Source Evidence Final App Wiring ASR Boundary - 2026-08-08
+
+- The final app/operator wiring pass added Source Evidence controller surfaces and review-bundle sidecar persistence without changing ASR runtime code.
+- The controller exposes ASR execution readiness as approval-gated metadata only. It does not read credentials, call providers, run local ASR, download models, or execute `asr_tools_test.py`.
+- The local ASR benchmark guard remains whisper.cpp / Vulkan / large-v3, and Online ASR remains a separate explicit provider workflow that requires later user approval before any provider call.
