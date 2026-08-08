@@ -42,9 +42,21 @@ from source_adapter_audit_report import (
     SourceAdapterAuditReport,
     build_source_adapter_audit_report,
 )
+from source_database_review_workflow import (
+    SourceDatabaseReviewViewModel,
+    build_source_database_review_view_model,
+)
 from source_named_site_priority_plan import (
     SourceNamedSitePriorityPlan,
     build_source_named_site_priority_plan,
+)
+from source_record_review_workflow import (
+    SourceRecordReviewWorkflow,
+    build_source_record_review_workflow,
+)
+from source_selector_approval_workflow import (
+    SourceSelectorApprovalPacketCollection,
+    build_source_selector_approval_packet_collection,
 )
 from source_site_method_audit_registry import (
     SourceSiteMethodAuditRegistry,
@@ -120,6 +132,22 @@ class SourceEvidenceWorkflowState:
     source_named_site_priority_plan_id: str
     source_named_site_priority_plan_row_count: int
     source_named_site_priority_plan_approval_required_count: int
+    source_database_review_workflow: SourceDatabaseReviewViewModel
+    source_database_review_workflow_id: str
+    source_database_review_scan_row_count: int
+    source_database_review_needed_row_count: int
+    source_database_review_pending_safe_edit_count: int
+    source_database_review_rejected_unsafe_edit_count: int
+    source_record_review_workflow: SourceRecordReviewWorkflow
+    source_record_review_workflow_id: str
+    source_record_review_record_count: int
+    source_record_review_reference_count: int
+    source_record_review_selector_cross_link_count: int
+    source_selector_approval_packets: SourceSelectorApprovalPacketCollection
+    source_selector_approval_packets_id: str
+    source_selector_approval_packet_count: int
+    source_selector_manual_smoke_checklist_row_count: int
+    source_selector_not_live_executed_receipt_count: int
     release_readiness: SourceEvidenceReleaseReadiness
     release_readiness_id: str
     release_target_count: int
@@ -156,6 +184,9 @@ class SourceEvidenceWorkflowState:
         data["source_site_method_audit_registry"] = self.source_site_method_audit_registry.to_dict()
         data["source_adapter_audit_report"] = self.source_adapter_audit_report.to_dict()
         data["source_named_site_priority_plan"] = self.source_named_site_priority_plan.to_dict()
+        data["source_database_review_workflow"] = self.source_database_review_workflow.to_dict()
+        data["source_record_review_workflow"] = self.source_record_review_workflow.to_dict()
+        data["source_selector_approval_packets"] = self.source_selector_approval_packets.to_dict()
         return data
 
     def to_summary_text(self) -> str:
@@ -191,6 +222,19 @@ class SourceEvidenceWorkflowState:
                 f"Named-site priority plan: {self.source_named_site_priority_plan_id}",
                 f"Named-site priority rows: {self.source_named_site_priority_plan_row_count}",
                 f"Named-site priority approvals required: {self.source_named_site_priority_plan_approval_required_count}",
+                f"Database review workflow: {self.source_database_review_workflow_id}",
+                f"Database review scan rows: {self.source_database_review_scan_row_count}",
+                f"Database review-needed rows: {self.source_database_review_needed_row_count}",
+                f"Database pending safe edits: {self.source_database_review_pending_safe_edit_count}",
+                f"Database rejected unsafe edits: {self.source_database_review_rejected_unsafe_edit_count}",
+                f"Source record review workflow: {self.source_record_review_workflow_id}",
+                f"Source record review records: {self.source_record_review_record_count}",
+                f"Source record review references: {self.source_record_review_reference_count}",
+                f"Source record selector cross-links: {self.source_record_review_selector_cross_link_count}",
+                f"Selector approval packets: {self.source_selector_approval_packets_id}",
+                f"Selector approval packet count: {self.source_selector_approval_packet_count}",
+                f"Selector manual smoke checklist rows: {self.source_selector_manual_smoke_checklist_row_count}",
+                f"Selector not-live-executed receipts: {self.source_selector_not_live_executed_receipt_count}",
                 f"Release readiness: {self.release_readiness.release_status}",
                 f"Release targets: {self.release_target_count}",
                 f"Release action plan: {self.release_action_plan_id}",
@@ -228,6 +272,9 @@ def build_source_evidence_workflow_state(
     source_site_selector_audit_packs = build_source_site_selector_audit_pack_collection(
         source_site_method_audit_registry
     )
+    source_selector_approval_packets = build_source_selector_approval_packet_collection(
+        source_site_method_audit_registry
+    )
     source_adapter_audit_report = build_source_adapter_audit_report(
         adapter_registry=source_adapter_audit_registry,
         site_method_registry=source_site_method_audit_registry,
@@ -258,6 +305,21 @@ def build_source_evidence_workflow_state(
         updated_at_utc=timestamp,
     )
     evidence_scan_result = scan_evidence_index_records(evidence_scan_manifest)
+    grabbed_source_records = (
+        (plan.grabbed_source_record,) if plan.grabbed_source_record is not None else ()
+    )
+    source_record_review_workflow = build_source_record_review_workflow(
+        grabbed_source_records,
+        site_method_registry=source_site_method_audit_registry,
+    )
+    source_database_review_workflow = build_source_database_review_view_model(
+        manifest=evidence_scan_manifest,
+        source_adapter_audit_registry=source_adapter_audit_registry,
+        source_site_method_audit_registry=source_site_method_audit_registry,
+        grabbed_source_records=grabbed_source_records,
+        evidence_queue=connection.queue,
+        approval_packet_count=source_selector_approval_packets.packet_count,
+    )
     access_provider_gate_summary = build_access_provider_gate_summary(
         build_default_access_keys_catalog()
     )
@@ -303,6 +365,9 @@ def build_source_evidence_workflow_state(
             "source_site_method_audit_registry": source_site_method_audit_registry.to_dict(),
             "source_adapter_audit_report": source_adapter_audit_report.to_dict(),
             "source_named_site_priority_plan": source_named_site_priority_plan.to_dict(),
+            "source_database_review_workflow": source_database_review_workflow.to_dict(),
+            "source_record_review_workflow": source_record_review_workflow.to_dict(),
+            "source_selector_approval_packets": source_selector_approval_packets.to_dict(),
             "grabbed_source_record": (
                 plan.grabbed_source_record.to_dict()
                 if plan.grabbed_source_record is not None
@@ -373,6 +438,34 @@ def build_source_evidence_workflow_state(
         source_named_site_priority_plan_row_count=source_named_site_priority_plan.row_count,
         source_named_site_priority_plan_approval_required_count=(
             source_named_site_priority_plan.approval_required_count
+        ),
+        source_database_review_workflow=source_database_review_workflow,
+        source_database_review_workflow_id=source_database_review_workflow.view_model_id,
+        source_database_review_scan_row_count=source_database_review_workflow.scan_row_count,
+        source_database_review_needed_row_count=(
+            source_database_review_workflow.review_needed_row_count
+        ),
+        source_database_review_pending_safe_edit_count=(
+            source_database_review_workflow.pending_safe_edit_count
+        ),
+        source_database_review_rejected_unsafe_edit_count=(
+            source_database_review_workflow.rejected_unsafe_edit_count
+        ),
+        source_record_review_workflow=source_record_review_workflow,
+        source_record_review_workflow_id=source_record_review_workflow.workflow_id,
+        source_record_review_record_count=source_record_review_workflow.source_record_count,
+        source_record_review_reference_count=source_record_review_workflow.reference_count,
+        source_record_review_selector_cross_link_count=(
+            source_record_review_workflow.selector_audit_cross_link_count
+        ),
+        source_selector_approval_packets=source_selector_approval_packets,
+        source_selector_approval_packets_id=source_selector_approval_packets.collection_id,
+        source_selector_approval_packet_count=source_selector_approval_packets.packet_count,
+        source_selector_manual_smoke_checklist_row_count=(
+            source_selector_approval_packets.manual_smoke_checklist_row_count
+        ),
+        source_selector_not_live_executed_receipt_count=(
+            source_selector_approval_packets.not_live_executed_receipt_count
         ),
         release_readiness=release_readiness,
         release_readiness_id=release_readiness.release_readiness_id,

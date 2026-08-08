@@ -218,6 +218,9 @@ def build_source_evidence_review_manifest_with_workflow_state(
     source_site_method_audit_registry_metadata: Mapping[str, Any] | None = None,
     source_adapter_audit_report_metadata: Mapping[str, Any] | None = None,
     source_named_site_priority_plan_metadata: Mapping[str, Any] | None = None,
+    source_database_review_workflow_metadata: Mapping[str, Any] | None = None,
+    source_record_review_workflow_metadata: Mapping[str, Any] | None = None,
+    source_selector_approval_packets_metadata: Mapping[str, Any] | None = None,
 ) -> TotalExportManifest:
     """Return a manifest copy with a workflow-state metadata sidecar asset.
 
@@ -305,6 +308,48 @@ def build_source_evidence_review_manifest_with_workflow_state(
             )
         )
         capture_option_values.add("Named-site priority plan metadata")
+    if source_database_review_workflow_metadata is not None:
+        database_review_metadata = _value_for_dict(source_database_review_workflow_metadata)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_RAW_SIDECAR,
+                description=(
+                    "Source database scan/edit/update review workflow sidecar: "
+                    "safe edits are preview-only until operator review."
+                ),
+                metadata=database_review_metadata,
+                created_at_utc=manifest.created_at_utc,
+            )
+        )
+        capture_option_values.add("Source database review workflow metadata")
+    if source_record_review_workflow_metadata is not None:
+        source_record_metadata = _value_for_dict(source_record_review_workflow_metadata)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_RAW_SIDECAR,
+                description=(
+                    "Source grabbed-record review workflow sidecar: typed references "
+                    "remain metadata-only and review-required."
+                ),
+                metadata=source_record_metadata,
+                created_at_utc=manifest.created_at_utc,
+            )
+        )
+        capture_option_values.add("Source record review workflow metadata")
+    if source_selector_approval_packets_metadata is not None:
+        selector_metadata = _value_for_dict(source_selector_approval_packets_metadata)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_RAW_SIDECAR,
+                description=(
+                    "Source selector approval packet metadata sidecar: selector "
+                    "audits require named-site operator approval before live execution."
+                ),
+                metadata=selector_metadata,
+                created_at_utc=manifest.created_at_utc,
+            )
+        )
+        capture_option_values.add("Source selector approval packet metadata")
     capture_options = sorted(capture_option_values)
     notes = manifest.notes
     if "Source Evidence workflow state metadata sidecar included." not in notes:
@@ -344,6 +389,27 @@ def build_source_evidence_review_manifest_with_workflow_state(
         notes = (
             notes + "\n" if notes else ""
         ) + "Named-site priority plan metadata sidecar included."
+    if (
+        source_database_review_workflow_metadata is not None
+        and "Source database review workflow metadata sidecar included." not in notes
+    ):
+        notes = (
+            notes + "\n" if notes else ""
+        ) + "Source database review workflow metadata sidecar included."
+    if (
+        source_record_review_workflow_metadata is not None
+        and "Source record review workflow metadata sidecar included." not in notes
+    ):
+        notes = (
+            notes + "\n" if notes else ""
+        ) + "Source record review workflow metadata sidecar included."
+    if (
+        source_selector_approval_packets_metadata is not None
+        and "Source selector approval packet metadata sidecar included." not in notes
+    ):
+        notes = (
+            notes + "\n" if notes else ""
+        ) + "Source selector approval packet metadata sidecar included."
     return TotalExportManifest(
         package_id=manifest.package_id,
         created_at_utc=manifest.created_at_utc,

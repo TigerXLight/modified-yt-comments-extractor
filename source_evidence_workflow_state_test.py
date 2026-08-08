@@ -66,6 +66,19 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert state.source_named_site_priority_plan_id.startswith("source_named_site_priority_plan_")
     assert state.source_named_site_priority_plan_row_count == 9
     assert state.source_named_site_priority_plan_approval_required_count == 9
+    assert state.source_database_review_workflow_id.startswith("source_database_review_workflow_")
+    assert state.source_database_review_scan_row_count == state.database_scan_record_count
+    assert state.source_database_review_needed_row_count >= 1
+    assert state.source_database_review_pending_safe_edit_count == 0
+    assert state.source_database_review_rejected_unsafe_edit_count == 0
+    assert state.source_record_review_workflow_id.startswith("source_record_review_workflow_")
+    assert state.source_record_review_record_count == 1
+    assert state.source_record_review_reference_count > 0
+    assert state.source_record_review_selector_cross_link_count > 0
+    assert state.source_selector_approval_packets_id.startswith("source_selector_approval_packets_")
+    assert state.source_selector_approval_packet_count == 1
+    assert state.source_selector_manual_smoke_checklist_row_count == 4
+    assert state.source_selector_not_live_executed_receipt_count == 1
     assert state.release_action_plan_id == state.release_action_plan.release_action_plan_id
     assert state.release_action_receipt_count == 4
     assert state.operator_signoff_required is True
@@ -93,6 +106,11 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert data["source_named_site_priority_plan"]["row_count"] == 9
     assert data["source_named_site_priority_plan"]["approval_required_count"] == 9
     assert data["source_named_site_priority_plan"]["live_execution_performed"] is False
+    assert data["source_database_review_workflow"]["scan_row_count"] == state.database_scan_record_count
+    assert data["source_database_review_workflow"]["bridge_summary"]["approval_packet_count"] == 1
+    assert data["source_record_review_workflow"]["source_record_count"] == 1
+    assert data["source_selector_approval_packets"]["packet_count"] == 1
+    assert data["source_selector_approval_packets"]["no_live_execution_performed"] is True
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
         for asset in data["review_manifest"]["assets"]
@@ -119,6 +137,11 @@ def test_source_evidence_workflow_state_serializes_without_execution_or_payload_
     assert "Source adapter audit report selector audit-required rows:" in summary
     assert "Named-site priority plan: source_named_site_priority_plan_" in summary
     assert "Named-site priority approvals required:" in summary
+    assert "Database review workflow: source_database_review_workflow_" in summary
+    assert "Database pending safe edits:" in summary
+    assert "Source record review workflow: source_record_review_workflow_" in summary
+    assert "Selector approval packets: source_selector_approval_packets_" in summary
+    assert "Selector not-live-executed receipts:" in summary
     assert "Release action plan: source_release_plan_" in summary
     assert "Operator signoff required: true" in summary
     assert "USER_REVIEW_REQUIRED" in summary
