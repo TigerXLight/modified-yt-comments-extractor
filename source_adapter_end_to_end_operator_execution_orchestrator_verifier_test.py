@@ -1,0 +1,7 @@
+from source_adapter_end_to_end_operator_execution_orchestrator import example_end_to_end_operator_execution_orchestrator_package
+from source_adapter_end_to_end_operator_execution_orchestrator_verifier import verify_source_adapter_end_to_end_operator_execution_orchestrator_package
+
+v = verify_source_adapter_end_to_end_operator_execution_orchestrator_package(example_end_to_end_operator_execution_orchestrator_package())
+assert v["verified"], v
+assert v["issue_count"] == 0, v
+print("Source Adapter End-to-End Operator Execution Orchestrator verifier self-test passed.")
