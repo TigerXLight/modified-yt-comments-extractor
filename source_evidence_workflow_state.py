@@ -11,6 +11,10 @@ from access_provider_gate import (
     AccessProviderGateSummary,
     build_access_provider_gate_summary,
 )
+from access_online_asr_bridge import (
+    AccessOnlineASRBridgeSummary,
+    build_access_online_asr_bridge_summary,
+)
 from capture_export_queue import (
     OperationalCaptureExportQueueConnection,
     connect_operational_capture_plan_to_export_queue,
@@ -132,6 +136,10 @@ class SourceEvidenceWorkflowState:
     access_provider_gate_summary_id: str
     access_provider_gate_record_count: int
     access_provider_gate_approval_required_count: int
+    access_online_asr_bridge_summary: AccessOnlineASRBridgeSummary
+    access_online_asr_bridge_summary_id: str
+    access_online_asr_added_provider_count: int
+    access_online_asr_provider_readiness_count: int
     source_adapter_audit_registry: SourceAdapterAuditRegistry
     source_adapter_audit_registry_id: str
     source_adapter_audit_entry_count: int
@@ -251,6 +259,9 @@ class SourceEvidenceWorkflowState:
                 f"Access/provider gate: {self.access_provider_gate_summary_id}",
                 f"Access/provider records: {self.access_provider_gate_record_count}",
                 f"Access/provider approvals required: {self.access_provider_gate_approval_required_count}",
+                f"Access/Online ASR bridge: {self.access_online_asr_bridge_summary_id}",
+                f"Access/Online ASR added providers: {self.access_online_asr_added_provider_count}",
+                f"Access/Online ASR provider readiness rows: {self.access_online_asr_provider_readiness_count}",
                 f"Source adapter audit registry: {self.source_adapter_audit_registry_id}",
                 f"Source adapter audit entries: {self.source_adapter_audit_entry_count}",
                 f"Source adapter audit-required entries: {self.source_adapter_audit_required_count}",
@@ -422,6 +433,7 @@ def build_source_evidence_workflow_state(
     access_provider_gate_summary = build_access_provider_gate_summary(
         build_default_access_keys_catalog()
     )
+    access_online_asr_bridge_summary = build_access_online_asr_bridge_summary()
     source_audit_dashboard_state = build_source_audit_dashboard_state(
         database_review_workflow=source_database_review_workflow,
         source_record_review_workflow=source_record_review_workflow,
@@ -429,6 +441,7 @@ def build_source_evidence_workflow_state(
         named_site_method_packs=source_named_site_method_packs,
         operator_command_packs=source_operator_command_packs,
         manual_smoke_checklists=source_manual_smoke_checklists,
+        access_online_asr_bridge_summary=access_online_asr_bridge_summary,
     )
     store_document = build_evidence_item_queue_review_store_document(
         connection.queue,
@@ -468,6 +481,7 @@ def build_source_evidence_workflow_state(
         workflow_state_metadata={
             "database_scan_result": evidence_scan_result.to_dict(),
             "access_provider_gate_summary": access_provider_gate_summary.to_dict(),
+            "access_online_asr_bridge_summary": access_online_asr_bridge_summary.to_dict(),
             "source_adapter_audit_registry": source_adapter_audit_registry.to_dict(),
             "source_site_method_audit_registry": source_site_method_audit_registry.to_dict(),
             "source_named_site_method_packs": source_named_site_method_packs.to_dict(),
@@ -524,6 +538,12 @@ def build_source_evidence_workflow_state(
         access_provider_gate_record_count=access_provider_gate_summary.record_count,
         access_provider_gate_approval_required_count=(
             access_provider_gate_summary.approval_required_count
+        ),
+        access_online_asr_bridge_summary=access_online_asr_bridge_summary,
+        access_online_asr_bridge_summary_id=access_online_asr_bridge_summary.summary_id,
+        access_online_asr_added_provider_count=access_online_asr_bridge_summary.added_provider_count,
+        access_online_asr_provider_readiness_count=(
+            access_online_asr_bridge_summary.online_asr_provider_readiness_count
         ),
         source_adapter_audit_registry=source_adapter_audit_registry,
         source_adapter_audit_registry_id=source_adapter_audit_registry.registry_id,

@@ -431,6 +431,9 @@ def test_start_fetching_source_scaffold_builds_plan_preview_without_live_executi
     assert app.last_source_evidence_workflow_state.source_manual_smoke_checklist_pack_count == 5
     assert app.last_source_audit_dashboard_state.summary["operator_command_pack_count"] == 11
     assert app.last_source_audit_dashboard_state.summary["manual_smoke_checklist_pack_count"] == 5
+    assert app.last_source_audit_dashboard_state.summary["access_online_asr_bridge_summary_id"].startswith(
+        "access_online_asr_bridge_"
+    )
     assert app.last_operational_capture_queue_review_store.metadata_only is True
     assert app.last_operational_capture_review_manifest.assets
     assert any("no fetch" in message for message, _level in app.log_messages)
