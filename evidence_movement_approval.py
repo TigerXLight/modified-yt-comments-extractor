@@ -23,6 +23,13 @@ class EvidenceMovementStatus(str, Enum):
     APPROVED_NOT_EXECUTED = "approved_not_executed"
     EXECUTED_WITH_RECEIPT = "executed_with_receipt"
     REJECTED_UNSAFE = "rejected_unsafe"
+    FAILED_WITH_RECEIPT = "failed_with_receipt"
+
+
+class EvidenceMovementCollisionPolicy(str, Enum):
+    FAIL = "fail"
+    OVERWRITE = "overwrite"
+    KEEP_BOTH = "keep_both"
 
 
 SENSITIVE_TOKENS = (
@@ -113,6 +120,8 @@ class EvidenceMovementReceipt:
     completed_evidence_claimed: bool = False
     approved_by_operator: bool = False
     destructive_delete_performed: bool = False
+    failure_reason: str = ""
+    rollback_performed: bool = False
     schema_version: str = EVIDENCE_MOVEMENT_APPROVAL_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -129,6 +138,20 @@ class CompletedEvidenceReceipt:
     completed_evidence_claimed: bool
     user_review_required: bool = True
     automatic_classification: bool = False
+    schema_version: str = EVIDENCE_MOVEMENT_APPROVAL_SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class EvidenceMovementApprovalToken:
+    approval_token_id: str
+    movement_id: str
+    approved_by_operator: bool
+    operator_label: str
+    approval_note: str = ""
+    destructive_file_move_approved: bool = False
     schema_version: str = EVIDENCE_MOVEMENT_APPROVAL_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -215,6 +238,125 @@ def execute_approved_fixture_movement(
         movement_performed=True,
         approved_by_operator=True,
     )
+
+
+def build_evidence_movement_approval_token(
+    preview: EvidenceMovementPreview,
+    *,
+    approved_by_operator: bool,
+    operator_label: str = "operator",
+    approval_note: str = "",
+    destructive_file_move_approved: bool = False,
+) -> EvidenceMovementApprovalToken:
+    return EvidenceMovementApprovalToken(
+        approval_token_id="movement_approval_token_" + _sha16(
+            (
+                preview.movement_id,
+                approved_by_operator,
+                operator_label,
+                approval_note,
+                destructive_file_move_approved,
+            )
+        ),
+        movement_id=preview.movement_id,
+        approved_by_operator=approved_by_operator,
+        operator_label=operator_label,
+        approval_note=approval_note,
+        destructive_file_move_approved=destructive_file_move_approved,
+    )
+
+
+def _path_stays_inside(root: Path, path: Path) -> bool:
+    return path == root or root in path.parents
+
+
+def _resolve_collision(path: Path, policy: EvidenceMovementCollisionPolicy) -> Path:
+    if not path.exists() or policy == EvidenceMovementCollisionPolicy.OVERWRITE:
+        return path
+    if policy == EvidenceMovementCollisionPolicy.FAIL:
+        raise FileExistsError("destination collision")
+    stem = path.stem
+    suffix = path.suffix
+    for index in range(1, 1000):
+        candidate = path.with_name(f"{stem}_{index}{suffix}")
+        if not candidate.exists():
+            return candidate
+    raise FileExistsError("destination collision")
+
+
+def _failure_receipt(
+    preview: EvidenceMovementPreview,
+    *,
+    reason: str,
+    old_path: Path | None = None,
+    new_path: Path | None = None,
+) -> EvidenceMovementReceipt:
+    return EvidenceMovementReceipt(
+        receipt_id="movement_failure_receipt_" + _sha16((preview.movement_id, reason)),
+        movement_id=preview.movement_id,
+        old_path_name=(old_path.name if old_path else Path(preview.old_path).name),
+        new_path_name=(new_path.name if new_path else Path(preview.new_path).name),
+        mode=preview.mode,
+        hash_before="",
+        hash_after="",
+        destination_verified=False,
+        movement_performed=False,
+        approved_by_operator=False,
+        failure_reason=reason,
+        rollback_performed=False,
+    )
+
+
+def execute_approved_evidence_movement(
+    preview: EvidenceMovementPreview,
+    *,
+    approval_token: EvidenceMovementApprovalToken,
+    approved_root: str,
+    collision_policy: EvidenceMovementCollisionPolicy = EvidenceMovementCollisionPolicy.FAIL,
+) -> EvidenceMovementReceipt:
+    root = Path(approved_root).resolve()
+    old_path = Path(preview.old_path).resolve()
+    requested_new_path = Path(preview.new_path).resolve()
+    try:
+        if approval_token.movement_id != preview.movement_id or not approval_token.approved_by_operator:
+            return _failure_receipt(preview, reason="operator_approval_token_required", old_path=old_path, new_path=requested_new_path)
+        if preview.status == EvidenceMovementStatus.REJECTED_UNSAFE:
+            return _failure_receipt(preview, reason="unsafe_preview_rejected", old_path=old_path, new_path=requested_new_path)
+        if not _path_stays_inside(root, old_path) or not _path_stays_inside(root, requested_new_path):
+            return _failure_receipt(preview, reason="path_outside_approved_root", old_path=old_path, new_path=requested_new_path)
+        if preview.mode == EvidenceMovementMode.MOVE and not approval_token.destructive_file_move_approved:
+            return _failure_receipt(preview, reason="move_requires_destructive_file_move_approval", old_path=old_path, new_path=requested_new_path)
+        if not old_path.is_file():
+            return _failure_receipt(preview, reason="source_file_missing", old_path=old_path, new_path=requested_new_path)
+        new_path = _resolve_collision(requested_new_path, collision_policy)
+        before = _sha256_file(old_path)
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+        if preview.mode == EvidenceMovementMode.MOVE:
+            shutil.move(str(old_path), str(new_path))
+        else:
+            shutil.copy2(str(old_path), str(new_path))
+        after = _sha256_file(new_path)
+        verified = new_path.is_file() and before == after
+        return EvidenceMovementReceipt(
+            receipt_id="movement_receipt_" + _sha16((preview.movement_id, before, after, new_path.name)),
+            movement_id=preview.movement_id,
+            old_path_name=old_path.name,
+            new_path_name=new_path.name,
+            mode=preview.mode,
+            hash_before=before,
+            hash_after=after,
+            destination_verified=verified,
+            movement_performed=verified,
+            approved_by_operator=True,
+            destructive_delete_performed=False,
+        )
+    except Exception as exc:
+        return _failure_receipt(
+            preview,
+            reason=f"movement_failed:{type(exc).__name__}",
+            old_path=old_path,
+            new_path=requested_new_path,
+        )
 
 
 def build_completed_evidence_receipt(
