@@ -104,6 +104,16 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert state.source_execution_bridge_local_fixture_tested_count >= 5
     assert state.source_execution_bridge_mocked_subprocess_tested_count >= 2
     assert state.source_execution_bridge_fake_http_tested_count >= 1
+    assert state.source_operator_approval_gateway_id.startswith("operator_approval_gateway_")
+    assert state.source_operator_approval_gateway["payload"]["preview_gateway"]["blocked_count"] > 0
+    assert state.source_unified_execution_jobs_id.startswith("unified_execution_jobs_")
+    assert state.source_unified_execution_jobs["payload"]["runner_available"] is True
+    assert state.source_local_e2e_total_export_id.startswith("local_e2e_total_export_")
+    assert state.source_local_e2e_total_export["payload"]["local_e2e_total_export_callable"] is True
+    assert state.source_live_smoke_runner_id.startswith("live_smoke_runner_")
+    assert state.source_live_smoke_runner["payload"]["plan_count"] == 11
+    assert state.source_database_movement_operator_workflow_id.startswith("database_movement_operator_workflow_")
+    assert state.source_database_movement_operator_workflow["payload"]["approved_copy_move_callable"] is True
     assert state.release_action_plan_id == state.release_action_plan.release_action_plan_id
     assert state.release_action_receipt_count == 4
     assert state.operator_signoff_required is True
@@ -156,6 +166,11 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert data["source_audit_dashboard_state"]["summary"]["manual_smoke_checklist_pack_count"] == 5
     assert data["source_execution_bridge_results"]["row_count"] >= 6
     assert data["source_execution_bridge_results"]["no_external_sites_accessed"] is True
+    assert data["source_operator_approval_gateway"]["payload"]["real_external_network_requires_explicit_token"] is True
+    assert data["source_unified_execution_jobs"]["payload"]["calls_existing_bridge_modules"] is True
+    assert data["source_local_e2e_total_export"]["payload"]["real_user_evidence_file_movement_performed"] is False
+    assert data["source_live_smoke_runner"]["payload"]["no_live_execution_performed"] is True
+    assert data["source_database_movement_operator_workflow"]["payload"]["real_user_evidence_file_movement_performed"] is False
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
         for asset in data["review_manifest"]["assets"]
@@ -193,6 +208,11 @@ def test_source_evidence_workflow_state_serializes_without_execution_or_payload_
     assert "Source audit dashboard: source_audit_dashboard_state_" in summary
     assert "Execution bridge results: source_execution_bridge_results_" in summary
     assert "Execution bridges mocked-subprocess tested:" in summary
+    assert "Operator approval gateway:" in summary
+    assert "Unified execution jobs:" in summary
+    assert "Local E2E Total Export:" in summary
+    assert "Live-smoke runner:" in summary
+    assert "Database movement operator workflow:" in summary
     assert "Release action plan: source_release_plan_" in summary
     assert "Operator signoff required: true" in summary
     assert "USER_REVIEW_REQUIRED" in summary

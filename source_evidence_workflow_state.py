@@ -87,6 +87,7 @@ from evidence_database_recognition_plan import build_default_database_recognitio
 from source_url_files_bridge import build_default_source_url_files_bridge_state
 from source_behavior_provenance_log import build_source_operational_behavior_log
 from source_execution_bridge_results import build_source_execution_bridge_results
+from source_operator_workflow_sidecars import build_operator_workflow_sidecar_bundle
 from source_site_method_audit_registry import (
     SourceSiteMethodAuditRegistry,
     build_source_site_method_audit_registry,
@@ -230,6 +231,16 @@ class SourceEvidenceWorkflowState:
     source_execution_bridge_local_fixture_tested_count: int
     source_execution_bridge_mocked_subprocess_tested_count: int
     source_execution_bridge_fake_http_tested_count: int
+    source_operator_approval_gateway: Any
+    source_operator_approval_gateway_id: str
+    source_unified_execution_jobs: Any
+    source_unified_execution_jobs_id: str
+    source_local_e2e_total_export: Any
+    source_local_e2e_total_export_id: str
+    source_live_smoke_runner: Any
+    source_live_smoke_runner_id: str
+    source_database_movement_operator_workflow: Any
+    source_database_movement_operator_workflow_id: str
     release_readiness: SourceEvidenceReleaseReadiness
     release_readiness_id: str
     release_target_count: int
@@ -359,6 +370,11 @@ class SourceEvidenceWorkflowState:
                 f"Execution bridges local-fixture tested: {self.source_execution_bridge_local_fixture_tested_count}",
                 f"Execution bridges mocked-subprocess tested: {self.source_execution_bridge_mocked_subprocess_tested_count}",
                 f"Execution bridges fake-HTTP tested: {self.source_execution_bridge_fake_http_tested_count}",
+                f"Operator approval gateway: {self.source_operator_approval_gateway_id}",
+                f"Unified execution jobs: {self.source_unified_execution_jobs_id}",
+                f"Local E2E Total Export: {self.source_local_e2e_total_export_id}",
+                f"Live-smoke runner: {self.source_live_smoke_runner_id}",
+                f"Database movement operator workflow: {self.source_database_movement_operator_workflow_id}",
                 f"Release readiness: {self.release_readiness.release_status}",
                 f"Release targets: {self.release_target_count}",
                 f"Release action plan: {self.release_action_plan_id}",
@@ -523,6 +539,14 @@ def build_source_evidence_workflow_state(
         movement_preview_ref=source_evidence_movement_plan["preview"]["movement_id"],
     ).to_dict()
     source_execution_bridge_results = build_source_execution_bridge_results().to_dict()
+    source_operator_workflow_sidecars = build_operator_workflow_sidecar_bundle()
+    source_operator_approval_gateway = source_operator_workflow_sidecars.operator_approval_gateway.to_dict()
+    source_unified_execution_jobs = source_operator_workflow_sidecars.unified_execution_jobs.to_dict()
+    source_local_e2e_total_export = source_operator_workflow_sidecars.local_e2e_total_export.to_dict()
+    source_live_smoke_runner = source_operator_workflow_sidecars.live_smoke_runner.to_dict()
+    source_database_movement_operator_workflow = (
+        source_operator_workflow_sidecars.database_movement_operator_workflow.to_dict()
+    )
     source_named_site_priority_plan = build_source_named_site_priority_plan(
         source_site_method_audit_registry,
         database_review_workflow=source_database_review_workflow,
@@ -630,6 +654,11 @@ def build_source_evidence_workflow_state(
             "source_url_files_bridge_state": source_url_files_bridge_state,
             "source_behavior_provenance_log": source_behavior_provenance_log,
             "source_execution_bridge_results": source_execution_bridge_results,
+            "source_operator_approval_gateway": source_operator_approval_gateway,
+            "source_unified_execution_jobs": source_unified_execution_jobs,
+            "source_local_e2e_total_export": source_local_e2e_total_export,
+            "source_live_smoke_runner": source_live_smoke_runner,
+            "source_database_movement_operator_workflow": source_database_movement_operator_workflow,
             "grabbed_source_record": (
                 plan.grabbed_source_record.to_dict()
                 if plan.grabbed_source_record is not None
@@ -804,6 +833,16 @@ def build_source_evidence_workflow_state(
             source_execution_bridge_results["mocked_subprocess_tested_count"]
         ),
         source_execution_bridge_fake_http_tested_count=source_execution_bridge_results["fake_http_tested_count"],
+        source_operator_approval_gateway=source_operator_approval_gateway,
+        source_operator_approval_gateway_id=source_operator_approval_gateway["sidecar_id"],
+        source_unified_execution_jobs=source_unified_execution_jobs,
+        source_unified_execution_jobs_id=source_unified_execution_jobs["sidecar_id"],
+        source_local_e2e_total_export=source_local_e2e_total_export,
+        source_local_e2e_total_export_id=source_local_e2e_total_export["sidecar_id"],
+        source_live_smoke_runner=source_live_smoke_runner,
+        source_live_smoke_runner_id=source_live_smoke_runner["sidecar_id"],
+        source_database_movement_operator_workflow=source_database_movement_operator_workflow,
+        source_database_movement_operator_workflow_id=source_database_movement_operator_workflow["sidecar_id"],
         release_readiness=release_readiness,
         release_readiness_id=release_readiness.release_readiness_id,
         release_target_count=release_readiness.target_count,

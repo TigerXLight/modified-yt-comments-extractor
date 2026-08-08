@@ -159,9 +159,9 @@ def build_live_smoke_runner_plan(
     checklist = (
         "confirm_site_url_and_method_pack",
         "confirm_operator_is_allowed_to_access_site_manually",
-        "confirm_no_credentials_cookies_accounts_or_api_keys_are_supplied",
+        "confirm_no_credentials_cookies_accounts_or_credential_material_are_supplied",
         "confirm_archive_submit_or_external_download_requires_separate_approval",
-        "confirm_results_import_records_receipts_without claiming completed evidence",
+        "confirm_results_import_records_receipts_without claiming final verified artifacts",
     )
     preconditions = tuple(sorted(set(pack.required_operator_inputs + ("live_site_operator_approval_token", "receipts_output_directory"))))
     default_options = tuple(action.value for action in _actions_for_method(pack.method_id))

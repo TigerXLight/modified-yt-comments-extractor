@@ -36,6 +36,11 @@ from source_evidence_workflow_store import (
     SOURCE_URL_FILES_BRIDGE_STATE_FILENAME,
     SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME,
     SOURCE_EXECUTION_BRIDGE_RESULTS_FILENAME,
+    SOURCE_OPERATOR_APPROVAL_GATEWAY_FILENAME,
+    SOURCE_UNIFIED_EXECUTION_JOBS_FILENAME,
+    SOURCE_LOCAL_E2E_TOTAL_EXPORT_FILENAME,
+    SOURCE_LIVE_SMOKE_RUNNER_FILENAME,
+    SOURCE_DATABASE_MOVEMENT_OPERATOR_WORKFLOW_FILENAME,
     SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME,
     WORKFLOW_STATE_FILENAME,
     read_source_evidence_workflow_review_bundle,
@@ -110,10 +115,15 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
             SOURCE_URL_FILES_BRIDGE_STATE_FILENAME,
             SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME,
             SOURCE_EXECUTION_BRIDGE_RESULTS_FILENAME,
+            SOURCE_OPERATOR_APPROVAL_GATEWAY_FILENAME,
+            SOURCE_UNIFIED_EXECUTION_JOBS_FILENAME,
+            SOURCE_LOCAL_E2E_TOTAL_EXPORT_FILENAME,
+            SOURCE_LIVE_SMOKE_RUNNER_FILENAME,
+            SOURCE_DATABASE_MOVEMENT_OPERATOR_WORKFLOW_FILENAME,
         }
         expected_files = expected_sidecars | {BUNDLE_INDEX_FILENAME}
         assert {file.filename for file in result.files} == expected_sidecars
-        assert result.file_count == 32
+        assert result.file_count == 37
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_read_performed is False
         assert result.evidence_file_move_performed is False
@@ -221,6 +231,12 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
         assert loaded.source_execution_bridge_results["row_count"] >= 6
         assert loaded.source_execution_bridge_results["mocked_subprocess_tested_count"] >= 2
         assert loaded.source_execution_bridge_results["fake_http_tested_count"] >= 1
+        assert loaded.source_operator_approval_gateway["sidecar_role"] == "operator_approval_gateway"
+        assert loaded.source_operator_approval_gateway["payload"]["preview_gateway"]["blocked_count"] > 0
+        assert loaded.source_unified_execution_jobs["payload"]["runner_available"] is True
+        assert loaded.source_local_e2e_total_export["payload"]["local_e2e_total_export_callable"] is True
+        assert loaded.source_live_smoke_runner["payload"]["plan_count"] == 11
+        assert loaded.source_database_movement_operator_workflow["payload"]["approved_copy_move_callable"] is True
         assert {
             target["target_kind"] for target in loaded.release_readiness["targets"]
         } == {
@@ -270,6 +286,12 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
     assert "Source database recognition plan metadata" in manifest["capture_options"]
     assert "Source URL/FILES bridge metadata" in manifest["capture_options"]
     assert "Source behavior provenance log metadata" in manifest["capture_options"]
+    assert "Source execution bridge results metadata" in manifest["capture_options"]
+    assert "Source operator approval gateway metadata" in manifest["capture_options"]
+    assert "Source unified execution jobs metadata" in manifest["capture_options"]
+    assert "Source local E2E Total Export metadata" in manifest["capture_options"]
+    assert "Source live-smoke runner metadata" in manifest["capture_options"]
+    assert "Source database movement operator workflow metadata" in manifest["capture_options"]
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
         for asset in manifest["assets"]
@@ -351,6 +373,12 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
     assert "Source operational capture runtime metadata sidecar included." in manifest["notes"]
     assert "Source evidence movement plan metadata sidecar included." in manifest["notes"]
     assert "Source behavior provenance log metadata sidecar included." in manifest["notes"]
+    assert "Source execution bridge results metadata sidecar included." in manifest["notes"]
+    assert "Source operator approval gateway metadata sidecar included." in manifest["notes"]
+    assert "Source unified execution jobs metadata sidecar included." in manifest["notes"]
+    assert "Source local E2E Total Export metadata sidecar included." in manifest["notes"]
+    assert "Source live-smoke runner metadata sidecar included." in manifest["notes"]
+    assert "Source database movement operator workflow metadata sidecar included." in manifest["notes"]
 
 
 def test_workflow_review_bundle_hash_validation_rejects_tampering() -> None:

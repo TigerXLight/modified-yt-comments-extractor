@@ -238,6 +238,11 @@ def build_source_evidence_review_manifest_with_workflow_state(
     source_url_files_bridge_state_metadata: Mapping[str, Any] | None = None,
     source_behavior_provenance_log_metadata: Mapping[str, Any] | None = None,
     source_execution_bridge_results_metadata: Mapping[str, Any] | None = None,
+    source_operator_approval_gateway_metadata: Mapping[str, Any] | None = None,
+    source_unified_execution_jobs_metadata: Mapping[str, Any] | None = None,
+    source_local_e2e_total_export_metadata: Mapping[str, Any] | None = None,
+    source_live_smoke_runner_metadata: Mapping[str, Any] | None = None,
+    source_database_movement_operator_workflow_metadata: Mapping[str, Any] | None = None,
 ) -> TotalExportManifest:
     """Return a manifest copy with a workflow-state metadata sidecar asset.
 
@@ -501,6 +506,36 @@ def build_source_evidence_review_manifest_with_workflow_state(
             "Source execution bridge results metadata",
             "Source execution bridge results sidecar: local fixture, fake-HTTP, and mocked-subprocess tested execution bridges.",
             "Source execution bridge results metadata sidecar included.",
+        ),
+        (
+            source_operator_approval_gateway_metadata,
+            "Source operator approval gateway metadata",
+            "Source operator approval gateway sidecar: preview/local/user/live execution scopes and required approval tokens.",
+            "Source operator approval gateway metadata sidecar included.",
+        ),
+        (
+            source_unified_execution_jobs_metadata,
+            "Source unified execution jobs metadata",
+            "Source unified execution job sidecar: callable local/temp runner result fields and failure receipt support.",
+            "Source unified execution jobs metadata sidecar included.",
+        ),
+        (
+            source_local_e2e_total_export_metadata,
+            "Source local E2E Total Export metadata",
+            "Source local E2E Total Export sidecar: fixture package path is callable and locally tested.",
+            "Source local E2E Total Export metadata sidecar included.",
+        ),
+        (
+            source_live_smoke_runner_metadata,
+            "Source live-smoke runner metadata",
+            "Source live-smoke dry-run runner sidecar: future live commands remain approval-gated and not executed.",
+            "Source live-smoke runner metadata sidecar included.",
+        ),
+        (
+            source_database_movement_operator_workflow_metadata,
+            "Source database movement operator workflow metadata",
+            "Source database movement operator workflow sidecar: temp-tested copy/move receipts with approval tokens.",
+            "Source database movement operator workflow metadata sidecar included.",
         ),
     )
     added_note_labels: list[str] = []
