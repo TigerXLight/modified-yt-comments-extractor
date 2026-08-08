@@ -443,3 +443,24 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 - Keeps all live/manual smoke and provider execution paths behind explicit operator approval, named-site inputs, receipt capture, and redacted credential references.
 - Preserves the Local ASR benchmark lock: large-v3 with Vulkan acceleration on the AMD RX 5700 workflow, while keeping Online ASR as a separate provider flow.
 - Preserves the KEYS/ACCOUNTS split between added visible providers and the searchable add-provider catalogue.
+
+## Site-Specific Source Method Audit Coverage
+
+- Coverage marker: SITE_SPECIFIC_SOURCE_METHOD_AUDIT_INFRASTRUCTURE_BUILT.
+- Implemented: durable site/method audit registry, explicit generic-comments selector audit row, selector-audit references on grabbed source records, Evidence Database scan/update receipt helpers, Source Evidence workflow sidecar persistence, and Total Export/review manifest metadata projection.
+- Coverage labels: MODEL_ONLY / LOCAL_FIXTURE_TESTED / UI_SCAFFOLD_ONLY / USER_REVIEW_REQUIRED / SELECTOR_AUDIT_REQUIRED / LIVE_APPROVED_ONLY.
+- Boundaries: no live website, browser, X/Twitter/MSN/YouTube/API/archive/provider, credential/cookie/account, evidence file move, completed-evidence, automatic-classification, or protected-attribute inference behavior.
+
+| Audit row | Coverage state | Not done |
+| --- | --- | --- |
+| MSN article | metadata_audit_ready | No live/manual named-site execution. |
+| MSN shadow-DOM comments | metadata_audit_ready | No live shadow-DOM selector run. |
+| X/Twitter public post archive/manual import | metadata_audit_ready | No live X/Twitter/API/browser/archive provider call. |
+| X/Twitter reply-thread archive/manual import | metadata_audit_ready | No live thread capture. |
+| YouTube media/transcript | metadata_audit_ready | No YouTube runtime/API call. |
+| YouTube comments | metadata_audit_ready | No YouTube runtime/API call. |
+| Generic article HTML | metadata_audit_ready | No live named-site article capture. |
+| Generic comments manual/import | metadata_audit_ready | No universal selector claim. |
+| Generic comments site-specific selector | selector_audit_required / live_approved_only | Named-site selector audit and explicit live approval required. |
+| Generic comments archive-only import | metadata_audit_ready | Operator-supplied archive metadata only. |
+| Archive-only import | metadata_audit_ready | Review/signoff metadata only. |

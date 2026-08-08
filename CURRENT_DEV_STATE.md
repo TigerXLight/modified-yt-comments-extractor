@@ -1147,3 +1147,27 @@ Next implementation work should connect this closeout to concrete release-sectio
 - Keeps all live/manual smoke and provider execution paths behind explicit operator approval, named-site inputs, receipt capture, and redacted credential references.
 - Preserves the Local ASR benchmark lock: large-v3 with Vulkan acceleration on the AMD RX 5700 workflow, while keeping Online ASR as a separate provider flow.
 - Preserves the KEYS/ACCOUNTS split between added visible providers and the searchable add-provider catalogue.
+
+## Site-Specific Source Method Audit Pass
+
+- Status: SITE_SPECIFIC_SOURCE_METHOD_AUDIT_INFRASTRUCTURE_BUILT.
+- Added `source_site_method_audit_registry.py` as a durable site/method table for MSN article, MSN shadow-DOM comments, X/Twitter public post archive/manual import, X/Twitter reply-thread archive/manual import, YouTube media/transcript, YouTube comments, generic article HTML, generic comments manual import, generic comments site-specific selector, generic comments archive-only import, and archive-only import.
+- The generic article-comments nested selector gap is now a tracked row: `generic_comments_site_specific_selector` remains `selector_audit_required` and `live_approved_only`; manual observation/import and archive-only comment evidence review remain metadata-audit-ready paths.
+- Evidence database helpers can scan site/method audit records and write metadata-only update receipts for status, operator review notes, selector audit notes, and archive/manual fallback notes. Unsafe protected/sensitive dimensions, completed-evidence claims, live-execution claims, file-move claims, and credential/cookie/account material are rejected.
+- Source Evidence workflow review bundles now include `source_site_method_audit_registry.json`, and Total Export review manifests include a pathless Source site/method audit metadata sidecar. Grabbed-source records can carry selector-audit reference IDs.
+
+| Site/method | Status | Notes |
+| --- | --- | --- |
+| MSN article | metadata_audit_ready | No live selector execution in this pass. |
+| MSN shadow-DOM comments | metadata_audit_ready | Fixture/manual observation metadata only. |
+| X/Twitter public post archive/manual import | metadata_audit_ready | Archive/manual metadata only; no X/Twitter API/browser. |
+| X/Twitter reply-thread archive/manual import | metadata_audit_ready | Parent/reply/thread-boundary metadata only. |
+| YouTube media/transcript | metadata_audit_ready | Existing-output/local metadata only; no YouTube runtime call. |
+| YouTube comments | metadata_audit_ready | Existing-output status/count metadata only. |
+| Generic article HTML | metadata_audit_ready | HTML/snapshot/text-extraction receipt refs only. |
+| Generic comments manual/import | metadata_audit_ready | Manual/local/import and archive-review path available. |
+| Generic comments site-specific selector | selector_audit_required / live_approved_only | Named-site selector audit and explicit live approval still required. |
+| Generic comments archive-only import | metadata_audit_ready | Operator-supplied archive metadata only. |
+| Archive-only import | metadata_audit_ready | Original/archive URL metadata review only. |
+
+- No live site access, browser automation, X/Twitter/MSN/YouTube/API/archive/provider calls, credentials/cookies/accounts, evidence file moves, completed-evidence claims, or protected-attribute inference occurred.
