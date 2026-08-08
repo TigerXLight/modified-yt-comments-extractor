@@ -1,0 +1,16 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+def test_provider_capability_registry_runtime_docs() -> None:
+    text = Path("SOURCE_ADAPTER_PROVIDER_CAPABILITY_REGISTRY_RUNTIME.md").read_text(encoding="utf-8")
+    assert "Provider Capability Registry Runtime" in text
+    assert "KEYS/ACCOUNTS" in text
+    assert "SOURCE_ADAPTER_PROVIDER_CAPABILITY_REGISTRY_RUNTIME" in text
+    assert "operator" in text.lower()
+
+
+if __name__ == "__main__":
+    test_provider_capability_registry_runtime_docs()
+    print("Source Adapter Provider Capability Registry Runtime docs self-test passed.")
