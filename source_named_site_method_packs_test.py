@@ -4,6 +4,7 @@ import json
 
 from source_named_site_method_packs import (
     build_msn_named_site_method_packs,
+    build_generic_archive_named_site_method_packs,
     build_source_named_site_method_pack_collection,
     build_twitter_x_named_site_method_packs,
     build_youtube_named_site_method_packs,
@@ -138,6 +139,43 @@ def test_youtube_named_site_method_packs_expose_media_transcript_and_comment_met
     assert comments.provider_call_performed is False
 
 
+def test_generic_archive_named_site_method_packs_keep_selector_audit_honest() -> None:
+    generic_packs = build_generic_archive_named_site_method_packs()
+    assert tuple(pack.method_id for pack in generic_packs) == (
+        "generic_article_html",
+        "generic_comments_manual_import",
+        "generic_comments_site_specific_selector",
+        "generic_comments_archive_only_import",
+        "archive_only_import",
+    )
+
+    article = generic_packs[0]
+    assert "HTML_SNAPSHOT" in article.site_specific_metadata["article_capture_refs"]
+    assert article.site_specific_metadata["universal_site_claimed"] is False
+
+    manual_comments = generic_packs[1]
+    assert manual_comments.site_specific_metadata["manual_observation_import_available_now"] is True
+    assert manual_comments.site_specific_metadata["universal_selector_support_claimed"] is False
+
+    selector = generic_packs[2]
+    assert selector.status == "selector_audit_required"
+    assert selector.selector_audit_required is True
+    assert selector.live_approved_only is True
+    assert selector.site_specific_metadata["approval_packet_required"] is True
+    assert selector.site_specific_metadata["site_specific_selector_required_before_live_execution"] is True
+    assert "selector_audit_reference_ids" in selector.source_record_typed_reference_mapping
+
+    archive_comments = generic_packs[3]
+    assert archive_comments.site_specific_metadata["archive_comment_review_available_now"] is True
+    assert archive_comments.archive_fallback_strategy == "archive_is_primary_source_metadata_no_provider_call"
+
+    archive_only = generic_packs[4]
+    assert archive_only.site_profile_id == "archive_only_import"
+    assert "ARCHIVE_URL" in archive_only.site_specific_metadata["archive_only_metadata_refs"]
+    assert archive_only.site_specific_metadata["review_signoff_required"] is True
+    assert archive_only.live_execution_performed is False
+
+
 def test_named_site_method_packs_link_selector_approval_packet_ids() -> None:
     registry = build_source_site_method_audit_registry()
     approval_packets = build_source_selector_approval_packet_collection(registry)
@@ -173,6 +211,7 @@ if __name__ == "__main__":
     test_msn_named_site_method_packs_expose_article_and_shadow_dom_operator_paths()
     test_twitter_x_named_site_method_packs_expose_archive_manual_boundaries()
     test_youtube_named_site_method_packs_expose_media_transcript_and_comment_metadata()
+    test_generic_archive_named_site_method_packs_keep_selector_audit_honest()
     test_named_site_method_packs_link_selector_approval_packet_ids()
     test_named_site_method_pack_json_is_deterministic_and_summary_only()
     print("source_named_site_method_packs_test.py passed")

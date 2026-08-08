@@ -23,6 +23,13 @@ TWITTER_X_SOURCE_METHOD_IDS = (
     "twitter_x_reply_thread_archive_manual_import",
 )
 YOUTUBE_SOURCE_METHOD_IDS = ("youtube_media_transcript", "youtube_comments")
+GENERIC_ARCHIVE_SOURCE_METHOD_IDS = (
+    "generic_article_html",
+    "generic_comments_manual_import",
+    "generic_comments_site_specific_selector",
+    "generic_comments_archive_only_import",
+    "archive_only_import",
+)
 
 
 def _value_for_dict(value: Any) -> Any:
@@ -494,3 +501,10 @@ def build_youtube_named_site_method_packs(
 ) -> tuple[SourceNamedSiteMethodPack, ...]:
     collection = collection or build_source_named_site_method_pack_collection()
     return source_named_site_method_packs_by_method_id(collection, YOUTUBE_SOURCE_METHOD_IDS)
+
+
+def build_generic_archive_named_site_method_packs(
+    collection: SourceNamedSiteMethodPackCollection | None = None,
+) -> tuple[SourceNamedSiteMethodPack, ...]:
+    collection = collection or build_source_named_site_method_pack_collection()
+    return source_named_site_method_packs_by_method_id(collection, GENERIC_ARCHIVE_SOURCE_METHOD_IDS)
