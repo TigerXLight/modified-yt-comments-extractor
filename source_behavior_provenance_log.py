@@ -23,6 +23,12 @@ class BehaviorActionType(str, Enum):
     MANUAL_SOURCE_NOTE_ADDED = "manual_source_note_added"
     DATABASE_REVIEW_PREVIEWED = "database_review_previewed"
     DATABASE_MIGRATION_PREVIEWED = "database_migration_previewed"
+    EVIDENCE_MOVEMENT_PREVIEWED = "evidence_movement_previewed"
+    EVIDENCE_MOVEMENT_APPROVED = "evidence_movement_approved"
+    COMPLETED_EVIDENCE_RECEIPT_GENERATED = "completed_evidence_receipt_generated"
+    SOURCE_URL_MEDIA_ROW_CREATED = "source_url_media_row_created"
+    OPERATOR_COMMAND_PACK_CREATED = "operator_command_pack_created"
+    MANUAL_SMOKE_CHECKLIST_CREATED = "manual_smoke_checklist_created"
 
 
 @dataclass(frozen=True)
@@ -187,4 +193,123 @@ def build_example_behavior_provenance_log() -> BehaviorProvenanceLog:
         log_id="behavior_log_example",
         entries=chain_behavior_entries(raw_entries),
         witnesses=witnesses,
+    )
+
+
+def build_source_operational_behavior_log(
+    *,
+    session_id: str,
+    source_url: str,
+    timestamp_utc: str = "2026-08-08T00:00:00Z",
+    actor_label: str = "operator",
+    movement_preview_ref: str = "",
+    completed_receipt_ref: str = "",
+    previous_hash: str = "",
+) -> BehaviorProvenanceLog:
+    """Build a non-live source workflow action log with redacted hash chaining."""
+
+    raw_entries = (
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_url_entered",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.URL_ENTERED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            previous_entry_hash=previous_hash,
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_get_clicked",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.GET_CLICKED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"selected_scopes": ["article", "comments", "media", "archive_check"]},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_media_row",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.SOURCE_URL_MEDIA_ROW_CREATED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"download_selected": False, "injection_separate_from_download": True},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_comments_selected",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.COMMENTS_SELECTED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"manual_or_fixture_only": True},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_archive_check_selected",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.ARCHIVE_CHECK_SELECTED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"provider_call_performed": False, "submit_performed": False},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_movement_previewed",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.EVIDENCE_MOVEMENT_PREVIEWED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            item_ref=movement_preview_ref,
+            details={"dry_run": True, "file_movement_performed": False},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_operator_command_pack",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.OPERATOR_COMMAND_PACK_CREATED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"approval_required": True, "not_live_executed": True},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_manual_smoke_checklist",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.MANUAL_SMOKE_CHECKLIST_CREATED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"operator_approval_required": True, "not_live_executed": True},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_completed_receipt_placeholder",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.COMPLETED_EVIDENCE_RECEIPT_GENERATED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            item_ref=completed_receipt_ref,
+            details={
+                "completed_evidence_claimed": bool(completed_receipt_ref),
+                "requires_verified_hash_receipt": True,
+            },
+        ),
+    )
+    chained = chain_behavior_entries(raw_entries)
+    return BehaviorProvenanceLog(
+        log_id=f"source_operational_behavior_log_{session_id}",
+        entries=chained,
+        witnesses=(
+            AccountableWitnessRecord(
+                witness_id=f"{session_id}_operator",
+                witness_role="operator_review_witness",
+                display_label=actor_label,
+                captured_by_user_at_utc=timestamp_utc,
+                source_item_ref=source_url,
+                evidence_proof_ref=f"hash_chain:{session_id}",
+            ),
+        ),
+        completed_evidence_claimed=bool(completed_receipt_ref),
+        file_movement_performed=False,
     )
