@@ -1284,6 +1284,32 @@ Next implementation work should connect this closeout to concrete release-sectio
 | Access/KEYS/Online ASR | PRESERVED_NON_SECRET | No credentials read, no provider calls, no ASR jobs run; local benchmark preference remains whisper.cpp / Vulkan / large-v3. |
 
 - Boundary remains explicit: no external site/account/archive/provider was contacted, no real browser automation against live sites occurred, no external media download ran, no real FFmpeg/yt-dlp or ArchiveBox/Docker/WSL command ran, no ASR job ran, no credentials/cookies/accounts were read, no user evidence files were moved, and no automatic classification or protected-attribute inference occurred.
+
+## Source Evidence Operator Workflow Bridge - 2026-08-08
+
+- Status: EXECUTION_BRIDGES_WIRED_TO_OPERATOR_WORKFLOW_LOCAL_ONLY.
+- Implementation commits: `7bdba9c` operator approval gateway and unified runner; `e863384` Source URL/FILES app workflow state; `d19cb1d` local E2E fixture Total Export path; `28b7dbc` evidence database operator workflow; `51c023b` live-smoke dry-run runner; `6ed7031` media/archive/ArchiveBox boundary hardening; `2f70da6` operator workflow sidecar persistence.
+- Added modules: `source_operator_approval_gateway.py`, `source_unified_execution_runner.py`, `source_local_e2e_export.py`, `evidence_database_operator_workflow.py`, `source_live_smoke_runner.py`, and `source_operator_workflow_sidecars.py`.
+- Added/updated workflow sidecars: `source_operator_approval_gateway.json`, `source_unified_execution_jobs.json`, `source_local_e2e_total_export.json`, `source_live_smoke_runner.json`, and `source_database_movement_operator_workflow.json`.
+- Operator approval gateway now distinguishes preview-only, approved local/temp execution, approved user-evidence execution, approved live external execution, blocked/missing approval, cancelled, failed, and completed states. External network, archive submit, user evidence movement, FFmpeg/yt-dlp, ArchiveBox/Docker/WSL, and ASR/provider execution all require explicit action-scoped tokens.
+- Unified execution runner now calls the existing local browser, screenshot/article/comments/livechat, media-copy, fake archive-client, and offline bundle bridges for approved local/temp fixture jobs, recording progress, artifacts, hashes, behavior labels, and failure receipts.
+- Source URL/FILES bridge now exposes app-facing operator state for Enter URL intake, icon states, archive icons, comments/livechat source selection, independent screenshot ticks, media download ticks, media/transcript injection, pinned FILES rows, sort metadata, transcript clear/replace preservation, audio-without-transcript, and waveform/speech interval future status.
+- Local E2E fixture Total Export path writes an actual temp package directory with article text, visible outline, rendered DOM, screenshot artifact, comments/livechat exports, selected local media receipt, fake archive result, offline bundle ZIP, behavior/provenance events, execution sidecar, movement preview, and temp-only completed receipt after hash verification.
+- Evidence database operator workflow scans temp fixture trees, proposes taxonomy paths, previews copy/move, requires approval tokens, supports collisions, records old/new path history, returns failure/rollback receipts, and creates completed receipts only after hash verification. It does not infer protected attributes or move real user evidence.
+- Live-smoke runner now generates dry-run command previews and approval checklists for MSN, X/Twitter, YouTube, generic article/comments, and archive-only methods. Approved live plans remain `approved_not_executed` in Codex; result import is metadata-only.
+- Media/archive/ArchiveBox boundaries were hardened for real-client readiness with injectable HTTP/fake-client tests, local file media download/copy receipts, separate audio/video grouping, FFmpeg/yt-dlp and ArchiveBox cancel/timeout/dependency handling, Wayback/archive.today interpretation, and ArchiveBox Docker/WSL/native/remote profile command builders.
+
+| Operator workflow | State | Test boundary |
+| --- | --- | --- |
+| Approval gateway | CALLABLE | Unit-tested; live/user-evidence/ASR execution blocked without explicit scoped token. |
+| Unified runner | CALLABLE_LOCAL_TEMP | Uses existing bridges; tests use temp files and fake HTTP only. |
+| Source URL/FILES app state | APP_FACING_STATE_TESTED | No live fetch/download. |
+| Local E2E Total Export | TEMP_PACKAGE_TESTED | Writes temp package only. |
+| Evidence database movement | TEMP_FIXTURE_TESTED | No user evidence moved. |
+| Live-smoke runner | DRY_RUN_ONLY | No browser/network/live site run. |
+| Media/archive/ArchiveBox boundary | LOCAL/Fake/Mock tested | No external downloads, providers, FFmpeg/yt-dlp, ArchiveBox/Docker/WSL execution. |
+
+- Boundary remains explicit: no external/live site, archive provider, provider/API, ASR, browser automation against live sites, external download, real FFmpeg/yt-dlp, real ArchiveBox/Docker/WSL, credential/cookie/account read, broad scan, release upload, or user evidence movement occurred in Codex.
 ## Source roadmap consolidation pointer — source methods, claims, URL UI, archives and database recognition
 
 Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE

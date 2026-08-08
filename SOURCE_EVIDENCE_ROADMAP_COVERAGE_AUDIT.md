@@ -582,6 +582,28 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 - Implemented local/mocked execution bridges: local browser/screenshot/article/comments/livechat runner, selected local media copy/download queue, approval-gated FFmpeg/yt-dlp wrappers, Wayback/archive.today fake-client execution, approval-gated ArchiveBox wrapper, offline compressed bundle writer, approval-token evidence movement executor, Source URL/FILES app-facing transitions, and behavior-log execution lifecycle events.
 - Remaining live gates: external sites/accounts, named-site live selectors, real archive providers/submissions, external downloads, real FFmpeg/yt-dlp, real ArchiveBox/Docker/WSL, live screenshots/OCR, ASR/provider jobs, credentials/cookies/accounts, broad scans, release uploads, and user evidence file movement.
 
+## Step 2 App Operator Workflow Coverage - 2026-08-08
+
+- Coverage marker: EXECUTION_BRIDGES_WIRED_TO_APP_OPERATOR_WORKFLOW_LOCAL_ONLY.
+- Added/updated tests: `source_operator_approval_gateway_test.py`, `source_unified_execution_runner_test.py`, `source_local_e2e_export_test.py`, `evidence_database_operator_workflow_test.py`, `source_live_smoke_runner_test.py`, `source_operator_workflow_sidecars_test.py`, `source_url_files_bridge_test.py`, `source_media_execution_bridge_test.py`, `source_archive_execution_bridge_test.py`, `source_evidence_workflow_state_test.py`, `source_evidence_workflow_store_test.py`, and `source_evidence_review_export_test.py`.
+- Added sidecars: `source_operator_approval_gateway.json`, `source_unified_execution_jobs.json`, `source_local_e2e_total_export.json`, `source_live_smoke_runner.json`, and `source_database_movement_operator_workflow.json`.
+
+| Step 2 requirement | Coverage | Boundary |
+| --- | --- | --- |
+| Execution operator approval gateway | Done | Preview/local/user/live scopes and explicit tokens tested; ASR readiness is gate-only. |
+| Unified execution job runner | Done | Approved local/temp runner calls existing bridge modules; fake HTTP and temp files only. |
+| Source URL/FILES app workflow | Done | App-facing state tested; no live fetch/download. |
+| Local E2E fixture Total Export | Done | Real temp package/manifest/hash checks; no user evidence files. |
+| Evidence database operator workflow | Done | Temp tree scan, preview, copy/move, collision, history, rollback/failure, and completed receipt after hash verification. |
+| Manual live-smoke runner | Done | Dry-run commands and approval checklists only; no live sites. |
+| Archive provider real-client boundary | Done | Request builders and response interpretations fake-HTTP-tested; no archive services contacted. |
+| Media execution real-client boundary | Done | Injectable HTTP downloader/local copy and FFmpeg/yt-dlp wrappers tested with local files/mocked subprocess. |
+| ArchiveBox real-client boundary | Done | Docker/WSL/remote/native profile builders and wrapper tested with mocked subprocess. |
+| Access/KEYS/Online ASR preservation | Done | Existing non-secret readiness tests retained; no provider call or ASR run. |
+| Workflow/store/export integration | Done | New sidecars persist through workflow bundle and Total Export manifest metadata. |
+
+- Boundary confirmed: no live external site, real archive provider, provider/API call, ASR job, credential/cookie/account read, browser automation against live sites, external download, real FFmpeg/yt-dlp, real ArchiveBox/Docker/WSL, broad folder scan, release upload, user evidence movement, automatic classification, or protected-attribute inference occurred.
+
 ## Named-Site Source Method Pack Coverage
 
 - Coverage marker: NAMED_SITE_SOURCE_METHOD_PACKS_BUILT.

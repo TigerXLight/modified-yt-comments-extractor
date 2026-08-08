@@ -1134,6 +1134,23 @@ The final execution-bridge pass from `f26f1cd` adds callable local/mocked execut
 | Workflow/store/export sidecar | Done | `source_execution_bridge_results.py` plus `source_execution_bridge_results.json` records implemented bridge/test summaries through Source Evidence review bundles and Total Export metadata. |
 
 Remaining approvals are live/destructive only: external sites/accounts, real archive providers, real browser automation against live sites, external downloads, real FFmpeg/yt-dlp, real ArchiveBox/Docker/WSL, screenshots/OCR from live pages, ASR/provider jobs, credentials/cookies/accounts, broad scans, release uploads, and user evidence file movement.
+
+## Step 2 Execution Bridges To App Operator Workflow - 2026-08-08
+
+Status: APP_OPERATOR_WORKFLOW_WIRED_LOCAL_ONLY.
+
+| Area | Status | Implemented path |
+| --- | --- | --- |
+| Operator approval gateway | Done | `source_operator_approval_gateway.py` covers preview, local/temp, user-evidence, live external, blocked, cancelled, failed, and completed states with scoped approval tokens. |
+| Unified execution job runner | Done | `source_unified_execution_runner.py` calls the existing browser/media/archive/offline bridges and records progress, artifacts, hashes, behavior labels, cancellation, and failure receipts. |
+| Source URL/FILES workflow | Done | `source_url_files_bridge.py` now exposes app-facing URL Enter intake, icon states, source selector, screenshot ticks, media download/inject ticks, pinned rows, sort metadata, transcript preservation, audio-without-transcript, and waveform future state. |
+| Local E2E Total Export | Done | `source_local_e2e_export.py` writes a temp fixture package with manifest, article/outline/DOM/screenshot/comments/livechat/media/archive/offline bundle/provenance/movement sidecars and hash-verified temp completed receipt. |
+| Evidence database operator workflow | Done | `evidence_database_operator_workflow.py` scans temp fixtures, previews taxonomy copy/move, requires approval tokens, handles collisions/failures, preserves old/new path history, and creates completed receipt only after hash verification. |
+| Manual live-smoke runner | Done / dry-run only | `source_live_smoke_runner.py` builds dry-run commands and approval checklists for MSN, X/Twitter, YouTube, generic, and archive-only methods; no live command executes in helper paths. |
+| Archive/media/ArchiveBox real-client boundary | Done | Fake-HTTP archive clients, injectable HTTP media downloader, local media receipts, audio/video grouping, FFmpeg/yt-dlp wrappers, and ArchiveBox Docker/WSL/native/remote command wrappers are callable and approval-gated. |
+| Workflow/store/export sidecars | Done | Added `source_operator_approval_gateway.json`, `source_unified_execution_jobs.json`, `source_local_e2e_total_export.json`, `source_live_smoke_runner.json`, and `source_database_movement_operator_workflow.json`. |
+
+Remaining work is live/manual/destructive only: named-site live execution, external archive services, external media downloads, real FFmpeg/yt-dlp, real ArchiveBox/Docker/WSL, ASR jobs/provider calls, credentials/cookies/accounts, broad scans, release uploads, and user evidence file movement.
 ## Source roadmap consolidation — source websites, roles, URL media UI, archives and database recognition
 
 Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE

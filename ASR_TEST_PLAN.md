@@ -630,3 +630,10 @@ Decision:
 - Access/KEYS and Online ASR readiness remain non-secret, approval-gated summaries.
 - The preferred local benchmark profile remains whisper.cpp / Vulkan / large-v3.
 - No ASR provider call, model download, local ASR transcription, or `asr_tools_test.py` execution occurred in the execution-bridge pass; `asr_tools_test.py` remains compile-check only.
+
+## Source Evidence Operator Workflow ASR Boundary - 2026-08-08
+
+- Step 2 added an operator approval gateway that includes ASR execution readiness as a gated action class only.
+- No ASR code path was executed, no provider was called, no model was downloaded, and no credentials were read.
+- The Access/KEYS and Online ASR bridge remains a non-secret readiness summary, and the local benchmark guard remains whisper.cpp / Vulkan / large-v3.
+- `asr_tools_test.py` remains compile-check only.

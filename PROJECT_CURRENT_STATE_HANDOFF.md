@@ -998,6 +998,28 @@ Local-only test status:
 - Source URL/FILES bridge and workflow/store/export integration: APP_FACING_STATE_TESTED.
 
 Remaining boundary: live external websites, named-site live selectors, real archive provider calls/submissions, real ArchiveBox/Docker/WSL execution, external downloads, real FFmpeg/yt-dlp, real browser automation against live sites, screenshots/OCR from live pages, ASR jobs/provider calls, credentials/cookies/accounts, broad scans, release uploads, and movement of user evidence files still require explicit operator approval and receipt import. No such live/external/destructive execution occurred in this pass.
+
+## Source Evidence Operator Workflow Bridge - 2026-08-08
+
+Starting from `29680e7`, Step 2 wired the execution bridges into real app/operator-facing workflows while keeping Codex tests local, temp, fake-client, or mocked-subprocess only. Implementation commits are `7bdba9c`, `e863384`, `d19cb1d`, `28b7dbc`, `51c023b`, `6ed7031`, and `2f70da6`.
+
+Implemented:
+- `source_operator_approval_gateway.py`: shared execution approval gateway for browser/local capture, screenshot/article/comments/livechat, media copy, FFmpeg, yt-dlp, archive check/submit, ArchiveBox, offline bundle, evidence copy/move, completed receipt creation, and ASR readiness. Real external/user-evidence/subprocess/archive-submit/ASR actions require scoped tokens.
+- `source_unified_execution_runner.py`: approved local/temp job runner that calls the existing bridge modules and records progress, artifacts, hashes, behavior labels, cancellation, and failure receipts.
+- `source_url_files_bridge.py`: app-facing Source URL/FILES workflow state for Enter intake, icon states, comments/livechat selectors and screenshot ticks, media download/inject ticks, pinned FILES rows, sort metadata, transcript clear/replace preservation, audio-without-transcript, and waveform/speech interval future state.
+- `source_local_e2e_export.py`: local fixture Total Export package writer exercising the execution bridges and writing a temp package with manifest, article/outline/DOM/screenshot/comments/livechat/media/archive/offline bundle/provenance/movement sidecars.
+- `evidence_database_operator_workflow.py`: temp-fixture scan/recognition, taxonomy migration preview, approval-token copy/move, collision handling, old/new path history, failure receipts, and completed receipt after hash verification.
+- `source_live_smoke_runner.py`: dry-run operator live-smoke runner for MSN, X/Twitter, YouTube, generic, and archive-only method packs; approved live plans remain not executed by helper paths.
+- `source_operator_workflow_sidecars.py`: workflow sidecar bundle persisted through Source Evidence store/export and Total Export metadata.
+
+New persisted sidecars:
+- `source_operator_approval_gateway.json`
+- `source_unified_execution_jobs.json`
+- `source_local_e2e_total_export.json`
+- `source_live_smoke_runner.json`
+- `source_database_movement_operator_workflow.json`
+
+Remaining boundary: live/manual execution is still approval-only and was not run. No external sites, real archive providers, credentials/cookies/accounts, ASR jobs, external downloads, real FFmpeg/yt-dlp, real ArchiveBox/Docker/WSL, broad scans, release uploads, or user evidence file movement occurred.
 ## Source roadmap consolidation pointer — source methods, claims, URL UI, archives and database recognition
 
 Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
