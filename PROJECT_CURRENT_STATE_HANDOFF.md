@@ -730,3 +730,11 @@ The implementation bundle advances from operator-approved execution runtime into
 - Explicit hygiene for generated operator receipt folders.
 
 Next implementation work should bind the concrete GUI buttons, including the Online ASR button requirement where relevant, and replace local provider backend handlers with provider-specific browser/archive/release/file-library implementations.
+
+### Source Adapter implementation execution bundle handoff
+
+Use `SOURCE_ADAPTER_IMPLEMENTATION_EXECUTION_BUNDLE_CLOSEOUT.md` as the latest
+implementation bundle checkpoint.  Next work should continue with provider-
+specific command configs, GUI live-smoke action binding, and evidence database /
+Total Export release import wiring against the provider command runtime,
+named-site smoke execution, and smoke receipt review integration modules.

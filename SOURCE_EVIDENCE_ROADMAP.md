@@ -834,3 +834,12 @@ The implementation bundle advances from operator-approved execution runtime into
 - Explicit hygiene for generated operator receipt folders.
 
 Next implementation work should bind the concrete GUI buttons, including the Online ASR button requirement where relevant, and replace local provider backend handlers with provider-specific browser/archive/release/file-library implementations.
+
+### Source Adapter implementation execution bundle
+
+Current source-adapter runtime work is now past queue/audit-only scaffolding.
+The implementation bundle adds provider command execution, named-site smoke
+execution, and smoke receipt review integration.  The next roadmap work should
+wire provider-specific browser/archive/release/file-library command adapters and
+GUI live-smoke actions into these callable surfaces, then import reviewed receipt
+rows into evidence database and Total Export release flows.
