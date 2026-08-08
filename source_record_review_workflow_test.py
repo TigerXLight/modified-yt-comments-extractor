@@ -37,6 +37,7 @@ def _record():
         selector_audit_reference_ids=(selector_id,),
         database_review_receipt_reference_ids=("database_review_receipt_1",),
         release_action_receipt_reference_ids=("release_action_receipt_1",),
+        named_site_method_pack_reference_ids=("source_named_site_method_pack_1",),
         created_at_utc="2026-08-08T12:00:00Z",
     )
 
@@ -73,6 +74,12 @@ def test_source_record_review_workflow_summarizes_all_typed_reference_buckets() 
     assert row["automatic_classification_performed"] is False
     assert row["selector_audit_cross_links"][0]["method_id"] == "generic_comments_site_specific_selector"
     assert row["annotation_receipts"][0]["operator_note"].startswith("Cross-link")
+    named_pack_bucket = next(
+        summary
+        for summary in row["reference_summaries"]
+        if summary["bucket_name"] == "named_site_method_pack_reference_ids"
+    )
+    assert named_pack_bucket["reference_count"] == 1
     assert "completed evidence" not in rendered.lower()
     assert "C:\\Users\\fahad" not in rendered
 

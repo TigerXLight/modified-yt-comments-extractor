@@ -22,6 +22,7 @@ REFERENCE_BUCKETS = (
     "selector_audit_reference_ids",
     "database_review_receipt_reference_ids",
     "release_action_receipt_reference_ids",
+    "named_site_method_pack_reference_ids",
 )
 
 

@@ -41,6 +41,7 @@ def test_grabbed_source_record_is_deterministic_and_metadata_only() -> None:
         selector_audit_reference_ids=("selector_audit_generic_comments",),
         database_review_receipt_reference_ids=("database_review_receipt_1",),
         release_action_receipt_reference_ids=("release_action_receipt_1",),
+        named_site_method_pack_reference_ids=("source_named_site_method_pack_1",),
         created_at_utc="2026-08-08T12:00:00Z",
     )
     second = build_grabbed_source_record(
@@ -78,6 +79,7 @@ def test_grabbed_source_record_is_deterministic_and_metadata_only() -> None:
         selector_audit_reference_ids=("selector_audit_generic_comments",),
         database_review_receipt_reference_ids=("database_review_receipt_1",),
         release_action_receipt_reference_ids=("release_action_receipt_1",),
+        named_site_method_pack_reference_ids=("source_named_site_method_pack_1",),
         created_at_utc="2026-08-08T12:00:00Z",
     )
 
@@ -99,11 +101,13 @@ def test_grabbed_source_record_is_deterministic_and_metadata_only() -> None:
     assert first.selector_audit_reference_ids == ("selector_audit_generic_comments",)
     assert first.database_review_receipt_reference_ids == ("database_review_receipt_1",)
     assert first.release_action_receipt_reference_ids == ("release_action_receipt_1",)
+    assert first.named_site_method_pack_reference_ids == ("source_named_site_method_pack_1",)
     assert first.to_dict()["article_reference_count"] == 1
     assert first.to_dict()["provider_receipt_reference_count"] == 1
     assert first.to_dict()["selector_audit_reference_count"] == 1
     assert first.to_dict()["database_review_receipt_reference_count"] == 1
     assert first.to_dict()["release_action_receipt_reference_count"] == 1
+    assert first.to_dict()["named_site_method_pack_reference_count"] == 1
     assert first.file_existence_claimed is False
     assert first.full_local_path_included is False
     assert first.raw_payload_included is False
