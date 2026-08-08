@@ -815,3 +815,10 @@ Next implementation work should bind these delivered artifacts into the concrete
 - Commit scope: source coordination, article/comment/media capture runners, archive submission and poll/import runners, evidence commit runners, Total Export/release delivery, file-library publish runners, KEYS/ACCOUNTS runtime routing, secret scope boundaries, operator command/receipt gates, live smoke planning, manual observation review, capture/archive/evidence/release quality gates, GUI provider/archive/release/KEYS panels, MSN/X/YouTube/article/comments/transcript profiles, end-to-end manifests/verifiers, handoff reports, and operator acceptance checklists.
 - KEYS/ACCOUNTS remains the canonical label for credential/account surfaces.
 - Credential material remains represented only by references and redacted hashes in receipts and ledgers.
+## Source Adapter Final Delivery Closure Bundle Closeout
+
+- Status: SOURCE_ADAPTER_FINAL_DELIVERY_CLOSURE_BUNDLE_CLOSEOUT_RECORDED
+- Commit scope: production capture executors, browser automation command writers, article/comment/media/transcript stores, archive command/receipt/fallback runners, evidence package/database/queue gates, Total Export source/archive/release bridges, release uploader/file-library/acceptance receipts, KEYS/ACCOUNTS onboarding and credential aliases, provider capability/execution/error receipt gates, operator live approval/session/signoff surfaces, GUI ASR button adjacency state, GUI source/evidence/release panels, MSN/X/YouTube/article-comment profile verifiers, reproducibility verifiers, export readiness, and runtime acceptance summaries.
+- Local ASR and Online ASR adjacency remains an explicit GUI state requirement; Online ASR must visually match the Local ASR control when wired to the concrete UI.
+- KEYS/ACCOUNTS remains the canonical label for credential/account surfaces.
+- Credential material remains represented only by references and redacted hashes in receipts and ledgers.
