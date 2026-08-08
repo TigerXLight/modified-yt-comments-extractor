@@ -15,6 +15,10 @@ from evidence_item_queue_store import (
     build_evidence_item_queue_review_store_document,
 )
 from source_evidence_review_export import build_source_evidence_review_manifest
+from source_evidence_release_readiness import (
+    SourceEvidenceReleaseReadiness,
+    build_source_evidence_release_readiness,
+)
 from total_export_manifest import TotalExportManifest
 
 
@@ -57,6 +61,9 @@ class SourceEvidenceWorkflowState:
     queue_review_store_id: str
     review_manifest_package_id: str
     review_manifest_asset_count: int
+    release_readiness: SourceEvidenceReleaseReadiness
+    release_readiness_id: str
+    release_target_count: int
     connection: OperationalCaptureExportQueueConnection
     queue_review_store_document: EvidenceItemQueueReviewStoreDocument
     review_manifest: TotalExportManifest
@@ -98,6 +105,8 @@ class SourceEvidenceWorkflowState:
                 f"Queue links: {self.queue_link_count}",
                 f"Total Export assets: {self.total_export_asset_count}",
                 f"Review manifest assets: {self.review_manifest_asset_count}",
+                f"Release readiness: {self.release_readiness.release_status}",
+                f"Release targets: {self.release_target_count}",
                 f"Queue review store: {self.queue_review_store_id}",
                 "Runtime executed: false",
                 "Live/network/browser/archive/download/file actions performed: none",
@@ -135,6 +144,24 @@ def build_source_evidence_workflow_state(
         actor_label="application",
         app_version=app_version,
     )
+    gate_plan = plan.execution_gate_plan
+    gate_actions = tuple(
+        request.action_kind.value for request in gate_plan.requests
+    ) if gate_plan is not None else ()
+    gate_status = gate_plan.status if gate_plan is not None else "APPROVAL_REQUIRED"
+    gate_id = gate_plan.plan_id if gate_plan is not None else ""
+    release_readiness = build_source_evidence_release_readiness(
+        source_row_id=plan.source_row_id,
+        adapter_id=plan.adapter_id,
+        selected_modes=plan.selected_modes,
+        execution_gate_status=gate_status,
+        execution_gate_action_kinds=gate_actions,
+        queue_item_count=len(connection.queue.items),
+        total_export_asset_count=len(connection.total_export_manifest.assets),
+        review_manifest_package_id=safe_package_id,
+        queue_review_store_id=store_document.store_id,
+        created_at_utc=timestamp,
+    )
     review_manifest = build_source_evidence_review_manifest(
         package_id=safe_package_id,
         created_at_utc=timestamp,
@@ -142,14 +169,9 @@ def build_source_evidence_workflow_state(
         queue=connection.queue,
         execution_gate_plan=plan.execution_gate_plan,
         queue_review_store_document=store_document,
+        release_readiness_metadata=release_readiness.to_dict(),
         app_version=app_version,
     )
-    gate_plan = plan.execution_gate_plan
-    gate_actions = tuple(
-        request.action_kind.value for request in gate_plan.requests
-    ) if gate_plan is not None else ()
-    gate_status = gate_plan.status if gate_plan is not None else "APPROVAL_REQUIRED"
-    gate_id = gate_plan.plan_id if gate_plan is not None else ""
     return SourceEvidenceWorkflowState(
         source_row_id=plan.source_row_id,
         source_title=plan.source_title,
@@ -167,6 +189,9 @@ def build_source_evidence_workflow_state(
         queue_review_store_id=store_document.store_id,
         review_manifest_package_id=review_manifest.package_id,
         review_manifest_asset_count=len(review_manifest.assets),
+        release_readiness=release_readiness,
+        release_readiness_id=release_readiness.release_readiness_id,
+        release_target_count=release_readiness.target_count,
         connection=connection,
         queue_review_store_document=store_document,
         review_manifest=review_manifest,

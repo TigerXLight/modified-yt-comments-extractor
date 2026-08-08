@@ -65,6 +65,7 @@ def build_source_evidence_review_manifest(
     reference_summary: ReferencePackIntakeSummary | None = None,
     queue_review_store_document: EvidenceItemQueueReviewStoreDocument | Mapping[str, Any] | None = None,
     workflow_state_metadata: Mapping[str, Any] | None = None,
+    release_readiness_metadata: Mapping[str, Any] | None = None,
     online_asr_gate_summary: Mapping[str, Any] | Any | None = None,
     app_version: str = "",
 ) -> TotalExportManifest:
@@ -157,6 +158,22 @@ def build_source_evidence_review_manifest(
         )
         capture_options.append("Source Evidence workflow state metadata")
 
+    if release_readiness_metadata is not None:
+        release_metadata = _value_for_dict(release_readiness_metadata)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_MANIFEST,
+                description=(
+                    "Source Evidence release readiness metadata: Total Export release, "
+                    "release-upload, file-library, and operator-signoff targets remain "
+                    "approval-required and not executed."
+                ),
+                metadata=release_metadata,
+                created_at_utc=created_at_utc,
+            )
+        )
+        capture_options.append("Source Evidence release readiness metadata")
+
     if online_asr_gate_summary is not None:
         online_asr_metadata = _value_for_dict(online_asr_gate_summary)
         assets.append(
@@ -196,6 +213,7 @@ def build_source_evidence_review_manifest_with_workflow_state(
     manifest: TotalExportManifest,
     *,
     workflow_state_metadata: Mapping[str, Any],
+    release_readiness_metadata: Mapping[str, Any] | None = None,
 ) -> TotalExportManifest:
     """Return a manifest copy with a workflow-state metadata sidecar asset.
 
@@ -210,19 +228,41 @@ def build_source_evidence_review_manifest_with_workflow_state(
         metadata=metadata,
         created_at_utc=manifest.created_at_utc,
     )
-    capture_options = sorted(
-        set(list(manifest.capture_options) + ["Source Evidence workflow state metadata"])
-    )
+    assets = list(manifest.assets) + [workflow_asset]
+    capture_option_values = set(list(manifest.capture_options) + ["Source Evidence workflow state metadata"])
+    if release_readiness_metadata is not None:
+        release_metadata = _value_for_dict(release_readiness_metadata)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_MANIFEST,
+                description=(
+                    "Source Evidence release readiness metadata: Total Export release, "
+                    "release-upload, file-library, and operator-signoff targets remain "
+                    "approval-required and not executed."
+                ),
+                metadata=release_metadata,
+                created_at_utc=manifest.created_at_utc,
+            )
+        )
+        capture_option_values.add("Source Evidence release readiness metadata")
+    capture_options = sorted(capture_option_values)
     notes = manifest.notes
     if "Source Evidence workflow state metadata sidecar included." not in notes:
         notes = (notes + "\n" if notes else "") + "Source Evidence workflow state metadata sidecar included."
+    if (
+        release_readiness_metadata is not None
+        and "Source Evidence release readiness metadata sidecar included." not in notes
+    ):
+        notes = (
+            notes + "\n" if notes else ""
+        ) + "Source Evidence release readiness metadata sidecar included."
     return TotalExportManifest(
         package_id=manifest.package_id,
         created_at_utc=manifest.created_at_utc,
         source_urls=list(manifest.source_urls),
         output_folder=manifest.output_folder,
         capture_options=capture_options,
-        assets=list(manifest.assets) + [workflow_asset],
+        assets=assets,
         provenance_records=list(manifest.provenance_records),
         claim_notes=list(manifest.claim_notes),
         media_source_chain_notes=list(manifest.media_source_chain_notes),

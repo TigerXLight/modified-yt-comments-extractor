@@ -7,6 +7,7 @@ from source_evidence_workflow_state import build_source_evidence_workflow_state
 from source_evidence_workflow_store import (
     BUNDLE_INDEX_FILENAME,
     QUEUE_REVIEW_STORE_FILENAME,
+    RELEASE_READINESS_FILENAME,
     REVIEW_MANIFEST_FILENAME,
     WORKFLOW_STATE_FILENAME,
     read_source_evidence_workflow_review_bundle,
@@ -52,13 +53,18 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
             WORKFLOW_STATE_FILENAME,
             REVIEW_MANIFEST_FILENAME,
             QUEUE_REVIEW_STORE_FILENAME,
+            RELEASE_READINESS_FILENAME,
         }
         expected_files = expected_sidecars | {BUNDLE_INDEX_FILENAME}
         assert {file.filename for file in result.files} == expected_sidecars
-        assert result.file_count == 3
+        assert result.file_count == 4
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_read_performed is False
         assert result.evidence_file_move_performed is False
+        assert result.release_upload_performed is False
+        assert result.file_library_publish_performed is False
+        assert result.operator_signoff_performed is False
+        assert result.completed_release_claimed is False
         assert result.file_existence_claimed is False
         assert result.full_local_path_included is False
         assert result.completed_evidence_claimed is False
@@ -80,6 +86,16 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
         assert loaded.workflow_state["review_status"] == "USER_REVIEW_REQUIRED"
         assert loaded.review_manifest["assets"]
         assert loaded.queue_review_store["metadata_only"] is True
+        assert loaded.release_readiness["release_status"] == "RELEASE_APPROVAL_REQUIRED"
+        assert loaded.release_readiness["target_count"] == 4
+        assert {
+            target["target_kind"] for target in loaded.release_readiness["targets"]
+        } == {
+            "total_export_release_manifest",
+            "release_upload_target_receipt",
+            "file_library_publish_receipt",
+            "operator_signoff_receipt",
+        }
         assert loaded.metadata_file_read_performed is True
         assert loaded.evidence_file_read_performed is False
         assert loaded.evidence_file_move_performed is False
@@ -97,12 +113,18 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
         manifest = json.loads((Path(temp_dir) / REVIEW_MANIFEST_FILENAME).read_text(encoding="utf-8"))
 
     assert "Source Evidence workflow state metadata" in manifest["capture_options"]
+    assert "Source Evidence release readiness metadata" in manifest["capture_options"]
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
         for asset in manifest["assets"]
     )
+    assert any(
+        "Source Evidence release readiness metadata" in asset["description"]
+        for asset in manifest["assets"]
+    )
     assert all(asset["path"] == "" for asset in manifest["assets"])
     assert "Source Evidence workflow state metadata sidecar included." in manifest["notes"]
+    assert "Source Evidence release readiness metadata sidecar included." in manifest["notes"]
 
 
 def test_workflow_review_bundle_hash_validation_rejects_tampering() -> None:

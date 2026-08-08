@@ -17,6 +17,10 @@ from source_evidence_review_export import (
     build_source_evidence_review_manifest_with_workflow_state,
     source_evidence_review_manifest_to_json,
 )
+from source_evidence_release_readiness import (
+    source_evidence_release_readiness_to_json,
+    validate_source_evidence_release_readiness,
+)
 from source_evidence_workflow_state import (
     SourceEvidenceWorkflowState,
     source_evidence_workflow_state_to_json,
@@ -27,6 +31,7 @@ SOURCE_EVIDENCE_WORKFLOW_STORE_SCHEMA_VERSION = "source_evidence_workflow_store_
 WORKFLOW_STATE_FILENAME = "source_evidence_workflow_state.json"
 REVIEW_MANIFEST_FILENAME = "source_evidence_review_manifest.json"
 QUEUE_REVIEW_STORE_FILENAME = "evidence_item_queue_review_store.json"
+RELEASE_READINESS_FILENAME = "source_evidence_release_readiness.json"
 BUNDLE_INDEX_FILENAME = "source_evidence_workflow_review_bundle.json"
 
 
@@ -69,6 +74,10 @@ class SourceEvidenceWorkflowStoreResult:
     browser_automation_performed: bool = False
     archive_provider_call_performed: bool = False
     download_performed: bool = False
+    release_upload_performed: bool = False
+    file_library_publish_performed: bool = False
+    operator_signoff_performed: bool = False
+    completed_release_claimed: bool = False
     automatic_classification: bool = False
     sensitive_inference_prohibited: bool = True
     note: str = (
@@ -95,6 +104,7 @@ class SourceEvidenceWorkflowStoreReadResult:
     workflow_state: Mapping[str, Any]
     review_manifest: Mapping[str, Any]
     queue_review_store: Mapping[str, Any]
+    release_readiness: Mapping[str, Any]
     schema_version: str = SOURCE_EVIDENCE_WORKFLOW_STORE_SCHEMA_VERSION
     metadata_file_read_performed: bool = True
     evidence_file_read_performed: bool = False
@@ -202,6 +212,10 @@ def validate_source_evidence_workflow_store_result(result: Mapping[str, Any]) ->
         "browser_automation_performed",
         "archive_provider_call_performed",
         "download_performed",
+        "release_upload_performed",
+        "file_library_publish_performed",
+        "operator_signoff_performed",
+        "completed_release_claimed",
         "automatic_classification",
     ):
         if result.get(required_false) is not False:
@@ -253,9 +267,13 @@ def write_source_evidence_workflow_review_bundle(
     output_root.mkdir(parents=True, exist_ok=True)
 
     workflow_state_json = source_evidence_workflow_state_to_json(state)
+    release_readiness = state.release_readiness.to_dict()
+    validate_source_evidence_release_readiness(release_readiness)
+    release_readiness_json = source_evidence_release_readiness_to_json(state.release_readiness)
     review_manifest = build_source_evidence_review_manifest_with_workflow_state(
         state.review_manifest,
         workflow_state_metadata=state.to_dict(),
+        release_readiness_metadata=release_readiness,
     )
     review_manifest_json = source_evidence_review_manifest_to_json(review_manifest)
     queue_review_store = state.queue_review_store_document.to_dict()
@@ -266,6 +284,7 @@ def write_source_evidence_workflow_review_bundle(
         _stored_file("workflow_state", WORKFLOW_STATE_FILENAME, workflow_state_json),
         _stored_file("review_manifest", REVIEW_MANIFEST_FILENAME, review_manifest_json),
         _stored_file("queue_review_store", QUEUE_REVIEW_STORE_FILENAME, queue_review_store_json),
+        _stored_file("release_readiness", RELEASE_READINESS_FILENAME, release_readiness_json),
     )
     result = build_source_evidence_workflow_store_result(state=state, files=files)
     result_json = source_evidence_workflow_store_result_to_json(result)
@@ -273,6 +292,7 @@ def write_source_evidence_workflow_review_bundle(
     _atomic_write_text(output_root / WORKFLOW_STATE_FILENAME, workflow_state_json)
     _atomic_write_text(output_root / REVIEW_MANIFEST_FILENAME, review_manifest_json)
     _atomic_write_text(output_root / QUEUE_REVIEW_STORE_FILENAME, queue_review_store_json)
+    _atomic_write_text(output_root / RELEASE_READINESS_FILENAME, release_readiness_json)
     _atomic_write_text(output_root / BUNDLE_INDEX_FILENAME, result_json)
     return result
 
@@ -288,13 +308,18 @@ def read_source_evidence_workflow_review_bundle(
     workflow_state = json.loads((input_root / WORKFLOW_STATE_FILENAME).read_text(encoding="utf-8"))
     review_manifest = json.loads((input_root / REVIEW_MANIFEST_FILENAME).read_text(encoding="utf-8"))
     queue_review_store = read_evidence_item_queue_review_store(input_root / QUEUE_REVIEW_STORE_FILENAME)
+    release_readiness = json.loads((input_root / RELEASE_READINESS_FILENAME).read_text(encoding="utf-8"))
     if not isinstance(workflow_state, dict) or not isinstance(review_manifest, dict):
         raise ValueError("Source Evidence workflow bundle sidecars must be JSON objects")
+    if not isinstance(release_readiness, dict):
+        raise ValueError("Source Evidence release readiness sidecar must be a JSON object")
+    validate_source_evidence_release_readiness(release_readiness)
     return SourceEvidenceWorkflowStoreReadResult(
         bundle=bundle,
         workflow_state=workflow_state,
         review_manifest=review_manifest,
         queue_review_store=queue_review_store,
+        release_readiness=release_readiness,
     )
 
 
