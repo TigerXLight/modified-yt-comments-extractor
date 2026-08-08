@@ -55,13 +55,25 @@ from source_named_site_method_packs import (
     SourceNamedSiteMethodPackCollection,
     build_source_named_site_method_pack_collection,
 )
+from source_operator_command_packs import (
+    SourceOperatorCommandPackCollection,
+    build_source_operator_command_pack_collection,
+)
 from source_record_review_workflow import (
     SourceRecordReviewWorkflow,
     build_source_record_review_workflow,
 )
+from source_review_panel_state import (
+    SourceReviewPanelState,
+    build_source_audit_dashboard_state,
+)
 from source_selector_approval_workflow import (
     SourceSelectorApprovalPacketCollection,
     build_source_selector_approval_packet_collection,
+)
+from source_manual_smoke_checklists import (
+    SourceManualSmokeChecklistCollection,
+    build_source_manual_smoke_checklist_collection,
 )
 from source_site_method_audit_registry import (
     SourceSiteMethodAuditRegistry,
@@ -161,6 +173,19 @@ class SourceEvidenceWorkflowState:
     source_selector_approval_packet_count: int
     source_selector_manual_smoke_checklist_row_count: int
     source_selector_not_live_executed_receipt_count: int
+    source_operator_command_packs: SourceOperatorCommandPackCollection
+    source_operator_command_packs_id: str
+    source_operator_command_pack_count: int
+    source_operator_command_pack_approval_required_count: int
+    source_manual_smoke_checklists: SourceManualSmokeChecklistCollection
+    source_manual_smoke_checklists_id: str
+    source_manual_smoke_checklist_pack_count: int
+    source_manual_smoke_checklist_row_count: int
+    source_audit_dashboard_state: SourceReviewPanelState
+    source_audit_dashboard_state_id: str
+    source_audit_dashboard_review_needed_count: int
+    source_audit_dashboard_operator_command_pack_count: int
+    source_audit_dashboard_manual_smoke_checklist_pack_count: int
     release_readiness: SourceEvidenceReleaseReadiness
     release_readiness_id: str
     release_target_count: int
@@ -201,6 +226,9 @@ class SourceEvidenceWorkflowState:
         data["source_database_review_workflow"] = self.source_database_review_workflow.to_dict()
         data["source_record_review_workflow"] = self.source_record_review_workflow.to_dict()
         data["source_selector_approval_packets"] = self.source_selector_approval_packets.to_dict()
+        data["source_operator_command_packs"] = self.source_operator_command_packs.to_dict()
+        data["source_manual_smoke_checklists"] = self.source_manual_smoke_checklists.to_dict()
+        data["source_audit_dashboard_state"] = self.source_audit_dashboard_state.to_dict()
         return data
 
     def to_summary_text(self) -> str:
@@ -256,6 +284,14 @@ class SourceEvidenceWorkflowState:
                 f"Selector approval packet count: {self.source_selector_approval_packet_count}",
                 f"Selector manual smoke checklist rows: {self.source_selector_manual_smoke_checklist_row_count}",
                 f"Selector not-live-executed receipts: {self.source_selector_not_live_executed_receipt_count}",
+                f"Operator command packs: {self.source_operator_command_packs_id}",
+                f"Operator command pack count: {self.source_operator_command_pack_count}",
+                f"Operator command approvals required: {self.source_operator_command_pack_approval_required_count}",
+                f"Manual smoke checklists: {self.source_manual_smoke_checklists_id}",
+                f"Manual smoke checklist packs: {self.source_manual_smoke_checklist_pack_count}",
+                f"Manual smoke checklist rows: {self.source_manual_smoke_checklist_row_count}",
+                f"Source audit dashboard: {self.source_audit_dashboard_state_id}",
+                f"Source audit dashboard review-needed count: {self.source_audit_dashboard_review_needed_count}",
                 f"Release readiness: {self.release_readiness.release_status}",
                 f"Release targets: {self.release_target_count}",
                 f"Release action plan: {self.release_action_plan_id}",
@@ -303,6 +339,12 @@ def build_source_evidence_workflow_state(
     source_named_site_method_packs = build_source_named_site_method_pack_collection(
         source_site_method_audit_registry,
         selector_approval_packets=source_selector_approval_packets,
+    )
+    source_operator_command_packs = build_source_operator_command_pack_collection(
+        source_named_site_method_packs
+    )
+    source_manual_smoke_checklists = build_source_manual_smoke_checklist_collection(
+        source_named_site_method_packs
     )
     site_method_audit_records = tuple(
         evidence_index_record_from_source_site_method_audit_row(
@@ -367,6 +409,9 @@ def build_source_evidence_workflow_state(
             "source_database_review_workflow.json",
             "source_record_review_workflow.json",
             "source_selector_approval_packets.json",
+            "source_operator_command_packs.json",
+            "source_manual_smoke_checklists.json",
+            "source_audit_dashboard_state.json",
         ),
         database_review_workflow=source_database_review_workflow,
         source_record_review_workflow=source_record_review_workflow,
@@ -376,6 +421,14 @@ def build_source_evidence_workflow_state(
     )
     access_provider_gate_summary = build_access_provider_gate_summary(
         build_default_access_keys_catalog()
+    )
+    source_audit_dashboard_state = build_source_audit_dashboard_state(
+        database_review_workflow=source_database_review_workflow,
+        source_record_review_workflow=source_record_review_workflow,
+        selector_approval_packets=source_selector_approval_packets,
+        named_site_method_packs=source_named_site_method_packs,
+        operator_command_packs=source_operator_command_packs,
+        manual_smoke_checklists=source_manual_smoke_checklists,
     )
     store_document = build_evidence_item_queue_review_store_document(
         connection.queue,
@@ -423,6 +476,9 @@ def build_source_evidence_workflow_state(
             "source_database_review_workflow": source_database_review_workflow.to_dict(),
             "source_record_review_workflow": source_record_review_workflow.to_dict(),
             "source_selector_approval_packets": source_selector_approval_packets.to_dict(),
+            "source_operator_command_packs": source_operator_command_packs.to_dict(),
+            "source_manual_smoke_checklists": source_manual_smoke_checklists.to_dict(),
+            "source_audit_dashboard_state": source_audit_dashboard_state.to_dict(),
             "grabbed_source_record": (
                 plan.grabbed_source_record.to_dict()
                 if plan.grabbed_source_record is not None
@@ -537,6 +593,27 @@ def build_source_evidence_workflow_state(
         ),
         source_selector_not_live_executed_receipt_count=(
             source_selector_approval_packets.not_live_executed_receipt_count
+        ),
+        source_operator_command_packs=source_operator_command_packs,
+        source_operator_command_packs_id=source_operator_command_packs.collection_id,
+        source_operator_command_pack_count=source_operator_command_packs.pack_count,
+        source_operator_command_pack_approval_required_count=(
+            source_operator_command_packs.approval_required_count
+        ),
+        source_manual_smoke_checklists=source_manual_smoke_checklists,
+        source_manual_smoke_checklists_id=source_manual_smoke_checklists.collection_id,
+        source_manual_smoke_checklist_pack_count=source_manual_smoke_checklists.pack_count,
+        source_manual_smoke_checklist_row_count=source_manual_smoke_checklists.row_count,
+        source_audit_dashboard_state=source_audit_dashboard_state,
+        source_audit_dashboard_state_id=source_audit_dashboard_state.panel_id,
+        source_audit_dashboard_review_needed_count=int(
+            source_audit_dashboard_state.summary.get("review_needed_count", 0)
+        ),
+        source_audit_dashboard_operator_command_pack_count=int(
+            source_audit_dashboard_state.summary.get("operator_command_pack_count", 0)
+        ),
+        source_audit_dashboard_manual_smoke_checklist_pack_count=int(
+            source_audit_dashboard_state.summary.get("manual_smoke_checklist_pack_count", 0)
         ),
         release_readiness=release_readiness,
         release_readiness_id=release_readiness.release_readiness_id,

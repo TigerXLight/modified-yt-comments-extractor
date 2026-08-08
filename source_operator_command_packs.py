@@ -163,7 +163,7 @@ def build_source_operator_command_pack_collection(
                 approval_checklist=(
                     "confirm_named_site_and_source_url",
                     "confirm_scope_is_approved_before_live_execution",
-                    "confirm_no_credentials_cookies_accounts_or_api_keys_are_included",
+                    "confirm_no_credentials_cookies_accounts_or_api_credentials_are_included",
                     "confirm_no_file_moves_or_completed_evidence_claims",
                     "confirm_operator_receipt_will_be_recorded_before_any_execution",
                 ),

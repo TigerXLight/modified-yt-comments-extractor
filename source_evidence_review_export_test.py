@@ -13,6 +13,9 @@ from source_evidence_review_export import (
 from source_adapter_audit_report import build_source_adapter_audit_report
 from source_named_site_method_packs import build_source_named_site_method_pack_collection
 from source_named_site_priority_plan import build_source_named_site_priority_plan
+from source_operator_command_packs import build_source_operator_command_pack_collection
+from source_manual_smoke_checklists import build_source_manual_smoke_checklist_collection
+from source_review_panel_state import build_source_audit_dashboard_state
 from source_site_method_audit_registry import build_source_site_method_audit_registry
 from source_reference_intake import build_reference_pack_intake_summary
 from online_asr_execution_gate import build_online_asr_execution_gate_plan
@@ -153,6 +156,16 @@ def run_self_test() -> None:
     audit_report = build_source_adapter_audit_report(site_method_registry=site_method_registry)
     priority_plan = build_source_named_site_priority_plan(site_method_registry)
     named_site_method_packs = build_source_named_site_method_pack_collection(site_method_registry)
+    operator_command_packs = build_source_operator_command_pack_collection(named_site_method_packs)
+    manual_smoke_checklists = build_source_manual_smoke_checklist_collection(named_site_method_packs)
+    dashboard_state = build_source_audit_dashboard_state(
+        database_review_workflow={},
+        source_record_review_workflow={},
+        selector_approval_packets={},
+        named_site_method_packs=named_site_method_packs,
+        operator_command_packs=operator_command_packs,
+        manual_smoke_checklists=manual_smoke_checklists,
+    )
     workflow_manifest = build_source_evidence_review_manifest_with_workflow_state(
         manifest,
         workflow_state_metadata={"workflow": "metadata_only"},
@@ -160,12 +173,18 @@ def run_self_test() -> None:
         source_adapter_audit_report_metadata=audit_report.to_dict(),
         source_named_site_priority_plan_metadata=priority_plan.to_dict(),
         source_named_site_method_packs_metadata=named_site_method_packs.to_dict(),
+        source_operator_command_packs_metadata=operator_command_packs.to_dict(),
+        source_manual_smoke_checklists_metadata=manual_smoke_checklists.to_dict(),
+        source_audit_dashboard_state_metadata=dashboard_state.to_dict(),
     )
     workflow_dict = workflow_manifest.to_dict()
     assert "Source site/method audit registry metadata" in workflow_dict["capture_options"]
     assert "Source Adapter audit report metadata" in workflow_dict["capture_options"]
     assert "Named-site priority plan metadata" in workflow_dict["capture_options"]
     assert "Named-site source method pack metadata" in workflow_dict["capture_options"]
+    assert "Source operator command pack metadata" in workflow_dict["capture_options"]
+    assert "Source manual smoke checklist metadata" in workflow_dict["capture_options"]
+    assert "Source audit dashboard state metadata" in workflow_dict["capture_options"]
     assert any(
         "Source site/method audit registry metadata sidecar" in asset["description"]
         for asset in workflow_dict["assets"]
@@ -182,10 +201,25 @@ def run_self_test() -> None:
         "Named-site source method pack metadata sidecar" in asset["description"]
         for asset in workflow_dict["assets"]
     )
+    assert any(
+        "Source operator command pack metadata sidecar" in asset["description"]
+        for asset in workflow_dict["assets"]
+    )
+    assert any(
+        "Source manual smoke checklist metadata sidecar" in asset["description"]
+        for asset in workflow_dict["assets"]
+    )
+    assert any(
+        "Source audit dashboard app-facing panel state sidecar" in asset["description"]
+        for asset in workflow_dict["assets"]
+    )
     assert "Source site/method audit registry metadata sidecar included." in workflow_dict["notes"]
     assert "Source Adapter audit report metadata sidecar included." in workflow_dict["notes"]
     assert "Named-site priority plan metadata sidecar included." in workflow_dict["notes"]
     assert "Named-site source method pack metadata sidecar included." in workflow_dict["notes"]
+    assert "Source operator command pack metadata sidecar included." in workflow_dict["notes"]
+    assert "Source manual smoke checklist metadata sidecar included." in workflow_dict["notes"]
+    assert "Source audit dashboard state metadata sidecar included." in workflow_dict["notes"]
     assert all(asset["path"] == "" for asset in workflow_dict["assets"])
 
 

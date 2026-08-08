@@ -5218,6 +5218,7 @@ class App(ctk.CTk):
         self.last_operational_capture_export_connection = workflow_state.connection
         self.last_operational_capture_queue_review_store = workflow_state.queue_review_store_document
         self.last_operational_capture_review_manifest = workflow_state.review_manifest
+        self.last_source_audit_dashboard_state = workflow_state.source_audit_dashboard_state
         self.log_message(
             "Source evidence review metadata ready: "
             f"{workflow_state.queue_item_count} queue item(s), "

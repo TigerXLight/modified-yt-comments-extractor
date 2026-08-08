@@ -222,6 +222,9 @@ def build_source_evidence_review_manifest_with_workflow_state(
     source_database_review_workflow_metadata: Mapping[str, Any] | None = None,
     source_record_review_workflow_metadata: Mapping[str, Any] | None = None,
     source_selector_approval_packets_metadata: Mapping[str, Any] | None = None,
+    source_operator_command_packs_metadata: Mapping[str, Any] | None = None,
+    source_manual_smoke_checklists_metadata: Mapping[str, Any] | None = None,
+    source_audit_dashboard_state_metadata: Mapping[str, Any] | None = None,
 ) -> TotalExportManifest:
     """Return a manifest copy with a workflow-state metadata sidecar asset.
 
@@ -365,6 +368,48 @@ def build_source_evidence_review_manifest_with_workflow_state(
             )
         )
         capture_option_values.add("Source selector approval packet metadata")
+    if source_operator_command_packs_metadata is not None:
+        operator_command_metadata = _value_for_dict(source_operator_command_packs_metadata)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_RAW_SIDECAR,
+                description=(
+                    "Source operator command pack metadata sidecar: future live/manual "
+                    "actions are approval-gated and not executed."
+                ),
+                metadata=operator_command_metadata,
+                created_at_utc=manifest.created_at_utc,
+            )
+        )
+        capture_option_values.add("Source operator command pack metadata")
+    if source_manual_smoke_checklists_metadata is not None:
+        manual_smoke_metadata = _value_for_dict(source_manual_smoke_checklists_metadata)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_RAW_SIDECAR,
+                description=(
+                    "Source manual smoke checklist metadata sidecar: manual smoke "
+                    "execution remains separately approval-gated."
+                ),
+                metadata=manual_smoke_metadata,
+                created_at_utc=manifest.created_at_utc,
+            )
+        )
+        capture_option_values.add("Source manual smoke checklist metadata")
+    if source_audit_dashboard_state_metadata is not None:
+        dashboard_metadata = _value_for_dict(source_audit_dashboard_state_metadata)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_RAW_SIDECAR,
+                description=(
+                    "Source audit dashboard app-facing panel state sidecar: summary/counts "
+                    "only, no live execution."
+                ),
+                metadata=dashboard_metadata,
+                created_at_utc=manifest.created_at_utc,
+            )
+        )
+        capture_option_values.add("Source audit dashboard state metadata")
     capture_options = sorted(capture_option_values)
     notes = manifest.notes
     if "Source Evidence workflow state metadata sidecar included." not in notes:
@@ -432,6 +477,27 @@ def build_source_evidence_review_manifest_with_workflow_state(
         notes = (
             notes + "\n" if notes else ""
         ) + "Source selector approval packet metadata sidecar included."
+    if (
+        source_operator_command_packs_metadata is not None
+        and "Source operator command pack metadata sidecar included." not in notes
+    ):
+        notes = (
+            notes + "\n" if notes else ""
+        ) + "Source operator command pack metadata sidecar included."
+    if (
+        source_manual_smoke_checklists_metadata is not None
+        and "Source manual smoke checklist metadata sidecar included." not in notes
+    ):
+        notes = (
+            notes + "\n" if notes else ""
+        ) + "Source manual smoke checklist metadata sidecar included."
+    if (
+        source_audit_dashboard_state_metadata is not None
+        and "Source audit dashboard state metadata sidecar included." not in notes
+    ):
+        notes = (
+            notes + "\n" if notes else ""
+        ) + "Source audit dashboard state metadata sidecar included."
     return TotalExportManifest(
         package_id=manifest.package_id,
         created_at_utc=manifest.created_at_utc,

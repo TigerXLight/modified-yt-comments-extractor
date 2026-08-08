@@ -86,6 +86,16 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert state.source_selector_approval_packet_count == 1
     assert state.source_selector_manual_smoke_checklist_row_count == 4
     assert state.source_selector_not_live_executed_receipt_count == 1
+    assert state.source_operator_command_packs_id.startswith("source_operator_command_packs_")
+    assert state.source_operator_command_pack_count == 11
+    assert state.source_operator_command_pack_approval_required_count == 11
+    assert state.source_manual_smoke_checklists_id.startswith("source_manual_smoke_checklists_")
+    assert state.source_manual_smoke_checklist_pack_count == 5
+    assert state.source_manual_smoke_checklist_row_count == 11
+    assert state.source_audit_dashboard_state_id.startswith("source_audit_dashboard_state_")
+    assert state.source_audit_dashboard_review_needed_count == state.source_database_review_needed_row_count
+    assert state.source_audit_dashboard_operator_command_pack_count == 11
+    assert state.source_audit_dashboard_manual_smoke_checklist_pack_count == 5
     assert state.release_action_plan_id == state.release_action_plan.release_action_plan_id
     assert state.release_action_receipt_count == 4
     assert state.operator_signoff_required is True
@@ -125,6 +135,14 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert data["source_selector_approval_packets"]["packet_count"] == 1
     assert data["source_selector_approval_packets"]["named_site_method_pack_summary"]["pack_count"] == 11
     assert data["source_selector_approval_packets"]["no_live_execution_performed"] is True
+    assert data["source_operator_command_packs"]["pack_count"] == 11
+    assert data["source_operator_command_packs"]["approval_required_count"] == 11
+    assert data["source_operator_command_packs"]["live_execution_performed"] is False
+    assert data["source_manual_smoke_checklists"]["pack_count"] == 5
+    assert data["source_manual_smoke_checklists"]["row_count"] == 11
+    assert data["source_manual_smoke_checklists"]["live_execution_performed"] is False
+    assert data["source_audit_dashboard_state"]["summary"]["operator_command_pack_count"] == 11
+    assert data["source_audit_dashboard_state"]["summary"]["manual_smoke_checklist_pack_count"] == 5
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
         for asset in data["review_manifest"]["assets"]
@@ -156,6 +174,9 @@ def test_source_evidence_workflow_state_serializes_without_execution_or_payload_
     assert "Source record review workflow: source_record_review_workflow_" in summary
     assert "Selector approval packets: source_selector_approval_packets_" in summary
     assert "Selector not-live-executed receipts:" in summary
+    assert "Operator command packs: source_operator_command_packs_" in summary
+    assert "Manual smoke checklists: source_manual_smoke_checklists_" in summary
+    assert "Source audit dashboard: source_audit_dashboard_state_" in summary
     assert "Release action plan: source_release_plan_" in summary
     assert "Operator signoff required: true" in summary
     assert "USER_REVIEW_REQUIRED" in summary

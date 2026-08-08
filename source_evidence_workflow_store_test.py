@@ -18,8 +18,11 @@ from source_evidence_workflow_store import (
     SOURCE_DATABASE_REVIEW_WORKFLOW_FILENAME,
     SOURCE_NAMED_SITE_METHOD_PACKS_FILENAME,
     SOURCE_NAMED_SITE_PRIORITY_PLAN_FILENAME,
+    SOURCE_OPERATOR_COMMAND_PACKS_FILENAME,
     SOURCE_RECORD_REVIEW_WORKFLOW_FILENAME,
     SOURCE_SELECTOR_APPROVAL_PACKETS_FILENAME,
+    SOURCE_MANUAL_SMOKE_CHECKLISTS_FILENAME,
+    SOURCE_AUDIT_DASHBOARD_STATE_FILENAME,
     SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME,
     WORKFLOW_STATE_FILENAME,
     read_source_evidence_workflow_review_bundle,
@@ -78,10 +81,13 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
             SOURCE_DATABASE_REVIEW_WORKFLOW_FILENAME,
             SOURCE_RECORD_REVIEW_WORKFLOW_FILENAME,
             SOURCE_SELECTOR_APPROVAL_PACKETS_FILENAME,
+            SOURCE_OPERATOR_COMMAND_PACKS_FILENAME,
+            SOURCE_MANUAL_SMOKE_CHECKLISTS_FILENAME,
+            SOURCE_AUDIT_DASHBOARD_STATE_FILENAME,
         }
         expected_files = expected_sidecars | {BUNDLE_INDEX_FILENAME}
         assert {file.filename for file in result.files} == expected_sidecars
-        assert result.file_count == 16
+        assert result.file_count == 19
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_read_performed is False
         assert result.evidence_file_move_performed is False
@@ -163,6 +169,17 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
         assert loaded.source_selector_approval_packets["schema_version"] == "source_selector_approval_workflow_v1"
         assert loaded.source_selector_approval_packets["packet_count"] == 1
         assert loaded.source_selector_approval_packets["no_live_execution_performed"] is True
+        assert loaded.source_operator_command_packs["schema_version"] == "source_operator_command_packs_v1"
+        assert loaded.source_operator_command_packs["pack_count"] == 11
+        assert loaded.source_operator_command_packs["approval_required_count"] == 11
+        assert loaded.source_operator_command_packs["live_execution_performed"] is False
+        assert loaded.source_manual_smoke_checklists["schema_version"] == "source_manual_smoke_checklists_v1"
+        assert loaded.source_manual_smoke_checklists["pack_count"] == 5
+        assert loaded.source_manual_smoke_checklists["row_count"] == 11
+        assert loaded.source_manual_smoke_checklists["live_execution_performed"] is False
+        assert loaded.source_audit_dashboard_state["schema_version"] == "source_review_panel_state_v1"
+        assert loaded.source_audit_dashboard_state["summary"]["operator_command_pack_count"] == 11
+        assert loaded.source_audit_dashboard_state["summary"]["manual_smoke_checklist_pack_count"] == 5
         assert {
             target["target_kind"] for target in loaded.release_readiness["targets"]
         } == {
@@ -197,6 +214,9 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
     assert "Source database review workflow metadata" in manifest["capture_options"]
     assert "Source record review workflow metadata" in manifest["capture_options"]
     assert "Source selector approval packet metadata" in manifest["capture_options"]
+    assert "Source operator command pack metadata" in manifest["capture_options"]
+    assert "Source manual smoke checklist metadata" in manifest["capture_options"]
+    assert "Source audit dashboard state metadata" in manifest["capture_options"]
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
         for asset in manifest["assets"]
@@ -234,6 +254,18 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
         for asset in manifest["assets"]
     )
     assert any(
+        "Source operator command pack metadata sidecar" in asset["description"]
+        for asset in manifest["assets"]
+    )
+    assert any(
+        "Source manual smoke checklist metadata sidecar" in asset["description"]
+        for asset in manifest["assets"]
+    )
+    assert any(
+        "Source audit dashboard app-facing panel state sidecar" in asset["description"]
+        for asset in manifest["assets"]
+    )
+    assert any(
         "Source Evidence release readiness metadata" in asset["description"]
         for asset in manifest["assets"]
     )
@@ -248,6 +280,9 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
     assert "Source database review workflow metadata sidecar included." in manifest["notes"]
     assert "Source record review workflow metadata sidecar included." in manifest["notes"]
     assert "Source selector approval packet metadata sidecar included." in manifest["notes"]
+    assert "Source operator command pack metadata sidecar included." in manifest["notes"]
+    assert "Source manual smoke checklist metadata sidecar included." in manifest["notes"]
+    assert "Source audit dashboard state metadata sidecar included." in manifest["notes"]
 
 
 def test_workflow_review_bundle_hash_validation_rejects_tampering() -> None:

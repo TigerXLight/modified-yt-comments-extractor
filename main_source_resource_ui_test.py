@@ -427,6 +427,10 @@ def test_start_fetching_source_scaffold_builds_plan_preview_without_live_executi
     assert app.last_source_evidence_workflow_state.source_selector_approval_packet_count == 1
     assert app.last_source_evidence_workflow_state.source_named_site_method_pack_count == 11
     assert app.last_source_evidence_workflow_state.source_named_site_method_pack_selector_audit_required_count == 1
+    assert app.last_source_evidence_workflow_state.source_operator_command_pack_count == 11
+    assert app.last_source_evidence_workflow_state.source_manual_smoke_checklist_pack_count == 5
+    assert app.last_source_audit_dashboard_state.summary["operator_command_pack_count"] == 11
+    assert app.last_source_audit_dashboard_state.summary["manual_smoke_checklist_pack_count"] == 5
     assert app.last_operational_capture_queue_review_store.metadata_only is True
     assert app.last_operational_capture_review_manifest.assets
     assert any("no fetch" in message for message, _level in app.log_messages)
@@ -450,7 +454,7 @@ def test_source_evidence_workflow_state_can_save_review_bundle() -> None:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         result = App.save_last_source_evidence_workflow_review_bundle(app, temp_dir)
-        assert result.file_count == 16
+        assert result.file_count == 19
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_move_performed is False
         assert result.full_local_path_included is False
@@ -466,6 +470,9 @@ def test_source_evidence_workflow_state_can_save_review_bundle() -> None:
         assert Path(temp_dir, "source_record_review_workflow.json").is_file()
         assert Path(temp_dir, "source_selector_approval_packets.json").is_file()
         assert Path(temp_dir, "source_named_site_method_packs.json").is_file()
+        assert Path(temp_dir, "source_operator_command_packs.json").is_file()
+        assert Path(temp_dir, "source_manual_smoke_checklists.json").is_file()
+        assert Path(temp_dir, "source_audit_dashboard_state.json").is_file()
 
     assert app.last_source_evidence_workflow_review_bundle.bundle_id == result.bundle_id
     assert any("review bundle saved" in message for message, _level in app.log_messages)
