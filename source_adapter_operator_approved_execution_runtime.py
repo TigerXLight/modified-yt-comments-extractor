@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import tempfile
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -408,12 +409,14 @@ def build_source_adapter_operator_approved_execution_runtime(
     runtime_wiring_package: Mapping[str, Any] | None = None,
     *,
     operator_inputs: Sequence[Mapping[str, Any]] | None = None,
-    output_dir: str | Path = "operator_approved_execution_receipts",
+    output_dir: str | Path | None = None,
     operator_id: str = "operator",
     execution_notes: Sequence[str] | None = None,
 ) -> SourceAdapterOperatorApprovedExecutionRuntime:
     closeout_audit_package = closeout_audit_package or example_runtime_queue_closeout_audit_package()
     runtime_wiring_package = runtime_wiring_package or example_regression_queue_runtime_wiring_package()
+    if output_dir is None:
+        output_dir = Path(tempfile.mkdtemp(prefix="source_adapter_operator_approved_execution_runtime_"))
     operator_inputs = list(operator_inputs or example_operator_inputs(runtime_wiring_package, receipt_root=output_dir))
     issues = _validate_closeout_and_wiring(closeout_audit_package, runtime_wiring_package)
     approval_packet = _build_operator_approval_packet(runtime_wiring_package, operator_inputs, issues)
@@ -509,11 +512,12 @@ def build_source_adapter_operator_approved_execution_runtime(
 
 
 def example_operator_approved_execution_runtime_package() -> dict[str, Any]:
+    output_dir = Path(tempfile.mkdtemp(prefix="source_adapter_operator_approved_execution_runtime_example_"))
     return build_source_adapter_operator_approved_execution_runtime(
         example_runtime_queue_closeout_audit_package(),
         example_regression_queue_runtime_wiring_package(),
-        operator_inputs=example_operator_inputs(receipt_root="operator_approved_execution_receipts"),
-        output_dir="operator_approved_execution_receipts",
+        operator_inputs=example_operator_inputs(receipt_root=output_dir),
+        output_dir=output_dir,
         operator_id="example_operator",
         execution_notes=["deterministic operator approved execution runtime example"],
     ).as_dict()

@@ -72,3 +72,7 @@ DIRECTML_*_SUMMARY.txt
 directml_probe_*.wav
 directml_whisper_*_onnx/
 INSTALL_FFMPEG7_SHARED_FOR_TORCHCODEC.py
+# Generated source-adapter operator execution receipt folders
+operator_approved_execution_receipts/
+operator_approved_provider_backend_receipts/
+operator_approved_gui_controller_receipts/
