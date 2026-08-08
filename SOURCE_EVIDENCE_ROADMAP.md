@@ -905,3 +905,9 @@ Next work should wire these delivery artifacts into the real release-section and
 - Commit scope: provider contract execution, named-site browser binding, archive execution/verification, capture artifact store, evidence queue/review gates, Total Export assembly/release bridge, release upload/file-library publish, KEYS/ACCOUNTS audit and added-provider runtime, GUI execution/result import, operator receipt import, live smoke receipt, provider health/retry, archive poll merge, release index publish, runbook script materialization, manual/live smoke closeout, and operator runtime handoff closeout.
 - KEYS/ACCOUNTS remains the canonical label for credential/account surfaces.
 - Credential material remains represented only by references and redacted hashes in receipts and ledgers.
+## Source Adapter Site Capture Mega Bundle Closeout
+
+- Status: SOURCE_ADAPTER_SITE_CAPTURE_MEGA_BUNDLE_CLOSEOUT_RECORDED
+- Commit scope: source authority resolution, page/comment/media capture recipes, archive normalization/provider adapter execution, release bundle storage, evidence source links/taxonomy, Total Export artifact inventory, source receipt chains, action-log hash chains, operator approval ledger, GUI provider picker/named-site run wizard, KEYS/ACCOUNTS added-provider search and add-provider wizard, credential redaction verification, live smoke command runner, manual observation importer, archive result review, release audit report, source package verification, export queue dispatch, runtime metrics, provider capability documentation, and final operator handoff.
+- KEYS/ACCOUNTS remains the canonical label for credential/account surfaces.
+- Credential material remains represented only by references and redacted hashes in receipts and ledgers.
