@@ -83,6 +83,11 @@ class SourceUrlFilesBridgeState:
     clear_editor_deletes_file: bool = False
     transcript_replacement_deletes_previous: bool = False
     audio_playback_requires_transcript: bool = False
+    url_enter_submit_supported: bool = True
+    injected_files_pinned_top: bool = True
+    files_sort_mode: str = "injected_first_then_newest"
+    editor_transcript_state: str = "preserved"
+    waveform_speech_interval_state: str = "future_state_not_executed"
     network_performed: bool = False
     download_performed: bool = False
     file_move_performed: bool = False
@@ -200,6 +205,179 @@ def build_source_url_files_bridge_state(
         files_rows=tuple(files_rows),
         selected_download_choice_ids=selected,
         injected_choice_ids=injected,
+    )
+
+
+def _state_urls(state: SourceUrlFilesBridgeState) -> tuple[str, ...]:
+    return tuple(str(row.get("source_url") or "") for row in state.source_rows if str(row.get("source_url") or ""))
+
+
+def accept_source_url_on_enter(
+    state: SourceUrlFilesBridgeState,
+    *,
+    url: str,
+    fixture_html_by_url: Mapping[str, str] | None = None,
+) -> SourceUrlFilesBridgeState:
+    urls = tuple(dict.fromkeys((*_state_urls(state), str(url or "").strip())))
+    return build_source_url_files_bridge_state(
+        urls=urls,
+        fixture_html_by_url=fixture_html_by_url,
+        selected_download_choice_ids=state.selected_download_choice_ids,
+        injected_choice_ids=state.injected_choice_ids,
+    )
+
+
+def _copy_source_rows_with_choice_flags(
+    state: SourceUrlFilesBridgeState,
+    *,
+    selected_download_choice_ids: tuple[str, ...],
+    injected_choice_ids: tuple[str, ...],
+) -> tuple[Mapping[str, Any], ...]:
+    selected = set(selected_download_choice_ids)
+    injected = set(injected_choice_ids)
+    rows: list[dict[str, Any]] = []
+    for row in state.source_rows:
+        new_row = dict(row)
+        choices = []
+        for raw_choice in row.get("resource_choices", ()):
+            choice = dict(raw_choice)
+            choice_id = str(choice.get("choice_id") or "")
+            choice["selected_for_download"] = choice_id in selected
+            choice["inject_into_transcript_editor"] = choice_id in injected
+            choice["stored_in_files_after_get"] = choice_id in injected
+            choice["local_file_id"] = f"file_{choice_id}" if choice_id in injected else None
+            choices.append(choice)
+        new_row["resource_choices"] = choices
+        new_row["resource_choice_count"] = len(choices)
+        rows.append(new_row)
+    return tuple(rows)
+
+
+def _choice_lookup(state: SourceUrlFilesBridgeState) -> dict[str, tuple[int, Mapping[str, Any]]]:
+    output: dict[str, tuple[int, Mapping[str, Any]]] = {}
+    for row_index, row in enumerate(state.source_rows, start=1):
+        for raw_choice in row.get("resource_choices", ()):
+            choice = dict(raw_choice)
+            choice_id = str(choice.get("choice_id") or "")
+            if choice_id:
+                output[choice_id] = (row_index, choice)
+    return output
+
+
+def _build_files_rows_from_injected(
+    state: SourceUrlFilesBridgeState,
+    injected_choice_ids: tuple[str, ...],
+) -> tuple[SourceFilesHierarchyRow, ...]:
+    lookup = _choice_lookup(state)
+    rows: list[SourceFilesHierarchyRow] = []
+    for choice_id in injected_choice_ids:
+        found = lookup.get(choice_id)
+        if not found:
+            continue
+        row_index, choice = found
+        kind = str(choice.get("kind") or "")
+        rows.append(
+            SourceFilesHierarchyRow(
+                row_id=f"files_{choice_id}",
+                display_name=str(choice.get("display_name") or choice_id).rsplit("/", 1)[-1],
+                source_row_id=f"source_row_{row_index}",
+                resource_choice_id=choice_id,
+                role=kind,
+                active_media=kind in {"audio", "video"},
+                active_transcript=kind in {"transcript", "caption"},
+            )
+        )
+    return tuple(rows)
+
+
+def set_source_url_download_tick(
+    state: SourceUrlFilesBridgeState,
+    *,
+    choice_id: str,
+    selected: bool,
+) -> SourceUrlFilesBridgeState:
+    selected_ids = set(state.selected_download_choice_ids)
+    if selected:
+        selected_ids.add(choice_id)
+    else:
+        selected_ids.discard(choice_id)
+    selected_tuple = tuple(sorted(selected_ids))
+    injected_tuple = tuple(sorted(set(state.injected_choice_ids)))
+    rows = _copy_source_rows_with_choice_flags(
+        state,
+        selected_download_choice_ids=selected_tuple,
+        injected_choice_ids=injected_tuple,
+    )
+    return SourceUrlFilesBridgeState(
+        bridge_id="source_url_files_bridge_" + _sha16((rows, selected_tuple, injected_tuple, "download_tick")),
+        source_rows=rows,
+        files_rows=state.files_rows,
+        selected_download_choice_ids=selected_tuple,
+        injected_choice_ids=injected_tuple,
+    )
+
+
+def inject_source_url_choice_to_files(
+    state: SourceUrlFilesBridgeState,
+    *,
+    choice_id: str,
+) -> SourceUrlFilesBridgeState:
+    injected_tuple = tuple(sorted(set((*state.injected_choice_ids, choice_id))))
+    selected_tuple = tuple(sorted(set(state.selected_download_choice_ids)))
+    rows = _copy_source_rows_with_choice_flags(
+        state,
+        selected_download_choice_ids=selected_tuple,
+        injected_choice_ids=injected_tuple,
+    )
+    working = SourceUrlFilesBridgeState(
+        bridge_id="",
+        source_rows=rows,
+        files_rows=(),
+        selected_download_choice_ids=selected_tuple,
+        injected_choice_ids=injected_tuple,
+    )
+    files_rows = _build_files_rows_from_injected(working, injected_tuple)
+    return SourceUrlFilesBridgeState(
+        bridge_id="source_url_files_bridge_" + _sha16((rows, selected_tuple, injected_tuple, "inject")),
+        source_rows=rows,
+        files_rows=files_rows,
+        selected_download_choice_ids=selected_tuple,
+        injected_choice_ids=injected_tuple,
+    )
+
+
+def clear_editor_transcript_without_deleting_file(
+    state: SourceUrlFilesBridgeState,
+) -> SourceUrlFilesBridgeState:
+    return SourceUrlFilesBridgeState(
+        bridge_id="source_url_files_bridge_" + _sha16((state.bridge_id, "editor_cleared")),
+        source_rows=state.source_rows,
+        files_rows=state.files_rows,
+        selected_download_choice_ids=state.selected_download_choice_ids,
+        injected_choice_ids=state.injected_choice_ids,
+        clear_editor_deletes_file=False,
+        transcript_replacement_deletes_previous=False,
+        audio_playback_requires_transcript=False,
+        editor_transcript_state="cleared_editor_only_stored_file_preserved",
+    )
+
+
+def replace_editor_transcript_without_deleting_previous(
+    state: SourceUrlFilesBridgeState,
+    *,
+    choice_id: str,
+) -> SourceUrlFilesBridgeState:
+    injected = inject_source_url_choice_to_files(state, choice_id=choice_id)
+    return SourceUrlFilesBridgeState(
+        bridge_id="source_url_files_bridge_" + _sha16((injected.bridge_id, "editor_replaced")),
+        source_rows=injected.source_rows,
+        files_rows=injected.files_rows,
+        selected_download_choice_ids=injected.selected_download_choice_ids,
+        injected_choice_ids=injected.injected_choice_ids,
+        clear_editor_deletes_file=False,
+        transcript_replacement_deletes_previous=False,
+        audio_playback_requires_transcript=False,
+        editor_transcript_state="replaced_editor_only_previous_file_preserved",
     )
 
 
