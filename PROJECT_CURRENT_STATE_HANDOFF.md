@@ -898,3 +898,19 @@ No live site access, browser automation, MSN/X/Twitter/YouTube/API/archive/provi
   - `source_named_site_priority_plan.json`
 - The big-scope path remains MODEL_ONLY / LOCAL_FIXTURE_TESTED / UI_SCAFFOLD_ONLY / USER_REVIEW_REQUIRED / APPROVAL_REQUIRED. It does not claim live capture, completed evidence, file existence, or provider execution.
 - Remaining next boundary: operator-approved named-site selector/live smoke execution, with explicit source URLs, allowed scopes, provider configuration references, and review/signoff before any live/browser/archive/provider/destructive action.
+
+## Database Review UI + Source Method Audit Workflow Handoff
+
+- Current status: DATABASE_REVIEW_UI_SOURCE_METHOD_AUDIT_WORKFLOW_BUILT.
+- New implementation commits: `d6d9542`, `9817a5e`, `19dd410`, `2d16059`, and `75463c1`; documentation is recorded separately after those implementation commits.
+- Source Evidence workflow review bundles now include:
+  - `source_database_review_workflow.json`
+  - `source_record_review_workflow.json`
+  - `source_selector_approval_packets.json`
+  - existing `source_adapter_audit_report.json` and `source_named_site_priority_plan.json` now summarize these workflows.
+- The database review view-model is GUI-callable/headless-testable and includes scan/review-needed/audit/source-record/queue rows, pending safe edits, rejected unsafe edits, receipt summaries, filters, selected row state, and preview-before-apply state.
+- Safe metadata edits create preview receipts for operator notes, selector audit notes, manual observation notes, archive fallback notes, review-state transitions, queue assignment notes, source-record cross-reference notes, and Total Export inclusion notes. Unsafe completed-evidence, live-execution, file movement, raw payload, full local path, credential/cookie/account/API-key material, protected/sensitive classification, and automatic-classification claims are rejected.
+- Source-record review summarizes typed article, comment, media, transcript, archive, screenshot, snapshot, manual-observation, provider-receipt, selector-audit, database-review-receipt, and release-action references, plus selector cross-links.
+- Selector approval packets group current selector-audit-required rows, generate manual smoke checklist rows, and emit `not_live_executed` receipts. Generic comments site-specific selector remains `selector_audit_required` / `live_approved_only`.
+- Existing main/source UI tests verify the app save/preview path exposes database review, source-record review, and selector approval counts through the real workflow state without layout churn.
+- Boundary remains unchanged: no live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider/ASR calls, credentials/cookies/accounts, evidence file moves, completed-evidence claims, protected-attribute inference, or automatic classification.

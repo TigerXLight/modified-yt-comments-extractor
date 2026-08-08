@@ -483,3 +483,37 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 | Named-site priority plan | Done | All rows approval-required; no live/manual smoke performed. |
 
 - Boundaries confirmed: no live site, browser automation, MSN/X/Twitter/YouTube/archive/API/provider calls, credentials/cookies/accounts, broad folder scan, evidence file move, completed-evidence claim, automatic classification, or protected-attribute inference.
+
+## Database Review UI + Source Method Audit Workflow Coverage
+
+- Coverage marker: DATABASE_REVIEW_UI_SOURCE_METHOD_AUDIT_WORKFLOW_BUILT.
+- Coverage labels: MODEL_ONLY / LOCAL_FIXTURE_TESTED / UI_SCAFFOLD_ONLY / USER_REVIEW_REQUIRED / APPROVAL_REQUIRED / SELECTOR_AUDIT_REQUIRED / LIVE_APPROVED_ONLY / PREVIEW_BEFORE_APPLY.
+- Added tests for database review view models, safe-edit preview receipts, rejected unsafe edits, source-record typed reference review, selector approval packets/manual smoke checklist rows, workflow/store/export sidecars, main source UI summary/save path, audit report expansion, and named-site priority summaries.
+
+| Area | Coverage state | Remaining gap |
+| --- | --- | --- |
+| Database review/edit/update view model | Done | Real user database scanning/editing remains approval-gated. |
+| Safe edit previews | Done | Applying to real evidence databases remains future/operator-approved. |
+| Unsafe edit rejection | Done | Rejected categories include live/completed/file-move/raw-payload/full-path/credential/protected-sensitive/automatic-classification claims. |
+| Source record review workflow | Done | Runtime source records remain metadata-only until approved capture/import execution. |
+| Selector approval packets | Done | Generic comments selector remains selector_audit_required / live_approved_only. |
+| Workflow/store/export sidecars | Done | `source_database_review_workflow.json`, `source_record_review_workflow.json`, and `source_selector_approval_packets.json` are metadata sidecars only. |
+| GUI bridge | Done | Existing source review path exposes summary counts; no new live controls. |
+| Audit report expansion | Done | Reports summarize review workflows, selector packets, unsafe rejections, next selector priorities, and done/not-done table. |
+| Live/manual execution | Not done | Requires explicit named-site operator approval and later receipts. |
+
+| Site/method | Current state | Remaining gap |
+| --- | --- | --- |
+| MSN article | metadata_audit_ready | Live/manual named-site smoke remains approval-gated. |
+| MSN shadow-DOM comments | metadata_audit_ready | Live selector execution remains approval-gated. |
+| X/Twitter public post archive/manual import | metadata_audit_ready | No live X/Twitter/API/browser/archive execution. |
+| X/Twitter reply-thread archive/manual import | metadata_audit_ready | Thread live/manual audit remains approval-gated. |
+| YouTube media/transcript | metadata_audit_ready | No YouTube runtime/API call. |
+| YouTube comments | metadata_audit_ready | No YouTube runtime/API call. |
+| Generic article HTML | metadata_audit_ready | Named-site live capture remains approval-gated. |
+| Generic comments manual/import | metadata_audit_ready | Manual/local import and archive review only. |
+| Generic comments site-specific selector | selector_audit_required / live_approved_only | Named-site selector audit before live comment capture. |
+| Generic comments archive-only import | metadata_audit_ready | Operator-supplied archive metadata only. |
+| Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
+
+- Boundaries confirmed: no live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider/ASR calls, credentials/cookies/accounts, broad folder scans, evidence file moves, completed-evidence claims, automatic classification, or protected-attribute inference.

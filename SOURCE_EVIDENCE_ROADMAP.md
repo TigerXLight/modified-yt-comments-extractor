@@ -1003,3 +1003,34 @@ Status: SOURCE_ADAPTER_AUDIT_READINESS_BIG_SCOPE_BUILT.
 | Live/manual execution | Not done | Requires explicit operator approval; no live/browser/API/archive/provider action occurred. |
 
 Next boundary: named-site operator approval and live/manual smoke execution only after the user supplies exact sites, scopes, and allowed actions.
+
+## Database Review UI + Source Method Audit Workflow Milestone
+
+Status: DATABASE_REVIEW_UI_SOURCE_METHOD_AUDIT_WORKFLOW_BUILT.
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| Database review/edit/update view model | Done | `source_database_review_workflow.py` models scan rows, review-needed rows, adapter/site-method rows, source records, queue rows, safe proposals, rejected updates, receipt summaries, filters, selected row state, pending edit state, and preview-before-apply state. |
+| Safe edit workflow | Done | Metadata-only previews create receipts for review notes, selector notes, manual observation notes, archive fallback notes, status transitions, queue assignment, source-record cross-reference, and Total Export inclusion notes. Unsafe live/completed/file-move/raw-payload/full-path/credential/protected-sensitive/automatic-classification claims are rejected. |
+| Source record review workflow | Done | `source_record_review_workflow.py` summarizes grabbed-source typed references and selector cross-links without file movement or completed-evidence claims. |
+| Selector approval workflow | Done | `source_selector_approval_workflow.py` lists selector-audit-required rows, groups by site/profile, builds operator approval packets, manual smoke checklist rows, and `not_live_executed` receipts. |
+| Workflow/store/export sidecars | Done | Bundles now write `source_database_review_workflow.json`, `source_record_review_workflow.json`, and `source_selector_approval_packets.json`; Total Export/review manifests include pathless metadata assets for each. |
+| GUI bridge | Done | Existing source review/preview and bundle-save path exposes database review, source-record review, selector packet counts, and no-live-execution status without layout churn. |
+| Audit report expansion | Done | `source_adapter_audit_report.py` and `source_named_site_priority_plan.py` summarize database review, source-record review, selector approval packets, unsafe rejection counts, next selector priorities, and done/not-done state. |
+| Documentation | Done | Current state, handoff, roadmap, and coverage audit record the new sidecars and remaining approval boundaries. |
+
+| Site/method | Current state | Remaining boundary |
+| --- | --- | --- |
+| MSN article | metadata_audit_ready | Named-site live/manual smoke remains approval-gated. |
+| MSN shadow-DOM comments | metadata_audit_ready | Live selector execution remains approval-gated. |
+| X/Twitter public post archive/manual import | metadata_audit_ready | No X/Twitter live/API/browser/archive execution approved. |
+| X/Twitter reply-thread archive/manual import | metadata_audit_ready | Thread live/manual audit remains approval-gated. |
+| YouTube media/transcript | metadata_audit_ready | Existing-output/local metadata only; no YouTube runtime/API call. |
+| YouTube comments | metadata_audit_ready | Existing-output status/count metadata only. |
+| Generic article HTML | metadata_audit_ready | Named-site live capture remains approval-gated. |
+| Generic comments manual/import | metadata_audit_ready | Manual/local import and archive review only. |
+| Generic comments site-specific selector | selector_audit_required / live_approved_only | Named-site selector audit before live comment capture. |
+| Generic comments archive-only import | metadata_audit_ready | Operator-supplied archive metadata only. |
+| Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
+
+No live site access, browser automation, network/archive/API/provider/ASR calls, credential/cookie/account use, broad scans, evidence file movement, completed-evidence claims, protected-attribute inference, or automatic classification occurred.
