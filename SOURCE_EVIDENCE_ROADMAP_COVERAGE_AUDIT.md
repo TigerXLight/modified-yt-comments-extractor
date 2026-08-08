@@ -331,3 +331,12 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 - Remaining work: bind provider-specific command configs, GUI live-smoke actions,
   and evidence database / Total Export release imports to these implementation
   surfaces.
+
+### Source Adapter release pipeline bundle closeout
+
+- Status: `SOURCE_ADAPTER_RELEASE_PIPELINE_BUNDLE_CLOSEOUT_RECORDED`.
+- Added `SOURCE_ADAPTER_EVIDENCE_EXPORT_RUNTIME_BRIDGE_BUILT` to convert accepted smoke-review rows into source evidence queue, Total Export, release index, and archive handoff runtime artifacts.
+- Added `SOURCE_ADAPTER_RELEASE_ARCHIVE_DELIVERY_RUNTIME_BUILT` to execute twenty local delivery writes and record delivery receipts with paths, byte counts, and SHA-256 hashes.
+- Added `SOURCE_ADAPTER_OPERATOR_DELIVERY_RECEIPT_CLOSEOUT_BUILT` to review twenty delivery receipts and accept five named-site release-section completion rows.
+- `KEYS/ACCOUNTS` remains the credential-reference surface. Receipt and release artifacts continue to carry redacted credential-reference metadata only.
+- Next implementation work: concrete release-section UI/controller import actions, evidence database acceptance surfaces, and final Total Export/release completion wiring.

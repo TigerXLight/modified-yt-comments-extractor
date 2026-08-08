@@ -843,3 +843,21 @@ execution, and smoke receipt review integration.  The next roadmap work should
 wire provider-specific browser/archive/release/file-library command adapters and
 GUI live-smoke actions into these callable surfaces, then import reviewed receipt
 rows into evidence database and Total Export release flows.
+
+### Source Adapter release pipeline bundle
+
+The current implementation path now includes runtime conversion of smoke receipt review output into source evidence / Total Export / release / archive delivery artifacts.
+
+Implemented statuses:
+
+- `SOURCE_ADAPTER_EVIDENCE_EXPORT_RUNTIME_BRIDGE_BUILT`
+- `SOURCE_ADAPTER_EVIDENCE_EXPORT_QUEUE_READY`
+- `SOURCE_ADAPTER_TOTAL_EXPORT_SOURCE_PACKAGE_READY`
+- `SOURCE_ADAPTER_RELEASE_INDEX_RUNTIME_PACKAGE_READY`
+- `SOURCE_ADAPTER_ARCHIVE_HANDOFF_RUNTIME_PACKAGE_READY`
+- `SOURCE_ADAPTER_RELEASE_ARCHIVE_DELIVERY_RUNTIME_BUILT`
+- `SOURCE_ADAPTER_RELEASE_ARCHIVE_DELIVERY_RECEIPTS_READY`
+- `SOURCE_ADAPTER_OPERATOR_DELIVERY_RECEIPT_CLOSEOUT_BUILT`
+- `SOURCE_ADAPTER_OPERATOR_DELIVERY_RECEIPT_CLOSEOUT_READY_FOR_RELEASE_SECTION_COMPLETION`
+
+Next work should wire these delivery artifacts into the real release-section and evidence database controller surfaces.

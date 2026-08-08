@@ -1036,3 +1036,11 @@ smoke receipt review integration.  The bundle records executable local command
 adapter seams for browser capture, archive submit, release upload, file-library
 publish, and KEYS/ACCOUNTS credential-reference lookup, plus review/import rows
 for evidence and release/export integration.
+
+### Source Adapter release pipeline bundle
+
+Current HEAD after this bundle includes the evidence/export runtime bridge, release/archive delivery runtime, and operator delivery receipt closeout. It writes local delivery artifacts for evidence queue, Total Export package, release index, and archive handoff targets, then reviews and accepts those delivery receipts for release-section completion.
+
+Current handoff status: `SOURCE_ADAPTER_OPERATOR_DELIVERY_RECEIPT_CLOSEOUT_READY_FOR_RELEASE_SECTION_COMPLETION`.
+
+Next implementation work should connect this closeout to concrete release-section GUI/controller import surfaces and evidence database acceptance flows.

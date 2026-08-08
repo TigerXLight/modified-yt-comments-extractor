@@ -738,3 +738,17 @@ implementation bundle checkpoint.  Next work should continue with provider-
 specific command configs, GUI live-smoke action binding, and evidence database /
 Total Export release import wiring against the provider command runtime,
 named-site smoke execution, and smoke receipt review integration modules.
+
+### Source Adapter release pipeline bundle handoff
+
+Use `SOURCE_ADAPTER_RELEASE_PIPELINE_BUNDLE_CLOSEOUT.md` as the latest implementation checkpoint after `SOURCE_ADAPTER_IMPLEMENTATION_EXECUTION_BUNDLE_CLOSEOUT.md`.
+
+The latest runtime path now reaches release/evidence delivery closeout:
+
+1. smoke receipt review integration,
+2. evidence/export runtime bridge,
+3. release/archive delivery runtime,
+4. operator delivery receipt closeout,
+5. release-section completion handoff.
+
+Next implementation work should bind these delivered artifacts into the concrete release-section UI/controller imports, evidence database acceptance, and final Total Export/release completion surfaces while preserving `KEYS/ACCOUNTS` and redacted credential-reference hashes.
