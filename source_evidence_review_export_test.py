@@ -10,6 +10,7 @@ from source_evidence_review_export import (
     build_source_evidence_review_manifest_with_workflow_state,
     source_evidence_review_manifest_to_json,
 )
+from source_adapter_audit_report import build_source_adapter_audit_report
 from source_site_method_audit_registry import build_source_site_method_audit_registry
 from source_reference_intake import build_reference_pack_intake_summary
 from online_asr_execution_gate import build_online_asr_execution_gate_plan
@@ -147,18 +148,26 @@ def run_self_test() -> None:
     assert repeated.to_dict() == manifest_dict
 
     site_method_registry = build_source_site_method_audit_registry()
+    audit_report = build_source_adapter_audit_report(site_method_registry=site_method_registry)
     workflow_manifest = build_source_evidence_review_manifest_with_workflow_state(
         manifest,
         workflow_state_metadata={"workflow": "metadata_only"},
         source_site_method_audit_registry_metadata=site_method_registry.to_dict(),
+        source_adapter_audit_report_metadata=audit_report.to_dict(),
     )
     workflow_dict = workflow_manifest.to_dict()
     assert "Source site/method audit registry metadata" in workflow_dict["capture_options"]
+    assert "Source Adapter audit report metadata" in workflow_dict["capture_options"]
     assert any(
         "Source site/method audit registry metadata sidecar" in asset["description"]
         for asset in workflow_dict["assets"]
     )
+    assert any(
+        "Source Adapter audit report metadata sidecar" in asset["description"]
+        for asset in workflow_dict["assets"]
+    )
     assert "Source site/method audit registry metadata sidecar included." in workflow_dict["notes"]
+    assert "Source Adapter audit report metadata sidecar included." in workflow_dict["notes"]
     assert all(asset["path"] == "" for asset in workflow_dict["assets"])
 
 

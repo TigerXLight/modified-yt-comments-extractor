@@ -14,6 +14,7 @@ from source_evidence_workflow_store import (
     RELEASE_READINESS_FILENAME,
     REVIEW_MANIFEST_FILENAME,
     SOURCE_ADAPTER_AUDIT_REGISTRY_FILENAME,
+    SOURCE_ADAPTER_AUDIT_REPORT_FILENAME,
     SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME,
     WORKFLOW_STATE_FILENAME,
     read_source_evidence_workflow_review_bundle,
@@ -66,10 +67,11 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
             ACCESS_PROVIDER_GATE_FILENAME,
             SOURCE_ADAPTER_AUDIT_REGISTRY_FILENAME,
             SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME,
+            SOURCE_ADAPTER_AUDIT_REPORT_FILENAME,
         }
         expected_files = expected_sidecars | {BUNDLE_INDEX_FILENAME}
         assert {file.filename for file in result.files} == expected_sidecars
-        assert result.file_count == 10
+        assert result.file_count == 11
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_read_performed is False
         assert result.evidence_file_move_performed is False
@@ -126,6 +128,10 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
         assert loaded.source_site_method_audit_registry["live_approved_only_count"] == 1
         assert loaded.source_site_method_audit_registry["live_execution_performed"] is False
         assert loaded.source_site_method_audit_registry["browser_automation_performed"] is False
+        assert loaded.source_adapter_audit_report["review_status"] == "USER_REVIEW_REQUIRED"
+        assert loaded.source_adapter_audit_report["row_count"] == 20
+        assert loaded.source_adapter_audit_report["selector_audit_required_count"] == 1
+        assert loaded.source_adapter_audit_report["live_execution_performed"] is False
         assert {
             target["target_kind"] for target in loaded.release_readiness["targets"]
         } == {
@@ -154,6 +160,7 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
     assert "Source Evidence release readiness metadata" in manifest["capture_options"]
     assert "Source Adapter audit registry metadata" in manifest["capture_options"]
     assert "Source site/method audit registry metadata" in manifest["capture_options"]
+    assert "Source Adapter audit report metadata" in manifest["capture_options"]
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
         for asset in manifest["assets"]
@@ -167,6 +174,10 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
         for asset in manifest["assets"]
     )
     assert any(
+        "Source Adapter audit report metadata sidecar" in asset["description"]
+        for asset in manifest["assets"]
+    )
+    assert any(
         "Source Evidence release readiness metadata" in asset["description"]
         for asset in manifest["assets"]
     )
@@ -175,6 +186,7 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
     assert "Source Evidence release readiness metadata sidecar included." in manifest["notes"]
     assert "Source Adapter audit registry metadata sidecar included." in manifest["notes"]
     assert "Source site/method audit registry metadata sidecar included." in manifest["notes"]
+    assert "Source Adapter audit report metadata sidecar included." in manifest["notes"]
 
 
 def test_workflow_review_bundle_hash_validation_rejects_tampering() -> None:

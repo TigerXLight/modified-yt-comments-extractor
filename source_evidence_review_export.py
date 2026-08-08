@@ -216,6 +216,7 @@ def build_source_evidence_review_manifest_with_workflow_state(
     release_readiness_metadata: Mapping[str, Any] | None = None,
     source_adapter_audit_registry_metadata: Mapping[str, Any] | None = None,
     source_site_method_audit_registry_metadata: Mapping[str, Any] | None = None,
+    source_adapter_audit_report_metadata: Mapping[str, Any] | None = None,
 ) -> TotalExportManifest:
     """Return a manifest copy with a workflow-state metadata sidecar asset.
 
@@ -275,6 +276,20 @@ def build_source_evidence_review_manifest_with_workflow_state(
             )
         )
         capture_option_values.add("Source site/method audit registry metadata")
+    if source_adapter_audit_report_metadata is not None:
+        report_metadata = _value_for_dict(source_adapter_audit_report_metadata)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_RAW_SIDECAR,
+                description=(
+                    "Source Adapter audit report metadata sidecar: selector audit, "
+                    "operator approval, and live-smoke gaps remain review-required."
+                ),
+                metadata=report_metadata,
+                created_at_utc=manifest.created_at_utc,
+            )
+        )
+        capture_option_values.add("Source Adapter audit report metadata")
     capture_options = sorted(capture_option_values)
     notes = manifest.notes
     if "Source Evidence workflow state metadata sidecar included." not in notes:
@@ -300,6 +315,13 @@ def build_source_evidence_review_manifest_with_workflow_state(
         notes = (
             notes + "\n" if notes else ""
         ) + "Source site/method audit registry metadata sidecar included."
+    if (
+        source_adapter_audit_report_metadata is not None
+        and "Source Adapter audit report metadata sidecar included." not in notes
+    ):
+        notes = (
+            notes + "\n" if notes else ""
+        ) + "Source Adapter audit report metadata sidecar included."
     return TotalExportManifest(
         package_id=manifest.package_id,
         created_at_utc=manifest.created_at_utc,
