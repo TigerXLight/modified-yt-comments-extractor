@@ -59,6 +59,15 @@ Existing YouTube comment/live-chat behavior, app exports, ASR runtime behavior, 
 - The Source Evidence workflow review bundle now writes `source_adapter_audit_registry.json` alongside the existing workflow state, review manifest, queue review store, release readiness/action plan, grabbed-source record, database scan result, and access/provider gate sidecars. The Total Export/review manifest includes an explicit pathless Source Adapter audit registry metadata sidecar entry.
 - This is audit readiness only. It performs no live site access, browser automation, network/API/provider call, archive submission, ASR job, upload, broad folder scan, file move, file-existence claim, protected-attribute inference, completed-evidence claim, or automatic classification.
 
+## Controlled MSN Vertical Live Validation
+
+- `66b589f77a23e1e82ba7b774beaeea281b217b6b Add MSN vertical live validation runner` adds a bounded runner/test pair for the approved MSN validation URL only: `source_msn_vertical_live_validation.py` and `source_msn_vertical_live_validation_test.py`.
+- The app-facing archive service order now includes `Local Web Archive` as the ordinary/default local preservation action before the optional advanced `ArchiveBox` backend. Status preview wording states that Local Web Archive uses built-in WARC/WACZ plus local evidence bundle output; ArchiveBox remains optional and non-executed unless separately approved.
+- The live validation run wrote artifacts to `C:\Users\fahad\AppData\Local\Temp\ytce_msn_vertical_live_validation_20260808_235152`. Manifest SHA-256: `6d711d840a2fed6973e6f42a1807c2c368fe45987a77ee34582e0c9f73bacc8b`.
+- Result matrix: source identification LIVE_SITE_MANUALLY_TESTED; Local Web Archive LIVE_SITE_MANUALLY_TESTED; article text, visible outline, resource inventory, and Wayback check PARTIAL; comments shadow DOM, faithful screenshot, and derived screenshot BLOCKED; representative download, Wayback submit, ArchiveBox, and Evidence Database N_A.
+- Important interpretation: the static MSN response was a JavaScript shell (`title=MSN`) and did not include extractable article body, page outline, static comment records, `social-comment-wc`, `.overlay-container`, or direct media resources. Wayback availability check was attempted but returned HTTP 429; no submit/save was attempted. ReplayWeb.page was not configured, so WACZ viewer status is `VIEWER_NOT_CONFIGURED` while structural ZIP validation succeeded.
+- Boundaries preserved: no archive.today request, Wayback submit, browser automation, screenshot runtime, browser profile/cookies, login, CAPTCHA bypass, stealth/proxy behavior, external broad crawl, ArchiveBox/Docker/WSL execution, ASR job, evidence database movement/reclassification, or destructive file operation occurred.
+
 ## ASR Comparison And Provider State
 
 ### Acceptance Policy
