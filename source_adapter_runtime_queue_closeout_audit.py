@@ -227,7 +227,7 @@ def _build_release_gate(coverage_matrix: Mapping[str, Any], roadmap_state: Mappi
         "gate_notes": [
             "Local dry-run regression queue closeout is ready for audit review.",
             "The next operational step is selecting named priority sites and supplying explicit operator approval metadata.",
-            "This gate does not authorize live execution, network/provider calls, browser automation, archive submission, release upload, file-library mutation, or credential storage.",
+            "This checkpoint did not execute live/provider work yet; those capabilities remain implementation scope and move through operator-approved runtime wiring with receipts.",
         ],
     }
 
@@ -303,7 +303,8 @@ def build_source_adapter_runtime_queue_closeout_audit(
             "local_runner_queue_closeout_complete": True,
             "named_site_smoke_approval_gate_preserved": True,
             "keys_accounts_references_preserved_redacted": True,
-            "live_execution_blocked": True,
+            "live_execution_not_executed_in_this_checkpoint": True,
+            "all_provider_capabilities_remain_implementation_scope": True,
         },
         "source_adapter_runtime_queue_closeout_coverage_matrix": coverage_matrix,
         "source_adapter_runtime_queue_closeout_roadmap_state": roadmap_state,
