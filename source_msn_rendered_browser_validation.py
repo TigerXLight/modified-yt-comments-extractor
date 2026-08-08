@@ -55,6 +55,7 @@ VIEWER_CONFIGURED = "VIEWER_CONFIGURED"
 MAX_RESPONSE_BODY_BYTES = 2 * 1024 * 1024
 MAX_WARC_BODY_BYTES = 14 * 1024 * 1024
 MAX_CAPTURED_RESPONSE_COUNT = 80
+COMMENT_COLLECTION_STEPS = 8
 
 DESKTOP_PROFILE = {
     "name": "desktop_chromium",
@@ -73,7 +74,7 @@ MOBILE_PROFILE = {
     "is_mobile": True,
     "device_scale_factor": 2,
 }
-EXPECTED_MSN_ARTICLE_TERMS = ("york", "mosque", "firearm")
+EXPECTED_MSN_ARTICLE_TERMS = ("york", "mosque", "shot")
 
 
 @dataclass(frozen=True)
@@ -200,6 +201,44 @@ def _safe_name(value: str, fallback: str = "artifact") -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", text)[:120].strip("._") or fallback
 
 
+def _safe_download_extension(content_type: str, payload: bytes) -> str:
+    lowered = content_type.split(";", 1)[0].strip().lower()
+    by_type = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/svg+xml": ".svg",
+    }
+    if lowered in by_type:
+        return by_type[lowered]
+    if payload.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if payload.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if payload.startswith((b"GIF87a", b"GIF89a")):
+        return ".gif"
+    if payload.startswith(b"RIFF") and payload[8:12] == b"WEBP":
+        return ".webp"
+    prefix = payload[:200].lstrip().lower()
+    if prefix.startswith((b"<svg", b"<?xml")) and b"<svg" in prefix:
+        return ".svg"
+    return ""
+
+
+def _safe_download_filename(response: CapturedResponse, fallback: str = "representative_image") -> str:
+    filename = _safe_name(response.url, fallback)
+    stem = Path(filename).stem or fallback
+    suffix = Path(filename).suffix.lower()
+    inferred = _safe_download_extension(_header_value(response.headers, "content-type"), response.body)
+    if inferred and suffix != inferred:
+        return f"{stem}{inferred}"
+    if not suffix and inferred:
+        return f"{stem}{inferred}"
+    return filename
+
+
 def _json_bytes(value: Any) -> bytes:
     return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
@@ -252,6 +291,21 @@ def _redacted_headers(headers: Mapping[str, str]) -> dict[str, str]:
         elif lowered in {"content-type", "content-length", "cache-control", "date", "etag", "last-modified", "server"}:
             allowed[str(key)] = str(value)
     return allowed
+
+
+def _redact_url_for_metadata(url: str) -> str:
+    parsed = urlsplit(url)
+    if not parsed.query:
+        return url
+    sensitive_names = ("apikey", "api_key", "token", "cookie", "user", "activityid", "authorization")
+    parts: list[str] = []
+    for pair in parsed.query.split("&"):
+        name = pair.split("=", 1)[0].lower()
+        if any(fragment in name for fragment in sensitive_names):
+            parts.append(pair.split("=", 1)[0] + "=[redacted]")
+        else:
+            parts.append(pair)
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "&".join(parts), parsed.fragment))
 
 
 def _surt(url: str) -> str:
@@ -507,10 +561,7 @@ def _download_from_captured_response(
             continue
         if len(response.body) <= 0 or len(response.body) > MAX_RESPONSE_BODY_BYTES:
             continue
-        filename = _safe_name(response.url, "representative_image")
-        if "." not in filename:
-            suffix = "." + content_type.split("/", 1)[1].split(";", 1)[0].replace("jpeg", "jpg")
-            filename += suffix
+        filename = _safe_download_filename(response, "representative_image")
         part_path = output_directory / "downloads" / f"{filename}.part"
         final_path = output_directory / "downloads" / filename
         part_path.parent.mkdir(parents=True, exist_ok=True)
@@ -583,63 +634,150 @@ def _evaluate_comments(page: Any) -> dict[str, Any]:
         page.evaluate(
             """() => {
               const rows = [];
-              const seen = new Set();
-              const chromeText = new Set([
-                "continue reading",
-                "read more",
-                "show comments",
-                "see comments",
-                "join the conversation",
-                "comments",
-                "sign in",
-                "log in"
-              ]);
-              function textOf(el) { return (el && (el.innerText || el.textContent) || "").replace(/\\s+/g, " ").trim(); }
-              function pushCandidate(el, source) {
-                if (!el) return;
-                const text = textOf(el);
-                if (!text || text.length < 3) return;
-                const normalized = text.toLowerCase();
-                if (chromeText.has(normalized)) return;
-                const hasCommentSignal = !!(
-                  el.getAttribute("data-comment-id") ||
-                  el.getAttribute("data-author") ||
-                  el.getAttribute("data-parent-id") ||
-                  el.querySelector?.("[datetime], time, [data-author], [data-comment-id], [data-parent-id], [aria-level]")
-                );
-                const hasConversationSignal = hasCommentSignal || /\\bReply\\b|\\bLike\\b|\\bDislike\\b|replies|Top comments/i.test(text);
-                if (!hasConversationSignal) return;
-                const id = el.getAttribute("id") || el.getAttribute("data-comment-id") || el.getAttribute("data-testid") || text.slice(0, 80);
-                const key = source + ":" + id + ":" + text.slice(0, 120);
-                if (seen.has(key)) return;
-                seen.add(key);
-                rows.push({
-                  comment_id: id,
-                  text,
-                  author: el.getAttribute("data-author") || "",
-                  posted_at: el.getAttribute("datetime") || el.getAttribute("data-time") || "",
-                  source,
-                  depth: Number(el.getAttribute("aria-level") || 0),
-                  reply_to: el.getAttribute("data-parent-id") || "",
-                  stable_identifier: id
-                });
-              }
               const host = document.querySelector("social-comment-wc");
               const hostRoot = host && host.shadowRoot;
-              const roots = [document];
-              if (hostRoot) roots.push(hostRoot);
-              document.querySelectorAll(".overlay-container, [class*='overlay'], [class*='comment'], [id*='comment']").forEach(el => roots.push(el));
-              for (const root of roots) {
-                root.querySelectorAll?.("[data-comment-id], article, [role='article'], [class*='comment'], [data-testid*='comment']").forEach(el => pushCandidate(el, root === document ? "document" : "component"));
+              function clean(value) {
+                return (value || "").replace(/\\s+/g, " ").trim();
               }
-              const scrollContainers = Array.from(document.querySelectorAll("*")).filter(el => {
+              function allOpenShadowElements(root, out = [], depth = 0) {
+                if (!root || depth > 10) return out;
+                for (const el of Array.from(root.children || [])) {
+                  out.push(el);
+                  if (el.shadowRoot) allOpenShadowElements(el.shadowRoot, out, depth + 1);
+                  allOpenShadowElements(el, out, depth + 1);
+                }
+                return out;
+              }
+              function firstDeep(root, selector) {
+                if (!root) return null;
+                if (root.querySelector) {
+                  const direct = root.querySelector(selector);
+                  if (direct) return direct;
+                }
+                for (const el of allOpenShadowElements(root)) {
+                  if (el.matches && el.matches(selector)) return el;
+                }
+                return null;
+              }
+              function firstText(root, selector) {
+                const el = firstDeep(root, selector);
+                return clean(el && (el.innerText || el.textContent || el.getAttribute("aria-label") || ""));
+              }
+              function firstAttr(root, selector, attr) {
+                const el = firstDeep(root, selector);
+                return clean(el && el.getAttribute(attr));
+              }
+              function textFromParts(root, selectors) {
+                for (const selector of selectors) {
+                  const value = firstText(root, selector);
+                  if (value) return value;
+                }
+                return "";
+              }
+              function parseDataT(el) {
+                const value = el.getAttribute("data-t") || "";
+                if (!value) return {};
+                try { return JSON.parse(value); } catch (error) { return {}; }
+              }
+              function domPath(el) {
+                const parts = [];
+                let node = el;
+                for (let depth = 0; node && depth < 8; depth++) {
+                  const tag = (node.tagName || "").toLowerCase();
+                  if (!tag) break;
+                  const siblings = Array.from(node.parentElement ? node.parentElement.children : []);
+                  parts.unshift(`${tag}[${Math.max(0, siblings.indexOf(node))}]`);
+                  node = node.parentElement;
+                }
+                return parts.join("/");
+              }
+              function pushItem(item, source, depth, replyTo) {
+                if (!item || !item.shadowRoot) return;
+                const shadow = item.shadowRoot;
+                const body = textFromParts(shadow, [
+                  ".comment-body",
+                  ".msg-clamp",
+                  ".message",
+                  ".comment-content",
+                  ".inner-content"
+                ]);
+                if (!body || body.length < 2) return;
+                const dataT = parseDataT(item);
+                const id = item.id || dataT["c.i"] || item.getAttribute("data-comment-id") || "";
+                const author = textFromParts(shadow, [
+                  ".item-user-name",
+                  "[class*='user-name']",
+                  "[class*='author']",
+                  "a[href*='/community/profile/']"
+                ]);
+                const authorUrl = firstAttr(shadow, ".item-user-name, a[href*='/community/profile/']", "href");
+                const postedAt = textFromParts(shadow, [
+                  ".posted-at",
+                  "time",
+                  "[datetime]",
+                  "[class*='date']",
+                  "[class*='time']"
+                ]);
+                const permalink = firstAttr(shadow, "a[href*='comment'], a[href*='cid-'], a[href*='/community/']", "href");
+                const replyButtonText = textFromParts(shadow, [
+                  ".reply-list",
+                  "[class*='reply']",
+                  "button[aria-label*='repl' i]",
+                  "a[aria-label*='repl' i]"
+                ]);
+                const hasReplies = /reply|replies/i.test(replyButtonText) || !!shadow.querySelector("reply-list");
+                const reactions = Array.from(shadow.querySelectorAll("msn-social-bar, social-bar-wc, [class*='social-bar']")).map(el => clean(el.innerText || el.textContent || "")).filter(Boolean).join(" ");
+                const stable = id || [author, postedAt, body.slice(0, 120), source].join("|");
+                rows.push({
+                  author,
+                  author_profile_url: authorUrl,
+                  capture_source: source,
+                  comment_id: stable,
+                  component_tag: "comment-item",
+                  depth,
+                  dom_position: domPath(item),
+                  has_reply_container: hasReplies,
+                  parent_comment_id: replyTo || item.getAttribute("data-parent-id") || "",
+                  permalink,
+                  posted_at: postedAt,
+                  reaction_summary: reactions,
+                  reply_to: replyTo || item.getAttribute("data-parent-id") || "",
+                  stable_identifier: stable,
+                  text: body
+                });
+                const replyItems = Array.from(shadow.querySelectorAll("reply-list")).flatMap(list => {
+                  const root = list.shadowRoot || list;
+                  return Array.from(root.querySelectorAll?.("comment-item") || []);
+                });
+                for (const reply of replyItems) pushItem(reply, "social-comment-wc.reply-list", depth + 1, stable);
+              }
+              if (hostRoot) {
+                const roots = [hostRoot].concat(allOpenShadowElements(hostRoot).map(el => el.shadowRoot).filter(Boolean));
+                const seen = new Set();
+                for (const root of roots) {
+                  for (const item of Array.from(root.querySelectorAll?.("comment-list comment-item, comment-item") || [])) {
+                    if (seen.has(item)) continue;
+                    seen.add(item);
+                    pushItem(item, "social-comment-wc.comment-list", 0, "");
+                  }
+                }
+              }
+              const shadowElements = hostRoot ? allOpenShadowElements(hostRoot) : [];
+              const scrollContainers = shadowElements.concat(Array.from(document.querySelectorAll("*"))).filter(el => {
                 const style = getComputedStyle(el);
                 return /(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 50;
-              }).slice(0, 20).map(el => ({tag: el.tagName.toLowerCase(), className: el.className || "", id: el.id || "", scrollHeight: el.scrollHeight, clientHeight: el.clientHeight}));
+              }).slice(0, 20).map(el => ({tag: el.tagName.toLowerCase(), className: String(el.className || ""), id: el.id || "", scrollHeight: el.scrollHeight, clientHeight: el.clientHeight}));
+              const commentListItems = hostRoot ? allOpenShadowElements(hostRoot).filter(el => (el.tagName || "").toLowerCase() === "comment-item").length : 0;
+              const loadMoreButtons = hostRoot ? allOpenShadowElements(hostRoot).filter(el => /see more comments|load more/i.test(clean(el.innerText || el.textContent || el.getAttribute("aria-label") || ""))).length : 0;
+              const headerText = hostRoot ? allOpenShadowElements(hostRoot).map(el => clean(el.innerText || el.textContent || "")).find(text => /\\b\\d+\\s+comments?\\b/i.test(text)) || "" : "";
+              const declaredCountMatch = headerText.match(/\\b(\\d+)\\s+comments?\\b/i);
               return {
                 social_comment_wc_found: !!host,
                 social_comment_wc_shadow_open: !!hostRoot,
-                overlay_container_found: !!document.querySelector(".overlay-container"),
+                overlay_container_found: !!(hostRoot && hostRoot.querySelector(".overlay-container")),
+                comment_list_item_count: commentListItems,
+                declared_comment_count: declaredCountMatch ? Number(declaredCountMatch[1]) : 0,
+                load_more_control_count: loadMoreButtons,
                 nested_scroll_container_count: scrollContainers.length,
                 nested_scroll_containers: scrollContainers,
                 rows,
@@ -648,6 +786,136 @@ def _evaluate_comments(page: Any) -> dict[str, Any]:
             }"""
         )
     )
+
+
+def _advance_msn_comments(page: Any) -> dict[str, Any]:
+    return dict(
+        page.evaluate(
+            """() => {
+              const actions = [];
+              const host = document.querySelector("social-comment-wc");
+              const root = host && host.shadowRoot;
+              function clean(value) { return (value || "").replace(/\\s+/g, " ").trim(); }
+              function allOpenShadowElements(root, out = [], depth = 0) {
+                if (!root || depth > 10) return out;
+                for (const el of Array.from(root.children || [])) {
+                  out.push(el);
+                  if (el.shadowRoot) allOpenShadowElements(el.shadowRoot, out, depth + 1);
+                  allOpenShadowElements(el, out, depth + 1);
+                }
+                return out;
+              }
+              if (!root) return {actions, social_comment_wc_found: !!host, social_comment_wc_shadow_open: false};
+              const elements = allOpenShadowElements(root);
+              for (const el of elements) {
+                try {
+                  const style = getComputedStyle(el);
+                  if (/(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 50) {
+                    el.scrollTop = el.scrollHeight;
+                    actions.push({action: "scroll_internal_container", tag: (el.tagName || "").toLowerCase(), className: String(el.className || ""), scrollHeight: el.scrollHeight});
+                  }
+                } catch (error) {}
+              }
+              const controls = elements.filter(el => {
+                const text = clean(el.innerText || el.textContent || el.getAttribute("aria-label") || "");
+                return /^(see more comments|load more comments|show more comments|see \\d+ more repl|view \\d+ repl|show \\d+ repl)/i.test(text)
+                  || /see more comments|load-more-comments-button/i.test(String(el.className || ""));
+              });
+              for (const control of controls.slice(0, 4)) {
+                try {
+                  control.click();
+                  actions.push({action: "click_comment_control", tag: (control.tagName || "").toLowerCase(), text: clean(control.innerText || control.textContent || control.getAttribute("aria-label") || "")});
+                } catch (error) {
+                  actions.push({action: "click_comment_control_failed", reason: String(error).slice(0, 120)});
+                }
+              }
+              return {actions, social_comment_wc_found: true, social_comment_wc_shadow_open: true};
+            }"""
+        )
+    )
+
+
+def _collect_incremental_comments(page: Any, output_root: Path, profile_name: str) -> tuple[dict[str, Any], RenderedArtifact]:
+    profile_root = output_root / profile_name
+    jsonl_path = profile_root / "comments_incremental.jsonl"
+    profile_root.mkdir(parents=True, exist_ok=True)
+    seen: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    position_history: dict[str, set[str]] = {}
+    step_summaries: list[dict[str, Any]] = []
+    new_rows_after_first_step = 0
+
+    for step in range(COMMENT_COLLECTION_STEPS):
+        if step:
+            actions = _advance_msn_comments(page)
+            page.wait_for_timeout(1200)
+        else:
+            actions = {"actions": []}
+        snapshot = _evaluate_comments(page)
+        new_this_step = 0
+        for row in snapshot.get("rows") or ():
+            stable = str(row.get("stable_identifier") or row.get("comment_id") or row.get("text") or "")
+            if not stable:
+                continue
+            position = str(row.get("dom_position") or "")
+            if position:
+                position_history.setdefault(position, set()).add(stable)
+            if stable not in seen:
+                enriched = dict(row)
+                enriched["capture_order"] = len(order) + 1
+                enriched["first_seen_step"] = step
+                enriched["last_seen_step"] = step
+                seen[stable] = enriched
+                order.append(stable)
+                with jsonl_path.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(enriched, sort_keys=True) + "\n")
+                new_this_step += 1
+            else:
+                seen[stable]["last_seen_step"] = step
+        if step:
+            new_rows_after_first_step += new_this_step
+        step_summaries.append(
+            {
+                "actions": actions.get("actions", []),
+                "component_found": bool(snapshot.get("social_comment_wc_found")),
+                "component_shadow_open": bool(snapshot.get("social_comment_wc_shadow_open")),
+                "comment_list_item_count": int(snapshot.get("comment_list_item_count") or 0),
+                "new_row_count": new_this_step,
+                "row_count": int(snapshot.get("row_count") or 0),
+                "step": step,
+            }
+        )
+        if step >= 3 and new_this_step == 0 and len(seen) > 0:
+            break
+
+    final = _evaluate_comments(page)
+    rows = [seen[key] for key in order]
+    final["rows"] = rows
+    final["row_count"] = len(rows)
+    final["incremental_serialization_path"] = str(jsonl_path)
+    final["incremental_step_count"] = len(step_summaries)
+    final["incremental_new_rows_after_first_step"] = new_rows_after_first_step
+    final["incremental_step_summaries"] = step_summaries
+    final["recycled_node_detected"] = any(len(values) > 1 for values in position_history.values())
+    declared_count = int(final.get("declared_comment_count") or 0)
+    if rows and declared_count and len(rows) < declared_count:
+        final["capture_stop_reason"] = "load_more_exhausted_before_declared_comment_count"
+        final["completeness"] = "visible_rows_partial_declared_count_unreached"
+    elif rows:
+        final["capture_stop_reason"] = "no_new_rows_after_component_scroll_or_load_more"
+        final["completeness"] = "incremental_visible_rows_captured_partial"
+    elif final.get("social_comment_wc_found"):
+        final["capture_stop_reason"] = "zero_rows_after_component_visible_and_network_evidence"
+        final["completeness"] = "component_visible_zero_rows"
+    else:
+        final["capture_stop_reason"] = "social_comment_wc_not_found"
+        final["completeness"] = "component_not_visible"
+    artifact = _write_bytes(
+        jsonl_path,
+        jsonl_path.read_bytes() if jsonl_path.exists() else b"",
+        f"{profile_name}_comments_incremental_jsonl",
+    )
+    return final, artifact
 
 
 def _write_profile_artifacts(output_root: Path, profile_name: str, page: Any, final_dom: str, comments: Mapping[str, Any]) -> tuple[RenderedArtifact, ...]:
@@ -666,14 +934,21 @@ def _write_profile_artifacts(output_root: Path, profile_name: str, page: Any, fi
     except Exception:
         pass
     if comments.get("social_comment_wc_found") or comments.get("overlay_container_found") or comments.get("row_count"):
-        try:
-            comments_path = profile_root / "faithful_comments_visible.png"
-            target = page.locator("social-comment-wc, .overlay-container, [class*='comment']").first
-            if target.count():
-                target.screenshot(path=str(comments_path), timeout=5000)
-                artifacts.append(_write_bytes(comments_path, comments_path.read_bytes(), f"{profile_name}_faithful_comments_screenshot"))
-        except Exception:
-            pass
+        for selector in (
+            "social-comment-wc .overlay-container",
+            "social-comment-wc comment-list",
+            "social-comment-wc",
+            ".overlay-container",
+        ):
+            try:
+                comments_path = profile_root / "faithful_comments_visible.png"
+                target = page.locator(selector).first
+                if target.count():
+                    target.screenshot(path=str(comments_path), timeout=5000)
+                    artifacts.append(_write_bytes(comments_path, comments_path.read_bytes(), f"{profile_name}_faithful_comments_screenshot"))
+                    break
+            except Exception:
+                continue
     return tuple(artifacts)
 
 
@@ -743,8 +1018,9 @@ def _capture_profile(
                         body_text = str(page.evaluate("() => document.body ? document.body.innerText : ''") or "")
                     except Exception:
                         body_text = ""
-                comments_info = _evaluate_comments(page)
-                artifacts = _write_profile_artifacts(output_root, profile_name, page, final_dom, comments_info)
+                comments_info, incremental_comments_artifact = _collect_incremental_comments(page, output_root, profile_name)
+                artifacts = list(_write_profile_artifacts(output_root, profile_name, page, final_dom, comments_info))
+                artifacts.append(incremental_comments_artifact)
                 for item in responses[:MAX_CAPTURED_RESPONSE_COUNT]:
                     try:
                         body = item.body()
@@ -764,6 +1040,13 @@ def _capture_profile(
                             from_profile=profile_name,
                         )
                     )
+                comment_network_responses = [
+                    _redact_url_for_metadata(str(item.url))
+                    for item in responses
+                    if any(fragment in str(item.url).lower() for fragment in ("service/community/comments", "comment-list", "social-data"))
+                ]
+                comments_info["comment_network_response_count"] = len(comment_network_responses)
+                comments_info["comment_network_response_urls"] = sorted(set(comment_network_responses))[:20]
                 if response is not None and all(item.url != source_url for item in captured):
                     captured.append(
                         CapturedResponse(
@@ -791,7 +1074,7 @@ def _capture_profile(
                     comments_component=comments_info,
                     resource_inventory=tuple(media_rows),
                     captured_responses=tuple(captured),
-                    screenshot_artifacts=artifacts,
+                    screenshot_artifacts=tuple(artifacts),
                     status=RENDERED_BROWSER_LIVE_TESTED,
                     warnings=tuple(item for item in (privacy_warning,) if item),
                 )
@@ -974,14 +1257,9 @@ def run_msn_rendered_browser_validation(
     canonical_url = canonicalize_msn_url(source_url)
 
     desktop = _capture_profile(source_url=source_url, output_root=output_root, profile=DESKTOP_PROFILE, headless=headless)
-    profile_results = [desktop]
-    mobile_used = False
-    if not desktop.comments and not desktop.comments_component.get("social_comment_wc_found"):
-        mobile_used = True
-        profile_results.append(_capture_profile(source_url=source_url, output_root=output_root, profile=MOBILE_PROFILE, headless=headless))
-    elif not desktop.article_text or not desktop.comments:
-        mobile_used = True
-        profile_results.append(_capture_profile(source_url=source_url, output_root=output_root, profile=MOBILE_PROFILE, headless=headless))
+    mobile = _capture_profile(source_url=source_url, output_root=output_root, profile=MOBILE_PROFILE, headless=headless)
+    profile_results = [desktop, mobile]
+    mobile_used = True
     best = max(
         profile_results,
         key=lambda item: (
@@ -1084,7 +1362,13 @@ def run_msn_rendered_browser_validation(
         "faithful_article_screenshot": RENDERED_BROWSER_LIVE_TESTED if best.screenshot_artifacts else STATUS_PARTIAL,
         "comments_component_detection": RENDERED_BROWSER_LIVE_TESTED if best.comments_component.get("social_comment_wc_found") else STATUS_PARTIAL,
         "comments_replies_capture": RENDERED_BROWSER_LIVE_TESTED if best.comments else STATUS_PARTIAL,
-        "comment_completeness": RENDERED_BROWSER_LIVE_TESTED if best.comments else STATUS_PARTIAL,
+        "comment_completeness": RENDERED_BROWSER_LIVE_TESTED
+        if best.comments
+        and (
+            not int(best.comments_component.get("declared_comment_count") or 0)
+            or len(best.comments) >= int(best.comments_component.get("declared_comment_count") or 0)
+        )
+        else STATUS_PARTIAL,
         "comments_screenshot": RENDERED_BROWSER_LIVE_TESTED
         if best.comments and any("comments" in artifact.label for artifact in best.screenshot_artifacts)
         else STATUS_PARTIAL,
