@@ -1584,6 +1584,71 @@ def evidence_index_record_from_source_resource_row(
     )
 
 
+def evidence_index_record_from_source_adapter_audit_entry(
+    entry: Any,
+    *,
+    database_root_id: str = "",
+    taxonomy_version_id: str = "",
+) -> EvidenceIndexRecord:
+    method_id = _clean(getattr(entry, "method_id", ""))
+    audit_entry_id = _clean(getattr(entry, "audit_entry_id", "")) or stable_evidence_id(
+        "source_adapter_audit",
+        method_id,
+        _clean(getattr(entry, "adapter_id", "")),
+    )
+    display_name = _clean(getattr(entry, "method_display_name", "")) or method_id
+    adapter_id = _clean(getattr(entry, "adapter_id", ""))
+    source_type = _clean(getattr(entry, "source_type", ""))
+    audit_status = _clean(getattr(entry, "audit_status", ""))
+    execution_status = _clean(getattr(entry, "execution_status", ""))
+    metadata = dict(getattr(entry, "method_audit_metadata", {}) or {})
+    identity = build_evidence_item_identity(
+        item_id=audit_entry_id,
+        display_name=display_name,
+        source_row_id=method_id,
+    )
+    basis = build_evidence_basis(
+        item_id=identity.item_id,
+        basis_type="source_adapter_audit_registry",
+        evidence_text=display_name,
+        user_note=_clean(getattr(entry, "notes", "")),
+        confidence="adapter_audit_metadata_only",
+    )
+    classification = build_classification_state(
+        classification_value=EvidenceClassificationValue.PROPOSED,
+        dimensions={
+            "adapter_id": adapter_id,
+            "archive_strategy": _clean(getattr(entry, "archive_strategy", "")),
+            "audit_status": audit_status,
+            "capture_method": _clean(getattr(entry, "capture_method", "")),
+            "comment_support": _clean(getattr(entry, "comment_support", "")),
+            "credential_requirement": _clean(getattr(entry, "credential_requirement", "")),
+            "execution_status": execution_status,
+            "method_id": method_id,
+            "method_profile_id": _clean(getattr(entry, "method_profile_id", "")),
+            "site_profile": adapter_id,
+            "source_adapter_audit_method": method_id,
+            "source_type": source_type,
+            "transcript_support": _clean(getattr(entry, "transcript_support", "")),
+            "media_support": _clean(getattr(entry, "media_support", "")),
+            "evidence_database_mapping_count": str(len(getattr(entry, "evidence_database_mapping", ()) or ())),
+            "operator_approval_requirement_count": str(len(getattr(entry, "operator_approval_requirements", ()) or ())),
+            "required_artifact_count": str(len(getattr(entry, "required_artifacts", ()) or ())),
+            "site_specific_selector_status": _clean(metadata.get("site_specific_selector_status", "")),
+            "total_export_mapping_count": str(len(getattr(entry, "total_export_mapping", ()) or ())),
+        },
+        source_evidenced=True,
+        notes="Derived from Source Adapter Audit registry metadata; user review still required.",
+    )
+    return EvidenceIndexRecord(
+        identity=identity,
+        database_root_id=database_root_id,
+        taxonomy_version_id=taxonomy_version_id,
+        classification_state=classification,
+        evidence_basis=(basis,),
+    )
+
+
 def evidence_index_record_from_total_export_manifest(
     manifest: Any,
     *,

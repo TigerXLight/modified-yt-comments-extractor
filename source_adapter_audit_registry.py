@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -21,6 +21,7 @@ SOURCE_ADAPTER_AUDIT_REGISTRY_SCHEMA_VERSION = "source_adapter_audit_registry_v1
 
 AUDIT_STATUS_METADATA_SCAFFOLDED = "metadata_scaffolded"
 AUDIT_STATUS_METADATA_BRIDGE_AVAILABLE = "metadata_bridge_available"
+AUDIT_STATUS_METADATA_AUDIT_READY = "metadata_audit_ready"
 AUDIT_STATUS_AUDIT_REQUIRED = "audit_required"
 EXECUTION_STATUS_NOT_YET_EXECUTED = "not_yet_executed"
 
@@ -47,6 +48,7 @@ class SourceAdapterAuditEntry:
     operator_approval_requirements: tuple[str, ...] = ()
     audit_status: str = AUDIT_STATUS_AUDIT_REQUIRED
     execution_status: str = EXECUTION_STATUS_NOT_YET_EXECUTED
+    method_audit_metadata: Mapping[str, Any] = field(default_factory=dict)
     user_review_required: bool = True
     operator_approval_required: bool = True
     metadata_only: bool = True
@@ -172,6 +174,7 @@ def _entry(
     operator_approval_requirements: Iterable[str] = (),
     audit_status: str = AUDIT_STATUS_AUDIT_REQUIRED,
     execution_status: str = EXECUTION_STATUS_NOT_YET_EXECUTED,
+    method_audit_metadata: Mapping[str, Any] | None = None,
     notes: str = "",
 ) -> SourceAdapterAuditEntry:
     adapter_id = adapter.source_name if adapter is not None else profile.adapter_id
@@ -212,6 +215,7 @@ def _entry(
         ),
         audit_status=audit_status,
         execution_status=execution_status,
+        method_audit_metadata=dict(method_audit_metadata or {}),
         notes=notes,
     )
 
@@ -226,9 +230,14 @@ def build_source_adapter_audit_registry(
     adapter_lookup = {adapter.source_name: adapter for adapter in adapters}
     msn_profile = _profile("msn_article_comments_shadow_manual_import", profiles, profiles[0])
     twitter_profile = _profile("twitter_x_post_reply_archive_fallback", profiles, profiles[1])
+    twitter_public_profile = _profile("twitter_x_public_post_archive", profiles, twitter_profile)
+    twitter_reply_profile = _profile("twitter_x_reply_thread_archive", profiles, twitter_profile)
     youtube_profile = _profile("youtube_media_transcript_comment", profiles, profiles[2])
     generic_profile = _profile("generic_article_comment_manual", profiles, profiles[3])
+    generic_html_profile = _profile("generic_article_html", profiles, generic_profile)
+    generic_comments_profile = _profile("generic_article_comments", profiles, generic_profile)
     manual_profile = _profile("manual_local_file_import", profiles, MANUAL_LOCAL_IMPORT_PROFILE)
+    archive_only_profile = _profile("archive_only_import", profiles, manual_profile)
 
     shared_db_mapping = (
         "adapter_id",
@@ -263,35 +272,72 @@ def build_source_adapter_audit_registry(
         ),
         _entry(
             adapter=adapter_lookup.get("twitter_x"),
-            profile=twitter_profile,
+            profile=twitter_public_profile,
             method_id="twitter_x_public_post_archive",
             method_display_name="X/Twitter public post archive/import",
             source_type="public_microblog_post",
             capture_method="local_export_or_archive_reference_metadata",
-            required_artifacts=("RAW_SIDECAR", "ARCHIVE_RESULT"),
-            archive_strategy="archive_fallback_required_before_live_review",
-            comment_support="reply_thread_requires_separate_audit",
+            required_artifacts=("RAW_SIDECAR", "ARCHIVE_RESULT", "SCREENSHOT", "DOM_SNAPSHOT"),
+            archive_strategy="operator_supplied_or_future_approved_wayback_archive_today_metadata",
+            comment_support="reply_thread_separate_method",
             media_support="metadata_only_no_download",
             evidence_database_mapping=shared_db_mapping,
             total_export_mapping=shared_export_mapping,
-            audit_status=AUDIT_STATUS_AUDIT_REQUIRED,
-            notes="Local exporter import is implemented separately; public post/archive method still needs adapter audit.",
+            audit_status=AUDIT_STATUS_METADATA_AUDIT_READY,
+            method_audit_metadata={
+                "archive_receipt_reference_policy": "archive_receipts and archive_url_references are typed grabbed-source references",
+                "archive_submission_performed": False,
+                "canonical_url_expectation": "https://x.com/{handle}/status/{status_id} or https://twitter.com/{handle}/status/{status_id} normalized without query/fragment",
+                "evidence_database_dimensions": (
+                    "adapter_id",
+                    "method_id",
+                    "audit_status",
+                    "execution_status",
+                    "archive_strategy",
+                ),
+                "manual_observation_reference_policy": "manual observation refs record operator-supplied post visibility/status notes only",
+                "screenshot_snapshot_reference_policy": "screenshot/snapshot refs are accepted as metadata references only; capture is not performed",
+                "total_export_sidecars": (
+                    "source_adapter_audit_registry.json",
+                    "source_grabbed_record.json",
+                    "source_evidence_database_scan_result.json",
+                ),
+                "url_normalization_expectations": (
+                    "http/https only",
+                    "x.com/twitter.com host only",
+                    "drop query and fragment",
+                ),
+            },
+            notes="Public post/archive method audit is metadata-backed and audit-ready; no live X/Twitter, browser, archive, screenshot, download, or API execution is performed.",
         ),
         _entry(
             adapter=adapter_lookup.get("twitter_x"),
-            profile=twitter_profile,
+            profile=twitter_reply_profile,
             method_id="twitter_x_reply_thread_archive",
             method_display_name="X/Twitter reply thread archive/import",
             source_type="public_microblog_reply_thread",
             capture_method="local_export_or_archive_reference_metadata",
-            required_artifacts=("COMMENTS_JSONL", "RAW_SIDECAR", "ARCHIVE_RESULT"),
-            archive_strategy="archive_fallback_required_before_live_review",
-            comment_support="audit_required_for_thread_shape",
+            required_artifacts=("COMMENTS_JSONL", "RAW_SIDECAR", "ARCHIVE_RESULT", "DOM_SNAPSHOT"),
+            archive_strategy="operator_supplied_or_future_approved_archive_metadata",
+            comment_support="manual_or_local_export_thread_metadata",
             media_support="metadata_only_no_download",
             evidence_database_mapping=shared_db_mapping,
             total_export_mapping=shared_export_mapping,
-            audit_status=AUDIT_STATUS_AUDIT_REQUIRED,
-            notes="Reply/thread completeness, deletion, quote, and archive behavior remain audit-required.",
+            audit_status=AUDIT_STATUS_METADATA_AUDIT_READY,
+            method_audit_metadata={
+                "archive_fallback": "archive URLs may document parent/reply views as operator-supplied metadata only",
+                "manual_observation_metadata": (
+                    "visible reply count",
+                    "deleted_or_unavailable_reply_state",
+                    "sort/filter context",
+                    "operator note",
+                ),
+                "parent_post_reference_policy": "parent post URL/status ID must be recorded when known",
+                "reply_ids_policy": "reply IDs are accepted only as explicit supplied IDs; no automatic discovery",
+                "thread_boundary_policy": "record parent status ID, included reply IDs, omitted/unknown range notes, and user_review_required completeness",
+                "typed_reference_policy": "comment_reference_ids for reply/thread records, archive_url_references for archive views, manual_observation_reference_ids for operator notes",
+            },
+            notes="Reply-thread/archive method audit is metadata-backed and audit-ready; thread completeness remains user-review-required and not live-executed.",
         ),
         _entry(
             adapter=adapter_lookup.get("youtube"),
@@ -329,34 +375,50 @@ def build_source_adapter_audit_registry(
         ),
         _entry(
             adapter=adapter_lookup.get("news_website"),
-            profile=generic_profile,
+            profile=generic_html_profile,
             method_id="generic_article_html",
             method_display_name="Generic article HTML manual/import",
             source_type="generic_article_html",
             capture_method="manual_or_fixture_supplied_html_metadata",
-            required_artifacts=("RAW_HTML", "ARTICLE_TEXT", "PAGE_OUTLINE"),
-            archive_strategy="archive_check_requires_separate_approval",
+            required_artifacts=("RAW_HTML", "FINAL_DOM", "ARTICLE_TEXT", "PAGE_OUTLINE", "SCREENSHOT", "ARCHIVE_RESULT"),
+            archive_strategy="operator_supplied_or_future_approved_archive_check_metadata",
             comment_support="separate_generic_article_comments_method",
             media_support="metadata_only_no_download",
             evidence_database_mapping=shared_db_mapping,
             total_export_mapping=shared_export_mapping,
-            audit_status=AUDIT_STATUS_AUDIT_REQUIRED,
-            notes="No generic live scraper is implemented; site-family behavior remains audit-required.",
+            audit_status=AUDIT_STATUS_METADATA_AUDIT_READY,
+            method_audit_metadata={
+                "archive_fallback": "archive refs remain operator-supplied or future approval-gated provider receipts",
+                "canonical_url_policy": "http/https canonical URL expected from adapter normalization or operator-supplied source URL",
+                "html_snapshot_reference_policy": "raw/final DOM refs are metadata references; no browser capture is performed",
+                "review_status": "USER_REVIEW_REQUIRED",
+                "screenshot_snapshot_reference_policy": "screenshot and snapshot refs are typed metadata references only",
+                "text_extraction_receipt_policy": "article text extraction refs are placeholder/receipt metadata until supplied content or site-specific extractor review",
+            },
+            notes="Generic article HTML method audit is metadata-backed and audit-ready; generic live scraping remains unimplemented.",
         ),
         _entry(
             adapter=adapter_lookup.get("news_website"),
-            profile=generic_profile,
+            profile=generic_comments_profile,
             method_id="generic_article_comments",
             method_display_name="Generic article comments manual/import",
             source_type="generic_article_comments",
             capture_method="manual_or_fixture_supplied_comments_metadata",
             required_artifacts=("COMMENTS_TEXT", "COMMENTS_JSONL", "ARCHIVE_RESULT"),
-            archive_strategy="archive_check_requires_separate_approval",
-            comment_support="manual_or_fixture_only",
+            archive_strategy="operator_supplied_or_future_approved_archive_check_metadata",
+            comment_support="manual_or_fixture_only_site_specific_selectors_audit_required",
             evidence_database_mapping=shared_db_mapping,
             total_export_mapping=shared_export_mapping,
-            audit_status=AUDIT_STATUS_AUDIT_REQUIRED,
-            notes="Generic comments vary by site and require adapter-specific audit before execution.",
+            audit_status=AUDIT_STATUS_METADATA_AUDIT_READY,
+            method_audit_metadata={
+                "archive_fallback": "archive refs can be recorded as metadata; provider checks/submissions remain approval-gated",
+                "comment_tree_boundary_policy": "record visible root/reply boundary and unknown/omitted ranges as review notes",
+                "manual_observation_support": "operator-supplied comment presence/count/tree notes only",
+                "selector_profile_notes": "site-specific selectors, shadow DOM, pagination, login/challenge and recycled-node handling remain audit_required before live execution",
+                "site_specific_selector_status": "audit_required",
+                "source_boundary_policy": "comments are separate from article text and must not be silently mixed into ARTICLE_TEXT",
+            },
+            notes="Generic comments method audit is metadata-backed and audit-ready, but site-specific selectors remain audit_required before any live execution.",
         ),
         _entry(
             adapter=None,
@@ -378,7 +440,7 @@ def build_source_adapter_audit_registry(
         ),
         _entry(
             adapter=None,
-            profile=manual_profile,
+            profile=archive_only_profile,
             method_id="archive_only_import",
             method_display_name="Archive-only URL/reference import",
             source_type="archive_reference",
@@ -391,8 +453,17 @@ def build_source_adapter_audit_registry(
             credential_requirement=CREDENTIAL_NONE,
             evidence_database_mapping=shared_db_mapping,
             total_export_mapping=shared_export_mapping,
-            audit_status=AUDIT_STATUS_AUDIT_REQUIRED,
-            notes="Archive-only import schema is represented for audit; no provider lookup or submission occurs.",
+            audit_status=AUDIT_STATUS_METADATA_AUDIT_READY,
+            method_audit_metadata={
+                "archive_url_required": True,
+                "evidence_database_mapping": "original URL, archive URL, source archive type, retrieved metadata refs, and review/signoff state remain metadata-only dimensions",
+                "no_live_site_requirement": True,
+                "original_url_required": True,
+                "provider_source_archive_type_policy": "operator supplied: wayback, archive_today, archivebox, WARC/WACZ, or other reviewed archive reference",
+                "retrieved_metadata_reference_policy": "metadata reference only; importer does not retrieve archive content",
+                "review_signoff_status": "USER_REVIEW_REQUIRED",
+            },
+            notes="Archive-only import method audit is metadata-backed and audit-ready; no provider lookup, live site retrieval, submission, or file movement is performed.",
         ),
     )
     sorted_entries = tuple(sorted(entries, key=lambda item: (item.adapter_id, item.method_id)))
@@ -467,6 +538,20 @@ def validate_source_adapter_audit_registry(data: Mapping[str, Any]) -> None:
                 raise ValueError(f"Unsafe Source Adapter audit entry flag: {required_false}")
         if entry.get("sensitive_inference_prohibited") is not True:
             raise ValueError("Source Adapter audit entry must prohibit sensitive inference")
+        metadata = entry.get("method_audit_metadata", {})
+        if not isinstance(metadata, Mapping):
+            raise ValueError("Source Adapter audit entry method metadata must be an object")
+        for unsafe_key in (
+            "live_execution_performed",
+            "provider_call_performed",
+            "browser_automation_performed",
+            "archive_submission_performed",
+            "download_performed",
+            "file_move_performed",
+            "automatic_classification",
+        ):
+            if metadata.get(unsafe_key) is True:
+                raise ValueError(f"Unsafe Source Adapter audit method metadata flag: {unsafe_key}")
 
 
 def source_adapter_audit_registry_to_json(registry: SourceAdapterAuditRegistry) -> str:

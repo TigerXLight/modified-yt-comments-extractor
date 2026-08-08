@@ -164,7 +164,17 @@ def run_self_test() -> None:
     twitter_profile = default_source_method_profile_for_adapter("twitter_x")
     assert twitter_profile.profile_id == "twitter_x_post_reply_archive_fallback"
     assert "archive_result" in twitter_profile.expected_artifact_types
+    twitter_public_profile = find_source_method_profile("twitter_x_public_post_archive")
+    assert twitter_public_profile.adapter_id == "twitter_x"
+    assert twitter_public_profile.archive_fallback_supported
+    assert "canonical_url_expectation" in twitter_public_profile.required_operator_fields
+    twitter_reply_profile = find_source_method_profile("twitter_x_reply_thread_archive")
+    assert twitter_reply_profile.adapter_id == "twitter_x"
+    assert "parent_post_reference" in twitter_reply_profile.required_operator_fields
     assert find_source_method_profile("youtube_media_transcript_comment").adapter_id == "youtube"
+    assert find_source_method_profile("generic_article_html").adapter_id == "news_website"
+    assert find_source_method_profile("generic_article_comments").adapter_id == "news_website"
+    assert find_source_method_profile("archive_only_import").adapter_id == "manual_local_import"
     assert default_source_method_profile_for_adapter("manual_local_import").profile_id == "manual_local_file_import"
     assert default_source_method_profile_for_adapter("unknown").profile_id == "generic_article_comment_manual"
 

@@ -114,7 +114,8 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
         assert loaded.access_provider_gate_summary["record_count"] > 0
         assert loaded.source_adapter_audit_registry["review_status"] == "USER_REVIEW_REQUIRED"
         assert loaded.source_adapter_audit_registry["entry_count"] == 9
-        assert loaded.source_adapter_audit_registry["audit_required_count"] >= 5
+        assert loaded.source_adapter_audit_registry["audit_required_count"] == 0
+        assert loaded.source_adapter_audit_registry["not_yet_executed_count"] == 9
         assert loaded.source_adapter_audit_registry["live_execution_performed"] is False
         assert loaded.source_adapter_audit_registry["browser_automation_performed"] is False
         assert {
@@ -143,8 +144,13 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
 
     assert "Source Evidence workflow state metadata" in manifest["capture_options"]
     assert "Source Evidence release readiness metadata" in manifest["capture_options"]
+    assert "Source Adapter audit registry metadata" in manifest["capture_options"]
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
+        for asset in manifest["assets"]
+    )
+    assert any(
+        "Source Adapter audit registry metadata sidecar" in asset["description"]
         for asset in manifest["assets"]
     )
     assert any(
@@ -154,6 +160,7 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
     assert all(asset["path"] == "" for asset in manifest["assets"])
     assert "Source Evidence workflow state metadata sidecar included." in manifest["notes"]
     assert "Source Evidence release readiness metadata sidecar included." in manifest["notes"]
+    assert "Source Adapter audit registry metadata sidecar included." in manifest["notes"]
 
 
 def test_workflow_review_bundle_hash_validation_rejects_tampering() -> None:

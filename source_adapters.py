@@ -385,6 +385,47 @@ TWITTER_X_ARCHIVE_FALLBACK_PROFILE = SourceMethodProfile(
     manual_import_supported=True,
     notes="Local/manual export and archive-fallback metadata only; no API, scraping, browser automation, or media download.",
 )
+TWITTER_X_PUBLIC_POST_ARCHIVE_PROFILE = SourceMethodProfile(
+    profile_id="twitter_x_public_post_archive",
+    adapter_id="twitter_x",
+    display_name="X/Twitter public post archive audit profile",
+    method_family="public_post_archive_manual_metadata",
+    supported_modes=("webpage", "archive_check", "archive_import", "manual_import"),
+    expected_artifact_types=("raw_sidecar", "archive_result", "screenshot", "dom_snapshot"),
+    required_operator_fields=(
+        "source_url",
+        "canonical_url_expectation",
+        "operator_supplied_archive_reference",
+        "manual_observation_reference",
+    ),
+    archive_fallback_supported=True,
+    manual_import_supported=True,
+    notes=(
+        "Metadata-backed public post/archive audit profile only; no X/Twitter API, "
+        "browser automation, live archive call, screenshot capture, or media download."
+    ),
+)
+TWITTER_X_REPLY_THREAD_ARCHIVE_PROFILE = SourceMethodProfile(
+    profile_id="twitter_x_reply_thread_archive",
+    adapter_id="twitter_x",
+    display_name="X/Twitter reply thread archive audit profile",
+    method_family="reply_thread_archive_manual_metadata",
+    supported_modes=("comments", "archive_check", "archive_import", "manual_import"),
+    expected_artifact_types=("comments_jsonl", "raw_sidecar", "archive_result", "dom_snapshot"),
+    required_operator_fields=(
+        "source_url",
+        "parent_post_reference",
+        "reply_id_list_or_thread_boundary",
+        "operator_supplied_archive_reference",
+        "manual_observation_reference",
+    ),
+    archive_fallback_supported=True,
+    manual_import_supported=True,
+    notes=(
+        "Metadata-backed reply-thread/archive audit profile only; reply boundaries and "
+        "deletion/completeness remain manual-review metadata, not live X/Twitter execution."
+    ),
+)
 YOUTUBE_MEDIA_TRANSCRIPT_COMMENT_PROFILE = SourceMethodProfile(
     profile_id="youtube_media_transcript_comment",
     adapter_id="youtube",
@@ -408,6 +449,48 @@ GENERIC_ARTICLE_COMMENT_PROFILE = SourceMethodProfile(
     manual_import_supported=True,
     notes="Manual/local supplied article and comment metadata only; no generic scraper is implied.",
 )
+GENERIC_ARTICLE_HTML_PROFILE = SourceMethodProfile(
+    profile_id="generic_article_html",
+    adapter_id="news_website",
+    display_name="Generic article HTML audit profile",
+    method_family="generic_article_html_manual_metadata",
+    supported_modes=("webpage", "archive_check", "manual_import"),
+    expected_artifact_types=("raw_html", "final_dom", "article_text", "page_outline", "screenshot", "archive_result"),
+    required_operator_fields=(
+        "source_url",
+        "canonical_url",
+        "html_snapshot_reference",
+        "text_extraction_receipt_reference",
+        "operator_review_note",
+    ),
+    archive_fallback_supported=True,
+    manual_import_supported=True,
+    notes=(
+        "Metadata-backed generic article HTML audit profile; text extraction remains "
+        "placeholder/receipt metadata until site-specific or supplied-content review."
+    ),
+)
+GENERIC_ARTICLE_COMMENTS_PROFILE = SourceMethodProfile(
+    profile_id="generic_article_comments",
+    adapter_id="news_website",
+    display_name="Generic article comments audit profile",
+    method_family="generic_article_comments_manual_metadata",
+    supported_modes=("comments", "archive_check", "manual_import"),
+    expected_artifact_types=("comments_text", "comments_jsonl", "raw_sidecar", "archive_result"),
+    required_operator_fields=(
+        "source_url",
+        "comment_tree_boundary",
+        "manual_observation_reference",
+        "selector_or_site_profile_note",
+        "operator_review_note",
+    ),
+    archive_fallback_supported=True,
+    manual_import_supported=True,
+    notes=(
+        "Metadata-backed generic comment audit profile; site-specific selectors and comment "
+        "systems remain audit-required before live execution."
+    ),
+)
 MANUAL_LOCAL_IMPORT_PROFILE = SourceMethodProfile(
     profile_id="manual_local_file_import",
     adapter_id="manual_local_import",
@@ -419,12 +502,38 @@ MANUAL_LOCAL_IMPORT_PROFILE = SourceMethodProfile(
     manual_import_supported=True,
     notes="User-supplied local files only; no file move or file-existence claim is made by metadata helpers.",
 )
+ARCHIVE_ONLY_IMPORT_PROFILE = SourceMethodProfile(
+    profile_id="archive_only_import",
+    adapter_id="manual_local_import",
+    display_name="Archive-only import audit profile",
+    method_family="archive_only_manual_import_metadata",
+    supported_modes=("archive_import", "manual_import"),
+    expected_artifact_types=("archive_result", "raw_sidecar"),
+    required_operator_fields=(
+        "archive_url",
+        "original_url",
+        "archive_provider_or_source_type",
+        "retrieved_metadata_reference",
+        "operator_signoff_status",
+    ),
+    archive_fallback_supported=True,
+    manual_import_supported=True,
+    notes=(
+        "Metadata-backed archive-only import profile for operator-supplied archive URLs; "
+        "no live site, archive provider lookup, submission, or retrieval is performed."
+    ),
+)
 SOURCE_METHOD_PROFILES: Sequence[SourceMethodProfile] = (
     MSN_ARTICLE_COMMENT_PROFILE,
     TWITTER_X_ARCHIVE_FALLBACK_PROFILE,
+    TWITTER_X_PUBLIC_POST_ARCHIVE_PROFILE,
+    TWITTER_X_REPLY_THREAD_ARCHIVE_PROFILE,
     YOUTUBE_MEDIA_TRANSCRIPT_COMMENT_PROFILE,
     GENERIC_ARTICLE_COMMENT_PROFILE,
+    GENERIC_ARTICLE_HTML_PROFILE,
+    GENERIC_ARTICLE_COMMENTS_PROFILE,
     MANUAL_LOCAL_IMPORT_PROFILE,
+    ARCHIVE_ONLY_IMPORT_PROFILE,
 )
 
 

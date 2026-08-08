@@ -318,6 +318,7 @@ def write_source_evidence_workflow_review_bundle(
         state.review_manifest,
         workflow_state_metadata=state.to_dict(),
         release_readiness_metadata=release_readiness,
+        source_adapter_audit_registry_metadata=source_adapter_audit_registry,
     )
     review_manifest_json = source_evidence_review_manifest_to_json(review_manifest)
     queue_review_store = state.queue_review_store_document.to_dict()

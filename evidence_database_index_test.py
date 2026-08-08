@@ -29,6 +29,7 @@ from evidence_database_index import (
     evidence_index_manifest_with_hash,
     evidence_index_payload_sha256,
     evidence_index_record_from_queue_item,
+    evidence_index_record_from_source_adapter_audit_entry,
     evidence_index_record_from_source_resource_row,
     evidence_index_record_from_total_export_manifest,
     read_evidence_index_file,
@@ -42,6 +43,11 @@ from evidence_database_index import (
 from evidence_item_queue import EvidenceItemRole, EvidenceItemStatus, EvidenceQueueItem
 from evidence_schema import PrimarySourceStatus, SourceRole
 from pathlib import Path
+from source_adapter_audit_registry import (
+    AUDIT_STATUS_METADATA_AUDIT_READY,
+    build_source_adapter_audit_registry,
+    source_adapter_audit_entry_by_method,
+)
 from source_resource_state import build_source_resource_row
 from tempfile import TemporaryDirectory
 from total_export_manifest import ExportAsset, TotalExportManifest
@@ -644,6 +650,91 @@ def run_self_test() -> None:
         assert "sensitive/protected" in str(error)
     else:
         raise AssertionError("Sensitive/protected classification patch should be rejected")
+
+    audit_registry = build_source_adapter_audit_registry()
+    audit_records = tuple(
+        evidence_index_record_from_source_adapter_audit_entry(
+            entry,
+            database_root_id=root.root_id,
+            taxonomy_version_id=taxonomy.taxonomy_version_id,
+        )
+        for entry in audit_registry.entries
+    )
+    audit_manifest = evidence_index_manifest_with_hash(
+        EvidenceIndexManifest(
+            manifest_id="source_adapter_audit_scan_manifest",
+            database_roots=(root,),
+            taxonomy_versions=(taxonomy,),
+            records=audit_records,
+            created_at_utc="2026-08-08T12:00:00Z",
+            updated_at_utc="2026-08-08T12:00:00Z",
+        )
+    )
+    twitter_audit_scan = scan_review_needed_evidence_index_records(
+        audit_manifest,
+        EvidenceIndexScanFilter(
+            site_profile="twitter_x",
+            artifact_type="source_adapter_audit_registry",
+            provider="twitter_x",
+        ),
+    )
+    assert twitter_audit_scan.matched_record_count == 2
+    assert {row.display_name for row in twitter_audit_scan.rows} == {
+        "X/Twitter public post archive/import",
+        "X/Twitter reply thread archive/import",
+    }
+    generic_comment_entry = source_adapter_audit_entry_by_method(
+        audit_registry,
+        "generic_article_comments",
+    )
+    assert generic_comment_entry is not None
+    assert generic_comment_entry.audit_status == AUDIT_STATUS_METADATA_AUDIT_READY
+    generic_scan = scan_evidence_index_records(
+        audit_manifest,
+        EvidenceIndexScanFilter(
+            site_profile="news_website",
+            source_url_contains="",
+            provider="news_website",
+        ),
+    )
+    assert any(
+        row.item_id == generic_comment_entry.audit_entry_id
+        for row in generic_scan.rows
+    )
+    reviewed_audit = apply_evidence_index_record_patch(
+        audit_manifest,
+        EvidenceIndexRecordPatch(
+            item_id=generic_comment_entry.audit_entry_id,
+            classification_dimensions={
+                "operator_review": "metadata_ready_site_selectors_pending",
+                "review_checkpoint": "source_adapter_audit_resolution",
+            },
+            review_note="Accepted generic comment method metadata; site-specific selectors remain audit_required.",
+        ),
+        operator_id="operator-1",
+        timestamp_utc="2026-08-08T13:00:00Z",
+    )
+    assert reviewed_audit.ok
+    assert reviewed_audit.receipt.item_id == generic_comment_entry.audit_entry_id
+    assert reviewed_audit.receipt.file_write_performed is False
+    assert reviewed_audit.receipt.file_move_performed is False
+    assert reviewed_audit.receipt.automatic_classification is False
+    assert "classification_state.dimensions" in reviewed_audit.receipt.changed_fields
+    assert "evidence_basis" in reviewed_audit.receipt.changed_fields
+    try:
+        apply_evidence_index_record_patch(
+            audit_manifest,
+            EvidenceIndexRecordPatch(
+                item_id=generic_comment_entry.audit_entry_id,
+                classification_dimensions={"ethnicity_status": "inferred"},
+            ),
+            operator_id="operator-1",
+            timestamp_utc="2026-08-08T13:00:00Z",
+        )
+    except ValueError as error:
+        assert "sensitive/protected" in str(error)
+    else:
+        raise AssertionError("Protected adapter audit classification patch should be rejected")
 
     manifest = TotalExportManifest(
         package_id="fixture_package",

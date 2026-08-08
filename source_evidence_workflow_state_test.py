@@ -55,7 +55,7 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert state.access_provider_gate_approval_required_count > 0
     assert state.source_adapter_audit_registry_id.startswith("source_adapter_audit_registry_")
     assert state.source_adapter_audit_entry_count == 9
-    assert state.source_adapter_audit_required_count >= 5
+    assert state.source_adapter_audit_required_count == 0
     assert state.release_action_plan_id == state.release_action_plan.release_action_plan_id
     assert state.release_action_receipt_count == 4
     assert state.operator_signoff_required is True
@@ -68,6 +68,7 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert data["database_scan_result"]["broad_scan_performed"] is False
     assert data["access_provider_gate_summary"]["credential_lookup_performed"] is False
     assert data["source_adapter_audit_registry"]["entry_count"] == 9
+    assert data["source_adapter_audit_registry"]["audit_required_count"] == 0
     assert data["source_adapter_audit_registry"]["live_execution_performed"] is False
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
