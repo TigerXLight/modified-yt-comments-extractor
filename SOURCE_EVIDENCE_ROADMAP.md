@@ -1179,3 +1179,11 @@ The database roadmap recognizes existing user repository trees and proposes prev
 - `main.py` exposes the controller state without adding a broad new layout. `source_evidence_workflow_state.py`, `source_evidence_workflow_store.py`, and `source_evidence_review_export.py` persist/export `source_app_operator_controller_state.json` as app/operator controller metadata.
 - The next human milestone is real named-site/manual audit execution with explicit site/action approval and imported receipts. The code is ready to receive receipts and surface dry-run/approval states; it still does not perform live capture in Codex.
 - Remaining live gates: named-site source URLs, browser/manual operator session, archive check/submit, media download, FFmpeg/yt-dlp, ArchiveBox/Docker/WSL, user evidence movement, credential/provider/ASR execution, and completed-evidence finalization all remain explicit approval-only.
+
+## REV4 WARC/WACZ Local Fixture Writer - 2026-08-08
+
+| Area | State | Notes |
+| --- | --- | --- |
+| WARC local fixture writer | LOCAL_FIXTURE_TESTED | `capture_warc_wacz.py` writes caller-supplied synthetic WARC records/payloads to a temp/local WARC-style file with sanitized header metadata and deterministic SHA-256 receipts. |
+| WACZ local fixture package | MOCK_PACKAGE_TESTED | `capture_warc_wacz.py` writes a WACZ-style ZIP containing `datapackage.json`, `manifest.json`, `warc_manifest.json`, index/page/resource metadata, embedded fixture WARC content, and digest metadata. |
+| Safety boundary | APPROVAL_REQUIRED_FOR_LIVE | No live WARC capture, real WACZ packaging from live data, external archive provider calls, browser profiles, ArchiveBox/Docker/WSL execution, credentials, or user evidence file movement. |

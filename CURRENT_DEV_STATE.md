@@ -1322,3 +1322,10 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 - The saved Source Evidence review bundle now includes `source_app_operator_controller_state.json` and the Total Export review manifest includes a pathless app/operator controller metadata sidecar. This sidecar records callable controller/operator state only, with redacted filenames and summary counts.
 - Receipt import/review now accepts local JSON receipt metadata for browser capture, screenshot, article/page, comments, livechat, media, archive, ArchiveBox, offline bundle, evidence movement, completed-evidence receipt, and manual source notes. It rejects raw credentials/cookies, raw payload keys, full local paths, unsafe live/archive/download/OCR/classification claims, and unsupported receipt types.
 - Local/temp execution remains fixture-tested only. Real named-site/manual audits are ready for later operator action, but no live external site, real archive provider, real browser session, credentials/cookies/accounts, ASR job, user evidence file movement, external download, real FFmpeg/yt-dlp, real ArchiveBox/Docker/WSL, automatic classification, or protected-attribute inference occurred in this Codex run.
+
+## REV4 WARC/WACZ Fixture Writer Completion - 2026-08-08
+
+- `capture_warc_wacz.py` now includes a bounded local fixture writer for caller-supplied WARC records/payloads and WACZ-style ZIP packages.
+- The writer creates temp/local WARC-style files and WACZ ZIPs with `datapackage.json`, `manifest.json`, `warc_manifest.json`, index/page/resource metadata, embedded fixture WARC content, deterministic hashes, and explicit no-live/no-network/no-ArchiveBox/no-credential flags.
+- `capture_warc_wacz_test.py` now verifies real temp WARC/WACZ file creation, ZIP entries, manifest/package execution labels, payload hash mismatch rejection, and secret-header redaction.
+- Remaining boundary: real WARC capture from live sites, real WACZ packaging from live browser/archive data, browser sessions, archive providers, ArchiveBox/Docker/WSL, credentials/cookies/accounts, and user evidence files remain separately approval-gated and were not executed.

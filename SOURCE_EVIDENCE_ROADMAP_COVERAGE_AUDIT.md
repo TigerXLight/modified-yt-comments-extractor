@@ -666,3 +666,11 @@ Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
 | Archive/media/ArchiveBox launch surfaces | Yes | `source_app_operator_controller.py`; execution bridge modules; focused tests | Fake-HTTP/local-file/dry-run/mocked-subprocess-ready preview surfaces | Real archive services, external downloads, FFmpeg/yt-dlp, ArchiveBox/Docker/WSL not run |
 | Receipt import/review | Yes | `source_receipt_import_review.py`; focused tests | JSON receipt validation rejects unsafe claims, raw payloads, credentials/cookies, full paths, and invalid completed-evidence claims | Later operator receipts must be imported after approved manual/live work |
 | Workflow/store/export sidecar | Yes | `source_evidence_workflow_state.py`; `source_evidence_workflow_store.py`; `source_evidence_review_export.py`; tests | `source_app_operator_controller_state.json` is saved and projected into Total Export manifest metadata | Sidecar remains review metadata; no live execution claim |
+
+## REV4 WARC/WACZ Fixture Writer Coverage - 2026-08-08
+
+| Requirement | Coverage | Where covered | Current state | Remaining boundary |
+| --- | --- | --- | --- | --- |
+| App-native WARC fixture output | Covered | `capture_warc_wacz.py`; `capture_warc_wacz_test.py` | LOCAL_FIXTURE_TESTED writer creates deterministic WARC-style temp/local files from caller-supplied records/payloads and records SHA-256/size/manifest metadata. | No live WARC capture or browser/network source capture. |
+| App-native WACZ fixture package | Covered | `capture_warc_wacz.py`; `capture_warc_wacz_test.py` | MOCK_PACKAGE_TESTED WACZ-style ZIP includes manifest/datapackage/index/page/resource/WARC entries and digest metadata. | No live WACZ packaging from external sites or ArchiveBox output. |
+| Secret/provenance boundary | Covered | `capture_warc_wacz.py`; `capture_warc_wacz_test.py` | Header sanitization is preserved and tests prove secret sentinels do not appear in written WARC/WACZ artifacts. | Credentials/cookies/accounts remain prohibited unless future explicit approved receipt paths are added. |

@@ -1032,3 +1032,9 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 - `source_receipt_import_review.py` validates later manually produced receipt JSON before attaching it to workflow summaries. Unsafe raw credential/cookie/material keys, raw payload keys, full local paths, unsupported types, unsafe live/archive/download/OCR/classification claims, and invalid completed-evidence claims are rejected.
 - The app workflow now persists `source_app_operator_controller_state.json` in review bundles and projects it into Total Export review manifest metadata. This is app/operator wiring, not live execution.
 - Remaining boundary: real named-site manual/live audits, real archive/provider/network calls, real browser sessions, real FFmpeg/yt-dlp or ArchiveBox/Docker/WSL commands, ASR jobs, credential/cookie/account use, broad scans, and user evidence file movement require separate explicit approval and operator receipts.
+
+## REV4 WARC/WACZ Local Fixture Writer Update - 2026-08-08
+
+- The REV4 archive/preservation layer no longer stops at WARC/WACZ manifest metadata only. `capture_warc_wacz.py` can now write caller-supplied local fixture records into a deterministic WARC-style file and package that fixture WARC into a WACZ-style ZIP with index/page/resource metadata and hashes.
+- This is LOCAL_FIXTURE_TESTED / MOCK_PACKAGE_TESTED only. Tests create temp files, verify package contents and SHA-256 values, and prove secret headers are redacted from written artifacts.
+- No live WARC capture, live WACZ packaging, external archive provider call, browser profile/cookie/account use, ArchiveBox/Docker/WSL execution, network access, or user evidence file movement occurred.
