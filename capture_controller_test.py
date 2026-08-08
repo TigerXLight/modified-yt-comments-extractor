@@ -66,6 +66,14 @@ def test_operational_capture_plan_records_modes_without_execution() -> None:
     assert result.grabbed_source_record.metadata_only is True
     assert result.grabbed_source_record.live_capture_performed is False
     assert result.grabbed_source_record.artifact_count == len(result.declared_artifacts) + 1
+    assert len(result.grabbed_source_record.article_reference_ids) == 2
+    assert len(result.grabbed_source_record.comment_reference_ids) == 2
+    assert len(result.grabbed_source_record.screenshot_reference_ids) == 2
+    assert len(result.grabbed_source_record.snapshot_reference_ids) == 5
+    assert result.grabbed_source_record.media_reference_ids == ()
+    assert result.grabbed_source_record.manual_observation_reference_ids == (
+        result.execution_gate_plan.plan_id,
+    )
     assert result.execution_gate_plan.approval_required is True
     assert {request.action_kind.value for request in result.execution_gate_plan.requests} == {
         "BROWSER_AUTOMATION",

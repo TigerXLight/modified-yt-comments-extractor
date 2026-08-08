@@ -29,6 +29,10 @@ from source_evidence_release_plan import (
     SourceEvidenceReleaseActionPlan,
     build_source_evidence_release_action_plan,
 )
+from source_adapter_audit_registry import (
+    SourceAdapterAuditRegistry,
+    build_source_adapter_audit_registry,
+)
 from total_export_manifest import TotalExportManifest
 
 
@@ -81,6 +85,10 @@ class SourceEvidenceWorkflowState:
     access_provider_gate_summary_id: str
     access_provider_gate_record_count: int
     access_provider_gate_approval_required_count: int
+    source_adapter_audit_registry: SourceAdapterAuditRegistry
+    source_adapter_audit_registry_id: str
+    source_adapter_audit_entry_count: int
+    source_adapter_audit_required_count: int
     release_readiness: SourceEvidenceReleaseReadiness
     release_readiness_id: str
     release_target_count: int
@@ -112,7 +120,9 @@ class SourceEvidenceWorkflowState:
     sensitive_inference_prohibited: bool = True
 
     def to_dict(self) -> dict[str, Any]:
-        return _value_for_dict(self)
+        data = _value_for_dict(self)
+        data["source_adapter_audit_registry"] = self.source_adapter_audit_registry.to_dict()
+        return data
 
     def to_summary_text(self) -> str:
         gate_actions = ", ".join(self.execution_gate_action_kinds) or "(none)"
@@ -134,6 +144,9 @@ class SourceEvidenceWorkflowState:
                 f"Access/provider gate: {self.access_provider_gate_summary_id}",
                 f"Access/provider records: {self.access_provider_gate_record_count}",
                 f"Access/provider approvals required: {self.access_provider_gate_approval_required_count}",
+                f"Source adapter audit registry: {self.source_adapter_audit_registry_id}",
+                f"Source adapter audit entries: {self.source_adapter_audit_entry_count}",
+                f"Source adapter audit-required entries: {self.source_adapter_audit_required_count}",
                 f"Release readiness: {self.release_readiness.release_status}",
                 f"Release targets: {self.release_target_count}",
                 f"Release action plan: {self.release_action_plan_id}",
@@ -177,6 +190,7 @@ def build_source_evidence_workflow_state(
     access_provider_gate_summary = build_access_provider_gate_summary(
         build_default_access_keys_catalog()
     )
+    source_adapter_audit_registry = build_source_adapter_audit_registry()
     store_document = build_evidence_item_queue_review_store_document(
         connection.queue,
         session_id=f"{safe_package_id}_queue_review_store",
@@ -215,6 +229,7 @@ def build_source_evidence_workflow_state(
         workflow_state_metadata={
             "database_scan_result": evidence_scan_result.to_dict(),
             "access_provider_gate_summary": access_provider_gate_summary.to_dict(),
+            "source_adapter_audit_registry": source_adapter_audit_registry.to_dict(),
             "grabbed_source_record": (
                 plan.grabbed_source_record.to_dict()
                 if plan.grabbed_source_record is not None
@@ -261,6 +276,10 @@ def build_source_evidence_workflow_state(
         access_provider_gate_approval_required_count=(
             access_provider_gate_summary.approval_required_count
         ),
+        source_adapter_audit_registry=source_adapter_audit_registry,
+        source_adapter_audit_registry_id=source_adapter_audit_registry.registry_id,
+        source_adapter_audit_entry_count=source_adapter_audit_registry.entry_count,
+        source_adapter_audit_required_count=source_adapter_audit_registry.audit_required_count,
         release_readiness=release_readiness,
         release_readiness_id=release_readiness.release_readiness_id,
         release_target_count=release_readiness.target_count,

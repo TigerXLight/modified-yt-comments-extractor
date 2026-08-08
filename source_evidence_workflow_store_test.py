@@ -13,6 +13,7 @@ from source_evidence_workflow_store import (
     RELEASE_ACTION_PLAN_FILENAME,
     RELEASE_READINESS_FILENAME,
     REVIEW_MANIFEST_FILENAME,
+    SOURCE_ADAPTER_AUDIT_REGISTRY_FILENAME,
     WORKFLOW_STATE_FILENAME,
     read_source_evidence_workflow_review_bundle,
     source_evidence_workflow_store_result_to_json,
@@ -62,10 +63,11 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
             GRABBED_SOURCE_RECORD_FILENAME,
             DATABASE_SCAN_RESULT_FILENAME,
             ACCESS_PROVIDER_GATE_FILENAME,
+            SOURCE_ADAPTER_AUDIT_REGISTRY_FILENAME,
         }
         expected_files = expected_sidecars | {BUNDLE_INDEX_FILENAME}
         assert {file.filename for file in result.files} == expected_sidecars
-        assert result.file_count == 8
+        assert result.file_count == 9
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_read_performed is False
         assert result.evidence_file_move_performed is False
@@ -110,6 +112,11 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
         assert loaded.access_provider_gate_summary["credential_lookup_performed"] is False
         assert loaded.access_provider_gate_summary["provider_call_performed"] is False
         assert loaded.access_provider_gate_summary["record_count"] > 0
+        assert loaded.source_adapter_audit_registry["review_status"] == "USER_REVIEW_REQUIRED"
+        assert loaded.source_adapter_audit_registry["entry_count"] == 9
+        assert loaded.source_adapter_audit_registry["audit_required_count"] >= 5
+        assert loaded.source_adapter_audit_registry["live_execution_performed"] is False
+        assert loaded.source_adapter_audit_registry["browser_automation_performed"] is False
         assert {
             target["target_kind"] for target in loaded.release_readiness["targets"]
         } == {

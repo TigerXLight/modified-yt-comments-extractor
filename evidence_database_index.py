@@ -28,6 +28,16 @@ CLASSIFICATION_PROPOSED = "proposed"
 CLASSIFICATION_REJECTED = "rejected"
 CLASSIFICATION_SUPERSEDED = "superseded"
 
+SENSITIVE_CLASSIFICATION_DIMENSION_TOKENS = (
+    "religion",
+    "ethnic",
+    "ethnicity",
+    "nationality",
+    "politic",
+    "race",
+    "protected_attribute",
+)
+
 PROPOSAL_STATUS_DRY_RUN = "dry_run"
 PROPOSAL_STATUS_USER_CONFIRMATION_REQUIRED = "user_confirmation_required"
 PROPOSAL_STATUS_REJECTED = "rejected"
@@ -969,6 +979,15 @@ def scan_evidence_index_records(
     )
 
 
+def scan_review_needed_evidence_index_records(
+    manifest: EvidenceIndexManifest,
+    filter: EvidenceIndexScanFilter | None = None,
+) -> EvidenceIndexScanResult:
+    active_filter = filter or EvidenceIndexScanFilter()
+    review_filter = replace(active_filter, review_state=active_filter.review_state or "user_review_required")
+    return scan_evidence_index_records(manifest, review_filter)
+
+
 def _classification_value_from_patch(
     value: EvidenceClassificationValue | str | None,
     fallback: EvidenceClassificationValue,
@@ -978,6 +997,11 @@ def _classification_value_from_patch(
     if isinstance(value, EvidenceClassificationValue):
         return value
     return EvidenceClassificationValue(str(value))
+
+
+def _classification_dimension_is_sensitive(dimension_name: str) -> bool:
+    normalized = _clean(dimension_name).lower()
+    return any(token in normalized for token in SENSITIVE_CLASSIFICATION_DIMENSION_TOKENS)
 
 
 def apply_evidence_index_record_patch(
@@ -1031,6 +1055,10 @@ def apply_evidence_index_record_patch(
             clean_value = _clean(value)
             if not clean_key:
                 raise ValueError("Evidence index patch classification dimension key must not be blank")
+            if clean_value and _classification_dimension_is_sensitive(clean_key):
+                raise ValueError(
+                    "Evidence index patch cannot set sensitive/protected classification dimensions"
+                )
             if clean_value:
                 dimensions[clean_key] = clean_value
             elif clean_key in dimensions:

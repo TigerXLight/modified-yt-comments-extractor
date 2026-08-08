@@ -541,6 +541,43 @@ def _planned_capture_artifacts(
     return tuple(artifacts)
 
 
+def _artifact_ids_for_types(
+    artifacts: tuple[CaptureArtifact, ...],
+    artifact_types: set[str],
+) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            artifact.artifact_id
+            for artifact in artifacts
+            if artifact.artifact_type in artifact_types
+        )
+    )
+
+
+def _archive_url_references(
+    archive_metadata: tuple[dict[str, Any], ...],
+) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            str(item.get("archive_url") or "").strip()
+            for item in archive_metadata
+            if str(item.get("archive_url") or "").strip()
+        )
+    )
+
+
+def _provider_receipt_references(
+    archive_metadata: tuple[dict[str, Any], ...],
+) -> tuple[str, ...]:
+    refs: list[str] = []
+    for item in archive_metadata:
+        service_id = str(item.get("service_id") or item.get("archive_service") or "").strip()
+        status = str(item.get("status") or item.get("archive_status") or "").strip()
+        if service_id and status:
+            refs.append(f"archive_status:{service_id}:{status}")
+    return tuple(sorted(refs))
+
+
 def build_operational_capture_plan(
     *,
     row: SourceResourceRowState,
@@ -768,6 +805,42 @@ def build_operational_capture_plan(
         status.__dict__ if hasattr(status, "__dict__") else {}
         for status in row.archive_statuses
     )
+    article_reference_ids = _artifact_ids_for_types(
+        declared_artifacts,
+        {ARTIFACT_TYPE_ARTICLE_TEXT, ARTIFACT_TYPE_PAGE_OUTLINE},
+    )
+    comment_reference_ids = _artifact_ids_for_types(
+        declared_artifacts,
+        {
+            ARTIFACT_TYPE_COMMENTS_JSONL,
+            ARTIFACT_TYPE_COMMENTS_TEXT,
+            ARTIFACT_TYPE_LIVECHAT_JSONL,
+            ARTIFACT_TYPE_LIVECHAT_TEXT,
+        },
+    )
+    media_reference_ids = _artifact_ids_for_types(
+        declared_artifacts,
+        {
+            ARTIFACT_TYPE_MEDIA_INVENTORY,
+            ARTIFACT_TYPE_MEDIA_FILE,
+            ARTIFACT_TYPE_MEDIA_COMPONENT,
+            ARTIFACT_TYPE_RENDERED_RECORDING,
+        },
+    )
+    screenshot_reference_ids = _artifact_ids_for_types(
+        declared_artifacts,
+        {ARTIFACT_TYPE_SCREENSHOT},
+    )
+    snapshot_reference_ids = _artifact_ids_for_types(
+        declared_artifacts,
+        {
+            ARTIFACT_TYPE_RAW_HTML,
+            ARTIFACT_TYPE_FINAL_DOM,
+            ARTIFACT_TYPE_MHTML,
+            ARTIFACT_TYPE_DOM_SNAPSHOT,
+            ARTIFACT_TYPE_ACCESSIBILITY_TREE,
+        },
+    )
     grabbed_source_record = build_grabbed_source_record(
         source_row_id=row.row_id,
         source_url=row.raw_url,
@@ -780,6 +853,15 @@ def build_operational_capture_plan(
         total_export_item_ids=tuple(artifact.relative_path for artifact in declared_artifacts),
         archive_metadata=archive_metadata,
         operator_approval_reference=execution_gate_plan.plan_id,
+        article_reference_ids=article_reference_ids,
+        comment_reference_ids=comment_reference_ids,
+        media_reference_ids=media_reference_ids,
+        transcript_reference_ids=(),
+        archive_url_references=_archive_url_references(archive_metadata),
+        screenshot_reference_ids=screenshot_reference_ids,
+        snapshot_reference_ids=snapshot_reference_ids,
+        manual_observation_reference_ids=(execution_gate_plan.plan_id,),
+        provider_receipt_reference_ids=_provider_receipt_references(archive_metadata),
         created_at_utc=timestamp_utc,
         updated_at_utc=timestamp_utc,
     )

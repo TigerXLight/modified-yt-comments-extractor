@@ -53,6 +53,9 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert state.access_provider_gate_summary_id.startswith("access_provider_gate_")
     assert state.access_provider_gate_record_count > 0
     assert state.access_provider_gate_approval_required_count > 0
+    assert state.source_adapter_audit_registry_id.startswith("source_adapter_audit_registry_")
+    assert state.source_adapter_audit_entry_count == 9
+    assert state.source_adapter_audit_required_count >= 5
     assert state.release_action_plan_id == state.release_action_plan.release_action_plan_id
     assert state.release_action_receipt_count == 4
     assert state.operator_signoff_required is True
@@ -64,6 +67,8 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert data["grabbed_source_record"]["review_state"] == "USER_REVIEW_REQUIRED"
     assert data["database_scan_result"]["broad_scan_performed"] is False
     assert data["access_provider_gate_summary"]["credential_lookup_performed"] is False
+    assert data["source_adapter_audit_registry"]["entry_count"] == 9
+    assert data["source_adapter_audit_registry"]["live_execution_performed"] is False
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
         for asset in data["review_manifest"]["assets"]
@@ -82,6 +87,8 @@ def test_source_evidence_workflow_state_serializes_without_execution_or_payload_
     assert "Database scan records:" in summary
     assert "Access/provider gate: access_provider_gate_" in summary
     assert "Access/provider approvals required:" in summary
+    assert "Source adapter audit registry: source_adapter_audit_registry_" in summary
+    assert "Source adapter audit-required entries:" in summary
     assert "Release action plan: source_release_plan_" in summary
     assert "Operator signoff required: true" in summary
     assert "USER_REVIEW_REQUIRED" in summary

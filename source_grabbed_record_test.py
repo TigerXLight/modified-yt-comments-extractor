@@ -23,11 +23,21 @@ def test_grabbed_source_record_is_deterministic_and_metadata_only() -> None:
             {
                 "service_id": "wayback",
                 "status": "not_checked",
+                "archive_url": "https://web.archive.org/example",
                 "provider_call_performed": False,
                 "submission_performed": False,
             },
         ),
         operator_approval_reference="execution_gate_plan_123",
+        article_reference_ids=("artifact_article",),
+        comment_reference_ids=("artifact_comments",),
+        media_reference_ids=("artifact_media",),
+        transcript_reference_ids=("artifact_transcript",),
+        archive_url_references=("https://web.archive.org/example",),
+        screenshot_reference_ids=("artifact_screenshot",),
+        snapshot_reference_ids=("artifact_snapshot",),
+        manual_observation_reference_ids=("manual_observation_1",),
+        provider_receipt_reference_ids=("archive_status:wayback:not_checked",),
         created_at_utc="2026-08-08T12:00:00Z",
     )
     second = build_grabbed_source_record(
@@ -47,11 +57,21 @@ def test_grabbed_source_record_is_deterministic_and_metadata_only() -> None:
             {
                 "archive_service": "wayback",
                 "archive_status": "not_checked",
+                "archive_url": "https://web.archive.org/example",
                 "provider_call_performed": False,
                 "submission_performed": False,
             },
         ),
         operator_approval_reference="execution_gate_plan_123",
+        article_reference_ids=("artifact_article",),
+        comment_reference_ids=("artifact_comments",),
+        media_reference_ids=("artifact_media",),
+        transcript_reference_ids=("artifact_transcript",),
+        archive_url_references=("https://web.archive.org/example",),
+        screenshot_reference_ids=("artifact_screenshot",),
+        snapshot_reference_ids=("artifact_snapshot",),
+        manual_observation_reference_ids=("manual_observation_1",),
+        provider_receipt_reference_ids=("archive_status:wayback:not_checked",),
         created_at_utc="2026-08-08T12:00:00Z",
     )
 
@@ -61,6 +81,17 @@ def test_grabbed_source_record_is_deterministic_and_metadata_only() -> None:
     assert first.relative_artifact_paths == ("capture/source_row_1/raw.html",)
     assert first.archive_receipts[0].provider_call_performed is False
     assert first.archive_receipts[0].submission_performed is False
+    assert first.article_reference_ids == ("artifact_article",)
+    assert first.comment_reference_ids == ("artifact_comments",)
+    assert first.media_reference_ids == ("artifact_media",)
+    assert first.transcript_reference_ids == ("artifact_transcript",)
+    assert first.archive_url_references == ("https://web.archive.org/example",)
+    assert first.screenshot_reference_ids == ("artifact_screenshot",)
+    assert first.snapshot_reference_ids == ("artifact_snapshot",)
+    assert first.manual_observation_reference_ids == ("manual_observation_1",)
+    assert first.provider_receipt_reference_ids == ("archive_status:wayback:not_checked",)
+    assert first.to_dict()["article_reference_count"] == 1
+    assert first.to_dict()["provider_receipt_reference_count"] == 1
     assert first.file_existence_claimed is False
     assert first.full_local_path_included is False
     assert first.raw_payload_included is False

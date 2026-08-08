@@ -34,6 +34,7 @@ from evidence_database_index import (
     read_evidence_index_file,
     recognize_variable_hierarchy,
     scan_evidence_index_records,
+    scan_review_needed_evidence_index_records,
     stable_evidence_id,
     stable_json_dumps,
     write_evidence_index_file_atomic,
@@ -583,6 +584,12 @@ def run_self_test() -> None:
     assert scan.rows[0].record_digest_sha256
     assert scan.file_read_performed is False
     assert scan.broad_scan_performed is False
+    review_needed = scan_review_needed_evidence_index_records(
+        source_manifest,
+        EvidenceIndexScanFilter(site_profile="msn"),
+    )
+    assert review_needed.matched_record_count == 1
+    assert review_needed.rows[0].review_state == "user_review_required"
 
     updated = apply_evidence_index_record_patch(
         source_manifest,
@@ -622,6 +629,21 @@ def run_self_test() -> None:
         assert "display_name" in str(error)
     else:
         raise AssertionError("Blank required field patch should be rejected")
+
+    try:
+        apply_evidence_index_record_patch(
+            source_manifest,
+            EvidenceIndexRecordPatch(
+                item_id=source_record.identity.item_id,
+                classification_dimensions={"religion_identity_status": "guessed from name"},
+            ),
+            operator_id="operator-1",
+            timestamp_utc="2026-08-08T12:30:00Z",
+        )
+    except ValueError as error:
+        assert "sensitive/protected" in str(error)
+    else:
+        raise AssertionError("Sensitive/protected classification patch should be rejected")
 
     manifest = TotalExportManifest(
         package_id="fixture_package",

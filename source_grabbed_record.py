@@ -40,6 +40,15 @@ class GrabbedSourceRecord:
     relative_artifact_paths: tuple[str, ...] = ()
     archive_receipts: tuple[GrabbedSourceArchiveReceipt, ...] = ()
     transcript_or_asr_reference: str = ""
+    article_reference_ids: tuple[str, ...] = ()
+    comment_reference_ids: tuple[str, ...] = ()
+    media_reference_ids: tuple[str, ...] = ()
+    transcript_reference_ids: tuple[str, ...] = ()
+    archive_url_references: tuple[str, ...] = ()
+    screenshot_reference_ids: tuple[str, ...] = ()
+    snapshot_reference_ids: tuple[str, ...] = ()
+    manual_observation_reference_ids: tuple[str, ...] = ()
+    provider_receipt_reference_ids: tuple[str, ...] = ()
     content_digest_sha256: str = ""
     redacted_credential_references: tuple[str, ...] = ()
     evidence_item_ids: tuple[str, ...] = ()
@@ -73,6 +82,15 @@ class GrabbedSourceRecord:
         data = _value_for_dict(self)
         data["artifact_count"] = self.artifact_count
         data["archive_receipt_count"] = self.archive_receipt_count
+        data["article_reference_count"] = len(self.article_reference_ids)
+        data["comment_reference_count"] = len(self.comment_reference_ids)
+        data["media_reference_count"] = len(self.media_reference_ids)
+        data["transcript_reference_count"] = len(self.transcript_reference_ids)
+        data["archive_url_reference_count"] = len(self.archive_url_references)
+        data["screenshot_reference_count"] = len(self.screenshot_reference_ids)
+        data["snapshot_reference_count"] = len(self.snapshot_reference_ids)
+        data["manual_observation_reference_count"] = len(self.manual_observation_reference_ids)
+        data["provider_receipt_reference_count"] = len(self.provider_receipt_reference_ids)
         return data
 
 
@@ -147,6 +165,15 @@ def build_grabbed_source_record(
     archive_metadata: Iterable[Mapping[str, Any]] = (),
     operator_approval_reference: str = "",
     transcript_or_asr_reference: str = "",
+    article_reference_ids: Iterable[str] = (),
+    comment_reference_ids: Iterable[str] = (),
+    media_reference_ids: Iterable[str] = (),
+    transcript_reference_ids: Iterable[str] = (),
+    archive_url_references: Iterable[str] = (),
+    screenshot_reference_ids: Iterable[str] = (),
+    snapshot_reference_ids: Iterable[str] = (),
+    manual_observation_reference_ids: Iterable[str] = (),
+    provider_receipt_reference_ids: Iterable[str] = (),
     redacted_credential_references: Iterable[str] = (),
     created_at_utc: str = "",
     updated_at_utc: str = "",
@@ -156,14 +183,32 @@ def build_grabbed_source_record(
         path for path in relative_artifact_paths if "/" in str(path or "") and "\\" not in str(path or "")
     )
     archive_receipts = _archive_receipts_from_metadata(source_row_id, archive_metadata)
+    safe_article_refs = _stable_tuple(article_reference_ids)
+    safe_comment_refs = _stable_tuple(comment_reference_ids)
+    safe_media_refs = _stable_tuple(media_reference_ids)
+    safe_transcript_refs = _stable_tuple(transcript_reference_ids)
+    safe_archive_urls = _stable_tuple(archive_url_references)
+    safe_screenshot_refs = _stable_tuple(screenshot_reference_ids)
+    safe_snapshot_refs = _stable_tuple(snapshot_reference_ids)
+    safe_manual_refs = _stable_tuple(manual_observation_reference_ids)
+    safe_provider_refs = _stable_tuple(provider_receipt_reference_ids)
     content_digest = _sha256(
         {
             "adapter_id": adapter_id,
             "archive_receipts": [receipt.to_dict() for receipt in archive_receipts],
+            "archive_url_references": safe_archive_urls,
+            "article_reference_ids": safe_article_refs,
             "canonical_url": canonical_url,
+            "comment_reference_ids": safe_comment_refs,
+            "manual_observation_reference_ids": safe_manual_refs,
+            "media_reference_ids": safe_media_refs,
+            "provider_receipt_reference_ids": safe_provider_refs,
             "relative_artifact_paths": safe_artifact_paths,
+            "screenshot_reference_ids": safe_screenshot_refs,
             "selected_modes": _stable_tuple(selected_modes),
+            "snapshot_reference_ids": safe_snapshot_refs,
             "source_row_id": source_row_id,
+            "transcript_reference_ids": safe_transcript_refs,
         }
     )
     identity_payload = {
@@ -186,6 +231,15 @@ def build_grabbed_source_record(
         relative_artifact_paths=safe_artifact_paths,
         archive_receipts=archive_receipts,
         transcript_or_asr_reference=str(transcript_or_asr_reference or ""),
+        article_reference_ids=safe_article_refs,
+        comment_reference_ids=safe_comment_refs,
+        media_reference_ids=safe_media_refs,
+        transcript_reference_ids=safe_transcript_refs,
+        archive_url_references=safe_archive_urls,
+        screenshot_reference_ids=safe_screenshot_refs,
+        snapshot_reference_ids=safe_snapshot_refs,
+        manual_observation_reference_ids=safe_manual_refs,
+        provider_receipt_reference_ids=safe_provider_refs,
         content_digest_sha256=content_digest,
         redacted_credential_references=_stable_tuple(redacted_credential_references),
         evidence_item_ids=_stable_tuple(evidence_item_ids),
