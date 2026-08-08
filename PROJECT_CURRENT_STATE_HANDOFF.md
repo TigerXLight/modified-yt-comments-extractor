@@ -775,3 +775,9 @@ Next implementation work should bind these delivered artifacts into the concrete
 - Preserves `KEYS/ACCOUNTS` as the credential-reference surface. Receipts and ledgers carry credential references, redacted hashes, and non-secret metadata only.
 - Live/provider execution remains explicit operator-run workflow: named site inputs, operator approval metadata, provider configuration references, receipts, review, and signoff are recorded through deterministic runtime modules and CLI/test surfaces.
 - Status marker: `SOURCE_ADAPTER_PRODUCTION_RUNTIME_BUNDLE_CLOSEOUT_BUILT`.
+## Source Adapter execution policy bundle handoff
+
+- Status: SOURCE_ADAPTER_EXECUTION_POLICY_BUNDLE_CLOSEOUT_RECORDED
+- Current implementation chain is ready for the next large runtime bundle after execution-policy closeout.
+- Continue with multi-patch ZIP bundles, commit-after-each-patch, and push-once-at-end.
+- Preserve operator approval, named-site inputs, receipt review, and KEYS/ACCOUNTS redacted credential-reference rules.

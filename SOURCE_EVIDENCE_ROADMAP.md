@@ -884,3 +884,8 @@ Next work should wire these delivery artifacts into the real release-section and
 - Preserves `KEYS/ACCOUNTS` as the credential-reference surface. Receipts and ledgers carry credential references, redacted hashes, and non-secret metadata only.
 - Live/provider execution remains explicit operator-run workflow: named site inputs, operator approval metadata, provider configuration references, receipts, review, and signoff are recorded through deterministic runtime modules and CLI/test surfaces.
 - Status marker: `SOURCE_ADAPTER_PRODUCTION_RUNTIME_BUNDLE_CLOSEOUT_BUILT`.
+### Source Adapter execution policy bundle checkpoint
+
+- Completed: SOURCE_ADAPTER_EXECUTION_POLICY_BUNDLE_CLOSEOUT_RECORDED.
+- Added execution-policy runtime, provider retry, archive polling, observation import, evidence claim linking, Total Export receipt indexing, release manifest signing, audit trail, GUI provider status, provider catalogue, named-site profile storage, failure recovery, live checkpoints, package integrity, evidence/release sync closeout, and bundle closeout.
+- Next work may continue into deeper GUI binding, provider-specific implementations, import/review UI, and release packaging UX.

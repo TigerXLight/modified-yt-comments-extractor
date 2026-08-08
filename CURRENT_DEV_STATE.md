@@ -1067,3 +1067,9 @@ Next implementation work should connect this closeout to concrete release-sectio
 - Preserves `KEYS/ACCOUNTS` as the credential-reference surface. Receipts and ledgers carry credential references, redacted hashes, and non-secret metadata only.
 - Live/provider execution remains explicit operator-run workflow: named site inputs, operator approval metadata, provider configuration references, receipts, review, and signoff are recorded through deterministic runtime modules and CLI/test surfaces.
 - Status marker: `SOURCE_ADAPTER_PRODUCTION_RUNTIME_BUNDLE_CLOSEOUT_BUILT`.
+## Source Adapter execution policy bundle checkpoint
+
+- Status: SOURCE_ADAPTER_EXECUTION_POLICY_BUNDLE_CLOSEOUT_RECORDED
+- HEAD checkpoint expected after this bundle: source Adapter execution policy runtime chain.
+- Scope covered: policy engine, retry runtime, archive polling, browser observation import, evidence claim links, Total Export receipt index, release manifest signing, operator audit trail, GUI provider status, KEYS/ACCOUNTS provider catalogue, named-site profile store, provider failure recovery, live execution checkpoints, release package integrity, evidence/release sync closeout, and execution policy closeout.
+- KEYS/ACCOUNTS remains the credential-reference surface; secret material is not written into runtime receipts.

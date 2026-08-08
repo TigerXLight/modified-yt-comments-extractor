@@ -363,3 +363,9 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 - Preserves `KEYS/ACCOUNTS` as the credential-reference surface. Receipts and ledgers carry credential references, redacted hashes, and non-secret metadata only.
 - Live/provider execution remains explicit operator-run workflow: named site inputs, operator approval metadata, provider configuration references, receipts, review, and signoff are recorded through deterministic runtime modules and CLI/test surfaces.
 - Status marker: `SOURCE_ADAPTER_PRODUCTION_RUNTIME_BUNDLE_CLOSEOUT_BUILT`.
+### Source Adapter execution policy bundle coverage
+
+- Coverage marker: SOURCE_ADAPTER_EXECUTION_POLICY_BUNDLE_CLOSEOUT_RECORDED.
+- Runtime coverage added for 16 execution-policy and closeout areas.
+- Receipt and credential-reference handling remains redacted under KEYS/ACCOUNTS.
+- Bundle ran through deterministic self-tests and bounded regression tail before push.
