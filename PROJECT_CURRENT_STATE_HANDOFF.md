@@ -829,3 +829,11 @@ Next implementation work should bind these delivered artifacts into the concrete
 - Online ASR remains adjacent to Local ASR and must visually match the Local ASR button when wired to concrete UI widgets.
 - KEYS/ACCOUNTS remains the canonical label for credential/account surfaces.
 - Credential material remains represented only by references and redacted hashes in receipts and ledgers.
+## Source Adapter Ultimate Delivery Bundle Closeout
+
+- Status: SOURCE_ADAPTER_ULTIMATE_DELIVERY_BUNDLE_CLOSEOUT_RECORDED
+- Commit scope: runbook launchers, browser/comment/media receipt mappers, archive execution/manual validation, source/evidence review and commit bridges, Total Export source/release indexing, release/file-library gates, KEYS/ACCOUNTS visible/catalogue/add-flow/search split surfaces, Online ASR adjacency/provider flow, local ASR benchmark guard, MSN/X/YouTube/article-comment profile executors, operator live-run preflight/import/closeout, GUI capture/archive/export/KEYS/ACCOUNTS/Online ASR states, provider backend/receipt/failure matrices, evidence-release/source-lineage matrices, final readiness reports, acceptance packets, runtime index, traceability register, operator delivery packet, and roadmap acceptance.
+- Online ASR remains adjacent to Local ASR and must visually match the Local ASR button when wired to concrete UI widgets.
+- Local ASR recommendation remains whisper.cpp large-v3 Vulkan on AMD RX 5700.
+- KEYS/ACCOUNTS remains the canonical label for credential/account surfaces.
+- Credential material remains represented only by references and redacted hashes in receipts and ledgers.

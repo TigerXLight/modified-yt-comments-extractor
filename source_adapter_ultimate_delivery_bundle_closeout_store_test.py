@@ -1,0 +1,15 @@
+import tempfile
+from pathlib import Path
+
+from source_adapter_ultimate_delivery_bundle_closeout import example_source_adapter_ultimate_delivery_bundle_closeout_package
+from source_adapter_ultimate_delivery_bundle_closeout_store import store_source_adapter_ultimate_delivery_bundle_closeout_package
+
+with tempfile.TemporaryDirectory() as tmp:
+    result = store_source_adapter_ultimate_delivery_bundle_closeout_package(example_source_adapter_ultimate_delivery_bundle_closeout_package(), tmp)
+    assert result["store_status"] == "STORED", result
+    assert result["output_file_count"] == 3, result
+    for row in result["stored_files"]:
+        assert Path(row["path"]).exists(), row
+        assert row["byte_count"] > 0, row
+        assert len(row["sha256"]) == 64, row
+print("Source Adapter Ultimate Delivery Bundle Closeout store self-test passed.")
