@@ -298,3 +298,11 @@ Provider/API work remains separately approval-gated: broader provider/API behavi
 The next runtime-adjacent milestone could accidentally introduce network/API calls, browser automation, scraping, archive submission, media downloading, credential handling, or filesystem movement.
 
 Keep the next implementation skeleton local-only, deterministic, and testable. Require explicit approval before any external access, media capture, archive service, browser, credential, or file-movement behavior is added.
+
+## Source Adapter Runtime Queue Closeout Audit Update
+
+- `SOURCE_ADAPTER_RUNTIME_QUEUE_CLOSEOUT_AUDIT_BUILT` is now recorded as the local closeout/audit checkpoint after priority fixture pack implementation, priority fixture regression promotion, and regression queue runtime wiring.
+- The closeout audits 20 local regression runner queue rows, 20 expanded controller/provider binding rows, at least 4 GUI/controller call-site wiring rows, 20 local regression acceptance receipt rows, and 5 named-site smoke gate rows.
+- `SOURCE_ADAPTER_RUNTIME_QUEUE_CLOSEOUT_READY_FOR_OPERATOR_APPROVED_NAMED_SITE_SELECTION` is the handoff state: the local queue/wiring audit is ready, while named-site smoke remains approval-gated.
+- This update does not authorize live smoke, browser automation, network calls, API calls, archive provider submission, release upload, file-library mutation, credential storage, or GUI mutation.
+- `KEYS/ACCOUNTS` remains the required user-facing credential/account label, with credential references preserved only as redacted metadata.

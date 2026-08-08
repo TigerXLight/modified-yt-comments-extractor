@@ -1008,3 +1008,12 @@ Next local-ASR branches:
 - This is a local-only review/reporting chain. It records schema coverage, safe package/provider IDs, issue counts, safe filenames/hashes/byte counts, review status, execution-gated state, and next-action metadata.
 - It performs no credential-value read, credential export/reveal/copy, automatic key testing, provider call, account/quota/model call, media upload, raw media serialization, live transcription, full-path serialization, archive/network behavior, or completed/verified transcription claim.
 - The current user workflow preference after this closeout is to continue roadmap work through section-level mega patches rather than many tiny persistence/CLI slices.
+
+## Source Adapter Runtime Queue Closeout Audit
+
+- `SOURCE_ADAPTER_RUNTIME_QUEUE_CLOSEOUT_AUDIT_BUILT` is now the current local source-adapter queue/wiring closeout checkpoint after the runtime regression queue wiring slice.
+- The audit package records the local closeout coverage matrix, roadmap/current-state projection, release gate, operator handoff, and operator summary.
+- Counts audited: 20 local regression runner queue rows, 20 expanded controller/provider bindings, at least 4 GUI/controller call-site wiring rows, 20 local regression acceptance receipts, and 5 named-site smoke approval-gate rows.
+- Handoff: `SOURCE_ADAPTER_RUNTIME_QUEUE_CLOSEOUT_READY_FOR_OPERATOR_APPROVED_NAMED_SITE_SELECTION`.
+- Remaining work is operator-only named-site selection and approval-packet capture. No live smoke, browser automation, network/API call, archive provider submission, release upload, file-library mutation, credential storage, or GUI mutation is authorized by this checkpoint.
+- `KEYS/ACCOUNTS` remains the required sidebar/account label and future receipt metadata must preserve redacted credential-reference hashes rather than credential values.

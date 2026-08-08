@@ -711,3 +711,11 @@ Evidence bundle JSON input validation now has a batched helper/CLI audit proving
 
 `total_export_validation_test.py` now centralizes exact validation error-code assertions while preserving valid, informational, relative-path, missing-asset, size/hash mismatch, and manifest-read coverage.
 - Local ASR whisper.cpp/Vulkan timeout handling now includes duration-scaled execution plus UI/log-friendly status metadata, clearer long-media retry guidance, and bounded failed-run temp cleanup that preserves source media and marks non-empty partial outputs as `user_review_required`; `large-v3` remains the benchmark-backed local recommendation.
+
+## Source Adapter Runtime Queue Closeout Audit Handoff
+
+The latest source-adapter runtime queue section is closed locally at `SOURCE_ADAPTER_RUNTIME_QUEUE_CLOSEOUT_AUDIT_BUILT`. It follows the promoted priority fixture regression queue and regression queue runtime wiring work. The closeout audits 20 local dry-run runner rows, 20 expanded controller/provider bindings, at least 4 GUI/controller call-site wiring rows, 20 local acceptance receipts, and 5 named-site smoke gates.
+
+Current handoff status: `SOURCE_ADAPTER_RUNTIME_QUEUE_CLOSEOUT_READY_FOR_OPERATOR_APPROVED_NAMED_SITE_SELECTION`.
+
+The next stage is operator named-site selection and approval-packet capture only. It must remain explicit and gated. This is not approval for live smoke execution, browser automation, network calls, API calls, archive provider submission, release upload, file-library mutation, credential storage, or GUI mutation. Preserve `KEYS/ACCOUNTS` wording and redacted credential-reference hashes in all future receipt metadata.
