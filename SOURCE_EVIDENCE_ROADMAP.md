@@ -889,3 +889,13 @@ Next work should wire these delivery artifacts into the real release-section and
 - Completed: SOURCE_ADAPTER_EXECUTION_POLICY_BUNDLE_CLOSEOUT_RECORDED.
 - Added execution-policy runtime, provider retry, archive polling, observation import, evidence claim linking, Total Export receipt indexing, release manifest signing, audit trail, GUI provider status, provider catalogue, named-site profile storage, failure recovery, live checkpoints, package integrity, evidence/release sync closeout, and bundle closeout.
 - Next work may continue into deeper GUI binding, provider-specific implementations, import/review UI, and release packaging UX.
+
+<!-- SOURCE_ADAPTER_OPERATIONAL_RUNTIME_BUNDLE_CLOSEOUT_RECORDED -->
+
+## Source Adapter Operational Runtime Bundle Closeout
+
+- Status: SOURCE_ADAPTER_OPERATIONAL_RUNTIME_BUNDLE_CLOSEOUT_RECORDED
+- Bundle head target: 473f4c8 runtime chain continuation
+- Coverage: provider execution manifest, capability registry, browser session profiles, archive queues/results, artifact normalization, evidence materialization, Total Export package assembly, release target/receipt runtime, KEYS/ACCOUNTS redaction, operator approvals, runbook export, live smoke readiness, provider healthcheck, failure triage, GUI action state, audit replay, source pipeline completion, and operational closeout.
+- KEYS/ACCOUNTS remains the preserved user-facing label.
+- Secret material remains outside committed artifacts; only redacted reference hashes are recorded.

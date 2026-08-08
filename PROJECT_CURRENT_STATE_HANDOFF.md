@@ -781,3 +781,13 @@ Next implementation work should bind these delivered artifacts into the concrete
 - Current implementation chain is ready for the next large runtime bundle after execution-policy closeout.
 - Continue with multi-patch ZIP bundles, commit-after-each-patch, and push-once-at-end.
 - Preserve operator approval, named-site inputs, receipt review, and KEYS/ACCOUNTS redacted credential-reference rules.
+
+<!-- SOURCE_ADAPTER_OPERATIONAL_RUNTIME_BUNDLE_CLOSEOUT_RECORDED -->
+
+## Source Adapter Operational Runtime Bundle Closeout
+
+- Status: SOURCE_ADAPTER_OPERATIONAL_RUNTIME_BUNDLE_CLOSEOUT_RECORDED
+- Bundle head target: 473f4c8 runtime chain continuation
+- Coverage: provider execution manifest, capability registry, browser session profiles, archive queues/results, artifact normalization, evidence materialization, Total Export package assembly, release target/receipt runtime, KEYS/ACCOUNTS redaction, operator approvals, runbook export, live smoke readiness, provider healthcheck, failure triage, GUI action state, audit replay, source pipeline completion, and operational closeout.
+- KEYS/ACCOUNTS remains the preserved user-facing label.
+- Secret material remains outside committed artifacts; only redacted reference hashes are recorded.

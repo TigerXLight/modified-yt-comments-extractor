@@ -369,3 +369,13 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 - Runtime coverage added for 16 execution-policy and closeout areas.
 - Receipt and credential-reference handling remains redacted under KEYS/ACCOUNTS.
 - Bundle ran through deterministic self-tests and bounded regression tail before push.
+
+<!-- SOURCE_ADAPTER_OPERATIONAL_RUNTIME_BUNDLE_CLOSEOUT_RECORDED -->
+
+## Source Adapter Operational Runtime Bundle Closeout
+
+- Status: SOURCE_ADAPTER_OPERATIONAL_RUNTIME_BUNDLE_CLOSEOUT_RECORDED
+- Bundle head target: 473f4c8 runtime chain continuation
+- Coverage: provider execution manifest, capability registry, browser session profiles, archive queues/results, artifact normalization, evidence materialization, Total Export package assembly, release target/receipt runtime, KEYS/ACCOUNTS redaction, operator approvals, runbook export, live smoke readiness, provider healthcheck, failure triage, GUI action state, audit replay, source pipeline completion, and operational closeout.
+- KEYS/ACCOUNTS remains the preserved user-facing label.
+- Secret material remains outside committed artifacts; only redacted reference hashes are recorded.

@@ -1073,3 +1073,13 @@ Next implementation work should connect this closeout to concrete release-sectio
 - HEAD checkpoint expected after this bundle: source Adapter execution policy runtime chain.
 - Scope covered: policy engine, retry runtime, archive polling, browser observation import, evidence claim links, Total Export receipt index, release manifest signing, operator audit trail, GUI provider status, KEYS/ACCOUNTS provider catalogue, named-site profile store, provider failure recovery, live execution checkpoints, release package integrity, evidence/release sync closeout, and execution policy closeout.
 - KEYS/ACCOUNTS remains the credential-reference surface; secret material is not written into runtime receipts.
+
+<!-- SOURCE_ADAPTER_OPERATIONAL_RUNTIME_BUNDLE_CLOSEOUT_RECORDED -->
+
+## Source Adapter Operational Runtime Bundle Closeout
+
+- Status: SOURCE_ADAPTER_OPERATIONAL_RUNTIME_BUNDLE_CLOSEOUT_RECORDED
+- Bundle head target: 473f4c8 runtime chain continuation
+- Coverage: provider execution manifest, capability registry, browser session profiles, archive queues/results, artifact normalization, evidence materialization, Total Export package assembly, release target/receipt runtime, KEYS/ACCOUNTS redaction, operator approvals, runbook export, live smoke readiness, provider healthcheck, failure triage, GUI action state, audit replay, source pipeline completion, and operational closeout.
+- KEYS/ACCOUNTS remains the preserved user-facing label.
+- Secret material remains outside committed artifacts; only redacted reference hashes are recorded.
