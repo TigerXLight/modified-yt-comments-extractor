@@ -394,11 +394,14 @@ class SourceSiteMethodAuditUpdatePatch:
     operator_review_note: str = ""
     selector_audit_note: str = ""
     archive_manual_fallback_note: str = ""
+    manual_observation_note: str = ""
     classification_dimensions: dict[str, str] | None = None
     completed_evidence_claimed: bool = False
     live_execution_claimed: bool = False
     file_movement_claimed: bool = False
     credential_material_claimed: bool = False
+    raw_payload_insertion_claimed: bool = False
+    absolute_path_injection_claimed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return _value_for_dict(self)
@@ -1039,7 +1042,22 @@ def _site_method_audit_update_text_is_unsafe(text: str) -> bool:
         "session cookie",
         "token=",
     )
-    return any(token in normalized for token in unsafe_tokens)
+    if any(token in normalized for token in unsafe_tokens):
+        return True
+    if "\\\\" in normalized:
+        return True
+    if len(normalized) >= 3 and normalized[1:3] in (":\\", ":/") and normalized[0].isalpha():
+        return True
+    for index in range(0, max(0, len(normalized) - 2)):
+        if (
+            normalized[index].isalpha()
+            and normalized[index + 1] == ":"
+            and normalized[index + 2] in ("\\", "/")
+        ):
+            return True
+    if any(marker in normalized for marker in ("/users/", "/documents/", "/downloads/", "/appdata/")):
+        return True
+    return False
 
 
 def apply_evidence_index_record_patch(
@@ -1760,6 +1778,15 @@ def scan_source_site_method_audit_records(
     return scan_evidence_index_records(manifest, site_filter)
 
 
+def scan_source_site_method_review_needed_records(
+    manifest: EvidenceIndexManifest,
+) -> EvidenceIndexScanResult:
+    return scan_source_site_method_audit_records(
+        manifest,
+        EvidenceIndexScanFilter(review_state="USER_REVIEW_REQUIRED"),
+    )
+
+
 def apply_source_site_method_audit_update(
     manifest: EvidenceIndexManifest,
     patch: SourceSiteMethodAuditUpdatePatch,
@@ -1775,6 +1802,10 @@ def apply_source_site_method_audit_update(
         raise ValueError("Source site/method audit update cannot claim file movement")
     if patch.credential_material_claimed:
         raise ValueError("Source site/method audit update cannot include credential material")
+    if patch.raw_payload_insertion_claimed:
+        raise ValueError("Source site/method audit update cannot insert raw payloads")
+    if patch.absolute_path_injection_claimed:
+        raise ValueError("Source site/method audit update cannot include absolute local paths")
     if not patch.item_id:
         raise ValueError("Source site/method audit update item_id is required")
 
@@ -1799,6 +1830,9 @@ def apply_source_site_method_audit_update(
     if patch.archive_manual_fallback_note.strip():
         dimensions["archive_manual_fallback_note_status"] = "review_note_recorded"
         note_parts.append("archive_manual_fallback_note: " + patch.archive_manual_fallback_note.strip())
+    if patch.manual_observation_note.strip():
+        dimensions["manual_observation_note_status"] = "review_note_recorded"
+        note_parts.append("manual_observation_note: " + patch.manual_observation_note.strip())
     combined_note = "\n".join(note_parts)
     for text in list(dimensions.values()) + [combined_note]:
         if _site_method_audit_update_text_is_unsafe(text):

@@ -40,6 +40,7 @@ from evidence_database_index import (
     scan_evidence_index_records,
     scan_review_needed_evidence_index_records,
     scan_source_site_method_audit_records,
+    scan_source_site_method_review_needed_records,
     stable_evidence_id,
     stable_json_dumps,
     write_evidence_index_file_atomic,
@@ -793,6 +794,7 @@ def run_self_test() -> None:
             operator_review_note="Operator kept live selector blocked pending named-site smoke.",
             selector_audit_note="Needs a named-site comment selector before live execution.",
             archive_manual_fallback_note="Manual observation/import and archive-only evidence remain reviewable.",
+            manual_observation_note="Operator can review supplied selector notes without running live capture.",
         ),
         operator_id="operator-1",
         timestamp_utc="2026-08-08T13:20:00Z",
@@ -817,7 +819,14 @@ def run_self_test() -> None:
     assert updated_selector.classification_state.dimensions["archive_manual_fallback_note_status"] == (
         "review_note_recorded"
     )
+    assert updated_selector.classification_state.dimensions["manual_observation_note_status"] == (
+        "review_note_recorded"
+    )
     assert updated_selector.evidence_basis[-1].basis_type == "manual_index_update_audit_note"
+    review_needed_site_methods = scan_source_site_method_review_needed_records(
+        reviewed_site_method.manifest
+    )
+    assert review_needed_site_methods.matched_record_count == site_method_registry.row_count
 
     generic_article_row = source_site_method_audit_row_by_method(
         site_method_registry,
@@ -870,6 +879,27 @@ def run_self_test() -> None:
             SourceSiteMethodAuditUpdatePatch(
                 item_id=selector_row.site_method_id,
                 operator_review_note="Cookie: do-not-record",
+            ),
+            "credential/cookie/account",
+        ),
+        (
+            SourceSiteMethodAuditUpdatePatch(
+                item_id=selector_row.site_method_id,
+                raw_payload_insertion_claimed=True,
+            ),
+            "raw payloads",
+        ),
+        (
+            SourceSiteMethodAuditUpdatePatch(
+                item_id=selector_row.site_method_id,
+                absolute_path_injection_claimed=True,
+            ),
+            "absolute local paths",
+        ),
+        (
+            SourceSiteMethodAuditUpdatePatch(
+                item_id=selector_row.site_method_id,
+                manual_observation_note=r"Evidence is at C:\Users\fahad\private.txt",
             ),
             "credential/cookie/account",
         ),
