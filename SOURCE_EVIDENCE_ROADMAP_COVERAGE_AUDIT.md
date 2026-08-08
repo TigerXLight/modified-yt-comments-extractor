@@ -583,3 +583,17 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 | Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
 
 - Boundaries confirmed: no live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider/ASR calls, credentials/cookies/accounts, broad folder scans, evidence file moves, completed-evidence claims, automatic classification, or protected-attribute inference.
+## Coverage note — source roadmap consolidation
+
+Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
+
+| Requirement | Status | Notes |
+| --- | --- | --- |
+| Source websites/source methods list | Covered as metadata/model roadmap | Includes existing YouTube/generic/archive paths and future social/video/news/forum adapters. |
+| Source-role and claim-level distinctions | Covered as metadata/model roadmap | Primary/secondary/tertiary source roles are claim-scoped. |
+| Media source-chain and disputed framing | Covered as metadata/model roadmap | Publisher page is not automatically original source. |
+| Source URL media UI | Covered as metadata/model roadmap | Generic Source URL/Get flow replaces YouTube-specific direction. |
+| Archive/offline preservation | Covered as metadata/model roadmap | Wayback/archive.today/ArchiveBox/app-native bundle separated. |
+| Database recognition/reclassification | Covered as preview-only metadata roadmap | No file movement or automatic classification. |
+| Behaviour/provenance log | Covered as metadata/model roadmap | Hash-chained user/source action logs and witness planning. |
+| Evidence file movement/completed evidence | Not executed | Requires explicit approved artifact creation/move/hash receipt. |

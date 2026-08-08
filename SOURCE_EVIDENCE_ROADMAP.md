@@ -1093,3 +1093,24 @@ Status: SOURCE_AUDIT_OPERATOR_WORKFLOW_BRIDGE_BUILT.
 | `source_audit_dashboard_state.json` | Added | GUI/app-facing source audit dashboard summary. |
 
 Remaining roadmap boundary: named-site live/manual smoke, browser/provider/archive/API calls, ASR execution, downloads, file moves, and real evidence completion remain OPERATOR_APPROVAL_REQUIRED and are not implemented as automatic execution.
+## Source roadmap consolidation — source websites, roles, URL media UI, archives and database recognition
+
+Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
+
+This section consolidates the post-operator-workflow requirements as roadmap/model contracts. It records source websites/methods, claim-level primary/secondary/tertiary source roles, media source-chain fields, Source URL/media UI planning, archive/offline preservation planning, rendered citation boundaries, database recognition/reclassification previews, behaviour/provenance logging, and the boundary that real evidence file movement/completed-evidence claims remain approval-gated.
+
+### Source websites and methods
+
+Existing and near-term methods include YouTube transcripts/captions, YouTube comments, YouTube livechat, generic articles, generic page text, generic screenshots, generic comments/manual import, archive-only imports, MSN article, MSN shadow-DOM comments, X/Twitter public post and reply-thread archive/manual imports, and local/manual imports. Future adapter families include Reddit, TikTok, Twitch live chat, Bluesky, Threads, X/Twitter, Instagram, Facebook, Pinterest, Medium, Tumblr, LinkedIn, Quora, forums, news-site comment systems, Vimeo, Dailymotion, Rumble, PeerTube, Odysee and other video/social/community/news adapters.
+
+### Access, source roles and source-chain planning
+
+Access mode is per URL/page/session. Planned labels: PUBLIC_ACCESS, USER_AUTHENTICATED_ACCESS, METERED_OR_PREVIEW_ACCESS, BLOCKED_OR_PAYWALLED, ARCHIVED_COPY and MANUAL_IMPORT. Source roles are claim-scoped project roles: PRIMARY_ORIGINAL_AUTHORED_SOURCE, SECONDARY_OUTSIDE_PERSPECTIVE_SOURCE and TERTIARY_PROPAGATED_SOURCE. Repeated media reports or agency/family/authority loops must not silently replace the primary/original source. Self-authored social posts may be primary for exactly what they directly show or state, while timing/currentness and claim scope remain explicit.
+
+### URL/media UI, archive and local preservation
+
+The future Source URL flow is generic rather than YouTube-button-specific. After Enter, the resolved title appears directly under the URL with media/transcript/image/archive choices as rows with icons, separate injection and download selection, and FILES retention. Archive check can be default-on and archive submit remains explicit. Wayback and archive.today/archive.ph are independent providers. ArchiveBox is optional through Docker/WSL2/remote/native-Unix routes. The app-native lightweight offline webpage bundle is planned as a compressed .sourceweb.zip style package with manifest, provenance, HTML/text/screenshot/comment/media metadata, archive results and hashes.
+
+### Database recognition, behaviour log and completed-evidence boundary
+
+The database roadmap recognizes existing user repository trees and proposes preview-only reclassification/migration receipts when new source data changes fields such as religion/category/date/source/publisher. It does not automatically classify or move files. Behaviour logging records URL entry, Get, selected capture options, transcript edits, file injection, archive checks/submits, manual notes, timestamps, session IDs and hash-chained redacted entries. Real evidence file movement, destructive migration, automatic classification and completed-evidence claims remain approval-gated until an approved action creates/moves/validates artifacts and writes receipts.

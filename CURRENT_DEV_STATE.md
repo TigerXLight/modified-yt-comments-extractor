@@ -1237,3 +1237,8 @@ Next implementation work should connect this closeout to concrete release-sectio
 | Generic comments site-specific selector | selector_audit_required / live_approved_only | Named-site selector audit and approval remain required. |
 
 - Boundary remains explicit: no live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider calls, credential/cookie/account use, ASR execution, evidence file movement, completed-evidence claims, automatic classification, or protected-attribute inference occurred.
+## Source roadmap consolidation pointer — source methods, claims, URL UI, archives and database recognition
+
+Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
+
+Added roadmap/model coverage for source website/method catalogue, claim-level source-role hierarchy, media source-chain tracking, Source URL/media UI contract, archive/offline preservation choices, rendered citation boundary, database recognition/reclassification previews, and behaviour/provenance logging. These are metadata/roadmap contracts; real evidence file movement, destructive migration, live capture, archive submission, media download, ASR execution and completed-evidence claims remain approval-gated.

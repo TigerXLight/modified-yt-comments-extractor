@@ -962,3 +962,8 @@ No live site access, browser automation, MSN/X/Twitter/YouTube/API/archive/provi
 | Generic comments live selector | Not done | `selector_audit_required` / `live_approved_only`. |
 
 - Boundary remains unchanged: no live site access, browser automation, network/archive/API/provider/ASR calls, credentials/cookies/accounts, evidence file movement, completed-evidence claims, protected-attribute inference, or automatic classification occurred.
+## Source roadmap consolidation pointer — source methods, claims, URL UI, archives and database recognition
+
+Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
+
+Added roadmap/model coverage for source website/method catalogue, claim-level source-role hierarchy, media source-chain tracking, Source URL/media UI contract, archive/offline preservation choices, rendered citation boundary, database recognition/reclassification previews, and behaviour/provenance logging. These are metadata/roadmap contracts; real evidence file movement, destructive migration, live capture, archive submission, media download, ASR execution and completed-evidence claims remain approval-gated.
