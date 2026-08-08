@@ -845,3 +845,11 @@ Next implementation work should bind these delivered artifacts into the concrete
 - Local ASR recommendation remains whisper.cpp large-v3 Vulkan on AMD RX 5700.
 - KEYS/ACCOUNTS remains the canonical label for credential/account surfaces.
 - Credential material remains represented only by references and redacted hashes in receipts and ledgers.
+
+<!-- source-adapter-absolute-delivery-acceptance-bundle-closeout -->
+## Source Adapter Absolute Delivery Acceptance Bundle Closeout
+
+- Added final acceptance records for source capture, archive, evidence, Total Export, release, KEYS/ACCOUNTS, Online ASR, local ASR, named-site profiles, provider acceptance, GUI acceptance, readiness crosschecks, traceability crosschecks, and operator handoff acceptance.
+- Keeps all live/manual smoke and provider execution paths behind explicit operator approval, named-site inputs, receipt capture, and redacted credential references.
+- Preserves the Local ASR benchmark lock: large-v3 with Vulkan acceleration on the AMD RX 5700 workflow, while keeping Online ASR as a separate provider flow.
+- Preserves the KEYS/ACCOUNTS split between added visible providers and the searchable add-provider catalogue.
