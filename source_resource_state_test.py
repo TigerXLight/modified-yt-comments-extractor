@@ -1,6 +1,7 @@
 from source_resource_state import (
     ARCHIVE_SERVICE_ARCHIVE_TODAY,
     ARCHIVE_SERVICE_ARCHIVEBOX,
+    ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
     ARCHIVE_SERVICE_WAYBACK,
     ARCHIVE_STATUS_AUTO_CHECK_DISABLED,
     ARCHIVE_STATUS_AVAILABLE,
@@ -95,6 +96,7 @@ def test_archive_auto_check_disabled_starts_gray_without_checks() -> None:
     assert [status.service_id for status in row.archive_statuses] == [
         ARCHIVE_SERVICE_WAYBACK,
         ARCHIVE_SERVICE_ARCHIVE_TODAY,
+        ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
         ARCHIVE_SERVICE_ARCHIVEBOX,
     ]
 

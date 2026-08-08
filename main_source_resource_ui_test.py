@@ -789,9 +789,12 @@ def test_archivebox_icon_and_service_order_are_local_only() -> None:
     assert 'assets", "ui", "archivebox_icon.png"' in loader
     assert "ctk.CTkImage" in loader
     assert "ImageTk.PhotoImage" not in loader
+    assert "ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE" in source
     assert "ARCHIVE_SERVICE_ARCHIVEBOX" in source
     assert "archive_status.service_id != ARCHIVE_SERVICE_ARCHIVEBOX" in source
-    assert "ArchiveBox local webpage archive scaffold" in popup
+    assert "Local Web Archive" in popup
+    assert "built-in WARC/WACZ + local evidence bundle" in popup
+    assert "ArchiveBox optional advanced backend" in popup
     assert "ArchiveBox execution performed: none" in popup
     assert source.index("for archive_status in row.archive_statuses") < source.index('text="×"')
 

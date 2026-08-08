@@ -150,6 +150,7 @@ from capture_twitter_exporter_review_flow import (
     build_twitter_exporter_review_flow_summary,
 )
 from source_resource_state import (
+    ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
     ARCHIVE_SERVICE_ARCHIVEBOX,
     RESOURCE_KIND_IMAGE,
     RESOURCE_KIND_VIDEO_AUDIO,
@@ -4783,6 +4784,8 @@ class App(ctk.CTk):
             return "Wayback"
         if service_id == "archive_today":
             return "archive.ph"
+        if service_id == ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE:
+            return "Local"
         if service_id == ARCHIVE_SERVICE_ARCHIVEBOX:
             return "AB"
         return service_id
@@ -4895,7 +4898,9 @@ class App(ctk.CTk):
                     sticky="n",
                 )
                 archive_button.tooltip_text = (
-                    "ArchiveBox"
+                    "Local Web Archive"
+                    if archive_status.service_id == ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE
+                    else "ArchiveBox optional advanced backend"
                     if archive_status.service_id == ARCHIVE_SERVICE_ARCHIVEBOX
                     else archive_status.tooltip
                 )
@@ -4974,9 +4979,20 @@ class App(ctk.CTk):
         )
 
     def _show_archive_status(self, archive_status: Any) -> None:
+        if archive_status.service_id == ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE:
+            details = [
+                "Local Web Archive",
+                "Default backend: built-in WARC/WACZ + local evidence bundle",
+                "External viewer: ReplayWeb.page compatible when configured",
+                "ArchiveBox backend: optional advanced backend",
+                "Files written by status preview: none",
+                "Network actions performed by status preview: none",
+            ]
+            messagebox.showinfo("Local Web Archive", "\n".join(details))
+            return
         if archive_status.service_id == ARCHIVE_SERVICE_ARCHIVEBOX:
             details = [
-                "ArchiveBox local webpage archive scaffold",
+                "ArchiveBox optional advanced backend",
                 "ArchiveBox execution performed: none",
                 "Files written: none",
                 "Network actions performed: none",

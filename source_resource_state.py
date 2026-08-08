@@ -11,6 +11,7 @@ from source_adapters import find_source_adapter
 
 ARCHIVE_SERVICE_WAYBACK = "internet_archive_wayback"
 ARCHIVE_SERVICE_ARCHIVE_TODAY = "archive_today"
+ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE = "local_web_archive"
 ARCHIVE_SERVICE_ARCHIVEBOX = "archivebox"
 
 ARCHIVE_STATUS_NOT_CHECKED = "not_checked"
@@ -288,6 +289,10 @@ def _default_archive_statuses(auto_check_enabled: bool) -> tuple[ArchiveServiceS
                 ARCHIVE_STATUS_NOT_AVAILABLE,
             ),
             archive_status_presentation(
+                ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
+                ARCHIVE_STATUS_NOT_CHECKED,
+            ),
+            archive_status_presentation(
                 ARCHIVE_SERVICE_ARCHIVEBOX,
                 ARCHIVE_STATUS_NOT_CHECKED,
             ),
@@ -299,6 +304,10 @@ def _default_archive_statuses(auto_check_enabled: bool) -> tuple[ArchiveServiceS
         ),
         archive_status_presentation(
             ARCHIVE_SERVICE_ARCHIVE_TODAY,
+            ARCHIVE_STATUS_AUTO_CHECK_DISABLED,
+        ),
+        archive_status_presentation(
+            ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
             ARCHIVE_STATUS_AUTO_CHECK_DISABLED,
         ),
         archive_status_presentation(
