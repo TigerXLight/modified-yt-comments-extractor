@@ -1,0 +1,6 @@
+from source_adapter_operator_delivery_receipt_closeout import example_operator_delivery_receipt_closeout_package
+from source_adapter_operator_delivery_receipt_closeout_verifier import verify_source_adapter_operator_delivery_receipt_closeout_package
+v = verify_source_adapter_operator_delivery_receipt_closeout_package(example_operator_delivery_receipt_closeout_package())
+assert v["issue_count"] == 0, v
+assert v["verified"] is True
+print("Source Adapter Operator Delivery Receipt Closeout verifier self-test passed.")
