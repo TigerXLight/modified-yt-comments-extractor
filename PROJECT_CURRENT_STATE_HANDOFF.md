@@ -48,6 +48,16 @@ Unless a later milestone is explicitly approved, do not add:
 
 Existing YouTube comment/live-chat behavior, app exports, ASR runtime behavior, and Total Export package/review behavior must remain stable unless a separately approved milestone changes them with local/mocked coverage.
 
+## Source Adapter Audit Readiness
+
+- `source_adapter_audit_registry.py` now provides a durable METADATA_ONLY / LOCAL_ONLY / USER_REVIEW_REQUIRED audit registry for current and required source-adapter methods.
+- The registry covers MSN, X/Twitter public post/archive, X/Twitter reply thread/archive, YouTube media/transcript, YouTube comments, generic article HTML, generic article comments, manual local import, and archive-only import.
+- Each audit entry records source type, capture method, required artifacts, archive strategy, comment/transcript/media support, credential requirement without credential values, live/manual mode, Evidence Database mapping, Total Export mapping, operator approval requirements, and audit status. Methods that are not implemented or not yet exercised remain `audit_required` / `not_yet_executed`, not done.
+- Grabbed-source records now expose typed article, comment, media, transcript, archive URL, screenshot, snapshot, manual-observation, and provider-receipt reference buckets. The operational capture controller derives those references from planned artifact metadata only.
+- Evidence Database review/update support now includes a review-needed scan helper and rejects protected/sensitive classification dimension edits before update receipt creation. Safe edits still return deterministic audit receipts and perform no file reads, broad scans, moves, live execution, or automatic classification.
+- The Source Evidence workflow review bundle now writes `source_adapter_audit_registry.json` alongside the existing workflow state, review manifest, queue review store, release readiness/action plan, grabbed-source record, database scan result, and access/provider gate sidecars.
+- This is audit readiness only. It performs no live site access, browser automation, network/API/provider call, archive submission, ASR job, upload, broad folder scan, file move, file-existence claim, protected-attribute inference, completed-evidence claim, or automatic classification.
+
 ## ASR Comparison And Provider State
 
 ### Acceptance Policy
