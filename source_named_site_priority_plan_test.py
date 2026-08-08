@@ -3,10 +3,28 @@ from source_named_site_priority_plan import (
     source_named_site_priority_plan_to_json,
     validate_source_named_site_priority_plan,
 )
+from source_database_review_workflow import build_source_database_review_bridge_summary
+from source_record_review_workflow import build_source_record_review_workflow
+from source_selector_approval_workflow import build_source_selector_approval_packet_collection
+from source_site_method_audit_registry import build_source_site_method_audit_registry
 
 
 def test_named_site_priority_plan_lists_future_operator_approval_targets() -> None:
-    plan = build_source_named_site_priority_plan()
+    registry = build_source_site_method_audit_registry()
+    selector_packets = build_source_selector_approval_packet_collection(registry)
+    database_review = build_source_database_review_bridge_summary(
+        database_scan_row_count=11,
+        review_needed_row_count=11,
+        selector_audit_required_count=1,
+        approval_packet_count=selector_packets.packet_count,
+    )
+    source_record_review = build_source_record_review_workflow(())
+    plan = build_source_named_site_priority_plan(
+        registry,
+        database_review_workflow=database_review,
+        source_record_review_workflow=source_record_review,
+        selector_approval_packets=selector_packets,
+    )
     data = plan.to_dict()
     rendered = source_named_site_priority_plan_to_json(plan)
 
@@ -21,6 +39,9 @@ def test_named_site_priority_plan_lists_future_operator_approval_targets() -> No
     )
     assert generic_comments.next_action == "perform_named_site_selector_audit_with_explicit_approval"
     assert "site_specific_selector_review_note" in generic_comments.planned_operator_inputs
+    assert data["review_workflow_summary"]["database_review"]["database_scan_row_count"] == 11
+    assert data["review_workflow_summary"]["source_record_review"]["source_record_count"] == 0
+    assert data["selector_approval_packet_summary"]["packet_count"] == 1
     assert "APPROVAL_REQUIRED" in rendered
     assert "live verified" not in rendered.lower()
     assert "completed evidence" not in rendered.lower()

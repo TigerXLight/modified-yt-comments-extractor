@@ -275,20 +275,6 @@ def build_source_evidence_workflow_state(
     source_selector_approval_packets = build_source_selector_approval_packet_collection(
         source_site_method_audit_registry
     )
-    source_adapter_audit_report = build_source_adapter_audit_report(
-        adapter_registry=source_adapter_audit_registry,
-        site_method_registry=source_site_method_audit_registry,
-        selector_pack_collection=source_site_selector_audit_packs,
-        workflow_sidecar_filenames=(
-            "source_adapter_audit_registry.json",
-            "source_site_method_audit_registry.json",
-            "source_site_selector_audit_packs.json",
-            "source_adapter_audit_report.json",
-        ),
-    )
-    source_named_site_priority_plan = build_source_named_site_priority_plan(
-        source_site_method_audit_registry
-    )
     site_method_audit_records = tuple(
         evidence_index_record_from_source_site_method_audit_row(
             row,
@@ -319,6 +305,30 @@ def build_source_evidence_workflow_state(
         grabbed_source_records=grabbed_source_records,
         evidence_queue=connection.queue,
         approval_packet_count=source_selector_approval_packets.packet_count,
+    )
+    source_named_site_priority_plan = build_source_named_site_priority_plan(
+        source_site_method_audit_registry,
+        database_review_workflow=source_database_review_workflow,
+        source_record_review_workflow=source_record_review_workflow,
+        selector_approval_packets=source_selector_approval_packets,
+    )
+    source_adapter_audit_report = build_source_adapter_audit_report(
+        adapter_registry=source_adapter_audit_registry,
+        site_method_registry=source_site_method_audit_registry,
+        selector_pack_collection=source_site_selector_audit_packs,
+        workflow_sidecar_filenames=(
+            "source_adapter_audit_registry.json",
+            "source_site_method_audit_registry.json",
+            "source_site_selector_audit_packs.json",
+            "source_adapter_audit_report.json",
+            "source_database_review_workflow.json",
+            "source_record_review_workflow.json",
+            "source_selector_approval_packets.json",
+        ),
+        database_review_workflow=source_database_review_workflow,
+        source_record_review_workflow=source_record_review_workflow,
+        selector_approval_packets=source_selector_approval_packets,
+        named_site_priority_plan=source_named_site_priority_plan,
     )
     access_provider_gate_summary = build_access_provider_gate_summary(
         build_default_access_keys_catalog()

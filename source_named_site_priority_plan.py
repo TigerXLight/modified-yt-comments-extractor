@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
 from typing import Any, Iterable, Mapping
 
@@ -47,6 +47,8 @@ class SourceNamedSitePriorityRow:
 class SourceNamedSitePriorityPlan:
     plan_id: str
     rows: tuple[SourceNamedSitePriorityRow, ...]
+    review_workflow_summary: Mapping[str, Any] = field(default_factory=dict)
+    selector_approval_packet_summary: Mapping[str, Any] = field(default_factory=dict)
     schema_version: str = SOURCE_NAMED_SITE_PRIORITY_PLAN_SCHEMA_VERSION
     review_status: str = "USER_REVIEW_REQUIRED"
     approval_status: str = "APPROVAL_REQUIRED"
@@ -112,6 +114,13 @@ def _stable_tuple(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(sorted(str(value or "").strip() for value in values if str(value or "").strip()))
 
 
+def _summary_from(value: Any, *keys: str) -> dict[str, Any]:
+    data = value.to_dict() if hasattr(value, "to_dict") and callable(value.to_dict) else _value_for_dict(value)
+    if not isinstance(data, dict):
+        return {}
+    return {key: data.get(key) for key in keys if key in data}
+
+
 PRIORITY_METHOD_ORDER = (
     "msn_article",
     "msn_shadow_dom_comments",
@@ -138,6 +147,10 @@ def _operator_inputs_for_method(method_id: str) -> tuple[str, ...]:
 
 def build_source_named_site_priority_plan(
     registry: SourceSiteMethodAuditRegistry | None = None,
+    *,
+    database_review_workflow: Any | None = None,
+    source_record_review_workflow: Any | None = None,
+    selector_approval_packets: Any | None = None,
 ) -> SourceNamedSitePriorityPlan:
     source_registry = registry or build_source_site_method_audit_registry()
     by_method = {row.method_id: row for row in source_registry.rows}
@@ -178,6 +191,33 @@ def build_source_named_site_priority_plan(
     return SourceNamedSitePriorityPlan(
         plan_id="source_named_site_priority_plan_" + _sha16(payload),
         rows=tuple(rows),
+        review_workflow_summary={
+            "database_review": _summary_from(
+                database_review_workflow,
+                "view_model_id",
+                "summary_id",
+                "database_scan_row_count",
+                "scan_row_count",
+                "review_needed_row_count",
+                "pending_safe_edit_count",
+                "rejected_unsafe_edit_count",
+            ),
+            "source_record_review": _summary_from(
+                source_record_review_workflow,
+                "workflow_id",
+                "source_record_count",
+                "selector_audit_cross_link_count",
+            ),
+            "live_execution_performed": False,
+            "completed_evidence_claimed": False,
+        },
+        selector_approval_packet_summary=_summary_from(
+            selector_approval_packets,
+            "collection_id",
+            "packet_count",
+            "manual_smoke_checklist_row_count",
+            "not_live_executed_receipt_count",
+        ),
     )
 
 

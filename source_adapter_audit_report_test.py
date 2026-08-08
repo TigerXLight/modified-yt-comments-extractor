@@ -3,15 +3,42 @@ from source_adapter_audit_report import (
     source_adapter_audit_report_to_json,
     validate_source_adapter_audit_report,
 )
+from source_database_review_workflow import build_source_database_review_bridge_summary
+from source_record_review_workflow import build_source_record_review_workflow
+from source_selector_approval_workflow import build_source_selector_approval_packet_collection
+from source_named_site_priority_plan import build_source_named_site_priority_plan
 from source_site_method_audit_registry import build_source_site_selector_audit_pack_collection
+from source_site_method_audit_registry import build_source_site_method_audit_registry
 
 
 def test_source_adapter_audit_report_combines_adapter_and_site_method_rows() -> None:
+    site_registry = build_source_site_method_audit_registry()
+    selector_packets = build_source_selector_approval_packet_collection(site_registry)
+    database_review = build_source_database_review_bridge_summary(
+        database_scan_row_count=11,
+        review_needed_row_count=11,
+        selector_audit_required_count=1,
+        rejected_unsafe_edit_count=2,
+        approval_packet_count=selector_packets.packet_count,
+    )
+    source_record_review = build_source_record_review_workflow(())
+    priority_plan = build_source_named_site_priority_plan(
+        site_registry,
+        database_review_workflow=database_review,
+        source_record_review_workflow=source_record_review,
+        selector_approval_packets=selector_packets,
+    )
     report = build_source_adapter_audit_report(
+        site_method_registry=site_registry,
+        database_review_workflow=database_review,
+        source_record_review_workflow=source_record_review,
+        selector_approval_packets=selector_packets,
+        named_site_priority_plan=priority_plan,
         workflow_sidecar_filenames=(
             "source_evidence_workflow_state.json",
             "source_site_method_audit_registry.json",
             "source_site_selector_audit_packs.json",
+            "source_database_review_workflow.json",
         )
     )
     data = report.to_dict()
@@ -23,6 +50,13 @@ def test_source_adapter_audit_report_combines_adapter_and_site_method_rows() -> 
     assert report.not_yet_executed_count == report.row_count
     assert report.selector_pack_collection_id == build_source_site_selector_audit_pack_collection().collection_id
     assert "source_site_selector_audit_packs.json" in report.workflow_sidecar_filenames
+    assert "source_database_review_workflow.json" in report.workflow_sidecar_filenames
+    assert data["database_review_workflow_summary"]["database_scan_row_count"] == 11
+    assert data["unsafe_update_rejection_summary"]["rejected_unsafe_edit_count"] == 2
+    assert data["selector_approval_packet_summary"]["packet_count"] == 1
+    assert data["done_not_done_table"]
+    assert any(row["not_done_reason"] == "selector_audit_required" for row in data["done_not_done_table"])
+    assert data["next_named_site_selector_priorities"][0]["method_id"] == "generic_comments_site_specific_selector"
     assert any(row.method_id == "generic_comments_site_specific_selector" for row in report.rows)
     assert any(
         row.next_review_action == "site_specific_selector_audit_required"

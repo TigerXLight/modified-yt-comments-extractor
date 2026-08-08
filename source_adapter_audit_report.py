@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
 from typing import Any, Iterable, Mapping
 
@@ -50,6 +50,12 @@ class SourceAdapterAuditReport:
     selector_pack_collection_id: str
     rows: tuple[SourceAdapterAuditReportRow, ...]
     workflow_sidecar_filenames: tuple[str, ...] = ()
+    database_review_workflow_summary: Mapping[str, Any] = field(default_factory=dict)
+    source_record_review_summary: Mapping[str, Any] = field(default_factory=dict)
+    selector_approval_packet_summary: Mapping[str, Any] = field(default_factory=dict)
+    unsafe_update_rejection_summary: Mapping[str, Any] = field(default_factory=dict)
+    next_named_site_selector_priorities: tuple[Mapping[str, Any], ...] = ()
+    done_not_done_table: tuple[Mapping[str, Any], ...] = ()
     schema_version: str = SOURCE_ADAPTER_AUDIT_REPORT_SCHEMA_VERSION
     review_status: str = "USER_REVIEW_REQUIRED"
     metadata_only: bool = True
@@ -120,6 +126,35 @@ def _stable_tuple(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(sorted(str(value or "").strip() for value in values if str(value or "").strip()))
 
 
+def _summary_from(value: Any, *keys: str) -> dict[str, Any]:
+    data = value.to_dict() if hasattr(value, "to_dict") and callable(value.to_dict) else _value_for_dict(value)
+    if not isinstance(data, dict):
+        return {}
+    return {key: data.get(key) for key in keys if key in data}
+
+
+def _done_not_done_table(
+    rows: tuple[SourceAdapterAuditReportRow, ...],
+) -> tuple[Mapping[str, Any], ...]:
+    return tuple(
+        {
+            "row_kind": row.row_kind,
+            "display_name": row.display_name,
+            "method_id": row.method_id,
+            "status": row.status,
+            "done": row.status in {"metadata_audit_ready"} and not row.selector_audit_required,
+            "not_done_reason": (
+                "selector_audit_required"
+                if row.selector_audit_required
+                else "not_live_executed"
+            ),
+            "live_execution_performed": False,
+            "completed_evidence_claimed": False,
+        }
+        for row in rows
+    )
+
+
 def _adapter_rows(registry: SourceAdapterAuditRegistry) -> tuple[SourceAdapterAuditReportRow, ...]:
     rows: list[SourceAdapterAuditReportRow] = []
     for entry in registry.entries:
@@ -167,6 +202,10 @@ def build_source_adapter_audit_report(
     site_method_registry: SourceSiteMethodAuditRegistry | None = None,
     selector_pack_collection: SourceSiteSelectorAuditPackCollection | None = None,
     workflow_sidecar_filenames: Iterable[str] = (),
+    database_review_workflow: Any | None = None,
+    source_record_review_workflow: Any | None = None,
+    selector_approval_packets: Any | None = None,
+    named_site_priority_plan: Any | None = None,
 ) -> SourceAdapterAuditReport:
     adapters = adapter_registry or build_source_adapter_audit_registry()
     site_methods = site_method_registry or build_source_site_method_audit_registry()
@@ -185,6 +224,52 @@ def build_source_adapter_audit_report(
         selector_pack_collection_id=packs.collection_id,
         rows=rows,
         workflow_sidecar_filenames=_stable_tuple(workflow_sidecar_filenames),
+        database_review_workflow_summary=_summary_from(
+            database_review_workflow,
+            "view_model_id",
+            "summary_id",
+            "database_scan_row_count",
+            "scan_row_count",
+            "review_needed_row_count",
+            "pending_safe_edit_count",
+            "rejected_unsafe_edit_count",
+        ),
+        source_record_review_summary=_summary_from(
+            source_record_review_workflow,
+            "workflow_id",
+            "source_record_count",
+            "reference_count",
+            "selector_audit_cross_link_count",
+        ),
+        selector_approval_packet_summary=_summary_from(
+            selector_approval_packets,
+            "collection_id",
+            "packet_count",
+            "manual_smoke_checklist_row_count",
+            "not_live_executed_receipt_count",
+        ),
+        unsafe_update_rejection_summary={
+            "rejected_unsafe_edit_count": (
+                _summary_from(database_review_workflow, "rejected_unsafe_edit_count")
+                .get("rejected_unsafe_edit_count", 0)
+            ),
+            "live_execution_performed": False,
+            "completed_evidence_claimed": False,
+        },
+        next_named_site_selector_priorities=tuple(
+            {
+                "method_id": row.get("method_id", ""),
+                "site_label": row.get("site_label", ""),
+                "status": row.get("status", ""),
+                "approval_status": row.get("approval_status", ""),
+            }
+            for row in _value_for_dict(named_site_priority_plan).get("rows", ())
+            if isinstance(row, dict)
+            and row.get("method_id") == "generic_comments_site_specific_selector"
+        )
+        if isinstance(_value_for_dict(named_site_priority_plan), dict)
+        else (),
+        done_not_done_table=_done_not_done_table(rows),
     )
 
 
