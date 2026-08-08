@@ -11,8 +11,10 @@ from source_media_execution_bridge import (
     MediaCollisionPolicy,
     MediaExecutionStatus,
     copy_selected_local_media_files,
+    download_selected_media_resources_with_http_client,
     execute_ffmpeg_mux_plan,
     execute_yt_dlp_command,
+    group_media_components_for_mux,
 )
 
 
@@ -114,7 +116,69 @@ class SourceMediaExecutionBridgeTest(unittest.TestCase):
         self.assertEqual(result.status, MediaExecutionStatus.DRY_RUN)
         self.assertFalse(called)
 
+    def test_http_downloader_injection_allows_localhost_and_refuses_external_blob(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            receipts = download_selected_media_resources_with_http_client(
+                resources=(
+                    {"resource_id": "local", "url": "http://localhost/media.mp4", "media_type": "video"},
+                    {"resource_id": "external", "url": "https://example.com/media.mp4", "media_type": "video"},
+                    {"resource_id": "blob", "url": "blob:https://example.com/id", "media_type": "video"},
+                ),
+                output_directory=temp_dir,
+                selected_resource_ids=("local", "external", "blob"),
+                http_downloader=lambda url, timeout: b"payload",
+            )
+            by_id = {receipt.resource_id: receipt for receipt in receipts}
+            self.assertEqual(by_id["local"].status, MediaExecutionStatus.SUCCESS)
+            self.assertTrue((Path(temp_dir) / by_id["local"].output_name).is_file())
+            self.assertEqual(by_id["external"].status, MediaExecutionStatus.UNSUPPORTED)
+            self.assertEqual(by_id["blob"].status, MediaExecutionStatus.UNSUPPORTED)
+
+    def test_http_download_timeout_cancel_and_track_grouping(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cancelled = download_selected_media_resources_with_http_client(
+                resources=({"resource_id": "local", "url": "http://localhost/media.mp4"},),
+                output_directory=temp_dir,
+                selected_resource_ids=("local",),
+                http_downloader=lambda url, timeout: b"",
+                cancel_requested=True,
+            )
+            self.assertEqual(cancelled[0].status, MediaExecutionStatus.CANCELLED)
+            timeout = download_selected_media_resources_with_http_client(
+                resources=({"resource_id": "local", "url": "http://localhost/media.mp4"},),
+                output_directory=temp_dir,
+                selected_resource_ids=("local",),
+                http_downloader=lambda url, timeout: (_ for _ in ()).throw(TimeoutError()),
+            )
+            self.assertEqual(timeout[0].status, MediaExecutionStatus.TIMEOUT)
+            grouping = group_media_components_for_mux(
+                (
+                    build_media_component_record(resource_id="v", role="video", path=""),
+                    build_media_component_record(resource_id="a", role="audio", path=""),
+                    build_media_component_record(resource_id="s", role="subtitle", path=""),
+                )
+            )
+            self.assertEqual(grouping.video_count, 1)
+            self.assertEqual(grouping.audio_count, 1)
+            self.assertEqual(grouping.to_dict()["other_count"], 1)
+
+    def test_media_command_cancel_does_not_call_runner(self) -> None:
+        called = False
+
+        def runner(command, **kwargs):
+            nonlocal called
+            called = True
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        result = execute_yt_dlp_command(
+            command=("yt-dlp", "http://localhost/media"),
+            runner=runner,
+            approval_granted=True,
+            cancel_requested=True,
+        )
+        self.assertEqual(result.status, MediaExecutionStatus.CANCELLED)
+        self.assertFalse(called)
+
 
 if __name__ == "__main__":
     unittest.main()
-

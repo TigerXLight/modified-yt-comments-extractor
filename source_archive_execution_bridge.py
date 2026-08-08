@@ -8,7 +8,17 @@ from enum import Enum
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import quote, urlencode
 
-from capture_archivebox import ArchiveBoxCommandPlan
+from capture_archivebox import (
+    ARCHIVEBOX_MODE_DOCKER_COMPOSE,
+    ARCHIVEBOX_MODE_NATIVE_UNIX,
+    ARCHIVEBOX_MODE_REMOTE,
+    ARCHIVEBOX_MODE_WSL2,
+    ARCHIVEBOX_PROFILE_BALANCED,
+    ARCHIVEBOX_PROFILE_FULL,
+    ARCHIVEBOX_PROFILE_LIGHT,
+    ArchiveBoxCommandPlan,
+    build_archivebox_command_plan,
+)
 
 
 SOURCE_ARCHIVE_EXECUTION_BRIDGE_SCHEMA_VERSION = "source_archive_execution_bridge_v1"
@@ -29,6 +39,10 @@ class ArchiveExecutionStatus(str, Enum):
     TIMEOUT = "timeout"
     FAILED = "failed"
     DRY_RUN = "dry_run"
+    NOT_FOUND = "not_found"
+    MULTIPLE_RESULTS = "multiple_results"
+    FORMAT_CHANGED = "format_changed"
+    CANCELLED = "cancelled"
 
 
 class ArchiveProviderKind(str, Enum):
@@ -102,6 +116,22 @@ class ArchiveHttpResult:
 
     def to_dict(self) -> dict[str, Any]:
         return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class ArchiveProviderInterpretation:
+    interpretation_id: str
+    provider: ArchiveProviderKind
+    operation: str
+    status: ArchiveExecutionStatus
+    archive_urls: tuple[str, ...] = ()
+    warning: str = ""
+    schema_version: str = SOURCE_ARCHIVE_EXECUTION_BRIDGE_SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        data = _value_for_dict(self)
+        data["archive_url_count"] = len(self.archive_urls)
+        return data
 
 
 @dataclass(frozen=True)
@@ -243,6 +273,121 @@ def execute_archive_http_request(request: ArchiveHttpRequest, *, http_client: Ht
     )
 
 
+def interpret_wayback_availability_response(result: ArchiveHttpResult) -> ArchiveProviderInterpretation:
+    body = result.response_excerpt or ""
+    urls: list[str] = []
+    status = ArchiveExecutionStatus.FORMAT_CHANGED
+    try:
+        parsed = json.loads(body or "{}")
+        closest = parsed.get("archived_snapshots", {}).get("closest", {})
+        if isinstance(closest, dict) and closest.get("available") and closest.get("url"):
+            urls.append(str(closest.get("url")))
+            status = ArchiveExecutionStatus.SUCCESS
+        else:
+            status = ArchiveExecutionStatus.NOT_FOUND
+    except Exception:
+        if "web.archive.org" in body:
+            urls.append(body.strip()[:500])
+            status = ArchiveExecutionStatus.SUCCESS
+    return ArchiveProviderInterpretation(
+        interpretation_id="archive_interpretation_" + _sha16((result.result_id, status.value, urls)),
+        provider=result.request.provider,
+        operation=result.request.operation,
+        status=status,
+        archive_urls=tuple(urls),
+        warning="" if status != ArchiveExecutionStatus.FORMAT_CHANGED else "Wayback availability response format changed or was not JSON.",
+    )
+
+
+def interpret_wayback_cdx_response(result: ArchiveHttpResult) -> ArchiveProviderInterpretation:
+    body = result.response_excerpt or ""
+    urls: list[str] = []
+    status = ArchiveExecutionStatus.FORMAT_CHANGED
+    try:
+        parsed = json.loads(body or "[]")
+        rows = parsed[1:] if isinstance(parsed, list) and parsed and isinstance(parsed[0], list) else parsed
+        for row in rows:
+            if isinstance(row, list) and len(row) >= 3:
+                timestamp = str(row[1])
+                original = str(row[2])
+                urls.append(f"https://web.archive.org/web/{timestamp}/{original}")
+        if len(urls) > 1:
+            status = ArchiveExecutionStatus.MULTIPLE_RESULTS
+        elif len(urls) == 1:
+            status = ArchiveExecutionStatus.SUCCESS
+        else:
+            status = ArchiveExecutionStatus.NOT_FOUND
+    except Exception:
+        status = ArchiveExecutionStatus.FORMAT_CHANGED
+    return ArchiveProviderInterpretation(
+        interpretation_id="archive_interpretation_" + _sha16((result.result_id, status.value, urls)),
+        provider=result.request.provider,
+        operation=result.request.operation,
+        status=status,
+        archive_urls=tuple(urls),
+        warning="" if status != ArchiveExecutionStatus.FORMAT_CHANGED else "Wayback CDX response format changed or was not JSON.",
+    )
+
+
+def interpret_archive_today_check_response(result: ArchiveHttpResult) -> ArchiveProviderInterpretation:
+    body = result.response_excerpt or ""
+    if result.challenge_required:
+        status = ArchiveExecutionStatus.CHALLENGE_USER_HANDOFF
+        urls: tuple[str, ...] = ()
+    elif result.archive_url:
+        status = ArchiveExecutionStatus.SUCCESS
+        urls = (result.archive_url,)
+    elif "not found" in body.lower() or result.http_status == 404:
+        status = ArchiveExecutionStatus.NOT_FOUND
+        urls = ()
+    elif result.status == ArchiveExecutionStatus.FAILED:
+        status = ArchiveExecutionStatus.FAILED
+        urls = ()
+    else:
+        status = ArchiveExecutionStatus.FORMAT_CHANGED
+        urls = ()
+    return ArchiveProviderInterpretation(
+        interpretation_id="archive_interpretation_" + _sha16((result.result_id, status.value, urls)),
+        provider=result.request.provider,
+        operation=result.request.operation,
+        status=status,
+        archive_urls=urls,
+        warning="" if status != ArchiveExecutionStatus.FORMAT_CHANGED else "archive.today response did not include a recognized saved/not-saved/challenge marker.",
+    )
+
+
+def build_archivebox_execution_plan_for_profile(
+    *,
+    mode: str,
+    url: str,
+    profile: str,
+    expected_output: str = "archivebox/index.html",
+) -> ArchiveBoxCommandPlan:
+    return build_archivebox_command_plan(
+        mode=mode,
+        url=url,
+        profile=profile,
+        expected_output=expected_output,
+    )
+
+
+def build_archivebox_default_execution_plans(url: str) -> tuple[ArchiveBoxCommandPlan, ...]:
+    plans: list[ArchiveBoxCommandPlan] = []
+    for mode in (
+        ARCHIVEBOX_MODE_DOCKER_COMPOSE,
+        ARCHIVEBOX_MODE_WSL2,
+        ARCHIVEBOX_MODE_REMOTE,
+        ARCHIVEBOX_MODE_NATIVE_UNIX,
+    ):
+        for profile in (
+            ARCHIVEBOX_PROFILE_LIGHT,
+            ARCHIVEBOX_PROFILE_BALANCED,
+            ARCHIVEBOX_PROFILE_FULL,
+        ):
+            plans.append(build_archivebox_execution_plan_for_profile(mode=mode, url=url, profile=profile))
+    return tuple(plans)
+
+
 def execute_archivebox_command(
     plan: ArchiveBoxCommandPlan,
     *,
@@ -250,8 +395,21 @@ def execute_archivebox_command(
     approval_granted: bool = False,
     dry_run: bool = False,
     timeout_seconds: int = 120,
+    cancel_requested: bool = False,
 ) -> ArchiveBoxExecutionResult:
     command = tuple(str(part) for part in plan.command)
+    if cancel_requested:
+        return ArchiveBoxExecutionResult(
+            execution_id="archivebox_execution_" + _sha16((command, "cancelled")),
+            status=ArchiveExecutionStatus.CANCELLED,
+            command=command,
+            mode=plan.mode,
+            profile=plan.profile,
+            approval_granted=approval_granted,
+            timeout_seconds=timeout_seconds,
+            expected_output=plan.expected_output,
+            warnings=("Operator cancellation requested before ArchiveBox execution.",),
+        )
     if dry_run:
         return ArchiveBoxExecutionResult(
             execution_id="archivebox_execution_" + _sha16((command, "dry_run")),
@@ -324,4 +482,3 @@ def execute_archivebox_command(
         timeout_seconds=timeout_seconds,
         expected_output=plan.expected_output,
     )
-

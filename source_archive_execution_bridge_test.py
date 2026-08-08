@@ -8,13 +8,18 @@ from capture_archivebox import ARCHIVEBOX_MODE_DOCKER_COMPOSE, build_archivebox_
 from source_archive_execution_bridge import (
     ArchiveExecutionStatus,
     ArchiveProviderKind,
+    build_archivebox_default_execution_plans,
     build_archive_dns_diagnostic_result,
     build_archive_today_check_request,
     build_archive_today_submit_request,
+    build_wayback_cdx_request,
     build_wayback_availability_request,
     build_wayback_submit_request,
     execute_archive_http_request,
     execute_archivebox_command,
+    interpret_archive_today_check_response,
+    interpret_wayback_availability_response,
+    interpret_wayback_cdx_response,
 )
 
 
@@ -100,7 +105,55 @@ class SourceArchiveExecutionBridgeTest(unittest.TestCase):
         )
         self.assertEqual(timeout.status, ArchiveExecutionStatus.TIMEOUT)
 
+    def test_wayback_and_archive_today_interpretations_cover_found_not_found_multiple_and_format_changes(self) -> None:
+        availability = build_wayback_availability_request("https://example.invalid/story")
+        found = execute_archive_http_request(
+            availability,
+            http_client=lambda req: {
+                "status": 200,
+                "body": '{"archived_snapshots":{"closest":{"available":true,"url":"https://web.archive.org/web/1/example"}}}',
+            },
+        )
+        self.assertEqual(interpret_wayback_availability_response(found).status, ArchiveExecutionStatus.SUCCESS)
+        not_found = execute_archive_http_request(
+            availability,
+            http_client=lambda req: {"status": 200, "body": '{"archived_snapshots":{}}'},
+        )
+        self.assertEqual(interpret_wayback_availability_response(not_found).status, ArchiveExecutionStatus.NOT_FOUND)
+        changed = execute_archive_http_request(
+            availability,
+            http_client=lambda req: {"status": 200, "body": '<html>changed</html>'},
+        )
+        self.assertEqual(interpret_wayback_availability_response(changed).status, ArchiveExecutionStatus.FORMAT_CHANGED)
+
+        cdx = execute_archive_http_request(
+            build_wayback_cdx_request("https://example.invalid/story"),
+            http_client=lambda req: {
+                "status": 200,
+                "body": '[["urlkey","timestamp","original"],["x","20260101000000","https://example.invalid/story"],["x","20260202000000","https://example.invalid/story"]]',
+            },
+        )
+        self.assertEqual(interpret_wayback_cdx_response(cdx).status, ArchiveExecutionStatus.MULTIPLE_RESULTS)
+
+        archive_today_missing = execute_archive_http_request(
+            build_archive_today_check_request("https://example.invalid/story"),
+            http_client=lambda req: {"status": 404, "body": "not found"},
+        )
+        self.assertEqual(interpret_archive_today_check_response(archive_today_missing).status, ArchiveExecutionStatus.NOT_FOUND)
+
+    def test_archivebox_default_plans_cover_modes_profiles_and_cancel(self) -> None:
+        plans = build_archivebox_default_execution_plans("https://example.invalid/story")
+        self.assertEqual(len(plans), 12)
+        profiles = {plan.profile for plan in plans}
+        self.assertEqual(profiles, {"light", "balanced", "full"})
+        cancelled = execute_archivebox_command(
+            plans[0],
+            runner=lambda *args, **kwargs: SimpleNamespace(returncode=0),
+            approval_granted=True,
+            cancel_requested=True,
+        )
+        self.assertEqual(cancelled.status, ArchiveExecutionStatus.CANCELLED)
+
 
 if __name__ == "__main__":
     unittest.main()
-

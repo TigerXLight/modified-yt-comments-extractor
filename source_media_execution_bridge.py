@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlsplit
 
-from capture_media_download import MediaDownloadResult, MediaMuxPlan
+from capture_media_download import MediaComponentRecord, MediaDownloadResult, MediaMuxPlan, is_allowed_media_download_url
 from capture_status import CAPTURE_STATUS_FAILED, CAPTURE_STATUS_SUCCESS, CAPTURE_STATUS_UNSUPPORTED
 
 
@@ -144,7 +144,49 @@ class MediaCommandExecutionResult:
         return _value_for_dict(self)
 
 
+@dataclass(frozen=True)
+class MediaHttpDownloadReceipt:
+    resource_id: str
+    url: str
+    output_name: str
+    sha256: str
+    size_bytes: int
+    status: MediaExecutionStatus
+    source_url: str = ""
+    media_type: str = ""
+    warnings: tuple[str, ...] = ()
+    schema_version: str = SOURCE_MEDIA_EXECUTION_BRIDGE_SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class MediaTrackGrouping:
+    grouping_id: str
+    video_components: tuple[MediaComponentRecord, ...]
+    audio_components: tuple[MediaComponentRecord, ...]
+    other_components: tuple[MediaComponentRecord, ...]
+    schema_version: str = SOURCE_MEDIA_EXECUTION_BRIDGE_SCHEMA_VERSION
+
+    @property
+    def video_count(self) -> int:
+        return len(self.video_components)
+
+    @property
+    def audio_count(self) -> int:
+        return len(self.audio_components)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = _value_for_dict(self)
+        data["video_count"] = self.video_count
+        data["audio_count"] = self.audio_count
+        data["other_count"] = len(self.other_components)
+        return data
+
+
 Runner = Callable[..., Any]
+HttpDownloader = Callable[[str, int], bytes]
 
 
 def copy_selected_local_media_files(
@@ -201,6 +243,138 @@ def copy_selected_local_media_files(
     )
 
 
+def download_selected_media_resources_with_http_client(
+    *,
+    resources: Sequence[Mapping[str, Any]],
+    output_directory: str | Path,
+    selected_resource_ids: Sequence[str],
+    http_downloader: HttpDownloader,
+    timeout_seconds: int = 30,
+    allowed_hostnames: tuple[str, ...] = ("127.0.0.1", "localhost", "::1"),
+    allow_external_network: bool = False,
+    cancel_requested: bool = False,
+) -> tuple[MediaHttpDownloadReceipt, ...]:
+    if cancel_requested:
+        return tuple(
+            MediaHttpDownloadReceipt(
+                resource_id=str(resource.get("resource_id") or ""),
+                url=str(resource.get("url") or ""),
+                output_name="",
+                sha256="",
+                size_bytes=0,
+                status=MediaExecutionStatus.CANCELLED,
+                warnings=("Operator cancellation requested before HTTP media download.",),
+            )
+            for resource in resources
+            if str(resource.get("resource_id") or "") in set(str(item) for item in selected_resource_ids)
+        )
+    selected = set(str(item) for item in selected_resource_ids)
+    output_root = Path(output_directory)
+    output_root.mkdir(parents=True, exist_ok=True)
+    receipts: list[MediaHttpDownloadReceipt] = []
+    for resource in sorted((dict(item) for item in resources), key=lambda item: str(item.get("resource_id") or "")):
+        resource_id = str(resource.get("resource_id") or "")
+        if resource_id not in selected:
+            continue
+        url = str(resource.get("url") or "")
+        if url.startswith("blob:") or url.startswith("mediasource:"):
+            receipts.append(
+                MediaHttpDownloadReceipt(
+                    resource_id=resource_id,
+                    url=url,
+                    output_name="",
+                    sha256="",
+                    size_bytes=0,
+                    status=MediaExecutionStatus.UNSUPPORTED,
+                    source_url=str(resource.get("source_url") or ""),
+                    media_type=str(resource.get("media_type") or resource.get("kind") or ""),
+                    warnings=("Blob/MediaSource URLs are not directly downloadable.",),
+                )
+            )
+            continue
+        if not allow_external_network and not is_allowed_media_download_url(url, allowed_hostnames):
+            receipts.append(
+                MediaHttpDownloadReceipt(
+                    resource_id=resource_id,
+                    url=url,
+                    output_name="",
+                    sha256="",
+                    size_bytes=0,
+                    status=MediaExecutionStatus.UNSUPPORTED,
+                    source_url=str(resource.get("source_url") or ""),
+                    media_type=str(resource.get("media_type") or resource.get("kind") or ""),
+                    warnings=("HTTP media download is restricted to local fixture hosts unless explicitly approved.",),
+                )
+            )
+            continue
+        try:
+            payload = http_downloader(url, timeout_seconds)
+        except TimeoutError:
+            receipts.append(
+                MediaHttpDownloadReceipt(
+                    resource_id=resource_id,
+                    url=url,
+                    output_name="",
+                    sha256="",
+                    size_bytes=0,
+                    status=MediaExecutionStatus.TIMEOUT,
+                    warnings=("HTTP media download timed out.",),
+                )
+            )
+            continue
+        except Exception as exc:
+            receipts.append(
+                MediaHttpDownloadReceipt(
+                    resource_id=resource_id,
+                    url=url,
+                    output_name="",
+                    sha256="",
+                    size_bytes=0,
+                    status=MediaExecutionStatus.FAILED,
+                    warnings=(f"HTTP media downloader failed: {type(exc).__name__}",),
+                )
+            )
+            continue
+        output_name = _safe_name(str(resource.get("filename") or url))
+        output_path = _resolve_collision(output_root / output_name, MediaCollisionPolicy.KEEP_BOTH)
+        output_path.write_bytes(payload)
+        receipts.append(
+            MediaHttpDownloadReceipt(
+                resource_id=resource_id,
+                url=url,
+                output_name=output_path.name,
+                sha256=hashlib.sha256(payload).hexdigest(),
+                size_bytes=len(payload),
+                status=MediaExecutionStatus.SUCCESS,
+                source_url=str(resource.get("source_url") or ""),
+                media_type=str(resource.get("media_type") or resource.get("kind") or ""),
+            )
+        )
+    return tuple(receipts)
+
+
+def group_media_components_for_mux(
+    components: Sequence[MediaComponentRecord],
+) -> MediaTrackGrouping:
+    video: list[MediaComponentRecord] = []
+    audio: list[MediaComponentRecord] = []
+    other: list[MediaComponentRecord] = []
+    for component in components:
+        role = str(component.role or component.media_type or "").lower()
+        if role == "video":
+            video.append(component)
+        elif role == "audio":
+            audio.append(component)
+        else:
+            other.append(component)
+    return MediaTrackGrouping(
+        grouping_id="media_track_grouping_" + _sha16([component.to_dict() for component in components]),
+        video_components=tuple(video),
+        audio_components=tuple(audio),
+        other_components=tuple(other),
+    )
+
+
 def _redact_process_text(value: object) -> str:
     text = str(value or "")
     for token in ("authorization", "cookie", "password", "api_key", "token", "secret"):
@@ -218,8 +392,20 @@ def execute_media_command(
     dry_run: bool = False,
     timeout_seconds: int = 120,
     output_name: str = "",
+    cancel_requested: bool = False,
 ) -> MediaCommandExecutionResult:
     command_tuple = tuple(str(part) for part in command)
+    if cancel_requested:
+        return MediaCommandExecutionResult(
+            execution_id=f"media_command_{tool}_" + _sha16((command_tuple, "cancelled")),
+            tool=tool,
+            status=MediaExecutionStatus.CANCELLED,
+            command=command_tuple,
+            approval_granted=approval_granted,
+            timeout_seconds=timeout_seconds,
+            output_name=output_name,
+            warnings=("Operator cancellation requested before media subprocess execution.",),
+        )
     if dry_run:
         return MediaCommandExecutionResult(
             execution_id=f"media_command_{tool}_" + _sha16((command_tuple, "dry_run")),
@@ -296,6 +482,7 @@ def execute_ffmpeg_mux_plan(
     approval_granted: bool = False,
     dry_run: bool = False,
     timeout_seconds: int = 120,
+    cancel_requested: bool = False,
 ) -> MediaCommandExecutionResult:
     return execute_media_command(
         tool="ffmpeg",
@@ -305,6 +492,7 @@ def execute_ffmpeg_mux_plan(
         dry_run=dry_run,
         timeout_seconds=timeout_seconds,
         output_name=plan.output_filename,
+        cancel_requested=cancel_requested,
     )
 
 
@@ -316,6 +504,7 @@ def execute_yt_dlp_command(
     dry_run: bool = False,
     timeout_seconds: int = 120,
     output_name: str = "",
+    cancel_requested: bool = False,
 ) -> MediaCommandExecutionResult:
     return execute_media_command(
         tool="yt-dlp",
@@ -325,5 +514,5 @@ def execute_yt_dlp_command(
         dry_run=dry_run,
         timeout_seconds=timeout_seconds,
         output_name=output_name,
+        cancel_requested=cancel_requested,
     )
-
