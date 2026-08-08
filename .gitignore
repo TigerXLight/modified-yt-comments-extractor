@@ -1,6 +1,7 @@
 # Python / virtual environment
 venv/
 ENV/
+.playwright-browsers/
 __pycache__/
 *.py[cod]
 *.pyo

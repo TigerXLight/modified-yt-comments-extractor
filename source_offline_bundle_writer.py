@@ -111,6 +111,7 @@ def write_offline_evidence_bundle(
     selected_media_metadata: Sequence[Mapping[str, Any]] = (),
     archive_results: Sequence[Mapping[str, Any]] = (),
     screenshot_paths: Sequence[str | Path] = (),
+    no_live_capture_performed: bool = True,
 ) -> OfflineEvidenceBundleWriteResult:
     output_path = Path(output_zip_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,7 +133,7 @@ def write_offline_evidence_bundle(
             "viewer_manifest.json",
             "index.html",
         ],
-        "no_live_capture_performed": True,
+        "no_live_capture_performed": bool(no_live_capture_performed),
         "user_review_required": True,
     }
     provenance = {
@@ -192,4 +193,3 @@ def write_offline_evidence_bundle(
         size_bytes=output_path.stat().st_size,
         entries=tuple(entries),
     )
-

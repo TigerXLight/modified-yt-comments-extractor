@@ -13,3 +13,5 @@ python-vlc==3.0.21203
 elevenlabs>=2.58.0,<3
 tkinterdnd2==0.6.2
 webrtcvad-wheels==2.0.14
+playwright==1.54.0
+warcio==1.7.5

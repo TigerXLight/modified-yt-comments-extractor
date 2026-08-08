@@ -4983,6 +4983,7 @@ class App(ctk.CTk):
             details = [
                 "Local Web Archive",
                 "Default backend: built-in WARC/WACZ + local evidence bundle",
+                "Actions: Capture locally, Open archive, Show files, Verify",
                 "External viewer: ReplayWeb.page compatible when configured",
                 "ArchiveBox backend: optional advanced backend",
                 "Files written by status preview: none",

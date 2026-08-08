@@ -8,7 +8,7 @@ from pathlib import Path
 from source_msn_vertical_live_validation import (
     DEFAULT_MSN_VERTICAL_URL,
     STATUS_BLOCKED,
-    STATUS_LIVE_SITE_MANUALLY_TESTED,
+    STATUS_STATIC_HTTP_LIVE_TESTED,
     HttpFetchResult,
     run_msn_vertical_live_validation,
 )
@@ -89,8 +89,8 @@ def test_msn_vertical_validation_writes_local_archive_bundle_and_manifest() -> N
         manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
 
         assert result.source_url == DEFAULT_MSN_VERTICAL_URL
-        assert result.status_matrix["source_identification"] == STATUS_LIVE_SITE_MANUALLY_TESTED
-        assert result.status_matrix["local_web_archive"] == STATUS_LIVE_SITE_MANUALLY_TESTED
+        assert result.status_matrix["source_identification"] == STATUS_STATIC_HTTP_LIVE_TESTED
+        assert result.status_matrix["local_web_archive"] == "LOCAL_PACKAGE_STRUCTURALLY_VERIFIED"
         assert result.status_matrix["faithful_screenshot"] == STATUS_BLOCKED
         assert manifest["summary"]["live_actions"]["wayback_submit_performed"] is False
         assert manifest["summary"]["local_web_archive"]["local_web_archive_default"] is True

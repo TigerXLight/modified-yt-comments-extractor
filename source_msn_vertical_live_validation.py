@@ -49,6 +49,7 @@ DEFAULT_MSN_VERTICAL_URL = (
 )
 
 STATUS_ALREADY_IMPLEMENTED_AND_TESTED = "ALREADY_IMPLEMENTED_AND_TESTED"
+STATUS_STATIC_HTTP_LIVE_TESTED = "STATIC_HTTP_LIVE_TESTED"
 STATUS_LIVE_SITE_MANUALLY_TESTED = "LIVE_SITE_MANUALLY_TESTED"
 STATUS_PARTIAL = "PARTIAL"
 STATUS_BLOCKED = "BLOCKED"
@@ -346,7 +347,7 @@ def _download_selected_resource(
                 "sha256": artifact.sha256,
                 "size_bytes": artifact.size_bytes,
                 "source_url": url,
-                "status": STATUS_LIVE_SITE_MANUALLY_TESTED,
+                "status": STATUS_STATIC_HTTP_LIVE_TESTED,
             },
             artifact,
         )
@@ -394,7 +395,7 @@ def _wayback_check(
             "snapshot_status": closest.get("status") if isinstance(closest, dict) else "",
             "snapshot_timestamp": closest.get("timestamp") if isinstance(closest, dict) else "",
             "snapshot_url": closest.get("url") if isinstance(closest, dict) else "",
-            "status": STATUS_LIVE_SITE_MANUALLY_TESTED,
+            "status": STATUS_STATIC_HTTP_LIVE_TESTED,
             "submission_performed": False,
         },
         raw,
@@ -487,7 +488,7 @@ def _build_archive_artifacts(
         "archivebox_optional_advanced_backend": True,
         "bundle": bundle_result.to_dict(),
         "local_web_archive_default": True,
-        "status": STATUS_LIVE_SITE_MANUALLY_TESTED,
+        "status": "LOCAL_PACKAGE_STRUCTURALLY_VERIFIED",
         "viewer_status": viewer_status,
         "warc": warc_result.to_dict(),
         "wacz": wacz_result.to_dict(),
@@ -732,13 +733,13 @@ def run_msn_vertical_live_validation(
     )
 
     status_matrix = {
-        "source_identification": STATUS_LIVE_SITE_MANUALLY_TESTED,
-        "article_text_extraction": STATUS_LIVE_SITE_MANUALLY_TESTED if article.text else STATUS_PARTIAL,
-        "visible_page_outline": STATUS_LIVE_SITE_MANUALLY_TESTED if outline.outline_lines else STATUS_PARTIAL,
+        "source_identification": STATUS_STATIC_HTTP_LIVE_TESTED,
+        "article_text_extraction": STATUS_STATIC_HTTP_LIVE_TESTED if article.text else STATUS_PARTIAL,
+        "visible_page_outline": STATUS_STATIC_HTTP_LIVE_TESTED if outline.outline_lines else STATUS_PARTIAL,
         "faithful_screenshot": STATUS_BLOCKED,
         "derived_screenshot": STATUS_BLOCKED,
         "comments_shadow_dom": comments_status,
-        "resource_inventory": STATUS_LIVE_SITE_MANUALLY_TESTED if media_rows else STATUS_PARTIAL,
+        "resource_inventory": STATUS_STATIC_HTTP_LIVE_TESTED if media_rows else STATUS_PARTIAL,
         "representative_download": selected_download["status"],
         "wayback_check": wayback_result["status"],
         "wayback_submit": STATUS_N_A,

@@ -794,6 +794,7 @@ def test_archivebox_icon_and_service_order_are_local_only() -> None:
     assert "archive_status.service_id != ARCHIVE_SERVICE_ARCHIVEBOX" in source
     assert "Local Web Archive" in popup
     assert "built-in WARC/WACZ + local evidence bundle" in popup
+    assert "Capture locally, Open archive, Show files, Verify" in popup
     assert "ArchiveBox optional advanced backend" in popup
     assert "ArchiveBox execution performed: none" in popup
     assert source.index("for archive_status in row.archive_statuses") < source.index('text="×"')
