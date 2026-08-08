@@ -914,3 +914,28 @@ No live site access, browser automation, MSN/X/Twitter/YouTube/API/archive/provi
 - Selector approval packets group current selector-audit-required rows, generate manual smoke checklist rows, and emit `not_live_executed` receipts. Generic comments site-specific selector remains `selector_audit_required` / `live_approved_only`.
 - Existing main/source UI tests verify the app save/preview path exposes database review, source-record review, and selector approval counts through the real workflow state without layout churn.
 - Boundary remains unchanged: no live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider/ASR calls, credentials/cookies/accounts, evidence file moves, completed-evidence claims, protected-attribute inference, or automatic classification.
+
+## Named-Site Source Method Pack Handoff
+
+- Current status: NAMED_SITE_SOURCE_METHOD_PACKS_BUILT.
+- Implementation commits: `18d3e90`, `c1c2e17`, `6859149`, `3a9b2d3`, `8209f69`, and `b3cd8f8`; documentation is recorded separately after those implementation commits.
+- New module and tests: `source_named_site_method_packs.py`, `source_named_site_method_packs_test.py`.
+- New Source Evidence workflow review sidecar: `source_named_site_method_packs.json`.
+- Workflow/store/export integration:
+  - Evidence Database review scans include named-site method pack index records.
+  - Database review view-model includes named-site method pack rows and selector-audit-required counts.
+  - Source-record review includes pack reference-bucket summaries.
+  - Selector approval packet collection links pack summary metadata.
+  - Adapter audit report and named-site priority plan include named-site pack summaries.
+  - Total Export/review manifest includes a pathless Named-site source method pack metadata asset.
+  - Existing main/source UI save-preview path reports pack counts and saves the new sidecar.
+
+| Pack group | Count | State |
+| --- | ---: | --- |
+| MSN article/comments | 2 | metadata_audit_ready / not_live_executed |
+| X/Twitter public/reply archive-manual | 2 | metadata_audit_ready / not_live_executed |
+| YouTube media-transcript/comments | 2 | metadata_audit_ready / not_live_executed |
+| Generic/archive methods | 5 | four metadata_audit_ready, one selector_audit_required / live_approved_only |
+
+- Remaining selector/live boundary: `generic_comments_site_specific_selector` remains selector_audit_required / live_approved_only; named-site selector audit and live/manual smoke require separate operator approval, exact source inputs, and later receipts.
+- Boundaries confirmed: no live site, browser automation, MSN/X/Twitter/YouTube/API/archive/provider/ASR calls, credentials/cookies/accounts, evidence file movement, completed-evidence claims, automatic classification, or protected-attribute inference.

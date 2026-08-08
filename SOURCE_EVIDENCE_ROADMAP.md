@@ -1034,3 +1034,33 @@ Status: DATABASE_REVIEW_UI_SOURCE_METHOD_AUDIT_WORKFLOW_BUILT.
 | Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
 
 No live site access, browser automation, network/archive/API/provider/ASR calls, credential/cookie/account use, broad scans, evidence file movement, completed-evidence claims, protected-attribute inference, or automatic classification occurred.
+
+## Named-Site Source Method Pack Milestone
+
+Status: NAMED_SITE_SOURCE_METHOD_PACKS_BUILT.
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| Named-site source method pack model | Done | `source_named_site_method_packs.py` models pack IDs, site/profile, method profile, selector/manual/archive strategy, artifacts, mappings, approvals, blockers, and not-live-executed state. |
+| MSN source method packs | Done | MSN article and MSN shadow-DOM comments packs include Android/Firefox RDM notes, `social-comment-wc`, `.overlay-container`, manual operator receipt path, article/comment/screenshot/archive/manual refs. |
+| X/Twitter source method packs | Done | Public post and reply-thread archive/manual packs include original URL/post/thread-boundary metadata expectations and archive fallback providers. |
+| YouTube source method packs | Done | Media/transcript and comments packs include video ID/URL, transcript/media/comment refs, and explicit no yt-dlp/FFmpeg/ASR/API/download execution. |
+| Generic/archive packs | Done | Generic article HTML, generic comments manual/import, generic comments site-specific selector, generic comments archive-only import, and archive-only import packs are concrete metadata rows. |
+| Workflow/store/export/UI bridge | Done | Added pack index records, database review rows, source-record pack summaries, selector packet summaries, audit report/priority summaries, `source_named_site_method_packs.json`, pathless Total Export metadata, and app preview/save assertions. |
+| Documentation | Done | Current state, handoff, roadmap, and coverage audit record the sidecar, commits, counts, and boundaries. |
+
+| Named-site method pack | Current state | Remaining boundary |
+| --- | --- | --- |
+| MSN article | metadata_audit_ready | Live/manual named-site smoke remains approval-gated. |
+| MSN shadow-DOM comments | metadata_audit_ready | Live shadow-DOM selector execution remains approval-gated. |
+| X/Twitter public post archive/manual import | metadata_audit_ready | No live X/Twitter/API/browser/archive provider execution. |
+| X/Twitter reply-thread archive/manual import | metadata_audit_ready | Thread live/manual audit remains approval-gated. |
+| YouTube media/transcript | metadata_audit_ready | No YouTube runtime/API/yt-dlp/FFmpeg/ASR/download execution. |
+| YouTube comments | metadata_audit_ready | Existing-output status/count metadata only. |
+| Generic article HTML | metadata_audit_ready | Named-site live capture remains approval-gated. |
+| Generic comments manual/import | metadata_audit_ready | Manual/local import and archive review only. |
+| Generic comments site-specific selector | selector_audit_required / live_approved_only | Named-site selector audit before live comment capture. |
+| Generic comments archive-only import | metadata_audit_ready | Operator-supplied archive metadata only. |
+| Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
+
+No live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider/ASR calls, credentials/cookies/accounts, evidence file moves, completed-evidence claims, automatic classification, or protected-attribute inference occurred.

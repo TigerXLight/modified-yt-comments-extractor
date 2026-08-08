@@ -1192,3 +1192,27 @@ Next implementation work should connect this closeout to concrete release-sectio
 - Generic comments site-specific selector remains `selector_audit_required` / `live_approved_only`; selector approval packets and manual smoke checklist rows are ready for future operator approval but record `not_live_executed` receipts now.
 - App/source workflow summary text and bundle save path expose database review counts, source-record review counts, selector approval packet counts, and no-live-execution status without layout churn or live controls.
 - Remaining boundary: named-site selector audit/live smoke execution still requires explicit operator approval, named source URLs/scopes, and later receipts. No live/browser/network/archive/API/provider/ASR/file-move execution occurred.
+
+## Named-Site Source Method Pack Closeout
+
+- Status: NAMED_SITE_SOURCE_METHOD_PACKS_BUILT.
+- Implementation commits: `18d3e90` named-site pack model/tests; `c1c2e17` MSN article and MSN shadow-DOM comments packs; `6859149` X/Twitter public-post and reply-thread archive/manual packs; `3a9b2d3` YouTube media/transcript and comments packs; `8209f69` generic article/comment/archive-only packs; `b3cd8f8` workflow/store/export/UI bridge.
+- Added durable `source_named_site_method_packs.py` and `source_named_site_method_packs_test.py`; Source Evidence workflow review bundles now write `source_named_site_method_packs.json`.
+- Total Export/review manifests include a pathless Named-site source method pack metadata asset. Database review scans include named-site pack records, source-record review summarizes pack reference buckets, selector approval packets link pack summaries, and app/source workflow preview shows pack counts.
+- Pack coverage remains MODEL_ONLY / LOCAL_FIXTURE_TESTED / UI_SCAFFOLD_ONLY / USER_REVIEW_REQUIRED / APPROVAL_REQUIRED / NOT_LIVE_EXECUTED.
+
+| Named-site method pack | Status | Remaining boundary |
+| --- | --- | --- |
+| MSN article | metadata_audit_ready | Live/manual named-site smoke requires explicit approval. |
+| MSN shadow-DOM comments | metadata_audit_ready | Live shadow-DOM selector execution remains approval-gated. |
+| X/Twitter public post archive/manual import | metadata_audit_ready | No X/Twitter live/API/browser/archive execution approved. |
+| X/Twitter reply-thread archive/manual import | metadata_audit_ready | Reply/thread live audit remains approval-gated. |
+| YouTube media/transcript | metadata_audit_ready | No yt-dlp, FFmpeg, ASR, YouTube runtime, API, or download execution. |
+| YouTube comments | metadata_audit_ready | Existing-output/status metadata only; no YouTube runtime/API call. |
+| Generic article HTML | metadata_audit_ready | Named-site live capture remains approval-gated. |
+| Generic comments manual/import | metadata_audit_ready | Manual/import/archive review only; universal selectors not claimed. |
+| Generic comments site-specific selector | selector_audit_required / live_approved_only | Named-site selector audit and explicit live approval required. |
+| Generic comments archive-only import | metadata_audit_ready | Operator-supplied archive metadata only. |
+| Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
+
+- No live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider/ASR calls, credentials/cookies/accounts, evidence file moves, completed-evidence claims, automatic classification, or protected-attribute inference occurred.

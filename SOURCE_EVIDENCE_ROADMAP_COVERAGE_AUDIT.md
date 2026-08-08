@@ -517,3 +517,39 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 | Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
 
 - Boundaries confirmed: no live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider/ASR calls, credentials/cookies/accounts, broad folder scans, evidence file moves, completed-evidence claims, automatic classification, or protected-attribute inference.
+
+## Named-Site Source Method Pack Coverage
+
+- Coverage marker: NAMED_SITE_SOURCE_METHOD_PACKS_BUILT.
+- Coverage labels: MODEL_ONLY / LOCAL_FIXTURE_TESTED / UI_SCAFFOLD_ONLY / USER_REVIEW_REQUIRED / APPROVAL_REQUIRED / NOT_LIVE_EXECUTED / SELECTOR_AUDIT_REQUIRED / LIVE_APPROVED_ONLY.
+- Added tests for the named-site pack collection, MSN/X/Twitter/YouTube/generic/archive pack accessors, deterministic JSON, selector approval packet linkage, database review pack rows, source-record pack summaries, workflow/store/export sidecar persistence, manifest inclusion, and main source UI preview/save path.
+- New sidecar: `source_named_site_method_packs.json`.
+
+| Coverage area | State | Remaining gap |
+| --- | --- | --- |
+| Named-site pack model | Done | Live/runtime execution remains separately approval-gated. |
+| MSN article/comments packs | Done | No live MSN browser/shadow-DOM execution. |
+| X/Twitter public/reply packs | Done | No X/Twitter live/API/browser/archive provider calls. |
+| YouTube media/transcript/comments packs | Done | No YouTube runtime/API/yt-dlp/FFmpeg/ASR/download execution. |
+| Generic/archive packs | Done | Generic comments site-specific selector remains selector_audit_required / live_approved_only. |
+| Evidence Database review integration | Done | Pack rows are metadata-only scan/review rows; no broad scans or file checks. |
+| Source-record review integration | Done | Pack reference-bucket summaries only; no raw payloads or completed-evidence claims. |
+| Selector approval integration | Done | Packet summaries link packs; approval remains required before live work. |
+| Workflow/store/export/UI bridge | Done | Sidecar and pathless manifest metadata are saved through the real workflow path. |
+| Documentation | Done | Four roadmap/current-state documents record commits, sidecar, counts, and boundaries. |
+
+| Named-site method pack | Coverage state | Not done |
+| --- | --- | --- |
+| MSN article | metadata_audit_ready | No live/manual named-site execution. |
+| MSN shadow-DOM comments | metadata_audit_ready | No live selector run. |
+| X/Twitter public post archive/manual import | metadata_audit_ready | No live X/Twitter/API/browser/archive execution. |
+| X/Twitter reply-thread archive/manual import | metadata_audit_ready | No live thread capture. |
+| YouTube media/transcript | metadata_audit_ready | No YouTube runtime/API/ASR/download execution. |
+| YouTube comments | metadata_audit_ready | No YouTube runtime/API call. |
+| Generic article HTML | metadata_audit_ready | No live named-site article capture. |
+| Generic comments manual/import | metadata_audit_ready | No universal selector claim. |
+| Generic comments site-specific selector | selector_audit_required / live_approved_only | Named-site selector audit and explicit live approval required. |
+| Generic comments archive-only import | metadata_audit_ready | Operator-supplied archive metadata only. |
+| Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
+
+- Boundaries confirmed: no live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider/ASR calls, credentials/cookies/accounts, broad folder scans, evidence file moves, completed-evidence claims, automatic classification, or protected-attribute inference.
