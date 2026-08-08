@@ -1,0 +1,7 @@
+from source_adapter_evidence_claim_link_runtime import example_source_adapter_evidence_claim_link_runtime_package
+from source_adapter_evidence_claim_link_runtime_verifier import verify_source_adapter_evidence_claim_link_runtime_package
+
+verification = verify_source_adapter_evidence_claim_link_runtime_package(example_source_adapter_evidence_claim_link_runtime_package())
+assert verification["verified"], verification
+assert verification["issue_count"] == 0, verification
+print("Source Adapter Evidence Claim Link Runtime verifier self-test passed.")
