@@ -79,6 +79,13 @@ from source_manual_smoke_checklists import (
     SourceManualSmokeChecklistCollection,
     build_source_manual_smoke_checklist_collection,
 )
+from source_operational_capture_runtime import build_fixture_operational_capture_runtime_bundle
+from source_fixture_capture_results import build_fixture_capture_result_bundle
+from source_media_archive_runtime import build_fixture_media_archive_runtime_bundle
+from evidence_movement_approval import build_default_evidence_movement_plan
+from evidence_database_recognition_plan import build_default_database_recognition_plan
+from source_url_files_bridge import build_default_source_url_files_bridge_state
+from source_behavior_provenance_log import build_source_operational_behavior_log
 from source_site_method_audit_registry import (
     SourceSiteMethodAuditRegistry,
     build_source_site_method_audit_registry,
@@ -194,6 +201,28 @@ class SourceEvidenceWorkflowState:
     source_audit_dashboard_review_needed_count: int
     source_audit_dashboard_operator_command_pack_count: int
     source_audit_dashboard_manual_smoke_checklist_pack_count: int
+    source_operational_capture_runtime: Any
+    source_operational_capture_runtime_id: str
+    source_operational_fixture_count: int
+    source_fixture_capture_results: Any
+    source_article_capture_result_count: int
+    source_screenshot_capture_result_count: int
+    source_comments_capture_result_count: int
+    source_livechat_capture_result_count: int
+    source_media_archive_runtime: Any
+    source_media_discovery_result_count: int
+    source_archive_provider_result_count: int
+    source_archivebox_command_plan_count: int
+    source_evidence_movement_plan: Any
+    source_evidence_movement_plan_id: str
+    source_database_recognition_plan: Any
+    source_database_recognition_plan_status: str
+    source_url_files_bridge_state: Any
+    source_url_files_bridge_id: str
+    source_url_files_bridge_files_row_count: int
+    source_behavior_provenance_log: Any
+    source_behavior_provenance_log_id: str
+    source_behavior_provenance_entry_count: int
     release_readiness: SourceEvidenceReleaseReadiness
     release_readiness_id: str
     release_target_count: int
@@ -303,6 +332,21 @@ class SourceEvidenceWorkflowState:
                 f"Manual smoke checklist rows: {self.source_manual_smoke_checklist_row_count}",
                 f"Source audit dashboard: {self.source_audit_dashboard_state_id}",
                 f"Source audit dashboard review-needed count: {self.source_audit_dashboard_review_needed_count}",
+                f"Operational capture runtime: {self.source_operational_capture_runtime_id}",
+                f"Operational fixture count: {self.source_operational_fixture_count}",
+                f"Article capture result count: {self.source_article_capture_result_count}",
+                f"Screenshot capture result count: {self.source_screenshot_capture_result_count}",
+                f"Comments capture result count: {self.source_comments_capture_result_count}",
+                f"Livechat capture result count: {self.source_livechat_capture_result_count}",
+                f"Media discovery result count: {self.source_media_discovery_result_count}",
+                f"Archive provider result count: {self.source_archive_provider_result_count}",
+                f"ArchiveBox command plan count: {self.source_archivebox_command_plan_count}",
+                f"Evidence movement plan: {self.source_evidence_movement_plan_id}",
+                f"Database recognition status: {self.source_database_recognition_plan_status}",
+                f"Source URL/FILES bridge: {self.source_url_files_bridge_id}",
+                f"Source URL/FILES rows: {self.source_url_files_bridge_files_row_count}",
+                f"Behavior provenance log: {self.source_behavior_provenance_log_id}",
+                f"Behavior provenance entries: {self.source_behavior_provenance_entry_count}",
                 f"Release readiness: {self.release_readiness.release_status}",
                 f"Release targets: {self.release_target_count}",
                 f"Release action plan: {self.release_action_plan_id}",
@@ -445,6 +489,27 @@ def build_source_evidence_workflow_state(
         manual_smoke_checklists=source_manual_smoke_checklists,
         access_online_asr_bridge_summary=access_online_asr_bridge_summary,
     )
+    source_operational_capture_runtime = build_fixture_operational_capture_runtime_bundle(
+        source_url=plan.canonical_url,
+        canonical_url=plan.canonical_url,
+        created_at_utc=timestamp,
+        selected_source_methods=tuple(plan.selected_modes),
+    ).to_dict()
+    source_fixture_capture_results = build_fixture_capture_result_bundle(
+        source_url=plan.canonical_url,
+    ).to_dict()
+    source_media_archive_runtime = build_fixture_media_archive_runtime_bundle(
+        source_url=plan.canonical_url,
+    ).to_dict()
+    source_evidence_movement_plan = build_default_evidence_movement_plan()
+    source_database_recognition_plan = build_default_database_recognition_plan().to_dict()
+    source_url_files_bridge_state = build_default_source_url_files_bridge_state().to_dict()
+    source_behavior_provenance_log = build_source_operational_behavior_log(
+        session_id=plan.source_row_id,
+        source_url=plan.canonical_url,
+        timestamp_utc=timestamp,
+        movement_preview_ref=source_evidence_movement_plan["preview"]["movement_id"],
+    ).to_dict()
     source_named_site_priority_plan = build_source_named_site_priority_plan(
         source_site_method_audit_registry,
         database_review_workflow=source_database_review_workflow,
@@ -471,6 +536,18 @@ def build_source_evidence_workflow_state(
             "source_operator_command_packs.json",
             "source_manual_smoke_checklists.json",
             "source_audit_dashboard_state.json",
+            "source_operational_capture_runtime.json",
+            "source_article_capture_results.json",
+            "source_screenshot_capture_results.json",
+            "source_comments_capture_results.json",
+            "source_livechat_capture_results.json",
+            "source_media_discovery_results.json",
+            "source_archive_provider_results.json",
+            "source_offline_bundle_plan.json",
+            "source_evidence_movement_plan.json",
+            "source_database_recognition_plan.json",
+            "source_url_files_bridge_state.json",
+            "source_behavior_provenance_log.json",
         ),
         database_review_workflow=source_database_review_workflow,
         source_record_review_workflow=source_record_review_workflow,
@@ -532,6 +609,13 @@ def build_source_evidence_workflow_state(
             "source_operator_command_packs": source_operator_command_packs.to_dict(),
             "source_manual_smoke_checklists": source_manual_smoke_checklists.to_dict(),
             "source_audit_dashboard_state": source_audit_dashboard_state.to_dict(),
+            "source_operational_capture_runtime": source_operational_capture_runtime,
+            "source_fixture_capture_results": source_fixture_capture_results,
+            "source_media_archive_runtime": source_media_archive_runtime,
+            "source_evidence_movement_plan": source_evidence_movement_plan,
+            "source_database_recognition_plan": source_database_recognition_plan,
+            "source_url_files_bridge_state": source_url_files_bridge_state,
+            "source_behavior_provenance_log": source_behavior_provenance_log,
             "grabbed_source_record": (
                 plan.grabbed_source_record.to_dict()
                 if plan.grabbed_source_record is not None
@@ -674,6 +758,28 @@ def build_source_evidence_workflow_state(
         source_audit_dashboard_manual_smoke_checklist_pack_count=int(
             source_audit_dashboard_state.summary.get("manual_smoke_checklist_pack_count", 0)
         ),
+        source_operational_capture_runtime=source_operational_capture_runtime,
+        source_operational_capture_runtime_id=source_operational_capture_runtime["bundle_id"],
+        source_operational_fixture_count=source_operational_capture_runtime["fixture_count"],
+        source_fixture_capture_results=source_fixture_capture_results,
+        source_article_capture_result_count=1,
+        source_screenshot_capture_result_count=source_fixture_capture_results["screenshot_result_count"],
+        source_comments_capture_result_count=source_fixture_capture_results["comment_count"],
+        source_livechat_capture_result_count=source_fixture_capture_results["livechat_event_count"],
+        source_media_archive_runtime=source_media_archive_runtime,
+        source_media_discovery_result_count=source_media_archive_runtime["discovered_resource_count"],
+        source_archive_provider_result_count=source_media_archive_runtime["archive_provider_result_count"],
+        source_archivebox_command_plan_count=source_media_archive_runtime["archivebox_command_plan_count"],
+        source_evidence_movement_plan=source_evidence_movement_plan,
+        source_evidence_movement_plan_id=source_evidence_movement_plan["plan_id"],
+        source_database_recognition_plan=source_database_recognition_plan,
+        source_database_recognition_plan_status=source_database_recognition_plan["status"],
+        source_url_files_bridge_state=source_url_files_bridge_state,
+        source_url_files_bridge_id=source_url_files_bridge_state["bridge_id"],
+        source_url_files_bridge_files_row_count=source_url_files_bridge_state["files_row_count"],
+        source_behavior_provenance_log=source_behavior_provenance_log,
+        source_behavior_provenance_log_id=source_behavior_provenance_log["log_id"],
+        source_behavior_provenance_entry_count=source_behavior_provenance_log["entry_count"],
         release_readiness=release_readiness,
         release_readiness_id=release_readiness.release_readiness_id,
         release_target_count=release_readiness.target_count,

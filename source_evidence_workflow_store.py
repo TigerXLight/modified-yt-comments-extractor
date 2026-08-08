@@ -84,6 +84,18 @@ SOURCE_SELECTOR_APPROVAL_PACKETS_FILENAME = "source_selector_approval_packets.js
 SOURCE_OPERATOR_COMMAND_PACKS_FILENAME = "source_operator_command_packs.json"
 SOURCE_MANUAL_SMOKE_CHECKLISTS_FILENAME = "source_manual_smoke_checklists.json"
 SOURCE_AUDIT_DASHBOARD_STATE_FILENAME = "source_audit_dashboard_state.json"
+SOURCE_OPERATIONAL_CAPTURE_RUNTIME_FILENAME = "source_operational_capture_runtime.json"
+SOURCE_ARTICLE_CAPTURE_RESULTS_FILENAME = "source_article_capture_results.json"
+SOURCE_SCREENSHOT_CAPTURE_RESULTS_FILENAME = "source_screenshot_capture_results.json"
+SOURCE_COMMENTS_CAPTURE_RESULTS_FILENAME = "source_comments_capture_results.json"
+SOURCE_LIVECHAT_CAPTURE_RESULTS_FILENAME = "source_livechat_capture_results.json"
+SOURCE_MEDIA_DISCOVERY_RESULTS_FILENAME = "source_media_discovery_results.json"
+SOURCE_ARCHIVE_PROVIDER_RESULTS_FILENAME = "source_archive_provider_results.json"
+SOURCE_OFFLINE_BUNDLE_PLAN_FILENAME = "source_offline_bundle_plan.json"
+SOURCE_EVIDENCE_MOVEMENT_PLAN_FILENAME = "source_evidence_movement_plan.json"
+SOURCE_DATABASE_RECOGNITION_PLAN_FILENAME = "source_database_recognition_plan.json"
+SOURCE_URL_FILES_BRIDGE_STATE_FILENAME = "source_url_files_bridge_state.json"
+SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME = "source_behavior_provenance_log.json"
 BUNDLE_INDEX_FILENAME = "source_evidence_workflow_review_bundle.json"
 
 
@@ -172,6 +184,18 @@ class SourceEvidenceWorkflowStoreReadResult:
     source_operator_command_packs: Mapping[str, Any]
     source_manual_smoke_checklists: Mapping[str, Any]
     source_audit_dashboard_state: Mapping[str, Any]
+    source_operational_capture_runtime: Mapping[str, Any]
+    source_article_capture_results: Mapping[str, Any]
+    source_screenshot_capture_results: Mapping[str, Any]
+    source_comments_capture_results: Mapping[str, Any]
+    source_livechat_capture_results: Mapping[str, Any]
+    source_media_discovery_results: Mapping[str, Any]
+    source_archive_provider_results: Mapping[str, Any]
+    source_offline_bundle_plan: Mapping[str, Any]
+    source_evidence_movement_plan: Mapping[str, Any]
+    source_database_recognition_plan: Mapping[str, Any]
+    source_url_files_bridge_state: Mapping[str, Any]
+    source_behavior_provenance_log: Mapping[str, Any]
     schema_version: str = SOURCE_EVIDENCE_WORKFLOW_STORE_SCHEMA_VERSION
     metadata_file_read_performed: bool = True
     evidence_file_read_performed: bool = False
@@ -396,6 +420,71 @@ def write_source_evidence_workflow_review_bundle(
     )
     source_audit_dashboard_state = state.source_audit_dashboard_state.to_dict()
     source_audit_dashboard_state_json = _stable_json(source_audit_dashboard_state, pretty=True)
+    source_operational_capture_runtime = _value_for_dict(state.source_operational_capture_runtime)
+    source_operational_capture_runtime_json = _stable_json(source_operational_capture_runtime, pretty=True)
+    source_article_capture_results = {
+        "schema_version": "source_article_capture_results_v1",
+        "article_result": state.source_fixture_capture_results["article_result"],
+        "page_outline_result": state.source_fixture_capture_results["page_outline_result"],
+        "no_live_execution": True,
+    }
+    source_article_capture_results_json = _stable_json(source_article_capture_results, pretty=True)
+    source_screenshot_capture_results = {
+        "schema_version": "source_screenshot_capture_results_v1",
+        "screenshot_results": state.source_fixture_capture_results["screenshot_results"],
+        "screenshots_taken": False,
+        "no_live_execution": True,
+    }
+    source_screenshot_capture_results_json = _stable_json(source_screenshot_capture_results, pretty=True)
+    source_comments_capture_results = {
+        "schema_version": "source_comments_capture_results_v1",
+        "comments_result": state.source_fixture_capture_results["comments_result"],
+        "virtualized_comment_checkpoint": state.source_fixture_capture_results[
+            "virtualized_comment_checkpoint"
+        ],
+        "encoded_payload_results": state.source_fixture_capture_results["encoded_payload_results"],
+        "challenge_states": state.source_fixture_capture_results["challenge_states"],
+        "no_live_execution": True,
+    }
+    source_comments_capture_results_json = _stable_json(source_comments_capture_results, pretty=True)
+    source_livechat_capture_results = {
+        "schema_version": "source_livechat_capture_results_v1",
+        "livechat_result": state.source_fixture_capture_results["livechat_result"],
+        "screenshots_default_on": False,
+        "no_live_execution": True,
+    }
+    source_livechat_capture_results_json = _stable_json(source_livechat_capture_results, pretty=True)
+    source_media_discovery_results = {
+        "schema_version": "source_media_discovery_results_v1",
+        "media_discovery_result": state.source_media_archive_runtime["media_discovery_result"],
+        "mux_plan": state.source_media_archive_runtime["mux_plan"],
+        "rendered_citation_plan": state.source_media_archive_runtime["rendered_citation_plan"],
+        "protected_output_result": state.source_media_archive_runtime["protected_output_result"],
+        "no_download_or_mux_execution": True,
+    }
+    source_media_discovery_results_json = _stable_json(source_media_discovery_results, pretty=True)
+    source_archive_provider_results = {
+        "schema_version": "source_archive_provider_results_v1",
+        "archive_provider_results": state.source_media_archive_runtime["archive_provider_results"],
+        "provider_call_performed": False,
+        "submission_performed": False,
+    }
+    source_archive_provider_results_json = _stable_json(source_archive_provider_results, pretty=True)
+    source_offline_bundle_plan = {
+        "schema_version": "source_offline_bundle_plan_v1",
+        "offline_bundle_plan": state.source_media_archive_runtime["offline_bundle_plan"],
+        "archivebox_command_plans": state.source_media_archive_runtime["archivebox_command_plans"],
+        "archivebox_executed": False,
+    }
+    source_offline_bundle_plan_json = _stable_json(source_offline_bundle_plan, pretty=True)
+    source_evidence_movement_plan = _value_for_dict(state.source_evidence_movement_plan)
+    source_evidence_movement_plan_json = _stable_json(source_evidence_movement_plan, pretty=True)
+    source_database_recognition_plan = _value_for_dict(state.source_database_recognition_plan)
+    source_database_recognition_plan_json = _stable_json(source_database_recognition_plan, pretty=True)
+    source_url_files_bridge_state = _value_for_dict(state.source_url_files_bridge_state)
+    source_url_files_bridge_state_json = _stable_json(source_url_files_bridge_state, pretty=True)
+    source_behavior_provenance_log = _value_for_dict(state.source_behavior_provenance_log)
+    source_behavior_provenance_log_json = _stable_json(source_behavior_provenance_log, pretty=True)
     review_manifest = build_source_evidence_review_manifest_with_workflow_state(
         state.review_manifest,
         workflow_state_metadata=state.to_dict(),
@@ -411,6 +500,18 @@ def write_source_evidence_workflow_review_bundle(
         source_operator_command_packs_metadata=source_operator_command_packs,
         source_manual_smoke_checklists_metadata=source_manual_smoke_checklists,
         source_audit_dashboard_state_metadata=source_audit_dashboard_state,
+        source_operational_capture_runtime_metadata=source_operational_capture_runtime,
+        source_article_capture_results_metadata=source_article_capture_results,
+        source_screenshot_capture_results_metadata=source_screenshot_capture_results,
+        source_comments_capture_results_metadata=source_comments_capture_results,
+        source_livechat_capture_results_metadata=source_livechat_capture_results,
+        source_media_discovery_results_metadata=source_media_discovery_results,
+        source_archive_provider_results_metadata=source_archive_provider_results,
+        source_offline_bundle_plan_metadata=source_offline_bundle_plan,
+        source_evidence_movement_plan_metadata=source_evidence_movement_plan,
+        source_database_recognition_plan_metadata=source_database_recognition_plan,
+        source_url_files_bridge_state_metadata=source_url_files_bridge_state,
+        source_behavior_provenance_log_metadata=source_behavior_provenance_log,
     )
     review_manifest_json = source_evidence_review_manifest_to_json(review_manifest)
     queue_review_store = state.queue_review_store_document.to_dict()
@@ -481,6 +582,18 @@ def write_source_evidence_workflow_review_bundle(
             SOURCE_AUDIT_DASHBOARD_STATE_FILENAME,
             source_audit_dashboard_state_json,
         ),
+        _stored_file("source_operational_capture_runtime", SOURCE_OPERATIONAL_CAPTURE_RUNTIME_FILENAME, source_operational_capture_runtime_json),
+        _stored_file("source_article_capture_results", SOURCE_ARTICLE_CAPTURE_RESULTS_FILENAME, source_article_capture_results_json),
+        _stored_file("source_screenshot_capture_results", SOURCE_SCREENSHOT_CAPTURE_RESULTS_FILENAME, source_screenshot_capture_results_json),
+        _stored_file("source_comments_capture_results", SOURCE_COMMENTS_CAPTURE_RESULTS_FILENAME, source_comments_capture_results_json),
+        _stored_file("source_livechat_capture_results", SOURCE_LIVECHAT_CAPTURE_RESULTS_FILENAME, source_livechat_capture_results_json),
+        _stored_file("source_media_discovery_results", SOURCE_MEDIA_DISCOVERY_RESULTS_FILENAME, source_media_discovery_results_json),
+        _stored_file("source_archive_provider_results", SOURCE_ARCHIVE_PROVIDER_RESULTS_FILENAME, source_archive_provider_results_json),
+        _stored_file("source_offline_bundle_plan", SOURCE_OFFLINE_BUNDLE_PLAN_FILENAME, source_offline_bundle_plan_json),
+        _stored_file("source_evidence_movement_plan", SOURCE_EVIDENCE_MOVEMENT_PLAN_FILENAME, source_evidence_movement_plan_json),
+        _stored_file("source_database_recognition_plan", SOURCE_DATABASE_RECOGNITION_PLAN_FILENAME, source_database_recognition_plan_json),
+        _stored_file("source_url_files_bridge_state", SOURCE_URL_FILES_BRIDGE_STATE_FILENAME, source_url_files_bridge_state_json),
+        _stored_file("source_behavior_provenance_log", SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME, source_behavior_provenance_log_json),
     )
     result = build_source_evidence_workflow_store_result(state=state, files=files)
     result_json = source_evidence_workflow_store_result_to_json(result)
@@ -537,6 +650,18 @@ def write_source_evidence_workflow_review_bundle(
         output_root / SOURCE_AUDIT_DASHBOARD_STATE_FILENAME,
         source_audit_dashboard_state_json,
     )
+    _atomic_write_text(output_root / SOURCE_OPERATIONAL_CAPTURE_RUNTIME_FILENAME, source_operational_capture_runtime_json)
+    _atomic_write_text(output_root / SOURCE_ARTICLE_CAPTURE_RESULTS_FILENAME, source_article_capture_results_json)
+    _atomic_write_text(output_root / SOURCE_SCREENSHOT_CAPTURE_RESULTS_FILENAME, source_screenshot_capture_results_json)
+    _atomic_write_text(output_root / SOURCE_COMMENTS_CAPTURE_RESULTS_FILENAME, source_comments_capture_results_json)
+    _atomic_write_text(output_root / SOURCE_LIVECHAT_CAPTURE_RESULTS_FILENAME, source_livechat_capture_results_json)
+    _atomic_write_text(output_root / SOURCE_MEDIA_DISCOVERY_RESULTS_FILENAME, source_media_discovery_results_json)
+    _atomic_write_text(output_root / SOURCE_ARCHIVE_PROVIDER_RESULTS_FILENAME, source_archive_provider_results_json)
+    _atomic_write_text(output_root / SOURCE_OFFLINE_BUNDLE_PLAN_FILENAME, source_offline_bundle_plan_json)
+    _atomic_write_text(output_root / SOURCE_EVIDENCE_MOVEMENT_PLAN_FILENAME, source_evidence_movement_plan_json)
+    _atomic_write_text(output_root / SOURCE_DATABASE_RECOGNITION_PLAN_FILENAME, source_database_recognition_plan_json)
+    _atomic_write_text(output_root / SOURCE_URL_FILES_BRIDGE_STATE_FILENAME, source_url_files_bridge_state_json)
+    _atomic_write_text(output_root / SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME, source_behavior_provenance_log_json)
     _atomic_write_text(output_root / BUNDLE_INDEX_FILENAME, result_json)
     return result
 
@@ -590,6 +715,42 @@ def read_source_evidence_workflow_review_bundle(
     source_audit_dashboard_state = json.loads(
         (input_root / SOURCE_AUDIT_DASHBOARD_STATE_FILENAME).read_text(encoding="utf-8")
     )
+    source_operational_capture_runtime = json.loads(
+        (input_root / SOURCE_OPERATIONAL_CAPTURE_RUNTIME_FILENAME).read_text(encoding="utf-8")
+    )
+    source_article_capture_results = json.loads(
+        (input_root / SOURCE_ARTICLE_CAPTURE_RESULTS_FILENAME).read_text(encoding="utf-8")
+    )
+    source_screenshot_capture_results = json.loads(
+        (input_root / SOURCE_SCREENSHOT_CAPTURE_RESULTS_FILENAME).read_text(encoding="utf-8")
+    )
+    source_comments_capture_results = json.loads(
+        (input_root / SOURCE_COMMENTS_CAPTURE_RESULTS_FILENAME).read_text(encoding="utf-8")
+    )
+    source_livechat_capture_results = json.loads(
+        (input_root / SOURCE_LIVECHAT_CAPTURE_RESULTS_FILENAME).read_text(encoding="utf-8")
+    )
+    source_media_discovery_results = json.loads(
+        (input_root / SOURCE_MEDIA_DISCOVERY_RESULTS_FILENAME).read_text(encoding="utf-8")
+    )
+    source_archive_provider_results = json.loads(
+        (input_root / SOURCE_ARCHIVE_PROVIDER_RESULTS_FILENAME).read_text(encoding="utf-8")
+    )
+    source_offline_bundle_plan = json.loads(
+        (input_root / SOURCE_OFFLINE_BUNDLE_PLAN_FILENAME).read_text(encoding="utf-8")
+    )
+    source_evidence_movement_plan = json.loads(
+        (input_root / SOURCE_EVIDENCE_MOVEMENT_PLAN_FILENAME).read_text(encoding="utf-8")
+    )
+    source_database_recognition_plan = json.loads(
+        (input_root / SOURCE_DATABASE_RECOGNITION_PLAN_FILENAME).read_text(encoding="utf-8")
+    )
+    source_url_files_bridge_state = json.loads(
+        (input_root / SOURCE_URL_FILES_BRIDGE_STATE_FILENAME).read_text(encoding="utf-8")
+    )
+    source_behavior_provenance_log = json.loads(
+        (input_root / SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME).read_text(encoding="utf-8")
+    )
     if not isinstance(workflow_state, dict) or not isinstance(review_manifest, dict):
         raise ValueError("Source Evidence workflow bundle sidecars must be JSON objects")
     if not isinstance(release_readiness, dict):
@@ -634,6 +795,22 @@ def read_source_evidence_workflow_review_bundle(
     validate_source_manual_smoke_checklist_collection(source_manual_smoke_checklists)
     if not isinstance(source_audit_dashboard_state, dict):
         raise ValueError("Source Evidence audit dashboard state sidecar must be a JSON object")
+    for label, payload in (
+        ("operational capture runtime", source_operational_capture_runtime),
+        ("article capture results", source_article_capture_results),
+        ("screenshot capture results", source_screenshot_capture_results),
+        ("comments capture results", source_comments_capture_results),
+        ("livechat capture results", source_livechat_capture_results),
+        ("media discovery results", source_media_discovery_results),
+        ("archive provider results", source_archive_provider_results),
+        ("offline bundle plan", source_offline_bundle_plan),
+        ("evidence movement plan", source_evidence_movement_plan),
+        ("database recognition plan", source_database_recognition_plan),
+        ("URL/FILES bridge state", source_url_files_bridge_state),
+        ("behavior provenance log", source_behavior_provenance_log),
+    ):
+        if not isinstance(payload, dict):
+            raise ValueError(f"Source Evidence {label} sidecar must be a JSON object")
     return SourceEvidenceWorkflowStoreReadResult(
         bundle=bundle,
         workflow_state=workflow_state,
@@ -655,6 +832,18 @@ def read_source_evidence_workflow_review_bundle(
         source_operator_command_packs=source_operator_command_packs,
         source_manual_smoke_checklists=source_manual_smoke_checklists,
         source_audit_dashboard_state=source_audit_dashboard_state,
+        source_operational_capture_runtime=source_operational_capture_runtime,
+        source_article_capture_results=source_article_capture_results,
+        source_screenshot_capture_results=source_screenshot_capture_results,
+        source_comments_capture_results=source_comments_capture_results,
+        source_livechat_capture_results=source_livechat_capture_results,
+        source_media_discovery_results=source_media_discovery_results,
+        source_archive_provider_results=source_archive_provider_results,
+        source_offline_bundle_plan=source_offline_bundle_plan,
+        source_evidence_movement_plan=source_evidence_movement_plan,
+        source_database_recognition_plan=source_database_recognition_plan,
+        source_url_files_bridge_state=source_url_files_bridge_state,
+        source_behavior_provenance_log=source_behavior_provenance_log,
     )
 
 

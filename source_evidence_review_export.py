@@ -225,6 +225,18 @@ def build_source_evidence_review_manifest_with_workflow_state(
     source_operator_command_packs_metadata: Mapping[str, Any] | None = None,
     source_manual_smoke_checklists_metadata: Mapping[str, Any] | None = None,
     source_audit_dashboard_state_metadata: Mapping[str, Any] | None = None,
+    source_operational_capture_runtime_metadata: Mapping[str, Any] | None = None,
+    source_article_capture_results_metadata: Mapping[str, Any] | None = None,
+    source_screenshot_capture_results_metadata: Mapping[str, Any] | None = None,
+    source_comments_capture_results_metadata: Mapping[str, Any] | None = None,
+    source_livechat_capture_results_metadata: Mapping[str, Any] | None = None,
+    source_media_discovery_results_metadata: Mapping[str, Any] | None = None,
+    source_archive_provider_results_metadata: Mapping[str, Any] | None = None,
+    source_offline_bundle_plan_metadata: Mapping[str, Any] | None = None,
+    source_evidence_movement_plan_metadata: Mapping[str, Any] | None = None,
+    source_database_recognition_plan_metadata: Mapping[str, Any] | None = None,
+    source_url_files_bridge_state_metadata: Mapping[str, Any] | None = None,
+    source_behavior_provenance_log_metadata: Mapping[str, Any] | None = None,
 ) -> TotalExportManifest:
     """Return a manifest copy with a workflow-state metadata sidecar asset.
 
@@ -410,6 +422,95 @@ def build_source_evidence_review_manifest_with_workflow_state(
             )
         )
         capture_option_values.add("Source audit dashboard state metadata")
+    extra_sidecars: tuple[tuple[Mapping[str, Any] | None, str, str, str], ...] = (
+        (
+            source_operational_capture_runtime_metadata,
+            "Source operational capture runtime metadata",
+            "Source operational capture runtime sidecar: fixture-tested runtime/session status only.",
+            "Source operational capture runtime metadata sidecar included.",
+        ),
+        (
+            source_article_capture_results_metadata,
+            "Source article capture results metadata",
+            "Source article capture result sidecar: article extraction and page outline fixture results.",
+            "Source article capture results metadata sidecar included.",
+        ),
+        (
+            source_screenshot_capture_results_metadata,
+            "Source screenshot capture results metadata",
+            "Source screenshot result sidecar: faithful/derived/protected-output labels.",
+            "Source screenshot capture results metadata sidecar included.",
+        ),
+        (
+            source_comments_capture_results_metadata,
+            "Source comments capture results metadata",
+            "Source comments result sidecar: fixture-tested comments and virtualized-list metadata.",
+            "Source comments capture results metadata sidecar included.",
+        ),
+        (
+            source_livechat_capture_results_metadata,
+            "Source livechat capture results metadata",
+            "Source livechat result sidecar: text-first bounded fixture collection metadata.",
+            "Source livechat capture results metadata sidecar included.",
+        ),
+        (
+            source_media_discovery_results_metadata,
+            "Source media discovery results metadata",
+            "Source media discovery and mux planning sidecar: no download or FFmpeg/yt-dlp execution.",
+            "Source media discovery results metadata sidecar included.",
+        ),
+        (
+            source_archive_provider_results_metadata,
+            "Source archive provider results metadata",
+            "Source archive provider mock result sidecar: no live provider calls or submissions.",
+            "Source archive provider results metadata sidecar included.",
+        ),
+        (
+            source_offline_bundle_plan_metadata,
+            "Source offline bundle plan metadata",
+            "Source offline preservation and ArchiveBox planning sidecar: no ArchiveBox execution.",
+            "Source offline bundle plan metadata sidecar included.",
+        ),
+        (
+            source_evidence_movement_plan_metadata,
+            "Source evidence movement plan metadata",
+            "Source evidence movement approval sidecar: dry-run default and fixture-tested receipts only.",
+            "Source evidence movement plan metadata sidecar included.",
+        ),
+        (
+            source_database_recognition_plan_metadata,
+            "Source database recognition plan metadata",
+            "Source database recognition and migration preview sidecar: no automatic classification or moves.",
+            "Source database recognition plan metadata sidecar included.",
+        ),
+        (
+            source_url_files_bridge_state_metadata,
+            "Source URL/FILES bridge metadata",
+            "Source URL/media/FILES bridge sidecar: injection and download selections remain separate.",
+            "Source URL/FILES bridge metadata sidecar included.",
+        ),
+        (
+            source_behavior_provenance_log_metadata,
+            "Source behavior provenance log metadata",
+            "Source behavior/provenance hash-chain sidecar with redacted details.",
+            "Source behavior provenance log metadata sidecar included.",
+        ),
+    )
+    added_note_labels: list[str] = []
+    for metadata_value, capture_option, description, note_label in extra_sidecars:
+        if metadata_value is None:
+            continue
+        normalized = _value_for_dict(metadata_value)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_RAW_SIDECAR,
+                description=description,
+                metadata=normalized,
+                created_at_utc=manifest.created_at_utc,
+            )
+        )
+        capture_option_values.add(capture_option)
+        added_note_labels.append(note_label)
     capture_options = sorted(capture_option_values)
     notes = manifest.notes
     if "Source Evidence workflow state metadata sidecar included." not in notes:
@@ -498,6 +599,9 @@ def build_source_evidence_review_manifest_with_workflow_state(
         notes = (
             notes + "\n" if notes else ""
         ) + "Source audit dashboard state metadata sidecar included."
+    for note_label in added_note_labels:
+        if note_label not in notes:
+            notes = (notes + "\n" if notes else "") + note_label
     return TotalExportManifest(
         package_id=manifest.package_id,
         created_at_utc=manifest.created_at_utc,

@@ -23,6 +23,18 @@ from source_evidence_workflow_store import (
     SOURCE_SELECTOR_APPROVAL_PACKETS_FILENAME,
     SOURCE_MANUAL_SMOKE_CHECKLISTS_FILENAME,
     SOURCE_AUDIT_DASHBOARD_STATE_FILENAME,
+    SOURCE_OPERATIONAL_CAPTURE_RUNTIME_FILENAME,
+    SOURCE_ARTICLE_CAPTURE_RESULTS_FILENAME,
+    SOURCE_SCREENSHOT_CAPTURE_RESULTS_FILENAME,
+    SOURCE_COMMENTS_CAPTURE_RESULTS_FILENAME,
+    SOURCE_LIVECHAT_CAPTURE_RESULTS_FILENAME,
+    SOURCE_MEDIA_DISCOVERY_RESULTS_FILENAME,
+    SOURCE_ARCHIVE_PROVIDER_RESULTS_FILENAME,
+    SOURCE_OFFLINE_BUNDLE_PLAN_FILENAME,
+    SOURCE_EVIDENCE_MOVEMENT_PLAN_FILENAME,
+    SOURCE_DATABASE_RECOGNITION_PLAN_FILENAME,
+    SOURCE_URL_FILES_BRIDGE_STATE_FILENAME,
+    SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME,
     SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME,
     WORKFLOW_STATE_FILENAME,
     read_source_evidence_workflow_review_bundle,
@@ -84,10 +96,22 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
             SOURCE_OPERATOR_COMMAND_PACKS_FILENAME,
             SOURCE_MANUAL_SMOKE_CHECKLISTS_FILENAME,
             SOURCE_AUDIT_DASHBOARD_STATE_FILENAME,
+            SOURCE_OPERATIONAL_CAPTURE_RUNTIME_FILENAME,
+            SOURCE_ARTICLE_CAPTURE_RESULTS_FILENAME,
+            SOURCE_SCREENSHOT_CAPTURE_RESULTS_FILENAME,
+            SOURCE_COMMENTS_CAPTURE_RESULTS_FILENAME,
+            SOURCE_LIVECHAT_CAPTURE_RESULTS_FILENAME,
+            SOURCE_MEDIA_DISCOVERY_RESULTS_FILENAME,
+            SOURCE_ARCHIVE_PROVIDER_RESULTS_FILENAME,
+            SOURCE_OFFLINE_BUNDLE_PLAN_FILENAME,
+            SOURCE_EVIDENCE_MOVEMENT_PLAN_FILENAME,
+            SOURCE_DATABASE_RECOGNITION_PLAN_FILENAME,
+            SOURCE_URL_FILES_BRIDGE_STATE_FILENAME,
+            SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME,
         }
         expected_files = expected_sidecars | {BUNDLE_INDEX_FILENAME}
         assert {file.filename for file in result.files} == expected_sidecars
-        assert result.file_count == 19
+        assert result.file_count == 31
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_read_performed is False
         assert result.evidence_file_move_performed is False
@@ -180,6 +204,18 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
         assert loaded.source_audit_dashboard_state["schema_version"] == "source_review_panel_state_v1"
         assert loaded.source_audit_dashboard_state["summary"]["operator_command_pack_count"] == 11
         assert loaded.source_audit_dashboard_state["summary"]["manual_smoke_checklist_pack_count"] == 5
+        assert loaded.source_operational_capture_runtime["fixture_count"] >= 25
+        assert loaded.source_article_capture_results["article_result"]["text"]
+        assert loaded.source_screenshot_capture_results["screenshot_results"]
+        assert loaded.source_comments_capture_results["comments_result"]["comments"]
+        assert loaded.source_livechat_capture_results["livechat_result"]["events"]
+        assert loaded.source_media_discovery_results["media_discovery_result"]["resources"]
+        assert loaded.source_archive_provider_results["provider_call_performed"] is False
+        assert loaded.source_offline_bundle_plan["archivebox_executed"] is False
+        assert loaded.source_evidence_movement_plan["dry_run_default"] is True
+        assert loaded.source_database_recognition_plan["file_movement_performed"] is False
+        assert loaded.source_url_files_bridge_state["files_row_count"] >= 1
+        assert loaded.source_behavior_provenance_log["chain_valid"] is True
         assert {
             target["target_kind"] for target in loaded.release_readiness["targets"]
         } == {
@@ -217,6 +253,18 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
     assert "Source operator command pack metadata" in manifest["capture_options"]
     assert "Source manual smoke checklist metadata" in manifest["capture_options"]
     assert "Source audit dashboard state metadata" in manifest["capture_options"]
+    assert "Source operational capture runtime metadata" in manifest["capture_options"]
+    assert "Source article capture results metadata" in manifest["capture_options"]
+    assert "Source screenshot capture results metadata" in manifest["capture_options"]
+    assert "Source comments capture results metadata" in manifest["capture_options"]
+    assert "Source livechat capture results metadata" in manifest["capture_options"]
+    assert "Source media discovery results metadata" in manifest["capture_options"]
+    assert "Source archive provider results metadata" in manifest["capture_options"]
+    assert "Source offline bundle plan metadata" in manifest["capture_options"]
+    assert "Source evidence movement plan metadata" in manifest["capture_options"]
+    assert "Source database recognition plan metadata" in manifest["capture_options"]
+    assert "Source URL/FILES bridge metadata" in manifest["capture_options"]
+    assert "Source behavior provenance log metadata" in manifest["capture_options"]
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
         for asset in manifest["assets"]
@@ -266,6 +314,18 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
         for asset in manifest["assets"]
     )
     assert any(
+        "Source operational capture runtime sidecar" in asset["description"]
+        for asset in manifest["assets"]
+    )
+    assert any(
+        "Source evidence movement approval sidecar" in asset["description"]
+        for asset in manifest["assets"]
+    )
+    assert any(
+        "Source URL/media/FILES bridge sidecar" in asset["description"]
+        for asset in manifest["assets"]
+    )
+    assert any(
         "Source Evidence release readiness metadata" in asset["description"]
         for asset in manifest["assets"]
     )
@@ -283,6 +343,9 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
     assert "Source operator command pack metadata sidecar included." in manifest["notes"]
     assert "Source manual smoke checklist metadata sidecar included." in manifest["notes"]
     assert "Source audit dashboard state metadata sidecar included." in manifest["notes"]
+    assert "Source operational capture runtime metadata sidecar included." in manifest["notes"]
+    assert "Source evidence movement plan metadata sidecar included." in manifest["notes"]
+    assert "Source behavior provenance log metadata sidecar included." in manifest["notes"]
 
 
 def test_workflow_review_bundle_hash_validation_rejects_tampering() -> None:
