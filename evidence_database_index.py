@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -304,6 +304,115 @@ class EvidenceIndexStoreResult:
             "status": self.status,
             "warnings": list(self.warnings),
         }
+
+
+@dataclass(frozen=True)
+class EvidenceIndexScanFilter:
+    site_profile: str = ""
+    status: str = ""
+    review_state: str = ""
+    artifact_type: str = ""
+    source_url_contains: str = ""
+    provider: str = ""
+    created_after_utc: str = ""
+    created_before_utc: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class EvidenceIndexScanRow:
+    item_id: str
+    display_name: str = ""
+    source_url: str = ""
+    site_profile: str = ""
+    status: str = ""
+    review_state: str = ""
+    artifact_types: tuple[str, ...] = ()
+    provider_refs: tuple[str, ...] = ()
+    created_at_utc: str = ""
+    updated_at_utc: str = ""
+    record_digest_sha256: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class EvidenceIndexScanResult:
+    filter: EvidenceIndexScanFilter
+    rows: tuple[EvidenceIndexScanRow, ...] = ()
+    manifest_id: str = ""
+    manifest_payload_sha256: str = ""
+    integrity_errors: tuple[str, ...] = ()
+    scanned_record_count: int = 0
+    matched_record_count: int = 0
+    file_read_performed: bool = False
+    broad_scan_performed: bool = False
+    file_move_performed: bool = False
+    automatic_classification: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        data = _value_for_dict(self)
+        data["rows"] = [row.to_dict() for row in self.rows]
+        return data
+
+
+@dataclass(frozen=True)
+class EvidenceIndexRecordPatch:
+    item_id: str
+    display_name: str | None = None
+    source_url: str | None = None
+    local_path_hint: str | None = None
+    export_package_id: str | None = None
+    queue_item_id: str | None = None
+    source_row_id: str | None = None
+    classification_dimensions: dict[str, str] | None = None
+    classification_value: EvidenceClassificationValue | str | None = None
+    review_note: str = ""
+    recalculate_digest: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class EvidenceIndexUpdateAuditReceipt:
+    receipt_id: str
+    item_id: str
+    operator_id: str
+    action: str
+    timestamp_utc: str
+    before_digest_sha256: str
+    after_digest_sha256: str
+    changed_fields: tuple[str, ...]
+    redacted_credential_policy: str = "credential_values_never_recorded"
+    digest_recalculated: bool = True
+    validation_status: str = "ok"
+    file_read_performed: bool = False
+    file_write_performed: bool = False
+    file_move_performed: bool = False
+    automatic_classification: bool = False
+    sensitive_inference_prohibited: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class EvidenceIndexUpdateResult:
+    manifest: EvidenceIndexManifest
+    receipt: EvidenceIndexUpdateAuditReceipt
+    errors: tuple[str, ...] = ()
+    rejected: bool = False
+
+    @property
+    def ok(self) -> bool:
+        return not self.errors and not self.rejected
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
 
 
 @dataclass(frozen=True)
@@ -757,6 +866,231 @@ def append_or_update_evidence_index_record(
         updated_at_utc=utc_now_iso(),
         scope=manifest.scope,
     )
+
+
+def _record_digest(record: EvidenceIndexRecord) -> str:
+    return hashlib.sha256(stable_json_dumps(record.to_dict()).encode("utf-8")).hexdigest()
+
+
+def _record_artifact_types(record: EvidenceIndexRecord) -> tuple[str, ...]:
+    values: set[str] = set()
+    for basis in record.evidence_basis:
+        if basis.basis_type:
+            values.add(basis.basis_type)
+    for proposal in record.placement_proposals:
+        if proposal.reason:
+            values.add(proposal.reason)
+    return tuple(sorted(values))
+
+
+def _record_provider_refs(record: EvidenceIndexRecord) -> tuple[str, ...]:
+    values: set[str] = set()
+    for dimension_name in (
+        "adapter_id",
+        "source_adapter",
+        "site_profile",
+        "provider",
+        "source_provider",
+    ):
+        value = record.classification_state.dimensions.get(dimension_name, "")
+        if value:
+            values.add(value)
+    for basis in record.evidence_basis:
+        if "provider" in basis.basis_type.lower():
+            values.add(basis.basis_type)
+        if basis.confidence.startswith("provider:"):
+            values.add(basis.confidence)
+    return tuple(sorted(values))
+
+
+def _scan_row_for_record(record: EvidenceIndexRecord) -> EvidenceIndexScanRow:
+    dimensions = record.classification_state.dimensions
+    artifact_types = _record_artifact_types(record)
+    provider_refs = _record_provider_refs(record)
+    return EvidenceIndexScanRow(
+        item_id=record.identity.item_id,
+        display_name=record.identity.display_name,
+        source_url=record.identity.source_url,
+        site_profile=dimensions.get("site_profile", "")
+        or dimensions.get("source_adapter", "")
+        or dimensions.get("adapter_id", ""),
+        status=record.classification_state.classification_value.value,
+        review_state="user_confirmed"
+        if record.classification_state.user_confirmed
+        else "user_review_required",
+        artifact_types=artifact_types,
+        provider_refs=provider_refs,
+        created_at_utc=record.created_at_utc,
+        updated_at_utc=record.updated_at_utc,
+        record_digest_sha256=_record_digest(record),
+    )
+
+
+def _matches_scan_filter(row: EvidenceIndexScanRow, filter: EvidenceIndexScanFilter) -> bool:
+    if filter.site_profile and filter.site_profile.lower() not in row.site_profile.lower():
+        return False
+    if filter.status and filter.status.lower() != row.status.lower():
+        return False
+    if filter.review_state and filter.review_state.lower() != row.review_state.lower():
+        return False
+    if filter.artifact_type and filter.artifact_type.lower() not in {
+        value.lower() for value in row.artifact_types
+    }:
+        return False
+    if filter.source_url_contains and filter.source_url_contains.lower() not in row.source_url.lower():
+        return False
+    if filter.provider and filter.provider.lower() not in {
+        value.lower() for value in row.provider_refs
+    }:
+        return False
+    if filter.created_after_utc and row.created_at_utc < filter.created_after_utc:
+        return False
+    if filter.created_before_utc and row.created_at_utc > filter.created_before_utc:
+        return False
+    return True
+
+
+def scan_evidence_index_records(
+    manifest: EvidenceIndexManifest,
+    filter: EvidenceIndexScanFilter | None = None,
+) -> EvidenceIndexScanResult:
+    active_filter = filter or EvidenceIndexScanFilter()
+    integrity_errors = validate_evidence_index_manifest(manifest)
+    rows = tuple(_scan_row_for_record(record) for record in manifest.records)
+    matched = tuple(row for row in rows if _matches_scan_filter(row, active_filter))
+    return EvidenceIndexScanResult(
+        filter=active_filter,
+        rows=matched,
+        manifest_id=manifest.manifest_id,
+        manifest_payload_sha256=manifest.payload_sha256 or evidence_index_payload_sha256(manifest),
+        integrity_errors=integrity_errors,
+        scanned_record_count=len(rows),
+        matched_record_count=len(matched),
+    )
+
+
+def _classification_value_from_patch(
+    value: EvidenceClassificationValue | str | None,
+    fallback: EvidenceClassificationValue,
+) -> EvidenceClassificationValue:
+    if value is None:
+        return fallback
+    if isinstance(value, EvidenceClassificationValue):
+        return value
+    return EvidenceClassificationValue(str(value))
+
+
+def apply_evidence_index_record_patch(
+    manifest: EvidenceIndexManifest,
+    patch: EvidenceIndexRecordPatch,
+    *,
+    operator_id: str,
+    timestamp_utc: str,
+) -> EvidenceIndexUpdateResult:
+    if not patch.item_id:
+        raise ValueError("Evidence index patch item_id is required")
+    if not operator_id:
+        raise ValueError("operator_id is required for evidence index update audit")
+    if not timestamp_utc:
+        raise ValueError("timestamp_utc is required for evidence index update audit")
+    target_record: EvidenceIndexRecord | None = None
+    for record in manifest.records:
+        if record.identity.item_id == patch.item_id:
+            target_record = record
+            break
+    if target_record is None:
+        raise ValueError("Evidence index patch target item_id was not found")
+
+    before_digest = _record_digest(target_record)
+    identity_changes: dict[str, Any] = {}
+    changed_fields: list[str] = []
+    for field_name in (
+        "display_name",
+        "source_url",
+        "local_path_hint",
+        "export_package_id",
+        "queue_item_id",
+        "source_row_id",
+    ):
+        value = getattr(patch, field_name)
+        if value is not None:
+            text = _clean(value)
+            if field_name in {"display_name", "source_url"} and not text:
+                raise ValueError(f"Evidence index patch cannot blank required field: {field_name}")
+            identity_changes[field_name] = text
+            if getattr(target_record.identity, field_name) != text:
+                changed_fields.append(f"identity.{field_name}")
+    new_identity = replace(target_record.identity, **identity_changes) if identity_changes else target_record.identity
+
+    classification = target_record.classification_state
+    classification_changes: dict[str, Any] = {}
+    if patch.classification_dimensions is not None:
+        dimensions = dict(classification.dimensions)
+        for key, value in sorted(patch.classification_dimensions.items()):
+            clean_key = _clean(key)
+            clean_value = _clean(value)
+            if not clean_key:
+                raise ValueError("Evidence index patch classification dimension key must not be blank")
+            if clean_value:
+                dimensions[clean_key] = clean_value
+            elif clean_key in dimensions:
+                del dimensions[clean_key]
+        classification_changes["dimensions"] = dimensions
+        changed_fields.append("classification_state.dimensions")
+    if patch.classification_value is not None:
+        classification_changes["classification_value"] = _classification_value_from_patch(
+            patch.classification_value,
+            classification.classification_value,
+        )
+        changed_fields.append("classification_state.classification_value")
+    if classification_changes:
+        classification_changes["user_confirmation_required"] = True
+        classification_changes["weak_inference_prohibited"] = True
+    new_classification = (
+        replace(classification, **classification_changes) if classification_changes else classification
+    )
+
+    evidence_basis = target_record.evidence_basis
+    if patch.review_note.strip():
+        review_basis = build_evidence_basis(
+            item_id=target_record.identity.item_id,
+            basis_type="manual_index_update_audit_note",
+            source_url=new_identity.source_url,
+            evidence_text="",
+            user_note=patch.review_note.strip(),
+            confidence="operator_supplied_review_note",
+        )
+        evidence_basis = tuple(list(evidence_basis) + [review_basis])
+        changed_fields.append("evidence_basis")
+
+    updated_record = EvidenceIndexRecord(
+        identity=new_identity,
+        database_root_id=target_record.database_root_id,
+        taxonomy_version_id=target_record.taxonomy_version_id,
+        path_records=target_record.path_records,
+        classification_state=new_classification,
+        evidence_basis=evidence_basis,
+        placement_proposals=target_record.placement_proposals,
+        reclassification_proposals=target_record.reclassification_proposals,
+        created_at_utc=target_record.created_at_utc,
+        updated_at_utc=timestamp_utc,
+    )
+    if not updated_record.identity.item_id or not updated_record.identity.display_name:
+        raise ValueError("Evidence index update would break required identity fields")
+    after_digest = _record_digest(updated_record)
+    receipt = EvidenceIndexUpdateAuditReceipt(
+        receipt_id=stable_evidence_id("index_update_receipt", patch.item_id, before_digest, after_digest),
+        item_id=patch.item_id,
+        operator_id=operator_id,
+        action="safe_patch_update",
+        timestamp_utc=timestamp_utc,
+        before_digest_sha256=before_digest,
+        after_digest_sha256=after_digest,
+        changed_fields=tuple(sorted(set(changed_fields))),
+        digest_recalculated=patch.recalculate_digest,
+    )
+    updated_manifest = append_or_update_evidence_index_record(manifest, updated_record)
+    return EvidenceIndexUpdateResult(manifest=updated_manifest, receipt=receipt)
 
 
 def build_evidence_basis(

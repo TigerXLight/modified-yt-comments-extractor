@@ -38,6 +38,8 @@ from capture_execution_gate import (
     execution_gate_plan_to_action_log_events,
 )
 from capture_status import COMPLETENESS_COMPLETE, FIDELITY_RAW, OPERATIONAL_STATUS_MODEL_ONLY
+from source_adapters import default_source_method_profile_for_adapter
+from source_grabbed_record import GrabbedSourceRecord, build_grabbed_source_record
 from source_resource_state import DiscussionCaptureOptions, SourceResourceRowState
 
 
@@ -60,6 +62,10 @@ class OperationalCapturePlanResult:
     declared_artifacts: tuple[CaptureArtifact, ...] = ()
     action_log_artifact: CaptureArtifact | None = None
     execution_gate_plan: ExecutionGatePlan | None = None
+    method_profile_id: str = ""
+    method_profile_family: str = ""
+    approval_packet_required_fields: tuple[str, ...] = ()
+    grabbed_source_record: GrabbedSourceRecord | None = None
     warnings: tuple[str, ...] = ()
     scope: str = CAPTURE_CONTROLLER_SCOPE
 
@@ -73,8 +79,14 @@ class OperationalCapturePlanResult:
             "execution_gate_plan": self.execution_gate_plan.to_dict()
             if self.execution_gate_plan is not None
             else None,
+            "grabbed_source_record": self.grabbed_source_record.to_dict()
+            if self.grabbed_source_record is not None
+            else None,
             "adapter_id": self.adapter_id,
+            "approval_packet_required_fields": list(self.approval_packet_required_fields),
             "canonical_url": self.canonical_url,
+            "method_profile_family": self.method_profile_family,
+            "method_profile_id": self.method_profile_id,
             "operational_status": self.operational_status,
             "scope": self.scope,
             "screenshot_intents": list(self.screenshot_intents),
@@ -614,6 +626,7 @@ def build_operational_capture_plan(
         warnings.append(
             "Execution-gated operations require explicit user approval before runtime."
         )
+    method_profile = default_source_method_profile_for_adapter(row.adapter_id)
     declared_artifacts = _planned_capture_artifacts(
         row=row,
         selected_modes=selected_modes_tuple,
@@ -639,6 +652,8 @@ def build_operational_capture_plan(
         request_summary={
             "adapter_id": row.adapter_id,
             "canonical_url": row.canonical_url,
+            "method_profile_family": method_profile.method_family,
+            "method_profile_id": method_profile.profile_id,
             "archive_check_requested": archive_check_requested,
             "archive_submit_requested": archive_submit_requested,
             "archivebox_plan_requested": archivebox_plan_requested,
@@ -749,6 +764,25 @@ def build_operational_capture_plan(
             "archives_performed": "none",
         },
     )
+    archive_metadata = tuple(
+        status.__dict__ if hasattr(status, "__dict__") else {}
+        for status in row.archive_statuses
+    )
+    grabbed_source_record = build_grabbed_source_record(
+        source_row_id=row.row_id,
+        source_url=row.raw_url,
+        canonical_url=row.canonical_url,
+        adapter_id=row.adapter_id,
+        relative_artifact_paths=tuple(artifact.relative_path for artifact in declared_artifacts)
+        + (action_log_artifact.relative_path,),
+        selected_modes=selected_modes_tuple,
+        evidence_item_ids=tuple(artifact.artifact_id for artifact in declared_artifacts),
+        total_export_item_ids=tuple(artifact.relative_path for artifact in declared_artifacts),
+        archive_metadata=archive_metadata,
+        operator_approval_reference=execution_gate_plan.plan_id,
+        created_at_utc=timestamp_utc,
+        updated_at_utc=timestamp_utc,
+    )
 
     return OperationalCapturePlanResult(
         source_row_id=row.row_id,
@@ -761,6 +795,10 @@ def build_operational_capture_plan(
         declared_artifacts=declared_artifacts,
         action_log_artifact=action_log_artifact,
         execution_gate_plan=execution_gate_plan,
+        method_profile_id=method_profile.profile_id,
+        method_profile_family=method_profile.method_family,
+        approval_packet_required_fields=method_profile.required_operator_fields,
+        grabbed_source_record=grabbed_source_record,
         warnings=tuple(warnings),
     )
 
@@ -801,11 +839,19 @@ def format_operational_capture_plan_message(result: OperationalCapturePlanResult
     )
     gate_status = gate_plan.status if gate_plan is not None else "APPROVAL_REQUIRED"
     gate_count = len(gate_plan.requests) if gate_plan is not None else 0
+    grabbed_record = result.grabbed_source_record
+    grabbed_record_summary = (
+        f"{grabbed_record.grabbed_source_record_id} "
+        f"({grabbed_record.artifact_count} artifact reference(s))"
+        if grabbed_record is not None
+        else "(none)"
+    )
     return "\n".join(
         [
             "Operational site-capture plan",
             f"Source: {result.source_title}",
             f"Adapter: {result.adapter_id}",
+            f"Method profile: {result.method_profile_id or '(none)'}",
             f"Selected modes: {modes}",
             f"Screenshot intents: {screenshots}",
             f"Artifact declarations: {len(result.declared_artifacts)}",
@@ -815,6 +861,7 @@ def format_operational_capture_plan_message(result: OperationalCapturePlanResult
             f"Execution gate status: {gate_status}",
             f"Execution-gated actions: {gate_actions}",
             f"Execution gate requests: {gate_count}",
+            f"Grabbed source record: {grabbed_record_summary}",
             "Operational status: fixture/model-only plan",
             "Manual live-site smoke: pending separate approval",
             "Manual live-smoke approval required: yes",

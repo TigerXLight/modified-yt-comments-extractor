@@ -56,6 +56,16 @@ def test_operational_capture_plan_records_modes_without_execution() -> None:
     assert result.action_events[3].previous_event_hash == result.action_events[2].event_hash
     assert result.action_events[3].action_type == "execution_gate_plan_recorded"
     assert result.execution_gate_plan is not None
+    assert result.method_profile_id == "msn_article_comments_shadow_manual_import"
+    assert result.method_profile_family == "article_comments_manual_observation"
+    assert "source_url" in result.approval_packet_required_fields
+    assert result.grabbed_source_record is not None
+    assert result.grabbed_source_record.source_row_id == row.row_id
+    assert result.grabbed_source_record.capture_method_profile_id == result.method_profile_id
+    assert result.grabbed_source_record.review_state == "USER_REVIEW_REQUIRED"
+    assert result.grabbed_source_record.metadata_only is True
+    assert result.grabbed_source_record.live_capture_performed is False
+    assert result.grabbed_source_record.artifact_count == len(result.declared_artifacts) + 1
     assert result.execution_gate_plan.approval_required is True
     assert {request.action_kind.value for request in result.execution_gate_plan.requests} == {
         "BROWSER_AUTOMATION",
@@ -311,6 +321,8 @@ def test_operational_capture_plan_message_is_user_facing_and_local_only() -> Non
     assert "Operational site-capture plan" in message
     assert "Selected modes: webpage" in message
     assert "Artifact declarations: 7" in message
+    assert "Method profile: msn_article_comments_shadow_manual_import" in message
+    assert "Grabbed source record: grabbed_source_" in message
     assert "Artifact types:" in message
     assert "RAW_HTML x1" in message
     assert "Action event chain: 4 event(s), final hash " in message

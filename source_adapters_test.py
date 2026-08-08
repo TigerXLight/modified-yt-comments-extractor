@@ -1,9 +1,14 @@
 from source_adapters import (
     AVAILABLE_SOURCE_ADAPTERS,
+    SOURCE_METHOD_PROFILES,
     MSN_SOURCE_ADAPTER,
     NEWS_WEBSITE_SOURCE_ADAPTER,
+    TWITTER_X_SOURCE_ADAPTER,
     YOUTUBE_SOURCE_ADAPTER,
+    default_source_method_profile_for_adapter,
     find_source_adapter,
+    find_source_method_profile,
+    source_method_profile_ids,
 )
 
 VALID_ID = "aB3_dE-9xYz"
@@ -131,11 +136,37 @@ def run_self_test() -> None:
     assert "does not fetch" in msn_metadata.access_limitations
     assert "browser automation" in msn_metadata.access_limitations
 
+    twitter_url = "https://x.com/example/status/1234567890?utm_source=test"
+    twitter_adapter = TWITTER_X_SOURCE_ADAPTER
+    assert twitter_adapter.can_handle(twitter_url)
+    assert twitter_adapter.normalize_url(twitter_url) == "https://x.com/example/status/1234567890"
+    assert twitter_adapter.extract_source_id(twitter_url) == "x.com/example/status/1234567890"
+    assert find_source_adapter("https://twitter.com/example/status/123") is twitter_adapter
+    assert not twitter_adapter.can_handle("https://notx.com/example/status/123")
+    twitter_metadata = twitter_adapter.metadata
+    assert twitter_metadata.display_name == "X / Twitter"
+    assert twitter_metadata.supports_manual_import
+    assert "does not browse" in twitter_metadata.access_limitations
+
     assert AVAILABLE_SOURCE_ADAPTERS == (
         YOUTUBE_SOURCE_ADAPTER,
         MSN_SOURCE_ADAPTER,
+        TWITTER_X_SOURCE_ADAPTER,
         NEWS_WEBSITE_SOURCE_ADAPTER,
     )
+
+    assert source_method_profile_ids() == tuple(profile.profile_id for profile in SOURCE_METHOD_PROFILES)
+    msn_profile = default_source_method_profile_for_adapter("msn")
+    assert msn_profile.profile_id == "msn_article_comments_shadow_manual_import"
+    assert msn_profile.archive_fallback_supported
+    assert msn_profile.manual_import_supported
+    assert msn_profile.network_actions_performed is False
+    twitter_profile = default_source_method_profile_for_adapter("twitter_x")
+    assert twitter_profile.profile_id == "twitter_x_post_reply_archive_fallback"
+    assert "archive_result" in twitter_profile.expected_artifact_types
+    assert find_source_method_profile("youtube_media_transcript_comment").adapter_id == "youtube"
+    assert default_source_method_profile_for_adapter("manual_local_import").profile_id == "manual_local_file_import"
+    assert default_source_method_profile_for_adapter("unknown").profile_id == "generic_article_comment_manual"
 
 
 if __name__ == "__main__":

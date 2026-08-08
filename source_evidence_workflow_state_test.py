@@ -45,11 +45,22 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert state.queue_link_count == len(state.connection.queue.links)
     assert state.total_export_asset_count == len(state.connection.total_export_manifest.assets)
     assert state.review_manifest_asset_count == len(state.review_manifest.assets)
+    assert state.grabbed_source_record is plan.grabbed_source_record
+    assert state.grabbed_source_record_id.startswith("grabbed_source_")
+    assert state.grabbed_source_artifact_count > 0
+    assert state.database_scan_record_count == len(state.connection.evidence_index_records)
+    assert state.database_scan_matched_count == state.database_scan_record_count
     assert state.queue_review_store_id.startswith("evidence_queue_review_store_")
     assert data["queue_review_store_document"]["metadata_only"] is True
     assert data["queue_review_store_document"]["payload_sha256"]
     assert data["review_manifest"]["assets"]
     assert data["connection"]["review_preview"]["supplied_records_only"] is True
+    assert data["grabbed_source_record"]["review_state"] == "USER_REVIEW_REQUIRED"
+    assert data["database_scan_result"]["broad_scan_performed"] is False
+    assert any(
+        asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
+        for asset in data["review_manifest"]["assets"]
+    )
 
 
 def test_source_evidence_workflow_state_serializes_without_execution_or_payload_claims() -> None:
@@ -60,6 +71,8 @@ def test_source_evidence_workflow_state_serializes_without_execution_or_payload_
 
     assert rendered == source_evidence_workflow_state_to_json(state)
     assert "Runtime executed: false" in summary
+    assert "Grabbed source record: grabbed_source_" in summary
+    assert "Database scan records:" in summary
     assert "USER_REVIEW_REQUIRED" in summary
     for forbidden in (
         "completed evidence",

@@ -10,6 +10,7 @@ from capture_export_queue import (
     OperationalCaptureExportQueueConnection,
     connect_operational_capture_plan_to_export_queue,
 )
+from evidence_database_index import EvidenceIndexManifest, scan_evidence_index_records, stable_evidence_id
 from evidence_item_queue_store import (
     EvidenceItemQueueReviewStoreDocument,
     build_evidence_item_queue_review_store_document,
@@ -61,6 +62,12 @@ class SourceEvidenceWorkflowState:
     queue_review_store_id: str
     review_manifest_package_id: str
     review_manifest_asset_count: int
+    grabbed_source_record: Any | None
+    grabbed_source_record_id: str
+    grabbed_source_artifact_count: int
+    database_scan_result: Any
+    database_scan_record_count: int
+    database_scan_matched_count: int
     release_readiness: SourceEvidenceReleaseReadiness
     release_readiness_id: str
     release_target_count: int
@@ -105,6 +112,8 @@ class SourceEvidenceWorkflowState:
                 f"Queue links: {self.queue_link_count}",
                 f"Total Export assets: {self.total_export_asset_count}",
                 f"Review manifest assets: {self.review_manifest_asset_count}",
+                f"Grabbed source record: {self.grabbed_source_record_id}",
+                f"Database scan records: {self.database_scan_matched_count}/{self.database_scan_record_count}",
                 f"Release readiness: {self.release_readiness.release_status}",
                 f"Release targets: {self.release_target_count}",
                 f"Queue review store: {self.queue_review_store_id}",
@@ -135,6 +144,13 @@ def build_source_evidence_workflow_state(
         taxonomy_version_id=taxonomy_version_id,
     )
     previous_hash = plan.action_events[-1].event_hash if plan.action_events else ""
+    evidence_scan_manifest = EvidenceIndexManifest(
+        manifest_id=stable_evidence_id("workflow_scan_manifest", plan.source_row_id, safe_package_id),
+        records=connection.evidence_index_records,
+        created_at_utc=timestamp,
+        updated_at_utc=timestamp,
+    )
+    evidence_scan_result = scan_evidence_index_records(evidence_scan_manifest)
     store_document = build_evidence_item_queue_review_store_document(
         connection.queue,
         session_id=f"{safe_package_id}_queue_review_store",
@@ -169,6 +185,14 @@ def build_source_evidence_workflow_state(
         queue=connection.queue,
         execution_gate_plan=plan.execution_gate_plan,
         queue_review_store_document=store_document,
+        workflow_state_metadata={
+            "database_scan_result": evidence_scan_result.to_dict(),
+            "grabbed_source_record": (
+                plan.grabbed_source_record.to_dict()
+                if plan.grabbed_source_record is not None
+                else None
+            ),
+        },
         release_readiness_metadata=release_readiness.to_dict(),
         app_version=app_version,
     )
@@ -189,6 +213,20 @@ def build_source_evidence_workflow_state(
         queue_review_store_id=store_document.store_id,
         review_manifest_package_id=review_manifest.package_id,
         review_manifest_asset_count=len(review_manifest.assets),
+        grabbed_source_record=plan.grabbed_source_record,
+        grabbed_source_record_id=(
+            plan.grabbed_source_record.grabbed_source_record_id
+            if plan.grabbed_source_record is not None
+            else ""
+        ),
+        grabbed_source_artifact_count=(
+            plan.grabbed_source_record.artifact_count
+            if plan.grabbed_source_record is not None
+            else 0
+        ),
+        database_scan_result=evidence_scan_result,
+        database_scan_record_count=evidence_scan_result.scanned_record_count,
+        database_scan_matched_count=evidence_scan_result.matched_record_count,
         release_readiness=release_readiness,
         release_readiness_id=release_readiness.release_readiness_id,
         release_target_count=release_readiness.target_count,

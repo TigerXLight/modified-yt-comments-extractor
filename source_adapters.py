@@ -11,6 +11,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 NEWS_WEBSITE_HOST_SUFFIXES = ("telegraph.co.uk",)
 MSN_HOST_SUFFIXES = ("msn.com",)
+TWITTER_X_HOST_SUFFIXES = ("x.com", "twitter.com")
 
 
 def _normalize_basic_url(url: str) -> str:
@@ -36,6 +37,13 @@ def _is_supported_news_website_host(host: str) -> bool:
     return any(
         _host_matches_suffix(host, suffix)
         for suffix in NEWS_WEBSITE_HOST_SUFFIXES
+    )
+
+
+def _is_supported_twitter_x_host(host: str) -> bool:
+    return any(
+        _host_matches_suffix(host, suffix)
+        for suffix in TWITTER_X_HOST_SUFFIXES
     )
 
 
@@ -84,6 +92,46 @@ class SourceAdapterMetadata:
     privacy_notes: str = ""
     cost_or_rate_limit_notes: str = ""
     access_limitations: str = ""
+
+
+@dataclass(frozen=True)
+class SourceMethodProfile:
+    profile_id: str
+    adapter_id: str
+    display_name: str
+    method_family: str
+    supported_modes: tuple[str, ...] = ()
+    expected_artifact_types: tuple[str, ...] = ()
+    required_operator_fields: tuple[str, ...] = ()
+    approval_required: bool = True
+    manual_operator_only: bool = True
+    live_execution_default_enabled: bool = False
+    archive_fallback_supported: bool = False
+    manual_import_supported: bool = False
+    network_actions_performed: bool = False
+    browser_automation_performed: bool = False
+    provider_api_calls_performed: bool = False
+    notes: str = ""
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "adapter_id": self.adapter_id,
+            "approval_required": self.approval_required,
+            "archive_fallback_supported": self.archive_fallback_supported,
+            "browser_automation_performed": self.browser_automation_performed,
+            "display_name": self.display_name,
+            "expected_artifact_types": list(self.expected_artifact_types),
+            "live_execution_default_enabled": self.live_execution_default_enabled,
+            "manual_import_supported": self.manual_import_supported,
+            "manual_operator_only": self.manual_operator_only,
+            "method_family": self.method_family,
+            "network_actions_performed": self.network_actions_performed,
+            "notes": self.notes,
+            "profile_id": self.profile_id,
+            "provider_api_calls_performed": self.provider_api_calls_performed,
+            "required_operator_fields": list(self.required_operator_fields),
+            "supported_modes": list(self.supported_modes),
+        }
 
 
 class SourceAdapter(Protocol):
@@ -253,13 +301,130 @@ class MsnSourceAdapter:
         return f"{parsed.netloc}{parsed.path}"
 
 
+class TwitterXSourceAdapter:
+    source_name = "twitter_x"
+    capabilities = SourceCapabilities(
+        supports_comments=True,
+        supports_replies=True,
+        supports_likes=True,
+        supports_timestamps=True,
+    )
+    metadata = SourceAdapterMetadata(
+        display_name="X / Twitter",
+        platform_family=PLATFORM_TEXT_MICROBLOGGING,
+        credential_type=CREDENTIAL_MANUAL,
+        credentials_required=False,
+        credentials_optional=True,
+        supports_browser_capture=False,
+        supports_manual_import=True,
+        setup_hint="Local/manual import and archive-fallback profile only; no X/Twitter API or browser automation.",
+        test_connection_supported=False,
+        privacy_notes="No X/Twitter request is made by this adapter metadata path.",
+        cost_or_rate_limit_notes="No API cost or rate limits are used because no network/API call is performed.",
+        access_limitations=(
+            "Recognizes public X/Twitter URLs for local review metadata and archive-fallback planning only. "
+            "It does not browse X/Twitter, automate a browser, call the API, use cookies, or download media."
+        ),
+    )
+
+    def can_handle(self, url: str) -> bool:
+        try:
+            parsed = urlsplit((url or "").strip())
+            if parsed.scheme.lower() not in ("http", "https"):
+                return False
+            return _is_supported_twitter_x_host(parsed.netloc)
+        except ValueError:
+            return False
+
+    def normalize_url(self, url: str) -> str:
+        normalized = _normalize_basic_url(url)
+        parsed = urlsplit(normalized)
+        if not _is_supported_twitter_x_host(parsed.netloc):
+            raise ValueError(f"unsupported X/Twitter host: {parsed.netloc}")
+        return normalized
+
+    def extract_source_id(self, url: str) -> str:
+        normalized = self.normalize_url(url)
+        parsed = urlsplit(normalized)
+        return f"{parsed.netloc}{parsed.path}"
+
+
 YOUTUBE_SOURCE_ADAPTER = YouTubeSourceAdapter()
 MSN_SOURCE_ADAPTER = MsnSourceAdapter()
+TWITTER_X_SOURCE_ADAPTER = TwitterXSourceAdapter()
 NEWS_WEBSITE_SOURCE_ADAPTER = NewsWebsiteSourceAdapter()
 AVAILABLE_SOURCE_ADAPTERS: Sequence[SourceAdapter] = (
     YOUTUBE_SOURCE_ADAPTER,
     MSN_SOURCE_ADAPTER,
+    TWITTER_X_SOURCE_ADAPTER,
     NEWS_WEBSITE_SOURCE_ADAPTER,
+)
+
+
+MSN_ARTICLE_COMMENT_PROFILE = SourceMethodProfile(
+    profile_id="msn_article_comments_shadow_manual_import",
+    adapter_id="msn",
+    display_name="MSN article/comments manual observation profile",
+    method_family="article_comments_manual_observation",
+    supported_modes=("webpage", "comments", "archive_check", "archive_submit"),
+    expected_artifact_types=("raw_html", "final_dom", "article_text", "comments_jsonl", "archive_result"),
+    required_operator_fields=("source_url", "selected_modes", "manual_observation_reference"),
+    archive_fallback_supported=True,
+    manual_import_supported=True,
+    notes="Uses supplied/manual observations and archive fallback metadata; no live browser or network execution.",
+)
+TWITTER_X_ARCHIVE_FALLBACK_PROFILE = SourceMethodProfile(
+    profile_id="twitter_x_post_reply_archive_fallback",
+    adapter_id="twitter_x",
+    display_name="X/Twitter post/reply archive fallback profile",
+    method_family="post_reply_archive_fallback",
+    supported_modes=("webpage", "comments", "archive_check", "archive_submit"),
+    expected_artifact_types=("raw_sidecar", "archive_result", "comments_jsonl"),
+    required_operator_fields=("source_url", "operator_supplied_export_or_archive_reference"),
+    archive_fallback_supported=True,
+    manual_import_supported=True,
+    notes="Local/manual export and archive-fallback metadata only; no API, scraping, browser automation, or media download.",
+)
+YOUTUBE_MEDIA_TRANSCRIPT_COMMENT_PROFILE = SourceMethodProfile(
+    profile_id="youtube_media_transcript_comment",
+    adapter_id="youtube",
+    display_name="YouTube media/transcript/comment source profile",
+    method_family="youtube_existing_runtime_metadata",
+    supported_modes=("webpage", "comments", "livechat", "media", "transcript"),
+    expected_artifact_types=("comments_jsonl", "livechat_jsonl", "media_inventory", "transcript"),
+    required_operator_fields=("source_url", "existing_runtime_output_status"),
+    manual_import_supported=True,
+    notes="Binds existing YouTube runtime outputs into review metadata; this profile does not start YouTube runtime/API calls.",
+)
+GENERIC_ARTICLE_COMMENT_PROFILE = SourceMethodProfile(
+    profile_id="generic_article_comment_manual",
+    adapter_id="news_website",
+    display_name="Generic article/comment manual profile",
+    method_family="generic_article_comment_manual",
+    supported_modes=("webpage", "comments", "archive_check"),
+    expected_artifact_types=("raw_html", "article_text", "comments_text", "archive_result"),
+    required_operator_fields=("source_url", "manual_source_material_reference"),
+    archive_fallback_supported=True,
+    manual_import_supported=True,
+    notes="Manual/local supplied article and comment metadata only; no generic scraper is implied.",
+)
+MANUAL_LOCAL_IMPORT_PROFILE = SourceMethodProfile(
+    profile_id="manual_local_file_import",
+    adapter_id="manual_local_import",
+    display_name="Manual/local file import profile",
+    method_family="manual_local_import",
+    supported_modes=("manual_import", "media", "transcript", "archive_import"),
+    expected_artifact_types=("raw_sidecar", "media", "extracted_text", "archive_result"),
+    required_operator_fields=("local_file_name", "operator_review_note"),
+    manual_import_supported=True,
+    notes="User-supplied local files only; no file move or file-existence claim is made by metadata helpers.",
+)
+SOURCE_METHOD_PROFILES: Sequence[SourceMethodProfile] = (
+    MSN_ARTICLE_COMMENT_PROFILE,
+    TWITTER_X_ARCHIVE_FALLBACK_PROFILE,
+    YOUTUBE_MEDIA_TRANSCRIPT_COMMENT_PROFILE,
+    GENERIC_ARTICLE_COMMENT_PROFILE,
+    MANUAL_LOCAL_IMPORT_PROFILE,
 )
 
 
@@ -281,6 +446,38 @@ def find_source_adapter_by_name(
             return adapter
     return None
 
+
+
+def source_method_profile_ids(
+    profiles: Sequence[SourceMethodProfile] = SOURCE_METHOD_PROFILES,
+) -> tuple[str, ...]:
+    return tuple(profile.profile_id for profile in profiles)
+
+
+def find_source_method_profile(
+    profile_id: str,
+    profiles: Sequence[SourceMethodProfile] = SOURCE_METHOD_PROFILES,
+) -> SourceMethodProfile | None:
+    normalized_profile_id = (profile_id or "").strip().lower()
+    if not normalized_profile_id:
+        return None
+    for profile in profiles:
+        if profile.profile_id.lower() == normalized_profile_id:
+            return profile
+    return None
+
+
+def default_source_method_profile_for_adapter(
+    adapter_id: str,
+    profiles: Sequence[SourceMethodProfile] = SOURCE_METHOD_PROFILES,
+) -> SourceMethodProfile:
+    normalized_adapter_id = (adapter_id or "").strip().lower()
+    for profile in profiles:
+        if profile.adapter_id.lower() == normalized_adapter_id:
+            return profile
+    if normalized_adapter_id == "manual_local_import":
+        return MANUAL_LOCAL_IMPORT_PROFILE
+    return GENERIC_ARTICLE_COMMENT_PROFILE
 
 
 def find_source_adapter(url: str) -> Optional[SourceAdapter]:

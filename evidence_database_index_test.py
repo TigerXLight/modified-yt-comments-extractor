@@ -10,12 +10,15 @@ from evidence_database_index import (
     EvidenceDatabaseRoot,
     EvidenceHierarchyRecognitionResult,
     EvidenceIndexManifest,
+    EvidenceIndexRecordPatch,
+    EvidenceIndexScanFilter,
     EvidenceIndexRecord,
     EvidenceItemIdentity,
     EvidencePathRecord,
     EvidencePlacementProposal,
     EvidenceReclassificationProposal,
     EvidenceTaxonomyVersion,
+    apply_evidence_index_record_patch,
     append_or_update_evidence_index_record,
     build_classification_state,
     build_dry_run_proposal_result,
@@ -30,6 +33,7 @@ from evidence_database_index import (
     evidence_index_record_from_total_export_manifest,
     read_evidence_index_file,
     recognize_variable_hierarchy,
+    scan_evidence_index_records,
     stable_evidence_id,
     stable_json_dumps,
     write_evidence_index_file_atomic,
@@ -547,6 +551,78 @@ def run_self_test() -> None:
     assert source_record.classification_state.dimensions["domain"] == "www.msn.com"
     assert source_record.evidence_basis[0].basis_type == "source_resource_row"
 
+    source_manifest = evidence_index_manifest_with_hash(
+        append_or_update_evidence_index_record(
+            EvidenceIndexManifest(
+                manifest_id="scan_manifest",
+                database_roots=(root,),
+                taxonomy_versions=(taxonomy,),
+                records=(source_record,),
+                created_at_utc="2026-08-08T12:00:00Z",
+                updated_at_utc="2026-08-08T12:00:00Z",
+            ),
+            queue_record,
+        )
+    )
+    scan = scan_evidence_index_records(
+        source_manifest,
+        EvidenceIndexScanFilter(
+            site_profile="msn",
+            status="proposed",
+            review_state="user_review_required",
+            artifact_type="source_resource_row",
+            source_url_contains="msn.com",
+            provider="msn",
+        ),
+    )
+    assert scan.scanned_record_count == 2
+    assert scan.matched_record_count == 1
+    assert scan.rows[0].item_id == source_record.identity.item_id
+    assert scan.rows[0].site_profile == "msn"
+    assert scan.rows[0].review_state == "user_review_required"
+    assert scan.rows[0].record_digest_sha256
+    assert scan.file_read_performed is False
+    assert scan.broad_scan_performed is False
+
+    updated = apply_evidence_index_record_patch(
+        source_manifest,
+        EvidenceIndexRecordPatch(
+            item_id=source_record.identity.item_id,
+            display_name="Reviewed MSN story",
+            classification_dimensions={"site_profile": "msn", "operator_review": "pending"},
+            review_note="Manual operator supplied a metadata-only index note.",
+        ),
+        operator_id="operator-1",
+        timestamp_utc="2026-08-08T12:30:00Z",
+    )
+    assert updated.ok
+    assert updated.receipt.item_id == source_record.identity.item_id
+    assert updated.receipt.before_digest_sha256 != updated.receipt.after_digest_sha256
+    assert updated.receipt.file_write_performed is False
+    assert updated.receipt.file_move_performed is False
+    assert updated.receipt.automatic_classification is False
+    assert "identity.display_name" in updated.receipt.changed_fields
+    assert "classification_state.dimensions" in updated.receipt.changed_fields
+    assert "evidence_basis" in updated.receipt.changed_fields
+    rescanned = scan_evidence_index_records(
+        updated.manifest,
+        EvidenceIndexScanFilter(site_profile="msn", source_url_contains="msn.com"),
+    )
+    assert rescanned.matched_record_count == 1
+    assert rescanned.rows[0].display_name == "Reviewed MSN story"
+
+    try:
+        apply_evidence_index_record_patch(
+            source_manifest,
+            EvidenceIndexRecordPatch(item_id=source_record.identity.item_id, display_name=" "),
+            operator_id="operator-1",
+            timestamp_utc="2026-08-08T12:30:00Z",
+        )
+    except ValueError as error:
+        assert "display_name" in str(error)
+    else:
+        raise AssertionError("Blank required field patch should be rejected")
+
     manifest = TotalExportManifest(
         package_id="fixture_package",
         source_urls=["https://example.test/source"],
@@ -580,3 +656,4 @@ def run_self_test() -> None:
 if __name__ == "__main__":
     run_self_test()
     print("Evidence database index self-test passed.")
+    scan_evidence_index_records,
