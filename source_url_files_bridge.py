@@ -80,6 +80,17 @@ class SourceUrlFilesBridgeState:
     files_rows: tuple[SourceFilesHierarchyRow, ...]
     selected_download_choice_ids: tuple[str, ...]
     injected_choice_ids: tuple[str, ...]
+    image_icon_enabled: bool = True
+    video_audio_icon_enabled: bool = True
+    archive_org_icon_enabled: bool = True
+    archive_today_icon_enabled: bool = True
+    comments_livechat_dropdown_source_id: str = ""
+    comments_capture_enabled: bool = True
+    livechat_capture_enabled: bool = True
+    comments_screenshot_requested: bool = False
+    livechat_screenshot_requested: bool = False
+    media_row_download_tick_count: int = 0
+    media_transcript_inject_icon_count: int = 0
     clear_editor_deletes_file: bool = False
     transcript_replacement_deletes_previous: bool = False
     audio_playback_requires_transcript: bool = False
@@ -107,6 +118,7 @@ class SourceUrlFilesBridgeState:
         data["files_row_count"] = self.files_row_count
         data["selected_download_count"] = len(self.selected_download_choice_ids)
         data["injected_choice_count"] = len(self.injected_choice_ids)
+        data["discussion_source_selector_enabled"] = bool(self.comments_livechat_dropdown_source_id)
         return data
 
 
@@ -205,6 +217,9 @@ def build_source_url_files_bridge_state(
         files_rows=tuple(files_rows),
         selected_download_choice_ids=selected,
         injected_choice_ids=injected,
+        comments_livechat_dropdown_source_id="source_row_1" if rows else "",
+        media_row_download_tick_count=len(selected),
+        media_transcript_inject_icon_count=len(injected),
     )
 
 
@@ -314,6 +329,11 @@ def set_source_url_download_tick(
         files_rows=state.files_rows,
         selected_download_choice_ids=selected_tuple,
         injected_choice_ids=injected_tuple,
+        comments_livechat_dropdown_source_id=state.comments_livechat_dropdown_source_id,
+        comments_screenshot_requested=state.comments_screenshot_requested,
+        livechat_screenshot_requested=state.livechat_screenshot_requested,
+        media_row_download_tick_count=len(selected_tuple),
+        media_transcript_inject_icon_count=len(injected_tuple),
     )
 
 
@@ -343,6 +363,11 @@ def inject_source_url_choice_to_files(
         files_rows=files_rows,
         selected_download_choice_ids=selected_tuple,
         injected_choice_ids=injected_tuple,
+        comments_livechat_dropdown_source_id=state.comments_livechat_dropdown_source_id,
+        comments_screenshot_requested=state.comments_screenshot_requested,
+        livechat_screenshot_requested=state.livechat_screenshot_requested,
+        media_row_download_tick_count=len(selected_tuple),
+        media_transcript_inject_icon_count=len(injected_tuple),
     )
 
 
@@ -355,6 +380,11 @@ def clear_editor_transcript_without_deleting_file(
         files_rows=state.files_rows,
         selected_download_choice_ids=state.selected_download_choice_ids,
         injected_choice_ids=state.injected_choice_ids,
+        comments_livechat_dropdown_source_id=state.comments_livechat_dropdown_source_id,
+        comments_screenshot_requested=state.comments_screenshot_requested,
+        livechat_screenshot_requested=state.livechat_screenshot_requested,
+        media_row_download_tick_count=len(state.selected_download_choice_ids),
+        media_transcript_inject_icon_count=len(state.injected_choice_ids),
         clear_editor_deletes_file=False,
         transcript_replacement_deletes_previous=False,
         audio_playback_requires_transcript=False,
@@ -374,11 +404,86 @@ def replace_editor_transcript_without_deleting_previous(
         files_rows=injected.files_rows,
         selected_download_choice_ids=injected.selected_download_choice_ids,
         injected_choice_ids=injected.injected_choice_ids,
+        comments_livechat_dropdown_source_id=injected.comments_livechat_dropdown_source_id,
+        comments_screenshot_requested=injected.comments_screenshot_requested,
+        livechat_screenshot_requested=injected.livechat_screenshot_requested,
+        media_row_download_tick_count=len(injected.selected_download_choice_ids),
+        media_transcript_inject_icon_count=len(injected.injected_choice_ids),
         clear_editor_deletes_file=False,
         transcript_replacement_deletes_previous=False,
         audio_playback_requires_transcript=False,
         editor_transcript_state="replaced_editor_only_previous_file_preserved",
     )
+
+
+def set_discussion_source_selector(
+    state: SourceUrlFilesBridgeState,
+    *,
+    source_row_id: str,
+) -> SourceUrlFilesBridgeState:
+    valid_source_ids = {f"source_row_{index}" for index, _row in enumerate(state.source_rows, start=1)}
+    selected = source_row_id if source_row_id in valid_source_ids else ""
+    return SourceUrlFilesBridgeState(
+        bridge_id="source_url_files_bridge_" + _sha16((state.bridge_id, "discussion_source", selected)),
+        source_rows=state.source_rows,
+        files_rows=state.files_rows,
+        selected_download_choice_ids=state.selected_download_choice_ids,
+        injected_choice_ids=state.injected_choice_ids,
+        comments_livechat_dropdown_source_id=selected,
+        comments_screenshot_requested=state.comments_screenshot_requested,
+        livechat_screenshot_requested=state.livechat_screenshot_requested,
+        media_row_download_tick_count=len(state.selected_download_choice_ids),
+        media_transcript_inject_icon_count=len(state.injected_choice_ids),
+    )
+
+
+def set_discussion_screenshot_tick(
+    state: SourceUrlFilesBridgeState,
+    *,
+    mode: str,
+    selected: bool,
+) -> SourceUrlFilesBridgeState:
+    comments_selected = state.comments_screenshot_requested
+    livechat_selected = state.livechat_screenshot_requested
+    if mode == "comments" and state.comments_capture_enabled:
+        comments_selected = selected
+    if mode == "livechat" and state.livechat_capture_enabled:
+        livechat_selected = selected
+    return SourceUrlFilesBridgeState(
+        bridge_id="source_url_files_bridge_" + _sha16((state.bridge_id, "screenshot_tick", mode, selected)),
+        source_rows=state.source_rows,
+        files_rows=state.files_rows,
+        selected_download_choice_ids=state.selected_download_choice_ids,
+        injected_choice_ids=state.injected_choice_ids,
+        comments_livechat_dropdown_source_id=state.comments_livechat_dropdown_source_id,
+        comments_screenshot_requested=comments_selected,
+        livechat_screenshot_requested=livechat_selected,
+        media_row_download_tick_count=len(state.selected_download_choice_ids),
+        media_transcript_inject_icon_count=len(state.injected_choice_ids),
+    )
+
+
+def build_source_url_files_app_workflow_state(
+    *,
+    initial_url: str,
+    fixture_html: str,
+    selected_download_choice_ids: Iterable[str] = (),
+    injected_choice_ids: Iterable[str] = (),
+) -> SourceUrlFilesBridgeState:
+    accepted = build_source_url_files_bridge_state(
+        urls=(),
+        fixture_html_by_url={initial_url: fixture_html},
+    )
+    accepted = accept_source_url_on_enter(
+        accepted,
+        url=initial_url,
+        fixture_html_by_url={initial_url: fixture_html},
+    )
+    for choice_id in selected_download_choice_ids:
+        accepted = set_source_url_download_tick(accepted, choice_id=choice_id, selected=True)
+    for choice_id in injected_choice_ids:
+        accepted = inject_source_url_choice_to_files(accepted, choice_id=choice_id)
+    return accepted
 
 
 def build_default_source_url_files_bridge_state() -> SourceUrlFilesBridgeState:
