@@ -42,6 +42,10 @@ from source_adapter_audit_report import (
     SourceAdapterAuditReport,
     build_source_adapter_audit_report,
 )
+from source_named_site_priority_plan import (
+    SourceNamedSitePriorityPlan,
+    build_source_named_site_priority_plan,
+)
 from source_site_method_audit_registry import (
     SourceSiteMethodAuditRegistry,
     build_source_site_method_audit_registry,
@@ -112,6 +116,10 @@ class SourceEvidenceWorkflowState:
     source_adapter_audit_report_id: str
     source_adapter_audit_report_row_count: int
     source_adapter_audit_report_selector_audit_required_count: int
+    source_named_site_priority_plan: SourceNamedSitePriorityPlan
+    source_named_site_priority_plan_id: str
+    source_named_site_priority_plan_row_count: int
+    source_named_site_priority_plan_approval_required_count: int
     release_readiness: SourceEvidenceReleaseReadiness
     release_readiness_id: str
     release_target_count: int
@@ -147,6 +155,7 @@ class SourceEvidenceWorkflowState:
         data["source_adapter_audit_registry"] = self.source_adapter_audit_registry.to_dict()
         data["source_site_method_audit_registry"] = self.source_site_method_audit_registry.to_dict()
         data["source_adapter_audit_report"] = self.source_adapter_audit_report.to_dict()
+        data["source_named_site_priority_plan"] = self.source_named_site_priority_plan.to_dict()
         return data
 
     def to_summary_text(self) -> str:
@@ -179,6 +188,9 @@ class SourceEvidenceWorkflowState:
                 f"Source adapter audit report: {self.source_adapter_audit_report_id}",
                 f"Source adapter audit report rows: {self.source_adapter_audit_report_row_count}",
                 f"Source adapter audit report selector audit-required rows: {self.source_adapter_audit_report_selector_audit_required_count}",
+                f"Named-site priority plan: {self.source_named_site_priority_plan_id}",
+                f"Named-site priority rows: {self.source_named_site_priority_plan_row_count}",
+                f"Named-site priority approvals required: {self.source_named_site_priority_plan_approval_required_count}",
                 f"Release readiness: {self.release_readiness.release_status}",
                 f"Release targets: {self.release_target_count}",
                 f"Release action plan: {self.release_action_plan_id}",
@@ -226,6 +238,9 @@ def build_source_evidence_workflow_state(
             "source_site_selector_audit_packs.json",
             "source_adapter_audit_report.json",
         ),
+    )
+    source_named_site_priority_plan = build_source_named_site_priority_plan(
+        source_site_method_audit_registry
     )
     site_method_audit_records = tuple(
         evidence_index_record_from_source_site_method_audit_row(
@@ -287,6 +302,7 @@ def build_source_evidence_workflow_state(
             "source_adapter_audit_registry": source_adapter_audit_registry.to_dict(),
             "source_site_method_audit_registry": source_site_method_audit_registry.to_dict(),
             "source_adapter_audit_report": source_adapter_audit_report.to_dict(),
+            "source_named_site_priority_plan": source_named_site_priority_plan.to_dict(),
             "grabbed_source_record": (
                 plan.grabbed_source_record.to_dict()
                 if plan.grabbed_source_record is not None
@@ -351,6 +367,12 @@ def build_source_evidence_workflow_state(
         source_adapter_audit_report_row_count=source_adapter_audit_report.row_count,
         source_adapter_audit_report_selector_audit_required_count=(
             source_adapter_audit_report.selector_audit_required_count
+        ),
+        source_named_site_priority_plan=source_named_site_priority_plan,
+        source_named_site_priority_plan_id=source_named_site_priority_plan.plan_id,
+        source_named_site_priority_plan_row_count=source_named_site_priority_plan.row_count,
+        source_named_site_priority_plan_approval_required_count=(
+            source_named_site_priority_plan.approval_required_count
         ),
         release_readiness=release_readiness,
         release_readiness_id=release_readiness.release_readiness_id,

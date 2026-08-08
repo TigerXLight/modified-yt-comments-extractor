@@ -217,6 +217,7 @@ def build_source_evidence_review_manifest_with_workflow_state(
     source_adapter_audit_registry_metadata: Mapping[str, Any] | None = None,
     source_site_method_audit_registry_metadata: Mapping[str, Any] | None = None,
     source_adapter_audit_report_metadata: Mapping[str, Any] | None = None,
+    source_named_site_priority_plan_metadata: Mapping[str, Any] | None = None,
 ) -> TotalExportManifest:
     """Return a manifest copy with a workflow-state metadata sidecar asset.
 
@@ -290,6 +291,20 @@ def build_source_evidence_review_manifest_with_workflow_state(
             )
         )
         capture_option_values.add("Source Adapter audit report metadata")
+    if source_named_site_priority_plan_metadata is not None:
+        priority_metadata = _value_for_dict(source_named_site_priority_plan_metadata)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_RAW_SIDECAR,
+                description=(
+                    "Named-site priority plan metadata sidecar: manual/operator "
+                    "approval is required before any live-site execution."
+                ),
+                metadata=priority_metadata,
+                created_at_utc=manifest.created_at_utc,
+            )
+        )
+        capture_option_values.add("Named-site priority plan metadata")
     capture_options = sorted(capture_option_values)
     notes = manifest.notes
     if "Source Evidence workflow state metadata sidecar included." not in notes:
@@ -322,6 +337,13 @@ def build_source_evidence_review_manifest_with_workflow_state(
         notes = (
             notes + "\n" if notes else ""
         ) + "Source Adapter audit report metadata sidecar included."
+    if (
+        source_named_site_priority_plan_metadata is not None
+        and "Named-site priority plan metadata sidecar included." not in notes
+    ):
+        notes = (
+            notes + "\n" if notes else ""
+        ) + "Named-site priority plan metadata sidecar included."
     return TotalExportManifest(
         package_id=manifest.package_id,
         created_at_utc=manifest.created_at_utc,
