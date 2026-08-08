@@ -251,6 +251,7 @@ def test_layout_sections_subgroups_aliases_and_order() -> None:
         "Decentralised & Alternative Communities",
         "Threaded Forums & Link Aggregators",
         "Special-Interest, Anonymous, Q&A & Blogging",
+        "Registered Source Adapters",
     ]
 
     twitter = build_access_keys_manager_view(
@@ -258,7 +259,7 @@ def test_layout_sections_subgroups_aliases_and_order() -> None:
         search_query="Twitter",
         layouts=bundle.layouts,
     )
-    assert _flatten_ids(twitter) == ("planned:source:x_twitter",)
+    assert _flatten_ids(twitter) == ("source:twitter_x",)
 
     blind = build_access_keys_manager_view(
         bundle.catalog,
