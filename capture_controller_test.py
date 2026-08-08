@@ -26,6 +26,10 @@ from capture_contracts import (
     ARTIFACT_TYPE_WARC,
 )
 from source_resource_state import build_discussion_capture_options, build_source_resource_row
+from source_site_method_audit_registry import (
+    build_source_site_method_audit_registry,
+    source_site_method_audit_row_by_method,
+)
 
 
 MSN_URL = "https://www.msn.com/en-gb/news/world/special-dj-by-taku-inoue/ar-AA123456"
@@ -73,6 +77,14 @@ def test_operational_capture_plan_records_modes_without_execution() -> None:
     assert result.grabbed_source_record.media_reference_ids == ()
     assert result.grabbed_source_record.manual_observation_reference_ids == (
         result.execution_gate_plan.plan_id,
+    )
+    registry = build_source_site_method_audit_registry()
+    msn_article_row = source_site_method_audit_row_by_method(registry, "msn_article")
+    msn_comments_row = source_site_method_audit_row_by_method(registry, "msn_shadow_dom_comments")
+    assert msn_article_row is not None
+    assert msn_comments_row is not None
+    assert result.grabbed_source_record.selector_audit_reference_ids == tuple(
+        sorted((msn_article_row.site_method_id, msn_comments_row.site_method_id))
     )
     assert result.execution_gate_plan.approval_required is True
     assert {request.action_kind.value for request in result.execution_gate_plan.requests} == {

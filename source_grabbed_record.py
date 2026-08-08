@@ -50,6 +50,8 @@ class GrabbedSourceRecord:
     manual_observation_reference_ids: tuple[str, ...] = ()
     provider_receipt_reference_ids: tuple[str, ...] = ()
     selector_audit_reference_ids: tuple[str, ...] = ()
+    database_review_receipt_reference_ids: tuple[str, ...] = ()
+    release_action_receipt_reference_ids: tuple[str, ...] = ()
     content_digest_sha256: str = ""
     redacted_credential_references: tuple[str, ...] = ()
     evidence_item_ids: tuple[str, ...] = ()
@@ -93,6 +95,8 @@ class GrabbedSourceRecord:
         data["manual_observation_reference_count"] = len(self.manual_observation_reference_ids)
         data["provider_receipt_reference_count"] = len(self.provider_receipt_reference_ids)
         data["selector_audit_reference_count"] = len(self.selector_audit_reference_ids)
+        data["database_review_receipt_reference_count"] = len(self.database_review_receipt_reference_ids)
+        data["release_action_receipt_reference_count"] = len(self.release_action_receipt_reference_ids)
         return data
 
 
@@ -177,6 +181,8 @@ def build_grabbed_source_record(
     manual_observation_reference_ids: Iterable[str] = (),
     provider_receipt_reference_ids: Iterable[str] = (),
     selector_audit_reference_ids: Iterable[str] = (),
+    database_review_receipt_reference_ids: Iterable[str] = (),
+    release_action_receipt_reference_ids: Iterable[str] = (),
     redacted_credential_references: Iterable[str] = (),
     created_at_utc: str = "",
     updated_at_utc: str = "",
@@ -196,6 +202,8 @@ def build_grabbed_source_record(
     safe_manual_refs = _stable_tuple(manual_observation_reference_ids)
     safe_provider_refs = _stable_tuple(provider_receipt_reference_ids)
     safe_selector_audit_refs = _stable_tuple(selector_audit_reference_ids)
+    safe_database_review_receipt_refs = _stable_tuple(database_review_receipt_reference_ids)
+    safe_release_action_receipt_refs = _stable_tuple(release_action_receipt_reference_ids)
     content_digest = _sha256(
         {
             "adapter_id": adapter_id,
@@ -204,10 +212,12 @@ def build_grabbed_source_record(
             "article_reference_ids": safe_article_refs,
             "canonical_url": canonical_url,
             "comment_reference_ids": safe_comment_refs,
+            "database_review_receipt_reference_ids": safe_database_review_receipt_refs,
             "manual_observation_reference_ids": safe_manual_refs,
             "media_reference_ids": safe_media_refs,
             "provider_receipt_reference_ids": safe_provider_refs,
             "relative_artifact_paths": safe_artifact_paths,
+            "release_action_receipt_reference_ids": safe_release_action_receipt_refs,
             "screenshot_reference_ids": safe_screenshot_refs,
             "selected_modes": _stable_tuple(selected_modes),
             "selector_audit_reference_ids": safe_selector_audit_refs,
@@ -246,6 +256,8 @@ def build_grabbed_source_record(
         manual_observation_reference_ids=safe_manual_refs,
         provider_receipt_reference_ids=safe_provider_refs,
         selector_audit_reference_ids=safe_selector_audit_refs,
+        database_review_receipt_reference_ids=safe_database_review_receipt_refs,
+        release_action_receipt_reference_ids=safe_release_action_receipt_refs,
         content_digest_sha256=content_digest,
         redacted_credential_references=_stable_tuple(redacted_credential_references),
         evidence_item_ids=_stable_tuple(evidence_item_ids),

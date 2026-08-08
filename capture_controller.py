@@ -41,6 +41,7 @@ from capture_status import COMPLETENESS_COMPLETE, FIDELITY_RAW, OPERATIONAL_STAT
 from source_adapters import default_source_method_profile_for_adapter
 from source_grabbed_record import GrabbedSourceRecord, build_grabbed_source_record
 from source_resource_state import DiscussionCaptureOptions, SourceResourceRowState
+from source_site_method_audit_registry import build_source_site_method_audit_registry
 
 
 CAPTURE_CONTROLLER_SCOPE = (
@@ -578,6 +579,57 @@ def _provider_receipt_references(
     return tuple(sorted(refs))
 
 
+def _selector_audit_references_for_plan(
+    *,
+    adapter_id: str,
+    selected_modes: tuple[str, ...],
+    selected_media_resource_ids: tuple[str, ...],
+    archive_requested: bool,
+) -> tuple[str, ...]:
+    methods: set[str] = set()
+    mode_set = set(selected_modes)
+    if adapter_id == "msn":
+        if "webpage" in mode_set:
+            methods.add("msn_article")
+        if "comments" in mode_set:
+            methods.add("msn_shadow_dom_comments")
+    elif adapter_id == "twitter_x":
+        methods.update(
+            {
+                "twitter_x_public_post_archive_manual_import",
+                "twitter_x_reply_thread_archive_manual_import",
+            }
+        )
+    elif adapter_id == "youtube":
+        if selected_media_resource_ids or "webpage" in mode_set:
+            methods.add("youtube_media_transcript")
+        if "comments" in mode_set:
+            methods.add("youtube_comments")
+    elif adapter_id == "news_website":
+        if "webpage" in mode_set:
+            methods.add("generic_article_html")
+        if "comments" in mode_set:
+            methods.update(
+                {
+                    "generic_comments_manual_import",
+                    "generic_comments_site_specific_selector",
+                    "generic_comments_archive_only_import",
+                }
+            )
+    elif adapter_id == "manual_local_import":
+        methods.add("archive_only_import")
+    if archive_requested:
+        methods.add("archive_only_import")
+
+    registry = build_source_site_method_audit_registry()
+    refs = tuple(
+        row.site_method_id
+        for row in registry.rows
+        if row.method_id in methods
+    )
+    return tuple(sorted(refs))
+
+
 def build_operational_capture_plan(
     *,
     row: SourceResourceRowState,
@@ -841,6 +893,12 @@ def build_operational_capture_plan(
             ARTIFACT_TYPE_ACCESSIBILITY_TREE,
         },
     )
+    selector_audit_reference_ids = _selector_audit_references_for_plan(
+        adapter_id=row.adapter_id,
+        selected_modes=selected_modes_tuple,
+        selected_media_resource_ids=tuple(selected_media_resource_ids),
+        archive_requested=archive_requested,
+    )
     grabbed_source_record = build_grabbed_source_record(
         source_row_id=row.row_id,
         source_url=row.raw_url,
@@ -862,6 +920,7 @@ def build_operational_capture_plan(
         snapshot_reference_ids=snapshot_reference_ids,
         manual_observation_reference_ids=(execution_gate_plan.plan_id,),
         provider_receipt_reference_ids=_provider_receipt_references(archive_metadata),
+        selector_audit_reference_ids=selector_audit_reference_ids,
         created_at_utc=timestamp_utc,
         updated_at_utc=timestamp_utc,
     )
