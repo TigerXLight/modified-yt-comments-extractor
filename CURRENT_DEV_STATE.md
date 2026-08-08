@@ -1095,3 +1095,9 @@ Next implementation work should connect this closeout to concrete release-sectio
 - Commit scope: source authority resolution, page/comment/media capture recipes, archive normalization/provider adapter execution, release bundle storage, evidence source links/taxonomy, Total Export artifact inventory, source receipt chains, action-log hash chains, operator approval ledger, GUI provider picker/named-site run wizard, KEYS/ACCOUNTS added-provider search and add-provider wizard, credential redaction verification, live smoke command runner, manual observation importer, archive result review, release audit report, source package verification, export queue dispatch, runtime metrics, provider capability documentation, and final operator handoff.
 - KEYS/ACCOUNTS remains the canonical label for credential/account surfaces.
 - Credential material remains represented only by references and redacted hashes in receipts and ledgers.
+## Source Adapter Capture Delivery Mega Bundle Closeout
+
+- Status: SOURCE_ADAPTER_CAPTURE_DELIVERY_MEGA_BUNDLE_CLOSEOUT_RECORDED
+- Commit scope: capture profile resolution, browser context launch, scroll capture, shadow-DOM comments, media metadata, transcript source binding, archive routing/polling/import, artifact digests, evidence claim materialization, review decision writing, evidence database commit, Total Export source/release manifesting, release package/publish/file-library delivery, provider/account binding, KEYS/ACCOUNTS added-provider registry/catalog filter, secret reference hashes, operator approval workflow, live run state machine, receipt chain validation, failure recovery, GUI execution/review panels, operator runbook packaging, manual smoke import closeout, and source/release acceptance.
+- KEYS/ACCOUNTS remains the canonical label for credential/account surfaces.
+- Credential material remains represented only by references and redacted hashes in receipts and ledgers.
