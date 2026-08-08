@@ -237,6 +237,7 @@ def build_source_evidence_review_manifest_with_workflow_state(
     source_database_recognition_plan_metadata: Mapping[str, Any] | None = None,
     source_url_files_bridge_state_metadata: Mapping[str, Any] | None = None,
     source_behavior_provenance_log_metadata: Mapping[str, Any] | None = None,
+    source_execution_bridge_results_metadata: Mapping[str, Any] | None = None,
 ) -> TotalExportManifest:
     """Return a manifest copy with a workflow-state metadata sidecar asset.
 
@@ -494,6 +495,12 @@ def build_source_evidence_review_manifest_with_workflow_state(
             "Source behavior provenance log metadata",
             "Source behavior/provenance hash-chain sidecar with redacted details.",
             "Source behavior provenance log metadata sidecar included.",
+        ),
+        (
+            source_execution_bridge_results_metadata,
+            "Source execution bridge results metadata",
+            "Source execution bridge results sidecar: local fixture, fake-HTTP, and mocked-subprocess tested execution bridges.",
+            "Source execution bridge results metadata sidecar included.",
         ),
     )
     added_note_labels: list[str] = []

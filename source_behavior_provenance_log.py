@@ -29,6 +29,19 @@ class BehaviorActionType(str, Enum):
     SOURCE_URL_MEDIA_ROW_CREATED = "source_url_media_row_created"
     OPERATOR_COMMAND_PACK_CREATED = "operator_command_pack_created"
     MANUAL_SMOKE_CHECKLIST_CREATED = "manual_smoke_checklist_created"
+    ARTICLE_CAPTURE_EXECUTED = "article_capture_executed"
+    PAGE_OUTLINE_CAPTURE_EXECUTED = "page_outline_capture_executed"
+    SCREENSHOT_CAPTURE_EXECUTED = "screenshot_capture_executed"
+    COMMENTS_CAPTURE_EXECUTED = "comments_capture_executed"
+    LIVECHAT_CAPTURE_EXECUTED = "livechat_capture_executed"
+    MEDIA_DISCOVERY_EXECUTED = "media_discovery_executed"
+    MEDIA_DOWNLOAD_EXECUTED = "media_download_executed"
+    ARCHIVE_PROVIDER_REQUEST_EXECUTED = "archive_provider_request_executed"
+    OFFLINE_BUNDLE_WRITTEN = "offline_bundle_written"
+    EVIDENCE_MOVEMENT_EXECUTED = "evidence_movement_executed"
+    CHALLENGE_PAUSED = "challenge_paused"
+    EXECUTION_CANCELLED = "execution_cancelled"
+    EXECUTION_FAILED = "execution_failed"
 
 
 @dataclass(frozen=True)
@@ -312,4 +325,176 @@ def build_source_operational_behavior_log(
         ),
         completed_evidence_claimed=bool(completed_receipt_ref),
         file_movement_performed=False,
+    )
+
+
+def build_execution_bridge_behavior_log(
+    *,
+    session_id: str,
+    source_url: str,
+    timestamp_utc: str = "2026-08-08T00:00:00Z",
+    actor_label: str = "operator",
+    screenshot_count: int = 0,
+    comment_count: int = 0,
+    livechat_event_count: int = 0,
+    media_resource_count: int = 0,
+    media_download_count: int = 0,
+    archive_request_count: int = 0,
+    offline_bundle_name: str = "",
+    movement_receipt_ref: str = "",
+    challenge_paused: bool = False,
+    cancelled: bool = False,
+    failed_reason: str = "",
+) -> BehaviorProvenanceLog:
+    raw_entries: list[BehaviorLogEntry] = [
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_url_entered",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.URL_ENTERED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_article_executed",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.ARTICLE_CAPTURE_EXECUTED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"local_fixture_or_local_file_only": True},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_outline_executed",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.PAGE_OUTLINE_CAPTURE_EXECUTED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"local_fixture_or_local_file_only": True},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_screenshot_executed",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.SCREENSHOT_CAPTURE_EXECUTED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"screenshot_count": screenshot_count, "external_site": False},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_comments_executed",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.COMMENTS_CAPTURE_EXECUTED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"comment_count": comment_count, "raw_payload_included": False},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_livechat_executed",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.LIVECHAT_CAPTURE_EXECUTED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"event_count": livechat_event_count, "text_first": True},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_media_discovery_executed",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.MEDIA_DISCOVERY_EXECUTED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"resource_count": media_resource_count},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_media_download_executed",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.MEDIA_DOWNLOAD_EXECUTED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"selected_download_count": media_download_count, "external_download": False},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_archive_request_executed",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.ARCHIVE_PROVIDER_REQUEST_EXECUTED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"request_count": archive_request_count, "fake_http_or_approval_gated": True},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_offline_bundle_written",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.OFFLINE_BUNDLE_WRITTEN,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            details={"bundle_name": offline_bundle_name, "full_path_included": False},
+        ),
+        BehaviorLogEntry(
+            entry_id=f"{session_id}_movement_executed",
+            timestamp_utc=timestamp_utc,
+            action_type=BehaviorActionType.EVIDENCE_MOVEMENT_EXECUTED,
+            session_id=session_id,
+            actor_label=actor_label,
+            source_url=source_url,
+            item_ref=movement_receipt_ref,
+            details={"approved_root_required": True, "user_evidence_file_moved": False},
+        ),
+    ]
+    if challenge_paused:
+        raw_entries.append(
+            BehaviorLogEntry(
+                entry_id=f"{session_id}_challenge_paused",
+                timestamp_utc=timestamp_utc,
+                action_type=BehaviorActionType.CHALLENGE_PAUSED,
+                session_id=session_id,
+                actor_label=actor_label,
+                source_url=source_url,
+                details={"manual_operator_handoff": True},
+            )
+        )
+    if cancelled:
+        raw_entries.append(
+            BehaviorLogEntry(
+                entry_id=f"{session_id}_cancelled",
+                timestamp_utc=timestamp_utc,
+                action_type=BehaviorActionType.EXECUTION_CANCELLED,
+                session_id=session_id,
+                actor_label=actor_label,
+                source_url=source_url,
+            )
+        )
+    if failed_reason:
+        raw_entries.append(
+            BehaviorLogEntry(
+                entry_id=f"{session_id}_failed",
+                timestamp_utc=timestamp_utc,
+                action_type=BehaviorActionType.EXECUTION_FAILED,
+                session_id=session_id,
+                actor_label=actor_label,
+                source_url=source_url,
+                details={"failure_reason": failed_reason},
+            )
+        )
+    return BehaviorProvenanceLog(
+        log_id=f"execution_bridge_behavior_log_{session_id}",
+        entries=chain_behavior_entries(raw_entries),
+        witnesses=(
+            AccountableWitnessRecord(
+                witness_id=f"{session_id}_operator",
+                witness_role="execution_bridge_operator_witness",
+                display_label=actor_label,
+                captured_by_user_at_utc=timestamp_utc,
+                source_item_ref=source_url,
+                evidence_proof_ref=f"hash_chain:{session_id}",
+            ),
+        ),
+        completed_evidence_claimed=False,
+        file_movement_performed=bool(movement_receipt_ref),
     )

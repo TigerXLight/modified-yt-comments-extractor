@@ -96,6 +96,7 @@ SOURCE_EVIDENCE_MOVEMENT_PLAN_FILENAME = "source_evidence_movement_plan.json"
 SOURCE_DATABASE_RECOGNITION_PLAN_FILENAME = "source_database_recognition_plan.json"
 SOURCE_URL_FILES_BRIDGE_STATE_FILENAME = "source_url_files_bridge_state.json"
 SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME = "source_behavior_provenance_log.json"
+SOURCE_EXECUTION_BRIDGE_RESULTS_FILENAME = "source_execution_bridge_results.json"
 BUNDLE_INDEX_FILENAME = "source_evidence_workflow_review_bundle.json"
 
 
@@ -196,6 +197,7 @@ class SourceEvidenceWorkflowStoreReadResult:
     source_database_recognition_plan: Mapping[str, Any]
     source_url_files_bridge_state: Mapping[str, Any]
     source_behavior_provenance_log: Mapping[str, Any]
+    source_execution_bridge_results: Mapping[str, Any]
     schema_version: str = SOURCE_EVIDENCE_WORKFLOW_STORE_SCHEMA_VERSION
     metadata_file_read_performed: bool = True
     evidence_file_read_performed: bool = False
@@ -485,6 +487,8 @@ def write_source_evidence_workflow_review_bundle(
     source_url_files_bridge_state_json = _stable_json(source_url_files_bridge_state, pretty=True)
     source_behavior_provenance_log = _value_for_dict(state.source_behavior_provenance_log)
     source_behavior_provenance_log_json = _stable_json(source_behavior_provenance_log, pretty=True)
+    source_execution_bridge_results = _value_for_dict(state.source_execution_bridge_results)
+    source_execution_bridge_results_json = _stable_json(source_execution_bridge_results, pretty=True)
     review_manifest = build_source_evidence_review_manifest_with_workflow_state(
         state.review_manifest,
         workflow_state_metadata=state.to_dict(),
@@ -512,6 +516,7 @@ def write_source_evidence_workflow_review_bundle(
         source_database_recognition_plan_metadata=source_database_recognition_plan,
         source_url_files_bridge_state_metadata=source_url_files_bridge_state,
         source_behavior_provenance_log_metadata=source_behavior_provenance_log,
+        source_execution_bridge_results_metadata=source_execution_bridge_results,
     )
     review_manifest_json = source_evidence_review_manifest_to_json(review_manifest)
     queue_review_store = state.queue_review_store_document.to_dict()
@@ -594,6 +599,7 @@ def write_source_evidence_workflow_review_bundle(
         _stored_file("source_database_recognition_plan", SOURCE_DATABASE_RECOGNITION_PLAN_FILENAME, source_database_recognition_plan_json),
         _stored_file("source_url_files_bridge_state", SOURCE_URL_FILES_BRIDGE_STATE_FILENAME, source_url_files_bridge_state_json),
         _stored_file("source_behavior_provenance_log", SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME, source_behavior_provenance_log_json),
+        _stored_file("source_execution_bridge_results", SOURCE_EXECUTION_BRIDGE_RESULTS_FILENAME, source_execution_bridge_results_json),
     )
     result = build_source_evidence_workflow_store_result(state=state, files=files)
     result_json = source_evidence_workflow_store_result_to_json(result)
@@ -662,6 +668,7 @@ def write_source_evidence_workflow_review_bundle(
     _atomic_write_text(output_root / SOURCE_DATABASE_RECOGNITION_PLAN_FILENAME, source_database_recognition_plan_json)
     _atomic_write_text(output_root / SOURCE_URL_FILES_BRIDGE_STATE_FILENAME, source_url_files_bridge_state_json)
     _atomic_write_text(output_root / SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME, source_behavior_provenance_log_json)
+    _atomic_write_text(output_root / SOURCE_EXECUTION_BRIDGE_RESULTS_FILENAME, source_execution_bridge_results_json)
     _atomic_write_text(output_root / BUNDLE_INDEX_FILENAME, result_json)
     return result
 
@@ -751,6 +758,9 @@ def read_source_evidence_workflow_review_bundle(
     source_behavior_provenance_log = json.loads(
         (input_root / SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME).read_text(encoding="utf-8")
     )
+    source_execution_bridge_results = json.loads(
+        (input_root / SOURCE_EXECUTION_BRIDGE_RESULTS_FILENAME).read_text(encoding="utf-8")
+    )
     if not isinstance(workflow_state, dict) or not isinstance(review_manifest, dict):
         raise ValueError("Source Evidence workflow bundle sidecars must be JSON objects")
     if not isinstance(release_readiness, dict):
@@ -808,6 +818,7 @@ def read_source_evidence_workflow_review_bundle(
         ("database recognition plan", source_database_recognition_plan),
         ("URL/FILES bridge state", source_url_files_bridge_state),
         ("behavior provenance log", source_behavior_provenance_log),
+        ("execution bridge results", source_execution_bridge_results),
     ):
         if not isinstance(payload, dict):
             raise ValueError(f"Source Evidence {label} sidecar must be a JSON object")
@@ -844,6 +855,7 @@ def read_source_evidence_workflow_review_bundle(
         source_database_recognition_plan=source_database_recognition_plan,
         source_url_files_bridge_state=source_url_files_bridge_state,
         source_behavior_provenance_log=source_behavior_provenance_log,
+        source_execution_bridge_results=source_execution_bridge_results,
     )
 
 

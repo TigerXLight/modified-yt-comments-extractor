@@ -86,6 +86,7 @@ from evidence_movement_approval import build_default_evidence_movement_plan
 from evidence_database_recognition_plan import build_default_database_recognition_plan
 from source_url_files_bridge import build_default_source_url_files_bridge_state
 from source_behavior_provenance_log import build_source_operational_behavior_log
+from source_execution_bridge_results import build_source_execution_bridge_results
 from source_site_method_audit_registry import (
     SourceSiteMethodAuditRegistry,
     build_source_site_method_audit_registry,
@@ -223,6 +224,12 @@ class SourceEvidenceWorkflowState:
     source_behavior_provenance_log: Any
     source_behavior_provenance_log_id: str
     source_behavior_provenance_entry_count: int
+    source_execution_bridge_results: Any
+    source_execution_bridge_results_id: str
+    source_execution_bridge_result_count: int
+    source_execution_bridge_local_fixture_tested_count: int
+    source_execution_bridge_mocked_subprocess_tested_count: int
+    source_execution_bridge_fake_http_tested_count: int
     release_readiness: SourceEvidenceReleaseReadiness
     release_readiness_id: str
     release_target_count: int
@@ -347,6 +354,11 @@ class SourceEvidenceWorkflowState:
                 f"Source URL/FILES rows: {self.source_url_files_bridge_files_row_count}",
                 f"Behavior provenance log: {self.source_behavior_provenance_log_id}",
                 f"Behavior provenance entries: {self.source_behavior_provenance_entry_count}",
+                f"Execution bridge results: {self.source_execution_bridge_results_id}",
+                f"Execution bridges implemented: {self.source_execution_bridge_result_count}",
+                f"Execution bridges local-fixture tested: {self.source_execution_bridge_local_fixture_tested_count}",
+                f"Execution bridges mocked-subprocess tested: {self.source_execution_bridge_mocked_subprocess_tested_count}",
+                f"Execution bridges fake-HTTP tested: {self.source_execution_bridge_fake_http_tested_count}",
                 f"Release readiness: {self.release_readiness.release_status}",
                 f"Release targets: {self.release_target_count}",
                 f"Release action plan: {self.release_action_plan_id}",
@@ -510,6 +522,7 @@ def build_source_evidence_workflow_state(
         timestamp_utc=timestamp,
         movement_preview_ref=source_evidence_movement_plan["preview"]["movement_id"],
     ).to_dict()
+    source_execution_bridge_results = build_source_execution_bridge_results().to_dict()
     source_named_site_priority_plan = build_source_named_site_priority_plan(
         source_site_method_audit_registry,
         database_review_workflow=source_database_review_workflow,
@@ -616,6 +629,7 @@ def build_source_evidence_workflow_state(
             "source_database_recognition_plan": source_database_recognition_plan,
             "source_url_files_bridge_state": source_url_files_bridge_state,
             "source_behavior_provenance_log": source_behavior_provenance_log,
+            "source_execution_bridge_results": source_execution_bridge_results,
             "grabbed_source_record": (
                 plan.grabbed_source_record.to_dict()
                 if plan.grabbed_source_record is not None
@@ -780,6 +794,16 @@ def build_source_evidence_workflow_state(
         source_behavior_provenance_log=source_behavior_provenance_log,
         source_behavior_provenance_log_id=source_behavior_provenance_log["log_id"],
         source_behavior_provenance_entry_count=source_behavior_provenance_log["entry_count"],
+        source_execution_bridge_results=source_execution_bridge_results,
+        source_execution_bridge_results_id=source_execution_bridge_results["result_id"],
+        source_execution_bridge_result_count=source_execution_bridge_results["row_count"],
+        source_execution_bridge_local_fixture_tested_count=(
+            source_execution_bridge_results["local_fixture_tested_count"]
+        ),
+        source_execution_bridge_mocked_subprocess_tested_count=(
+            source_execution_bridge_results["mocked_subprocess_tested_count"]
+        ),
+        source_execution_bridge_fake_http_tested_count=source_execution_bridge_results["fake_http_tested_count"],
         release_readiness=release_readiness,
         release_readiness_id=release_readiness.release_readiness_id,
         release_target_count=release_readiness.target_count,

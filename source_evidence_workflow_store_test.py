@@ -35,6 +35,7 @@ from source_evidence_workflow_store import (
     SOURCE_DATABASE_RECOGNITION_PLAN_FILENAME,
     SOURCE_URL_FILES_BRIDGE_STATE_FILENAME,
     SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME,
+    SOURCE_EXECUTION_BRIDGE_RESULTS_FILENAME,
     SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME,
     WORKFLOW_STATE_FILENAME,
     read_source_evidence_workflow_review_bundle,
@@ -108,10 +109,11 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
             SOURCE_DATABASE_RECOGNITION_PLAN_FILENAME,
             SOURCE_URL_FILES_BRIDGE_STATE_FILENAME,
             SOURCE_BEHAVIOR_PROVENANCE_LOG_FILENAME,
+            SOURCE_EXECUTION_BRIDGE_RESULTS_FILENAME,
         }
         expected_files = expected_sidecars | {BUNDLE_INDEX_FILENAME}
         assert {file.filename for file in result.files} == expected_sidecars
-        assert result.file_count == 31
+        assert result.file_count == 32
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_read_performed is False
         assert result.evidence_file_move_performed is False
@@ -216,6 +218,9 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
         assert loaded.source_database_recognition_plan["file_movement_performed"] is False
         assert loaded.source_url_files_bridge_state["files_row_count"] >= 1
         assert loaded.source_behavior_provenance_log["chain_valid"] is True
+        assert loaded.source_execution_bridge_results["row_count"] >= 6
+        assert loaded.source_execution_bridge_results["mocked_subprocess_tested_count"] >= 2
+        assert loaded.source_execution_bridge_results["fake_http_tested_count"] >= 1
         assert {
             target["target_kind"] for target in loaded.release_readiness["targets"]
         } == {
