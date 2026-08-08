@@ -1,0 +1,13 @@
+# Source Adapter Browser Session Receipt Runtime
+
+This implementation milestone adds `source_adapter_browser_session_receipt_runtime` as a callable runtime surface for the shared Source Adapter pipeline.
+
+It covers browser session receipt rows for launched contexts, screenshots, HTML snapshots, command outputs, and provenance digests.
+
+The milestone preserves the `KEYS/ACCOUNTS` label, carries credential references as identifiers/redacted hashes only, records receipt-required rows, and keeps provider/network execution behind explicit operator-approved runtime calls.
+
+Tested status strings:
+
+- `SOURCE_ADAPTER_BROWSER_SESSION_RECEIPT_RUNTIME_BUILT`
+- `SOURCE_ADAPTER_BROWSER_SESSION_RECEIPT_RUNTIME_READY_FOR_NEXT_IMPLEMENTATION_BUNDLE`
+- `SOURCE_ADAPTER_BROWSER_SESSION_RECEIPT_RUNTIME_ROWS_READY`
