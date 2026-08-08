@@ -125,6 +125,92 @@ class SourceSiteMethodAuditRegistry:
         return data
 
 
+@dataclass(frozen=True)
+class SourceSiteSelectorAuditPack:
+    """Named-site audit packet derived from a source site/method row.
+
+    The packet is still metadata-only. It gives review/export layers one durable
+    object that describes the exact reference buckets a future grabbed-source
+    record is expected to populate after explicit operator approval.
+    """
+
+    selector_audit_pack_id: str
+    site_method_id: str
+    site_profile_id: str
+    site_display_name: str
+    adapter_id: str
+    method_id: str
+    source_type: str
+    selector_or_strategy: str
+    expected_artifact_refs: tuple[str, ...]
+    typed_grabbed_source_reference_buckets: tuple[str, ...]
+    archive_fallback: str
+    manual_observation_support: str
+    database_mapping: tuple[str, ...]
+    total_export_mapping: tuple[str, ...]
+    operator_approval_requirement: str
+    status: str
+    execution_status: str
+    selector_audit_required: bool
+    live_approved_only: bool
+    review_status: str = "USER_REVIEW_REQUIRED"
+    metadata_only: bool = True
+    local_only: bool = True
+    live_execution_performed: bool = False
+    browser_automation_performed: bool = False
+    provider_call_performed: bool = False
+    archive_submission_performed: bool = False
+    download_performed: bool = False
+    file_move_performed: bool = False
+    completed_evidence_claimed: bool = False
+    automatic_classification: bool = False
+    protected_attribute_inference_performed: bool = False
+    sensitive_inference_prohibited: bool = True
+    notes: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class SourceSiteSelectorAuditPackCollection:
+    collection_id: str
+    packs: tuple[SourceSiteSelectorAuditPack, ...]
+    schema_version: str = SOURCE_SITE_METHOD_AUDIT_REGISTRY_SCHEMA_VERSION
+    review_status: str = "USER_REVIEW_REQUIRED"
+    metadata_only: bool = True
+    local_only: bool = True
+    live_execution_performed: bool = False
+    browser_automation_performed: bool = False
+    provider_call_performed: bool = False
+    archive_submission_performed: bool = False
+    download_performed: bool = False
+    file_move_performed: bool = False
+    completed_evidence_claimed: bool = False
+    automatic_classification: bool = False
+    protected_attribute_inference_performed: bool = False
+    sensitive_inference_prohibited: bool = True
+
+    @property
+    def pack_count(self) -> int:
+        return len(self.packs)
+
+    @property
+    def selector_audit_required_count(self) -> int:
+        return sum(1 for pack in self.packs if pack.selector_audit_required)
+
+    @property
+    def live_approved_only_count(self) -> int:
+        return sum(1 for pack in self.packs if pack.live_approved_only)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = _value_for_dict(self)
+        data["live_approved_only_count"] = self.live_approved_only_count
+        data["pack_count"] = self.pack_count
+        data["selector_audit_required_count"] = self.selector_audit_required_count
+        return data
+
+
 def _value_for_dict(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value
@@ -153,6 +239,67 @@ def _sha16(data: Any) -> str:
 
 def _stable_tuple(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(sorted(str(value or "").strip() for value in values if str(value or "").strip()))
+
+
+def _typed_reference_buckets_for_row(row: SourceSiteMethodAuditRow) -> tuple[str, ...]:
+    buckets: set[str] = {
+        "manual_observation_reference_ids",
+        "selector_audit_reference_ids",
+    }
+    if "article" in row.source_type:
+        buckets.update(
+            {
+                "article_reference_ids",
+                "archive_url_references",
+                "screenshot_reference_ids",
+                "snapshot_reference_ids",
+            }
+        )
+    if "comment" in row.source_type or "reply" in row.source_type or row.method_id.endswith("comments"):
+        buckets.update(
+            {
+                "comment_reference_ids",
+                "archive_url_references",
+                "screenshot_reference_ids",
+            }
+        )
+    if "media" in row.source_type or "video" in row.source_type:
+        buckets.update({"media_reference_ids", "transcript_reference_ids"})
+    if "transcript" in row.source_type:
+        buckets.add("transcript_reference_ids")
+    if "archive" in row.source_type or "archive" in row.method_id:
+        buckets.update({"archive_url_references", "provider_receipt_reference_ids"})
+    return tuple(sorted(buckets))
+
+
+def _selector_pack_from_row(row: SourceSiteMethodAuditRow) -> SourceSiteSelectorAuditPack:
+    payload = {
+        "schema_version": SOURCE_SITE_METHOD_AUDIT_REGISTRY_SCHEMA_VERSION,
+        "site_method_id": row.site_method_id,
+        "typed_buckets": _typed_reference_buckets_for_row(row),
+    }
+    return SourceSiteSelectorAuditPack(
+        selector_audit_pack_id="source_site_selector_audit_pack_" + _sha16(payload),
+        site_method_id=row.site_method_id,
+        site_profile_id=row.site_profile_id,
+        site_display_name=row.site_display_name,
+        adapter_id=row.adapter_id,
+        method_id=row.method_id,
+        source_type=row.source_type,
+        selector_or_strategy=row.selector_or_strategy,
+        expected_artifact_refs=row.expected_artifact_refs,
+        typed_grabbed_source_reference_buckets=_typed_reference_buckets_for_row(row),
+        archive_fallback=row.archive_fallback,
+        manual_observation_support=row.manual_observation_support,
+        database_mapping=row.database_mapping,
+        total_export_mapping=row.total_export_mapping,
+        operator_approval_requirement=row.operator_approval_requirement,
+        status=row.status,
+        execution_status=row.execution_status,
+        selector_audit_required=row.selector_audit_required,
+        live_approved_only=row.live_approved_only,
+        notes=row.notes,
+    )
 
 
 def _row(
@@ -417,6 +564,63 @@ def source_site_method_audit_rows_by_status(
     return tuple(row for row in registry.rows if row.status == status)
 
 
+def build_source_site_selector_audit_pack_collection(
+    registry: SourceSiteMethodAuditRegistry | None = None,
+) -> SourceSiteSelectorAuditPackCollection:
+    source_registry = registry or build_source_site_method_audit_registry()
+    packs = tuple(_selector_pack_from_row(row) for row in source_registry.rows)
+    payload = {
+        "pack_ids": [pack.selector_audit_pack_id for pack in packs],
+        "schema_version": SOURCE_SITE_METHOD_AUDIT_REGISTRY_SCHEMA_VERSION,
+    }
+    return SourceSiteSelectorAuditPackCollection(
+        collection_id="source_site_selector_audit_packs_" + _sha16(payload),
+        packs=packs,
+    )
+
+
+def source_site_selector_audit_pack_by_method(
+    collection: SourceSiteSelectorAuditPackCollection,
+    method_id: str,
+) -> SourceSiteSelectorAuditPack | None:
+    for pack in collection.packs:
+        if pack.method_id == method_id:
+            return pack
+    return None
+
+
+def validate_source_site_selector_audit_pack_collection(data: Mapping[str, Any]) -> None:
+    if data.get("schema_version") != SOURCE_SITE_METHOD_AUDIT_REGISTRY_SCHEMA_VERSION:
+        raise ValueError("Unsupported source site selector audit pack schema version")
+    for flag in SOURCE_SITE_METHOD_UNSAFE_FLAGS:
+        if data.get(flag) is not False:
+            raise ValueError(f"Unsafe source site selector audit pack collection flag: {flag}")
+    packs = data.get("packs", ())
+    if not isinstance(packs, list) or not packs:
+        raise ValueError("Source site selector audit pack collection must contain packs")
+    seen: set[str] = set()
+    for pack in packs:
+        if not isinstance(pack, dict):
+            raise ValueError("Source site selector audit packs must be JSON objects")
+        for required in (
+            "selector_audit_pack_id",
+            "site_method_id",
+            "method_id",
+            "typed_grabbed_source_reference_buckets",
+            "status",
+        ):
+            if not pack.get(required):
+                raise ValueError(f"Source site selector audit pack missing required field: {required}")
+        if pack["selector_audit_pack_id"] in seen:
+            raise ValueError("Duplicate source site selector audit pack id")
+        seen.add(str(pack["selector_audit_pack_id"]))
+        if pack.get("status") not in SOURCE_SITE_METHOD_ALLOWED_STATUSES:
+            raise ValueError(f"Unsupported source site selector audit pack status: {pack.get('status')}")
+        for flag in SOURCE_SITE_METHOD_UNSAFE_FLAGS:
+            if pack.get(flag) is not False:
+                raise ValueError(f"Unsafe source site selector audit pack flag: {flag}")
+
+
 def validate_source_site_method_audit_registry(data: Mapping[str, Any]) -> None:
     if data.get("schema_version") != SOURCE_SITE_METHOD_AUDIT_REGISTRY_SCHEMA_VERSION:
         raise ValueError("Unsupported source site/method audit registry schema version")
@@ -457,3 +661,9 @@ def validate_source_site_method_audit_registry(data: Mapping[str, Any]) -> None:
 
 def source_site_method_audit_registry_to_json(registry: SourceSiteMethodAuditRegistry) -> str:
     return _stable_json(registry.to_dict(), pretty=True)
+
+
+def source_site_selector_audit_pack_collection_to_json(
+    collection: SourceSiteSelectorAuditPackCollection,
+) -> str:
+    return _stable_json(collection.to_dict(), pretty=True)
