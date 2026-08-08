@@ -464,3 +464,22 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 | Generic comments site-specific selector | selector_audit_required / live_approved_only | Named-site selector audit and explicit live approval required. |
 | Generic comments archive-only import | metadata_audit_ready | Operator-supplied archive metadata only. |
 | Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
+
+## Source Adapter Audit Readiness Big-Scope Coverage
+
+- Coverage marker: SOURCE_ADAPTER_AUDIT_READINESS_BIG_SCOPE_BUILT.
+- Coverage labels: MODEL_ONLY / LOCAL_FIXTURE_TESTED / UI_SCAFFOLD_ONLY / USER_REVIEW_REQUIRED / APPROVAL_REQUIRED / SELECTOR_AUDIT_REQUIRED / LIVE_APPROVED_ONLY.
+- Added tests for selector audit packs, safer Evidence Database site/method review updates, grabbed-source receipt/reference buckets, controller selector refs, workflow/store/export report sidecars, and named-site priority plan sidecars.
+
+| Area | Coverage state | Remaining gap |
+| --- | --- | --- |
+| Named-site selector audit packs | Done | Future live selector run requires approval. |
+| Database scan/edit/update receipts | Done | No real evidence file reads/moves or broad scans. |
+| Grabbed-source typed refs | Done | Runtime refs remain metadata-only until approved execution. |
+| Capture/controller metadata | Done | Selector audit refs are resolved from registry rows; no runtime capture. |
+| Workflow/store/export sidecars | Done | Sidecars are metadata JSON only, with pathless Total Export assets. |
+| UI/review bridge | Done | Existing review summary exposes counts; no new live controls. |
+| Adapter audit report generator | Done | Rows remain not live-executed and review-required. |
+| Named-site priority plan | Done | All rows approval-required; no live/manual smoke performed. |
+
+- Boundaries confirmed: no live site, browser automation, MSN/X/Twitter/YouTube/archive/API/provider calls, credentials/cookies/accounts, broad folder scan, evidence file move, completed-evidence claim, automatic classification, or protected-attribute inference.

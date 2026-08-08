@@ -888,3 +888,13 @@ Source Evidence workflow bundles write a `source_site_method_audit_registry.json
 | Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
 
 No live site access, browser automation, MSN/X/Twitter/YouTube/API/archive/provider calls, credential use, evidence file movement, completed-evidence claim, or protected-attribute inference occurred in this pass.
+
+## Source Adapter Audit Readiness Big-Scope Handoff
+
+- Current status: SOURCE_ADAPTER_AUDIT_READINESS_BIG_SCOPE_BUILT.
+- Implementation added real integration paths for named-site selector audit packs, Evidence Database scan/edit/update receipts, grabbed-source database/release receipt references, controller-populated selector audit references, workflow/store/export audit sidecars, an adapter audit report, and a named-site priority plan.
+- New sidecars in Source Evidence workflow review bundles:
+  - `source_adapter_audit_report.json`
+  - `source_named_site_priority_plan.json`
+- The big-scope path remains MODEL_ONLY / LOCAL_FIXTURE_TESTED / UI_SCAFFOLD_ONLY / USER_REVIEW_REQUIRED / APPROVAL_REQUIRED. It does not claim live capture, completed evidence, file existence, or provider execution.
+- Remaining next boundary: operator-approved named-site selector/live smoke execution, with explicit source URLs, allowed scopes, provider configuration references, and review/signoff before any live/browser/archive/provider/destructive action.

@@ -1171,3 +1171,13 @@ Next implementation work should connect this closeout to concrete release-sectio
 | Archive-only import | metadata_audit_ready | Original/archive URL metadata review only. |
 
 - No live site access, browser automation, X/Twitter/MSN/YouTube/API/archive/provider calls, credentials/cookies/accounts, evidence file moves, completed-evidence claims, or protected-attribute inference occurred.
+
+## Source Adapter Audit Readiness Big-Scope Closeout
+
+- Status: SOURCE_ADAPTER_AUDIT_READINESS_BIG_SCOPE_BUILT.
+- Added named-site selector audit packs derived from the durable site/method registry, including typed grabbed-source reference buckets for article, comments, media/transcript, archive, screenshot/snapshot, manual observation, provider receipt, and selector audit references.
+- Evidence Database site/method review updates now support manual-observation notes and review-needed scans, while rejecting raw payload insertion, full local path injection, protected/sensitive dimensions, completed-evidence claims, live-execution claims, file-movement claims, and credential/cookie/account material.
+- Grabbed-source records now include database review receipt and release action receipt reference buckets; capture controller plans populate selector audit references from the real registry rows.
+- Source Evidence workflow bundles now include metadata-only sidecars for `source_adapter_audit_report.json` and `source_named_site_priority_plan.json`; Total Export review manifests include pathless metadata assets for both.
+- The named-site priority plan remains APPROVAL_REQUIRED / USER_REVIEW_REQUIRED and only prepares future operator-approved MSN, X/Twitter, YouTube, generic article/comments, and archive-only review targets.
+- No live site access, browser automation, API/archive/provider calls, credentials/cookies/accounts, evidence file moves, completed-evidence claims, automatic classification, or protected-attribute inference occurred.

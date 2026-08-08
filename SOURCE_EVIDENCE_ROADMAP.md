@@ -986,3 +986,20 @@ Next work should wire these delivery artifacts into the real release-section and
 | Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
 
 - No live site access, browser automation, X/Twitter/MSN/YouTube/API/archive/provider calls, credentials/cookies/accounts, broad scans, evidence file moves, completed-evidence claims, or protected-attribute inference occurred.
+
+## Source Adapter Audit Readiness Big-Scope Milestone
+
+Status: SOURCE_ADAPTER_AUDIT_READINESS_BIG_SCOPE_BUILT.
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| Named-site selector audit packs | Done | Derived from the site/method registry; metadata-only typed reference buckets. |
+| Database review/edit/update workflow depth | Done | Review-needed scan and safe receipt updates; raw payload/full-path/live/destructive claims rejected. |
+| Source grabbed record coverage | Done | Added database review and release action receipt refs; controller now records selector audit refs. |
+| Workflow/store/export sidecars | Done | Added adapter audit report and named-site priority plan sidecars plus Total Export pathless metadata assets. |
+| UI/review bridge | Done | Workflow summary text exposes audit report and priority-plan review counts for the existing source review dialog path. |
+| Adapter/site-method audit report generator | Done | Deterministic report combines adapter method rows with site-method rows and current selector/live approval gaps. |
+| Named-site priority plan | Done | Approval-required plan covers MSN, X/Twitter, YouTube, generic article/comments, and archive-only import. |
+| Live/manual execution | Not done | Requires explicit operator approval; no live/browser/API/archive/provider action occurred. |
+
+Next boundary: named-site operator approval and live/manual smoke execution only after the user supplies exact sites, scopes, and allowed actions.
