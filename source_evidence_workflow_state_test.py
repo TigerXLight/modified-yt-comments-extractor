@@ -48,7 +48,7 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert state.grabbed_source_record is plan.grabbed_source_record
     assert state.grabbed_source_record_id.startswith("grabbed_source_")
     assert state.grabbed_source_artifact_count > 0
-    assert state.database_scan_record_count == len(state.connection.evidence_index_records) + 11
+    assert state.database_scan_record_count == len(state.connection.evidence_index_records) + 22
     assert state.database_scan_matched_count == state.database_scan_record_count
     assert state.access_provider_gate_summary_id.startswith("access_provider_gate_")
     assert state.access_provider_gate_record_count > 0
@@ -66,6 +66,13 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert state.source_named_site_priority_plan_id.startswith("source_named_site_priority_plan_")
     assert state.source_named_site_priority_plan_row_count == 9
     assert state.source_named_site_priority_plan_approval_required_count == 9
+    assert state.source_named_site_method_packs_id.startswith("source_named_site_method_packs_")
+    assert state.source_named_site_method_pack_count == 11
+    assert state.source_named_site_method_pack_msn_count == 2
+    assert state.source_named_site_method_pack_twitter_x_count == 2
+    assert state.source_named_site_method_pack_youtube_count == 2
+    assert state.source_named_site_method_pack_generic_archive_count == 5
+    assert state.source_named_site_method_pack_selector_audit_required_count == 1
     assert state.source_database_review_workflow_id.startswith("source_database_review_workflow_")
     assert state.source_database_review_scan_row_count == state.database_scan_record_count
     assert state.source_database_review_needed_row_count >= 1
@@ -106,10 +113,17 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert data["source_named_site_priority_plan"]["row_count"] == 9
     assert data["source_named_site_priority_plan"]["approval_required_count"] == 9
     assert data["source_named_site_priority_plan"]["live_execution_performed"] is False
+    assert data["source_named_site_method_packs"]["pack_count"] == 11
+    assert data["source_named_site_method_packs"]["selector_audit_required_count"] == 1
+    assert data["source_named_site_method_packs"]["live_execution_performed"] is False
     assert data["source_database_review_workflow"]["scan_row_count"] == state.database_scan_record_count
     assert data["source_database_review_workflow"]["bridge_summary"]["approval_packet_count"] == 1
+    assert data["source_database_review_workflow"]["named_site_method_pack_row_count"] == 11
+    assert data["source_database_review_workflow"]["bridge_summary"]["named_site_method_pack_count"] == 11
     assert data["source_record_review_workflow"]["source_record_count"] == 1
+    assert data["source_record_review_workflow"]["named_site_method_pack_count"] == 11
     assert data["source_selector_approval_packets"]["packet_count"] == 1
+    assert data["source_selector_approval_packets"]["named_site_method_pack_summary"]["pack_count"] == 11
     assert data["source_selector_approval_packets"]["no_live_execution_performed"] is True
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."

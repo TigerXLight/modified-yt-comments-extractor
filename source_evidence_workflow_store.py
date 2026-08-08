@@ -42,6 +42,10 @@ from source_named_site_priority_plan import (
     source_named_site_priority_plan_to_json,
     validate_source_named_site_priority_plan,
 )
+from source_named_site_method_packs import (
+    source_named_site_method_pack_collection_to_json,
+    validate_source_named_site_method_pack_collection,
+)
 from source_site_method_audit_registry import (
     source_site_method_audit_registry_to_json,
     validate_source_site_method_audit_registry,
@@ -65,6 +69,7 @@ SOURCE_ADAPTER_AUDIT_REGISTRY_FILENAME = "source_adapter_audit_registry.json"
 SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME = "source_site_method_audit_registry.json"
 SOURCE_ADAPTER_AUDIT_REPORT_FILENAME = "source_adapter_audit_report.json"
 SOURCE_NAMED_SITE_PRIORITY_PLAN_FILENAME = "source_named_site_priority_plan.json"
+SOURCE_NAMED_SITE_METHOD_PACKS_FILENAME = "source_named_site_method_packs.json"
 SOURCE_DATABASE_REVIEW_WORKFLOW_FILENAME = "source_database_review_workflow.json"
 SOURCE_RECORD_REVIEW_WORKFLOW_FILENAME = "source_record_review_workflow.json"
 SOURCE_SELECTOR_APPROVAL_PACKETS_FILENAME = "source_selector_approval_packets.json"
@@ -149,6 +154,7 @@ class SourceEvidenceWorkflowStoreReadResult:
     source_site_method_audit_registry: Mapping[str, Any]
     source_adapter_audit_report: Mapping[str, Any]
     source_named_site_priority_plan: Mapping[str, Any]
+    source_named_site_method_packs: Mapping[str, Any]
     source_database_review_workflow: Mapping[str, Any]
     source_record_review_workflow: Mapping[str, Any]
     source_selector_approval_packets: Mapping[str, Any]
@@ -353,6 +359,11 @@ def write_source_evidence_workflow_review_bundle(
     source_named_site_priority_plan_json = source_named_site_priority_plan_to_json(
         state.source_named_site_priority_plan
     )
+    source_named_site_method_packs = state.source_named_site_method_packs.to_dict()
+    validate_source_named_site_method_pack_collection(source_named_site_method_packs)
+    source_named_site_method_packs_json = source_named_site_method_pack_collection_to_json(
+        state.source_named_site_method_packs
+    )
     source_database_review_workflow = state.source_database_review_workflow.to_dict()
     source_database_review_workflow_json = _stable_json(source_database_review_workflow, pretty=True)
     source_record_review_workflow = state.source_record_review_workflow.to_dict()
@@ -367,6 +378,7 @@ def write_source_evidence_workflow_review_bundle(
         source_site_method_audit_registry_metadata=source_site_method_audit_registry,
         source_adapter_audit_report_metadata=source_adapter_audit_report,
         source_named_site_priority_plan_metadata=source_named_site_priority_plan,
+        source_named_site_method_packs_metadata=source_named_site_method_packs,
         source_database_review_workflow_metadata=source_database_review_workflow,
         source_record_review_workflow_metadata=source_record_review_workflow,
         source_selector_approval_packets_metadata=source_selector_approval_packets,
@@ -404,6 +416,11 @@ def write_source_evidence_workflow_review_bundle(
             "source_named_site_priority_plan",
             SOURCE_NAMED_SITE_PRIORITY_PLAN_FILENAME,
             source_named_site_priority_plan_json,
+        ),
+        _stored_file(
+            "source_named_site_method_packs",
+            SOURCE_NAMED_SITE_METHOD_PACKS_FILENAME,
+            source_named_site_method_packs_json,
         ),
         _stored_file(
             "source_database_review_workflow",
@@ -449,6 +466,10 @@ def write_source_evidence_workflow_review_bundle(
         source_named_site_priority_plan_json,
     )
     _atomic_write_text(
+        output_root / SOURCE_NAMED_SITE_METHOD_PACKS_FILENAME,
+        source_named_site_method_packs_json,
+    )
+    _atomic_write_text(
         output_root / SOURCE_DATABASE_REVIEW_WORKFLOW_FILENAME,
         source_database_review_workflow_json,
     )
@@ -492,6 +513,9 @@ def read_source_evidence_workflow_review_bundle(
     source_named_site_priority_plan = json.loads(
         (input_root / SOURCE_NAMED_SITE_PRIORITY_PLAN_FILENAME).read_text(encoding="utf-8")
     )
+    source_named_site_method_packs = json.loads(
+        (input_root / SOURCE_NAMED_SITE_METHOD_PACKS_FILENAME).read_text(encoding="utf-8")
+    )
     source_database_review_workflow = json.loads(
         (input_root / SOURCE_DATABASE_REVIEW_WORKFLOW_FILENAME).read_text(encoding="utf-8")
     )
@@ -528,6 +552,9 @@ def read_source_evidence_workflow_review_bundle(
     if not isinstance(source_named_site_priority_plan, dict):
         raise ValueError("Source Evidence named-site priority plan sidecar must be a JSON object")
     validate_source_named_site_priority_plan(source_named_site_priority_plan)
+    if not isinstance(source_named_site_method_packs, dict):
+        raise ValueError("Source Evidence named-site method packs sidecar must be a JSON object")
+    validate_source_named_site_method_pack_collection(source_named_site_method_packs)
     if not isinstance(source_database_review_workflow, dict):
         raise ValueError("Source Evidence database review workflow sidecar must be a JSON object")
     if not isinstance(source_record_review_workflow, dict):
@@ -548,6 +575,7 @@ def read_source_evidence_workflow_review_bundle(
         source_site_method_audit_registry=source_site_method_audit_registry,
         source_adapter_audit_report=source_adapter_audit_report,
         source_named_site_priority_plan=source_named_site_priority_plan,
+        source_named_site_method_packs=source_named_site_method_packs,
         source_database_review_workflow=source_database_review_workflow,
         source_record_review_workflow=source_record_review_workflow,
         source_selector_approval_packets=source_selector_approval_packets,

@@ -246,6 +246,8 @@ class SourceDatabaseReviewBridgeSummary:
     source_record_count: int = 0
     evidence_queue_row_count: int = 0
     approval_packet_count: int = 0
+    named_site_method_pack_count: int = 0
+    named_site_method_pack_selector_audit_required_count: int = 0
     no_live_execution_performed: bool = True
     metadata_only: bool = True
     user_review_required: bool = True
@@ -262,6 +264,7 @@ class SourceDatabaseReviewViewModel:
     review_needed_rows: tuple[Mapping[str, Any], ...] = ()
     adapter_audit_rows: tuple[Mapping[str, Any], ...] = ()
     site_method_audit_rows: tuple[Mapping[str, Any], ...] = ()
+    named_site_method_pack_rows: tuple[Mapping[str, Any], ...] = ()
     source_grabbed_record_rows: tuple[Mapping[str, Any], ...] = ()
     evidence_queue_rows: tuple[Mapping[str, Any], ...] = ()
     safe_update_proposals: tuple[SourceDatabaseReviewSafeUpdateProposalRow, ...] = ()
@@ -296,6 +299,16 @@ class SourceDatabaseReviewViewModel:
         return len(self.site_method_audit_rows)
 
     @property
+    def named_site_method_pack_row_count(self) -> int:
+        return len(self.named_site_method_pack_rows)
+
+    @property
+    def named_site_method_pack_selector_audit_required_count(self) -> int:
+        return sum(
+            1 for row in self.named_site_method_pack_rows if row.get("selector_audit_required") is True
+        )
+
+    @property
     def source_grabbed_record_count(self) -> int:
         return len(self.source_grabbed_record_rows)
 
@@ -323,6 +336,10 @@ class SourceDatabaseReviewViewModel:
                 "review_needed_row_count": self.review_needed_row_count,
                 "adapter_audit_row_count": self.adapter_audit_row_count,
                 "site_method_audit_row_count": self.site_method_audit_row_count,
+                "named_site_method_pack_row_count": self.named_site_method_pack_row_count,
+                "named_site_method_pack_selector_audit_required_count": (
+                    self.named_site_method_pack_selector_audit_required_count
+                ),
                 "source_grabbed_record_count": self.source_grabbed_record_count,
                 "evidence_queue_row_count": self.evidence_queue_row_count,
                 "pending_safe_edit_count": self.pending_safe_edit_count,
@@ -358,6 +375,31 @@ def _queue_rows(queue: Any) -> tuple[Mapping[str, Any], ...]:
             }
         )
     return tuple(rows)
+
+
+def _named_site_method_pack_rows(collection: Any | None) -> tuple[Mapping[str, Any], ...]:
+    rows: list[Mapping[str, Any]] = []
+    for pack in tuple(getattr(collection, "packs", ()) or ()):
+        data = _value_for_dict(pack)
+        rows.append(
+            {
+                "pack_id": data.get("pack_id", ""),
+                "site_method_id": data.get("site_method_id", ""),
+                "site_profile_id": data.get("site_profile_id", ""),
+                "site_display_name": data.get("site_display_name", ""),
+                "site_group": data.get("site_group", ""),
+                "method_id": data.get("method_id", ""),
+                "source_type": data.get("source_type", ""),
+                "status": data.get("status", ""),
+                "selector_audit_required": data.get("selector_audit_required", False),
+                "live_approved_only": data.get("live_approved_only", False),
+                "not_live_executed_status": data.get("not_live_executed_status", ""),
+                "remaining_blocker_count": len(data.get("exact_remaining_audit_blockers", ()) or ()),
+                "metadata_only": True,
+                "user_review_required": True,
+            }
+        )
+    return tuple(sorted(rows, key=lambda row: (row["site_group"], row["method_id"], row["pack_id"])))
 
 
 def _grabbed_source_rows(records: tuple[Any, ...]) -> tuple[Mapping[str, Any], ...]:
@@ -529,6 +571,8 @@ def build_source_database_review_bridge_summary(
     source_record_count: int = 0,
     evidence_queue_row_count: int = 0,
     approval_packet_count: int = 0,
+    named_site_method_pack_count: int = 0,
+    named_site_method_pack_selector_audit_required_count: int = 0,
 ) -> SourceDatabaseReviewBridgeSummary:
     payload = {
         "database_scan_row_count": database_scan_row_count,
@@ -539,6 +583,10 @@ def build_source_database_review_bridge_summary(
         "source_record_count": source_record_count,
         "evidence_queue_row_count": evidence_queue_row_count,
         "approval_packet_count": approval_packet_count,
+        "named_site_method_pack_count": named_site_method_pack_count,
+        "named_site_method_pack_selector_audit_required_count": (
+            named_site_method_pack_selector_audit_required_count
+        ),
     }
     return SourceDatabaseReviewBridgeSummary(
         summary_id="source_database_review_bridge_" + _sha16(payload),
@@ -551,6 +599,7 @@ def build_source_database_review_view_model(
     manifest: EvidenceIndexManifest,
     source_adapter_audit_registry: Any | None = None,
     source_site_method_audit_registry: Any | None = None,
+    source_named_site_method_packs: Any | None = None,
     grabbed_source_records: tuple[Any, ...] = (),
     evidence_queue: Any | None = None,
     filter_state: SourceDatabaseReviewFilterState | None = None,
@@ -572,6 +621,7 @@ def build_source_database_review_view_model(
     if not site_method_rows:
         site_method_rows = tuple(_scan_row_dict(row) for row in site_method_result.rows)
     adapter_rows = _registry_rows(source_adapter_audit_registry, "entries")
+    named_site_pack_rows = _named_site_method_pack_rows(source_named_site_method_packs)
     grabbed_rows = _grabbed_source_rows(tuple(grabbed_source_records or ()))
     queue_rows = _queue_rows(evidence_queue)
     selector_required_count = sum(
@@ -586,12 +636,17 @@ def build_source_database_review_view_model(
         source_record_count=len(grabbed_rows),
         evidence_queue_row_count=len(queue_rows),
         approval_packet_count=approval_packet_count,
+        named_site_method_pack_count=len(named_site_pack_rows),
+        named_site_method_pack_selector_audit_required_count=sum(
+            1 for row in named_site_pack_rows if row.get("selector_audit_required") is True
+        ),
     )
     payload = {
         "manifest_id": manifest.manifest_id,
         "scan_row_count": len(scan_rows),
         "review_needed_row_count": len(review_needed_rows),
         "site_method_audit_row_count": len(site_method_rows),
+        "named_site_method_pack_row_count": len(named_site_pack_rows),
         "adapter_audit_row_count": len(adapter_rows),
         "source_grabbed_record_count": len(grabbed_rows),
         "evidence_queue_row_count": len(queue_rows),
@@ -604,6 +659,7 @@ def build_source_database_review_view_model(
         review_needed_rows=review_needed_rows,
         adapter_audit_rows=adapter_rows,
         site_method_audit_rows=site_method_rows,
+        named_site_method_pack_rows=named_site_pack_rows,
         source_grabbed_record_rows=grabbed_rows,
         evidence_queue_rows=queue_rows,
         safe_update_proposals=tuple(safe_update_proposals),

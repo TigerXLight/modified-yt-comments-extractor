@@ -17,6 +17,7 @@ from capture_export_queue import (
 )
 from evidence_database_index import (
     EvidenceIndexManifest,
+    evidence_index_record_from_source_named_site_method_pack,
     evidence_index_record_from_source_site_method_audit_row,
     scan_evidence_index_records,
     stable_evidence_id,
@@ -49,6 +50,10 @@ from source_database_review_workflow import (
 from source_named_site_priority_plan import (
     SourceNamedSitePriorityPlan,
     build_source_named_site_priority_plan,
+)
+from source_named_site_method_packs import (
+    SourceNamedSiteMethodPackCollection,
+    build_source_named_site_method_pack_collection,
 )
 from source_record_review_workflow import (
     SourceRecordReviewWorkflow,
@@ -132,6 +137,14 @@ class SourceEvidenceWorkflowState:
     source_named_site_priority_plan_id: str
     source_named_site_priority_plan_row_count: int
     source_named_site_priority_plan_approval_required_count: int
+    source_named_site_method_packs: SourceNamedSiteMethodPackCollection
+    source_named_site_method_packs_id: str
+    source_named_site_method_pack_count: int
+    source_named_site_method_pack_msn_count: int
+    source_named_site_method_pack_twitter_x_count: int
+    source_named_site_method_pack_youtube_count: int
+    source_named_site_method_pack_generic_archive_count: int
+    source_named_site_method_pack_selector_audit_required_count: int
     source_database_review_workflow: SourceDatabaseReviewViewModel
     source_database_review_workflow_id: str
     source_database_review_scan_row_count: int
@@ -184,6 +197,7 @@ class SourceEvidenceWorkflowState:
         data["source_site_method_audit_registry"] = self.source_site_method_audit_registry.to_dict()
         data["source_adapter_audit_report"] = self.source_adapter_audit_report.to_dict()
         data["source_named_site_priority_plan"] = self.source_named_site_priority_plan.to_dict()
+        data["source_named_site_method_packs"] = self.source_named_site_method_packs.to_dict()
         data["source_database_review_workflow"] = self.source_database_review_workflow.to_dict()
         data["source_record_review_workflow"] = self.source_record_review_workflow.to_dict()
         data["source_selector_approval_packets"] = self.source_selector_approval_packets.to_dict()
@@ -222,6 +236,13 @@ class SourceEvidenceWorkflowState:
                 f"Named-site priority plan: {self.source_named_site_priority_plan_id}",
                 f"Named-site priority rows: {self.source_named_site_priority_plan_row_count}",
                 f"Named-site priority approvals required: {self.source_named_site_priority_plan_approval_required_count}",
+                f"Named-site source method packs: {self.source_named_site_method_packs_id}",
+                f"Named-site source method pack count: {self.source_named_site_method_pack_count}",
+                f"MSN source method packs: {self.source_named_site_method_pack_msn_count}",
+                f"X/Twitter source method packs: {self.source_named_site_method_pack_twitter_x_count}",
+                f"YouTube source method packs: {self.source_named_site_method_pack_youtube_count}",
+                f"Generic/archive source method packs: {self.source_named_site_method_pack_generic_archive_count}",
+                f"Named-site pack selector audit-required rows: {self.source_named_site_method_pack_selector_audit_required_count}",
                 f"Database review workflow: {self.source_database_review_workflow_id}",
                 f"Database review scan rows: {self.source_database_review_scan_row_count}",
                 f"Database review-needed rows: {self.source_database_review_needed_row_count}",
@@ -272,8 +293,16 @@ def build_source_evidence_workflow_state(
     source_site_selector_audit_packs = build_source_site_selector_audit_pack_collection(
         source_site_method_audit_registry
     )
-    source_selector_approval_packets = build_source_selector_approval_packet_collection(
+    source_named_site_method_packs = build_source_named_site_method_pack_collection(
         source_site_method_audit_registry
+    )
+    source_selector_approval_packets = build_source_selector_approval_packet_collection(
+        source_site_method_audit_registry,
+        named_site_method_packs=source_named_site_method_packs,
+    )
+    source_named_site_method_packs = build_source_named_site_method_pack_collection(
+        source_site_method_audit_registry,
+        selector_approval_packets=source_selector_approval_packets,
     )
     site_method_audit_records = tuple(
         evidence_index_record_from_source_site_method_audit_row(
@@ -283,10 +312,20 @@ def build_source_evidence_workflow_state(
         )
         for row in source_site_method_audit_registry.rows
     )
+    named_site_method_pack_records = tuple(
+        evidence_index_record_from_source_named_site_method_pack(
+            pack,
+            database_root_id=database_root_id,
+            taxonomy_version_id=taxonomy_version_id,
+        )
+        for pack in source_named_site_method_packs.packs
+    )
     previous_hash = plan.action_events[-1].event_hash if plan.action_events else ""
     evidence_scan_manifest = EvidenceIndexManifest(
         manifest_id=stable_evidence_id("workflow_scan_manifest", plan.source_row_id, safe_package_id),
-        records=tuple(connection.evidence_index_records) + site_method_audit_records,
+        records=tuple(connection.evidence_index_records)
+        + site_method_audit_records
+        + named_site_method_pack_records,
         created_at_utc=timestamp,
         updated_at_utc=timestamp,
     )
@@ -297,11 +336,13 @@ def build_source_evidence_workflow_state(
     source_record_review_workflow = build_source_record_review_workflow(
         grabbed_source_records,
         site_method_registry=source_site_method_audit_registry,
+        named_site_method_packs=source_named_site_method_packs,
     )
     source_database_review_workflow = build_source_database_review_view_model(
         manifest=evidence_scan_manifest,
         source_adapter_audit_registry=source_adapter_audit_registry,
         source_site_method_audit_registry=source_site_method_audit_registry,
+        source_named_site_method_packs=source_named_site_method_packs,
         grabbed_source_records=grabbed_source_records,
         evidence_queue=connection.queue,
         approval_packet_count=source_selector_approval_packets.packet_count,
@@ -311,6 +352,7 @@ def build_source_evidence_workflow_state(
         database_review_workflow=source_database_review_workflow,
         source_record_review_workflow=source_record_review_workflow,
         selector_approval_packets=source_selector_approval_packets,
+        named_site_method_packs=source_named_site_method_packs,
     )
     source_adapter_audit_report = build_source_adapter_audit_report(
         adapter_registry=source_adapter_audit_registry,
@@ -320,6 +362,7 @@ def build_source_evidence_workflow_state(
             "source_adapter_audit_registry.json",
             "source_site_method_audit_registry.json",
             "source_site_selector_audit_packs.json",
+            "source_named_site_method_packs.json",
             "source_adapter_audit_report.json",
             "source_database_review_workflow.json",
             "source_record_review_workflow.json",
@@ -328,6 +371,7 @@ def build_source_evidence_workflow_state(
         database_review_workflow=source_database_review_workflow,
         source_record_review_workflow=source_record_review_workflow,
         selector_approval_packets=source_selector_approval_packets,
+        named_site_method_packs=source_named_site_method_packs,
         named_site_priority_plan=source_named_site_priority_plan,
     )
     access_provider_gate_summary = build_access_provider_gate_summary(
@@ -373,6 +417,7 @@ def build_source_evidence_workflow_state(
             "access_provider_gate_summary": access_provider_gate_summary.to_dict(),
             "source_adapter_audit_registry": source_adapter_audit_registry.to_dict(),
             "source_site_method_audit_registry": source_site_method_audit_registry.to_dict(),
+            "source_named_site_method_packs": source_named_site_method_packs.to_dict(),
             "source_adapter_audit_report": source_adapter_audit_report.to_dict(),
             "source_named_site_priority_plan": source_named_site_priority_plan.to_dict(),
             "source_database_review_workflow": source_database_review_workflow.to_dict(),
@@ -399,7 +444,7 @@ def build_source_evidence_workflow_state(
         queue_item_count=len(connection.queue.items),
         queue_link_count=len(connection.queue.links),
         total_export_asset_count=len(connection.total_export_manifest.assets),
-        evidence_index_record_count=len(connection.evidence_index_records),
+        evidence_index_record_count=len(evidence_scan_manifest.records),
         review_preview_record_count=connection.review_preview.record_count,
         queue_review_store_id=store_document.store_id,
         review_manifest_package_id=review_manifest.package_id,
@@ -448,6 +493,22 @@ def build_source_evidence_workflow_state(
         source_named_site_priority_plan_row_count=source_named_site_priority_plan.row_count,
         source_named_site_priority_plan_approval_required_count=(
             source_named_site_priority_plan.approval_required_count
+        ),
+        source_named_site_method_packs=source_named_site_method_packs,
+        source_named_site_method_packs_id=source_named_site_method_packs.collection_id,
+        source_named_site_method_pack_count=source_named_site_method_packs.pack_count,
+        source_named_site_method_pack_msn_count=source_named_site_method_packs.msn_pack_count,
+        source_named_site_method_pack_twitter_x_count=(
+            source_named_site_method_packs.twitter_x_pack_count
+        ),
+        source_named_site_method_pack_youtube_count=(
+            source_named_site_method_packs.youtube_pack_count
+        ),
+        source_named_site_method_pack_generic_archive_count=(
+            source_named_site_method_packs.generic_archive_pack_count
+        ),
+        source_named_site_method_pack_selector_audit_required_count=(
+            source_named_site_method_packs.selector_audit_required_count
         ),
         source_database_review_workflow=source_database_review_workflow,
         source_database_review_workflow_id=source_database_review_workflow.view_model_id,

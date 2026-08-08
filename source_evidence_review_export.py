@@ -218,6 +218,7 @@ def build_source_evidence_review_manifest_with_workflow_state(
     source_site_method_audit_registry_metadata: Mapping[str, Any] | None = None,
     source_adapter_audit_report_metadata: Mapping[str, Any] | None = None,
     source_named_site_priority_plan_metadata: Mapping[str, Any] | None = None,
+    source_named_site_method_packs_metadata: Mapping[str, Any] | None = None,
     source_database_review_workflow_metadata: Mapping[str, Any] | None = None,
     source_record_review_workflow_metadata: Mapping[str, Any] | None = None,
     source_selector_approval_packets_metadata: Mapping[str, Any] | None = None,
@@ -308,6 +309,20 @@ def build_source_evidence_review_manifest_with_workflow_state(
             )
         )
         capture_option_values.add("Named-site priority plan metadata")
+    if source_named_site_method_packs_metadata is not None:
+        named_site_method_pack_metadata = _value_for_dict(source_named_site_method_packs_metadata)
+        assets.append(
+            _metadata_asset(
+                asset_type=ASSET_RAW_SIDECAR,
+                description=(
+                    "Named-site source method pack metadata sidecar: concrete method packs "
+                    "remain review-required and not live-executed."
+                ),
+                metadata=named_site_method_pack_metadata,
+                created_at_utc=manifest.created_at_utc,
+            )
+        )
+        capture_option_values.add("Named-site source method pack metadata")
     if source_database_review_workflow_metadata is not None:
         database_review_metadata = _value_for_dict(source_database_review_workflow_metadata)
         assets.append(
@@ -389,6 +404,13 @@ def build_source_evidence_review_manifest_with_workflow_state(
         notes = (
             notes + "\n" if notes else ""
         ) + "Named-site priority plan metadata sidecar included."
+    if (
+        source_named_site_method_packs_metadata is not None
+        and "Named-site source method pack metadata sidecar included." not in notes
+    ):
+        notes = (
+            notes + "\n" if notes else ""
+        ) + "Named-site source method pack metadata sidecar included."
     if (
         source_database_review_workflow_metadata is not None
         and "Source database review workflow metadata sidecar included." not in notes

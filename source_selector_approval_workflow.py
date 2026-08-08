@@ -112,6 +112,7 @@ class SourceSelectorApprovalPacketCollection:
     schema_version: str = SOURCE_SELECTOR_APPROVAL_WORKFLOW_SCHEMA_VERSION
     packets: tuple[SourceSelectorApprovalPacket, ...] = ()
     grouped_by_site_profile: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    named_site_method_pack_summary: Mapping[str, Any] = field(default_factory=dict)
     selector_audit_required_count: int = 0
     live_approved_only_count: int = 0
     metadata_only: bool = True
@@ -245,6 +246,7 @@ def build_source_selector_approval_packet_collection(
     registry: SourceSiteMethodAuditRegistry | None = None,
     *,
     include_live_approved_only: bool = False,
+    named_site_method_packs: Any | None = None,
 ) -> SourceSelectorApprovalPacketCollection:
     source_registry = registry or build_source_site_method_audit_registry()
     rows = [
@@ -257,6 +259,7 @@ def build_source_selector_approval_packet_collection(
     packets = tuple(build_source_selector_approval_packet(row) for row in rows)
     grouped = group_selector_audit_rows_by_site_profile(tuple(rows))
     payload = {
+        "named_site_method_pack_count": getattr(named_site_method_packs, "pack_count", 0),
         "packet_ids": [packet.packet_id for packet in packets],
         "selector_required": source_registry.selector_audit_required_count,
         "live_approved_only": source_registry.live_approved_only_count,
@@ -265,6 +268,18 @@ def build_source_selector_approval_packet_collection(
         collection_id="source_selector_approval_packets_" + _sha16(payload),
         packets=packets,
         grouped_by_site_profile=grouped,
+        named_site_method_pack_summary={
+            "collection_id": getattr(named_site_method_packs, "collection_id", ""),
+            "pack_count": getattr(named_site_method_packs, "pack_count", 0),
+            "selector_audit_required_count": getattr(
+                named_site_method_packs,
+                "selector_audit_required_count",
+                0,
+            ),
+            "not_live_executed": getattr(named_site_method_packs, "not_live_executed", True),
+            "metadata_only": True,
+            "user_review_required": True,
+        },
         selector_audit_required_count=source_registry.selector_audit_required_count,
         live_approved_only_count=source_registry.live_approved_only_count,
     )

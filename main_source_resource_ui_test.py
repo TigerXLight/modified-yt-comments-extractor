@@ -407,6 +407,11 @@ def test_start_fetching_source_scaffold_builds_plan_preview_without_live_executi
     assert "Action event chain:" in fake_messagebox.infos[0][1]
     assert "Source Evidence workflow state" in fake_messagebox.infos[0][1]
     assert "Source site/method selector audit-required rows:" in fake_messagebox.infos[0][1]
+    assert "Named-site source method pack count: 11" in fake_messagebox.infos[0][1]
+    assert "MSN source method packs: 2" in fake_messagebox.infos[0][1]
+    assert "X/Twitter source method packs: 2" in fake_messagebox.infos[0][1]
+    assert "YouTube source method packs: 2" in fake_messagebox.infos[0][1]
+    assert "Generic/archive source method packs: 5" in fake_messagebox.infos[0][1]
     assert "Database review workflow: source_database_review_workflow_" in fake_messagebox.infos[0][1]
     assert "Source record review workflow: source_record_review_workflow_" in fake_messagebox.infos[0][1]
     assert "Selector approval packets: source_selector_approval_packets_" in fake_messagebox.infos[0][1]
@@ -420,6 +425,8 @@ def test_start_fetching_source_scaffold_builds_plan_preview_without_live_executi
     assert app.last_source_evidence_workflow_state.source_database_review_rejected_unsafe_edit_count == 0
     assert app.last_source_evidence_workflow_state.source_record_review_record_count == 1
     assert app.last_source_evidence_workflow_state.source_selector_approval_packet_count == 1
+    assert app.last_source_evidence_workflow_state.source_named_site_method_pack_count == 11
+    assert app.last_source_evidence_workflow_state.source_named_site_method_pack_selector_audit_required_count == 1
     assert app.last_operational_capture_queue_review_store.metadata_only is True
     assert app.last_operational_capture_review_manifest.assets
     assert any("no fetch" in message for message, _level in app.log_messages)
@@ -443,7 +450,7 @@ def test_source_evidence_workflow_state_can_save_review_bundle() -> None:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         result = App.save_last_source_evidence_workflow_review_bundle(app, temp_dir)
-        assert result.file_count == 15
+        assert result.file_count == 16
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_move_performed is False
         assert result.full_local_path_included is False
@@ -458,6 +465,7 @@ def test_source_evidence_workflow_state_can_save_review_bundle() -> None:
         assert Path(temp_dir, "source_database_review_workflow.json").is_file()
         assert Path(temp_dir, "source_record_review_workflow.json").is_file()
         assert Path(temp_dir, "source_selector_approval_packets.json").is_file()
+        assert Path(temp_dir, "source_named_site_method_packs.json").is_file()
 
     assert app.last_source_evidence_workflow_review_bundle.bundle_id == result.bundle_id
     assert any("review bundle saved" in message for message, _level in app.log_messages)

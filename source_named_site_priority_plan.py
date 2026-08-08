@@ -49,6 +49,7 @@ class SourceNamedSitePriorityPlan:
     rows: tuple[SourceNamedSitePriorityRow, ...]
     review_workflow_summary: Mapping[str, Any] = field(default_factory=dict)
     selector_approval_packet_summary: Mapping[str, Any] = field(default_factory=dict)
+    named_site_method_pack_summary: Mapping[str, Any] = field(default_factory=dict)
     schema_version: str = SOURCE_NAMED_SITE_PRIORITY_PLAN_SCHEMA_VERSION
     review_status: str = "USER_REVIEW_REQUIRED"
     approval_status: str = "APPROVAL_REQUIRED"
@@ -151,6 +152,7 @@ def build_source_named_site_priority_plan(
     database_review_workflow: Any | None = None,
     source_record_review_workflow: Any | None = None,
     selector_approval_packets: Any | None = None,
+    named_site_method_packs: Any | None = None,
 ) -> SourceNamedSitePriorityPlan:
     source_registry = registry or build_source_site_method_audit_registry()
     by_method = {row.method_id: row for row in source_registry.rows}
@@ -217,6 +219,17 @@ def build_source_named_site_priority_plan(
             "packet_count",
             "manual_smoke_checklist_row_count",
             "not_live_executed_receipt_count",
+        ),
+        named_site_method_pack_summary=_summary_from(
+            named_site_method_packs,
+            "collection_id",
+            "pack_count",
+            "msn_pack_count",
+            "twitter_x_pack_count",
+            "youtube_pack_count",
+            "generic_archive_pack_count",
+            "selector_audit_required_count",
+            "live_approved_only_count",
         ),
     )
 

@@ -11,6 +11,7 @@ from source_evidence_review_export import (
     source_evidence_review_manifest_to_json,
 )
 from source_adapter_audit_report import build_source_adapter_audit_report
+from source_named_site_method_packs import build_source_named_site_method_pack_collection
 from source_named_site_priority_plan import build_source_named_site_priority_plan
 from source_site_method_audit_registry import build_source_site_method_audit_registry
 from source_reference_intake import build_reference_pack_intake_summary
@@ -151,17 +152,20 @@ def run_self_test() -> None:
     site_method_registry = build_source_site_method_audit_registry()
     audit_report = build_source_adapter_audit_report(site_method_registry=site_method_registry)
     priority_plan = build_source_named_site_priority_plan(site_method_registry)
+    named_site_method_packs = build_source_named_site_method_pack_collection(site_method_registry)
     workflow_manifest = build_source_evidence_review_manifest_with_workflow_state(
         manifest,
         workflow_state_metadata={"workflow": "metadata_only"},
         source_site_method_audit_registry_metadata=site_method_registry.to_dict(),
         source_adapter_audit_report_metadata=audit_report.to_dict(),
         source_named_site_priority_plan_metadata=priority_plan.to_dict(),
+        source_named_site_method_packs_metadata=named_site_method_packs.to_dict(),
     )
     workflow_dict = workflow_manifest.to_dict()
     assert "Source site/method audit registry metadata" in workflow_dict["capture_options"]
     assert "Source Adapter audit report metadata" in workflow_dict["capture_options"]
     assert "Named-site priority plan metadata" in workflow_dict["capture_options"]
+    assert "Named-site source method pack metadata" in workflow_dict["capture_options"]
     assert any(
         "Source site/method audit registry metadata sidecar" in asset["description"]
         for asset in workflow_dict["assets"]
@@ -174,9 +178,14 @@ def run_self_test() -> None:
         "Named-site priority plan metadata sidecar" in asset["description"]
         for asset in workflow_dict["assets"]
     )
+    assert any(
+        "Named-site source method pack metadata sidecar" in asset["description"]
+        for asset in workflow_dict["assets"]
+    )
     assert "Source site/method audit registry metadata sidecar included." in workflow_dict["notes"]
     assert "Source Adapter audit report metadata sidecar included." in workflow_dict["notes"]
     assert "Named-site priority plan metadata sidecar included." in workflow_dict["notes"]
+    assert "Named-site source method pack metadata sidecar included." in workflow_dict["notes"]
     assert all(asset["path"] == "" for asset in workflow_dict["assets"])
 
 

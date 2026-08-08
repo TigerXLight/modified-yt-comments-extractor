@@ -144,6 +144,7 @@ class SourceRecordReviewWorkflow:
     workflow_id: str
     schema_version: str = SOURCE_RECORD_REVIEW_WORKFLOW_SCHEMA_VERSION
     rows: tuple[SourceRecordReviewRow, ...] = ()
+    named_site_method_pack_rows: tuple[Mapping[str, Any], ...] = ()
     metadata_only: bool = True
     user_review_required: bool = True
     no_file_movement_performed: bool = True
@@ -168,6 +169,14 @@ class SourceRecordReviewWorkflow:
         return sum(row.selector_audit_cross_link_count for row in self.rows)
 
     @property
+    def named_site_method_pack_count(self) -> int:
+        return len(self.named_site_method_pack_rows)
+
+    @property
+    def named_site_method_pack_reference_count(self) -> int:
+        return sum(len(row.get("source_record_reference_buckets", ()) or ()) for row in self.named_site_method_pack_rows)
+
+    @property
     def annotation_receipt_count(self) -> int:
         return sum(row.annotation_receipt_count for row in self.rows)
 
@@ -179,6 +188,8 @@ class SourceRecordReviewWorkflow:
                 "reference_bucket_count": self.reference_bucket_count,
                 "reference_count": self.reference_count,
                 "selector_audit_cross_link_count": self.selector_audit_cross_link_count,
+                "named_site_method_pack_count": self.named_site_method_pack_count,
+                "named_site_method_pack_reference_count": self.named_site_method_pack_reference_count,
                 "annotation_receipt_count": self.annotation_receipt_count,
             }
         )
@@ -267,6 +278,7 @@ def build_source_record_review_workflow(
     records: tuple[Any, ...] = (),
     *,
     site_method_registry: Any | None = None,
+    named_site_method_packs: Any | None = None,
     annotation_receipts: tuple[SourceRecordReviewAnnotationReceipt, ...] = (),
 ) -> SourceRecordReviewWorkflow:
     rows = tuple(
@@ -280,12 +292,43 @@ def build_source_record_review_workflow(
     )
     payload = {
         "annotation_receipt_count": sum(row.annotation_receipt_count for row in rows),
+        "named_site_method_pack_ids": [
+            getattr(pack, "pack_id", "") for pack in tuple(getattr(named_site_method_packs, "packs", ()) or ())
+        ],
         "record_ids": [row.grabbed_source_record_id for row in rows],
         "selector_link_count": sum(row.selector_audit_cross_link_count for row in rows),
     }
+    pack_rows = tuple(
+        sorted(
+            (
+                {
+                    "pack_id": getattr(pack, "pack_id", ""),
+                    "site_method_id": getattr(pack, "site_method_id", ""),
+                    "site_profile_id": getattr(pack, "site_profile_id", ""),
+                    "method_id": getattr(pack, "method_id", ""),
+                    "site_group": getattr(pack, "site_group", ""),
+                    "source_record_reference_buckets": tuple(
+                        sorted(
+                            bucket
+                            for bucket, refs in (
+                                getattr(pack, "source_record_typed_reference_mapping", {}) or {}
+                            ).items()
+                            if refs
+                        )
+                    ),
+                    "selector_audit_required": bool(getattr(pack, "selector_audit_required", False)),
+                    "metadata_only": True,
+                    "user_review_required": True,
+                }
+                for pack in tuple(getattr(named_site_method_packs, "packs", ()) or ())
+            ),
+            key=lambda row: (row["site_group"], row["method_id"], row["pack_id"]),
+        )
+    )
     return SourceRecordReviewWorkflow(
         workflow_id="source_record_review_workflow_" + _sha16(payload),
         rows=rows,
+        named_site_method_pack_rows=pack_rows,
     )
 
 

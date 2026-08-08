@@ -1769,6 +1769,61 @@ def evidence_index_record_from_source_site_method_audit_row(
     )
 
 
+def evidence_index_record_from_source_named_site_method_pack(
+    pack: Any,
+    *,
+    database_root_id: str = "",
+    taxonomy_version_id: str = "",
+) -> EvidenceIndexRecord:
+    pack_id = _clean(getattr(pack, "pack_id", ""))
+    method_id = _clean(getattr(pack, "method_id", ""))
+    site_profile_id = _clean(getattr(pack, "site_profile_id", ""))
+    display_name = _clean(getattr(pack, "site_display_name", "")) or method_id
+    identity = build_evidence_item_identity(
+        item_id=pack_id or stable_evidence_id("source_named_site_method_pack", site_profile_id, method_id),
+        display_name=f"{display_name} named-site method pack",
+        source_row_id=method_id,
+    )
+    blockers = tuple(getattr(pack, "exact_remaining_audit_blockers", ()) or ())
+    basis = build_evidence_basis(
+        item_id=identity.item_id,
+        basis_type="source_named_site_method_pack",
+        evidence_text=display_name,
+        user_note="Named-site source method pack metadata only; no live execution or completed evidence claimed.",
+        confidence="named_site_method_pack_metadata_only",
+    )
+    classification = build_classification_state(
+        classification_value=EvidenceClassificationValue.PROPOSED,
+        dimensions={
+            "adapter_id": _clean(getattr(pack, "adapter_id", "")),
+            "approval_requirement_count": str(len(getattr(pack, "approval_requirements", ()) or ())),
+            "artifact_type": "source_named_site_method_pack",
+            "blocker_count": str(len(blockers)),
+            "execution_status": _clean(getattr(pack, "execution_status", "")),
+            "generic_archive_pack": str(getattr(pack, "site_group", "") == "generic_archive").lower(),
+            "live_approved_only": str(bool(getattr(pack, "live_approved_only", False))).lower(),
+            "method_id": method_id,
+            "not_live_executed_status": _clean(getattr(pack, "not_live_executed_status", "")),
+            "selector_audit_required": str(bool(getattr(pack, "selector_audit_required", False))).lower(),
+            "site_group": _clean(getattr(pack, "site_group", "")),
+            "site_method_id": _clean(getattr(pack, "site_method_id", "")),
+            "site_profile": site_profile_id,
+            "site_profile_id": site_profile_id,
+            "source_named_site_method_pack": method_id,
+            "source_type": _clean(getattr(pack, "source_type", "")),
+        },
+        source_evidenced=True,
+        notes="Derived from named-site source method pack metadata; user review and operator approval remain required.",
+    )
+    return EvidenceIndexRecord(
+        identity=identity,
+        database_root_id=database_root_id,
+        taxonomy_version_id=taxonomy_version_id,
+        classification_state=classification,
+        evidence_basis=(basis,),
+    )
+
+
 def scan_source_site_method_audit_records(
     manifest: EvidenceIndexManifest,
     scan_filter: EvidenceIndexScanFilter | None = None,

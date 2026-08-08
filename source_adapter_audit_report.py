@@ -53,6 +53,7 @@ class SourceAdapterAuditReport:
     database_review_workflow_summary: Mapping[str, Any] = field(default_factory=dict)
     source_record_review_summary: Mapping[str, Any] = field(default_factory=dict)
     selector_approval_packet_summary: Mapping[str, Any] = field(default_factory=dict)
+    named_site_method_pack_summary: Mapping[str, Any] = field(default_factory=dict)
     unsafe_update_rejection_summary: Mapping[str, Any] = field(default_factory=dict)
     next_named_site_selector_priorities: tuple[Mapping[str, Any], ...] = ()
     done_not_done_table: tuple[Mapping[str, Any], ...] = ()
@@ -205,6 +206,7 @@ def build_source_adapter_audit_report(
     database_review_workflow: Any | None = None,
     source_record_review_workflow: Any | None = None,
     selector_approval_packets: Any | None = None,
+    named_site_method_packs: Any | None = None,
     named_site_priority_plan: Any | None = None,
 ) -> SourceAdapterAuditReport:
     adapters = adapter_registry or build_source_adapter_audit_registry()
@@ -247,6 +249,18 @@ def build_source_adapter_audit_report(
             "packet_count",
             "manual_smoke_checklist_row_count",
             "not_live_executed_receipt_count",
+        ),
+        named_site_method_pack_summary=_summary_from(
+            named_site_method_packs,
+            "collection_id",
+            "pack_count",
+            "msn_pack_count",
+            "twitter_x_pack_count",
+            "youtube_pack_count",
+            "generic_archive_pack_count",
+            "selector_audit_required_count",
+            "live_approved_only_count",
+            "no_live_execution_status",
         ),
         unsafe_update_rejection_summary={
             "rejected_unsafe_edit_count": (

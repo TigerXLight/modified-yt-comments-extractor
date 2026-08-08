@@ -16,6 +16,7 @@ from source_evidence_workflow_store import (
     SOURCE_ADAPTER_AUDIT_REGISTRY_FILENAME,
     SOURCE_ADAPTER_AUDIT_REPORT_FILENAME,
     SOURCE_DATABASE_REVIEW_WORKFLOW_FILENAME,
+    SOURCE_NAMED_SITE_METHOD_PACKS_FILENAME,
     SOURCE_NAMED_SITE_PRIORITY_PLAN_FILENAME,
     SOURCE_RECORD_REVIEW_WORKFLOW_FILENAME,
     SOURCE_SELECTOR_APPROVAL_PACKETS_FILENAME,
@@ -73,13 +74,14 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
             SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME,
             SOURCE_ADAPTER_AUDIT_REPORT_FILENAME,
             SOURCE_NAMED_SITE_PRIORITY_PLAN_FILENAME,
+            SOURCE_NAMED_SITE_METHOD_PACKS_FILENAME,
             SOURCE_DATABASE_REVIEW_WORKFLOW_FILENAME,
             SOURCE_RECORD_REVIEW_WORKFLOW_FILENAME,
             SOURCE_SELECTOR_APPROVAL_PACKETS_FILENAME,
         }
         expected_files = expected_sidecars | {BUNDLE_INDEX_FILENAME}
         assert {file.filename for file in result.files} == expected_sidecars
-        assert result.file_count == 15
+        assert result.file_count == 16
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_read_performed is False
         assert result.evidence_file_move_performed is False
@@ -144,8 +146,17 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
         assert loaded.source_named_site_priority_plan["row_count"] == 9
         assert loaded.source_named_site_priority_plan["approval_required_count"] == 9
         assert loaded.source_named_site_priority_plan["live_execution_performed"] is False
+        assert loaded.source_named_site_method_packs["review_status"] == "USER_REVIEW_REQUIRED"
+        assert loaded.source_named_site_method_packs["pack_count"] == 11
+        assert loaded.source_named_site_method_packs["msn_pack_count"] == 2
+        assert loaded.source_named_site_method_packs["twitter_x_pack_count"] == 2
+        assert loaded.source_named_site_method_packs["youtube_pack_count"] == 2
+        assert loaded.source_named_site_method_packs["generic_archive_pack_count"] == 5
+        assert loaded.source_named_site_method_packs["selector_audit_required_count"] == 1
+        assert loaded.source_named_site_method_packs["live_execution_performed"] is False
         assert loaded.source_database_review_workflow["schema_version"] == "source_database_review_workflow_v1"
         assert loaded.source_database_review_workflow["scan_row_count"] >= 1
+        assert loaded.source_database_review_workflow["named_site_method_pack_row_count"] == 11
         assert loaded.source_database_review_workflow["bridge_summary"]["approval_packet_count"] == 1
         assert loaded.source_record_review_workflow["schema_version"] == "source_record_review_workflow_v1"
         assert loaded.source_record_review_workflow["source_record_count"] == 1
@@ -182,6 +193,7 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
     assert "Source site/method audit registry metadata" in manifest["capture_options"]
     assert "Source Adapter audit report metadata" in manifest["capture_options"]
     assert "Named-site priority plan metadata" in manifest["capture_options"]
+    assert "Named-site source method pack metadata" in manifest["capture_options"]
     assert "Source database review workflow metadata" in manifest["capture_options"]
     assert "Source record review workflow metadata" in manifest["capture_options"]
     assert "Source selector approval packet metadata" in manifest["capture_options"]
@@ -203,6 +215,10 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
     )
     assert any(
         "Named-site priority plan metadata sidecar" in asset["description"]
+        for asset in manifest["assets"]
+    )
+    assert any(
+        "Named-site source method pack metadata sidecar" in asset["description"]
         for asset in manifest["assets"]
     )
     assert any(
@@ -228,6 +244,7 @@ def test_review_manifest_gets_workflow_state_metadata_sidecar() -> None:
     assert "Source site/method audit registry metadata sidecar included." in manifest["notes"]
     assert "Source Adapter audit report metadata sidecar included." in manifest["notes"]
     assert "Named-site priority plan metadata sidecar included." in manifest["notes"]
+    assert "Named-site source method pack metadata sidecar included." in manifest["notes"]
     assert "Source database review workflow metadata sidecar included." in manifest["notes"]
     assert "Source record review workflow metadata sidecar included." in manifest["notes"]
     assert "Source selector approval packet metadata sidecar included." in manifest["notes"]
