@@ -406,6 +406,8 @@ def build_source_evidence_workflow_state(
         source_record_review_workflow=source_record_review_workflow,
         selector_approval_packets=source_selector_approval_packets,
         named_site_method_packs=source_named_site_method_packs,
+        operator_command_packs=source_operator_command_packs,
+        manual_smoke_checklists=source_manual_smoke_checklists,
     )
     source_adapter_audit_report = build_source_adapter_audit_report(
         adapter_registry=source_adapter_audit_registry,
@@ -442,6 +444,43 @@ def build_source_evidence_workflow_state(
         operator_command_packs=source_operator_command_packs,
         manual_smoke_checklists=source_manual_smoke_checklists,
         access_online_asr_bridge_summary=access_online_asr_bridge_summary,
+    )
+    source_named_site_priority_plan = build_source_named_site_priority_plan(
+        source_site_method_audit_registry,
+        database_review_workflow=source_database_review_workflow,
+        source_record_review_workflow=source_record_review_workflow,
+        selector_approval_packets=source_selector_approval_packets,
+        named_site_method_packs=source_named_site_method_packs,
+        operator_command_packs=source_operator_command_packs,
+        manual_smoke_checklists=source_manual_smoke_checklists,
+        source_audit_dashboard_state=source_audit_dashboard_state,
+    )
+    source_adapter_audit_report = build_source_adapter_audit_report(
+        adapter_registry=source_adapter_audit_registry,
+        site_method_registry=source_site_method_audit_registry,
+        selector_pack_collection=source_site_selector_audit_packs,
+        workflow_sidecar_filenames=(
+            "source_adapter_audit_registry.json",
+            "source_site_method_audit_registry.json",
+            "source_site_selector_audit_packs.json",
+            "source_named_site_method_packs.json",
+            "source_adapter_audit_report.json",
+            "source_database_review_workflow.json",
+            "source_record_review_workflow.json",
+            "source_selector_approval_packets.json",
+            "source_operator_command_packs.json",
+            "source_manual_smoke_checklists.json",
+            "source_audit_dashboard_state.json",
+        ),
+        database_review_workflow=source_database_review_workflow,
+        source_record_review_workflow=source_record_review_workflow,
+        selector_approval_packets=source_selector_approval_packets,
+        named_site_method_packs=source_named_site_method_packs,
+        operator_command_packs=source_operator_command_packs,
+        manual_smoke_checklists=source_manual_smoke_checklists,
+        source_audit_dashboard_state=source_audit_dashboard_state,
+        access_online_asr_bridge_summary=access_online_asr_bridge_summary,
+        named_site_priority_plan=source_named_site_priority_plan,
     )
     store_document = build_evidence_item_queue_review_store_document(
         connection.queue,

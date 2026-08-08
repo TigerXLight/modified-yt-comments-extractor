@@ -54,6 +54,10 @@ class SourceAdapterAuditReport:
     source_record_review_summary: Mapping[str, Any] = field(default_factory=dict)
     selector_approval_packet_summary: Mapping[str, Any] = field(default_factory=dict)
     named_site_method_pack_summary: Mapping[str, Any] = field(default_factory=dict)
+    operator_command_pack_summary: Mapping[str, Any] = field(default_factory=dict)
+    manual_smoke_checklist_summary: Mapping[str, Any] = field(default_factory=dict)
+    source_audit_dashboard_summary: Mapping[str, Any] = field(default_factory=dict)
+    access_online_asr_bridge_summary: Mapping[str, Any] = field(default_factory=dict)
     unsafe_update_rejection_summary: Mapping[str, Any] = field(default_factory=dict)
     next_named_site_selector_priorities: tuple[Mapping[str, Any], ...] = ()
     done_not_done_table: tuple[Mapping[str, Any], ...] = ()
@@ -207,6 +211,10 @@ def build_source_adapter_audit_report(
     source_record_review_workflow: Any | None = None,
     selector_approval_packets: Any | None = None,
     named_site_method_packs: Any | None = None,
+    operator_command_packs: Any | None = None,
+    manual_smoke_checklists: Any | None = None,
+    source_audit_dashboard_state: Any | None = None,
+    access_online_asr_bridge_summary: Any | None = None,
     named_site_priority_plan: Any | None = None,
 ) -> SourceAdapterAuditReport:
     adapters = adapter_registry or build_source_adapter_audit_registry()
@@ -261,6 +269,37 @@ def build_source_adapter_audit_report(
             "selector_audit_required_count",
             "live_approved_only_count",
             "no_live_execution_status",
+        ),
+        operator_command_pack_summary=_summary_from(
+            operator_command_packs,
+            "collection_id",
+            "pack_count",
+            "approval_required_count",
+            "selector_audit_required_count",
+            "no_live_execution_status",
+        ),
+        manual_smoke_checklist_summary=_summary_from(
+            manual_smoke_checklists,
+            "collection_id",
+            "pack_count",
+            "row_count",
+            "approval_required_count",
+            "no_live_execution_status",
+        ),
+        source_audit_dashboard_summary=_summary_from(
+            source_audit_dashboard_state,
+            "panel_id",
+            "panel_kind",
+            "summary",
+            "row_count",
+        ),
+        access_online_asr_bridge_summary=_summary_from(
+            access_online_asr_bridge_summary,
+            "summary_id",
+            "added_provider_count",
+            "catalogue_provider_count",
+            "online_asr_provider_readiness_count",
+            "local_asr_benchmark_profile_guard",
         ),
         unsafe_update_rejection_summary={
             "rejected_unsafe_edit_count": (
