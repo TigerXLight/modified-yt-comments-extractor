@@ -1,0 +1,6 @@
+from source_adapter_operator_session_execution_runtime import example_source_adapter_operator_session_execution_runtime_package
+from source_adapter_operator_session_execution_runtime_verifier import verify_source_adapter_operator_session_execution_runtime_package
+v = verify_source_adapter_operator_session_execution_runtime_package(example_source_adapter_operator_session_execution_runtime_package())
+assert v["verified"], v
+assert v["issue_count"] == 0, v
+print("Source Adapter Operator Session Execution Runtime verifier self-test passed.")
