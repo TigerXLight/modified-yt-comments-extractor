@@ -1,0 +1,10 @@
+from source_adapter_source_observation_claim_mapper_runtime import example_source_adapter_source_observation_claim_mapper_runtime_package
+from source_adapter_source_observation_claim_mapper_runtime_verifier import verify_source_adapter_source_observation_claim_mapper_runtime
+
+package = example_source_adapter_source_observation_claim_mapper_runtime_package()
+verified = verify_source_adapter_source_observation_claim_mapper_runtime(package)
+assert verified["verified"], verified
+broken = dict(package)
+broken["status"] = "BROKEN"
+assert not verify_source_adapter_source_observation_claim_mapper_runtime(broken)["verified"]
+print("Source Adapter Source Observation Claim Mapper Runtime verifier self-test passed.")
