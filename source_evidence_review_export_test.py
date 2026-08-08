@@ -7,8 +7,10 @@ from evidence_item_queue import EvidenceItemQueue, EvidenceItemRole, EvidenceIte
 from evidence_item_queue_store import build_evidence_item_queue_review_store_document
 from source_evidence_review_export import (
     build_source_evidence_review_manifest,
+    build_source_evidence_review_manifest_with_workflow_state,
     source_evidence_review_manifest_to_json,
 )
+from source_site_method_audit_registry import build_source_site_method_audit_registry
 from source_reference_intake import build_reference_pack_intake_summary
 from online_asr_execution_gate import build_online_asr_execution_gate_plan
 from total_export_manifest import ASSET_MANIFEST, ASSET_RAW_SIDECAR
@@ -143,6 +145,21 @@ def run_self_test() -> None:
         app_version="test",
     )
     assert repeated.to_dict() == manifest_dict
+
+    site_method_registry = build_source_site_method_audit_registry()
+    workflow_manifest = build_source_evidence_review_manifest_with_workflow_state(
+        manifest,
+        workflow_state_metadata={"workflow": "metadata_only"},
+        source_site_method_audit_registry_metadata=site_method_registry.to_dict(),
+    )
+    workflow_dict = workflow_manifest.to_dict()
+    assert "Source site/method audit registry metadata" in workflow_dict["capture_options"]
+    assert any(
+        "Source site/method audit registry metadata sidecar" in asset["description"]
+        for asset in workflow_dict["assets"]
+    )
+    assert "Source site/method audit registry metadata sidecar included." in workflow_dict["notes"]
+    assert all(asset["path"] == "" for asset in workflow_dict["assets"])
 
 
 if __name__ == "__main__":

@@ -34,6 +34,10 @@ from source_adapter_audit_registry import (
     source_adapter_audit_registry_to_json,
     validate_source_adapter_audit_registry,
 )
+from source_site_method_audit_registry import (
+    source_site_method_audit_registry_to_json,
+    validate_source_site_method_audit_registry,
+)
 from source_evidence_workflow_state import (
     SourceEvidenceWorkflowState,
     source_evidence_workflow_state_to_json,
@@ -50,6 +54,7 @@ GRABBED_SOURCE_RECORD_FILENAME = "source_grabbed_record.json"
 DATABASE_SCAN_RESULT_FILENAME = "source_evidence_database_scan_result.json"
 ACCESS_PROVIDER_GATE_FILENAME = "source_access_provider_gate_summary.json"
 SOURCE_ADAPTER_AUDIT_REGISTRY_FILENAME = "source_adapter_audit_registry.json"
+SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME = "source_site_method_audit_registry.json"
 BUNDLE_INDEX_FILENAME = "source_evidence_workflow_review_bundle.json"
 
 
@@ -128,6 +133,7 @@ class SourceEvidenceWorkflowStoreReadResult:
     database_scan_result: Mapping[str, Any]
     access_provider_gate_summary: Mapping[str, Any]
     source_adapter_audit_registry: Mapping[str, Any]
+    source_site_method_audit_registry: Mapping[str, Any]
     schema_version: str = SOURCE_EVIDENCE_WORKFLOW_STORE_SCHEMA_VERSION
     metadata_file_read_performed: bool = True
     evidence_file_read_performed: bool = False
@@ -314,11 +320,17 @@ def write_source_evidence_workflow_review_bundle(
     source_adapter_audit_registry_json = source_adapter_audit_registry_to_json(
         state.source_adapter_audit_registry
     )
+    source_site_method_audit_registry = state.source_site_method_audit_registry.to_dict()
+    validate_source_site_method_audit_registry(source_site_method_audit_registry)
+    source_site_method_audit_registry_json = source_site_method_audit_registry_to_json(
+        state.source_site_method_audit_registry
+    )
     review_manifest = build_source_evidence_review_manifest_with_workflow_state(
         state.review_manifest,
         workflow_state_metadata=state.to_dict(),
         release_readiness_metadata=release_readiness,
         source_adapter_audit_registry_metadata=source_adapter_audit_registry,
+        source_site_method_audit_registry_metadata=source_site_method_audit_registry,
     )
     review_manifest_json = source_evidence_review_manifest_to_json(review_manifest)
     queue_review_store = state.queue_review_store_document.to_dict()
@@ -339,6 +351,11 @@ def write_source_evidence_workflow_review_bundle(
             SOURCE_ADAPTER_AUDIT_REGISTRY_FILENAME,
             source_adapter_audit_registry_json,
         ),
+        _stored_file(
+            "source_site_method_audit_registry",
+            SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME,
+            source_site_method_audit_registry_json,
+        ),
     )
     result = build_source_evidence_workflow_store_result(state=state, files=files)
     result_json = source_evidence_workflow_store_result_to_json(result)
@@ -354,6 +371,10 @@ def write_source_evidence_workflow_review_bundle(
     _atomic_write_text(
         output_root / SOURCE_ADAPTER_AUDIT_REGISTRY_FILENAME,
         source_adapter_audit_registry_json,
+    )
+    _atomic_write_text(
+        output_root / SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME,
+        source_site_method_audit_registry_json,
     )
     _atomic_write_text(output_root / BUNDLE_INDEX_FILENAME, result_json)
     return result
@@ -378,6 +399,9 @@ def read_source_evidence_workflow_review_bundle(
     source_adapter_audit_registry = json.loads(
         (input_root / SOURCE_ADAPTER_AUDIT_REGISTRY_FILENAME).read_text(encoding="utf-8")
     )
+    source_site_method_audit_registry = json.loads(
+        (input_root / SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME).read_text(encoding="utf-8")
+    )
     if not isinstance(workflow_state, dict) or not isinstance(review_manifest, dict):
         raise ValueError("Source Evidence workflow bundle sidecars must be JSON objects")
     if not isinstance(release_readiness, dict):
@@ -396,6 +420,9 @@ def read_source_evidence_workflow_review_bundle(
     if not isinstance(source_adapter_audit_registry, dict):
         raise ValueError("Source Evidence adapter audit registry sidecar must be a JSON object")
     validate_source_adapter_audit_registry(source_adapter_audit_registry)
+    if not isinstance(source_site_method_audit_registry, dict):
+        raise ValueError("Source Evidence site/method audit registry sidecar must be a JSON object")
+    validate_source_site_method_audit_registry(source_site_method_audit_registry)
     return SourceEvidenceWorkflowStoreReadResult(
         bundle=bundle,
         workflow_state=workflow_state,
@@ -407,6 +434,7 @@ def read_source_evidence_workflow_review_bundle(
         database_scan_result=database_scan_result,
         access_provider_gate_summary=access_provider_gate_summary,
         source_adapter_audit_registry=source_adapter_audit_registry,
+        source_site_method_audit_registry=source_site_method_audit_registry,
     )
 
 

@@ -388,6 +388,23 @@ class EvidenceIndexRecordPatch:
 
 
 @dataclass(frozen=True)
+class SourceSiteMethodAuditUpdatePatch:
+    item_id: str
+    status: str = ""
+    operator_review_note: str = ""
+    selector_audit_note: str = ""
+    archive_manual_fallback_note: str = ""
+    classification_dimensions: dict[str, str] | None = None
+    completed_evidence_claimed: bool = False
+    live_execution_claimed: bool = False
+    file_movement_claimed: bool = False
+    credential_material_claimed: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
 class EvidenceIndexUpdateAuditReceipt:
     receipt_id: str
     item_id: str
@@ -1002,6 +1019,27 @@ def _classification_value_from_patch(
 def _classification_dimension_is_sensitive(dimension_name: str) -> bool:
     normalized = _clean(dimension_name).lower()
     return any(token in normalized for token in SENSITIVE_CLASSIFICATION_DIMENSION_TOKENS)
+
+
+def _site_method_audit_update_text_is_unsafe(text: str) -> bool:
+    normalized = _clean(text).lower()
+    if not normalized:
+        return False
+    unsafe_tokens = (
+        "account:",
+        "account=",
+        "api key",
+        "apikey",
+        "authorization:",
+        "bearer ",
+        "cookie:",
+        "credential value",
+        "password",
+        "secret",
+        "session cookie",
+        "token=",
+    )
+    return any(token in normalized for token in unsafe_tokens)
 
 
 def apply_evidence_index_record_patch(
@@ -1646,6 +1684,134 @@ def evidence_index_record_from_source_adapter_audit_entry(
         taxonomy_version_id=taxonomy_version_id,
         classification_state=classification,
         evidence_basis=(basis,),
+    )
+
+
+def evidence_index_record_from_source_site_method_audit_row(
+    row: Any,
+    *,
+    database_root_id: str = "",
+    taxonomy_version_id: str = "",
+) -> EvidenceIndexRecord:
+    method_id = _clean(getattr(row, "method_id", ""))
+    site_method_id = _clean(getattr(row, "site_method_id", "")) or stable_evidence_id(
+        "source_site_method_audit",
+        method_id,
+        _clean(getattr(row, "site_profile_id", "")),
+    )
+    display_name = _clean(getattr(row, "site_display_name", "")) or method_id
+    site_profile_id = _clean(getattr(row, "site_profile_id", ""))
+    status = _clean(getattr(row, "status", ""))
+    selector_audit_required = bool(getattr(row, "selector_audit_required", False))
+    live_approved_only = bool(getattr(row, "live_approved_only", False))
+    identity = build_evidence_item_identity(
+        item_id=site_method_id,
+        display_name=display_name,
+        source_row_id=method_id,
+    )
+    basis = build_evidence_basis(
+        item_id=identity.item_id,
+        basis_type="source_site_method_audit_registry",
+        evidence_text=display_name,
+        user_note=_clean(getattr(row, "notes", "")),
+        confidence="site_method_audit_metadata_only",
+    )
+    classification = build_classification_state(
+        classification_value=EvidenceClassificationValue.PROPOSED,
+        dimensions={
+            "adapter_id": _clean(getattr(row, "adapter_id", "")),
+            "archive_fallback": _clean(getattr(row, "archive_fallback", "")),
+            "comment_support": _clean(getattr(row, "comment_support", "")),
+            "execution_status": _clean(getattr(row, "execution_status", "")),
+            "live_approved_only": str(live_approved_only).lower(),
+            "manual_observation_support": _clean(getattr(row, "manual_observation_support", "")),
+            "method_id": method_id,
+            "selector_audit_required": str(selector_audit_required).lower(),
+            "selector_or_strategy": _clean(getattr(row, "selector_or_strategy", "")),
+            "site_method_audit_status": status,
+            "site_profile": site_profile_id,
+            "site_profile_id": site_profile_id,
+            "source_site_method_audit_method": method_id,
+            "source_type": _clean(getattr(row, "source_type", "")),
+            "transcript_support": _clean(getattr(row, "transcript_support", "")),
+            "media_support": _clean(getattr(row, "media_support", "")),
+            "database_mapping_count": str(len(getattr(row, "database_mapping", ()) or ())),
+            "expected_artifact_ref_count": str(len(getattr(row, "expected_artifact_refs", ()) or ())),
+            "total_export_mapping_count": str(len(getattr(row, "total_export_mapping", ()) or ())),
+        },
+        source_evidenced=True,
+        notes="Derived from Source site/method audit registry metadata; user review still required.",
+    )
+    return EvidenceIndexRecord(
+        identity=identity,
+        database_root_id=database_root_id,
+        taxonomy_version_id=taxonomy_version_id,
+        classification_state=classification,
+        evidence_basis=(basis,),
+    )
+
+
+def scan_source_site_method_audit_records(
+    manifest: EvidenceIndexManifest,
+    scan_filter: EvidenceIndexScanFilter | None = None,
+) -> EvidenceIndexScanResult:
+    base_filter = scan_filter or EvidenceIndexScanFilter()
+    site_filter = replace(base_filter, artifact_type="source_site_method_audit_registry")
+    return scan_evidence_index_records(manifest, site_filter)
+
+
+def apply_source_site_method_audit_update(
+    manifest: EvidenceIndexManifest,
+    patch: SourceSiteMethodAuditUpdatePatch,
+    *,
+    operator_id: str,
+    timestamp_utc: str,
+) -> EvidenceIndexUpdateResult:
+    if patch.completed_evidence_claimed:
+        raise ValueError("Source site/method audit update cannot claim completed evidence")
+    if patch.live_execution_claimed:
+        raise ValueError("Source site/method audit update cannot claim live execution")
+    if patch.file_movement_claimed:
+        raise ValueError("Source site/method audit update cannot claim file movement")
+    if patch.credential_material_claimed:
+        raise ValueError("Source site/method audit update cannot include credential material")
+    if not patch.item_id:
+        raise ValueError("Source site/method audit update item_id is required")
+
+    allowed_statuses = {
+        "metadata_audit_ready",
+        "selector_audit_required",
+        "not_yet_executed",
+        "live_approved_only",
+    }
+    dimensions = dict(patch.classification_dimensions or {})
+    if patch.status:
+        clean_status = _clean(patch.status)
+        if clean_status not in allowed_statuses:
+            raise ValueError("Unsupported source site/method audit status update")
+        dimensions["site_method_audit_status"] = clean_status
+    note_parts: list[str] = []
+    if patch.operator_review_note.strip():
+        note_parts.append("operator_review_note: " + patch.operator_review_note.strip())
+    if patch.selector_audit_note.strip():
+        dimensions["selector_audit_note_status"] = "review_note_recorded"
+        note_parts.append("selector_audit_note: " + patch.selector_audit_note.strip())
+    if patch.archive_manual_fallback_note.strip():
+        dimensions["archive_manual_fallback_note_status"] = "review_note_recorded"
+        note_parts.append("archive_manual_fallback_note: " + patch.archive_manual_fallback_note.strip())
+    combined_note = "\n".join(note_parts)
+    for text in list(dimensions.values()) + [combined_note]:
+        if _site_method_audit_update_text_is_unsafe(text):
+            raise ValueError("Source site/method audit update cannot include credential/cookie/account material")
+    return apply_evidence_index_record_patch(
+        manifest,
+        EvidenceIndexRecordPatch(
+            item_id=patch.item_id,
+            classification_dimensions=dimensions,
+            review_note=combined_note,
+        ),
+        operator_id=operator_id,
+        timestamp_utc=timestamp_utc,
     )
 
 

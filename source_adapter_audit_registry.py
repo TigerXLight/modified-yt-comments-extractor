@@ -416,6 +416,7 @@ def build_source_adapter_audit_registry(
                 "manual_observation_support": "operator-supplied comment presence/count/tree notes only",
                 "selector_profile_notes": "site-specific selectors, shadow DOM, pagination, login/challenge and recycled-node handling remain audit_required before live execution",
                 "site_specific_selector_status": "audit_required",
+                "tracked_selector_audit_method_id": "generic_comments_site_specific_selector",
                 "source_boundary_policy": "comments are separate from article text and must not be silently mixed into ARTICLE_TEXT",
             },
             notes="Generic comments method audit is metadata-backed and audit-ready, but site-specific selectors remain audit_required before any live execution.",

@@ -18,7 +18,9 @@ from evidence_database_index import (
     EvidencePlacementProposal,
     EvidenceReclassificationProposal,
     EvidenceTaxonomyVersion,
+    SourceSiteMethodAuditUpdatePatch,
     apply_evidence_index_record_patch,
+    apply_source_site_method_audit_update,
     append_or_update_evidence_index_record,
     build_classification_state,
     build_dry_run_proposal_result,
@@ -30,12 +32,14 @@ from evidence_database_index import (
     evidence_index_payload_sha256,
     evidence_index_record_from_queue_item,
     evidence_index_record_from_source_adapter_audit_entry,
+    evidence_index_record_from_source_site_method_audit_row,
     evidence_index_record_from_source_resource_row,
     evidence_index_record_from_total_export_manifest,
     read_evidence_index_file,
     recognize_variable_hierarchy,
     scan_evidence_index_records,
     scan_review_needed_evidence_index_records,
+    scan_source_site_method_audit_records,
     stable_evidence_id,
     stable_json_dumps,
     write_evidence_index_file_atomic,
@@ -47,6 +51,12 @@ from source_adapter_audit_registry import (
     AUDIT_STATUS_METADATA_AUDIT_READY,
     build_source_adapter_audit_registry,
     source_adapter_audit_entry_by_method,
+)
+from source_site_method_audit_registry import (
+    SITE_METHOD_STATUS_METADATA_AUDIT_READY,
+    SITE_METHOD_STATUS_SELECTOR_AUDIT_REQUIRED,
+    build_source_site_method_audit_registry,
+    source_site_method_audit_row_by_method,
 )
 from source_resource_state import build_source_resource_row
 from tempfile import TemporaryDirectory
@@ -735,6 +745,146 @@ def run_self_test() -> None:
         assert "sensitive/protected" in str(error)
     else:
         raise AssertionError("Protected adapter audit classification patch should be rejected")
+
+    site_method_registry = build_source_site_method_audit_registry()
+    site_method_records = tuple(
+        evidence_index_record_from_source_site_method_audit_row(
+            row,
+            database_root_id=root.root_id,
+            taxonomy_version_id=taxonomy.taxonomy_version_id,
+        )
+        for row in site_method_registry.rows
+    )
+    site_method_manifest = evidence_index_manifest_with_hash(
+        EvidenceIndexManifest(
+            manifest_id="source_site_method_audit_scan_manifest",
+            database_roots=(root,),
+            taxonomy_versions=(taxonomy,),
+            records=site_method_records,
+            created_at_utc="2026-08-08T13:10:00Z",
+            updated_at_utc="2026-08-08T13:10:00Z",
+        )
+    )
+    site_method_scan = scan_source_site_method_audit_records(site_method_manifest)
+    assert site_method_scan.scanned_record_count == site_method_registry.row_count
+    assert site_method_scan.matched_record_count == site_method_registry.row_count
+    selector_row = source_site_method_audit_row_by_method(
+        site_method_registry,
+        "generic_comments_site_specific_selector",
+    )
+    assert selector_row is not None
+    selector_record = next(
+        record for record in site_method_records if record.identity.item_id == selector_row.site_method_id
+    )
+    assert selector_record.classification_state.dimensions["site_method_audit_status"] == (
+        SITE_METHOD_STATUS_SELECTOR_AUDIT_REQUIRED
+    )
+    selector_scan = scan_source_site_method_audit_records(
+        site_method_manifest,
+        EvidenceIndexScanFilter(site_profile="generic_comments_site_selector"),
+    )
+    assert selector_scan.matched_record_count == 1
+    assert selector_scan.rows[0].display_name == "Generic comments site-specific selector"
+    reviewed_site_method = apply_source_site_method_audit_update(
+        site_method_manifest,
+        SourceSiteMethodAuditUpdatePatch(
+            item_id=selector_row.site_method_id,
+            status=SITE_METHOD_STATUS_SELECTOR_AUDIT_REQUIRED,
+            operator_review_note="Operator kept live selector blocked pending named-site smoke.",
+            selector_audit_note="Needs a named-site comment selector before live execution.",
+            archive_manual_fallback_note="Manual observation/import and archive-only evidence remain reviewable.",
+        ),
+        operator_id="operator-1",
+        timestamp_utc="2026-08-08T13:20:00Z",
+    )
+    assert reviewed_site_method.ok
+    assert reviewed_site_method.receipt.file_write_performed is False
+    assert reviewed_site_method.receipt.file_move_performed is False
+    assert reviewed_site_method.receipt.automatic_classification is False
+    assert "classification_state.dimensions" in reviewed_site_method.receipt.changed_fields
+    assert "evidence_basis" in reviewed_site_method.receipt.changed_fields
+    updated_selector = next(
+        record
+        for record in reviewed_site_method.manifest.records
+        if record.identity.item_id == selector_row.site_method_id
+    )
+    assert updated_selector.classification_state.dimensions["site_method_audit_status"] == (
+        SITE_METHOD_STATUS_SELECTOR_AUDIT_REQUIRED
+    )
+    assert updated_selector.classification_state.dimensions["selector_audit_note_status"] == (
+        "review_note_recorded"
+    )
+    assert updated_selector.classification_state.dimensions["archive_manual_fallback_note_status"] == (
+        "review_note_recorded"
+    )
+    assert updated_selector.evidence_basis[-1].basis_type == "manual_index_update_audit_note"
+
+    generic_article_row = source_site_method_audit_row_by_method(
+        site_method_registry,
+        "generic_article_html",
+    )
+    assert generic_article_row is not None
+    ready_update = apply_source_site_method_audit_update(
+        site_method_manifest,
+        SourceSiteMethodAuditUpdatePatch(
+            item_id=generic_article_row.site_method_id,
+            status=SITE_METHOD_STATUS_METADATA_AUDIT_READY,
+            operator_review_note="Metadata row accepted for review bundle sidecar.",
+        ),
+        operator_id="operator-1",
+        timestamp_utc="2026-08-08T13:25:00Z",
+    )
+    assert ready_update.ok
+    assert ready_update.receipt.item_id == generic_article_row.site_method_id
+
+    for unsafe_patch, expected in (
+        (
+            SourceSiteMethodAuditUpdatePatch(
+                item_id=selector_row.site_method_id,
+                classification_dimensions={"religion_identity_status": "inferred"},
+            ),
+            "sensitive/protected",
+        ),
+        (
+            SourceSiteMethodAuditUpdatePatch(
+                item_id=selector_row.site_method_id,
+                completed_evidence_claimed=True,
+            ),
+            "completed evidence",
+        ),
+        (
+            SourceSiteMethodAuditUpdatePatch(
+                item_id=selector_row.site_method_id,
+                live_execution_claimed=True,
+            ),
+            "live execution",
+        ),
+        (
+            SourceSiteMethodAuditUpdatePatch(
+                item_id=selector_row.site_method_id,
+                file_movement_claimed=True,
+            ),
+            "file movement",
+        ),
+        (
+            SourceSiteMethodAuditUpdatePatch(
+                item_id=selector_row.site_method_id,
+                operator_review_note="Cookie: do-not-record",
+            ),
+            "credential/cookie/account",
+        ),
+    ):
+        try:
+            apply_source_site_method_audit_update(
+                site_method_manifest,
+                unsafe_patch,
+                operator_id="operator-1",
+                timestamp_utc="2026-08-08T13:30:00Z",
+            )
+        except ValueError as error:
+            assert expected in str(error)
+        else:
+            raise AssertionError("Unsafe site/method audit update should be rejected")
 
     manifest = TotalExportManifest(
         package_id="fixture_package",

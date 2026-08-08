@@ -15,7 +15,12 @@ from capture_export_queue import (
     OperationalCaptureExportQueueConnection,
     connect_operational_capture_plan_to_export_queue,
 )
-from evidence_database_index import EvidenceIndexManifest, scan_evidence_index_records, stable_evidence_id
+from evidence_database_index import (
+    EvidenceIndexManifest,
+    evidence_index_record_from_source_site_method_audit_row,
+    scan_evidence_index_records,
+    stable_evidence_id,
+)
 from evidence_item_queue_store import (
     EvidenceItemQueueReviewStoreDocument,
     build_evidence_item_queue_review_store_document,
@@ -32,6 +37,10 @@ from source_evidence_release_plan import (
 from source_adapter_audit_registry import (
     SourceAdapterAuditRegistry,
     build_source_adapter_audit_registry,
+)
+from source_site_method_audit_registry import (
+    SourceSiteMethodAuditRegistry,
+    build_source_site_method_audit_registry,
 )
 from total_export_manifest import TotalExportManifest
 
@@ -89,6 +98,11 @@ class SourceEvidenceWorkflowState:
     source_adapter_audit_registry_id: str
     source_adapter_audit_entry_count: int
     source_adapter_audit_required_count: int
+    source_site_method_audit_registry: SourceSiteMethodAuditRegistry
+    source_site_method_audit_registry_id: str
+    source_site_method_audit_row_count: int
+    source_site_method_selector_audit_required_count: int
+    source_site_method_live_approved_only_count: int
     release_readiness: SourceEvidenceReleaseReadiness
     release_readiness_id: str
     release_target_count: int
@@ -122,6 +136,7 @@ class SourceEvidenceWorkflowState:
     def to_dict(self) -> dict[str, Any]:
         data = _value_for_dict(self)
         data["source_adapter_audit_registry"] = self.source_adapter_audit_registry.to_dict()
+        data["source_site_method_audit_registry"] = self.source_site_method_audit_registry.to_dict()
         return data
 
     def to_summary_text(self) -> str:
@@ -147,6 +162,10 @@ class SourceEvidenceWorkflowState:
                 f"Source adapter audit registry: {self.source_adapter_audit_registry_id}",
                 f"Source adapter audit entries: {self.source_adapter_audit_entry_count}",
                 f"Source adapter audit-required entries: {self.source_adapter_audit_required_count}",
+                f"Source site/method audit registry: {self.source_site_method_audit_registry_id}",
+                f"Source site/method audit rows: {self.source_site_method_audit_row_count}",
+                f"Source site/method selector audit-required rows: {self.source_site_method_selector_audit_required_count}",
+                f"Source site/method live-approved-only rows: {self.source_site_method_live_approved_only_count}",
                 f"Release readiness: {self.release_readiness.release_status}",
                 f"Release targets: {self.release_target_count}",
                 f"Release action plan: {self.release_action_plan_id}",
@@ -179,10 +198,20 @@ def build_source_evidence_workflow_state(
         database_root_id=database_root_id,
         taxonomy_version_id=taxonomy_version_id,
     )
+    source_adapter_audit_registry = build_source_adapter_audit_registry()
+    source_site_method_audit_registry = build_source_site_method_audit_registry()
+    site_method_audit_records = tuple(
+        evidence_index_record_from_source_site_method_audit_row(
+            row,
+            database_root_id=database_root_id,
+            taxonomy_version_id=taxonomy_version_id,
+        )
+        for row in source_site_method_audit_registry.rows
+    )
     previous_hash = plan.action_events[-1].event_hash if plan.action_events else ""
     evidence_scan_manifest = EvidenceIndexManifest(
         manifest_id=stable_evidence_id("workflow_scan_manifest", plan.source_row_id, safe_package_id),
-        records=connection.evidence_index_records,
+        records=tuple(connection.evidence_index_records) + site_method_audit_records,
         created_at_utc=timestamp,
         updated_at_utc=timestamp,
     )
@@ -190,7 +219,6 @@ def build_source_evidence_workflow_state(
     access_provider_gate_summary = build_access_provider_gate_summary(
         build_default_access_keys_catalog()
     )
-    source_adapter_audit_registry = build_source_adapter_audit_registry()
     store_document = build_evidence_item_queue_review_store_document(
         connection.queue,
         session_id=f"{safe_package_id}_queue_review_store",
@@ -230,6 +258,7 @@ def build_source_evidence_workflow_state(
             "database_scan_result": evidence_scan_result.to_dict(),
             "access_provider_gate_summary": access_provider_gate_summary.to_dict(),
             "source_adapter_audit_registry": source_adapter_audit_registry.to_dict(),
+            "source_site_method_audit_registry": source_site_method_audit_registry.to_dict(),
             "grabbed_source_record": (
                 plan.grabbed_source_record.to_dict()
                 if plan.grabbed_source_record is not None
@@ -280,6 +309,15 @@ def build_source_evidence_workflow_state(
         source_adapter_audit_registry_id=source_adapter_audit_registry.registry_id,
         source_adapter_audit_entry_count=source_adapter_audit_registry.entry_count,
         source_adapter_audit_required_count=source_adapter_audit_registry.audit_required_count,
+        source_site_method_audit_registry=source_site_method_audit_registry,
+        source_site_method_audit_registry_id=source_site_method_audit_registry.registry_id,
+        source_site_method_audit_row_count=source_site_method_audit_registry.row_count,
+        source_site_method_selector_audit_required_count=(
+            source_site_method_audit_registry.selector_audit_required_count
+        ),
+        source_site_method_live_approved_only_count=(
+            source_site_method_audit_registry.live_approved_only_count
+        ),
         release_readiness=release_readiness,
         release_readiness_id=release_readiness.release_readiness_id,
         release_target_count=release_readiness.target_count,

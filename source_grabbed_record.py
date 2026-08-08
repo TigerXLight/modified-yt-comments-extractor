@@ -49,6 +49,7 @@ class GrabbedSourceRecord:
     snapshot_reference_ids: tuple[str, ...] = ()
     manual_observation_reference_ids: tuple[str, ...] = ()
     provider_receipt_reference_ids: tuple[str, ...] = ()
+    selector_audit_reference_ids: tuple[str, ...] = ()
     content_digest_sha256: str = ""
     redacted_credential_references: tuple[str, ...] = ()
     evidence_item_ids: tuple[str, ...] = ()
@@ -91,6 +92,7 @@ class GrabbedSourceRecord:
         data["snapshot_reference_count"] = len(self.snapshot_reference_ids)
         data["manual_observation_reference_count"] = len(self.manual_observation_reference_ids)
         data["provider_receipt_reference_count"] = len(self.provider_receipt_reference_ids)
+        data["selector_audit_reference_count"] = len(self.selector_audit_reference_ids)
         return data
 
 
@@ -174,6 +176,7 @@ def build_grabbed_source_record(
     snapshot_reference_ids: Iterable[str] = (),
     manual_observation_reference_ids: Iterable[str] = (),
     provider_receipt_reference_ids: Iterable[str] = (),
+    selector_audit_reference_ids: Iterable[str] = (),
     redacted_credential_references: Iterable[str] = (),
     created_at_utc: str = "",
     updated_at_utc: str = "",
@@ -192,6 +195,7 @@ def build_grabbed_source_record(
     safe_snapshot_refs = _stable_tuple(snapshot_reference_ids)
     safe_manual_refs = _stable_tuple(manual_observation_reference_ids)
     safe_provider_refs = _stable_tuple(provider_receipt_reference_ids)
+    safe_selector_audit_refs = _stable_tuple(selector_audit_reference_ids)
     content_digest = _sha256(
         {
             "adapter_id": adapter_id,
@@ -206,6 +210,7 @@ def build_grabbed_source_record(
             "relative_artifact_paths": safe_artifact_paths,
             "screenshot_reference_ids": safe_screenshot_refs,
             "selected_modes": _stable_tuple(selected_modes),
+            "selector_audit_reference_ids": safe_selector_audit_refs,
             "snapshot_reference_ids": safe_snapshot_refs,
             "source_row_id": source_row_id,
             "transcript_reference_ids": safe_transcript_refs,
@@ -240,6 +245,7 @@ def build_grabbed_source_record(
         snapshot_reference_ids=safe_snapshot_refs,
         manual_observation_reference_ids=safe_manual_refs,
         provider_receipt_reference_ids=safe_provider_refs,
+        selector_audit_reference_ids=safe_selector_audit_refs,
         content_digest_sha256=content_digest,
         redacted_credential_references=_stable_tuple(redacted_credential_references),
         evidence_item_ids=_stable_tuple(evidence_item_ids),

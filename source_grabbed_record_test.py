@@ -38,6 +38,7 @@ def test_grabbed_source_record_is_deterministic_and_metadata_only() -> None:
         snapshot_reference_ids=("artifact_snapshot",),
         manual_observation_reference_ids=("manual_observation_1",),
         provider_receipt_reference_ids=("archive_status:wayback:not_checked",),
+        selector_audit_reference_ids=("selector_audit_generic_comments",),
         created_at_utc="2026-08-08T12:00:00Z",
     )
     second = build_grabbed_source_record(
@@ -72,6 +73,7 @@ def test_grabbed_source_record_is_deterministic_and_metadata_only() -> None:
         snapshot_reference_ids=("artifact_snapshot",),
         manual_observation_reference_ids=("manual_observation_1",),
         provider_receipt_reference_ids=("archive_status:wayback:not_checked",),
+        selector_audit_reference_ids=("selector_audit_generic_comments",),
         created_at_utc="2026-08-08T12:00:00Z",
     )
 
@@ -90,8 +92,10 @@ def test_grabbed_source_record_is_deterministic_and_metadata_only() -> None:
     assert first.snapshot_reference_ids == ("artifact_snapshot",)
     assert first.manual_observation_reference_ids == ("manual_observation_1",)
     assert first.provider_receipt_reference_ids == ("archive_status:wayback:not_checked",)
+    assert first.selector_audit_reference_ids == ("selector_audit_generic_comments",)
     assert first.to_dict()["article_reference_count"] == 1
     assert first.to_dict()["provider_receipt_reference_count"] == 1
+    assert first.to_dict()["selector_audit_reference_count"] == 1
     assert first.file_existence_claimed is False
     assert first.full_local_path_included is False
     assert first.raw_payload_included is False

@@ -127,6 +127,9 @@ def test_source_adapter_audit_resolution_rows_include_method_specific_metadata()
     assert generic_comments.audit_status == AUDIT_STATUS_METADATA_AUDIT_READY
     assert generic_comments.comment_support == "manual_or_fixture_only_site_specific_selectors_audit_required"
     assert generic_comments.method_audit_metadata["site_specific_selector_status"] == AUDIT_STATUS_AUDIT_REQUIRED
+    assert generic_comments.method_audit_metadata["tracked_selector_audit_method_id"] == (
+        "generic_comments_site_specific_selector"
+    )
     assert generic_comments.method_audit_metadata["source_boundary_policy"]
 
 
