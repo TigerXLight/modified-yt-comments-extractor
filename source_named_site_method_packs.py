@@ -18,6 +18,10 @@ SOURCE_NAMED_SITE_METHOD_PACK_SCHEMA_VERSION = "source_named_site_method_packs_v
 NAMED_SITE_PACK_EXECUTION_STATUS = "not_live_executed"
 NAMED_SITE_PACK_REVIEW_STATUS = "USER_REVIEW_REQUIRED"
 MSN_SOURCE_METHOD_IDS = ("msn_article", "msn_shadow_dom_comments")
+TWITTER_X_SOURCE_METHOD_IDS = (
+    "twitter_x_public_post_archive_manual_import",
+    "twitter_x_reply_thread_archive_manual_import",
+)
 
 
 def _value_for_dict(value: Any) -> Any:
@@ -475,3 +479,10 @@ def build_msn_named_site_method_packs(
 ) -> tuple[SourceNamedSiteMethodPack, ...]:
     collection = collection or build_source_named_site_method_pack_collection()
     return source_named_site_method_packs_by_method_id(collection, MSN_SOURCE_METHOD_IDS)
+
+
+def build_twitter_x_named_site_method_packs(
+    collection: SourceNamedSiteMethodPackCollection | None = None,
+) -> tuple[SourceNamedSiteMethodPack, ...]:
+    collection = collection or build_source_named_site_method_pack_collection()
+    return source_named_site_method_packs_by_method_id(collection, TWITTER_X_SOURCE_METHOD_IDS)

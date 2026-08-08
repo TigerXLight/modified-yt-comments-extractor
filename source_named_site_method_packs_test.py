@@ -5,6 +5,7 @@ import json
 from source_named_site_method_packs import (
     build_msn_named_site_method_packs,
     build_source_named_site_method_pack_collection,
+    build_twitter_x_named_site_method_packs,
     source_named_site_method_pack_collection_to_json,
     validate_source_named_site_method_pack_collection,
 )
@@ -88,6 +89,30 @@ def test_msn_named_site_method_packs_expose_article_and_shadow_dom_operator_path
     assert comments.provider_call_performed is False
 
 
+def test_twitter_x_named_site_method_packs_expose_archive_manual_boundaries() -> None:
+    twitter_packs = build_twitter_x_named_site_method_packs()
+    assert tuple(pack.method_id for pack in twitter_packs) == (
+        "twitter_x_public_post_archive_manual_import",
+        "twitter_x_reply_thread_archive_manual_import",
+    )
+
+    public_post = twitter_packs[0]
+    assert public_post.site_profile_id == "twitter_x_public_post_archive_manual"
+    assert "archive.ph" in public_post.site_specific_metadata["archive_fallback_providers"]
+    assert "public_post_id" in public_post.site_specific_metadata["expected_public_post_metadata"]
+    assert "archive_receipt_ref" in public_post.site_specific_metadata["expected_public_post_metadata"]
+    assert public_post.site_specific_metadata["x_twitter_runtime_performed"] is False
+    assert public_post.browser_automation_performed is False
+
+    reply_thread = twitter_packs[1]
+    assert reply_thread.site_profile_id == "twitter_x_reply_thread_archive_manual"
+    assert "parent_post_id" in reply_thread.site_specific_metadata["expected_thread_metadata"]
+    assert "reply_ids" in reply_thread.site_specific_metadata["expected_thread_metadata"]
+    assert "thread_boundary" in reply_thread.site_specific_metadata["expected_thread_metadata"]
+    assert reply_thread.provider_call_performed is False
+    assert reply_thread.archive_submission_performed is False
+
+
 def test_named_site_method_packs_link_selector_approval_packet_ids() -> None:
     registry = build_source_site_method_audit_registry()
     approval_packets = build_source_selector_approval_packet_collection(registry)
@@ -121,6 +146,7 @@ if __name__ == "__main__":
     test_named_site_method_pack_collection_covers_current_site_method_registry()
     test_named_site_method_packs_preserve_site_specific_metadata_and_boundaries()
     test_msn_named_site_method_packs_expose_article_and_shadow_dom_operator_paths()
+    test_twitter_x_named_site_method_packs_expose_archive_manual_boundaries()
     test_named_site_method_packs_link_selector_approval_packet_ids()
     test_named_site_method_pack_json_is_deterministic_and_summary_only()
     print("source_named_site_method_packs_test.py passed")
