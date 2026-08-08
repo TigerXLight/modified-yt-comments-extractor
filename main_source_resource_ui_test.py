@@ -434,12 +434,13 @@ def test_source_evidence_workflow_state_can_save_review_bundle() -> None:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         result = App.save_last_source_evidence_workflow_review_bundle(app, temp_dir)
-        assert result.file_count == 6
+        assert result.file_count == 7
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_move_performed is False
         assert result.full_local_path_included is False
         assert Path(temp_dir, "source_evidence_workflow_review_bundle.json").is_file()
         assert Path(temp_dir, "source_evidence_release_readiness.json").is_file()
+        assert Path(temp_dir, "source_evidence_release_action_plan.json").is_file()
         assert Path(temp_dir, "source_grabbed_record.json").is_file()
         assert Path(temp_dir, "source_evidence_database_scan_result.json").is_file()
 

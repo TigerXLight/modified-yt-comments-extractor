@@ -9,6 +9,7 @@ from source_evidence_workflow_store import (
     DATABASE_SCAN_RESULT_FILENAME,
     GRABBED_SOURCE_RECORD_FILENAME,
     QUEUE_REVIEW_STORE_FILENAME,
+    RELEASE_ACTION_PLAN_FILENAME,
     RELEASE_READINESS_FILENAME,
     REVIEW_MANIFEST_FILENAME,
     WORKFLOW_STATE_FILENAME,
@@ -56,12 +57,13 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
             REVIEW_MANIFEST_FILENAME,
             QUEUE_REVIEW_STORE_FILENAME,
             RELEASE_READINESS_FILENAME,
+            RELEASE_ACTION_PLAN_FILENAME,
             GRABBED_SOURCE_RECORD_FILENAME,
             DATABASE_SCAN_RESULT_FILENAME,
         }
         expected_files = expected_sidecars | {BUNDLE_INDEX_FILENAME}
         assert {file.filename for file in result.files} == expected_sidecars
-        assert result.file_count == 6
+        assert result.file_count == 7
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_read_performed is False
         assert result.evidence_file_move_performed is False
@@ -92,6 +94,10 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
         assert loaded.queue_review_store["metadata_only"] is True
         assert loaded.release_readiness["release_status"] == "RELEASE_APPROVAL_REQUIRED"
         assert loaded.release_readiness["target_count"] == 4
+        assert loaded.release_action_plan["release_status"] == "RELEASE_APPROVAL_REQUIRED"
+        assert loaded.release_action_plan["operator_signoff_required"] is True
+        assert loaded.release_action_plan["receipt_count"] == 4
+        assert loaded.release_action_plan["command_count"] == 0
         assert loaded.grabbed_source_record["review_state"] == "USER_REVIEW_REQUIRED"
         assert loaded.grabbed_source_record["metadata_only"] is True
         assert loaded.grabbed_source_record["artifact_count"] > 0

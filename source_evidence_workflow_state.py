@@ -20,6 +20,10 @@ from source_evidence_release_readiness import (
     SourceEvidenceReleaseReadiness,
     build_source_evidence_release_readiness,
 )
+from source_evidence_release_plan import (
+    SourceEvidenceReleaseActionPlan,
+    build_source_evidence_release_action_plan,
+)
 from total_export_manifest import TotalExportManifest
 
 
@@ -71,6 +75,10 @@ class SourceEvidenceWorkflowState:
     release_readiness: SourceEvidenceReleaseReadiness
     release_readiness_id: str
     release_target_count: int
+    release_action_plan: SourceEvidenceReleaseActionPlan
+    release_action_plan_id: str
+    release_action_receipt_count: int
+    operator_signoff_required: bool
     connection: OperationalCaptureExportQueueConnection
     queue_review_store_document: EvidenceItemQueueReviewStoreDocument
     review_manifest: TotalExportManifest
@@ -116,6 +124,9 @@ class SourceEvidenceWorkflowState:
                 f"Database scan records: {self.database_scan_matched_count}/{self.database_scan_record_count}",
                 f"Release readiness: {self.release_readiness.release_status}",
                 f"Release targets: {self.release_target_count}",
+                f"Release action plan: {self.release_action_plan_id}",
+                f"Release action receipts: {self.release_action_receipt_count}",
+                f"Operator signoff required: {str(self.operator_signoff_required).lower()}",
                 f"Queue review store: {self.queue_review_store_id}",
                 "Runtime executed: false",
                 "Live/network/browser/archive/download/file actions performed: none",
@@ -178,6 +189,7 @@ def build_source_evidence_workflow_state(
         queue_review_store_id=store_document.store_id,
         created_at_utc=timestamp,
     )
+    release_action_plan = build_source_evidence_release_action_plan(release_readiness)
     review_manifest = build_source_evidence_review_manifest(
         package_id=safe_package_id,
         created_at_utc=timestamp,
@@ -230,6 +242,10 @@ def build_source_evidence_workflow_state(
         release_readiness=release_readiness,
         release_readiness_id=release_readiness.release_readiness_id,
         release_target_count=release_readiness.target_count,
+        release_action_plan=release_action_plan,
+        release_action_plan_id=release_action_plan.release_action_plan_id,
+        release_action_receipt_count=release_action_plan.receipt_count,
+        operator_signoff_required=release_action_plan.operator_signoff_required,
         connection=connection,
         queue_review_store_document=store_document,
         review_manifest=review_manifest,
