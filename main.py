@@ -11823,12 +11823,15 @@ class App(ctk.CTk):
             return False
 
     def _online_asr_credential_statuses(self) -> Dict[str, CredentialRuntimeStatus]:
-        provider = getattr(self, "_online_asr_credential_status_provider", None)
+        provider = self.__dict__.get("_online_asr_credential_status_provider")
         if callable(provider):
             return dict(provider())
+        settings_manager = self.__dict__.get("settings_manager")
+        if settings_manager is None:
+            return {}
         return dict(
             build_runtime_credential_statuses(
-                settings_manager=self.settings_manager,
+                settings_manager=settings_manager,
                 youtube_configured=False,
                 credential_store=SystemKeyringCredentialStore(),
             )

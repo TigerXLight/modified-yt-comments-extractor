@@ -6,6 +6,7 @@ from capture_controller import build_operational_capture_plan
 from source_evidence_workflow_state import build_source_evidence_workflow_state
 from source_evidence_workflow_store import (
     BUNDLE_INDEX_FILENAME,
+    ACCESS_PROVIDER_GATE_FILENAME,
     DATABASE_SCAN_RESULT_FILENAME,
     GRABBED_SOURCE_RECORD_FILENAME,
     QUEUE_REVIEW_STORE_FILENAME,
@@ -60,10 +61,11 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
             RELEASE_ACTION_PLAN_FILENAME,
             GRABBED_SOURCE_RECORD_FILENAME,
             DATABASE_SCAN_RESULT_FILENAME,
+            ACCESS_PROVIDER_GATE_FILENAME,
         }
         expected_files = expected_sidecars | {BUNDLE_INDEX_FILENAME}
         assert {file.filename for file in result.files} == expected_sidecars
-        assert result.file_count == 7
+        assert result.file_count == 8
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_read_performed is False
         assert result.evidence_file_move_performed is False
@@ -104,6 +106,10 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
         assert loaded.database_scan_result["matched_record_count"] >= 1
         assert loaded.database_scan_result["file_read_performed"] is False
         assert loaded.database_scan_result["broad_scan_performed"] is False
+        assert loaded.access_provider_gate_summary["review_status"] == "USER_REVIEW_REQUIRED"
+        assert loaded.access_provider_gate_summary["credential_lookup_performed"] is False
+        assert loaded.access_provider_gate_summary["provider_call_performed"] is False
+        assert loaded.access_provider_gate_summary["record_count"] > 0
         assert {
             target["target_kind"] for target in loaded.release_readiness["targets"]
         } == {

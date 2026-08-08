@@ -634,6 +634,9 @@ def test_online_asr_start_requires_file_and_prevents_duplicate_dispatch(monkeypa
     main.threading.Thread = FakeThread
     try:
         app = _app()
+        app._online_asr_credential_status_provider = lambda: {
+            "asr:elevenlabs_scribe": _configured_elevenlabs_status()
+        }
         status = FakeVar()
         assert app._start_online_asr_transcription("", status_var=status) is False
         assert status.value == "Choose a local media file before transcribing."
@@ -699,6 +702,9 @@ def test_online_asr_worker_restores_controls_after_safe_failure() -> None:
     FakeMessageBox.errors = []
     try:
         app = _app()
+        app._online_asr_credential_status_provider = lambda: {
+            "asr:elevenlabs_scribe": _configured_elevenlabs_status()
+        }
         status = FakeVar()
         start_button = FakeWidget()
 
@@ -739,6 +745,9 @@ def test_online_asr_worker_restores_main_button_when_dialog_was_closed() -> None
     main.threading.Thread = ImmediateThread
     try:
         app = _app()
+        app._online_asr_credential_status_provider = lambda: {
+            "asr:elevenlabs_scribe": _configured_elevenlabs_status()
+        }
         dialog = FakeWidget()
         dialog.destroy()
         start_button = FakeWidget()

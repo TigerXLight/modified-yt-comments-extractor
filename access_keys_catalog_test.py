@@ -239,8 +239,8 @@ def run_self_test() -> None:
     )
 
     alias_expectations = {
-        "Twitter": "planned:source:x_twitter",
-        "X": "planned:source:x_twitter",
+        "Twitter": "source:twitter_x",
+        "X": "source:twitter_x",
         "AngelList": "planned:professional:wellfound_angellist",
         "Blind": "planned:professional:teamblind_blind",
         "Matrix": "planned:workplace:element_matrix",

@@ -13,6 +13,10 @@ from evidence_item_queue_store import (
     read_evidence_item_queue_review_store,
     validate_evidence_item_queue_review_store_document,
 )
+from access_provider_gate import (
+    access_provider_gate_summary_to_json,
+    validate_access_provider_gate_summary,
+)
 from source_evidence_review_export import (
     build_source_evidence_review_manifest_with_workflow_state,
     source_evidence_review_manifest_to_json,
@@ -40,6 +44,7 @@ RELEASE_READINESS_FILENAME = "source_evidence_release_readiness.json"
 RELEASE_ACTION_PLAN_FILENAME = "source_evidence_release_action_plan.json"
 GRABBED_SOURCE_RECORD_FILENAME = "source_grabbed_record.json"
 DATABASE_SCAN_RESULT_FILENAME = "source_evidence_database_scan_result.json"
+ACCESS_PROVIDER_GATE_FILENAME = "source_access_provider_gate_summary.json"
 BUNDLE_INDEX_FILENAME = "source_evidence_workflow_review_bundle.json"
 
 
@@ -116,6 +121,7 @@ class SourceEvidenceWorkflowStoreReadResult:
     release_action_plan: Mapping[str, Any]
     grabbed_source_record: Mapping[str, Any]
     database_scan_result: Mapping[str, Any]
+    access_provider_gate_summary: Mapping[str, Any]
     schema_version: str = SOURCE_EVIDENCE_WORKFLOW_STORE_SCHEMA_VERSION
     metadata_file_read_performed: bool = True
     evidence_file_read_performed: bool = False
@@ -292,6 +298,11 @@ def write_source_evidence_workflow_review_bundle(
         grabbed_source_record_json = _stable_json({}, pretty=True)
     database_scan_result = state.database_scan_result.to_dict()
     database_scan_result_json = _stable_json(database_scan_result, pretty=True)
+    access_provider_gate_summary = state.access_provider_gate_summary.to_dict()
+    validate_access_provider_gate_summary(access_provider_gate_summary)
+    access_provider_gate_json = access_provider_gate_summary_to_json(
+        state.access_provider_gate_summary
+    )
     review_manifest = build_source_evidence_review_manifest_with_workflow_state(
         state.review_manifest,
         workflow_state_metadata=state.to_dict(),
@@ -310,6 +321,7 @@ def write_source_evidence_workflow_review_bundle(
         _stored_file("release_action_plan", RELEASE_ACTION_PLAN_FILENAME, release_action_plan_json),
         _stored_file("grabbed_source_record", GRABBED_SOURCE_RECORD_FILENAME, grabbed_source_record_json),
         _stored_file("database_scan_result", DATABASE_SCAN_RESULT_FILENAME, database_scan_result_json),
+        _stored_file("access_provider_gate", ACCESS_PROVIDER_GATE_FILENAME, access_provider_gate_json),
     )
     result = build_source_evidence_workflow_store_result(state=state, files=files)
     result_json = source_evidence_workflow_store_result_to_json(result)
@@ -321,6 +333,7 @@ def write_source_evidence_workflow_review_bundle(
     _atomic_write_text(output_root / RELEASE_ACTION_PLAN_FILENAME, release_action_plan_json)
     _atomic_write_text(output_root / GRABBED_SOURCE_RECORD_FILENAME, grabbed_source_record_json)
     _atomic_write_text(output_root / DATABASE_SCAN_RESULT_FILENAME, database_scan_result_json)
+    _atomic_write_text(output_root / ACCESS_PROVIDER_GATE_FILENAME, access_provider_gate_json)
     _atomic_write_text(output_root / BUNDLE_INDEX_FILENAME, result_json)
     return result
 
@@ -340,6 +353,7 @@ def read_source_evidence_workflow_review_bundle(
     release_action_plan = json.loads((input_root / RELEASE_ACTION_PLAN_FILENAME).read_text(encoding="utf-8"))
     grabbed_source_record = json.loads((input_root / GRABBED_SOURCE_RECORD_FILENAME).read_text(encoding="utf-8"))
     database_scan_result = json.loads((input_root / DATABASE_SCAN_RESULT_FILENAME).read_text(encoding="utf-8"))
+    access_provider_gate_summary = json.loads((input_root / ACCESS_PROVIDER_GATE_FILENAME).read_text(encoding="utf-8"))
     if not isinstance(workflow_state, dict) or not isinstance(review_manifest, dict):
         raise ValueError("Source Evidence workflow bundle sidecars must be JSON objects")
     if not isinstance(release_readiness, dict):
@@ -352,6 +366,9 @@ def read_source_evidence_workflow_review_bundle(
         raise ValueError("Source Evidence grabbed source/database scan sidecars must be JSON objects")
     if grabbed_source_record:
         validate_grabbed_source_record(grabbed_source_record)
+    if not isinstance(access_provider_gate_summary, dict):
+        raise ValueError("Source Evidence access provider gate sidecar must be a JSON object")
+    validate_access_provider_gate_summary(access_provider_gate_summary)
     return SourceEvidenceWorkflowStoreReadResult(
         bundle=bundle,
         workflow_state=workflow_state,
@@ -361,6 +378,7 @@ def read_source_evidence_workflow_review_bundle(
         release_action_plan=release_action_plan,
         grabbed_source_record=grabbed_source_record,
         database_scan_result=database_scan_result,
+        access_provider_gate_summary=access_provider_gate_summary,
     )
 
 

@@ -6,6 +6,11 @@ from enum import Enum
 from typing import Any
 
 from capture_controller import OperationalCapturePlanResult
+from access_keys_catalog import build_default_access_keys_catalog
+from access_provider_gate import (
+    AccessProviderGateSummary,
+    build_access_provider_gate_summary,
+)
 from capture_export_queue import (
     OperationalCaptureExportQueueConnection,
     connect_operational_capture_plan_to_export_queue,
@@ -72,6 +77,10 @@ class SourceEvidenceWorkflowState:
     database_scan_result: Any
     database_scan_record_count: int
     database_scan_matched_count: int
+    access_provider_gate_summary: AccessProviderGateSummary
+    access_provider_gate_summary_id: str
+    access_provider_gate_record_count: int
+    access_provider_gate_approval_required_count: int
     release_readiness: SourceEvidenceReleaseReadiness
     release_readiness_id: str
     release_target_count: int
@@ -122,6 +131,9 @@ class SourceEvidenceWorkflowState:
                 f"Review manifest assets: {self.review_manifest_asset_count}",
                 f"Grabbed source record: {self.grabbed_source_record_id}",
                 f"Database scan records: {self.database_scan_matched_count}/{self.database_scan_record_count}",
+                f"Access/provider gate: {self.access_provider_gate_summary_id}",
+                f"Access/provider records: {self.access_provider_gate_record_count}",
+                f"Access/provider approvals required: {self.access_provider_gate_approval_required_count}",
                 f"Release readiness: {self.release_readiness.release_status}",
                 f"Release targets: {self.release_target_count}",
                 f"Release action plan: {self.release_action_plan_id}",
@@ -162,6 +174,9 @@ def build_source_evidence_workflow_state(
         updated_at_utc=timestamp,
     )
     evidence_scan_result = scan_evidence_index_records(evidence_scan_manifest)
+    access_provider_gate_summary = build_access_provider_gate_summary(
+        build_default_access_keys_catalog()
+    )
     store_document = build_evidence_item_queue_review_store_document(
         connection.queue,
         session_id=f"{safe_package_id}_queue_review_store",
@@ -199,6 +214,7 @@ def build_source_evidence_workflow_state(
         queue_review_store_document=store_document,
         workflow_state_metadata={
             "database_scan_result": evidence_scan_result.to_dict(),
+            "access_provider_gate_summary": access_provider_gate_summary.to_dict(),
             "grabbed_source_record": (
                 plan.grabbed_source_record.to_dict()
                 if plan.grabbed_source_record is not None
@@ -239,6 +255,12 @@ def build_source_evidence_workflow_state(
         database_scan_result=evidence_scan_result,
         database_scan_record_count=evidence_scan_result.scanned_record_count,
         database_scan_matched_count=evidence_scan_result.matched_record_count,
+        access_provider_gate_summary=access_provider_gate_summary,
+        access_provider_gate_summary_id=access_provider_gate_summary.gate_summary_id,
+        access_provider_gate_record_count=access_provider_gate_summary.record_count,
+        access_provider_gate_approval_required_count=(
+            access_provider_gate_summary.approval_required_count
+        ),
         release_readiness=release_readiness,
         release_readiness_id=release_readiness.release_readiness_id,
         release_target_count=release_readiness.target_count,
