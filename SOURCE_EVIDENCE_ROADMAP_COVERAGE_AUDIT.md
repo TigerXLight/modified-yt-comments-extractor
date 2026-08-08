@@ -518,6 +518,36 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 
 - Boundaries confirmed: no live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider/ASR calls, credentials/cookies/accounts, broad folder scans, evidence file moves, completed-evidence claims, automatic classification, or protected-attribute inference.
 
+## Source Audit Operator Workflow Bridge Coverage
+
+- Coverage marker: SOURCE_AUDIT_OPERATOR_WORKFLOW_BRIDGE_BUILT.
+- Coverage labels: MODEL_ONLY / LOCAL_ONLY / UI_SCAFFOLD_ONLY / USER_REVIEW_REQUIRED / OPERATOR_APPROVAL_REQUIRED / NOT_LIVE_EXECUTED / METADATA_ONLY / NON_SECRET_SUMMARY_ONLY.
+- Implementation commits covered by this pass: `9b0bb3f`, `c6bc762`, `47acf08`, `8393823`, `775f048`, `deee7fc`, and `82dedd0`.
+
+| Coverage area | State | Remaining gap |
+| --- | --- | --- |
+| Database review panel state bridge | Done | Real accepted edits remain review/receipt gated. |
+| Safe edit/update mechanism surfacing | Done | No destructive/file/live updates are accepted. |
+| Source record review expansion | Done | Metadata refs only; no evidence completion claim. |
+| Named-site method pack refs | Done | Pack references appear in grabbed-source review buckets. |
+| Operator command packs | Done | Generated but not executed; approval required. |
+| Manual smoke checklist packs | Done | Generated but not executed; live/manual smoke approval required. |
+| Workflow/store/export sidecars | Done | Metadata-only sidecars written and referenced by Total Export metadata. |
+| GUI/app-facing dashboard state | Done | Existing source preview/save path exposes counts and no-live status. |
+| Access/KEYS/Online ASR bridge | Done | Non-secret summaries only; no credential read/provider call/ASR execution. |
+| Audit report/priority expansion | Done | Reports include command/checklist/dashboard/Access summaries. |
+| Generic comments site-specific selector | selector_audit_required / live_approved_only | Named-site selector audit remains approval-gated. |
+
+| Pack/checklist family | Current state | Not done |
+| --- | --- | --- |
+| MSN article/comments | approval_required / not_live_executed | No live MSN browser or shadow-DOM execution. |
+| X/Twitter public/reply archive-manual | approval_required / not_live_executed | No X/Twitter live/API/browser/archive provider execution. |
+| YouTube media/transcript/comments | approval_required / not_live_executed | No YouTube runtime/API/yt-dlp/FFmpeg/ASR/download execution. |
+| Generic article/comment/archive | approval_required / not_live_executed | Generic comments selector remains selector_audit_required / live_approved_only. |
+| Archive-only import | approval_required / not_live_executed | Operator-supplied archive review only. |
+
+- Boundaries confirmed: no live site access, browser automation, network/archive/API/provider/ASR calls, credentials/cookies/accounts, broad folder scans, evidence file moves, completed-evidence claims, automatic classification, protected-attribute inference, downloads, or release uploads occurred.
+
 ## Named-Site Source Method Pack Coverage
 
 - Coverage marker: NAMED_SITE_SOURCE_METHOD_PACKS_BUILT.

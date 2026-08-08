@@ -939,3 +939,26 @@ No live site access, browser automation, MSN/X/Twitter/YouTube/API/archive/provi
 
 - Remaining selector/live boundary: `generic_comments_site_specific_selector` remains selector_audit_required / live_approved_only; named-site selector audit and live/manual smoke require separate operator approval, exact source inputs, and later receipts.
 - Boundaries confirmed: no live site, browser automation, MSN/X/Twitter/YouTube/API/archive/provider/ASR calls, credentials/cookies/accounts, evidence file movement, completed-evidence claims, automatic classification, or protected-attribute inference.
+
+## Source Audit Operator Workflow Bridge Handoff
+
+- Current status: SOURCE_AUDIT_OPERATOR_WORKFLOW_BRIDGE_BUILT.
+- Implementation commits in this pass: `9b0bb3f`, `c6bc762`, `47acf08`, `8393823`, `775f048`, `deee7fc`, and `82dedd0`; documentation is recorded separately after those implementation commits.
+- New modules and tests: `source_review_panel_state.py`, `source_operator_command_packs.py`, `source_manual_smoke_checklists.py`, and `access_online_asr_bridge.py` with focused tests for each.
+- Source Evidence workflow review bundles now include `source_operator_command_packs.json`, `source_manual_smoke_checklists.json`, and `source_audit_dashboard_state.json`; existing database review, source-record review, selector approval, named-site pack, adapter audit report, and named-site priority sidecars remain wired.
+- App-facing bridge coverage includes database review counts, review-needed rows, pending safe edits, rejected unsafe edits, receipt summaries, source-record reference summaries, selector approval packet summaries, named-site method pack counts, and a no-live-execution dashboard state through the real main/source save-preview path.
+- Operator command packs and manual smoke checklists are approval-gated and metadata-only for MSN, X/Twitter, YouTube, generic article/comment, and archive-only workflows. They do not launch browsers, providers, ASR, archive tools, downloads, file moves, or live capture.
+- Access/KEYS/Online ASR summary keeps credential/provider state non-secret: added-provider and catalogue summaries are separate, Online ASR calls remain approval-required, and Local ASR stays guarded to the benchmarked whisper.cpp / Vulkan / large-v3 profile.
+
+| Handoff area | Done | Not done |
+| --- | --- | --- |
+| GUI/app-facing panel state bridge | Done | No full new GUI layout in this pass. |
+| Database review/edit/update summary | Done | Real accepted edits remain operator-reviewed and receipt-backed. |
+| Source record review expansion | Done | No completed evidence or raw payload claims. |
+| Operator command packs | Done | Commands are generated only, not executed. |
+| Manual smoke checklist packs | Done | Manual live smoke remains separately approval-gated. |
+| Workflow/store/export sidecars | Done | Metadata-only sidecars only. |
+| Access/KEYS/Online ASR bridge | Done | No credential read/provider call/ASR run. |
+| Generic comments live selector | Not done | `selector_audit_required` / `live_approved_only`. |
+
+- Boundary remains unchanged: no live site access, browser automation, network/archive/API/provider/ASR calls, credentials/cookies/accounts, evidence file movement, completed-evidence claims, protected-attribute inference, or automatic classification occurred.

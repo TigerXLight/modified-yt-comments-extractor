@@ -1064,3 +1064,32 @@ Status: NAMED_SITE_SOURCE_METHOD_PACKS_BUILT.
 | Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
 
 No live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider/ASR calls, credentials/cookies/accounts, evidence file moves, completed-evidence claims, automatic classification, or protected-attribute inference occurred.
+
+## Source Audit Operator Workflow Bridge Milestone
+
+Status: SOURCE_AUDIT_OPERATOR_WORKFLOW_BRIDGE_BUILT.
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| Real app-facing database review bridge | Done | `source_review_panel_state.py` exposes GUI-callable database review summaries without live files. |
+| Database review edit/update mechanism | Done | Existing safe preview/receipt workflow is surfaced; unsafe live/completed/file-move/raw-payload/full-path/credential/protected-sensitive/automatic-classification edits are rejected. |
+| GUI bridge/panel state | Done | Database review, source-record review, selector approval, named-site packs, and audit dashboard panel states are built for existing main/source tests without layout churn. |
+| Source record/evidence record review | Done | Grabbed-source records include named-site method pack references and review summaries. |
+| Operator command pack generation | Done | Approval-gated packs generated for MSN, X/Twitter, YouTube, generic article/comment, and archive-only methods. |
+| Manual smoke checklist packs | Done | Checklist packs generated for MSN, X/Twitter, YouTube, generic article/comment, and archive-only workflows. |
+| Workflow/store/export integration | Done | Bundles save operator command packs, manual smoke checklists, and audit dashboard state sidecars; Total Export manifest includes pathless metadata assets. |
+| Access/KEYS/Online ASR bridge cleanup | Done | Non-secret provider/catalogue/readiness summaries only; Online ASR and Local ASR remain non-executed. |
+| Audit report and priority expansion | Done | Report and priority plan include command pack, checklist, dashboard, and Access/Online ASR summaries. |
+| Documentation closeout | Done | Current state, handoff, roadmap, and coverage audit updated. |
+
+| Sidecar | State | Purpose |
+| --- | --- | --- |
+| `source_database_review_workflow.json` | Updated | Database review/edit/update metadata. |
+| `source_record_review_workflow.json` | Updated | Source grabbed-record review metadata. |
+| `source_selector_approval_packets.json` | Updated | Selector approval packet metadata. |
+| `source_named_site_method_packs.json` | Updated | Named-site source method pack metadata. |
+| `source_operator_command_packs.json` | Added | Future operator command pack metadata only. |
+| `source_manual_smoke_checklists.json` | Added | Future manual smoke checklist metadata only. |
+| `source_audit_dashboard_state.json` | Added | GUI/app-facing source audit dashboard summary. |
+
+Remaining roadmap boundary: named-site live/manual smoke, browser/provider/archive/API calls, ASR execution, downloads, file moves, and real evidence completion remain OPERATOR_APPROVAL_REQUIRED and are not implemented as automatic execution.

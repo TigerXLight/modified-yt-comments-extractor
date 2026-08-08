@@ -1216,3 +1216,24 @@ Next implementation work should connect this closeout to concrete release-sectio
 | Archive-only import | metadata_audit_ready | Review/signoff metadata only. |
 
 - No live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider/ASR calls, credentials/cookies/accounts, evidence file moves, completed-evidence claims, automatic classification, or protected-attribute inference occurred.
+
+## Source Audit Operator Workflow Bridge Closeout
+
+- Status: SOURCE_AUDIT_OPERATOR_WORKFLOW_BRIDGE_BUILT.
+- Implementation commits: `9b0bb3f` source review panel state bridge; `c6bc762` named-site pack source record references; `47acf08` operator command packs; `8393823` manual smoke checklist packs; `775f048` workflow/store/export sidecar integration; `deee7fc` Access/Online ASR bridge summary; `82dedd0` audit report and priority expansion.
+- `source_review_panel_state.py` exposes database review, source-record review, selector approval, named-site pack, and combined audit dashboard panel states for the existing GUI/source workflow without layout churn.
+- `source_operator_command_packs.py` and `source_manual_smoke_checklists.py` generate approval-gated, metadata-only command/checklist rows for MSN, X/Twitter, YouTube, generic article/comment, and archive-only methods.
+- Source Evidence workflow bundles now include new metadata sidecars: `source_operator_command_packs.json`, `source_manual_smoke_checklists.json`, and `source_audit_dashboard_state.json`.
+- Access/KEYS/Online ASR bridge coverage is non-secret and non-executing: added-provider counts stay in KEYS/ACCOUNTS, catalogue counts stay in Add Provider, Online ASR provider readiness is summary-only, provider calls remain approval-gated, and the Local ASR benchmark guard remains whisper.cpp / Vulkan / large-v3.
+
+| Bridge area | Current state | Remaining boundary |
+| --- | --- | --- |
+| Database review/edit/update | UI_SCAFFOLD_ONLY / USER_REVIEW_REQUIRED | Real evidence database edits require explicit operator review and safe receipt flow. |
+| Source record review | MODEL_ONLY / USER_REVIEW_REQUIRED | Runtime records remain metadata-only until approved capture/import execution. |
+| Operator command packs | APPROVAL_REQUIRED / NOT_LIVE_EXECUTED | Generated for future operator use; no command execution occurred. |
+| Manual smoke checklist packs | MANUAL_OPERATOR_ONLY / NOT_LIVE_EXECUTED | Future live/manual smoke requires named sites, scopes, and explicit approval. |
+| Workflow/store/export sidecars | LOCAL_ONLY / METADATA_ONLY | Sidecars are hashed/indexed metadata, not evidence artifacts. |
+| Access/KEYS/Online ASR bridge | NON_SECRET_SUMMARY_ONLY | No credentials read and no provider/ASR call executed. |
+| Generic comments site-specific selector | selector_audit_required / live_approved_only | Named-site selector audit and approval remain required. |
+
+- Boundary remains explicit: no live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider calls, credential/cookie/account use, ASR execution, evidence file movement, completed-evidence claims, automatic classification, or protected-attribute inference occurred.
