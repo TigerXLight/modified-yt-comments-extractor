@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import re
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -62,6 +63,7 @@ from source_unified_execution_runner import (
 
 
 SOURCE_APP_OPERATOR_CONTROLLER_SCHEMA_VERSION = "source_app_operator_controller_v1"
+FULL_LOCAL_PATH_RE = re.compile(r"(^[A-Za-z]:\\|^\\\\|^/tmp/|^/var/|^/home/|^/Users/)")
 
 
 def _value_for_dict(value: Any) -> Any:
@@ -77,6 +79,16 @@ def _value_for_dict(value: Any) -> Any:
         return {str(key): _value_for_dict(value[key]) for key in sorted(value)}
     if hasattr(value, "to_dict") and callable(value.to_dict):
         return value.to_dict()
+    return value
+
+
+def _redact_full_local_paths(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _redact_full_local_paths(value[key]) for key in sorted(value)}
+    if isinstance(value, (tuple, list)):
+        return [_redact_full_local_paths(item) for item in value]
+    if isinstance(value, str) and FULL_LOCAL_PATH_RE.search(value):
+        return Path(value).name or "[redacted-local-path]"
     return value
 
 
@@ -98,9 +110,13 @@ class AppOperatorControllerState:
     no_asr_run: bool = True
     no_user_evidence_files_moved: bool = True
 
+    @property
+    def controller_surface_count(self) -> int:
+        return 9
+
     def to_dict(self) -> dict[str, Any]:
         data = _value_for_dict(self)
-        data["controller_surface_count"] = 9
+        data["controller_surface_count"] = self.controller_surface_count
         return data
 
 
@@ -273,7 +289,7 @@ def build_unified_execution_controller_state(
         "progress_events": [event.to_dict() for event in result.progress_events],
         "artifact_paths": list(result.artifact_names),
         "hashes": list(result.artifact_hashes),
-        "result_summary": result.to_dict(),
+        "result_summary": _redact_full_local_paths(result.to_dict()),
         "behavior_provenance_log_summary": {
             "event_labels": list(result.behavior_event_labels),
             "redaction_applied": result.redaction_applied,
@@ -301,7 +317,7 @@ def build_local_e2e_total_export_controller_state(*, output_root: str | Path) ->
         "hash_count": len(result.asset_hashes),
         "offline_bundle_written": bool(result.offline_bundle_name),
         "completed_evidence_receipt_created": bool(result.completed_evidence_receipt_id),
-        "result": result.to_dict(),
+        "result": _redact_full_local_paths(result.to_dict()),
     }
 
 
@@ -347,11 +363,11 @@ def build_database_movement_controller_state(
         "controller_id": _safe_id("database_movement_controller", preview.preview_id, execute),
         "scan_row_count": scan.row_count,
         "review_needed_count": scan.row_count,
-        "preview": preview.to_dict(),
+        "preview": _redact_full_local_paths(preview.to_dict()),
         "copy_move_mode": movement_mode.value,
         "approval_token_required": True,
         "approval_token_supplied": bool(token),
-        "execution_receipt": execution.to_dict() if execution else {},
+        "execution_receipt": _redact_full_local_paths(execution.to_dict()) if execution else {},
         "old_new_path_history": [
             {
                 "old_path_name": scan_row.file_name,
@@ -449,11 +465,11 @@ def build_archive_media_archivebox_launch_controller_state(*, output_root: str |
         "archive_today_interpretation": interpret_archive_today_check_response(archive_today_check).to_dict(),
         "archive_today_submit_preview": build_archive_today_submit_request(target_url, explicit_submit_granted=False).to_dict(),
         "archive_challenge_manual_handoff_state": "manual_handoff_required_when_challenge_detected",
-        "media_selected_download_queue": media_queue.to_dict(),
+        "media_selected_download_queue": _redact_full_local_paths(media_queue.to_dict()),
         "local_media_copy_receipt_count": len(media_queue.local_copy_receipts),
-        "ffmpeg_mux_preview": ffmpeg_preview.to_dict(),
-        "yt_dlp_preview": ytdlp_preview.to_dict(),
-        "archivebox_command_previews": [plan.to_dict() for plan in archivebox_plans],
+        "ffmpeg_mux_preview": _redact_full_local_paths(ffmpeg_preview.to_dict()),
+        "yt_dlp_preview": _redact_full_local_paths(ytdlp_preview.to_dict()),
+        "archivebox_command_previews": _redact_full_local_paths([plan.to_dict() for plan in archivebox_plans]),
         "archivebox_approved_execution_state": "approval_required_not_run",
         "fake_http_used": True,
         "mocked_subprocess_required_for_execution_tests": True,

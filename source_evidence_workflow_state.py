@@ -88,6 +88,7 @@ from source_url_files_bridge import build_default_source_url_files_bridge_state
 from source_behavior_provenance_log import build_source_operational_behavior_log
 from source_execution_bridge_results import build_source_execution_bridge_results
 from source_operator_workflow_sidecars import build_operator_workflow_sidecar_bundle
+from source_app_operator_controller import build_app_operator_controller_state
 from source_site_method_audit_registry import (
     SourceSiteMethodAuditRegistry,
     build_source_site_method_audit_registry,
@@ -241,6 +242,10 @@ class SourceEvidenceWorkflowState:
     source_live_smoke_runner_id: str
     source_database_movement_operator_workflow: Any
     source_database_movement_operator_workflow_id: str
+    source_app_operator_controller_state: Any
+    source_app_operator_controller_state_id: str
+    source_app_operator_controller_surface_count: int
+    source_app_operator_controller_no_live_execution: bool
     release_readiness: SourceEvidenceReleaseReadiness
     release_readiness_id: str
     release_target_count: int
@@ -375,6 +380,9 @@ class SourceEvidenceWorkflowState:
                 f"Local E2E Total Export: {self.source_local_e2e_total_export_id}",
                 f"Live-smoke runner: {self.source_live_smoke_runner_id}",
                 f"Database movement operator workflow: {self.source_database_movement_operator_workflow_id}",
+                f"App/operator controller state: {self.source_app_operator_controller_state_id}",
+                f"App/operator controller surfaces: {self.source_app_operator_controller_surface_count}",
+                f"App/operator no-live-execution status: {str(self.source_app_operator_controller_no_live_execution).lower()}",
                 f"Release readiness: {self.release_readiness.release_status}",
                 f"Release targets: {self.release_target_count}",
                 f"Release action plan: {self.release_action_plan_id}",
@@ -547,6 +555,7 @@ def build_source_evidence_workflow_state(
     source_database_movement_operator_workflow = (
         source_operator_workflow_sidecars.database_movement_operator_workflow.to_dict()
     )
+    source_app_operator_controller_state = build_app_operator_controller_state().to_dict()
     source_named_site_priority_plan = build_source_named_site_priority_plan(
         source_site_method_audit_registry,
         database_review_workflow=source_database_review_workflow,
@@ -659,6 +668,7 @@ def build_source_evidence_workflow_state(
             "source_local_e2e_total_export": source_local_e2e_total_export,
             "source_live_smoke_runner": source_live_smoke_runner,
             "source_database_movement_operator_workflow": source_database_movement_operator_workflow,
+            "source_app_operator_controller_state": source_app_operator_controller_state,
             "grabbed_source_record": (
                 plan.grabbed_source_record.to_dict()
                 if plan.grabbed_source_record is not None
@@ -843,6 +853,10 @@ def build_source_evidence_workflow_state(
         source_live_smoke_runner_id=source_live_smoke_runner["sidecar_id"],
         source_database_movement_operator_workflow=source_database_movement_operator_workflow,
         source_database_movement_operator_workflow_id=source_database_movement_operator_workflow["sidecar_id"],
+        source_app_operator_controller_state=source_app_operator_controller_state,
+        source_app_operator_controller_state_id=source_app_operator_controller_state["controller_id"],
+        source_app_operator_controller_surface_count=source_app_operator_controller_state["controller_surface_count"],
+        source_app_operator_controller_no_live_execution=source_app_operator_controller_state["no_live_execution_performed"],
         release_readiness=release_readiness,
         release_readiness_id=release_readiness.release_readiness_id,
         release_target_count=release_readiness.target_count,

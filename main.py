@@ -138,6 +138,7 @@ from capture_controller import (
     format_operational_capture_plan_message,
 )
 from source_evidence_workflow_state import build_source_evidence_workflow_state
+from source_app_operator_controller import build_app_operator_controller_state
 from capture_twitter_exporter_source_import import (
     build_twitter_exporter_queue_review_draft,
     build_twitter_exporter_queue_review_draft_summary,
@@ -5197,6 +5198,12 @@ class App(ctk.CTk):
         )
         return result
 
+    def build_source_app_operator_controller_state(self) -> Any:
+        """Return the app/operator execution controller dashboard without running live work."""
+        state = build_app_operator_controller_state()
+        self.last_source_app_operator_controller_state = state
+        return state
+
     def _record_operational_capture_review_metadata(self, plan: Any) -> Any:
         """Build app-facing review/export state for an execution-gated source plan."""
         try:
@@ -5219,6 +5226,7 @@ class App(ctk.CTk):
         self.last_operational_capture_queue_review_store = workflow_state.queue_review_store_document
         self.last_operational_capture_review_manifest = workflow_state.review_manifest
         self.last_source_audit_dashboard_state = workflow_state.source_audit_dashboard_state
+        self.last_source_app_operator_controller_state = workflow_state.source_app_operator_controller_state
         self.log_message(
             "Source evidence review metadata ready: "
             f"{workflow_state.queue_item_count} queue item(s), "

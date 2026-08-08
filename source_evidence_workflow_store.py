@@ -102,6 +102,7 @@ SOURCE_UNIFIED_EXECUTION_JOBS_FILENAME = "source_unified_execution_jobs.json"
 SOURCE_LOCAL_E2E_TOTAL_EXPORT_FILENAME = "source_local_e2e_total_export.json"
 SOURCE_LIVE_SMOKE_RUNNER_FILENAME = "source_live_smoke_runner.json"
 SOURCE_DATABASE_MOVEMENT_OPERATOR_WORKFLOW_FILENAME = "source_database_movement_operator_workflow.json"
+SOURCE_APP_OPERATOR_CONTROLLER_STATE_FILENAME = "source_app_operator_controller_state.json"
 BUNDLE_INDEX_FILENAME = "source_evidence_workflow_review_bundle.json"
 
 
@@ -208,6 +209,7 @@ class SourceEvidenceWorkflowStoreReadResult:
     source_local_e2e_total_export: Mapping[str, Any]
     source_live_smoke_runner: Mapping[str, Any]
     source_database_movement_operator_workflow: Mapping[str, Any]
+    source_app_operator_controller_state: Mapping[str, Any]
     schema_version: str = SOURCE_EVIDENCE_WORKFLOW_STORE_SCHEMA_VERSION
     metadata_file_read_performed: bool = True
     evidence_file_read_performed: bool = False
@@ -509,6 +511,8 @@ def write_source_evidence_workflow_review_bundle(
     source_live_smoke_runner_json = _stable_json(source_live_smoke_runner, pretty=True)
     source_database_movement_operator_workflow = _value_for_dict(state.source_database_movement_operator_workflow)
     source_database_movement_operator_workflow_json = _stable_json(source_database_movement_operator_workflow, pretty=True)
+    source_app_operator_controller_state = _value_for_dict(state.source_app_operator_controller_state)
+    source_app_operator_controller_state_json = _stable_json(source_app_operator_controller_state, pretty=True)
     review_manifest = build_source_evidence_review_manifest_with_workflow_state(
         state.review_manifest,
         workflow_state_metadata=state.to_dict(),
@@ -542,6 +546,7 @@ def write_source_evidence_workflow_review_bundle(
         source_local_e2e_total_export_metadata=source_local_e2e_total_export,
         source_live_smoke_runner_metadata=source_live_smoke_runner,
         source_database_movement_operator_workflow_metadata=source_database_movement_operator_workflow,
+        source_app_operator_controller_state_metadata=source_app_operator_controller_state,
     )
     review_manifest_json = source_evidence_review_manifest_to_json(review_manifest)
     queue_review_store = state.queue_review_store_document.to_dict()
@@ -630,6 +635,7 @@ def write_source_evidence_workflow_review_bundle(
         _stored_file("source_local_e2e_total_export", SOURCE_LOCAL_E2E_TOTAL_EXPORT_FILENAME, source_local_e2e_total_export_json),
         _stored_file("source_live_smoke_runner", SOURCE_LIVE_SMOKE_RUNNER_FILENAME, source_live_smoke_runner_json),
         _stored_file("source_database_movement_operator_workflow", SOURCE_DATABASE_MOVEMENT_OPERATOR_WORKFLOW_FILENAME, source_database_movement_operator_workflow_json),
+        _stored_file("source_app_operator_controller_state", SOURCE_APP_OPERATOR_CONTROLLER_STATE_FILENAME, source_app_operator_controller_state_json),
     )
     result = build_source_evidence_workflow_store_result(state=state, files=files)
     result_json = source_evidence_workflow_store_result_to_json(result)
@@ -704,6 +710,7 @@ def write_source_evidence_workflow_review_bundle(
     _atomic_write_text(output_root / SOURCE_LOCAL_E2E_TOTAL_EXPORT_FILENAME, source_local_e2e_total_export_json)
     _atomic_write_text(output_root / SOURCE_LIVE_SMOKE_RUNNER_FILENAME, source_live_smoke_runner_json)
     _atomic_write_text(output_root / SOURCE_DATABASE_MOVEMENT_OPERATOR_WORKFLOW_FILENAME, source_database_movement_operator_workflow_json)
+    _atomic_write_text(output_root / SOURCE_APP_OPERATOR_CONTROLLER_STATE_FILENAME, source_app_operator_controller_state_json)
     _atomic_write_text(output_root / BUNDLE_INDEX_FILENAME, result_json)
     return result
 
@@ -811,6 +818,9 @@ def read_source_evidence_workflow_review_bundle(
     source_database_movement_operator_workflow = json.loads(
         (input_root / SOURCE_DATABASE_MOVEMENT_OPERATOR_WORKFLOW_FILENAME).read_text(encoding="utf-8")
     )
+    source_app_operator_controller_state = json.loads(
+        (input_root / SOURCE_APP_OPERATOR_CONTROLLER_STATE_FILENAME).read_text(encoding="utf-8")
+    )
     if not isinstance(workflow_state, dict) or not isinstance(review_manifest, dict):
         raise ValueError("Source Evidence workflow bundle sidecars must be JSON objects")
     if not isinstance(release_readiness, dict):
@@ -874,6 +884,7 @@ def read_source_evidence_workflow_review_bundle(
         ("local E2E Total Export", source_local_e2e_total_export),
         ("live smoke runner", source_live_smoke_runner),
         ("database movement operator workflow", source_database_movement_operator_workflow),
+        ("app operator controller state", source_app_operator_controller_state),
     ):
         if not isinstance(payload, dict):
             raise ValueError(f"Source Evidence {label} sidecar must be a JSON object")
@@ -916,6 +927,7 @@ def read_source_evidence_workflow_review_bundle(
         source_local_e2e_total_export=source_local_e2e_total_export,
         source_live_smoke_runner=source_live_smoke_runner,
         source_database_movement_operator_workflow=source_database_movement_operator_workflow,
+        source_app_operator_controller_state=source_app_operator_controller_state,
     )
 
 

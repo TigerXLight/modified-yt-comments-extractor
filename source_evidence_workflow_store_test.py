@@ -41,6 +41,7 @@ from source_evidence_workflow_store import (
     SOURCE_LOCAL_E2E_TOTAL_EXPORT_FILENAME,
     SOURCE_LIVE_SMOKE_RUNNER_FILENAME,
     SOURCE_DATABASE_MOVEMENT_OPERATOR_WORKFLOW_FILENAME,
+    SOURCE_APP_OPERATOR_CONTROLLER_STATE_FILENAME,
     SOURCE_SITE_METHOD_AUDIT_REGISTRY_FILENAME,
     WORKFLOW_STATE_FILENAME,
     read_source_evidence_workflow_review_bundle,
@@ -120,10 +121,11 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
             SOURCE_LOCAL_E2E_TOTAL_EXPORT_FILENAME,
             SOURCE_LIVE_SMOKE_RUNNER_FILENAME,
             SOURCE_DATABASE_MOVEMENT_OPERATOR_WORKFLOW_FILENAME,
+            SOURCE_APP_OPERATOR_CONTROLLER_STATE_FILENAME,
         }
         expected_files = expected_sidecars | {BUNDLE_INDEX_FILENAME}
         assert {file.filename for file in result.files} == expected_sidecars
-        assert result.file_count == 37
+        assert result.file_count == 38
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_read_performed is False
         assert result.evidence_file_move_performed is False
@@ -237,6 +239,8 @@ def test_workflow_review_bundle_writes_and_loads_metadata_sidecars_only() -> Non
         assert loaded.source_local_e2e_total_export["payload"]["local_e2e_total_export_callable"] is True
         assert loaded.source_live_smoke_runner["payload"]["plan_count"] == 11
         assert loaded.source_database_movement_operator_workflow["payload"]["approved_copy_move_callable"] is True
+        assert loaded.source_app_operator_controller_state["controller_surface_count"] == 9
+        assert loaded.source_app_operator_controller_state["no_live_execution_performed"] is True
         assert {
             target["target_kind"] for target in loaded.release_readiness["targets"]
         } == {

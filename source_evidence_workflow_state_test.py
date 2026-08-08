@@ -114,6 +114,9 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert state.source_live_smoke_runner["payload"]["plan_count"] == 11
     assert state.source_database_movement_operator_workflow_id.startswith("database_movement_operator_workflow_")
     assert state.source_database_movement_operator_workflow["payload"]["approved_copy_move_callable"] is True
+    assert state.source_app_operator_controller_state_id.startswith("source_app_operator_controller_")
+    assert state.source_app_operator_controller_surface_count == 9
+    assert state.source_app_operator_controller_no_live_execution is True
     assert state.release_action_plan_id == state.release_action_plan.release_action_plan_id
     assert state.release_action_receipt_count == 4
     assert state.operator_signoff_required is True
@@ -171,6 +174,8 @@ def test_source_evidence_workflow_state_connects_controller_queue_store_export()
     assert data["source_local_e2e_total_export"]["payload"]["real_user_evidence_file_movement_performed"] is False
     assert data["source_live_smoke_runner"]["payload"]["no_live_execution_performed"] is True
     assert data["source_database_movement_operator_workflow"]["payload"]["real_user_evidence_file_movement_performed"] is False
+    assert data["source_app_operator_controller_state"]["source_url_files"]["url_enter_accepts_source"] is True
+    assert data["source_app_operator_controller_state"]["operator_approval"]["summary"]["action_count"] > 0
     assert any(
         asset["description"] == "Source Evidence workflow state metadata bundle sidecar."
         for asset in data["review_manifest"]["assets"]

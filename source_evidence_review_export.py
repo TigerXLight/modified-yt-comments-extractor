@@ -243,6 +243,7 @@ def build_source_evidence_review_manifest_with_workflow_state(
     source_local_e2e_total_export_metadata: Mapping[str, Any] | None = None,
     source_live_smoke_runner_metadata: Mapping[str, Any] | None = None,
     source_database_movement_operator_workflow_metadata: Mapping[str, Any] | None = None,
+    source_app_operator_controller_state_metadata: Mapping[str, Any] | None = None,
 ) -> TotalExportManifest:
     """Return a manifest copy with a workflow-state metadata sidecar asset.
 
@@ -536,6 +537,12 @@ def build_source_evidence_review_manifest_with_workflow_state(
             "Source database movement operator workflow metadata",
             "Source database movement operator workflow sidecar: temp-tested copy/move receipts with approval tokens.",
             "Source database movement operator workflow metadata sidecar included.",
+        ),
+        (
+            source_app_operator_controller_state_metadata,
+            "Source app/operator controller state metadata",
+            "Source app/operator controller state sidecar: real app-facing launch surfaces and receipt import review stay approval-gated.",
+            "Source app/operator controller state metadata sidecar included.",
         ),
     )
     added_note_labels: list[str] = []

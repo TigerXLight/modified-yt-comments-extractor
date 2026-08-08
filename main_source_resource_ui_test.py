@@ -434,6 +434,8 @@ def test_start_fetching_source_scaffold_builds_plan_preview_without_live_executi
     assert app.last_source_audit_dashboard_state.summary["access_online_asr_bridge_summary_id"].startswith(
         "access_online_asr_bridge_"
     )
+    assert app.last_source_app_operator_controller_state["controller_surface_count"] == 9
+    assert app.last_source_app_operator_controller_state["no_live_execution_performed"] is True
     assert app.last_operational_capture_queue_review_store.metadata_only is True
     assert app.last_operational_capture_review_manifest.assets
     assert any("no fetch" in message for message, _level in app.log_messages)
@@ -457,7 +459,7 @@ def test_source_evidence_workflow_state_can_save_review_bundle() -> None:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         result = App.save_last_source_evidence_workflow_review_bundle(app, temp_dir)
-        assert result.file_count == 19
+        assert result.file_count == 38
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_move_performed is False
         assert result.full_local_path_included is False
@@ -476,9 +478,22 @@ def test_source_evidence_workflow_state_can_save_review_bundle() -> None:
         assert Path(temp_dir, "source_operator_command_packs.json").is_file()
         assert Path(temp_dir, "source_manual_smoke_checklists.json").is_file()
         assert Path(temp_dir, "source_audit_dashboard_state.json").is_file()
+        assert Path(temp_dir, "source_app_operator_controller_state.json").is_file()
 
     assert app.last_source_evidence_workflow_review_bundle.bundle_id == result.bundle_id
     assert any("review bundle saved" in message for message, _level in app.log_messages)
+
+
+def test_main_exposes_source_app_operator_controller_state_without_live_execution() -> None:
+    app = _make_source_row_app()
+
+    state = App.build_source_app_operator_controller_state(app)
+
+    assert state.controller_surface_count == 9
+    assert state.no_live_execution_performed is True
+    assert state.no_credentials_read is True
+    assert state.no_asr_run is True
+    assert app.last_source_app_operator_controller_state == state
 
 
 def test_start_fetching_without_selected_scope_sets_skipped_status() -> None:
