@@ -1,0 +1,6 @@
+from source_adapter_provider_configuration_resolver import example_source_adapter_provider_configuration_resolver_package
+from source_adapter_provider_configuration_resolver_verifier import verify_source_adapter_provider_configuration_resolver_package
+v = verify_source_adapter_provider_configuration_resolver_package(example_source_adapter_provider_configuration_resolver_package())
+assert v["verified"], v
+assert v["issue_count"] == 0, v
+print("Source Adapter Provider Configuration Resolver verifier self-test passed.")
