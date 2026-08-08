@@ -822,3 +822,10 @@ Next implementation work should bind these delivered artifacts into the concrete
 - Local ASR and Online ASR adjacency remains an explicit GUI state requirement; Online ASR must visually match the Local ASR control when wired to the concrete UI.
 - KEYS/ACCOUNTS remains the canonical label for credential/account surfaces.
 - Credential material remains represented only by references and redacted hashes in receipts and ledgers.
+## Source Adapter Provider Site Roadmap Bundle Closeout
+
+- Status: SOURCE_ADAPTER_PROVIDER_SITE_ROADMAP_BUNDLE_CLOSEOUT_RECORDED
+- Commit scope: live site selection, capture intent routing, browser command/session receipts, scroll/comment/shadow DOM materialization, media/ASR/transcript normalization, archive policy/result/manual import ledgers, source observation and evidence review gates, evidence database commit reports, queue GUI bridges, Total Export source manifests/closeout, release/file-library delivery acceptance, KEYS/ACCOUNTS provider state/search/credential boundaries, provider dispatch/receipt/failure escalation, operator session/handoff packets, GUI live/archive/export/KEYS/ACCOUNTS/Online ASR panels, MSN/X/YouTube/article-comment profile delivery, end-to-end receipt/release verification, runtime gap report, operator acceptance, and source-release traceability matrix.
+- Online ASR remains adjacent to Local ASR and must visually match the Local ASR button when wired to concrete UI widgets.
+- KEYS/ACCOUNTS remains the canonical label for credential/account surfaces.
+- Credential material remains represented only by references and redacted hashes in receipts and ledgers.
