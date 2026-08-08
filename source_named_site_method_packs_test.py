@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from source_named_site_method_packs import (
+    build_msn_named_site_method_packs,
     build_source_named_site_method_pack_collection,
     source_named_site_method_pack_collection_to_json,
     validate_source_named_site_method_pack_collection,
@@ -62,6 +63,31 @@ def test_named_site_method_packs_preserve_site_specific_metadata_and_boundaries(
     assert generic_selector.site_specific_metadata["universal_selector_support_claimed"] is False
 
 
+def test_msn_named_site_method_packs_expose_article_and_shadow_dom_operator_paths() -> None:
+    msn_packs = build_msn_named_site_method_packs()
+    assert tuple(pack.method_id for pack in msn_packs) == ("msn_article", "msn_shadow_dom_comments")
+
+    article = msn_packs[0]
+    assert article.site_profile_id == "msn_article"
+    assert "Android/Firefox responsive-design-mode" in article.site_specific_metadata[
+        "manual_operator_notes"
+    ][0]
+    assert "RAW_HTML" in article.site_specific_metadata["article_html_snapshot_refs"]
+    assert "SCREENSHOT" in article.site_specific_metadata["screenshot_snapshot_refs"]
+    assert article.not_live_executed_status == "not_live_executed"
+    assert article.completed_evidence_claimed is False
+
+    comments = msn_packs[1]
+    assert comments.site_profile_id == "msn_shadow_dom_comments"
+    assert comments.site_specific_metadata["shadow_dom_host"] == "social-comment-wc"
+    assert comments.site_specific_metadata["shadow_dom_scroll_container"] == ".overlay-container"
+    assert any(
+        ".overlay-container" in note for note in comments.site_specific_metadata["comment_selector_notes"]
+    )
+    assert comments.live_execution_performed is False
+    assert comments.provider_call_performed is False
+
+
 def test_named_site_method_packs_link_selector_approval_packet_ids() -> None:
     registry = build_source_site_method_audit_registry()
     approval_packets = build_source_selector_approval_packet_collection(registry)
@@ -94,6 +120,7 @@ def test_named_site_method_pack_json_is_deterministic_and_summary_only() -> None
 if __name__ == "__main__":
     test_named_site_method_pack_collection_covers_current_site_method_registry()
     test_named_site_method_packs_preserve_site_specific_metadata_and_boundaries()
+    test_msn_named_site_method_packs_expose_article_and_shadow_dom_operator_paths()
     test_named_site_method_packs_link_selector_approval_packet_ids()
     test_named_site_method_pack_json_is_deterministic_and_summary_only()
     print("source_named_site_method_packs_test.py passed")

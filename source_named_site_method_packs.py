@@ -17,6 +17,7 @@ from source_site_method_audit_registry import (
 SOURCE_NAMED_SITE_METHOD_PACK_SCHEMA_VERSION = "source_named_site_method_packs_v1"
 NAMED_SITE_PACK_EXECUTION_STATUS = "not_live_executed"
 NAMED_SITE_PACK_REVIEW_STATUS = "USER_REVIEW_REQUIRED"
+MSN_SOURCE_METHOD_IDS = ("msn_article", "msn_shadow_dom_comments")
 
 
 def _value_for_dict(value: Any) -> Any:
@@ -459,3 +460,18 @@ def source_named_site_method_pack_collection_to_json(
     collection: SourceNamedSiteMethodPackCollection,
 ) -> str:
     return json.dumps(collection.to_dict(), indent=2, sort_keys=True)
+
+
+def source_named_site_method_packs_by_method_id(
+    collection: SourceNamedSiteMethodPackCollection,
+    method_ids: tuple[str, ...],
+) -> tuple[SourceNamedSiteMethodPack, ...]:
+    requested = set(method_ids)
+    return tuple(pack for pack in collection.packs if pack.method_id in requested)
+
+
+def build_msn_named_site_method_packs(
+    collection: SourceNamedSiteMethodPackCollection | None = None,
+) -> tuple[SourceNamedSiteMethodPack, ...]:
+    collection = collection or build_source_named_site_method_pack_collection()
+    return source_named_site_method_packs_by_method_id(collection, MSN_SOURCE_METHOD_IDS)
