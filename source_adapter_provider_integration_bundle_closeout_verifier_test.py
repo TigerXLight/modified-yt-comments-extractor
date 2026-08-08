@@ -1,0 +1,6 @@
+from source_adapter_provider_integration_bundle_closeout import example_source_adapter_provider_integration_bundle_closeout_package
+from source_adapter_provider_integration_bundle_closeout_verifier import verify_source_adapter_provider_integration_bundle_closeout_package
+v = verify_source_adapter_provider_integration_bundle_closeout_package(example_source_adapter_provider_integration_bundle_closeout_package())
+assert v["verified"], v
+assert v["issue_count"] == 0, v
+print("Source Adapter Provider Integration Bundle Closeout verifier self-test passed.")
