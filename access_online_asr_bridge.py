@@ -81,6 +81,29 @@ class AccessOnlineASRBridgeSummary:
         return _value_for_dict(self)
 
 
+@dataclass(frozen=True)
+class AccessOnlineASRBridgePreservationReport:
+    report_id: str
+    bridge_summary_id: str
+    keys_accounts_added_provider_count: int
+    add_provider_catalogue_count: int
+    online_asr_readiness_count: int
+    search_added_vs_catalogue_split_preserved: bool
+    online_asr_provider_calls_blocked: bool
+    local_asr_benchmark_profile_preserved: bool
+    local_asr_preferred_engine: str
+    local_asr_preferred_device: str
+    local_asr_preferred_model: str
+    credential_values_read: bool = False
+    provider_call_performed: bool = False
+    asr_run_performed: bool = False
+    plaintext_secret_included: bool = False
+    schema_version: str = "access_online_asr_bridge_preservation_v1"
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
 def build_access_online_asr_bridge_summary(
     *,
     settings: Any | None = None,
@@ -141,6 +164,64 @@ def validate_access_online_asr_bridge_summary(data: Mapping[str, Any]) -> None:
         raise ValueError("Local ASR preferred benchmark model changed")
     if data.get("local_asr_preferred_device") != PREFERRED_LOCAL_ASR_DEVICE:
         raise ValueError("Local ASR preferred benchmark device changed")
+
+
+def build_access_online_asr_bridge_preservation_report(
+    summary: AccessOnlineASRBridgeSummary | Mapping[str, Any] | None = None,
+) -> AccessOnlineASRBridgePreservationReport:
+    bridge = summary if isinstance(summary, AccessOnlineASRBridgeSummary) else None
+    data = bridge.to_dict() if bridge is not None else dict(summary or build_access_online_asr_bridge_summary().to_dict())
+    preserved = (
+        data.get("local_asr_preferred_engine") == PREFERRED_LOCAL_ASR_ENGINE
+        and data.get("local_asr_preferred_device") == PREFERRED_LOCAL_ASR_DEVICE
+        and data.get("local_asr_preferred_model") == PREFERRED_LOCAL_ASR_MODEL
+    )
+    payload = {
+        "bridge_summary_id": data.get("summary_id", ""),
+        "added": data.get("added_provider_count", 0),
+        "catalogue": data.get("catalogue_provider_count", 0),
+        "readiness": data.get("online_asr_provider_readiness_count", 0),
+        "preserved": preserved,
+    }
+    return AccessOnlineASRBridgePreservationReport(
+        report_id="access_online_asr_preservation_" + _sha16(payload),
+        bridge_summary_id=str(data.get("summary_id", "")),
+        keys_accounts_added_provider_count=int(data.get("added_provider_count", 0)),
+        add_provider_catalogue_count=int(data.get("catalogue_provider_count", 0)),
+        online_asr_readiness_count=int(data.get("online_asr_provider_readiness_count", 0)),
+        search_added_vs_catalogue_split_preserved=bool(
+            data.get("search_added_supported", False)
+            and data.get("search_catalogue_supported", False)
+        ),
+        online_asr_provider_calls_blocked=data.get("online_asr_command_state")
+        == "approval_required_before_provider_call",
+        local_asr_benchmark_profile_preserved=preserved,
+        local_asr_preferred_engine=str(data.get("local_asr_preferred_engine", "")),
+        local_asr_preferred_device=str(data.get("local_asr_preferred_device", "")),
+        local_asr_preferred_model=str(data.get("local_asr_preferred_model", "")),
+        credential_values_read=bool(data.get("credential_values_read", False)),
+        provider_call_performed=bool(data.get("provider_call_performed", False)),
+        asr_run_performed=bool(data.get("asr_run_performed", False)),
+        plaintext_secret_included=bool(data.get("plaintext_secret_included", False)),
+    )
+
+
+def validate_access_online_asr_bridge_preservation_report(data: Mapping[str, Any]) -> None:
+    for required_true in (
+        "search_added_vs_catalogue_split_preserved",
+        "online_asr_provider_calls_blocked",
+        "local_asr_benchmark_profile_preserved",
+    ):
+        if data.get(required_true) is not True:
+            raise ValueError(f"Access/Online ASR bridge preservation failed: {required_true}")
+    for required_false in (
+        "credential_values_read",
+        "provider_call_performed",
+        "asr_run_performed",
+        "plaintext_secret_included",
+    ):
+        if data.get(required_false) is not False:
+            raise ValueError(f"Unsafe Access/Online ASR preservation flag: {required_false}")
 
 
 def access_online_asr_bridge_summary_to_json(summary: AccessOnlineASRBridgeSummary) -> str:

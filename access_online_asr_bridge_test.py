@@ -6,7 +6,9 @@ from access_online_asr_bridge import (
     PREFERRED_LOCAL_ASR_ENGINE,
     PREFERRED_LOCAL_ASR_MODEL,
     access_online_asr_bridge_summary_to_json,
+    build_access_online_asr_bridge_preservation_report,
     build_access_online_asr_bridge_summary,
+    validate_access_online_asr_bridge_preservation_report,
     validate_access_online_asr_bridge_summary,
 )
 from core.settings import AppSettings
@@ -80,9 +82,26 @@ def test_access_online_asr_bridge_preserves_local_asr_benchmark_guard() -> None:
     assert "Authorization:" not in rendered
 
 
+def test_access_online_asr_bridge_preservation_report_is_non_secret() -> None:
+    summary = build_access_online_asr_bridge_summary()
+    report = build_access_online_asr_bridge_preservation_report(summary)
+    data = report.to_dict()
+    assert report.search_added_vs_catalogue_split_preserved is True
+    assert report.online_asr_provider_calls_blocked is True
+    assert report.local_asr_benchmark_profile_preserved is True
+    assert report.local_asr_preferred_model == "large-v3"
+    assert report.local_asr_preferred_device == "Vulkan"
+    assert report.credential_values_read is False
+    assert report.provider_call_performed is False
+    assert report.asr_run_performed is False
+    assert report.plaintext_secret_included is False
+    validate_access_online_asr_bridge_preservation_report(data)
+
+
 def run_self_test() -> None:
     test_access_online_asr_bridge_summarizes_non_secret_provider_state()
     test_access_online_asr_bridge_preserves_local_asr_benchmark_guard()
+    test_access_online_asr_bridge_preservation_report_is_non_secret()
 
 
 if __name__ == "__main__":
