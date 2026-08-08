@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from capture_contracts import CAPTURE_CONTRACT_SCHEMA_VERSION, stable_capture_id
 
 
 WARC_WACZ_SCOPE = (
-    "WARC/WACZ model and fixture metadata only; no live capture, browser automation, "
+    "WARC/WACZ local fixture writer and metadata; no live capture, browser automation, "
     "external download, archive provider call, ArchiveBox execution, credential use, "
     "cookie storage, external command, broad folder scan, or GUI behavior"
 )
@@ -143,6 +144,36 @@ class WARCManifest:
 
 
 @dataclass(frozen=True)
+class WARCFixtureWriteResult:
+    output_name: str
+    sha256: str
+    size_bytes: int
+    manifest: WARCManifest
+    record_count: int
+    local_fixture_written: bool = True
+    live_capture_performed: bool = False
+    external_network_performed: bool = False
+    credentials_or_cookies_stored: bool = False
+    schema_version: str = CAPTURE_CONTRACT_SCHEMA_VERSION
+    scope: str = WARC_WACZ_SCOPE
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "credentials_or_cookies_stored": self.credentials_or_cookies_stored,
+            "external_network_performed": self.external_network_performed,
+            "live_capture_performed": self.live_capture_performed,
+            "local_fixture_written": self.local_fixture_written,
+            "manifest": self.manifest.to_dict(),
+            "output_name": self.output_name,
+            "record_count": int(self.record_count),
+            "schema_version": self.schema_version,
+            "scope": self.scope,
+            "sha256": self.sha256,
+            "size_bytes": int(self.size_bytes),
+        }
+
+
+@dataclass(frozen=True)
 class WACZIndexEntry:
     url: str
     timestamp_utc: str
@@ -246,6 +277,39 @@ class WACZManifest:
         }
 
 
+@dataclass(frozen=True)
+class WACZFixtureWriteResult:
+    output_name: str
+    sha256: str
+    size_bytes: int
+    manifest: WACZManifest
+    entries: tuple[str, ...]
+    local_fixture_written: bool = True
+    live_capture_performed: bool = False
+    external_network_performed: bool = False
+    archivebox_executed: bool = False
+    credentials_or_cookies_stored: bool = False
+    schema_version: str = CAPTURE_CONTRACT_SCHEMA_VERSION
+    scope: str = WARC_WACZ_SCOPE
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "archivebox_executed": self.archivebox_executed,
+            "credentials_or_cookies_stored": self.credentials_or_cookies_stored,
+            "entries": list(self.entries),
+            "entry_count": len(self.entries),
+            "external_network_performed": self.external_network_performed,
+            "live_capture_performed": self.live_capture_performed,
+            "local_fixture_written": self.local_fixture_written,
+            "manifest": self.manifest.to_dict(),
+            "output_name": self.output_name,
+            "schema_version": self.schema_version,
+            "scope": self.scope,
+            "sha256": self.sha256,
+            "size_bytes": int(self.size_bytes),
+        }
+
+
 def build_warc_record(
     *,
     source_url: str,
@@ -276,6 +340,7 @@ def build_warc_manifest(
     source_url: str,
     records: tuple[WARCSyntheticRecord, ...],
     fixture_warc_path: str = "",
+    capture_execution: str = "not executed",
 ) -> WARCManifest:
     file_hash = sha256_file(fixture_warc_path) if fixture_warc_path and Path(fixture_warc_path).is_file() else ""
     return WARCManifest(
@@ -283,6 +348,7 @@ def build_warc_manifest(
         records=records,
         fixture_warc_path=fixture_warc_path,
         warc_sha256=file_hash,
+        capture_execution=capture_execution,
     )
 
 
@@ -295,6 +361,7 @@ def build_wacz_manifest(
     resources: tuple[WACZResourceRecord, ...] = (),
     warc_components: tuple[WACZWARCComponentReference, ...] = (),
     fixture_wacz_path: str = "",
+    package_execution: str = "not executed",
 ) -> WACZManifest:
     file_hash = sha256_file(fixture_wacz_path) if fixture_wacz_path and Path(fixture_wacz_path).is_file() else ""
     return WACZManifest(
@@ -306,4 +373,158 @@ def build_wacz_manifest(
         warc_components=warc_components,
         fixture_wacz_path=fixture_wacz_path,
         wacz_sha256=file_hash,
+        package_execution=package_execution,
+    )
+
+
+def _json_bytes(data: Mapping[str, Any]) -> bytes:
+    return (json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _warc_record_bytes(record: WARCSyntheticRecord, payload: bytes) -> bytes:
+    data = record.to_dict()
+    if payload and record.payload_sha256 and hashlib.sha256(payload).hexdigest() != record.payload_sha256:
+        raise ValueError(f"payload hash mismatch for WARC record {data['record_id']}")
+    headers = [
+        "WARC/1.1",
+        f"WARC-Type: {record.record_kind}",
+        f"WARC-Record-ID: <urn:source-fixture:{data['record_id']}>",
+        f"WARC-Target-URI: {record.source_url}",
+        f"WARC-Date: {record.timestamp_utc}",
+        f"WARC-Block-Digest: sha256:{record.payload_sha256 or hashlib.sha256(payload).hexdigest()}",
+        f"Content-Type: {record.content_type or 'application/octet-stream'}",
+        f"Content-Length: {len(payload)}",
+        f"X-Capture-Header-SHA256: {data['headers_sha256']}",
+        "",
+        "",
+    ]
+    return "\r\n".join(headers).encode("utf-8") + payload + b"\r\n\r\n"
+
+
+def write_synthetic_warc_fixture(
+    *,
+    output_warc_path: str | Path,
+    source_url: str,
+    records: Sequence[WARCSyntheticRecord],
+    payloads_by_record_id: Mapping[str, bytes] | None = None,
+) -> WARCFixtureWriteResult:
+    """Write a bounded local WARC-style fixture from caller-supplied records.
+
+    The writer never captures a page. It serializes only the records and payloads
+    already supplied by the caller, preserving sanitized header metadata.
+    """
+
+    output_path = Path(output_warc_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    payloads = dict(payloads_by_record_id or {})
+    ordered_records = tuple(records)
+    with output_path.open("wb") as handle:
+        for record in ordered_records:
+            record_id = str(record.to_dict()["record_id"])
+            payload = bytes(payloads.get(record_id, b""))
+            handle.write(_warc_record_bytes(record, payload))
+    manifest = build_warc_manifest(
+        source_url=source_url,
+        records=ordered_records,
+        fixture_warc_path=str(output_path),
+        capture_execution="local_fixture_warc_written",
+    )
+    return WARCFixtureWriteResult(
+        output_name=output_path.name,
+        sha256=sha256_file(str(output_path)),
+        size_bytes=output_path.stat().st_size,
+        manifest=manifest,
+        record_count=len(ordered_records),
+    )
+
+
+def _write_zip_bytes(
+    bundle: zipfile.ZipFile,
+    entries: list[str],
+    name: str,
+    payload: bytes,
+) -> None:
+    info = zipfile.ZipInfo(name)
+    info.date_time = (2026, 1, 1, 0, 0, 0)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o644 << 16
+    bundle.writestr(info, payload)
+    entries.append(name)
+
+
+def write_synthetic_wacz_fixture(
+    *,
+    output_wacz_path: str | Path,
+    package_id: str,
+    source_url: str,
+    warc_manifest: WARCManifest,
+    index_entries: Sequence[WACZIndexEntry] = (),
+    pages: Sequence[WACZPageEntry] = (),
+    resources: Sequence[WACZResourceRecord] = (),
+) -> WACZFixtureWriteResult:
+    """Write a deterministic local WACZ-style package for supplied fixture data."""
+
+    output_path = Path(output_wacz_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    warc_path = Path(warc_manifest.fixture_warc_path) if warc_manifest.fixture_warc_path else None
+    warc_entry_name = f"archive/{warc_path.name if warc_path is not None else 'fixture.warc'}"
+    warc_bytes = warc_path.read_bytes() if warc_path is not None and warc_path.is_file() else b""
+    component = WACZWARCComponentReference(
+        path=warc_entry_name,
+        sha256=hashlib.sha256(warc_bytes).hexdigest() if warc_bytes else warc_manifest.warc_sha256,
+        record_count=len(warc_manifest.records),
+    )
+    manifest = WACZManifest(
+        package_id=package_id,
+        source_url=source_url,
+        index_entries=tuple(index_entries),
+        pages=tuple(pages),
+        resources=tuple(resources),
+        warc_components=(component,),
+        fixture_wacz_path=str(output_path),
+        wacz_sha256="",
+        package_execution="local_fixture_wacz_written",
+    )
+    entries: list[str] = []
+    with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        _write_zip_bytes(bundle, entries, "datapackage.json", _json_bytes(manifest.to_dict()))
+        _write_zip_bytes(bundle, entries, "manifest.json", _json_bytes(manifest.to_dict()))
+        _write_zip_bytes(bundle, entries, "warc_manifest.json", _json_bytes(warc_manifest.to_dict()))
+        _write_zip_bytes(
+            bundle,
+            entries,
+            "indexes/index.jsonl",
+            ("\n".join(json.dumps(entry.to_dict(), sort_keys=True) for entry in index_entries) + "\n").encode("utf-8"),
+        )
+        _write_zip_bytes(
+            bundle,
+            entries,
+            "pages/pages.jsonl",
+            ("\n".join(json.dumps(page.to_dict(), sort_keys=True) for page in pages) + "\n").encode("utf-8"),
+        )
+        _write_zip_bytes(bundle, entries, "resources/resources.json", _json_bytes({"resources": [resource.to_dict() for resource in resources]}))
+        _write_zip_bytes(bundle, entries, warc_entry_name, warc_bytes)
+        digest_payload = {
+            "package_id": package_id,
+            "source_url": source_url,
+            "entries": sorted(entries),
+            "warc_sha256": component.sha256,
+        }
+        _write_zip_bytes(bundle, entries, "datapackage-digest.json", _json_bytes(digest_payload))
+    final_manifest = build_wacz_manifest(
+        package_id=package_id,
+        source_url=source_url,
+        index_entries=tuple(index_entries),
+        pages=tuple(pages),
+        resources=tuple(resources),
+        warc_components=(component,),
+        fixture_wacz_path=str(output_path),
+        package_execution="local_fixture_wacz_written",
+    )
+    return WACZFixtureWriteResult(
+        output_name=output_path.name,
+        sha256=sha256_file(str(output_path)),
+        size_bytes=output_path.stat().st_size,
+        manifest=final_manifest,
+        entries=tuple(sorted(entries)),
     )

@@ -1,4 +1,5 @@
 import hashlib
+import zipfile
 from tempfile import TemporaryDirectory
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from capture_warc_wacz import (
     build_warc_manifest,
     build_warc_record,
     sanitize_headers,
+    write_synthetic_wacz_fixture,
+    write_synthetic_warc_fixture,
 )
 
 
@@ -189,11 +192,156 @@ def test_wacz_manifest_models_index_pages_resources_components_and_fixture_hash(
     assert "docker compose" not in repr(data).lower()
 
 
+def test_synthetic_warc_fixture_writer_creates_local_file_and_redacts_headers() -> None:
+    with TemporaryDirectory() as temp_dir:
+        output = Path(temp_dir) / "fixture.warc"
+        response = build_warc_record(
+            source_url=SOURCE_URL,
+            record_kind=WARC_RECORD_RESPONSE,
+            status_code=200,
+            content_type="text/html",
+            timestamp_utc="2026-07-16T00:00:01Z",
+            payload=b"<html>fixture</html>",
+            headers={"Cookie": SECRET_SENTINEL, "Content-Type": "text/html"},
+        )
+        record_id = response.to_dict()["record_id"]
+
+        result = write_synthetic_warc_fixture(
+            output_warc_path=output,
+            source_url=SOURCE_URL,
+            records=(response,),
+            payloads_by_record_id={record_id: b"<html>fixture</html>"},
+        )
+
+        written = output.read_bytes()
+        data = result.to_dict()
+
+    assert result.sha256 == hashlib.sha256(written).hexdigest()
+    assert result.size_bytes == len(written)
+    assert data["manifest"]["capture_execution"] == "local_fixture_warc_written"
+    assert data["live_capture_performed"] is False
+    assert data["external_network_performed"] is False
+    assert SECRET_SENTINEL.encode("utf-8") not in written
+    assert b"WARC/1.1" in written
+    assert b"<html>fixture</html>" in written
+
+
+def test_synthetic_warc_fixture_writer_rejects_payload_hash_mismatch() -> None:
+    with TemporaryDirectory() as temp_dir:
+        output = Path(temp_dir) / "fixture.warc"
+        response = build_warc_record(
+            source_url=SOURCE_URL,
+            record_kind=WARC_RECORD_RESPONSE,
+            status_code=200,
+            content_type="text/html",
+            timestamp_utc="2026-07-16T00:00:01Z",
+            payload=b"expected",
+        )
+        record_id = response.to_dict()["record_id"]
+        try:
+            write_synthetic_warc_fixture(
+                output_warc_path=output,
+                source_url=SOURCE_URL,
+                records=(response,),
+                payloads_by_record_id={record_id: b"different"},
+            )
+        except ValueError as exc:
+            assert "payload hash mismatch" in str(exc)
+        else:
+            raise AssertionError("Expected payload hash mismatch to be rejected")
+
+
+def test_synthetic_wacz_fixture_writer_creates_zip_package_with_manifest_and_warc() -> None:
+    with TemporaryDirectory() as temp_dir:
+        temp_root = Path(temp_dir)
+        warc_output = temp_root / "fixture.warc"
+        wacz_output = temp_root / "fixture.wacz"
+        request = build_warc_record(
+            source_url=SOURCE_URL,
+            record_kind=WARC_RECORD_REQUEST,
+            method="GET",
+            timestamp_utc="2026-07-16T00:00:00Z",
+            headers={"Authorization": SECRET_SENTINEL},
+        )
+        response = build_warc_record(
+            source_url=SOURCE_URL,
+            record_kind=WARC_RECORD_RESPONSE,
+            status_code=200,
+            content_type="text/html",
+            timestamp_utc="2026-07-16T00:00:01Z",
+            payload=b"<html>fixture</html>",
+        )
+        response_id = response.to_dict()["record_id"]
+        warc_result = write_synthetic_warc_fixture(
+            output_warc_path=warc_output,
+            source_url=SOURCE_URL,
+            records=(request, response),
+            payloads_by_record_id={response_id: b"<html>fixture</html>"},
+        )
+        wacz_result = write_synthetic_wacz_fixture(
+            output_wacz_path=wacz_output,
+            package_id="package_1",
+            source_url=SOURCE_URL,
+            warc_manifest=warc_result.manifest,
+            index_entries=(
+                WACZIndexEntry(
+                    url=SOURCE_URL,
+                    timestamp_utc="2026-07-16T00:00:01Z",
+                    warc_record_id=response_id,
+                    status_code=200,
+                    content_type="text/html",
+                ),
+            ),
+            pages=(WACZPageEntry(page_id="page_1", url=SOURCE_URL, title="Fixture"),),
+            resources=(WACZResourceRecord(resource_id="resource_1", url=SOURCE_URL, media_type="text/html"),),
+        )
+        with zipfile.ZipFile(wacz_output, "r") as bundle:
+            names = sorted(bundle.namelist())
+            manifest_payload = bundle.read("manifest.json")
+            warc_payload = bundle.read("archive/fixture.warc")
+        wacz_bytes = wacz_output.read_bytes()
+        repeated_result = write_synthetic_wacz_fixture(
+            output_wacz_path=wacz_output,
+            package_id="package_1",
+            source_url=SOURCE_URL,
+            warc_manifest=warc_result.manifest,
+            index_entries=(
+                WACZIndexEntry(
+                    url=SOURCE_URL,
+                    timestamp_utc="2026-07-16T00:00:01Z",
+                    warc_record_id=response_id,
+                    status_code=200,
+                    content_type="text/html",
+                ),
+            ),
+            pages=(WACZPageEntry(page_id="page_1", url=SOURCE_URL, title="Fixture"),),
+            resources=(WACZResourceRecord(resource_id="resource_1", url=SOURCE_URL, media_type="text/html"),),
+        )
+        repeated_bytes = wacz_output.read_bytes()
+
+    assert wacz_result.sha256 == hashlib.sha256(wacz_bytes).hexdigest()
+    assert repeated_result.sha256 == wacz_result.sha256
+    assert repeated_bytes == wacz_bytes
+    assert "datapackage.json" in names
+    assert "datapackage-digest.json" in names
+    assert "indexes/index.jsonl" in names
+    assert "pages/pages.jsonl" in names
+    assert "resources/resources.json" in names
+    assert "archive/fixture.warc" in names
+    assert wacz_result.to_dict()["manifest"]["package_execution"] == "local_fixture_wacz_written"
+    assert wacz_result.to_dict()["archivebox_executed"] is False
+    assert SECRET_SENTINEL.encode("utf-8") not in manifest_payload
+    assert SECRET_SENTINEL.encode("utf-8") not in warc_payload
+
+
 def run_self_test() -> None:
     test_warc_record_sanitizes_secret_headers_and_hashes_payload()
     test_sanitize_headers_is_deterministic_and_path_agnostic()
     test_warc_manifest_hash_is_deterministic_and_fixture_file_hash_is_recorded()
     test_wacz_manifest_models_index_pages_resources_components_and_fixture_hash()
+    test_synthetic_warc_fixture_writer_creates_local_file_and_redacts_headers()
+    test_synthetic_warc_fixture_writer_rejects_payload_hash_mismatch()
+    test_synthetic_wacz_fixture_writer_creates_zip_package_with_manifest_and_warc()
 
 
 if __name__ == "__main__":
