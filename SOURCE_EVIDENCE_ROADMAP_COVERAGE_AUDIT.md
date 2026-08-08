@@ -558,21 +558,29 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 | --- | --- | --- |
 | Operational capture runtime/result model | Done | Real live capture session execution not performed. |
 | Article extraction and page outline | Done | Fixture inputs only; live pages require approval. |
-| Screenshot result contracts | Done | No real screenshots taken. |
+| Screenshot execution bridge | Done | Local fixture PNG artifacts are written; live page screenshots remain approval-gated. |
 | Generic comments and virtualized persistence | Done | Real site selectors remain approval-gated. |
 | Encoded/challenge/login states | Done | No challenge token storage or CAPTCHA solving. |
 | Livechat text-first collection | Done | Fixture text/events only; no complete screenshot claim. |
-| Media discovery and mux planning | Done | No external download, FFmpeg, or yt-dlp execution. |
+| Media discovery/download/mux execution bridge | Done | Explicit local media copy is temp-fixture-tested; FFmpeg/yt-dlp wrappers are mocked-subprocess-tested and approval-gated. |
 | Rendered citation/protected output | Done | Protected output is blocked; no DRM/CDM/EME/HDCP bypass. |
-| Archive providers and ArchiveBox/offline bundle | Done | Mock/provider plan only; no real archive calls or ArchiveBox execution. |
-| Evidence movement/completed receipt | Done | Temp-fixture-tested approval flow only; no real evidence files moved. |
+| Archive providers and ArchiveBox/offline bundle | Done | Archive provider clients are fake-HTTP-tested; ArchiveBox wrapper is mocked-subprocess-tested; offline ZIP bundle writer is temp-tested. |
+| Evidence movement/completed receipt | Done | Approval-token executor is temp-fixture-tested with copy/move, collision, hash verification, failure receipts, and completed receipt after verification. |
 | Database recognition/migration preview | Done | No automatic classification and no movement by default. |
-| Source URL/media/FILES bridge | Done | UI state only; no live fetch/download. |
-| Behavior/provenance log | Done | Hash chain and redaction tested. |
-| Workflow/store/export sidecars | Done | Pathless metadata assets; no evidence artifact claims. |
+| Source URL/media/FILES bridge | Done | App-facing state transitions are tested for Enter intake, download ticks, injection, pinned rows, and transcript preservation. |
+| Behavior/provenance log | Done | Hash chain, redaction, and execution-bridge lifecycle events are tested. |
+| Workflow/store/export sidecars | Done | Pathless metadata assets include `source_execution_bridge_results.json`; no evidence artifact claims. |
 | Access/KEYS/Online ASR preservation | Done | Non-secret summary only; no provider call or ASR run. |
 
-- Boundary confirmed: no live site, browser automation, archive provider, network/API/provider call, credentials/cookies/accounts, broad folder scan, evidence file move, release upload, screenshots/OCR, downloads, FFmpeg/yt-dlp, ArchiveBox/Docker/WSL execution, ASR run, automatic classification, or protected-attribute inference occurred.
+- Boundary confirmed: no live external site/account, live archive provider, network/API/provider call, credentials/cookies/accounts, broad folder scan, user evidence file move, release upload, external screenshot/OCR, external download, real FFmpeg/yt-dlp, real ArchiveBox/Docker/WSL execution, ASR run, automatic classification, or protected-attribute inference occurred. Local fixture browser/screenshot artifacts, temp local media copy, fake-HTTP archive clients, mocked subprocess wrappers, temp ZIP bundle writing, and temp-fixture evidence movement are implemented and tested.
+
+## Final Execution Bridge Coverage - 2026-08-08
+
+- Coverage marker: FINAL_EXECUTION_BRIDGE_IMPLEMENTED_LOCAL_ONLY.
+- Added/updated tests: `source_local_browser_execution_test.py`, `source_media_execution_bridge_test.py`, `source_archive_execution_bridge_test.py`, `source_offline_bundle_writer_test.py`, `source_execution_bridge_results_test.py`, `evidence_movement_approval_test.py`, `source_url_files_bridge_test.py`, `source_behavior_provenance_log_test.py`, `source_evidence_workflow_state_test.py`, `source_evidence_workflow_store_test.py`, and `source_evidence_review_export_test.py`.
+- New sidecar: `source_execution_bridge_results.json`.
+- Implemented local/mocked execution bridges: local browser/screenshot/article/comments/livechat runner, selected local media copy/download queue, approval-gated FFmpeg/yt-dlp wrappers, Wayback/archive.today fake-client execution, approval-gated ArchiveBox wrapper, offline compressed bundle writer, approval-token evidence movement executor, Source URL/FILES app-facing transitions, and behavior-log execution lifecycle events.
+- Remaining live gates: external sites/accounts, named-site live selectors, real archive providers/submissions, external downloads, real FFmpeg/yt-dlp, real ArchiveBox/Docker/WSL, live screenshots/OCR, ASR/provider jobs, credentials/cookies/accounts, broad scans, release uploads, and user evidence file movement.
 
 ## Named-Site Source Method Pack Coverage
 

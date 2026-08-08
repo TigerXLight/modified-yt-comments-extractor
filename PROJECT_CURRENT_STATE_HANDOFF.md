@@ -976,6 +976,28 @@ No live site access, browser automation, MSN/X/Twitter/YouTube/API/archive/provi
 - Access/Online ASR bridge preservation report proves non-secret provider summary state, Add Provider vs added-provider split, no provider call, no ASR run, and the preferred local benchmark profile whisper.cpp / Vulkan / large-v3.
 
 Remaining live/manual-only boundary: real websites, external archive/provider calls, browser automation, real screenshots/OCR, downloads, FFmpeg/yt-dlp, ArchiveBox/Docker/WSL execution, ASR jobs, credentials, real evidence file movement, release uploads, and completed real-evidence verification still require explicit operator approval and later receipts.
+
+## Source Evidence Execution Bridge Closeout - 2026-08-08
+
+Starting from `f26f1cd`, the final execution-bridge pass converted the remaining safe plan-only areas into callable local/mocked execution adapters while preserving all live/operator boundaries. The implementation commits are `1ade13d` local browser execution bridge, `d2f7934` media execution bridge, `eaa4e8f` archive execution bridge, `683165a` offline evidence bundle writer, `c69e0f4` evidence movement executor hardening, `d7ca21c` Source URL/FILES bridge actions, and `375a763` execution bridge workflow sidecars.
+
+Implemented modules and sidecars:
+- `source_local_browser_execution.py`: local fixture/file/localhost browser-style execution bridge, rendered DOM writing, PNG screenshot artifacts, parser execution, progress/cancel/block states.
+- `source_media_execution_bridge.py`: selected local media copy/download queue receipts plus approval-gated FFmpeg/yt-dlp subprocess wrappers with dry-run, missing-dependency, timeout, and failure states.
+- `source_archive_execution_bridge.py`: Wayback/archive.today request builders, explicit submit gate, fake-HTTP execution client, challenge handoff/DNS diagnostics, and approval-gated ArchiveBox subprocess wrapper.
+- `source_offline_bundle_writer.py`: real compressed ZIP bundle writer for supplied local/temp content and metadata.
+- `evidence_movement_approval.py`: app-facing approved-root evidence movement executor with approval token, copy/move, hash verification, collision handling, rollback/failure receipts, and completed-evidence receipt generation only after verification.
+- `source_url_files_bridge.py`: Enter-driven URL intake and FILES/source-row state transitions for download ticks, injection, pinned rows, editor clear/replace preservation, and audio-without-transcript status.
+- `source_execution_bridge_results.json`: new workflow/review/export sidecar recording pathless execution-bridge capability and local/fake/mocked test summaries.
+
+Local-only test status:
+- Browser/screenshot/article/comments/livechat bridge: LOCAL_FIXTURE_TESTED.
+- Media local copy/download and mux command wrappers: LOCAL_FIXTURE_TESTED / MOCKED_SUBPROCESS_TESTED.
+- Archive provider clients and ArchiveBox wrapper: FAKE_HTTP_TESTED / MOCKED_SUBPROCESS_TESTED.
+- Offline bundle writer and evidence movement executor: TEMP_FIXTURE_TESTED.
+- Source URL/FILES bridge and workflow/store/export integration: APP_FACING_STATE_TESTED.
+
+Remaining boundary: live external websites, named-site live selectors, real archive provider calls/submissions, real ArchiveBox/Docker/WSL execution, external downloads, real FFmpeg/yt-dlp, real browser automation against live sites, screenshots/OCR from live pages, ASR jobs/provider calls, credentials/cookies/accounts, broad scans, release uploads, and movement of user evidence files still require explicit operator approval and receipt import. No such live/external/destructive execution occurred in this pass.
 ## Source roadmap consolidation pointer — source methods, claims, URL UI, archives and database recognition
 
 Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE

@@ -623,3 +623,10 @@ Decision:
 - The local ASR benchmark guard remains whisper.cpp / Vulkan / large-v3.
 - Online ASR provider readiness remains non-secret summary metadata only; provider calls require explicit user approval.
 - `asr_tools_test.py` remains compile-check only in this workflow.
+
+## Source Evidence Execution Bridge ASR Boundary - 2026-08-08
+
+- The Source Evidence final execution-bridge pass added local/mocked capture, archive, media, bundle, movement, workflow, and provenance execution bridges without changing ASR code or running ASR jobs.
+- Access/KEYS and Online ASR readiness remain non-secret, approval-gated summaries.
+- The preferred local benchmark profile remains whisper.cpp / Vulkan / large-v3.
+- No ASR provider call, model download, local ASR transcription, or `asr_tools_test.py` execution occurred in the execution-bridge pass; `asr_tools_test.py` remains compile-check only.

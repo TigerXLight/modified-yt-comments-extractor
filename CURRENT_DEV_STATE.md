@@ -1258,6 +1258,32 @@ Next implementation work should connect this closeout to concrete release-sectio
 | Access/KEYS/Online ASR | NON_SECRET_SUMMARY_ONLY | No credentials read, no provider call, no ASR run. |
 
 - Boundary remains explicit: no live site access, browser automation, archive/API/provider calls, downloads, screenshots/OCR, FFmpeg/yt-dlp, ArchiveBox/Docker/WSL execution, ASR jobs, real evidence file movement, credentials/cookies/accounts, completed real-evidence claims, automatic classification, or protected-attribute inference occurred.
+
+## Source Evidence Execution Bridge Closeout - 2026-08-08
+
+- Status: FINAL_EXECUTION_BRIDGE_IMPLEMENTED_LOCAL_ONLY.
+- Implementation commits: `1ade13d` local browser execution bridge; `d2f7934` media execution bridge; `eaa4e8f` archive execution bridge; `683165a` offline evidence bundle writer; `c69e0f4` evidence movement executor hardening; `d7ca21c` Source URL/FILES bridge actions; `375a763` execution bridge workflow sidecars.
+- Added modules: `source_local_browser_execution.py`, `source_media_execution_bridge.py`, `source_archive_execution_bridge.py`, `source_offline_bundle_writer.py`, and `source_execution_bridge_results.py`.
+- Added/updated sidecar: `source_execution_bridge_results.json` now persists pathless execution-bridge capability/test-result metadata through the Source Evidence workflow store and Total Export review manifest.
+- Local browser/screenshot/article/comments/livechat execution bridge is implemented and fixture-tested: it accepts local fixture/local file/localhost-style sources, writes rendered DOM and PNG screenshot artifacts to a caller-supplied output directory, runs article text, visible page outline, comments, livechat, and media discovery parsers, exposes progress/cancel/block states, and blocks non-local external URLs in fixture mode.
+- Media execution bridge is implemented and fixture/mocked-subprocess-tested: it copies explicitly selected local media files with SHA-256 receipts, preserves selected-download queue metadata, supports collision policies, and provides approval-gated FFmpeg and yt-dlp subprocess wrappers with dry-run, dependency-not-found, timeout, and failure states.
+- Archive execution bridge is implemented and fake-HTTP/mocked-subprocess-tested: it builds Wayback availability/CDX/submit and archive.today check/submit requests, enforces explicit submit approval, records archive.today challenge handoff and DNS diagnostic metadata, and provides an approval-gated ArchiveBox subprocess wrapper for Docker Compose/WSL/native command plans.
+- Offline compressed evidence bundle writer is implemented and temp-bundle-tested: it writes a ZIP with `manifest.json`, `source_provenance.json`, article text, visible outline, rendered DOM snapshot, comments/livechat JSON, selected media metadata, archive results, screenshot entries when supplied, `hashes.json`, `viewer_manifest.json`, and `index.html`.
+- Evidence movement executor is implemented and temp-fixture-tested: app-facing copy/move execution requires an approval token and approved root, verifies before/after hashes, supports collision handling, returns rollback/failure receipts, and creates completed-evidence receipts only after verified destination artifacts. No user evidence files were moved.
+- Source URL/FILES bridge now has app-facing state transitions for Enter-driven URL intake, independent download ticks, injection into FILES, pinned injected rows, editor clear preserving stored files, transcript replacement preserving prior transcript files, and audio playback without transcript.
+- Behavior/provenance logging now records execution bridge events for URL entry, article/outline extraction, screenshot capture, comments/livechat capture, media discovery/download, archive request, offline bundle write, evidence movement, challenge pause, cancellation, and failure while preserving hash chaining and redaction.
+
+| Area | State | Remaining boundary |
+| --- | --- | --- |
+| Browser/screenshot/article/comments/livechat | LOCAL_FIXTURE_TESTED | Real external sites and named-site selectors remain operator-approval-only. |
+| Media download/mux | LOCAL_FIXTURE_TESTED / MOCKED_SUBPROCESS_TESTED | External downloads and real FFmpeg/yt-dlp runs require explicit approval. |
+| Archive providers/ArchiveBox | FAKE_HTTP_TESTED / MOCKED_SUBPROCESS_TESTED | Real archive.org/archive.today calls and real ArchiveBox/Docker/WSL execution require explicit approval. |
+| Offline bundle writer | TEMP_BUNDLE_TESTED | User-selected real evidence packaging remains review/approval-bound. |
+| Evidence movement/completed receipt | APPROVAL_GATED / TEMP_FIXTURE_TESTED | Real user evidence movement remains explicit-token/operator-approved only and was not performed. |
+| Source URL/FILES app bridge | APP_FACING_STATE_TESTED | Live fetch/download remains gated. |
+| Access/KEYS/Online ASR | PRESERVED_NON_SECRET | No credentials read, no provider calls, no ASR jobs run; local benchmark preference remains whisper.cpp / Vulkan / large-v3. |
+
+- Boundary remains explicit: no external site/account/archive/provider was contacted, no real browser automation against live sites occurred, no external media download ran, no real FFmpeg/yt-dlp or ArchiveBox/Docker/WSL command ran, no ASR job ran, no credentials/cookies/accounts were read, no user evidence files were moved, and no automatic classification or protected-attribute inference occurred.
 ## Source roadmap consolidation pointer — source methods, claims, URL UI, archives and database recognition
 
 Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
