@@ -617,3 +617,9 @@ Decision:
 - Do not treat ElevenLabs as final truth; treat it as a leading integration candidate subject to cost, quota, API reliability, and user opt-in.
 - Keep local whisper.cpp Vulkan as the best no-cloud/free local baseline.
 - Current architecture decision remains: ASR draft + glossary/context QA + explicit user review.
+## Source Evidence Operational Layer ASR Boundary
+
+- The final non-live operational layer preserved the Access/KEYS and Online ASR bridge without running ASR.
+- The local ASR benchmark guard remains whisper.cpp / Vulkan / large-v3.
+- Online ASR provider readiness remains non-secret summary metadata only; provider calls require explicit user approval.
+- `asr_tools_test.py` remains compile-check only in this workflow.

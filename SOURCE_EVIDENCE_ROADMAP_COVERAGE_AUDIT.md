@@ -548,6 +548,32 @@ Next implementation work should bind the concrete GUI buttons, including the Onl
 
 - Boundaries confirmed: no live site access, browser automation, network/archive/API/provider/ASR calls, credentials/cookies/accounts, broad folder scans, evidence file moves, completed-evidence claims, automatic classification, protected-attribute inference, downloads, or release uploads occurred.
 
+## Final Non-Live Operational Layer Coverage
+
+- Coverage marker: FINAL_NON_LIVE_OPERATIONAL_LAYER_BUILT.
+- Coverage labels: FIXTURE_TESTED / LOCAL_ONLY / MOCK_PROVIDER_TESTED / MOCK_COMMAND_TESTED / APPROVAL_GATED / TEMP_FIXTURE_TESTED / METADATA_ONLY / UI_SCAFFOLD_ONLY / NOT_LIVE_EXECUTED.
+- Implementation commits covered: `91364eb`, `4870fe7`, `cfbcb5e`, `1b31f26`, `e8cf9c4`, `4bb324a`, `316a9d2`, and `84af2e8`.
+
+| Coverage area | State | Remaining gap |
+| --- | --- | --- |
+| Operational capture runtime/result model | Done | Real live capture session execution not performed. |
+| Article extraction and page outline | Done | Fixture inputs only; live pages require approval. |
+| Screenshot result contracts | Done | No real screenshots taken. |
+| Generic comments and virtualized persistence | Done | Real site selectors remain approval-gated. |
+| Encoded/challenge/login states | Done | No challenge token storage or CAPTCHA solving. |
+| Livechat text-first collection | Done | Fixture text/events only; no complete screenshot claim. |
+| Media discovery and mux planning | Done | No external download, FFmpeg, or yt-dlp execution. |
+| Rendered citation/protected output | Done | Protected output is blocked; no DRM/CDM/EME/HDCP bypass. |
+| Archive providers and ArchiveBox/offline bundle | Done | Mock/provider plan only; no real archive calls or ArchiveBox execution. |
+| Evidence movement/completed receipt | Done | Temp-fixture-tested approval flow only; no real evidence files moved. |
+| Database recognition/migration preview | Done | No automatic classification and no movement by default. |
+| Source URL/media/FILES bridge | Done | UI state only; no live fetch/download. |
+| Behavior/provenance log | Done | Hash chain and redaction tested. |
+| Workflow/store/export sidecars | Done | Pathless metadata assets; no evidence artifact claims. |
+| Access/KEYS/Online ASR preservation | Done | Non-secret summary only; no provider call or ASR run. |
+
+- Boundary confirmed: no live site, browser automation, archive provider, network/API/provider call, credentials/cookies/accounts, broad folder scan, evidence file move, release upload, screenshots/OCR, downloads, FFmpeg/yt-dlp, ArchiveBox/Docker/WSL execution, ASR run, automatic classification, or protected-attribute inference occurred.
+
 ## Named-Site Source Method Pack Coverage
 
 - Coverage marker: NAMED_SITE_SOURCE_METHOD_PACKS_BUILT.

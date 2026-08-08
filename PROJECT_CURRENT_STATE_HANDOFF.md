@@ -962,6 +962,20 @@ No live site access, browser automation, MSN/X/Twitter/YouTube/API/archive/provi
 | Generic comments live selector | Not done | `selector_audit_required` / `live_approved_only`. |
 
 - Boundary remains unchanged: no live site access, browser automation, network/archive/API/provider/ASR calls, credentials/cookies/accounts, evidence file movement, completed-evidence claims, protected-attribute inference, or automatic classification occurred.
+
+## Final Non-Live Operational Layer Handoff
+
+- Current status: FINAL_NON_LIVE_OPERATIONAL_LAYER_BUILT.
+- Implementation commits in this pass: `91364eb`, `4870fe7`, `cfbcb5e`, `1b31f26`, `e8cf9c4`, `4bb324a`, `316a9d2`, and `84af2e8`; documentation is recorded separately after those implementation commits.
+- Operational capture runtime/result models now record session ID, source/canonical URL, access mode, capture method, selected methods, approval state, timestamps, status, artifact/receipt refs, completeness/warning flags, no-live flag, and hash-chain refs.
+- Fixture capture results now cover article text, visible page outline, screenshot fidelity boundaries, comments, virtualized/deleted comments, encoded/page-decoded payload metadata, challenge pause/resume states, and text-first livechat.
+- Media/archive runtime planning now covers image/video/audio discovery, mux command construction, rendered citation metadata, protected/black-output blocked results, mocked Wayback/archive.today statuses, ArchiveBox command plans, and app-native offline bundle planning.
+- Evidence movement now has approval-gated temp-fixture-tested preview and receipt logic with hash-before/hash-after verification and completed-evidence receipts only after verified artifact presence. Real user evidence movement remains not performed.
+- Source URL/FILES bridge preserves entered URL rows, resource rows, archive icons, selected-download vs injection separation, FILES hierarchy rows, and editor/transcript/media preservation guarantees.
+- Workflow/store/export now writes the operational sidecars and includes pathless Total Export metadata assets. Main/source UI tests continue to exercise the real save/preview path.
+- Access/Online ASR bridge preservation report proves non-secret provider summary state, Add Provider vs added-provider split, no provider call, no ASR run, and the preferred local benchmark profile whisper.cpp / Vulkan / large-v3.
+
+Remaining live/manual-only boundary: real websites, external archive/provider calls, browser automation, real screenshots/OCR, downloads, FFmpeg/yt-dlp, ArchiveBox/Docker/WSL execution, ASR jobs, credentials, real evidence file movement, release uploads, and completed real-evidence verification still require explicit operator approval and later receipts.
 ## Source roadmap consolidation pointer — source methods, claims, URL UI, archives and database recognition
 
 Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE

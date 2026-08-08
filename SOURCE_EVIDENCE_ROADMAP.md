@@ -1093,6 +1093,31 @@ Status: SOURCE_AUDIT_OPERATOR_WORKFLOW_BRIDGE_BUILT.
 | `source_audit_dashboard_state.json` | Added | GUI/app-facing source audit dashboard summary. |
 
 Remaining roadmap boundary: named-site live/manual smoke, browser/provider/archive/API calls, ASR execution, downloads, file moves, and real evidence completion remain OPERATOR_APPROVAL_REQUIRED and are not implemented as automatic execution.
+
+## Final Non-Live Operational Layer Milestone
+
+Status: FINAL_NON_LIVE_OPERATIONAL_LAYER_BUILT.
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| Operational capture runtime/results | Done | `source_operational_capture_runtime.py` adds fixture-tested session/result status and unsafe-completion validation. |
+| Localhost/fixture matrix | Done | Fixture descriptors cover article, comments, challenge, livechat, media, archive, protected output, and ArchiveBox mock cases. |
+| Article and visible outline | Done | `source_fixture_capture_results.py` wraps existing article and page outline parsers with fixture results. |
+| Screenshot contracts | Done | Faithful, derived, print-modified, and protected/black-frame labels are separated. |
+| Comments engine coverage | Done | Existing comments parser is wrapped for ordinary, load-more, open shadow, nested, virtualized, disappearing, encoded, login/challenge fixture states. |
+| Virtualized persistence | Done | Virtualized checkpoint records observed IDs, tombstones, first/last-seen support, and stop condition. |
+| Encoded/challenge states | Done | Page-decoded and inaccessible payload metadata plus pause/resume challenge states are represented without token storage. |
+| Livechat text-first | Done | Text/event fixture results are present; screenshot frames remain off by default. |
+| Media discovery/mux/rendered citation | Done | `source_media_archive_runtime.py` records discovery, mux plan, rendered citation plan, protected-output block. |
+| Archive/offline preservation | Done | Mock Wayback/archive.today results, ArchiveBox command plans, and offline bundle plan are represented without execution. |
+| Evidence movement/completed receipts | Done | `evidence_movement_approval.py` supports approval-gated temp-fixture copy/move receipts and hash-verified completion receipts. |
+| Database recognition/migration | Done | Existing recognition plan is included as a workflow sidecar; movement remains approval-gated. |
+| Source URL/media/FILES bridge | Done | `source_url_files_bridge.py` models URL rows, media rows, selected downloads, injections, and FILES hierarchy guarantees. |
+| Behavior/provenance log | Done | Hash-chained log now includes media rows, operator packs, manual smoke checklists, movement previews, and completion receipt events. |
+| Workflow/store/export | Done | New operational sidecars are written, hashed, read back, and projected into Total Export metadata. |
+| Access/KEYS/Online ASR | Done | Non-secret preservation report added; local ASR preferred profile remains whisper.cpp / Vulkan / large-v3. |
+
+What remains live/manual verified only: named-site selector execution, real browser capture, live archive checks/submissions, real downloads, real screenshots/OCR, real FFmpeg/yt-dlp, real ArchiveBox/Docker/WSL execution, ASR runs, real evidence file movement, release uploads, and completed real-evidence verification.
 ## Source roadmap consolidation — source websites, roles, URL media UI, archives and database recognition
 
 Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE

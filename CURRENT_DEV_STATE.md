@@ -1237,6 +1237,27 @@ Next implementation work should connect this closeout to concrete release-sectio
 | Generic comments site-specific selector | selector_audit_required / live_approved_only | Named-site selector audit and approval remain required. |
 
 - Boundary remains explicit: no live site access, browser automation, MSN/X/Twitter/YouTube/archive/API/provider calls, credential/cookie/account use, ASR execution, evidence file movement, completed-evidence claims, automatic classification, or protected-attribute inference occurred.
+
+## Final Non-Live Operational Layer Closeout
+
+- Status: FINAL_NON_LIVE_OPERATIONAL_LAYER_BUILT.
+- Implementation commits: `91364eb` operational capture runtime fixture matrix; `4870fe7` fixture capture result contracts; `cfbcb5e` media/archive runtime planning bundle; `1b31f26` approval-gated evidence movement receipts; `e8cf9c4` Source URL/FILES bridge state; `4bb324a` behavior provenance log expansion; `316a9d2` workflow/store/export operational sidecars; `84af2e8` Access/Online ASR preservation report.
+- Added modules: `source_operational_capture_runtime.py`, `source_fixture_capture_results.py`, `source_media_archive_runtime.py`, `evidence_movement_approval.py`, and `source_url_files_bridge.py`.
+- Added/updated sidecars include `source_operational_capture_runtime.json`, `source_article_capture_results.json`, `source_screenshot_capture_results.json`, `source_comments_capture_results.json`, `source_livechat_capture_results.json`, `source_media_discovery_results.json`, `source_archive_provider_results.json`, `source_offline_bundle_plan.json`, `source_evidence_movement_plan.json`, `source_database_recognition_plan.json`, `source_url_files_bridge_state.json`, and `source_behavior_provenance_log.json`.
+- Article/outline extraction, screenshot fidelity labelling, comments including virtualized/deleted rows, encoded/challenge state, livechat text-first metadata, media discovery/mux planning, rendered citation/protected-output boundary, archive provider mocks, ArchiveBox command planning, offline bundle planning, evidence movement/completed receipt logic, database recognition preview, Source URL/FILES bridge, behavior log hash chain, and Access/Online ASR guard are now local-only or fixture-tested.
+
+| Area | State | Remaining boundary |
+| --- | --- | --- |
+| Operational capture runtime | FIXTURE_TESTED / NOT_LIVE_EXECUTED | Live sessions require approval. |
+| Article/outline/screenshot | LOCAL_ONLY / METADATA_ONLY | Real screenshots/browser capture require approval. |
+| Comments/livechat | LOCAL_FIXTURE_TESTED | Real site selectors and livechat runs require approval. |
+| Media/mux/rendered citation | MOCK_COMMAND_TESTED | No download, FFmpeg, yt-dlp, or real recording executed. |
+| Archive/offline preservation | MOCK_PROVIDER_TESTED / COMMAND_PLAN_ONLY | No live archive providers or ArchiveBox execution. |
+| Evidence movement/completed receipt | APPROVAL_GATED / TEMP_FIXTURE_TESTED | No real evidence files moved. |
+| Source URL/FILES bridge | UI_SCAFFOLD_ONLY | Existing GUI can consume summary state; no live fetch. |
+| Access/KEYS/Online ASR | NON_SECRET_SUMMARY_ONLY | No credentials read, no provider call, no ASR run. |
+
+- Boundary remains explicit: no live site access, browser automation, archive/API/provider calls, downloads, screenshots/OCR, FFmpeg/yt-dlp, ArchiveBox/Docker/WSL execution, ASR jobs, real evidence file movement, credentials/cookies/accounts, completed real-evidence claims, automatic classification, or protected-attribute inference occurred.
 ## Source roadmap consolidation pointer — source methods, claims, URL UI, archives and database recognition
 
 Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
