@@ -22,6 +22,7 @@ TWITTER_X_SOURCE_METHOD_IDS = (
     "twitter_x_public_post_archive_manual_import",
     "twitter_x_reply_thread_archive_manual_import",
 )
+YOUTUBE_SOURCE_METHOD_IDS = ("youtube_media_transcript", "youtube_comments")
 
 
 def _value_for_dict(value: Any) -> Any:
@@ -470,8 +471,8 @@ def source_named_site_method_packs_by_method_id(
     collection: SourceNamedSiteMethodPackCollection,
     method_ids: tuple[str, ...],
 ) -> tuple[SourceNamedSiteMethodPack, ...]:
-    requested = set(method_ids)
-    return tuple(pack for pack in collection.packs if pack.method_id in requested)
+    packs_by_method = {pack.method_id: pack for pack in collection.packs}
+    return tuple(packs_by_method[method_id] for method_id in method_ids if method_id in packs_by_method)
 
 
 def build_msn_named_site_method_packs(
@@ -486,3 +487,10 @@ def build_twitter_x_named_site_method_packs(
 ) -> tuple[SourceNamedSiteMethodPack, ...]:
     collection = collection or build_source_named_site_method_pack_collection()
     return source_named_site_method_packs_by_method_id(collection, TWITTER_X_SOURCE_METHOD_IDS)
+
+
+def build_youtube_named_site_method_packs(
+    collection: SourceNamedSiteMethodPackCollection | None = None,
+) -> tuple[SourceNamedSiteMethodPack, ...]:
+    collection = collection or build_source_named_site_method_pack_collection()
+    return source_named_site_method_packs_by_method_id(collection, YOUTUBE_SOURCE_METHOD_IDS)

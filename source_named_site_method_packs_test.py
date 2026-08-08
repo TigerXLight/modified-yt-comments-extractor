@@ -6,6 +6,7 @@ from source_named_site_method_packs import (
     build_msn_named_site_method_packs,
     build_source_named_site_method_pack_collection,
     build_twitter_x_named_site_method_packs,
+    build_youtube_named_site_method_packs,
     source_named_site_method_pack_collection_to_json,
     validate_source_named_site_method_pack_collection,
 )
@@ -113,6 +114,30 @@ def test_twitter_x_named_site_method_packs_expose_archive_manual_boundaries() ->
     assert reply_thread.archive_submission_performed is False
 
 
+def test_youtube_named_site_method_packs_expose_media_transcript_and_comment_metadata() -> None:
+    youtube_packs = build_youtube_named_site_method_packs()
+    assert tuple(pack.method_id for pack in youtube_packs) == (
+        "youtube_media_transcript",
+        "youtube_comments",
+    )
+
+    media = youtube_packs[0]
+    assert media.site_profile_id == "youtube_media_transcript"
+    assert "video_id" in media.site_specific_metadata["expected_video_metadata"]
+    assert "TRANSCRIPT_REFERENCE" in media.site_specific_metadata["transcript_refs"]
+    assert media.site_specific_metadata["youtube_runtime_performed"] is False
+    assert media.site_specific_metadata["yt_dlp_ffmpeg_asr_performed"] is False
+    assert "transcript_reference_ids" in media.source_record_typed_reference_mapping
+    assert media.download_performed is False
+
+    comments = youtube_packs[1]
+    assert comments.site_profile_id == "youtube_comments"
+    assert "COMMENTS_STATUS_COUNTS" in comments.site_specific_metadata["comment_refs"]
+    assert "video_url" in comments.site_specific_metadata["expected_video_metadata"]
+    assert comments.site_specific_metadata["youtube_api_or_runtime_performed"] is False
+    assert comments.provider_call_performed is False
+
+
 def test_named_site_method_packs_link_selector_approval_packet_ids() -> None:
     registry = build_source_site_method_audit_registry()
     approval_packets = build_source_selector_approval_packet_collection(registry)
@@ -147,6 +172,7 @@ if __name__ == "__main__":
     test_named_site_method_packs_preserve_site_specific_metadata_and_boundaries()
     test_msn_named_site_method_packs_expose_article_and_shadow_dom_operator_paths()
     test_twitter_x_named_site_method_packs_expose_archive_manual_boundaries()
+    test_youtube_named_site_method_packs_expose_media_transcript_and_comment_metadata()
     test_named_site_method_packs_link_selector_approval_packet_ids()
     test_named_site_method_pack_json_is_deterministic_and_summary_only()
     print("source_named_site_method_packs_test.py passed")
