@@ -7,12 +7,14 @@ from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping, Sequence
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 
 SOURCE_REPLAY_STATIC_SNAPSHOT_SCHEMA_VERSION = "source_replay_static_snapshot_v1"
 
 STATIC_EVIDENCE_VIEW_READY = "STATIC_EVIDENCE_VIEW_READY"
+STATIC_EVIDENCE_HTML_READY = "STATIC_EVIDENCE_HTML_READY"
+STATIC_EVIDENCE_WARC_READY = "STATIC_EVIDENCE_WARC_READY"
 REPLAYWEB_RUNTIME_PARTIAL_RENDER = "REPLAYWEB_RUNTIME_PARTIAL_RENDER"
 STATIC_EVIDENCE_WARNING = (
     "Derived static replay/evidence view generated from local archived evidence. "
@@ -108,6 +110,23 @@ class StaticReplayEvidencePageResult:
         return _value_for_dict(self)
 
 
+@dataclass(frozen=True)
+class StaticReplayStandaloneOutputResult:
+    status: str
+    static_evidence_url: str
+    static_html_path: str = ""
+    static_html_sha256: str = ""
+    static_warc_gz_path: str = ""
+    static_warc_gz_sha256: str = ""
+    static_warc_path: str = ""
+    static_warc_sha256: str = ""
+    errors: tuple[str, ...] = ()
+    schema_version: str = SOURCE_REPLAY_STATIC_SNAPSHOT_SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
 def build_static_evidence_url(source_url: str, *, site_hint: str = "source") -> str:
     parsed = urlsplit(source_url)
     path = parsed.path or "/source"
@@ -119,6 +138,14 @@ def build_static_evidence_url(source_url: str, *, site_hint: str = "source") -> 
         slug = f"source-{digest}"
     safe_site = re.sub(r"[^a-z0-9-]+", "-", site_hint.lower()).strip("-") or "source"
     return f"https://source-evidence.local/replay/{safe_site}/{slug}/static-evidence.html"
+
+
+def _warc_request_path(url: str) -> str:
+    parsed = urlsplit(url)
+    path = parsed.path or "/"
+    if parsed.query:
+        path += "?" + parsed.query
+    return urlunsplit(("", "", path, "", ""))
 
 
 def _escape(value: object) -> str:
@@ -274,6 +301,72 @@ def validate_static_replay_evidence_html(html_text: str) -> list[str]:
     return errors
 
 
+def build_static_replay_evidence_warc(
+    input_data: StaticReplayEvidenceInput,
+    *,
+    gzip_output: bool = True,
+) -> tuple[StaticReplayEvidencePageResult, bytes]:
+    try:
+        from warcio.statusandheaders import StatusAndHeaders
+        from warcio.warcwriter import WARCWriter
+    except Exception as error:  # pragma: no cover - exercised in user venv where warcio is available
+        raise RuntimeError(f"warcio unavailable for static evidence WARC generation: {error}") from error
+
+    from io import BytesIO
+
+    page = build_static_replay_evidence_page(input_data)
+    if page.errors:
+        return page, b""
+    html_payload = page.html.encode("utf-8")
+    timestamp_utc = input_data.capture_timestamp or "2026-08-09T00:00:00Z"
+    output = BytesIO()
+    writer = WARCWriter(output, gzip=gzip_output)
+    request_headers = StatusAndHeaders(
+        f"{_warc_request_path(page.static_url)} HTTP/1.1",
+        [("Host", urlsplit(page.static_url).netloc)],
+        protocol="GET",
+    )
+    writer.write_record(
+        writer.create_warc_record(
+            page.static_url,
+            "request",
+            payload=BytesIO(b""),
+            http_headers=request_headers,
+            warc_headers_dict={"WARC-Date": timestamp_utc},
+        )
+    )
+    response_headers = StatusAndHeaders(
+        "200 OK",
+        [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Content-Length", str(len(html_payload))),
+        ],
+        protocol="HTTP/1.1",
+    )
+    writer.write_record(
+        writer.create_warc_record(
+            page.static_url,
+            "response",
+            payload=BytesIO(html_payload),
+            http_headers=response_headers,
+            warc_headers_dict={"WARC-Date": timestamp_utc},
+        )
+    )
+    return page, output.getvalue()
+
+
+def _sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _write_new_file(path: Path, payload: bytes) -> str:
+    if path.exists():
+        raise FileExistsError(f"Static evidence output already exists and will not be overwritten: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    return _sha256_bytes(payload)
+
+
 def write_static_replay_evidence_page(path: str | Path, input_data: StaticReplayEvidenceInput) -> StaticReplayEvidencePageResult:
     result = build_static_replay_evidence_page(input_data)
     if result.errors:
@@ -282,3 +375,71 @@ def write_static_replay_evidence_page(path: str | Path, input_data: StaticReplay
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(result.html, encoding="utf-8", newline="\n")
     return result
+
+
+def write_static_replay_standalone_outputs(
+    input_data: StaticReplayEvidenceInput,
+    *,
+    html_path: str | Path | None = None,
+    warc_gz_path: str | Path | None = None,
+    warc_path: str | Path | None = None,
+) -> StaticReplayStandaloneOutputResult:
+    if not any((html_path, warc_gz_path, warc_path)):
+        return StaticReplayStandaloneOutputResult(
+            status="STATIC_EVIDENCE_OUTPUT_NOT_REQUESTED",
+            static_evidence_url=input_data.static_url or build_static_evidence_url(input_data.source_url, site_hint="msn"),
+        )
+    try:
+        page = build_static_replay_evidence_page(input_data)
+        if page.errors:
+            return StaticReplayStandaloneOutputResult(
+                status="STATIC_EVIDENCE_OUTPUT_FAILED",
+                static_evidence_url=page.static_url,
+                errors=page.errors,
+            )
+
+        static_html_path = ""
+        static_html_sha256 = ""
+        if html_path:
+            html_payload = page.html.encode("utf-8")
+            html_destination = Path(html_path)
+            static_html_sha256 = _write_new_file(html_destination, html_payload)
+            static_html_path = str(html_destination)
+
+        static_warc_gz_path = ""
+        static_warc_gz_sha256 = ""
+        if warc_gz_path:
+            _page, warc_gz_payload = build_static_replay_evidence_warc(input_data, gzip_output=True)
+            warc_gz_destination = Path(warc_gz_path)
+            static_warc_gz_sha256 = _write_new_file(warc_gz_destination, warc_gz_payload)
+            static_warc_gz_path = str(warc_gz_destination)
+
+        static_warc_path = ""
+        static_warc_sha256 = ""
+        if warc_path:
+            _page, warc_payload = build_static_replay_evidence_warc(input_data, gzip_output=False)
+            warc_destination = Path(warc_path)
+            static_warc_sha256 = _write_new_file(warc_destination, warc_payload)
+            static_warc_path = str(warc_destination)
+
+        statuses = []
+        if static_html_path:
+            statuses.append(STATIC_EVIDENCE_HTML_READY)
+        if static_warc_gz_path or static_warc_path:
+            statuses.append(STATIC_EVIDENCE_WARC_READY)
+        return StaticReplayStandaloneOutputResult(
+            status="+".join(statuses) if statuses else "STATIC_EVIDENCE_OUTPUT_NOT_REQUESTED",
+            static_evidence_url=page.static_url,
+            static_html_path=static_html_path,
+            static_html_sha256=static_html_sha256,
+            static_warc_gz_path=static_warc_gz_path,
+            static_warc_gz_sha256=static_warc_gz_sha256,
+            static_warc_path=static_warc_path,
+            static_warc_sha256=static_warc_sha256,
+        )
+    except Exception as error:
+        return StaticReplayStandaloneOutputResult(
+            status="STATIC_EVIDENCE_OUTPUT_FAILED",
+            static_evidence_url=input_data.static_url or build_static_evidence_url(input_data.source_url, site_hint="msn"),
+            errors=(str(error),),
+        )

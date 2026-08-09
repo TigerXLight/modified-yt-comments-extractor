@@ -782,6 +782,74 @@ def _static_evidence_warc_gzip(
     return output.getvalue(), (timestamp, row)
 
 
+def build_static_replay_evidence_input_for_wacz(
+    wacz_path: str | Path,
+    *,
+    manifest_path: str | Path | None = None,
+    expected_source_url: str = "",
+    expected_comment_count: int = 0,
+    static_evidence_url: str = "",
+    static_evidence_title: str = "",
+    static_evidence_capture_timestamp: str = "",
+    static_evidence_runtime_notes: Sequence[str] = (),
+) -> StaticReplayEvidenceInput:
+    source = Path(wacz_path)
+    input_sha = _sha256_file(source)
+    with zipfile.ZipFile(source, "r") as bundle:
+        names = bundle.namelist()
+        datapackage = _safe_json_loads(bundle.read("datapackage.json")) if "datapackage.json" in names else {}
+        package = dict(datapackage) if isinstance(datapackage, Mapping) else {}
+        home = package.get("home")
+        home_url = str(home.get("url") or "") if isinstance(home, Mapping) else ""
+        legacy_home = str(package.get("mainPageUrl") or "")
+        page_rows = (
+            _pages_rows_from_payload(bundle.read("pages/pages.jsonl"))
+            if "pages/pages.jsonl" in names
+            else []
+        )
+    first_page = next((row for row in page_rows if row.get("url")), {})
+    static_source_url = _fragmentless_url(expected_source_url or home_url or legacy_home or str(first_page.get("url") or ""))
+    if not static_source_url:
+        raise ValueError("Static evidence output requires a source URL from metadata or --expected-source-url")
+    timestamp_utc = (
+        static_evidence_capture_timestamp
+        or str(first_page.get("ts") or "")
+        or str(package.get("created") or "")
+        or "2026-08-09T00:00:00Z"
+    )
+    title = static_evidence_title or str(first_page.get("title") or "") or "Static evidence view"
+    runtime_notes = tuple(static_evidence_runtime_notes)
+    if not runtime_notes and "msn.com" in static_source_url.lower():
+        runtime_notes = (
+            "Normalized WACZ manual ReplayWeb result: article entry click returned Archived Page Not Found.",
+            "Normalized WACZ manual ReplayWeb result: article URL without #comments returned Archived Page Not Found.",
+            "Normalized WACZ manual ReplayWeb result: comments visible: no.",
+            "Normalized raw WARC manual ReplayWeb result: _wb_method=HTTP/1.1 symptom absent, but page only partially rendered.",
+            "Normalized raw WARC manual ReplayWeb result: privacy modal, black/empty page area, severe browser lag, and comments visible: no.",
+        )
+    elif not runtime_notes:
+        runtime_notes = DEFAULT_REPLAY_RUNTIME_LIMITATION_NOTES
+    source_verification = verify_local_web_archive_package(
+        source,
+        manifest_path=manifest_path,
+        expected_source_url=static_source_url,
+        expected_comment_count=expected_comment_count,
+        allow_replayweb_page_legacy_profile=True,
+    )
+    return StaticReplayEvidenceInput(
+        source_url=static_source_url,
+        title=title,
+        capture_timestamp=timestamp_utc,
+        original_wacz_sha256=input_sha,
+        normalized_wacz_sha256="not applicable for standalone static output",
+        warc_record_count=source_verification.warc_record_count,
+        replay_runtime_status=REPLAYWEB_RUNTIME_PARTIAL_RENDER,
+        replay_runtime_notes=runtime_notes,
+        comments_evidence=_comments_evidence_from_verification(source_verification),
+        static_url=static_evidence_url or build_static_evidence_url(static_source_url, site_hint="msn"),
+    )
+
+
 def _json_bytes(payload: Mapping[str, Any]) -> bytes:
     return (json.dumps(dict(payload), indent=2, sort_keys=True) + "\n").encode("utf-8")
 

@@ -229,6 +229,55 @@ def test_repair_cli_can_add_static_evidence_page_without_replacing_original_page
             assert index_lines == sorted(index_lines, key=lambda line: line.encode("utf-8"))
 
 
+def test_repair_cli_writes_standalone_static_outputs_for_wacz_lookup_fallback() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        source = root / "archive.wacz"
+        output = root / "archive.static-evidence.wacz"
+        static_dir = root / "standalone"
+        _legacy_fixture(source)
+        source_sha = hashlib.sha256(source.read_bytes()).hexdigest()
+        static_url = "https://source-evidence.local/replay/msn/ar-AA123/static-evidence.html"
+
+        exit_code = main(
+            [
+                "--input-wacz",
+                str(source),
+                "--output-wacz",
+                str(output),
+                "--expected-source-url",
+                SOURCE_URL + "#comments",
+                "--add-static-evidence-page",
+                "--static-output-dir",
+                str(static_dir),
+                "--static-evidence-url",
+                static_url,
+                "--runtime-limitation-note",
+                "WACZ static page listed but ReplayWeb WACZ lookup returned Archived Page Not Found.",
+            ]
+        )
+
+        assert exit_code == 0
+        assert hashlib.sha256(source.read_bytes()).hexdigest() == source_sha
+        html_path = static_dir / "static-evidence.html"
+        warc_gz_path = static_dir / "static-evidence.warc.gz"
+        warc_path = static_dir / "static-evidence.warc"
+        assert html_path.is_file()
+        assert warc_gz_path.is_file()
+        assert warc_path.is_file()
+        html_text = html_path.read_text(encoding="utf-8")
+        assert "Derived static replay/evidence view generated from local archived evidence" in html_text
+        assert "Archived Page Not Found" in html_text
+        assert "<script" not in html_text.lower()
+        assert "<iframe" not in html_text.lower()
+        raw_warc_gz = gzip.decompress(warc_gz_path.read_bytes()).decode("utf-8", errors="replace")
+        assert "WARC-Target-URI: " + static_url in raw_warc_gz
+        assert "GET /replay/msn/ar-AA123/static-evidence.html HTTP/1.1" in raw_warc_gz
+        assert "HTTP/1.1 200 OK" in raw_warc_gz
+        assert "Content-Type: text/html; charset=utf-8" in raw_warc_gz
+        assert "REPLAY_VISUALLY_VERIFIED" not in raw_warc_gz
+
+
 def test_repair_cli_refuses_in_place_static_evidence_output() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
@@ -252,6 +301,7 @@ def run_self_test() -> None:
     test_repair_cli_defaults_to_replayweb_page_profile_and_preserves_input()
     test_repair_cli_can_write_strict_wacz12_profile()
     test_repair_cli_can_add_static_evidence_page_without_replacing_original_page()
+    test_repair_cli_writes_standalone_static_outputs_for_wacz_lookup_fallback()
     test_repair_cli_refuses_in_place_static_evidence_output()
 
 
