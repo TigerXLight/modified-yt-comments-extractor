@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+from collections import defaultdict, deque
+from io import BytesIO
 import json
 import os
 import re
 import subprocess
+import tempfile
 import zipfile
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
+from urllib.parse import urlsplit, urlunsplit
 
 
 REPLAYWEB_LOCAL_ARCHIVE_SCHEMA_VERSION = "source_local_web_archive_actions_v1"
@@ -24,6 +28,11 @@ REPLAY_PARTIAL = "REPLAY_PARTIAL"
 REPLAY_VISUALLY_VERIFIED = "REPLAY_VISUALLY_VERIFIED"
 USER_VISUAL_CONFIRMATION_REQUIRED = "USER_VISUAL_CONFIRMATION_REQUIRED"
 REPLAY_FAILED = "REPLAY_FAILED"
+WACZ_REPLAY_COMPATIBILITY_REPAIRED = "WACZ_REPLAY_COMPATIBILITY_REPAIRED"
+REPLAYWEB_PAGE_COMPATIBLE = "REPLAYWEB_PAGE_COMPATIBLE"
+REPLAYWEB_PAGE_PACKAGE_READY = "REPLAYWEB_PAGE_PACKAGE_READY"
+WACZ_12_COMPATIBILITY_PROFILE = "wacz12"
+REPLAYWEB_PAGE_COMPATIBILITY_PROFILE = "replayweb-page"
 
 SHOW_FILES_READY = "SHOW_FILES_READY"
 SHOW_FILES_PREVIEWED = "SHOW_FILES_PREVIEWED"
@@ -143,6 +152,12 @@ class LocalWebArchiveVerificationResult:
     missing_required_entries: tuple[str, ...] = ()
     datapackage_profile: str = ""
     wacz_version: str = ""
+    wacz_spec_target: str = "1.2.0"
+    legacy_declared_wacz_version: str = ""
+    deprecated_datapackage_fields: tuple[str, ...] = ()
+    index_sorted: bool = False
+    index_search_keys_canonical: bool = False
+    replay_lookup_ready: bool = False
     page_count: int = 0
     index_line_count: int = 0
     warc_record_count: int = 0
@@ -161,6 +176,26 @@ class LocalWebArchiveVerificationResult:
     derived_comments_visual_sha256: str = ""
     errors: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    schema_version: str = REPLAYWEB_LOCAL_ARCHIVE_SCHEMA_VERSION
+    scope: str = LOCAL_WEB_ARCHIVE_SCOPE
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class LocalWebArchiveRepairResult:
+    status: str
+    input_name: str
+    output_name: str
+    input_sha256: str = ""
+    output_sha256: str = ""
+    output_size_bytes: int = 0
+    rewritten_index_count: int = 0
+    removed_legacy_fields: tuple[str, ...] = ()
+    verification_status: str = ""
+    original_preserved: bool = True
+    errors: tuple[str, ...] = ()
     schema_version: str = REPLAYWEB_LOCAL_ARCHIVE_SCHEMA_VERSION
     scope: str = LOCAL_WEB_ARCHIVE_SCOPE
 
@@ -432,6 +467,456 @@ def _manifest_comments_summary(
     }
 
 
+def _cdxj_searchable_url(url: str) -> str:
+    parsed = urlsplit(str(url or "").lower())
+    host = parsed.hostname or ""
+    host_key = ",".join(reversed(host.split(".")))
+    path = parsed.path or "/"
+    if parsed.query:
+        path += "?" + parsed.query
+    return f"{host_key}){path}"
+
+
+def _cdxj_filename_for_wacz(filename: str) -> str:
+    name = str(filename or "")
+    if name.startswith("archive/"):
+        return Path(name).name
+    return name
+
+
+def _fragmentless_url(url: str) -> str:
+    parsed = urlsplit(str(url or ""))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
+
+
+def _warc_request_path(url: str) -> str:
+    parsed = urlsplit(str(url or ""))
+    path = parsed.path or "/"
+    if parsed.query:
+        path += "?" + parsed.query
+    return path
+
+
+def _parse_cdxj_line(line: str) -> tuple[str, str, Mapping[str, Any]]:
+    searchable, timestamp, payload = line.split(" ", 2)
+    row = json.loads(payload)
+    if not isinstance(row, Mapping):
+        raise ValueError("CDXJ payload is not an object")
+    required = {"url", "digest", "mime", "filename", "offset", "length", "status"}
+    missing = sorted(required - set(row))
+    if missing:
+        raise ValueError("CDXJ payload missing required fields: " + ", ".join(missing))
+    return searchable, timestamp, row
+
+
+def _cdxj_entries_from_payload(payload: bytes, *, compressed: bool) -> list[tuple[str, dict[str, Any]]]:
+    raw = gzip.decompress(payload) if compressed else payload
+    entries: list[tuple[str, dict[str, Any]]] = []
+    for line in raw.decode("utf-8").splitlines():
+        if not line.strip():
+            continue
+        _searchable, timestamp, row = _parse_cdxj_line(line)
+        entries.append((timestamp, dict(row)))
+    return entries
+
+
+def _cdxj_payload_from_entries(entries: Sequence[tuple[str, Mapping[str, Any]]], *, compressed: bool) -> bytes:
+    lines = []
+    for timestamp, row in entries:
+        item = dict(row)
+        if item.get("filename"):
+            item["filename"] = _cdxj_filename_for_wacz(str(item.get("filename") or ""))
+        lines.append(
+            f"{_cdxj_searchable_url(str(item.get('url') or ''))} {timestamp} "
+            + json.dumps(item, sort_keys=True, separators=(",", ":"))
+        )
+    lines.sort(key=lambda line: line.encode("utf-8"))
+    output = ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+    return gzip.compress(output, mtime=0) if compressed else output
+
+
+def _rewrite_cdxj_for_replay(payload: bytes, *, compressed: bool) -> bytes:
+    return _cdxj_payload_from_entries(_cdxj_entries_from_payload(payload, compressed=compressed), compressed=compressed)
+
+
+def _timestamp14_from_warc_date(value: str) -> str:
+    return re.sub(r"[^0-9]", "", value)[:14].ljust(14, "0")
+
+
+def _replayweb_page_repack_warc_gzip(
+    *,
+    warc_payload: bytes,
+    original_name: str,
+    output_name: str,
+    cdx_entries: Sequence[tuple[str, Mapping[str, Any]]],
+) -> tuple[bytes, list[tuple[str, dict[str, Any]]]]:
+    try:
+        from warcio.archiveiterator import ArchiveIterator
+        from warcio.statusandheaders import StatusAndHeaders
+        from warcio.warcwriter import WARCWriter
+    except Exception as error:  # pragma: no cover - exercised in user venv where warcio is available
+        raise RuntimeError(f"warcio unavailable for ReplayWeb.page WARC gzip repack: {error}") from error
+
+    by_url: dict[str, deque[tuple[str, dict[str, Any]]]] = defaultdict(deque)
+    for timestamp, row in cdx_entries:
+        if str(row.get("filename") or "") == original_name:
+            by_url[str(row.get("url") or "")].append((timestamp, dict(row)))
+
+    output = BytesIO()
+    writer = WARCWriter(output, gzip=True)
+    rewritten_entries: list[tuple[str, dict[str, Any]]] = []
+    for record in ArchiveIterator(BytesIO(warc_payload)):
+        target_url = str(record.rec_headers.get_header("WARC-Target-URI") or "")
+        start = output.tell()
+        if record.rec_type == "request":
+            # Older generated MSN WARC request records can contain the malformed
+            # request line `HTTP/1.1 GET /path HTTP/1.1`. ReplayWeb imports those
+            # as synthetic `_wb_method=HTTP/1.1` resources, which leaves browser
+            # replay unable to resolve the matching page even when the response
+            # record is present. Rebuild request records with the method in the
+            # StatusAndHeaders protocol slot so the stored request line is
+            # `GET /path HTTP/1.1`. Response records are not modified here.
+            request_headers = StatusAndHeaders(
+                f"{_warc_request_path(target_url)} HTTP/1.1",
+                list(record.http_headers.headers)
+                if record.http_headers
+                else [("Host", urlsplit(target_url).netloc)],
+                protocol="GET",
+            )
+            writer.write_record(
+                writer.create_warc_record(
+                    target_url,
+                    "request",
+                    payload=BytesIO(b""),
+                    http_headers=request_headers,
+                    warc_headers_dict={"WARC-Date": str(record.rec_headers.get_header("WARC-Date") or "")},
+                )
+            )
+        else:
+            writer.write_record(record)
+        length = output.tell() - start
+        if record.rec_type != "response":
+            continue
+        if by_url[target_url]:
+            timestamp, row = by_url[target_url].popleft()
+        else:
+            timestamp = _timestamp14_from_warc_date(str(record.rec_headers.get_header("WARC-Date") or ""))
+            row = {
+                "digest": str(record.rec_headers.get_header("WARC-Payload-Digest") or ""),
+                "mime": str(record.http_headers.get_header("Content-Type") if record.http_headers else "")
+                or "application/octet-stream",
+                "status": int(record.http_headers.get_statuscode() if record.http_headers else 0),
+                "url": target_url,
+            }
+        row["filename"] = _cdxj_filename_for_wacz(output_name)
+        row["offset"] = start
+        row["length"] = length
+        row["url"] = str(row.get("url") or target_url)
+        rewritten_entries.append((timestamp, row))
+
+    missing = [(timestamp, row) for rows in by_url.values() for timestamp, row in rows]
+    if missing:
+        missing_urls = ", ".join(sorted(str(row.get("url") or "") for _timestamp, row in missing)[:5])
+        raise ValueError("Could not map CDXJ response rows into gzipped WARC member: " + missing_urls)
+    return output.getvalue(), rewritten_entries
+
+
+def _rewrite_pages_jsonl_for_replay(payload: bytes) -> bytes:
+    output: list[str] = []
+    for line in payload.decode("utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if isinstance(row, Mapping) and row.get("url"):
+            row = dict(row)
+            row["url"] = _fragmentless_url(str(row.get("url") or ""))
+        output.append(json.dumps(row, sort_keys=True, separators=(",", ":")))
+    return ("\n".join(output) + ("\n" if output else "")).encode("utf-8")
+
+
+def _json_bytes(payload: Mapping[str, Any]) -> bytes:
+    return (json.dumps(dict(payload), indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def repair_local_web_archive_wacz(
+    wacz_path: str | Path,
+    *,
+    output_path: str | Path | None = None,
+    compatibility_profile: str = WACZ_12_COMPATIBILITY_PROFILE,
+) -> LocalWebArchiveRepairResult:
+    source = Path(wacz_path)
+    destination = Path(output_path) if output_path else source.with_name(source.stem + ".replayweb-fixed.wacz")
+    if compatibility_profile not in {WACZ_12_COMPATIBILITY_PROFILE, REPLAYWEB_PAGE_COMPATIBILITY_PROFILE}:
+        return LocalWebArchiveRepairResult(
+            status=REPLAY_FAILED,
+            input_name=source.name,
+            output_name=destination.name,
+            errors=(
+                "Unsupported compatibility profile: "
+                + compatibility_profile
+                + "; expected wacz12 or replayweb-page",
+            ),
+        )
+    if not source.is_file():
+        return LocalWebArchiveRepairResult(
+            status=REPLAY_FAILED,
+            input_name=source.name,
+            output_name=destination.name,
+            errors=(f"Input WACZ does not exist: {source}",),
+        )
+    if source.resolve() == destination.resolve():
+        return LocalWebArchiveRepairResult(
+            status=REPLAY_FAILED,
+            input_name=source.name,
+            output_name=destination.name,
+            input_sha256=_sha256_file(source),
+            errors=("Repair output must be a different file so the original archive is preserved.",),
+        )
+    if destination.exists():
+        return LocalWebArchiveRepairResult(
+            status=REPLAY_FAILED,
+            input_name=source.name,
+            output_name=destination.name,
+            input_sha256=_sha256_file(source),
+            errors=(f"Repair output already exists and will not be overwritten: {destination}",),
+        )
+
+    input_sha = _sha256_file(source)
+    removed: list[str] = []
+    rewritten_indexes = 0
+    removed_payload_names: set[str] = set()
+    try:
+        with zipfile.ZipFile(source, "r") as bundle:
+            names = bundle.namelist()
+            if "datapackage.json" not in names:
+                raise ValueError("datapackage.json is missing")
+            datapackage = _safe_json_loads(bundle.read("datapackage.json"))
+            if not isinstance(datapackage, Mapping):
+                raise ValueError("datapackage.json is not an object")
+            package = dict(datapackage)
+            legacy_home = str(package.get("mainPageUrl") or "")
+            home = package.get("home")
+            home_url = ""
+            if isinstance(home, Mapping):
+                home_url = str(home.get("url") or "")
+            canonical_home_url = _fragmentless_url(home_url or legacy_home)
+
+            if compatibility_profile == WACZ_12_COMPATIBILITY_PROFILE:
+                for field_name in ("wacz_version", "mainPageUrl", "mainPageDate"):
+                    if field_name in package:
+                        removed.append(field_name)
+                        package.pop(field_name, None)
+                package["profile"] = "wacz"
+            else:
+                # The published WACZ 1.2.0 profile is `wacz`, but the currently hosted
+                # ReplayWeb.page browser app observed in manual smoke testing rejects that
+                # profile with "Unknown package profile: wacz". For operational replay, keep
+                # the legacy data-package profile ReplayWeb.page accepts while still fixing
+                # the material replay defects: fragmentless page metadata and sorted,
+                # canonical CDXJ lookup keys.
+                if "mainPageDate" in package:
+                    removed.append("mainPageDate")
+                    package.pop("mainPageDate", None)
+                package["profile"] = "data-package"
+                package["wacz_version"] = str(package.get("wacz_version") or "1.2.0")
+                package["mainPageUrl"] = canonical_home_url
+
+            home = package.get("home")
+            if isinstance(home, Mapping):
+                fixed_home = dict(home)
+                fixed_home["url"] = canonical_home_url or _fragmentless_url(str(fixed_home.get("url") or legacy_home))
+                package["home"] = fixed_home
+            elif canonical_home_url:
+                package["home"] = {"url": canonical_home_url, "ts": str(package.get("created") or "")}
+
+            rewritten_payloads: dict[str, bytes] = {}
+            if "pages/pages.jsonl" in names:
+                rewritten_payloads["pages/pages.jsonl"] = _rewrite_pages_jsonl_for_replay(
+                    bundle.read("pages/pages.jsonl")
+                )
+
+            index_entries_by_name: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+            for name in names:
+                if not name.startswith("indexes/"):
+                    continue
+                if name.endswith(".cdx.gz"):
+                    index_entries_by_name[name] = _cdxj_entries_from_payload(bundle.read(name), compressed=True)
+                elif name.endswith((".cdx", ".cdxj")):
+                    index_entries_by_name[name] = _cdxj_entries_from_payload(bundle.read(name), compressed=False)
+
+            if compatibility_profile == REPLAYWEB_PAGE_COMPATIBILITY_PROFILE:
+                # Manual ReplayWeb.page smoke showed that profile/data-package compatibility is not enough:
+                # the hosted browser app lists pages but still returns "Archived Page Not Found" when the
+                # archived WARC member is stored as plain archive/data.warc. Repack uncompressed WARC
+                # members into per-record gzip WARC members and rewrite CDXJ offsets to those compressed
+                # members, matching the ArchiveWeb.page-style WACZ shape ReplayWeb.page random-accesses.
+                all_entries: list[tuple[str, dict[str, Any]]] = []
+                for entries in index_entries_by_name.values():
+                    all_entries.extend((timestamp, dict(row)) for timestamp, row in entries)
+                converted_filenames: set[str] = set()
+                converted_entries: list[tuple[str, dict[str, Any]]] = []
+                for archive_name in sorted(
+                    name for name in names if name.startswith("archive/") and name.endswith(".warc")
+                ):
+                    gz_name = archive_name + ".gz"
+                    gz_payload, gz_entries = _replayweb_page_repack_warc_gzip(
+                        warc_payload=bundle.read(archive_name),
+                        original_name=archive_name,
+                        output_name=gz_name,
+                        cdx_entries=all_entries,
+                    )
+                    rewritten_payloads[gz_name] = gz_payload
+                    removed_payload_names.add(archive_name)
+                    converted_filenames.add(archive_name)
+                    converted_entries.extend(gz_entries)
+
+                if converted_filenames:
+                    replacement_entries = converted_entries + [
+                        (timestamp, dict(row))
+                        for timestamp, row in all_entries
+                        if str(row.get("filename") or "") not in converted_filenames
+                    ]
+                    for name in index_entries_by_name or {"indexes/index.cdx.gz": []}:
+                        rewritten_payloads[name] = _cdxj_payload_from_entries(
+                            replacement_entries, compressed=name.endswith(".gz")
+                        )
+                        rewritten_indexes += 1
+                else:
+                    for name, entries in index_entries_by_name.items():
+                        compressed = name.endswith(".gz")
+                        rewritten_payloads[name] = _cdxj_payload_from_entries(entries, compressed=compressed)
+                        rewritten_indexes += 1
+            else:
+                for name, entries in index_entries_by_name.items():
+                    compressed = name.endswith(".gz")
+                    rewritten_payloads[name] = _cdxj_payload_from_entries(entries, compressed=compressed)
+                    rewritten_indexes += 1
+
+            resources = []
+            seen_resource_paths: set[str] = set()
+            for resource in package.get("resources") or ():
+                if not isinstance(resource, Mapping):
+                    resources.append(resource)
+                    continue
+                item = dict(resource)
+                resource_path = str(item.get("path") or "")
+                if resource_path in removed_payload_names:
+                    continue
+                if resource_path in rewritten_payloads:
+                    payload = rewritten_payloads[resource_path]
+                    item["bytes"] = len(payload)
+                    item["hash"] = "sha256:" + hashlib.sha256(payload).hexdigest()
+                resources.append(item)
+                seen_resource_paths.add(resource_path)
+            for resource_path, payload in sorted(rewritten_payloads.items()):
+                if resource_path in seen_resource_paths or resource_path.startswith("indexes/") or resource_path.startswith("pages/"):
+                    continue
+                resources.append(
+                    {
+                        "bytes": len(payload),
+                        "hash": "sha256:" + hashlib.sha256(payload).hexdigest(),
+                        "name": Path(resource_path).name,
+                        "path": resource_path,
+                    }
+                )
+            package["resources"] = resources
+            datapackage_bytes = _json_bytes(package)
+            digest_bytes = _json_bytes(
+                {"hash": "sha256:" + hashlib.sha256(datapackage_bytes).hexdigest(), "path": "datapackage.json"}
+            )
+
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                prefix=destination.name + ".",
+                suffix=".part",
+                dir=destination.parent,
+                delete=False,
+            ) as temp_handle:
+                temp_destination = Path(temp_handle.name)
+            try:
+                with zipfile.ZipFile(temp_destination, "w") as output:
+                    for name in names:
+                        if (
+                            name in {"datapackage.json", "datapackage-digest.json"}
+                            or name in rewritten_payloads
+                            or name in removed_payload_names
+                        ):
+                            continue
+                        payload = bundle.read(name)
+                        info = zipfile.ZipInfo(name)
+                        info.date_time = (2026, 1, 1, 0, 0, 0)
+                        info.compress_type = (
+                            zipfile.ZIP_STORED
+                            if name.startswith("archive/") or name.endswith(".gz")
+                            else zipfile.ZIP_DEFLATED
+                        )
+                        output.writestr(info, payload)
+                    for name, payload in sorted(rewritten_payloads.items()):
+                        info = zipfile.ZipInfo(name)
+                        info.date_time = (2026, 1, 1, 0, 0, 0)
+                        info.compress_type = zipfile.ZIP_STORED if name.endswith(".gz") else zipfile.ZIP_DEFLATED
+                        output.writestr(info, payload)
+                    for name, payload in (
+                        ("datapackage.json", datapackage_bytes),
+                        ("datapackage-digest.json", digest_bytes),
+                    ):
+                        info = zipfile.ZipInfo(name)
+                        info.date_time = (2026, 1, 1, 0, 0, 0)
+                        info.compress_type = zipfile.ZIP_DEFLATED
+                        output.writestr(info, payload)
+
+                temp_verification = verify_local_web_archive_package(
+                    temp_destination,
+                    allow_replayweb_page_legacy_profile=(
+                        compatibility_profile == REPLAYWEB_PAGE_COMPATIBILITY_PROFILE
+                    ),
+                )
+                if temp_verification.status not in {STRUCTURAL_WACZ_VALID, REPLAYWEB_PAGE_COMPATIBLE, REPLAYWEB_PAGE_PACKAGE_READY}:
+                    raise ValueError(
+                        "Repaired WACZ failed verification: "
+                        + "; ".join(temp_verification.errors or (temp_verification.status,))
+                    )
+                if destination.exists():
+                    raise FileExistsError(
+                        f"Repair output appeared during repair and will not be overwritten: {destination}"
+                    )
+                temp_destination.replace(destination)
+            finally:
+                if temp_destination.exists():
+                    temp_destination.unlink()
+    except Exception as error:
+        return LocalWebArchiveRepairResult(
+            status=REPLAY_FAILED,
+            input_name=source.name,
+            output_name=destination.name,
+            input_sha256=input_sha,
+            errors=(str(error),),
+        )
+
+    verification = verify_local_web_archive_package(
+        destination,
+        allow_replayweb_page_legacy_profile=(compatibility_profile == REPLAYWEB_PAGE_COMPATIBILITY_PROFILE),
+    )
+    status = (
+        WACZ_REPLAY_COMPATIBILITY_REPAIRED
+        if verification.status in {STRUCTURAL_WACZ_VALID, REPLAYWEB_PAGE_COMPATIBLE, REPLAYWEB_PAGE_PACKAGE_READY}
+        else REPLAY_FAILED
+    )
+    return LocalWebArchiveRepairResult(
+        status=status,
+        input_name=source.name,
+        output_name=destination.name,
+        input_sha256=input_sha,
+        output_sha256=_sha256_file(destination),
+        output_size_bytes=destination.stat().st_size,
+        rewritten_index_count=rewritten_indexes,
+        removed_legacy_fields=tuple(sorted(removed)),
+        verification_status=verification.status,
+        original_preserved=True,
+        errors=verification.errors,
+    )
+
+
 def verify_local_web_archive_package(
     wacz_path: str | Path,
     *,
@@ -440,6 +925,7 @@ def verify_local_web_archive_package(
     expected_wacz_sha256: str = "",
     expected_manifest_sha256: str = "",
     expected_comment_count: int = 0,
+    allow_replayweb_page_legacy_profile: bool = False,
 ) -> LocalWebArchiveVerificationResult:
     package = Path(wacz_path)
     errors: list[str] = []
@@ -481,6 +967,10 @@ def verify_local_web_archive_package(
     pages: list[Mapping[str, Any]] = []
     index_lines: list[str] = []
     warc_record_count = 0
+    archive_warc_gzip_member_count = 0
+    index_sorted = False
+    index_search_keys_canonical = False
+    deprecated_fields: tuple[str, ...] = ()
     try:
         with zipfile.ZipFile(package, "r") as bundle:
             bad_member = bundle.testzip()
@@ -501,31 +991,88 @@ def verify_local_web_archive_package(
                     .splitlines()
                     if line.strip()
                 ]
-            warc_names = sorted(name for name in names if name.startswith("archive/") and name.endswith(".warc"))
+                index_sorted = index_lines == sorted(index_lines, key=lambda line: line.encode("utf-8"))
+                canonical_rows = True
+                for line in index_lines:
+                    try:
+                        searchable, _timestamp, row = _parse_cdxj_line(line)
+                        if searchable != _cdxj_searchable_url(str(row.get("url") or "")):
+                            canonical_rows = False
+                            break
+                    except Exception as error:
+                        canonical_rows = False
+                        warnings.append(f"CDXJ parse warning: {error}")
+                        break
+                index_search_keys_canonical = canonical_rows
+            warc_names = sorted(
+                name for name in names if name.startswith("archive/") and name.endswith((".warc", ".warc.gz"))
+            )
+            archive_warc_gzip_member_count = sum(1 for name in warc_names if name.endswith(".warc.gz"))
             warc_record_count, warc_errors = _warc_record_count_from_zip(bundle, warc_names)
             warnings.extend(warc_errors)
     except Exception as error:
         errors.append(f"WACZ ZIP/read failed: {error}")
 
     missing = tuple(sorted(REQUIRED_WACZ_ENTRIES - names))
-    if not any(name.startswith("archive/") and name.endswith(".warc") for name in names):
-        missing = tuple(sorted(set(missing) | {"archive/*.warc"}))
+    if not any(name.startswith("archive/") and name.endswith((".warc", ".warc.gz")) for name in names):
+        missing = tuple(sorted(set(missing) | {"archive/*.warc[.gz]"}))
     if missing:
         errors.append("Required WACZ entries are missing")
 
+    datapackage_profile = str(datapackage.get("profile") or "")
+    legacy_version = str(datapackage.get("wacz_version") or "")
+    deprecated_fields = tuple(
+        name for name in ("wacz_version", "mainPageUrl", "mainPageDate") if name in datapackage
+    )
+    replayweb_page_legacy_profile = bool(
+        allow_replayweb_page_legacy_profile
+        and datapackage_profile == "data-package"
+        and str(datapackage.get("wacz_version") or "")
+    )
+    if datapackage and datapackage_profile != "wacz" and not replayweb_page_legacy_profile:
+        errors.append("WACZ 1.2.0 requires datapackage profile 'wacz'")
+    if deprecated_fields and not replayweb_page_legacy_profile:
+        errors.append("WACZ 1.2.0 datapackage contains removed legacy fields: " + ", ".join(deprecated_fields))
+    if index_lines and not index_sorted:
+        errors.append("CDXJ index is not byte-wise sorted for binary-search replay lookup")
+    if index_lines and not index_search_keys_canonical:
+        errors.append("CDXJ searchable URL keys are not canonical lower-case lookup keys")
+    if replayweb_page_legacy_profile and archive_warc_gzip_member_count <= 0:
+        errors.append("ReplayWeb.page-compatible WACZ requires archive/*.warc.gz random-access members")
+
     source_candidates = {
-        str(datapackage.get("mainPageUrl") or ""),
         str(((datapackage.get("home") or {}) if isinstance(datapackage.get("home"), Mapping) else {}).get("url") or ""),
     }
     source_candidates.update(str(page.get("url") or "") for page in pages)
-    source_candidates.update(index_lines)
+    for line in index_lines:
+        try:
+            _searchable, _timestamp, row = _parse_cdxj_line(line)
+            source_candidates.add(str(row.get("url") or ""))
+        except Exception:
+            source_candidates.add(line)
     expected_found = True
     if expected_source_url:
-        expected_found = any(expected_source_url in candidate for candidate in source_candidates)
+        expected_fragmentless = _fragmentless_url(expected_source_url)
+        expected_found = any(
+            _fragmentless_url(candidate) == expected_fragmentless or expected_fragmentless in candidate
+            for candidate in source_candidates
+            if candidate
+        )
         if not expected_found:
             errors.append("Expected source URL was not found in WACZ metadata/index")
 
-    status = STRUCTURAL_WACZ_VALID if not errors else REPLAY_FAILED
+    profile_lookup_ready = bool(
+        (datapackage_profile == "wacz" and not deprecated_fields) or replayweb_page_legacy_profile
+    )
+    replay_lookup_ready = bool(
+        profile_lookup_ready
+        and (not index_lines or (index_sorted and index_search_keys_canonical))
+        and not missing
+        and (not replayweb_page_legacy_profile or archive_warc_gzip_member_count > 0)
+    )
+    status = REPLAY_FAILED
+    if not errors:
+        status = REPLAYWEB_PAGE_PACKAGE_READY if replayweb_page_legacy_profile else STRUCTURAL_WACZ_VALID
     return LocalWebArchiveVerificationResult(
         status=status,
         wacz_name=package.name,
@@ -536,12 +1083,23 @@ def verify_local_web_archive_package(
         zip_integrity_ok=not any("ZIP integrity" in error for error in errors),
         required_entries_present=not missing,
         missing_required_entries=missing,
-        datapackage_profile=str(datapackage.get("profile") or ""),
-        wacz_version=str(datapackage.get("wacz_version") or ""),
+        datapackage_profile=datapackage_profile,
+        wacz_version=legacy_version,
+        wacz_spec_target="1.2.0",
+        legacy_declared_wacz_version=legacy_version,
+        deprecated_datapackage_fields=deprecated_fields,
+        index_sorted=index_sorted,
+        index_search_keys_canonical=index_search_keys_canonical,
+        replay_lookup_ready=replay_lookup_ready,
         page_count=len(pages),
         index_line_count=len(index_lines),
         warc_record_count=warc_record_count,
         expected_source_url_found=expected_found,
+        replayweb_acceptance_basis=(
+            "ReplayWeb.page browser-app legacy data-package profile + WACZ package/index readiness; manual browser replay still required"
+            if replayweb_page_legacy_profile
+            else "WACZ 1.2.0 structure + CDXJ replay lookup verification"
+        ),
         comments_json_count=int(comments_summary.get("comments_json_count") or 0),
         comments_jsonl_count=int(comments_summary.get("comments_jsonl_count") or 0),
         declared_comment_count=int(comments_summary.get("declared_comment_count") or 0),
@@ -720,6 +1278,13 @@ def local_web_archive_status_lines(state: LocalWebArchiveActionState) -> tuple[s
         f"Open archive: {state.open_archive_status}",
         f"Show files: {state.show_files_status}",
         verify_line,
+        f"WACZ 1.2 profile: {state.verification.datapackage_profile or 'unknown'}",
+        f"CDXJ lookup index: {'ready' if state.verification.replay_lookup_ready else 'not ready'}",
+        (
+            "Verify issue: " + state.verification.errors[0]
+            if state.verification.errors
+            else "Verify issue: none"
+        ),
         comments_line,
         f"Replay visual status: {state.replay_visual_status}",
         "Browser/PWA note: local WACZ files require the official file chooser",

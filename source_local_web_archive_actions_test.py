@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import tempfile
+import zipfile
 from pathlib import Path
 
 from source_local_web_archive_actions import (
@@ -12,6 +14,7 @@ from source_local_web_archive_actions import (
     SHOW_FILES_PREVIEWED,
     STRUCTURAL_WACZ_VALID,
     USER_VISUAL_CONFIRMATION_REQUIRED,
+    WACZ_REPLAY_COMPATIBILITY_REPAIRED,
     VIEWER_CONFIGURED,
     VIEWER_NOT_CONFIGURED,
     build_local_web_archive_action_state,
@@ -22,10 +25,11 @@ from source_local_web_archive_actions import (
     local_web_archive_status_lines,
     open_archive_with_replaywebpage,
     parse_replayweb_release_metadata,
+    repair_local_web_archive_wacz,
     show_local_web_archive_files,
     verify_local_web_archive_package,
 )
-from source_msn_rendered_browser_validation import write_standard_wacz, write_standard_warc
+from source_msn_rendered_browser_validation import CapturedResponse, write_standard_wacz, write_standard_warc
 
 
 SOURCE_URL = "https://www.msn.com/en-gb/news/other/arrest-made-after-shot-fired-outside-york-mosque/ar-AA29207o"
@@ -73,11 +77,24 @@ def _build_fixture_archive(root: Path) -> tuple[Path, Path, str, str]:
     derived.write_bytes(b"\x89PNG\r\n\x1a\nfixture derived")
     warc = write_standard_warc(
         output_warc_path=root / "local_web_archive" / "archive" / "data.warc",
-        responses=(),
+        responses=(
+            CapturedResponse(
+                url=SOURCE_URL + "?PC=EMMX01",
+                status=200,
+                headers={"content-type": "text/html; charset=utf-8"},
+                body=b"<html><body>fixture story</body></html>",
+                resource_type="document",
+            ),
+            CapturedResponse(
+                url="https://assets.msn.com/Z-script.js",
+                status=200,
+                headers={"content-type": "application/javascript"},
+                body=b"console.log('fixture')",
+                resource_type="script",
+            ),
+        ),
         timestamp_utc="2026-08-09T00:00:00Z",
     )
-    # Add one response after the empty fixture would be less direct than using the rendered helper's
-    # response writer, so build a WACZ around the conformant WARC the helper creates.
     wacz = write_standard_wacz(
         output_wacz_path=root / "local_web_archive" / "archive.wacz",
         warc_path=warc["path"],
@@ -126,6 +143,40 @@ def _build_fixture_archive(root: Path) -> tuple[Path, Path, str, str]:
     manifest_path = root / "manifest.json"
     manifest_sha = _write_json(manifest_path, manifest)
     return Path(wacz["path"]), manifest_path, wacz["sha256"], manifest_sha
+
+
+def _rewrite_fixture_as_legacy_replay_incompatible(wacz_path: Path) -> None:
+    with zipfile.ZipFile(wacz_path, "r") as source:
+        payloads = {name: source.read(name) for name in source.namelist()}
+
+    package = json.loads(payloads["datapackage.json"].decode("utf-8"))
+    package["profile"] = "data-package"
+    package["wacz_version"] = "1.2.0"
+    package["mainPageUrl"] = SOURCE_URL + "#comments"
+    package["home"]["url"] = SOURCE_URL + "#comments"
+    payloads["datapackage.json"] = (json.dumps(package, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+    pages = []
+    for line in payloads["pages/pages.jsonl"].decode("utf-8").splitlines():
+        row = json.loads(line)
+        if isinstance(row, dict) and row.get("url"):
+            row["url"] = str(row["url"]) + "#comments"
+        pages.append(json.dumps(row, sort_keys=True))
+    payloads["pages/pages.jsonl"] = ("\n".join(pages) + "\n").encode("utf-8")
+
+    index_lines = gzip.decompress(payloads["indexes/index.cdx.gz"]).decode("utf-8").splitlines()
+    broken = []
+    for line in reversed(index_lines):
+        searchable, timestamp, row_json = line.split(" ", 2)
+        broken.append(searchable.upper() + " " + timestamp + " " + row_json)
+    payloads["indexes/index.cdx.gz"] = gzip.compress(("\n".join(broken) + "\n").encode("utf-8"), mtime=0)
+
+    with zipfile.ZipFile(wacz_path, "w") as output:
+        for name, payload in payloads.items():
+            info = zipfile.ZipInfo(name)
+            info.date_time = (2026, 1, 1, 0, 0, 0)
+            info.compress_type = zipfile.ZIP_STORED if name.startswith("archive/") or name.endswith(".gz") else zipfile.ZIP_DEFLATED
+            output.writestr(info, payload)
 
 
 def test_parse_replayweb_release_metadata_selects_official_windows_assets() -> None:
@@ -226,6 +277,59 @@ def test_verify_local_web_archive_package_rejects_wrong_expected_hash_or_url() -
         assert "Expected source URL was not found in WACZ metadata/index" in result.errors
 
 
+def test_repair_local_web_archive_wacz_fixes_replay_lookup_without_touching_warc() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        wacz_path, _manifest_path, _wacz_sha, _manifest_sha = _build_fixture_archive(root)
+        _rewrite_fixture_as_legacy_replay_incompatible(wacz_path)
+        original_sha = _sha256(wacz_path)
+        with zipfile.ZipFile(wacz_path, "r") as bundle:
+            original_warc = bundle.read("archive/data.warc")
+
+        before = verify_local_web_archive_package(wacz_path, expected_source_url=SOURCE_URL + "#comments")
+        assert before.status == REPLAY_FAILED
+        assert before.datapackage_profile == "data-package"
+        assert before.deprecated_datapackage_fields == ("wacz_version", "mainPageUrl")
+        assert before.index_sorted is False
+        assert before.index_search_keys_canonical is False
+        assert before.replay_lookup_ready is False
+
+        repaired_path = root / "local_web_archive" / "archive.replayweb-fixed.wacz"
+        repair = repair_local_web_archive_wacz(wacz_path, output_path=repaired_path)
+
+        assert repair.status == WACZ_REPLAY_COMPATIBILITY_REPAIRED
+        assert repair.verification_status == STRUCTURAL_WACZ_VALID
+        assert repair.input_sha256 == original_sha
+        assert _sha256(wacz_path) == original_sha
+        assert repair.original_preserved is True
+        assert repair.rewritten_index_count == 1
+        assert repair.removed_legacy_fields == ("mainPageUrl", "wacz_version")
+
+        after = verify_local_web_archive_package(repaired_path, expected_source_url=SOURCE_URL + "#comments")
+        assert after.status == STRUCTURAL_WACZ_VALID
+        assert after.datapackage_profile == "wacz"
+        assert after.deprecated_datapackage_fields == ()
+        assert after.index_sorted is True
+        assert after.index_search_keys_canonical is True
+        assert after.replay_lookup_ready is True
+        assert after.expected_source_url_found is True
+        with zipfile.ZipFile(repaired_path, "r") as bundle:
+            assert bundle.read("archive/data.warc") == original_warc
+            package = json.loads(bundle.read("datapackage.json").decode("utf-8"))
+            assert package["home"]["url"] == SOURCE_URL
+            assert "#comments" not in bundle.read("pages/pages.jsonl").decode("utf-8")
+            index_lines = gzip.decompress(bundle.read("indexes/index.cdx.gz")).decode("utf-8").splitlines()
+            assert index_lines == sorted(index_lines, key=lambda line: line.encode("utf-8"))
+            assert all(line.split(" ", 1)[0] == line.split(" ", 1)[0].lower() for line in index_lines)
+
+        same_path = repair_local_web_archive_wacz(wacz_path, output_path=wacz_path)
+        assert same_path.status == REPLAY_FAILED
+        assert "different file" in same_path.errors[0]
+        overwrite = repair_local_web_archive_wacz(wacz_path, output_path=repaired_path)
+        assert overwrite.status == REPLAY_FAILED
+        assert "will not be overwritten" in overwrite.errors[0]
+
+
 def test_open_and_show_files_build_safe_argument_arrays_without_shell() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
@@ -297,6 +401,7 @@ def run_self_test() -> None:
     test_missing_replaywebpage_viewer_is_nonfatal()
     test_verify_local_web_archive_package_checks_wacz_manifest_and_comments_evidence()
     test_verify_local_web_archive_package_rejects_wrong_expected_hash_or_url()
+    test_repair_local_web_archive_wacz_fixes_replay_lookup_without_touching_warc()
     test_open_and_show_files_build_safe_argument_arrays_without_shell()
     test_local_archive_action_state_keeps_replay_visual_confirmation_separate()
     test_browser_pwa_file_state_documents_direct_file_url_limitation()

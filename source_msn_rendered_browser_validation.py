@@ -316,14 +316,21 @@ def _redact_url_for_metadata(url: str) -> str:
 
 
 def _surt(url: str) -> str:
-    parsed = urlsplit(url)
-    host = (parsed.hostname or "").lower()
+    # CDXJ searchable URLs are derived from the lower-cased archived URL.
+    # Fragments are client-side only and therefore are not part of the lookup key.
+    parsed = urlsplit(str(url or "").lower())
+    host = parsed.hostname or ""
     parts = host.split(".")
     host_key = ",".join(reversed(parts))
     path = parsed.path or "/"
     if parsed.query:
         path += "?" + parsed.query
     return f"{host_key}){path}"
+
+
+def _without_fragment(url: str) -> str:
+    parsed = urlsplit(str(url or ""))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
 
 
 def _msn_content_id(source_url: str) -> str:
@@ -384,10 +391,15 @@ def write_standard_warc(
     with output_path.open("wb") as stream:
         writer = WARCWriter(stream, gzip=False)
         for response in _dedupe_responses(responses):
+            # warcio prepends the StatusAndHeaders `protocol` value to the
+            # status line. For HTTP request records the protocol slot is the
+            # method, so this must render as `GET /path HTTP/1.1`, not the
+            # malformed `HTTP/1.1 GET /path HTTP/1.1` that ReplayWeb imports as
+            # a synthetic `_wb_method=HTTP/1.1` resource.
             request_headers = StatusAndHeaders(
-                f"{response.method or 'GET'} {_warc_target_path(response.url)} HTTP/1.1",
+                f"{_warc_target_path(response.url)} HTTP/1.1",
                 [("Host", urlsplit(response.url).netloc)],
-                protocol="HTTP/1.1",
+                protocol=(response.method or "GET").upper(),
             )
             writer.write_record(
                 writer.create_warc_record(
@@ -463,13 +475,13 @@ def write_standard_wacz(
                 "text": text[:5000],
                 "title": title,
                 "ts": timestamp_utc,
-                "url": source_url,
+                "url": _without_fragment(source_url),
             },
             sort_keys=True,
         )
         + "\n"
     ).encode("utf-8")
-    cdxj = "\n".join(
+    cdx_lines = [
         f"{row['urlkey']} {row['timestamp']} "
         + json.dumps(
             {
@@ -485,7 +497,10 @@ def write_standard_wacz(
             separators=(",", ":"),
         )
         for row in index_rows
-    ).encode("utf-8") + b"\n"
+    ]
+    # CDXJ requires byte-wise (LC_ALL=C equivalent) sorting for binary-search lookup.
+    cdx_lines.sort(key=lambda line: line.encode("utf-8"))
+    cdxj = ("\n".join(cdx_lines) + "\n").encode("utf-8")
     cdx_gz = gzip.compress(cdxj, mtime=0)
     resources = {
         "archive/data.warc": warc_bytes,
@@ -495,10 +510,9 @@ def write_standard_wacz(
     datapackage = {
         "created": timestamp_utc,
         "description": "Controlled MSN rendered-browser validation WACZ.",
-        "home": {"url": source_url, "ts": timestamp_utc},
-        "mainPageUrl": source_url,
+        "home": {"url": _without_fragment(source_url), "ts": timestamp_utc},
         "modified": timestamp_utc,
-        "profile": "data-package",
+        "profile": "wacz",
         "resources": [
             {
                 "bytes": len(payload),
@@ -510,7 +524,6 @@ def write_standard_wacz(
         ],
         "software": "yt-comments-extractor rendered browser validation",
         "title": title or "MSN rendered browser validation",
-        "wacz_version": "1.2.0",
     }
     resources["datapackage.json"] = _json_bytes(datapackage)
     resources["datapackage-digest.json"] = _json_bytes(
@@ -532,19 +545,60 @@ def verify_wacz_structure(path: str | Path) -> dict[str, Any]:
         "sha256": _sha256_file(package),
         "size_bytes": package.stat().st_size,
         "status": LOCAL_PACKAGE_STRUCTURALLY_VERIFIED,
+        "wacz_spec_target": "1.2.0",
+        "wacz_version": "",
+        "profile": "",
+        "legacy_declared_wacz_version": "",
+        "deprecated_datapackage_fields": [],
+        "index_sorted": False,
+        "index_search_keys_canonical": False,
+        "errors": [],
     }
+    errors: list[str] = result["errors"]
     with zipfile.ZipFile(package, "r") as bundle:
         names = set(bundle.namelist())
         required = {"archive/data.warc", "indexes/index.cdx.gz", "pages/pages.jsonl", "datapackage.json"}
         result["entries"] = sorted(names)
         result["missing_required_entries"] = sorted(required - names)
         datapackage = json.loads(bundle.read("datapackage.json").decode("utf-8"))
-        result["wacz_version"] = str(datapackage.get("wacz_version") or "")
         result["profile"] = str(datapackage.get("profile") or "")
+        result["legacy_declared_wacz_version"] = str(datapackage.get("wacz_version") or "")
+        result["wacz_version"] = result["legacy_declared_wacz_version"]
+        deprecated = [name for name in ("wacz_version", "mainPageUrl", "mainPageDate") if name in datapackage]
+        result["deprecated_datapackage_fields"] = deprecated
         result["resource_count"] = len(datapackage.get("resources", ()))
         result["page_count"] = max(0, len(bundle.read("pages/pages.jsonl").decode("utf-8").splitlines()) - 1)
-        result["index_line_count"] = len(gzip.decompress(bundle.read("indexes/index.cdx.gz")).decode("utf-8").splitlines())
+        index_lines = [
+            line
+            for line in gzip.decompress(bundle.read("indexes/index.cdx.gz")).decode("utf-8").splitlines()
+            if line.strip()
+        ]
+        result["index_line_count"] = len(index_lines)
+        result["index_sorted"] = index_lines == sorted(index_lines, key=lambda line: line.encode("utf-8"))
+        canonical_keys = True
+        for line in index_lines:
+            try:
+                searchable, _timestamp, payload = line.split(" ", 2)
+                row = json.loads(payload)
+                if searchable != _surt(str(row.get("url") or "")):
+                    canonical_keys = False
+                    break
+            except Exception:
+                canonical_keys = False
+                break
+        result["index_search_keys_canonical"] = canonical_keys
+
     if result["missing_required_entries"]:
+        errors.append("Required WACZ entries are missing")
+    if result["profile"] != "wacz":
+        errors.append("WACZ 1.2.0 requires datapackage profile 'wacz'")
+    if result["deprecated_datapackage_fields"]:
+        errors.append("WACZ 1.2.0 datapackage contains removed legacy fields")
+    if not result["index_sorted"]:
+        errors.append("CDXJ index is not byte-wise sorted")
+    if not result["index_search_keys_canonical"]:
+        errors.append("CDXJ searchable URL keys are not canonical")
+    if errors:
         result["status"] = REPLAY_FAILED
     return result
 
@@ -1525,10 +1579,11 @@ def _capture_profile(
                 ]
                 comments_info["comment_network_response_count"] = len(comment_network_responses)
                 comments_info["comment_network_response_urls"] = sorted(set(comment_network_responses))[:20]
-                if response is not None and all(item.url != source_url for item in captured):
+                source_request_url = _without_fragment(source_url)
+                if response is not None and all(_without_fragment(item.url) != source_request_url for item in captured):
                     captured.append(
                         CapturedResponse(
-                            url=source_url,
+                            url=source_request_url,
                             status=int(response.status),
                             headers={str(k): str(v) for k, v in response.headers.items()},
                             body=final_dom.encode("utf-8"),

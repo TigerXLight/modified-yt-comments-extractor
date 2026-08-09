@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import tempfile
@@ -57,6 +58,9 @@ def test_rendered_warc_is_readable_and_redacts_secret_headers() -> None:
         assert result["conformant_read_record_count"] == 4
         assert result["index_rows"][0]["filename"] == "archive/data.warc"
         raw_warc = warc_path.read_text(encoding="latin-1")
+        assert "GET /story HTTP/1.1" in raw_warc
+        assert "GET /story/image.jpg HTTP/1.1" in raw_warc
+        assert "HTTP/1.1 GET /story HTTP/1.1" not in raw_warc
         assert "should-not-export" not in raw_warc
         assert "Bearer should-not-export" not in raw_warc
         assert "should-not-export=true" not in raw_warc
@@ -70,14 +74,17 @@ def test_rendered_wacz_has_expected_standard_entries_and_index() -> None:
         root = Path(temp_dir)
         warc = write_standard_warc(
             output_warc_path=root / "archive" / "data.warc",
-            responses=(_response("https://www.msn.com/story", b"<html><body>story</body></html>"),),
+            responses=(
+                _response("https://www.msn.com/Z-story?PC=EMMX01", b"<html><body>z story</body></html>"),
+                _response("https://assets.msn.com/A-script.js", b"console.log('fixture')", "application/javascript"),
+            ),
             timestamp_utc="2026-08-09T00:00:00Z",
         )
         wacz = write_standard_wacz(
             output_wacz_path=root / "archive.wacz",
             warc_path=warc["path"],
             index_rows=warc["index_rows"],
-            source_url="https://www.msn.com/story",
+            source_url="https://www.msn.com/Z-story?PC=EMMX01#comments",
             title="Story",
             text="Story text",
             timestamp_utc="2026-08-09T00:00:00Z",
@@ -85,7 +92,11 @@ def test_rendered_wacz_has_expected_standard_entries_and_index() -> None:
 
         assert wacz["status"] == LOCAL_PACKAGE_STRUCTURALLY_VERIFIED
         assert wacz["missing_required_entries"] == []
-        assert wacz["index_line_count"] == 1
+        assert wacz["index_line_count"] == 2
+        assert wacz["profile"] == "wacz"
+        assert wacz["wacz_spec_target"] == "1.2.0"
+        assert wacz["index_sorted"] is True
+        assert wacz["index_search_keys_canonical"] is True
         with zipfile.ZipFile(root / "archive.wacz", "r") as bundle:
             names = set(bundle.namelist())
             assert "archive/data.warc" in names
@@ -93,10 +104,18 @@ def test_rendered_wacz_has_expected_standard_entries_and_index() -> None:
             assert "pages/pages.jsonl" in names
             assert "datapackage.json" in names
             package = json.loads(bundle.read("datapackage.json").decode("utf-8"))
-            assert package["wacz_version"] == "1.2.0"
+            assert package["profile"] == "wacz"
+            assert package["home"]["url"] == "https://www.msn.com/Z-story?PC=EMMX01"
+            assert "wacz_version" not in package
+            assert "mainPageUrl" not in package
+            index_lines = gzip.decompress(bundle.read("indexes/index.cdx.gz")).decode("utf-8").splitlines()
+            assert index_lines == sorted(index_lines, key=lambda line: line.encode("utf-8"))
+            assert index_lines[0].startswith("com,msn,assets)/a-script.js ")
+            assert index_lines[1].startswith("com,msn,www)/z-story?pc=emmx01 ")
 
         verified = verify_wacz_structure(root / "archive.wacz")
         assert verified["status"] == LOCAL_PACKAGE_STRUCTURALLY_VERIFIED
+        assert verified["deprecated_datapackage_fields"] == []
 
 
 def test_representative_download_uses_part_then_final_and_hashes() -> None:
