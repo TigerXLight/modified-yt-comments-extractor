@@ -27,6 +27,7 @@ from source_replay_static_snapshot import (
     StaticReplayPageViewInput,
     build_static_evidence_url,
     build_static_page_view_url,
+    build_static_text_view_url,
     build_static_replay_evidence_page,
 )
 
@@ -961,6 +962,7 @@ def _references_from_manifest_artifacts(
                 label=label,
                 name=path.name if path else str(artifact.get("name") or label),
                 sha256=str(artifact.get("sha256") or ""),
+                source_path=str(path or ""),
             )
         )
     return tuple(references)
@@ -1045,6 +1047,7 @@ def build_static_page_view_input_for_wacz(
         replay_runtime_status=evidence_input.replay_runtime_status,
         replay_runtime_notes=evidence_input.replay_runtime_notes,
         static_url=static_page_view_url or build_static_page_view_url(evidence_input.source_url, site_hint="msn"),
+        text_view_url=build_static_text_view_url(evidence_input.source_url, site_hint="msn"),
     )
 
 

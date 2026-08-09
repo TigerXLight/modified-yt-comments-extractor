@@ -265,12 +265,26 @@ def test_repair_cli_writes_standalone_static_outputs_for_wacz_lookup_fallback() 
         page_html_path = static_dir / "static-page-view.html"
         page_warc_gz_path = static_dir / "static-page-view.warc.gz"
         page_warc_path = static_dir / "static-page-view.warc"
+        text_html_path = static_dir / "static-text-view.html"
+        text_warc_gz_path = static_dir / "static-text-view.warc.gz"
+        text_warc_path = static_dir / "static-text-view.warc"
+        article_txt_path = static_dir / "static-article.txt"
+        comments_txt_path = static_dir / "static-comments.txt"
+        page_text_txt_path = static_dir / "static-page-text.txt"
+        page_text_md_path = static_dir / "static-page-text.md"
         assert html_path.is_file()
         assert warc_gz_path.is_file()
         assert warc_path.is_file()
         assert page_html_path.is_file()
         assert page_warc_gz_path.is_file()
         assert page_warc_path.is_file()
+        assert text_html_path.is_file()
+        assert text_warc_gz_path.is_file()
+        assert text_warc_path.is_file()
+        assert article_txt_path.is_file()
+        assert comments_txt_path.is_file()
+        assert page_text_txt_path.is_file()
+        assert page_text_md_path.is_file()
         html_text = html_path.read_text(encoding="utf-8")
         assert "Derived static replay/evidence view generated from local archived evidence" in html_text
         assert "Archived Page Not Found" in html_text
@@ -293,6 +307,21 @@ def test_repair_cli_writes_standalone_static_outputs_for_wacz_lookup_fallback() 
         assert "HTTP/1.1 200 OK" in raw_page_warc_gz
         assert "Content-Type: text/html; charset=utf-8" in raw_page_warc_gz
         assert "REPLAY_VISUALLY_VERIFIED" not in raw_page_warc_gz
+        text_html = text_html_path.read_text(encoding="utf-8")
+        assert "<details open>" in text_html
+        assert "<summary>Comments evidence - not supplied</summary>" in text_html
+        raw_text_warc_gz = gzip.decompress(text_warc_gz_path.read_bytes()).decode("utf-8", errors="replace")
+        assert "GET /replay/msn/ar-AA123/static-text-view.html HTTP/1.1" in raw_text_warc_gz
+        assert "HTTP/1.1 200 OK" in raw_text_warc_gz
+        assert "Content-Type: text/html; charset=utf-8" in raw_text_warc_gz
+        article_txt = article_txt_path.read_text(encoding="utf-8")
+        comments_txt = comments_txt_path.read_text(encoding="utf-8")
+        page_text_md = page_text_md_path.read_text(encoding="utf-8")
+        assert "<" not in article_txt
+        assert ">" not in article_txt
+        assert "Structured comment counts were supplied" not in article_txt
+        assert "Comments evidence" in comments_txt
+        assert page_text_md.startswith("# Static Page Text")
 
 
 def test_repair_cli_refuses_in_place_static_evidence_output() -> None:

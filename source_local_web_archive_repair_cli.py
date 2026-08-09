@@ -19,6 +19,7 @@ from source_local_web_archive_actions import (
 from source_replay_static_snapshot import (
     write_static_page_view_standalone_outputs,
     write_static_replay_standalone_outputs,
+    write_static_text_view_standalone_outputs,
 )
 
 
@@ -96,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help=(
             "Optional directory for standalone fallback files. Writes static-evidence.* and "
-            "static-page-view.* outputs without relying on WACZ lookup."
+            "static-page-view.*, static-text-view.*, and text/Markdown exports without relying on WACZ lookup."
         ),
     )
     parser.add_argument(
@@ -134,6 +135,25 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional explicit output path for an uncompressed static page-view WARC file.",
     )
+    parser.add_argument(
+        "--write-static-text-html",
+        default="",
+        help="Optional explicit output path for a collapsible no-JavaScript static text-view HTML file.",
+    )
+    parser.add_argument(
+        "--write-static-text-warc-gz",
+        default="",
+        help="Optional explicit output path for a raw ReplayWeb-loadable static text-view WARC.GZ file.",
+    )
+    parser.add_argument(
+        "--write-static-text-warc",
+        default="",
+        help="Optional explicit output path for an uncompressed static text-view WARC file.",
+    )
+    parser.add_argument("--write-article-txt", default="", help="Optional article-only UTF-8 text export path.")
+    parser.add_argument("--write-comments-txt", default="", help="Optional comments-only UTF-8 text export path.")
+    parser.add_argument("--write-page-text-txt", default="", help="Optional combined page UTF-8 text export path.")
+    parser.add_argument("--write-page-text-md", default="", help="Optional combined page Markdown export path.")
     return parser
 
 
@@ -181,6 +201,13 @@ def main(argv: list[str] | None = None) -> int:
         page_html_path = Path(args.write_static_page_html) if args.write_static_page_html else None
         page_warc_gz_path = Path(args.write_static_page_warc_gz) if args.write_static_page_warc_gz else None
         page_warc_path = Path(args.write_static_page_warc) if args.write_static_page_warc else None
+        text_html_path = Path(args.write_static_text_html) if args.write_static_text_html else None
+        text_warc_gz_path = Path(args.write_static_text_warc_gz) if args.write_static_text_warc_gz else None
+        text_warc_path = Path(args.write_static_text_warc) if args.write_static_text_warc else None
+        article_txt_path = Path(args.write_article_txt) if args.write_article_txt else None
+        comments_txt_path = Path(args.write_comments_txt) if args.write_comments_txt else None
+        page_text_txt_path = Path(args.write_page_text_txt) if args.write_page_text_txt else None
+        page_text_md_path = Path(args.write_page_text_md) if args.write_page_text_md else None
         if static_output_dir:
             html_path = html_path or static_output_dir / "static-evidence.html"
             warc_gz_path = warc_gz_path or static_output_dir / "static-evidence.warc.gz"
@@ -188,6 +215,13 @@ def main(argv: list[str] | None = None) -> int:
             page_html_path = page_html_path or static_output_dir / "static-page-view.html"
             page_warc_gz_path = page_warc_gz_path or static_output_dir / "static-page-view.warc.gz"
             page_warc_path = page_warc_path or static_output_dir / "static-page-view.warc"
+            text_html_path = text_html_path or static_output_dir / "static-text-view.html"
+            text_warc_gz_path = text_warc_gz_path or static_output_dir / "static-text-view.warc.gz"
+            text_warc_path = text_warc_path or static_output_dir / "static-text-view.warc"
+            article_txt_path = article_txt_path or static_output_dir / "static-article.txt"
+            comments_txt_path = comments_txt_path or static_output_dir / "static-comments.txt"
+            page_text_txt_path = page_text_txt_path or static_output_dir / "static-page-text.txt"
+            page_text_md_path = page_text_md_path or static_output_dir / "static-page-text.md"
         if any((html_path, warc_gz_path, warc_path)):
             static_input = build_static_replay_evidence_input_for_wacz(
                 args.input_wacz,
@@ -228,6 +262,30 @@ def main(argv: list[str] | None = None) -> int:
             )
             payload["static_page_view_outputs"] = static_page_outputs.to_dict()
             ok = ok and not static_page_outputs.errors
+        if any((text_html_path, text_warc_gz_path, text_warc_path, article_txt_path, comments_txt_path, page_text_txt_path, page_text_md_path)):
+            static_text_input = build_static_page_view_input_for_wacz(
+                args.input_wacz,
+                manifest_path=Path(args.manifest_path) if args.manifest_path else None,
+                expected_source_url=args.expected_source_url,
+                expected_comment_count=args.expected_comment_count,
+                static_page_view_title=args.static_evidence_title,
+                static_page_view_capture_timestamp=args.static_evidence_capture_timestamp,
+                static_page_view_runtime_notes=tuple(args.runtime_limitation_note or ()),
+                evidence_report_path=html_path if html_path else None,
+                evidence_report_url=args.static_evidence_url,
+            )
+            static_text_outputs = write_static_text_view_standalone_outputs(
+                static_text_input,
+                html_path=text_html_path,
+                warc_gz_path=text_warc_gz_path,
+                warc_path=text_warc_path,
+                article_txt_path=article_txt_path,
+                comments_txt_path=comments_txt_path,
+                page_text_txt_path=page_text_txt_path,
+                page_text_md_path=page_text_md_path,
+            )
+            payload["static_text_view_outputs"] = static_text_outputs.to_dict()
+            ok = ok and not static_text_outputs.errors
     else:
         ok = False
 
