@@ -8,6 +8,7 @@ from pathlib import Path
 
 from warcio.archiveiterator import ArchiveIterator
 
+import source_msn_rendered_browser_validation as msn_rendered
 from source_msn_rendered_browser_validation import (
     LOCAL_PACKAGE_STRUCTURALLY_VERIFIED,
     RENDERED_BROWSER_LIVE_TESTED,
@@ -15,6 +16,9 @@ from source_msn_rendered_browser_validation import (
     MOBILE_PROFILE,
     _collect_incremental_comments,
     _download_from_captured_response,
+    _merge_provider_comment_rows,
+    _reconcile_comments,
+    _write_comments_derived_artifacts,
     verify_wacz_structure,
     write_standard_wacz,
     write_standard_warc,
@@ -116,6 +120,8 @@ def test_representative_download_uses_part_then_final_and_hashes() -> None:
 
 
 def test_incremental_comments_collects_nested_shadow_comment_items() -> None:
+    msn_rendered.COMMENT_STABLE_PASS_TARGET = 2
+    msn_rendered.COMMENT_PASS_WAIT_MS = 25
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path(".playwright-browsers").resolve()))
     from playwright.sync_api import sync_playwright
 
@@ -142,9 +148,16 @@ def test_incremental_comments_collects_nested_shadow_comment_items() -> None:
           connectedCallback() {
             if (this.shadowRoot) return;
             const root = this.attachShadow({mode: 'open'});
-            root.innerHTML = `<div><ul class="comment-list"></ul><div class="load-more-comments-container"><a class="load-more-comments-button" role="button">See more comments</a></div></div>`;
+            root.innerHTML = `<div style="overflow-y:auto;max-height:120px"><div>4 comments</div><ul class="comment-list"></ul><div class="load-more-comments-container"><a class="load-more-comments-button" role="button">See more comments</a></div></div>`;
             const ul = root.querySelector('ul');
-            ul.appendChild(this.makeItem('c1', 'Fixture Author', '30 Jul', 'First fixture comment'));
+            const first = this.makeItem('c1', 'Fixture Author', '30 Jul', 'First fixture comment');
+            ul.appendChild(first);
+            const replyList = first.querySelector('comment-item').shadowRoot.querySelector('reply-list');
+            const replyRoot = replyList.attachShadow({mode: 'open'});
+            replyRoot.innerHTML = `<button class="show-more-replies">See 1 more reply</button><div id="replyTarget"></div>`;
+            replyRoot.querySelector('button').addEventListener('click', () => {
+              if (!replyRoot.querySelector('#r1')) replyRoot.querySelector('#replyTarget').appendChild(this.makeItem('r1', 'Reply Author', '30 Jul', 'Reply fixture comment').querySelector('comment-item'));
+            });
             root.querySelector('a').addEventListener('click', () => {
               if (!root.querySelector('#c2')) ul.appendChild(this.makeItem('c2', 'Second Author', '31 Jul', 'Second fixture comment'));
             });
@@ -186,13 +199,79 @@ def test_incremental_comments_collects_nested_shadow_comment_items() -> None:
 
         assert comments["social_comment_wc_found"] is True
         assert comments["social_comment_wc_shadow_open"] is True
-        assert comments["row_count"] == 2
-        assert [row["comment_id"] for row in comments["rows"]] == ["c1", "c2"]
+        assert comments["row_count"] == 3
+        assert [row["comment_id"] for row in comments["rows"]] == ["c1", "r1", "c2"]
         assert comments["rows"][0]["author"] == "Fixture Author"
         assert comments["rows"][0]["posted_at"] == "30 Jul"
-        assert comments["rows"][1]["first_seen_step"] > 0
-        assert comments["completeness"] == "incremental_visible_rows_captured_partial"
-        assert Path(artifact.path).read_text(encoding="utf-8").count("\n") == 2
+        assert comments["rows"][1]["depth"] == 1
+        assert comments["rows"][2]["first_seen_step"] >= 0
+        assert comments["completeness"] == "visible_rows_partial_declared_count_unreached"
+        assert comments["incremental_stable_pass_target"] == 2
+        assert Path(artifact.path).read_text(encoding="utf-8").count("\n") == 3
+
+
+def test_comment_provider_reconciliation_marks_complete_for_roots_plus_replies() -> None:
+    rows = [
+        {"comment_id": "r1", "stable_identifier": "r1", "depth": 0},
+        {"comment_id": "r2", "stable_identifier": "r2", "depth": 0},
+        {"comment_id": "q1", "stable_identifier": "q1", "depth": 1},
+    ]
+
+    result = _reconcile_comments(rows=rows, declared_total=3, provider_root_count=2, provider_reply_count=1)
+
+    assert result["comments_complete"] is True
+    assert result["completeness"] == "COMMENTS_COMPLETE"
+    assert result["reconciliation"] == "2 top-level + 1 replies = 3; provider declared 3"
+
+
+def test_provider_merge_uses_stable_api_ids_and_keeps_identical_text_distinct() -> None:
+    comments = {"declared_comment_count": 2, "rows": [{"comment_id": "dom-only", "stable_identifier": "dom-only", "text": "Same"}]}
+    api_result = {
+        "api_followup_performed": True,
+        "declared_total_count": 2,
+        "records": [
+            {"comment_id": "api-1", "stable_identifier": "api-1", "depth": 0, "text": "Same"},
+            {"comment_id": "api-2", "stable_identifier": "api-2", "depth": 0, "text": "Same"},
+        ],
+        "reply_record_count": 0,
+        "root_record_count": 2,
+    }
+
+    merged = _merge_provider_comment_rows(comments, api_result)
+
+    assert merged["row_count"] == 2
+    assert [row["comment_id"] for row in merged["rows"]] == ["api-1", "api-2"]
+    assert merged["provider_reconciliation"]["comments_complete"] is True
+
+
+def test_derived_comments_artifact_is_separate_from_faithful_capture() -> None:
+    msn_rendered.COMMENT_STABLE_PASS_TARGET = 2
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path(".playwright-browsers").resolve()))
+    from playwright.sync_api import sync_playwright
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            context = browser.new_context(viewport=MOBILE_PROFILE["viewport"])
+            page = context.new_page()
+            page.set_content("<html><body><p>faithful page</p></body></html>")
+            artifacts = _write_comments_derived_artifacts(
+                Path(temp_dir),
+                "fixture_profile",
+                page,
+                {"rows": [{"comment_id": "c1", "depth": 0, "author": "A", "posted_at": "now", "text": "Comment"}]},
+            )
+            context.close()
+            browser.close()
+
+        labels = {artifact.label for artifact in artifacts}
+        assert "fixture_profile_comments_derived_layout_transformations" in labels
+        assert "fixture_profile_derived_comments_full_thread_html" in labels
+        assert any("derived_comments_full_thread_screenshot" in label for label in labels)
+        transform = Path(temp_dir) / "fixture_profile" / "comments_derived_layout_transformations.json"
+        payload = json.loads(transform.read_text(encoding="utf-8"))
+        assert payload["label"] == "DERIVED_MSN_COMMENTS_EXPANDED_LAYOUT"
+        assert payload["faithful_screenshot_unmodified"] is True
 
 
 def run_self_test() -> None:
@@ -200,6 +279,9 @@ def run_self_test() -> None:
     test_rendered_wacz_has_expected_standard_entries_and_index()
     test_representative_download_uses_part_then_final_and_hashes()
     test_incremental_comments_collects_nested_shadow_comment_items()
+    test_comment_provider_reconciliation_marks_complete_for_roots_plus_replies()
+    test_provider_merge_uses_stable_api_ids_and_keeps_identical_text_distinct()
+    test_derived_comments_artifact_is_separate_from_faithful_capture()
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
+import html as html_lib
 import json
 import os
 import re
@@ -56,6 +57,12 @@ MAX_RESPONSE_BODY_BYTES = 2 * 1024 * 1024
 MAX_WARC_BODY_BYTES = 14 * 1024 * 1024
 MAX_CAPTURED_RESPONSE_COUNT = 80
 COMMENT_COLLECTION_STEPS = 8
+COMMENT_STABLE_PASS_TARGET = 12
+COMMENT_MAX_PASSES = 300
+COMMENT_PASS_WAIT_MS = 1200
+COMMENTS_COMPLETE = "COMMENTS_COMPLETE"
+COMMENTS_PARTIAL = "PARTIAL"
+DERIVED_MSN_COMMENTS_EXPANDED_LAYOUT = "DERIVED_MSN_COMMENTS_EXPANDED_LAYOUT"
 
 DESKTOP_PROFILE = {
     "name": "desktop_chromium",
@@ -640,13 +647,27 @@ def _evaluate_comments(page: Any) -> dict[str, Any]:
                 return (value || "").replace(/\\s+/g, " ").trim();
               }
               function allOpenShadowElements(root, out = [], depth = 0) {
-                if (!root || depth > 10) return out;
+                if (!root || depth > 15) return out;
                 for (const el of Array.from(root.children || [])) {
                   out.push(el);
                   if (el.shadowRoot) allOpenShadowElements(el.shadowRoot, out, depth + 1);
                   allOpenShadowElements(el, out, depth + 1);
                 }
                 return out;
+              }
+              function allOpenShadowRoots(root) {
+                const roots = [];
+                const seen = new Set();
+                function add(candidate) {
+                  if (!candidate || seen.has(candidate)) return;
+                  seen.add(candidate);
+                  roots.push(candidate);
+                  for (const el of allOpenShadowElements(candidate)) {
+                    if (el.shadowRoot) add(el.shadowRoot);
+                  }
+                }
+                add(root);
+                return roots;
               }
               function firstDeep(root, selector) {
                 if (!root) return null;
@@ -679,6 +700,9 @@ def _evaluate_comments(page: Any) -> dict[str, Any]:
                 if (!value) return {};
                 try { return JSON.parse(value); } catch (error) { return {}; }
               }
+              function stableFromParts(author, postedAt, body, source, parentId) {
+                return [parentId || "", author || "", postedAt || "", body.slice(0, 160), source || ""].join("|");
+              }
               function domPath(el) {
                 const parts = [];
                 let node = el;
@@ -690,6 +714,14 @@ def _evaluate_comments(page: Any) -> dict[str, Any]:
                   node = node.parentElement;
                 }
                 return parts.join("/");
+              }
+              function replyControls(root) {
+                return allOpenShadowElements(root).filter(el => {
+                  const text = clean(el.innerText || el.textContent || el.getAttribute("aria-label") || "");
+                  const className = String(el.getAttribute("class") || el.className || "");
+                  return ((/\\brepl(?:y|ies)\\b/i.test(text) && /\\b(see|show|view|load|more|\\d+)\\b/i.test(text))
+                    || /show-more-replies|load-more-replies/i.test(className));
+                });
               }
               function pushItem(item, source, depth, replyTo) {
                 if (!item || !item.shadowRoot) return;
@@ -725,9 +757,10 @@ def _evaluate_comments(page: Any) -> dict[str, Any]:
                   "button[aria-label*='repl' i]",
                   "a[aria-label*='repl' i]"
                 ]);
-                const hasReplies = /reply|replies/i.test(replyButtonText) || !!shadow.querySelector("reply-list");
+                const replyLists = Array.from(shadow.querySelectorAll("reply-list"));
+                const hasReplies = /reply|replies/i.test(replyButtonText) || !!replyLists.length;
                 const reactions = Array.from(shadow.querySelectorAll("msn-social-bar, social-bar-wc, [class*='social-bar']")).map(el => clean(el.innerText || el.textContent || "")).filter(Boolean).join(" ");
-                const stable = id || [author, postedAt, body.slice(0, 120), source].join("|");
+                const stable = id || stableFromParts(author, postedAt, body, source, replyTo);
                 rows.push({
                   author,
                   author_profile_url: authorUrl,
@@ -745,14 +778,14 @@ def _evaluate_comments(page: Any) -> dict[str, Any]:
                   stable_identifier: stable,
                   text: body
                 });
-                const replyItems = Array.from(shadow.querySelectorAll("reply-list")).flatMap(list => {
+                const replyItems = replyLists.flatMap(list => {
                   const root = list.shadowRoot || list;
                   return Array.from(root.querySelectorAll?.("comment-item") || []);
                 });
                 for (const reply of replyItems) pushItem(reply, "social-comment-wc.reply-list", depth + 1, stable);
               }
               if (hostRoot) {
-                const roots = [hostRoot].concat(allOpenShadowElements(hostRoot).map(el => el.shadowRoot).filter(Boolean));
+                const roots = allOpenShadowRoots(hostRoot);
                 const seen = new Set();
                 for (const root of roots) {
                   for (const item of Array.from(root.querySelectorAll?.("comment-list comment-item, comment-item") || [])) {
@@ -765,21 +798,33 @@ def _evaluate_comments(page: Any) -> dict[str, Any]:
               const shadowElements = hostRoot ? allOpenShadowElements(hostRoot) : [];
               const scrollContainers = shadowElements.concat(Array.from(document.querySelectorAll("*"))).filter(el => {
                 const style = getComputedStyle(el);
-                return /(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 50;
-              }).slice(0, 20).map(el => ({tag: el.tagName.toLowerCase(), className: String(el.className || ""), id: el.id || "", scrollHeight: el.scrollHeight, clientHeight: el.clientHeight}));
+                return /(auto|scroll|overlay)/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 30;
+              }).sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight)).slice(0, 30).map(el => ({
+                tag: el.tagName.toLowerCase(),
+                className: String(el.getAttribute("class") || el.className || ""),
+                id: el.id || "",
+                scrollHeight: el.scrollHeight,
+                clientHeight: el.clientHeight,
+                scrollTop: Math.round(el.scrollTop || 0)
+              }));
               const commentListItems = hostRoot ? allOpenShadowElements(hostRoot).filter(el => (el.tagName || "").toLowerCase() === "comment-item").length : 0;
-              const loadMoreButtons = hostRoot ? allOpenShadowElements(hostRoot).filter(el => /see more comments|load more/i.test(clean(el.innerText || el.textContent || el.getAttribute("aria-label") || ""))).length : 0;
+              const loadMoreButtons = hostRoot ? allOpenShadowElements(hostRoot).filter(el => /see more comments|load more comments|show more comments/i.test(clean(el.innerText || el.textContent || el.getAttribute("aria-label") || ""))).length : 0;
+              const replyButtons = hostRoot ? replyControls(hostRoot) : [];
               const headerText = hostRoot ? allOpenShadowElements(hostRoot).map(el => clean(el.innerText || el.textContent || "")).find(text => /\\b\\d+\\s+comments?\\b/i.test(text)) || "" : "";
               const declaredCountMatch = headerText.match(/\\b(\\d+)\\s+comments?\\b/i);
               return {
+                current_rendered_ids: rows.map(row => row.stable_identifier || row.comment_id).filter(Boolean),
                 social_comment_wc_found: !!host,
                 social_comment_wc_shadow_open: !!hostRoot,
                 overlay_container_found: !!(hostRoot && hostRoot.querySelector(".overlay-container")),
                 comment_list_item_count: commentListItems,
                 declared_comment_count: declaredCountMatch ? Number(declaredCountMatch[1]) : 0,
                 load_more_control_count: loadMoreButtons,
+                reply_control_count: replyButtons.length,
                 nested_scroll_container_count: scrollContainers.length,
                 nested_scroll_containers: scrollContainers,
+                shadow_element_count: shadowElements.length,
+                shadow_root_count: hostRoot ? allOpenShadowRoots(hostRoot).length : 0,
                 rows,
                 row_count: rows.length
               };
@@ -797,7 +842,7 @@ def _advance_msn_comments(page: Any) -> dict[str, Any]:
               const root = host && host.shadowRoot;
               function clean(value) { return (value || "").replace(/\\s+/g, " ").trim(); }
               function allOpenShadowElements(root, out = [], depth = 0) {
-                if (!root || depth > 10) return out;
+                if (!root || depth > 15) return out;
                 for (const el of Array.from(root.children || [])) {
                   out.push(el);
                   if (el.shadowRoot) allOpenShadowElements(el.shadowRoot, out, depth + 1);
@@ -807,22 +852,43 @@ def _advance_msn_comments(page: Any) -> dict[str, Any]:
               }
               if (!root) return {actions, social_comment_wc_found: !!host, social_comment_wc_shadow_open: false};
               const elements = allOpenShadowElements(root);
-              for (const el of elements) {
+              const scrollers = elements.filter(el => {
                 try {
                   const style = getComputedStyle(el);
-                  if (/(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 50) {
-                    el.scrollTop = el.scrollHeight;
-                    actions.push({action: "scroll_internal_container", tag: (el.tagName || "").toLowerCase(), className: String(el.className || ""), scrollHeight: el.scrollHeight});
-                  }
+                  return /(auto|scroll|overlay)/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 30;
+                } catch (error) {
+                  return false;
+                }
+              }).sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight));
+              for (const el of scrollers) {
+                try {
+                  el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - 40);
+                  el.dispatchEvent(new Event("scroll", {bubbles: true, composed: true}));
+                  el.scrollTop = el.scrollHeight;
+                  el.dispatchEvent(new Event("scroll", {bubbles: true, composed: true}));
+                  actions.push({action: "scroll_internal_container", tag: (el.tagName || "").toLowerCase(), className: String(el.getAttribute("class") || el.className || ""), scrollHeight: el.scrollHeight, clientHeight: el.clientHeight});
                 } catch (error) {}
               }
-              const controls = elements.filter(el => {
+              const replyControls = elements.filter(el => {
                 const text = clean(el.innerText || el.textContent || el.getAttribute("aria-label") || "");
-                return /^(see more comments|load more comments|show more comments|see \\d+ more repl|view \\d+ repl|show \\d+ repl)/i.test(text)
-                  || /see more comments|load-more-comments-button/i.test(String(el.className || ""));
+                const className = String(el.getAttribute("class") || el.className || "");
+                return ((/\\brepl(?:y|ies)\\b/i.test(text) && /\\b(see|show|view|load|more|\\d+)\\b/i.test(text))
+                  || /show-more-replies|load-more-replies/i.test(className));
               });
-              for (const control of controls.slice(0, 4)) {
+              const commentControls = elements.filter(el => {
+                const text = clean(el.innerText || el.textContent || el.getAttribute("aria-label") || "");
+                const className = String(el.getAttribute("class") || el.className || "");
+                return /^(see more comments|load more comments|show more comments)/i.test(text)
+                  || /see-more-comments|load-more-comments-button/i.test(className);
+              });
+              const controls = replyControls.concat(commentControls);
+              const clicked = new Set();
+              for (const control of controls.slice(0, 40)) {
                 try {
+                  const key = [(control.tagName || "").toLowerCase(), String(control.getAttribute("class") || control.className || ""), clean(control.innerText || control.textContent || control.getAttribute("aria-label") || "")].join("|");
+                  if (clicked.has(key)) continue;
+                  clicked.add(key);
+                  control.scrollIntoView({block: "center", inline: "nearest"});
                   control.click();
                   actions.push({action: "click_comment_control", tag: (control.tagName || "").toLowerCase(), text: clean(control.innerText || control.textContent || control.getAttribute("aria-label") || "")});
                 } catch (error) {
@@ -835,6 +901,305 @@ def _advance_msn_comments(page: Any) -> dict[str, Any]:
     )
 
 
+def _comment_signature(snapshot: Mapping[str, Any], captured_ids: Sequence[str], network_count: int = 0) -> str:
+    scrollers = []
+    for item in snapshot.get("nested_scroll_containers") or ():
+        scrollers.append(
+            (
+                str(item.get("tag") or ""),
+                str(item.get("className") or "")[:80],
+                int(item.get("scrollHeight") or 0),
+                int(item.get("clientHeight") or 0),
+                int(item.get("scrollTop") or 0),
+            )
+        )
+    payload = {
+        "captured_ids": sorted(str(item) for item in captured_ids),
+        "current_rendered_ids": sorted(str(item) for item in snapshot.get("current_rendered_ids") or ()),
+        "load_more_control_count": int(snapshot.get("load_more_control_count") or 0),
+        "network_count": int(network_count),
+        "reply_control_count": int(snapshot.get("reply_control_count") or 0),
+        "row_count": int(snapshot.get("row_count") or 0),
+        "scroll_containers": scrollers,
+        "shadow_element_count": int(snapshot.get("shadow_element_count") or 0),
+        "shadow_root_count": int(snapshot.get("shadow_root_count") or 0),
+    }
+    return _sha256_bytes(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+
+
+def _replace_raw_query_param(url: str, name: str, value: str | int) -> str:
+    encoded = str(value).replace(" ", "%20")
+    pattern = re.compile(r"([?&])" + re.escape(name) + r"=[^&]*")
+    if pattern.search(url):
+        return pattern.sub(lambda match: f"{match.group(1)}{name}={encoded}", url)
+    return url + ("&" if "?" in url else "?") + f"{name}={encoded}"
+
+
+def _remove_raw_query_param(url: str, name: str) -> str:
+    pattern = re.compile(r"([?&])" + re.escape(name) + r"=[^&]*&?")
+    cleaned = pattern.sub(lambda match: match.group(1) if match.group(1) == "?" else "", url)
+    return cleaned.rstrip("?&")
+
+
+def _comment_api_array(payload: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
+    value = payload.get("items")
+    if isinstance(value, list):
+        return tuple(item for item in value if isinstance(item, Mapping))
+    for key in ("value", "comments", "data"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return tuple(item for item in value if isinstance(item, Mapping))
+    return ()
+
+
+def _api_author(item: Mapping[str, Any]) -> tuple[str, str]:
+    for link in item.get("links") or ():
+        if not isinstance(link, Mapping) or str(link.get("type") or "").lower() != "user":
+            continue
+        user = link.get("item")
+        if not isinstance(user, Mapping):
+            continue
+        name = str(user.get("primaryName") or " ".join(str(user.get(part) or "") for part in ("firstName", "lastName")).strip())
+        return name.strip(), str(user.get("id") or "")
+    return "", str(item.get("createdBy") or "")
+
+
+def _api_item_reply_count(item: Mapping[str, Any]) -> int:
+    summary = item.get("commentSummary")
+    if isinstance(summary, Mapping):
+        total = summary.get("totalCount")
+        if isinstance(total, int):
+            return max(0, total)
+        for entry in summary.get("subCommentSummaries") or ():
+            if isinstance(entry, Mapping) and str(entry.get("type") or "").lower() == "reply":
+                try:
+                    return max(0, int(entry.get("totalCount") or 0))
+                except Exception:
+                    return 0
+    return 0
+
+
+def _api_item_to_comment_row(item: Mapping[str, Any], *, depth: int, source: str, step: int, order: int) -> dict[str, Any]:
+    comment_id = str(item.get("id") or item.get("commentId") or item.get("commentID") or "")
+    parent_id = str(item.get("parentId") or "")
+    body = str(item.get("body") or item.get("text") or item.get("content") or "").strip()
+    author, author_id = _api_author(item)
+    visible_status = str(item.get("visibleStatus") or item.get("status") or "")
+    reaction_summary = item.get("reactionSummary")
+    reaction_count = 0
+    if isinstance(reaction_summary, Mapping):
+        try:
+            reaction_count = int(reaction_summary.get("totalCount") or 0)
+        except Exception:
+            reaction_count = 0
+    stable = comment_id or stable_capture_id("msn_comment_api", parent_id, author, str(item.get("createdTime") or ""), body[:160])
+    return {
+        "author": author,
+        "author_profile_url": "",
+        "author_reference_id": author_id,
+        "capture_order": order,
+        "capture_source": source,
+        "comment_id": stable,
+        "component_tag": "msn-comments-api-item",
+        "depth": int(depth),
+        "dom_position": "",
+        "first_seen_step": step,
+        "has_reply_container": _api_item_reply_count(item) > 0,
+        "last_seen_step": step,
+        "network_api_correlation_id": comment_id,
+        "parent_comment_id": parent_id,
+        "permalink": "",
+        "posted_at": str(item.get("createdTime") or item.get("updatedTime") or ""),
+        "reaction_count": reaction_count,
+        "reaction_summary": str(reaction_count) if reaction_count else "",
+        "reply_count_declared": _api_item_reply_count(item),
+        "reply_to": parent_id,
+        "stable_identifier": stable,
+        "text": body,
+        "visible_status": visible_status,
+    }
+
+
+def _fetch_json_same_session(page: Any, url: str) -> dict[str, Any]:
+    return dict(
+        page.evaluate(
+            """async (url) => {
+              const response = await fetch(url, {credentials: "same-origin"});
+              const text = await response.text();
+              let payload = {};
+              try { payload = JSON.parse(text); } catch (error) {}
+              return {ok: response.ok, status: response.status, payload};
+            }""",
+            url,
+        )
+    )
+
+
+def _fetch_msn_comment_api_records(page: Any, comment_urls: Sequence[str], existing_step_count: int) -> dict[str, Any]:
+    templates = [url for url in comment_urls if "/service/community/comments/" in url.lower() and "contentId=" in url]
+    if not templates:
+        return {
+            "api_followup_performed": False,
+            "reason": "no_same_session_comments_endpoint_observed",
+            "records": [],
+        }
+    template = templates[0]
+    pages: list[dict[str, Any]] = []
+    root_items: dict[str, Mapping[str, Any]] = {}
+    declared_total = 0
+    max_root_skip = 60
+    for skip in range(0, max_root_skip + 1):
+        url = _replace_raw_query_param(template, "$top", 10)
+        url = _replace_raw_query_param(url, "$skip", skip)
+        fetched = _fetch_json_same_session(page, url)
+        payload = fetched.get("payload") if isinstance(fetched.get("payload"), Mapping) else {}
+        items = _comment_api_array(payload)
+        declared_total = max(declared_total, int(payload.get("totalCount") or 0))
+        pages.append(
+            {
+                "has_more": bool(payload.get("hasMore")),
+                "item_count": len(items),
+                "redacted_url": _redact_url_for_metadata(url),
+                "request_kind": "root",
+                "skip": int(payload.get("skip") if isinstance(payload.get("skip"), int) else skip),
+                "status": int(fetched.get("status") or 0),
+                "top": int(payload.get("top") or 0),
+                "total_count": int(payload.get("totalCount") or 0),
+            }
+        )
+        for item in items:
+            item_id = str(item.get("id") or item.get("commentId") or "")
+            if item_id and item_id not in root_items:
+                root_items[item_id] = item
+        if declared_total and skip >= min(max_root_skip, declared_total):
+            break
+        if skip > 30 and not items and not payload.get("hasMore"):
+            break
+    reply_items: dict[str, Mapping[str, Any]] = {}
+    for root_id, item in sorted(root_items.items()):
+        reply_count = _api_item_reply_count(item)
+        if reply_count <= 0:
+            continue
+        for skip in range(0, max(reply_count, 1), 10):
+            url = _remove_raw_query_param(template, "contentId")
+            url = _replace_raw_query_param(url, "parentId", root_id)
+            url = _replace_raw_query_param(url, "$top", max(10, min(50, reply_count)))
+            url = _replace_raw_query_param(url, "$skip", skip)
+            url = _replace_raw_query_param(url, "$orderby", "Time%20asc")
+            fetched = _fetch_json_same_session(page, url)
+            payload = fetched.get("payload") if isinstance(fetched.get("payload"), Mapping) else {}
+            items = _comment_api_array(payload)
+            pages.append(
+                {
+                    "has_more": bool(payload.get("hasMore")),
+                    "item_count": len(items),
+                    "parent_id": root_id,
+                    "redacted_url": _redact_url_for_metadata(url),
+                    "request_kind": "reply",
+                    "skip": int(payload.get("skip") if isinstance(payload.get("skip"), int) else skip),
+                    "status": int(fetched.get("status") or 0),
+                    "top": int(payload.get("top") or 0),
+                    "total_count": int(payload.get("totalCount") or 0),
+                }
+            )
+            for reply in items:
+                reply_id = str(reply.get("id") or reply.get("commentId") or "")
+                if reply_id and reply_id not in reply_items:
+                    reply_items[reply_id] = reply
+            if not payload.get("hasMore"):
+                break
+    records: list[dict[str, Any]] = []
+    order = 0
+    for _root_id, item in sorted(root_items.items(), key=lambda pair: str(pair[1].get("createdTime") or pair[0])):
+        order += 1
+        records.append(_api_item_to_comment_row(item, depth=0, source="msn_comments_api_same_session.root", step=existing_step_count, order=order))
+    for _reply_id, item in sorted(reply_items.items(), key=lambda pair: (str(pair[1].get("parentId") or ""), str(pair[1].get("createdTime") or pair[0]))):
+        order += 1
+        records.append(_api_item_to_comment_row(item, depth=1, source="msn_comments_api_same_session.reply", step=existing_step_count, order=order))
+    root_reply_declared = sum(_api_item_reply_count(item) for item in root_items.values())
+    return {
+        "api_followup_performed": True,
+        "api_followup_scope": "same_browser_session_observed_comments_endpoint",
+        "declared_total_count": declared_total,
+        "expected_root_reply_count": root_reply_declared,
+        "fetched_page_count": len(pages),
+        "pages": pages,
+        "records": records,
+        "reply_record_count": len(reply_items),
+        "root_record_count": len(root_items),
+    }
+
+
+def _reconcile_comments(
+    *,
+    rows: Sequence[Mapping[str, Any]],
+    declared_total: int,
+    provider_root_count: int = 0,
+    provider_reply_count: int = 0,
+    unavailable_count: int = 0,
+) -> dict[str, Any]:
+    top_level_count = sum(1 for row in rows if int(row.get("depth") or 0) == 0)
+    reply_count = sum(1 for row in rows if int(row.get("depth") or 0) > 0)
+    captured_total = len(rows)
+    retrievable_total = provider_root_count + provider_reply_count if provider_root_count or provider_reply_count else declared_total
+    remaining_gap = max(0, int(declared_total or retrievable_total) - captured_total - int(unavailable_count or 0))
+    complete = bool(rows) and (
+        (declared_total and captured_total >= declared_total)
+        or (retrievable_total and captured_total >= retrievable_total)
+        or (declared_total and remaining_gap == 0)
+    )
+    return {
+        "captured_total": captured_total,
+        "comments_complete": complete,
+        "completeness": COMMENTS_COMPLETE if complete else COMMENTS_PARTIAL,
+        "declared_total_count": int(declared_total or 0),
+        "provider_reply_count": int(provider_reply_count or 0),
+        "provider_root_count": int(provider_root_count or 0),
+        "reconciliation": (
+            f"{top_level_count} top-level + {reply_count} replies = {captured_total}; "
+            f"provider declared {int(declared_total or 0)}"
+        ),
+        "remaining_gap": remaining_gap,
+        "reply_count": reply_count,
+        "retrievable_total_count": int(retrievable_total or 0),
+        "top_level_count": top_level_count,
+        "unavailable_count": int(unavailable_count or 0),
+    }
+
+
+def _merge_provider_comment_rows(comments_info: Mapping[str, Any], api_result: Mapping[str, Any]) -> dict[str, Any]:
+    rows = [dict(row) for row in comments_info.get("rows") or ()]
+    api_rows = [dict(row) for row in api_result.get("records") or ()]
+    if api_rows:
+        dom_ids = {str(row.get("network_api_correlation_id") or row.get("stable_identifier") or row.get("comment_id") or "") for row in rows}
+        for row in api_rows:
+            row["component_dom_observed"] = str(row.get("network_api_correlation_id") or row.get("comment_id") or "") in dom_ids
+        rows = api_rows
+    declared = int(api_result.get("declared_total_count") or comments_info.get("declared_comment_count") or 0)
+    reconciliation = _reconcile_comments(
+        rows=rows,
+        declared_total=declared,
+        provider_root_count=int(api_result.get("root_record_count") or 0),
+        provider_reply_count=int(api_result.get("reply_record_count") or 0),
+    )
+    merged = dict(comments_info)
+    merged.update(
+        {
+            "api_reconciliation": {key: value for key, value in api_result.items() if key != "records"},
+            "capture_stop_reason": "stable_and_provider_declared_count_reconciled"
+            if reconciliation["comments_complete"]
+            else "stable_but_provider_declared_count_unreconciled",
+            "completeness": reconciliation["completeness"],
+            "declared_comment_count": declared,
+            "provider_declared_total_count": declared,
+            "provider_reconciliation": reconciliation,
+            "rows": rows,
+            "row_count": len(rows),
+        }
+    )
+    return merged
+
+
 def _collect_incremental_comments(page: Any, output_root: Path, profile_name: str) -> tuple[dict[str, Any], RenderedArtifact]:
     profile_root = output_root / profile_name
     jsonl_path = profile_root / "comments_incremental.jsonl"
@@ -844,14 +1209,11 @@ def _collect_incremental_comments(page: Any, output_root: Path, profile_name: st
     position_history: dict[str, set[str]] = {}
     step_summaries: list[dict[str, Any]] = []
     new_rows_after_first_step = 0
+    stable_passes = 0
+    last_signature = ""
+    stop_reason = "safety_ceiling_reached"
 
-    for step in range(COMMENT_COLLECTION_STEPS):
-        if step:
-            actions = _advance_msn_comments(page)
-            page.wait_for_timeout(1200)
-        else:
-            actions = {"actions": []}
-        snapshot = _evaluate_comments(page)
+    def persist_snapshot(snapshot: Mapping[str, Any], step: int) -> int:
         new_this_step = 0
         for row in snapshot.get("rows") or ():
             stable = str(row.get("stable_identifier") or row.get("comment_id") or row.get("text") or "")
@@ -872,23 +1234,48 @@ def _collect_incremental_comments(page: Any, output_root: Path, profile_name: st
                 new_this_step += 1
             else:
                 seen[stable]["last_seen_step"] = step
+        return new_this_step
+
+    final_snapshot: dict[str, Any] = {}
+    for step in range(COMMENT_MAX_PASSES):
+        before = _evaluate_comments(page)
+        new_before = persist_snapshot(before, step)
+        actions = _advance_msn_comments(page)
+        page.wait_for_timeout(COMMENT_PASS_WAIT_MS)
+        try:
+            page.mouse.wheel(0, 900)
+        except Exception:
+            pass
+        page.wait_for_timeout(250)
+        after = _evaluate_comments(page)
+        new_after = persist_snapshot(after, step)
+        new_this_step = new_before + new_after
         if step:
             new_rows_after_first_step += new_this_step
+        current_signature = _comment_signature(after, order)
+        stable_passes = stable_passes + 1 if current_signature == last_signature and new_this_step == 0 else 0
+        last_signature = current_signature
+        final_snapshot = dict(after)
         step_summaries.append(
             {
                 "actions": actions.get("actions", []),
-                "component_found": bool(snapshot.get("social_comment_wc_found")),
-                "component_shadow_open": bool(snapshot.get("social_comment_wc_shadow_open")),
-                "comment_list_item_count": int(snapshot.get("comment_list_item_count") or 0),
+                "component_found": bool(after.get("social_comment_wc_found")),
+                "component_shadow_open": bool(after.get("social_comment_wc_shadow_open")),
+                "comment_list_item_count": int(after.get("comment_list_item_count") or 0),
+                "load_more_control_count": int(after.get("load_more_control_count") or 0),
                 "new_row_count": new_this_step,
-                "row_count": int(snapshot.get("row_count") or 0),
+                "reply_control_count": int(after.get("reply_control_count") or 0),
+                "row_count": int(after.get("row_count") or 0),
+                "signature": current_signature,
+                "stable_pass_count": stable_passes,
                 "step": step,
             }
         )
-        if step >= 3 and new_this_step == 0 and len(seen) > 0:
+        if stable_passes >= COMMENT_STABLE_PASS_TARGET and (len(seen) > 0 or bool(after.get("social_comment_wc_found")) or step >= COMMENT_STABLE_PASS_TARGET):
+            stop_reason = f"stable_for_{COMMENT_STABLE_PASS_TARGET}_passes"
             break
 
-    final = _evaluate_comments(page)
+    final = final_snapshot or _evaluate_comments(page)
     rows = [seen[key] for key in order]
     final["rows"] = rows
     final["row_count"] = len(rows)
@@ -896,13 +1283,16 @@ def _collect_incremental_comments(page: Any, output_root: Path, profile_name: st
     final["incremental_step_count"] = len(step_summaries)
     final["incremental_new_rows_after_first_step"] = new_rows_after_first_step
     final["incremental_step_summaries"] = step_summaries
+    final["incremental_stable_pass_target"] = COMMENT_STABLE_PASS_TARGET
+    final["incremental_stable_pass_count"] = stable_passes
+    final["incremental_safety_ceiling"] = COMMENT_MAX_PASSES
     final["recycled_node_detected"] = any(len(values) > 1 for values in position_history.values())
     declared_count = int(final.get("declared_comment_count") or 0)
     if rows and declared_count and len(rows) < declared_count:
-        final["capture_stop_reason"] = "load_more_exhausted_before_declared_comment_count"
+        final["capture_stop_reason"] = stop_reason
         final["completeness"] = "visible_rows_partial_declared_count_unreached"
     elif rows:
-        final["capture_stop_reason"] = "no_new_rows_after_component_scroll_or_load_more"
+        final["capture_stop_reason"] = stop_reason
         final["completeness"] = "incremental_visible_rows_captured_partial"
     elif final.get("social_comment_wc_found"):
         final["capture_stop_reason"] = "zero_rows_after_component_visible_and_network_evidence"
@@ -916,6 +1306,76 @@ def _collect_incremental_comments(page: Any, output_root: Path, profile_name: st
         f"{profile_name}_comments_incremental_jsonl",
     )
     return final, artifact
+
+
+def _write_comments_derived_artifacts(output_root: Path, profile_name: str, page: Any, comments: Mapping[str, Any]) -> tuple[RenderedArtifact, ...]:
+    rows = [dict(row) for row in comments.get("rows") or ()]
+    if not rows:
+        return ()
+    profile_root = output_root / profile_name
+    width = int(MOBILE_PROFILE["viewport"]["width"])
+    parts = [
+        "<!doctype html><html><head><meta charset='utf-8'>",
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>",
+        "<style>body{font-family:Arial,sans-serif;margin:0;background:#f5f5f5;color:#111}.wrap{width:",
+        str(width),
+        "px;margin:0 auto;background:white;padding:16px;box-sizing:border-box}.label{font-size:12px;text-transform:uppercase;color:#555}.comment{border-bottom:1px solid #ddd;padding:12px 0}.reply{margin-left:28px}.meta{font-size:12px;color:#555;margin-bottom:6px}.body{white-space:pre-wrap;font-size:15px;line-height:1.35}</style></head><body><main class='wrap'>",
+        f"<div class='label'>{DERIVED_MSN_COMMENTS_EXPANDED_LAYOUT}</div>",
+    ]
+    for row in rows:
+        depth = int(row.get("depth") or 0)
+        author = html_lib.escape(str(row.get("author") or ""))
+        posted = html_lib.escape(str(row.get("posted_at") or ""))
+        comment_id = html_lib.escape(str(row.get("comment_id") or row.get("stable_identifier") or ""))
+        text = html_lib.escape(str(row.get("text") or ""))
+        klass = "comment reply" if depth else "comment"
+        parts.append(
+            f"<article class='{klass}' data-comment-id='{comment_id}'><div class='meta'>"
+            f"{author} {posted} depth={depth} id={comment_id}</div><div class='body'>{text}</div></article>"
+        )
+    parts.append("</main></body></html>")
+    html_text = "".join(parts)
+    html_artifact = _write_text(profile_root / "derived_comments_full_thread.html", html_text, f"{profile_name}_derived_comments_full_thread_html")
+    transform_artifact = _write_json(
+        profile_root / "comments_derived_layout_transformations.json",
+        {
+            "authoritative_record_source": "comments.json/comments_incremental.jsonl",
+            "faithful_screenshot_unmodified": True,
+            "label": DERIVED_MSN_COMMENTS_EXPANDED_LAYOUT,
+            "mobile_width_px": width,
+            "record_count": len(rows),
+            "transformations": [
+                "static_print_document_generated_from_reconciled_comment_records",
+                "height:auto !important",
+                "max-height:none !important",
+                "overflow:visible !important",
+                "overflow-y:visible !important",
+            ],
+            "virtualization_note": "final DOM coexistence is not required; JSON/TXT records are authoritative",
+        },
+        f"{profile_name}_comments_derived_layout_transformations",
+    )
+    screenshot_artifact: RenderedArtifact | None = None
+    derived_page = None
+    try:
+        derived_page = page.context.new_page()
+        derived_page.set_viewport_size({"width": width, "height": 900})
+        derived_page.set_content(html_text, wait_until="domcontentloaded")
+        path = profile_root / "derived_comments_full_thread.png"
+        derived_page.screenshot(path=str(path), full_page=True)
+        screenshot_artifact = _write_bytes(path, path.read_bytes(), f"{profile_name}_derived_comments_full_thread_screenshot")
+    except Exception:
+        screenshot_artifact = None
+    finally:
+        if derived_page is not None:
+            try:
+                derived_page.close()
+            except Exception:
+                pass
+    artifacts = [html_artifact, transform_artifact]
+    if screenshot_artifact is not None:
+        artifacts.append(screenshot_artifact)
+    return tuple(artifacts)
 
 
 def _write_profile_artifacts(output_root: Path, profile_name: str, page: Any, final_dom: str, comments: Mapping[str, Any]) -> tuple[RenderedArtifact, ...]:
@@ -949,6 +1409,7 @@ def _write_profile_artifacts(output_root: Path, profile_name: str, page: Any, fi
                     break
             except Exception:
                 continue
+    artifacts.extend(_write_comments_derived_artifacts(output_root, profile_name, page, comments))
     return tuple(artifacts)
 
 
@@ -1019,8 +1480,25 @@ def _capture_profile(
                     except Exception:
                         body_text = ""
                 comments_info, incremental_comments_artifact = _collect_incremental_comments(page, output_root, profile_name)
+                comment_response_urls = [
+                    str(item.url)
+                    for item in responses
+                    if "service/community/comments" in str(item.url).lower()
+                ]
+                api_result = _fetch_msn_comment_api_records(page, comment_response_urls, int(comments_info.get("incremental_step_count") or 0))
+                comments_info = _merge_provider_comment_rows(comments_info, api_result)
                 artifacts = list(_write_profile_artifacts(output_root, profile_name, page, final_dom, comments_info))
                 artifacts.append(incremental_comments_artifact)
+                artifacts.append(
+                    _write_json(
+                        output_root / profile_name / "comments_provider_reconciliation.json",
+                        {
+                            "api_reconciliation": comments_info.get("api_reconciliation", {}),
+                            "provider_reconciliation": comments_info.get("provider_reconciliation", {}),
+                        },
+                        f"{profile_name}_comments_provider_reconciliation",
+                    )
+                )
                 for item in responses[:MAX_CAPTURED_RESPONSE_COUNT]:
                     try:
                         body = item.body()
@@ -1363,11 +1841,7 @@ def run_msn_rendered_browser_validation(
         "comments_component_detection": RENDERED_BROWSER_LIVE_TESTED if best.comments_component.get("social_comment_wc_found") else STATUS_PARTIAL,
         "comments_replies_capture": RENDERED_BROWSER_LIVE_TESTED if best.comments else STATUS_PARTIAL,
         "comment_completeness": RENDERED_BROWSER_LIVE_TESTED
-        if best.comments
-        and (
-            not int(best.comments_component.get("declared_comment_count") or 0)
-            or len(best.comments) >= int(best.comments_component.get("declared_comment_count") or 0)
-        )
+        if best.comments_component.get("completeness") == COMMENTS_COMPLETE
         else STATUS_PARTIAL,
         "comments_screenshot": RENDERED_BROWSER_LIVE_TESTED
         if best.comments and any("comments" in artifact.label for artifact in best.screenshot_artifacts)
