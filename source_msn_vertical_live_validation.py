@@ -42,7 +42,11 @@ from source_resource_state import canonicalize_msn_url
 
 
 MSN_VERTICAL_VALIDATION_SCHEMA_VERSION = "msn_vertical_live_validation_v1"
-DEFAULT_MSN_VERTICAL_URL = "https://www.msn.com/en-gb/news/other/arrest-made-after-shot-fired-outside-york-mosque/ar-AA29207o?ocid=edgemobile&PC=EMMX01#comments"
+DEFAULT_MSN_VERTICAL_URL = (
+    "https://www.msn.com"
+    "/en-gb/news/other/arrest-made-after-shot-fired-outside-york-mosque/ar-AA29207o"
+    "?ocid=edgemobile&PC=EMMX01#comments"
+)
 
 STATUS_ALREADY_IMPLEMENTED_AND_TESTED = "ALREADY_IMPLEMENTED_AND_TESTED"
 STATUS_STATIC_HTTP_LIVE_TESTED = "STATIC_HTTP_LIVE_TESTED"

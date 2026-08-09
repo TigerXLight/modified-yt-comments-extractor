@@ -16,7 +16,11 @@ from source_msn_live_viewable_capture_cli import (
 )
 from source_msn_vertical_live_validation import DEFAULT_MSN_VERTICAL_URL
 
-TARGET_URL = "https://www.msn.com/en-gb/news/other/arrest-made-after-shot-fired-outside-york-mosque/ar-AA29207o?ocid=edgemobile&PC=EMMX01#comments"
+TARGET_URL = (
+    "https://www.msn.com"
+    "/en-gb/news/other/arrest-made-after-shot-fired-outside-york-mosque/ar-AA29207o"
+    "?ocid=edgemobile&PC=EMMX01#comments"
+)
 
 
 def _write(path: Path, payload: bytes) -> Path:
@@ -88,10 +92,12 @@ def test_configured_msn_url_is_raw_and_not_markdown_link() -> None:
     assert DEFAULT_MSN_VERTICAL_URL.startswith("https://www.msn.com/")
     assert "ar-AA29207o" in DEFAULT_MSN_VERTICAL_URL
     assert DEFAULT_MSN_VERTICAL_URL.endswith("#comments")
+    assert "&PC=EMMX01" in DEFAULT_MSN_VERTICAL_URL
     assert "[" not in DEFAULT_MSN_VERTICAL_URL
     assert "]" not in DEFAULT_MSN_VERTICAL_URL
     assert ("](" + "https://") not in DEFAULT_MSN_VERTICAL_URL
     assert ("\\" + "&PC=") not in DEFAULT_MSN_VERTICAL_URL
+    assert ("%5B" + "https") not in DEFAULT_MSN_VERTICAL_URL
     assert DEFAULT_MSN_VERTICAL_URL == TARGET_URL
 
 

@@ -6,7 +6,11 @@ from pathlib import Path
 from source_local_webpage_viewer import LOCAL_VIEWER_READY, write_local_webpage_viewer
 
 
-SOURCE_URL = "https://www.msn.com/en-gb/news/other/arrest-made-after-shot-fired-outside-york-mosque/ar-AA29207o?ocid=edgemobile&PC=EMMX01#comments"
+SOURCE_URL = (
+    "https://www.msn.com"
+    "/en-gb/news/other/arrest-made-after-shot-fired-outside-york-mosque/ar-AA29207o"
+    "?ocid=edgemobile&PC=EMMX01#comments"
+)
 
 
 def _write(path: Path, text: str | bytes) -> None:
