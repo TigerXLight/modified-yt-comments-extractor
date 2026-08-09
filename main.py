@@ -139,6 +139,10 @@ from capture_controller import (
 )
 from source_evidence_workflow_state import build_source_evidence_workflow_state
 from source_app_operator_controller import build_app_operator_controller_state
+from source_local_web_archive_actions import (
+    build_local_web_archive_action_state,
+    local_web_archive_status_lines,
+)
 from capture_twitter_exporter_source_import import (
     build_twitter_exporter_queue_review_draft,
     build_twitter_exporter_queue_review_draft_summary,
@@ -4978,17 +4982,20 @@ class App(ctk.CTk):
             ),
         )
 
+    def _local_web_archive_status_lines(self, archive_status: Any) -> tuple[str, ...]:
+        state = build_local_web_archive_action_state(
+            wacz_path=getattr(archive_status, "wacz_path", "") or None,
+            manifest_path=getattr(archive_status, "manifest_path", "") or None,
+            expected_source_url=getattr(archive_status, "source_url", "") or "",
+            expected_wacz_sha256=getattr(archive_status, "wacz_sha256", "") or "",
+            expected_manifest_sha256=getattr(archive_status, "manifest_sha256", "") or "",
+            expected_comment_count=int(getattr(archive_status, "expected_comment_count", 0) or 0),
+        )
+        return local_web_archive_status_lines(state)
+
     def _show_archive_status(self, archive_status: Any) -> None:
         if archive_status.service_id == ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE:
-            details = [
-                "Local Web Archive",
-                "Default backend: built-in WARC/WACZ + local evidence bundle",
-                "Actions: Capture locally, Open archive, Show files, Verify",
-                "External viewer: ReplayWeb.page compatible when configured",
-                "ArchiveBox backend: optional advanced backend",
-                "Files written by status preview: none",
-                "Network actions performed by status preview: none",
-            ]
+            details = list(self._local_web_archive_status_lines(archive_status))
             messagebox.showinfo("Local Web Archive", "\n".join(details))
             return
         if archive_status.service_id == ARCHIVE_SERVICE_ARCHIVEBOX:

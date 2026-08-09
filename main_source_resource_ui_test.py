@@ -785,6 +785,7 @@ def test_archivebox_icon_and_service_order_are_local_only() -> None:
     source = inspect.getsource(App._refresh_source_resource_rows)
     loader = inspect.getsource(App._ensure_archivebox_icon)
     popup = inspect.getsource(App._show_archive_status)
+    local_archive = inspect.getsource(App._local_web_archive_status_lines)
 
     assert 'assets", "ui", "archivebox_icon.png"' in loader
     assert "ctk.CTkImage" in loader
@@ -793,8 +794,9 @@ def test_archivebox_icon_and_service_order_are_local_only() -> None:
     assert "ARCHIVE_SERVICE_ARCHIVEBOX" in source
     assert "archive_status.service_id != ARCHIVE_SERVICE_ARCHIVEBOX" in source
     assert "Local Web Archive" in popup
-    assert "built-in WARC/WACZ + local evidence bundle" in popup
-    assert "Capture locally, Open archive, Show files, Verify" in popup
+    assert "_local_web_archive_status_lines" in popup
+    assert "build_local_web_archive_action_state" in local_archive
+    assert "expected_comment_count" in local_archive
     assert "ArchiveBox optional advanced backend" in popup
     assert "ArchiveBox execution performed: none" in popup
     assert source.index("for archive_status in row.archive_statuses") < source.index('text="×"')
