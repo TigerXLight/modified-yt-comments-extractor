@@ -1050,3 +1050,16 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 - The REV4 archive/preservation layer no longer stops at WARC/WACZ manifest metadata only. `capture_warc_wacz.py` can now write caller-supplied local fixture records into a deterministic WARC-style file and package that fixture WARC into a WACZ-style ZIP with index/page/resource metadata and hashes.
 - This is LOCAL_FIXTURE_TESTED / MOCK_PACKAGE_TESTED only. Tests create temp files, verify package contents and SHA-256 values, and prove secret headers are redacted from written artifacts.
 - No live WARC capture, live WACZ packaging, external archive provider call, browser profile/cookie/account use, ArchiveBox/Docker/WSL execution, network access, or user evidence file movement occurred.
+
+## MSN Viewable Live Capture Patchset 2026-08-09
+
+- Patchset base: `0e5d8c82622a97ae5457a62d2dd55f069e0c68b5 Improve static page view and text exports`.
+- Approved target URL for this workflow:
+  https://www.msn.com/en-gb/news/other/arrest-made-after-shot-fired-outside-york-mosque/ar-AA29207o?ocid=edgemobile&PC=EMMX01#comments
+- The old accepted MSN capture and derived static evidence/page/text fallbacks remain preserved; this patchset does not overwrite or delete prior WACZ/WARC/evidence outputs.
+- The user explicitly authorized a new side-by-side live MSN browser recapture for the same approved URL so the actual webpage can be viewed from new artifacts, separate from the existing accepted capture.
+- The new `source_msn_live_viewable_capture_cli.py` workflow requires a new output directory, refuses nonempty output folders unless explicitly allowed, supports dry-run planning, writes validation JSON, and prints manual browser/ReplayWeb validation steps.
+- Generated live outputs are intended to include `rendered-page.html`, `rendered-page.warc`, `rendered-page.warc.gz`, `archive.viewable-live-capture.wacz`, screenshots, `capture-manifest.json`, and `validation.json` when the local browser dependencies are available.
+- Follow-up fix: `DEFAULT_MSN_VERTICAL_URL` is now the exact raw approved MSN URL, so the rendered-browser safety gate remains in place without rejecting the approved capture target because of malformed URL text.
+- The live-capture workflow now writes a lightweight `local_viewer` bundle with `local-viewer-index.html`, manifest, README, and Windows open scripts. It is an offline local review launcher/index over generated files, not a replacement browser engine.
+- ReplayWeb/browser success is never claimed automatically: `replay_tested` remains false and article/comments visibility, privacy modal, slow-page warning, and `Archived Page Not Found` remain manual validation fields until the user records results.

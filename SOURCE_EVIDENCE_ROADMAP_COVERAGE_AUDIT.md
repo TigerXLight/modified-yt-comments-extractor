@@ -678,3 +678,16 @@ Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
 | App-native WARC fixture output | Covered | `capture_warc_wacz.py`; `capture_warc_wacz_test.py` | LOCAL_FIXTURE_TESTED writer creates deterministic WARC-style temp/local files from caller-supplied records/payloads and records SHA-256/size/manifest metadata. | No live WARC capture or browser/network source capture. |
 | App-native WACZ fixture package | Covered | `capture_warc_wacz.py`; `capture_warc_wacz_test.py` | MOCK_PACKAGE_TESTED WACZ-style ZIP includes manifest/datapackage/index/page/resource/WARC entries and digest metadata. | No live WACZ packaging from external sites or ArchiveBox output. |
 | Secret/provenance boundary | Covered | `capture_warc_wacz.py`; `capture_warc_wacz_test.py` | Header sanitization is preserved and tests prove secret sentinels do not appear in written WARC/WACZ artifacts. | Credentials/cookies/accounts remain prohibited unless future explicit approved receipt paths are added. |
+
+## MSN Viewable Live Capture Patchset 2026-08-09
+
+- Patchset base: `0e5d8c82622a97ae5457a62d2dd55f069e0c68b5 Improve static page view and text exports`.
+- Approved target URL for this workflow:
+  https://www.msn.com/en-gb/news/other/arrest-made-after-shot-fired-outside-york-mosque/ar-AA29207o?ocid=edgemobile&PC=EMMX01#comments
+- The old accepted MSN capture and derived static evidence/page/text fallbacks remain preserved; this patchset does not overwrite or delete prior WACZ/WARC/evidence outputs.
+- The user explicitly authorized a new side-by-side live MSN browser recapture for the same approved URL so the actual webpage can be viewed from new artifacts, separate from the existing accepted capture.
+- The new `source_msn_live_viewable_capture_cli.py` workflow requires a new output directory, refuses nonempty output folders unless explicitly allowed, supports dry-run planning, writes validation JSON, and prints manual browser/ReplayWeb validation steps.
+- Generated live outputs are intended to include `rendered-page.html`, `rendered-page.warc`, `rendered-page.warc.gz`, `archive.viewable-live-capture.wacz`, screenshots, `capture-manifest.json`, and `validation.json` when the local browser dependencies are available.
+- Follow-up fix: the approved MSN target constant now stores the exact raw URL, with no Markdown-link syntax or escaped Markdown ampersand, while keeping the single-URL live safety gate.
+- The workflow now writes an offline `local_viewer` review bundle beside the generated capture outputs. The local viewer is a local-file index/launcher only and does not claim the original dynamic ReplayWeb/WACZ replay is fixed.
+- ReplayWeb/browser success is never claimed automatically: `replay_tested` remains false and article/comments visibility, privacy modal, slow-page warning, and `Archived Page Not Found` remain manual validation fields until the user records results.
