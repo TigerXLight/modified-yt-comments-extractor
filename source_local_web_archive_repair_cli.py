@@ -44,6 +44,47 @@ def build_parser() -> argparse.ArgumentParser:
             "Use 'wacz12' for the stricter published WACZ 1.2 profile."
         ),
     )
+    parser.add_argument(
+        "--add-static-evidence-page",
+        "--static-replay-page",
+        action="store_true",
+        help=(
+            "Add a derived no-JavaScript static evidence page as a separate synthetic WARC record "
+            "and pages/pages.jsonl entry. The original source page entry is preserved."
+        ),
+    )
+    parser.add_argument(
+        "--static-evidence-url",
+        default="",
+        help="Optional stable synthetic URL for the static evidence page.",
+    )
+    parser.add_argument(
+        "--static-evidence-title",
+        default="",
+        help="Optional title for the static evidence page.",
+    )
+    parser.add_argument(
+        "--static-evidence-capture-timestamp",
+        default="",
+        help="Optional timestamp to record on the synthetic static evidence WARC records.",
+    )
+    parser.add_argument(
+        "--runtime-limitation-note",
+        action="append",
+        default=[],
+        help="Manual ReplayWeb runtime limitation note to include in the static evidence page.",
+    )
+    parser.add_argument(
+        "--manifest-path",
+        default="",
+        help="Optional local evidence manifest used only to summarize comments evidence in the static page.",
+    )
+    parser.add_argument(
+        "--expected-comment-count",
+        type=int,
+        default=0,
+        help="Optional declared comment count for manifest-based comments evidence checks.",
+    )
     return parser
 
 
@@ -54,6 +95,14 @@ def main(argv: list[str] | None = None) -> int:
         args.input_wacz,
         output_path=output_path,
         compatibility_profile=args.compatibility_profile,
+        add_static_evidence_page=bool(args.add_static_evidence_page),
+        static_evidence_url=args.static_evidence_url,
+        static_evidence_source_url=args.expected_source_url,
+        static_evidence_title=args.static_evidence_title,
+        static_evidence_capture_timestamp=args.static_evidence_capture_timestamp,
+        static_evidence_runtime_notes=tuple(args.runtime_limitation_note or ()),
+        manifest_path=Path(args.manifest_path) if args.manifest_path else None,
+        expected_comment_count=args.expected_comment_count,
     )
     payload: dict[str, object] = {"repair": repair.to_dict()}
 
@@ -63,7 +112,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         verification = verify_local_web_archive_package(
             repaired_path,
+            manifest_path=Path(args.manifest_path) if args.manifest_path else None,
             expected_source_url=args.expected_source_url,
+            expected_comment_count=args.expected_comment_count,
             allow_replayweb_page_legacy_profile=(
                 args.compatibility_profile == REPLAYWEB_PAGE_COMPATIBILITY_PROFILE
             ),

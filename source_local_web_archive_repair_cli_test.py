@@ -175,9 +175,84 @@ def test_repair_cli_can_write_strict_wacz12_profile() -> None:
             assert "mainPageUrl" not in package
             assert "wacz_version" not in package
 
+
+def test_repair_cli_can_add_static_evidence_page_without_replacing_original_page() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        source = root / "archive.wacz"
+        output = root / "archive.static-evidence.wacz"
+        _legacy_fixture(source)
+        source_sha = hashlib.sha256(source.read_bytes()).hexdigest()
+        static_url = "https://source-evidence.local/replay/msn/ar-AA123/static-evidence.html"
+
+        exit_code = main(
+            [
+                "--input-wacz",
+                str(source),
+                "--output-wacz",
+                str(output),
+                "--expected-source-url",
+                SOURCE_URL + "#comments",
+                "--add-static-evidence-page",
+                "--static-evidence-url",
+                static_url,
+                "--runtime-limitation-note",
+                "Normalized WACZ article entry click: Archived Page Not Found.",
+            ]
+        )
+
+        assert exit_code == 0
+        assert hashlib.sha256(source.read_bytes()).hexdigest() == source_sha
+        with zipfile.ZipFile(output, "r") as bundle:
+            names = bundle.namelist()
+            assert "archive/source-evidence-static.warc.gz" in names
+            static_warc = gzip.decompress(bundle.read("archive/source-evidence-static.warc.gz")).decode(
+                "utf-8",
+                errors="replace",
+            )
+            assert "GET /replay/msn/ar-AA123/static-evidence.html HTTP/1.1" in static_warc
+            assert "Derived static replay/evidence view generated from local archived evidence" in static_warc
+            assert "<script" not in static_warc.lower()
+            assert "<iframe" not in static_warc.lower()
+
+            pages = [
+                json.loads(line)
+                for line in bundle.read("pages/pages.jsonl").decode("utf-8").splitlines()
+                if line.strip()
+            ]
+            assert pages[1]["url"] == static_url
+            assert pages[1]["derived"] is True
+            assert any(row.get("url") == SOURCE_URL for row in pages)
+
+            index_lines = gzip.decompress(bundle.read("indexes/index.cdx.gz")).decode("utf-8").splitlines()
+            assert any(static_url in line for line in index_lines)
+            assert index_lines == sorted(index_lines, key=lambda line: line.encode("utf-8"))
+
+
+def test_repair_cli_refuses_in_place_static_evidence_output() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        source = root / "archive.wacz"
+        _legacy_fixture(source)
+
+        exit_code = main(
+            [
+                "--input-wacz",
+                str(source),
+                "--output-wacz",
+                str(source),
+                "--add-static-evidence-page",
+            ]
+        )
+
+        assert exit_code == 2
+
+
 def run_self_test() -> None:
     test_repair_cli_defaults_to_replayweb_page_profile_and_preserves_input()
     test_repair_cli_can_write_strict_wacz12_profile()
+    test_repair_cli_can_add_static_evidence_page_without_replacing_original_page()
+    test_repair_cli_refuses_in_place_static_evidence_output()
 
 
 if __name__ == "__main__":

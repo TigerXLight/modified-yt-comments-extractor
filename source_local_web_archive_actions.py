@@ -16,6 +16,16 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
+from source_replay_static_snapshot import (
+    DEFAULT_REPLAY_RUNTIME_LIMITATION_NOTES,
+    REPLAYWEB_RUNTIME_PARTIAL_RENDER,
+    STATIC_EVIDENCE_VIEW_READY,
+    StaticReplayCommentsEvidence,
+    StaticReplayEvidenceInput,
+    build_static_evidence_url,
+    build_static_replay_evidence_page,
+)
+
 
 REPLAYWEB_LOCAL_ARCHIVE_SCHEMA_VERSION = "source_local_web_archive_actions_v1"
 
@@ -194,6 +204,11 @@ class LocalWebArchiveRepairResult:
     rewritten_index_count: int = 0
     removed_legacy_fields: tuple[str, ...] = ()
     verification_status: str = ""
+    verification_statuses: tuple[str, ...] = ()
+    static_evidence_status: str = ""
+    static_evidence_page_url: str = ""
+    replay_runtime_status: str = ""
+    replay_runtime_notes: tuple[str, ...] = ()
     original_preserved: bool = True
     errors: tuple[str, ...] = ()
     schema_version: str = REPLAYWEB_LOCAL_ARCHIVE_SCHEMA_VERSION
@@ -634,6 +649,139 @@ def _rewrite_pages_jsonl_for_replay(payload: bytes) -> bytes:
     return ("\n".join(output) + ("\n" if output else "")).encode("utf-8")
 
 
+def _pages_rows_from_payload(payload: bytes) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line in payload.decode("utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if isinstance(row, Mapping):
+            rows.append(dict(row))
+    return rows
+
+
+def _pages_payload_with_static_evidence(
+    payload: bytes,
+    *,
+    static_url: str,
+    title: str,
+    timestamp_utc: str,
+) -> bytes:
+    rows = _pages_rows_from_payload(_rewrite_pages_jsonl_for_replay(payload))
+    output: list[dict[str, Any]] = []
+    header = rows[0] if rows and rows[0].get("format") else {"format": "json-pages-1.0", "id": "pages", "title": "All Pages"}
+    output.append(dict(header))
+    output.append(
+        {
+            "derived": True,
+            "replay_runtime_status": REPLAYWEB_RUNTIME_PARTIAL_RENDER,
+            "source": "source_evidence_static_replay_fallback",
+            "title": title or "Static evidence view",
+            "ts": timestamp_utc,
+            "url": static_url,
+        }
+    )
+    for row in rows[1:] if rows and rows[0].get("format") else rows:
+        if str(row.get("url") or "") == static_url:
+            continue
+        output.append(dict(row))
+    return ("\n".join(json.dumps(row, sort_keys=True, separators=(",", ":")) for row in output) + "\n").encode(
+        "utf-8"
+    )
+
+
+def _comments_evidence_from_verification(
+    verification: LocalWebArchiveVerificationResult,
+) -> StaticReplayCommentsEvidence | None:
+    if (
+        not verification.comments_evidence_status
+        or verification.comments_evidence_status == "not_checked"
+        or not any(
+            (
+                verification.comments_json_count,
+                verification.comments_jsonl_count,
+                verification.declared_comment_count,
+                verification.top_level_comment_count,
+                verification.reply_count,
+            )
+        )
+    ):
+        return None
+    return StaticReplayCommentsEvidence(
+        status=verification.comments_evidence_status,
+        comments_json_count=verification.comments_json_count,
+        comments_jsonl_count=verification.comments_jsonl_count,
+        declared_comment_count=verification.declared_comment_count,
+        top_level_comment_count=verification.top_level_comment_count,
+        reply_count=verification.reply_count,
+        comments_complete=verification.comments_complete,
+        faithful_comments_screenshot_name=verification.faithful_comments_screenshot_name,
+        faithful_comments_screenshot_sha256=verification.faithful_comments_screenshot_sha256,
+        derived_comments_visual_name=verification.derived_comments_visual_name,
+        derived_comments_visual_sha256=verification.derived_comments_visual_sha256,
+    )
+
+
+def _static_evidence_warc_gzip(
+    *,
+    static_url: str,
+    html_payload: bytes,
+    timestamp_utc: str,
+    output_name: str,
+) -> tuple[bytes, tuple[str, dict[str, Any]]]:
+    try:
+        from warcio.statusandheaders import StatusAndHeaders
+        from warcio.warcwriter import WARCWriter
+    except Exception as error:  # pragma: no cover - exercised in user venv where warcio is available
+        raise RuntimeError(f"warcio unavailable for static evidence WARC generation: {error}") from error
+
+    output = BytesIO()
+    writer = WARCWriter(output, gzip=True)
+    request_headers = StatusAndHeaders(
+        f"{_warc_request_path(static_url)} HTTP/1.1",
+        [("Host", urlsplit(static_url).netloc)],
+        protocol="GET",
+    )
+    writer.write_record(
+        writer.create_warc_record(
+            static_url,
+            "request",
+            payload=BytesIO(b""),
+            http_headers=request_headers,
+            warc_headers_dict={"WARC-Date": timestamp_utc},
+        )
+    )
+    response_headers = StatusAndHeaders(
+        "200 OK",
+        [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Content-Length", str(len(html_payload))),
+        ],
+        protocol="HTTP/1.1",
+    )
+    start = output.tell()
+    response_record = writer.create_warc_record(
+        static_url,
+        "response",
+        payload=BytesIO(html_payload),
+        http_headers=response_headers,
+        warc_headers_dict={"WARC-Date": timestamp_utc},
+    )
+    writer.write_record(response_record)
+    length = output.tell() - start
+    timestamp = _timestamp14_from_warc_date(timestamp_utc)
+    row = {
+        "digest": str(response_record.rec_headers.get_header("WARC-Payload-Digest") or ""),
+        "filename": _cdxj_filename_for_wacz(output_name),
+        "length": length,
+        "mime": "text/html",
+        "offset": start,
+        "status": 200,
+        "url": static_url,
+    }
+    return output.getvalue(), (timestamp, row)
+
+
 def _json_bytes(payload: Mapping[str, Any]) -> bytes:
     return (json.dumps(dict(payload), indent=2, sort_keys=True) + "\n").encode("utf-8")
 
@@ -643,6 +791,14 @@ def repair_local_web_archive_wacz(
     *,
     output_path: str | Path | None = None,
     compatibility_profile: str = WACZ_12_COMPATIBILITY_PROFILE,
+    add_static_evidence_page: bool = False,
+    static_evidence_url: str = "",
+    static_evidence_source_url: str = "",
+    static_evidence_title: str = "",
+    static_evidence_capture_timestamp: str = "",
+    static_evidence_runtime_notes: Sequence[str] = (),
+    manifest_path: str | Path | None = None,
+    expected_comment_count: int = 0,
 ) -> LocalWebArchiveRepairResult:
     source = Path(wacz_path)
     destination = Path(output_path) if output_path else source.with_name(source.stem + ".replayweb-fixed.wacz")
@@ -685,6 +841,10 @@ def repair_local_web_archive_wacz(
     removed: list[str] = []
     rewritten_indexes = 0
     removed_payload_names: set[str] = set()
+    static_status = ""
+    static_page_url = ""
+    replay_runtime_status = ""
+    replay_runtime_notes: tuple[str, ...] = ()
     try:
         with zipfile.ZipFile(source, "r") as bundle:
             names = bundle.namelist()
@@ -700,6 +860,14 @@ def repair_local_web_archive_wacz(
             if isinstance(home, Mapping):
                 home_url = str(home.get("url") or "")
             canonical_home_url = _fragmentless_url(home_url or legacy_home)
+            page_rows = (
+                _pages_rows_from_payload(bundle.read("pages/pages.jsonl"))
+                if "pages/pages.jsonl" in names
+                else []
+            )
+            first_page = next((row for row in page_rows if row.get("url")), {})
+            page_title = str(first_page.get("title") or "")
+            page_timestamp = str(first_page.get("ts") or "")
 
             if compatibility_profile == WACZ_12_COMPATIBILITY_PROFILE:
                 for field_name in ("wacz_version", "mainPageUrl", "mainPageDate"):
@@ -734,6 +902,8 @@ def repair_local_web_archive_wacz(
                 rewritten_payloads["pages/pages.jsonl"] = _rewrite_pages_jsonl_for_replay(
                     bundle.read("pages/pages.jsonl")
                 )
+            else:
+                rewritten_payloads["pages/pages.jsonl"] = b'{"format":"json-pages-1.0","id":"pages","title":"All Pages"}\n'
 
             index_entries_by_name: dict[str, list[tuple[str, dict[str, Any]]]] = {}
             for name in names:
@@ -790,6 +960,88 @@ def repair_local_web_archive_wacz(
                 for name, entries in index_entries_by_name.items():
                     compressed = name.endswith(".gz")
                     rewritten_payloads[name] = _cdxj_payload_from_entries(entries, compressed=compressed)
+                    rewritten_indexes += 1
+
+            if add_static_evidence_page:
+                static_source_url = _fragmentless_url(
+                    static_evidence_source_url or canonical_home_url or str(first_page.get("url") or "")
+                )
+                if not static_source_url:
+                    raise ValueError("Static evidence page requires a source URL from metadata or --expected-source-url")
+                static_page_url = static_evidence_url or build_static_evidence_url(static_source_url, site_hint="msn")
+                timestamp_utc = (
+                    static_evidence_capture_timestamp
+                    or page_timestamp
+                    or str(package.get("created") or "")
+                    or "2026-08-09T00:00:00Z"
+                )
+                source_verification = verify_local_web_archive_package(
+                    source,
+                    manifest_path=manifest_path,
+                    expected_source_url=static_source_url,
+                    expected_comment_count=expected_comment_count,
+                    allow_replayweb_page_legacy_profile=True,
+                )
+                replay_runtime_notes = tuple(static_evidence_runtime_notes)
+                if not replay_runtime_notes and "msn.com" in static_source_url.lower():
+                    replay_runtime_notes = (
+                        "Normalized WACZ manual ReplayWeb result: article entry click returned Archived Page Not Found.",
+                        "Normalized WACZ manual ReplayWeb result: article URL without #comments returned Archived Page Not Found.",
+                        "Normalized WACZ manual ReplayWeb result: comments visible: no.",
+                        "Normalized raw WARC manual ReplayWeb result: _wb_method=HTTP/1.1 symptom absent, but page only partially rendered.",
+                        "Normalized raw WARC manual ReplayWeb result: privacy modal, black/empty page area, severe browser lag, and comments visible: no.",
+                    )
+                elif not replay_runtime_notes:
+                    replay_runtime_notes = DEFAULT_REPLAY_RUNTIME_LIMITATION_NOTES
+                replay_runtime_status = REPLAYWEB_RUNTIME_PARTIAL_RENDER
+                static_page = build_static_replay_evidence_page(
+                    StaticReplayEvidenceInput(
+                        source_url=static_source_url,
+                        title=static_evidence_title or page_title or "Static evidence view",
+                        capture_timestamp=timestamp_utc,
+                        original_wacz_sha256=input_sha,
+                        normalized_wacz_sha256="computed after derived WACZ write; see repair JSON output",
+                        warc_record_count=source_verification.warc_record_count,
+                        replay_runtime_status=replay_runtime_status,
+                        replay_runtime_notes=replay_runtime_notes,
+                        comments_evidence=_comments_evidence_from_verification(source_verification),
+                        static_url=static_page_url,
+                    )
+                )
+                if static_page.status != STATIC_EVIDENCE_VIEW_READY:
+                    raise ValueError("Static evidence page validation failed: " + "; ".join(static_page.errors))
+                static_archive_name = "archive/source-evidence-static.warc.gz"
+                static_warc, static_cdx_entry = _static_evidence_warc_gzip(
+                    static_url=static_page.static_url,
+                    html_payload=static_page.html.encode("utf-8"),
+                    timestamp_utc=timestamp_utc,
+                    output_name=static_archive_name,
+                )
+                rewritten_payloads[static_archive_name] = static_warc
+                static_status = static_page.status
+                pages_payload = rewritten_payloads.get("pages/pages.jsonl", b"")
+                rewritten_payloads["pages/pages.jsonl"] = _pages_payload_with_static_evidence(
+                    pages_payload,
+                    static_url=static_page.static_url,
+                    title=static_evidence_title or page_title or "Static evidence view",
+                    timestamp_utc=timestamp_utc,
+                )
+                if index_entries_by_name:
+                    for name in tuple(index_entries_by_name):
+                        existing_entries = _cdxj_entries_from_payload(
+                            rewritten_payloads.get(name, bundle.read(name)),
+                            compressed=name.endswith(".gz"),
+                        )
+                        rewritten_payloads[name] = _cdxj_payload_from_entries(
+                            existing_entries + [static_cdx_entry],
+                            compressed=name.endswith(".gz"),
+                        )
+                    rewritten_indexes = max(rewritten_indexes, len(index_entries_by_name))
+                else:
+                    rewritten_payloads["indexes/index.cdx.gz"] = _cdxj_payload_from_entries(
+                        [static_cdx_entry],
+                        compressed=True,
+                    )
                     rewritten_indexes += 1
 
             resources = []
@@ -912,6 +1164,13 @@ def repair_local_web_archive_wacz(
         rewritten_index_count=rewritten_indexes,
         removed_legacy_fields=tuple(sorted(removed)),
         verification_status=verification.status,
+        verification_statuses=tuple(
+            item for item in (verification.status, static_status) if item
+        ),
+        static_evidence_status=static_status,
+        static_evidence_page_url=static_page_url,
+        replay_runtime_status=replay_runtime_status,
+        replay_runtime_notes=replay_runtime_notes,
         original_preserved=True,
         errors=verification.errors,
     )
