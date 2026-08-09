@@ -11,11 +11,15 @@ from source_local_web_archive_actions import (
     STRUCTURAL_WACZ_VALID,
     WACZ_12_COMPATIBILITY_PROFILE,
     WACZ_REPLAY_COMPATIBILITY_REPAIRED,
+    build_static_page_view_input_for_wacz,
     build_static_replay_evidence_input_for_wacz,
     repair_local_web_archive_wacz,
     verify_local_web_archive_package,
 )
-from source_replay_static_snapshot import write_static_replay_standalone_outputs
+from source_replay_static_snapshot import (
+    write_static_page_view_standalone_outputs,
+    write_static_replay_standalone_outputs,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -91,8 +95,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--static-output-dir",
         default="",
         help=(
-            "Optional directory for standalone fallback files. Writes static-evidence.html, "
-            "static-evidence.warc.gz, and static-evidence.warc without relying on WACZ lookup."
+            "Optional directory for standalone fallback files. Writes static-evidence.* and "
+            "static-page-view.* outputs without relying on WACZ lookup."
         ),
     )
     parser.add_argument(
@@ -109,6 +113,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--write-static-warc",
         default="",
         help="Optional explicit output path for an uncompressed static-only WARC file.",
+    )
+    parser.add_argument(
+        "--static-page-view-url",
+        default="",
+        help="Optional stable synthetic URL for the static archived webpage view.",
+    )
+    parser.add_argument(
+        "--write-static-page-html",
+        default="",
+        help="Optional explicit output path for a direct no-JavaScript static archived webpage HTML file.",
+    )
+    parser.add_argument(
+        "--write-static-page-warc-gz",
+        default="",
+        help="Optional explicit output path for a raw ReplayWeb-loadable static page-view WARC.GZ file.",
+    )
+    parser.add_argument(
+        "--write-static-page-warc",
+        default="",
+        help="Optional explicit output path for an uncompressed static page-view WARC file.",
     )
     return parser
 
@@ -154,10 +178,16 @@ def main(argv: list[str] | None = None) -> int:
         html_path = Path(args.write_static_html) if args.write_static_html else None
         warc_gz_path = Path(args.write_static_warc_gz) if args.write_static_warc_gz else None
         warc_path = Path(args.write_static_warc) if args.write_static_warc else None
+        page_html_path = Path(args.write_static_page_html) if args.write_static_page_html else None
+        page_warc_gz_path = Path(args.write_static_page_warc_gz) if args.write_static_page_warc_gz else None
+        page_warc_path = Path(args.write_static_page_warc) if args.write_static_page_warc else None
         if static_output_dir:
             html_path = html_path or static_output_dir / "static-evidence.html"
             warc_gz_path = warc_gz_path or static_output_dir / "static-evidence.warc.gz"
             warc_path = warc_path or static_output_dir / "static-evidence.warc"
+            page_html_path = page_html_path or static_output_dir / "static-page-view.html"
+            page_warc_gz_path = page_warc_gz_path or static_output_dir / "static-page-view.warc.gz"
+            page_warc_path = page_warc_path or static_output_dir / "static-page-view.warc"
         if any((html_path, warc_gz_path, warc_path)):
             static_input = build_static_replay_evidence_input_for_wacz(
                 args.input_wacz,
@@ -177,6 +207,27 @@ def main(argv: list[str] | None = None) -> int:
             )
             payload["static_outputs"] = static_outputs.to_dict()
             ok = ok and not static_outputs.errors
+        if any((page_html_path, page_warc_gz_path, page_warc_path)):
+            static_page_input = build_static_page_view_input_for_wacz(
+                args.input_wacz,
+                manifest_path=Path(args.manifest_path) if args.manifest_path else None,
+                expected_source_url=args.expected_source_url,
+                expected_comment_count=args.expected_comment_count,
+                static_page_view_url=args.static_page_view_url,
+                static_page_view_title=args.static_evidence_title,
+                static_page_view_capture_timestamp=args.static_evidence_capture_timestamp,
+                static_page_view_runtime_notes=tuple(args.runtime_limitation_note or ()),
+                evidence_report_path=html_path if html_path else None,
+                evidence_report_url=args.static_evidence_url,
+            )
+            static_page_outputs = write_static_page_view_standalone_outputs(
+                static_page_input,
+                html_path=page_html_path,
+                warc_gz_path=page_warc_gz_path,
+                warc_path=page_warc_path,
+            )
+            payload["static_page_view_outputs"] = static_page_outputs.to_dict()
+            ok = ok and not static_page_outputs.errors
     else:
         ok = False
 

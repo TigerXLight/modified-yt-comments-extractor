@@ -15,10 +15,17 @@ SOURCE_REPLAY_STATIC_SNAPSHOT_SCHEMA_VERSION = "source_replay_static_snapshot_v1
 STATIC_EVIDENCE_VIEW_READY = "STATIC_EVIDENCE_VIEW_READY"
 STATIC_EVIDENCE_HTML_READY = "STATIC_EVIDENCE_HTML_READY"
 STATIC_EVIDENCE_WARC_READY = "STATIC_EVIDENCE_WARC_READY"
+STATIC_PAGE_VIEW_READY = "STATIC_PAGE_VIEW_READY"
+STATIC_PAGE_VIEW_HTML_READY = "STATIC_PAGE_VIEW_HTML_READY"
+STATIC_PAGE_VIEW_WARC_READY = "STATIC_PAGE_VIEW_WARC_READY"
 REPLAYWEB_RUNTIME_PARTIAL_RENDER = "REPLAYWEB_RUNTIME_PARTIAL_RENDER"
 STATIC_EVIDENCE_WARNING = (
     "Derived static replay/evidence view generated from local archived evidence. "
     "This is not the original dynamic page runtime."
+)
+STATIC_PAGE_VIEW_WARNING = (
+    "Derived static archived webpage view generated from local captured evidence. "
+    "This is not the original dynamic MSN runtime."
 )
 
 DEFAULT_REPLAY_RUNTIME_LIMITATION_NOTES = (
@@ -93,7 +100,63 @@ class StaticReplayEvidenceInput:
 
 
 @dataclass(frozen=True)
+class StaticReplayCommentItem:
+    comment_id: str = ""
+    parent_id: str = ""
+    author: str = ""
+    timestamp: str = ""
+    text: str = ""
+    permalink: str = ""
+    depth: int = 0
+    status: str = ""
+    order: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class StaticReplayPageViewInput:
+    source_url: str
+    title: str = ""
+    capture_timestamp: str = ""
+    article_text: str = ""
+    captured_text_snippet: str = ""
+    comments_evidence: StaticReplayCommentsEvidence | None = None
+    comment_items: tuple[StaticReplayCommentItem, ...] = ()
+    screenshot_references: tuple[StaticReplayEvidenceReference, ...] = ()
+    manifest_references: tuple[StaticReplayEvidenceReference, ...] = ()
+    evidence_report_path: str = ""
+    evidence_report_url: str = ""
+    replay_runtime_status: str = REPLAYWEB_RUNTIME_PARTIAL_RENDER
+    replay_runtime_notes: tuple[str, ...] = DEFAULT_REPLAY_RUNTIME_LIMITATION_NOTES
+    static_url: str = ""
+    schema_version: str = SOURCE_REPLAY_STATIC_SNAPSHOT_SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
 class StaticReplayEvidencePageResult:
+    status: str
+    static_url: str
+    html: str
+    html_sha256: str
+    html_size_bytes: int
+    contains_script_tag: bool
+    contains_iframe_tag: bool
+    contains_remote_runtime_dependency: bool
+    warnings: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
+    schema_version: str = SOURCE_REPLAY_STATIC_SNAPSHOT_SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class StaticReplayPageViewResult:
     status: str
     static_url: str
     html: str
@@ -127,17 +190,43 @@ class StaticReplayStandaloneOutputResult:
         return _value_for_dict(self)
 
 
+@dataclass(frozen=True)
+class StaticReplayPageViewStandaloneOutputResult:
+    status: str
+    static_page_view_url: str
+    static_page_view_html_path: str = ""
+    static_page_view_html_sha256: str = ""
+    static_page_view_warc_gz_path: str = ""
+    static_page_view_warc_gz_sha256: str = ""
+    static_page_view_warc_path: str = ""
+    static_page_view_warc_sha256: str = ""
+    errors: tuple[str, ...] = ()
+    schema_version: str = SOURCE_REPLAY_STATIC_SNAPSHOT_SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
 def build_static_evidence_url(source_url: str, *, site_hint: str = "source") -> str:
+    slug = _stable_source_slug(source_url)
+    safe_site = re.sub(r"[^a-z0-9-]+", "-", site_hint.lower()).strip("-") or "source"
+    return f"https://source-evidence.local/replay/{safe_site}/{slug}/static-evidence.html"
+
+
+def build_static_page_view_url(source_url: str, *, site_hint: str = "source") -> str:
+    slug = _stable_source_slug(source_url)
+    safe_site = re.sub(r"[^a-z0-9-]+", "-", site_hint.lower()).strip("-") or "source"
+    return f"https://source-evidence.local/replay/{safe_site}/{slug}/static-page-view.html"
+
+
+def _stable_source_slug(source_url: str) -> str:
     parsed = urlsplit(source_url)
     path = parsed.path or "/source"
     article_match = re.search(r"/(ar-[A-Za-z0-9]+)", path)
     if article_match:
-        slug = article_match.group(1)
-    else:
-        digest = hashlib.sha256(source_url.encode("utf-8")).hexdigest()[:16]
-        slug = f"source-{digest}"
-    safe_site = re.sub(r"[^a-z0-9-]+", "-", site_hint.lower()).strip("-") or "source"
-    return f"https://source-evidence.local/replay/{safe_site}/{slug}/static-evidence.html"
+        return article_match.group(1)
+    digest = hashlib.sha256(source_url.encode("utf-8")).hexdigest()[:16]
+    return f"source-{digest}"
 
 
 def _warc_request_path(url: str) -> str:
@@ -199,6 +288,145 @@ def _comments_section(comments: StaticReplayCommentsEvidence | None) -> str:
         body.append(f"<tr><th>{_escape(label)}</th><td>{_escape(value)}</td></tr>")
     body.append("</tbody></table>")
     return _section("Comments evidence", "\n".join(body))
+
+
+def _page_view_article_section(input_data: StaticReplayPageViewInput) -> str:
+    if input_data.article_text.strip():
+        paragraphs = [
+            f"<p>{_escape(part.strip())}</p>"
+            for part in re.split(r"\n\s*\n|\r\n\s*\r\n", input_data.article_text)
+            if part.strip()
+        ]
+        return "\n".join(paragraphs) or "<p>Not supplied.</p>"
+    if input_data.captured_text_snippet.strip():
+        return (
+            "<p><strong>Captured snippet:</strong></p>\n"
+            f"<p>{_escape(input_data.captured_text_snippet.strip())}</p>"
+        )
+    return (
+        "<p>Captured article body text was not available in the local manifest; "
+        "use screenshot/visual references below.</p>"
+    )
+
+
+def _page_view_comments_section(input_data: StaticReplayPageViewInput) -> str:
+    parts: list[str] = [
+        _section(
+            "Comments section",
+            "<p>Comments are rendered only from local captured evidence supplied to this static page view.</p>",
+        )
+    ]
+    if input_data.comments_evidence:
+        parts.append(_comments_section(input_data.comments_evidence))
+    if input_data.comment_items:
+        rows = [
+            "<table><thead><tr><th>Order</th><th>Depth</th><th>Author</th><th>Timestamp</th>"
+            "<th>Comment text</th><th>IDs</th></tr></thead><tbody>"
+        ]
+        for item in sorted(input_data.comment_items, key=lambda comment: (comment.order or 0, comment.comment_id)):
+            depth = max(0, int(item.depth or 0))
+            id_text = " / ".join(
+                value
+                for value in (
+                    f"id={item.comment_id}" if item.comment_id else "",
+                    f"parent={item.parent_id}" if item.parent_id else "",
+                    item.status or "",
+                )
+                if value
+            )
+            rows.append(
+                "<tr>"
+                f"<td>{_escape(item.order or '')}</td>"
+                f"<td>{_escape(depth)}</td>"
+                f"<td>{_escape(item.author or 'not supplied')}</td>"
+                f"<td>{_escape(item.timestamp or 'not supplied')}</td>"
+                f"<td style=\"padding-left:{depth * 18 + 8}px\">{_escape(item.text or 'not supplied')}</td>"
+                f"<td>{_escape(id_text or 'not supplied')}</td>"
+                "</tr>"
+            )
+        rows.append("</tbody></table>")
+        parts.append(_section("Comment rows", "\n".join(rows)))
+    elif input_data.comments_evidence:
+        parts.append(
+            _section(
+                "Comment rows",
+                "<p>Structured comment counts were supplied, but full comment text rows were not supplied.</p>",
+            )
+        )
+    else:
+        parts.append(_section("Comment rows", "<p>No local comments evidence was supplied.</p>"))
+    return "\n".join(parts)
+
+
+def _page_view_evidence_report_reference(input_data: StaticReplayPageViewInput) -> str:
+    references = []
+    if input_data.evidence_report_path:
+        references.append(f"Evidence report file: {Path(input_data.evidence_report_path).name}")
+    if input_data.evidence_report_url:
+        references.append(f"Evidence report URL: {input_data.evidence_report_url}")
+    return _list_items(references)
+
+
+def build_static_archived_page_view(input_data: StaticReplayPageViewInput) -> StaticReplayPageViewResult:
+    static_url = input_data.static_url or build_static_page_view_url(input_data.source_url, site_hint="msn")
+    title = input_data.title or "Static archived webpage view"
+    source_body = (
+        "<p class=\"source-url\">"
+        + _escape(input_data.source_url)
+        + "</p><p>This is the captured source URL. The current document is a derived static local review page.</p>"
+    )
+    timestamp_body = f"<p>{_escape(input_data.capture_timestamp or 'not supplied')}</p>"
+    replay_body = (
+        f"<p><strong>Status:</strong> {_escape(input_data.replay_runtime_status)}</p>"
+        + _list_items(input_data.replay_runtime_notes)
+    )
+    html_text = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{_escape(title)} - derived static archived webpage view</title>
+<style>
+body {{ color: #17202a; background: #fbfcfd; font-family: Arial, sans-serif; line-height: 1.5; margin: 0; }}
+main {{ max-width: 980px; margin: 0 auto; padding: 24px; }}
+.warning {{ background: #fff4ce; border: 2px solid #b7791f; padding: 16px; font-weight: 700; }}
+section {{ background: #ffffff; border: 1px solid #d9e2ec; margin-top: 16px; padding: 16px; }}
+h1, h2 {{ color: #102a43; }}
+table {{ border-collapse: collapse; width: 100%; }}
+th, td {{ border: 1px solid #d9e2ec; padding: 8px; text-align: left; vertical-align: top; }}
+th {{ background: #eef2f7; }}
+.source-url {{ overflow-wrap: anywhere; font-family: Consolas, monospace; }}
+</style>
+</head>
+<body>
+<main>
+<h1>{_escape(title)}</h1>
+<div class="warning">{_escape(STATIC_PAGE_VIEW_WARNING)}</div>
+{_section("Source URL", source_body)}
+{_section("Capture timestamp", timestamp_body)}
+{_section("Article/content area", _page_view_article_section(input_data))}
+{_page_view_comments_section(input_data)}
+{_section("Screenshots/visual evidence", _reference_table(input_data.screenshot_references))}
+{_section("Runtime replay limitation notice", replay_body)}
+{_section("Evidence report reference", _page_view_evidence_report_reference(input_data))}
+{_section("Manifest references", _reference_table(input_data.manifest_references))}
+</main>
+</body>
+</html>
+"""
+    errors = tuple(validate_static_page_view_html(html_text))
+    payload = html_text.encode("utf-8")
+    return StaticReplayPageViewResult(
+        status=STATIC_PAGE_VIEW_READY if not errors else "STATIC_PAGE_VIEW_INVALID",
+        static_url=static_url,
+        html=html_text,
+        html_sha256=hashlib.sha256(payload).hexdigest(),
+        html_size_bytes=len(payload),
+        contains_script_tag=bool(re.search(r"<\s*script\b", html_text, flags=re.IGNORECASE)),
+        contains_iframe_tag=bool(re.search(r"<\s*iframe\b", html_text, flags=re.IGNORECASE)),
+        contains_remote_runtime_dependency=contains_remote_runtime_dependency(html_text),
+        warnings=(STATIC_PAGE_VIEW_WARNING,),
+        errors=errors,
+    )
 
 
 def build_static_replay_evidence_page(input_data: StaticReplayEvidenceInput) -> StaticReplayEvidencePageResult:
@@ -301,34 +529,44 @@ def validate_static_replay_evidence_html(html_text: str) -> list[str]:
     return errors
 
 
-def build_static_replay_evidence_warc(
-    input_data: StaticReplayEvidenceInput,
+def validate_static_page_view_html(html_text: str) -> list[str]:
+    errors: list[str] = []
+    if re.search(r"<\s*script\b", html_text, flags=re.IGNORECASE):
+        errors.append("Static page view must not contain script tags.")
+    if re.search(r"<\s*iframe\b", html_text, flags=re.IGNORECASE):
+        errors.append("Static page view must not contain iframe tags.")
+    if contains_remote_runtime_dependency(html_text):
+        errors.append("Static page view must not contain remote runtime dependencies.")
+    if STATIC_PAGE_VIEW_WARNING not in html_text:
+        errors.append("Static page view warning banner is missing.")
+    return errors
+
+
+def _build_static_html_warc(
     *,
-    gzip_output: bool = True,
-) -> tuple[StaticReplayEvidencePageResult, bytes]:
+    static_url: str,
+    html_payload: bytes,
+    timestamp_utc: str,
+    gzip_output: bool,
+) -> bytes:
     try:
         from warcio.statusandheaders import StatusAndHeaders
         from warcio.warcwriter import WARCWriter
     except Exception as error:  # pragma: no cover - exercised in user venv where warcio is available
-        raise RuntimeError(f"warcio unavailable for static evidence WARC generation: {error}") from error
+        raise RuntimeError(f"warcio unavailable for static WARC generation: {error}") from error
 
     from io import BytesIO
 
-    page = build_static_replay_evidence_page(input_data)
-    if page.errors:
-        return page, b""
-    html_payload = page.html.encode("utf-8")
-    timestamp_utc = input_data.capture_timestamp or "2026-08-09T00:00:00Z"
     output = BytesIO()
     writer = WARCWriter(output, gzip=gzip_output)
     request_headers = StatusAndHeaders(
-        f"{_warc_request_path(page.static_url)} HTTP/1.1",
-        [("Host", urlsplit(page.static_url).netloc)],
+        f"{_warc_request_path(static_url)} HTTP/1.1",
+        [("Host", urlsplit(static_url).netloc)],
         protocol="GET",
     )
     writer.write_record(
         writer.create_warc_record(
-            page.static_url,
+            static_url,
             "request",
             payload=BytesIO(b""),
             http_headers=request_headers,
@@ -345,14 +583,50 @@ def build_static_replay_evidence_warc(
     )
     writer.write_record(
         writer.create_warc_record(
-            page.static_url,
+            static_url,
             "response",
             payload=BytesIO(html_payload),
             http_headers=response_headers,
             warc_headers_dict={"WARC-Date": timestamp_utc},
         )
     )
-    return page, output.getvalue()
+    return output.getvalue()
+
+
+def build_static_replay_evidence_warc(
+    input_data: StaticReplayEvidenceInput,
+    *,
+    gzip_output: bool = True,
+) -> tuple[StaticReplayEvidencePageResult, bytes]:
+    page = build_static_replay_evidence_page(input_data)
+    if page.errors:
+        return page, b""
+    html_payload = page.html.encode("utf-8")
+    timestamp_utc = input_data.capture_timestamp or "2026-08-09T00:00:00Z"
+    return page, _build_static_html_warc(
+        static_url=page.static_url,
+        html_payload=html_payload,
+        timestamp_utc=timestamp_utc,
+        gzip_output=gzip_output,
+    )
+
+
+def build_static_page_view_warc(
+    input_data: StaticReplayPageViewInput,
+    *,
+    gzip_output: bool = True,
+) -> tuple[StaticReplayPageViewResult, bytes]:
+    page = build_static_archived_page_view(input_data)
+    if page.errors:
+        return page, b""
+    html_payload = page.html.encode("utf-8")
+    timestamp_utc = input_data.capture_timestamp or "2026-08-09T00:00:00Z"
+    return page, _build_static_html_warc(
+        static_url=page.static_url,
+        html_payload=html_payload,
+        timestamp_utc=timestamp_utc,
+        gzip_output=gzip_output,
+    )
 
 
 def _sha256_bytes(payload: bytes) -> str:
@@ -369,6 +643,16 @@ def _write_new_file(path: Path, payload: bytes) -> str:
 
 def write_static_replay_evidence_page(path: str | Path, input_data: StaticReplayEvidenceInput) -> StaticReplayEvidencePageResult:
     result = build_static_replay_evidence_page(input_data)
+    if result.errors:
+        return result
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(result.html, encoding="utf-8", newline="\n")
+    return result
+
+
+def write_static_archived_page_view(path: str | Path, input_data: StaticReplayPageViewInput) -> StaticReplayPageViewResult:
+    result = build_static_archived_page_view(input_data)
     if result.errors:
         return result
     destination = Path(path)
@@ -441,5 +725,73 @@ def write_static_replay_standalone_outputs(
         return StaticReplayStandaloneOutputResult(
             status="STATIC_EVIDENCE_OUTPUT_FAILED",
             static_evidence_url=input_data.static_url or build_static_evidence_url(input_data.source_url, site_hint="msn"),
+            errors=(str(error),),
+        )
+
+
+def write_static_page_view_standalone_outputs(
+    input_data: StaticReplayPageViewInput,
+    *,
+    html_path: str | Path | None = None,
+    warc_gz_path: str | Path | None = None,
+    warc_path: str | Path | None = None,
+) -> StaticReplayPageViewStandaloneOutputResult:
+    if not any((html_path, warc_gz_path, warc_path)):
+        return StaticReplayPageViewStandaloneOutputResult(
+            status="STATIC_PAGE_VIEW_OUTPUT_NOT_REQUESTED",
+            static_page_view_url=input_data.static_url or build_static_page_view_url(input_data.source_url, site_hint="msn"),
+        )
+    try:
+        page = build_static_archived_page_view(input_data)
+        if page.errors:
+            return StaticReplayPageViewStandaloneOutputResult(
+                status="STATIC_PAGE_VIEW_OUTPUT_FAILED",
+                static_page_view_url=page.static_url,
+                errors=page.errors,
+            )
+
+        static_html_path = ""
+        static_html_sha256 = ""
+        if html_path:
+            html_payload = page.html.encode("utf-8")
+            html_destination = Path(html_path)
+            static_html_sha256 = _write_new_file(html_destination, html_payload)
+            static_html_path = str(html_destination)
+
+        static_warc_gz_path = ""
+        static_warc_gz_sha256 = ""
+        if warc_gz_path:
+            _page, warc_gz_payload = build_static_page_view_warc(input_data, gzip_output=True)
+            warc_gz_destination = Path(warc_gz_path)
+            static_warc_gz_sha256 = _write_new_file(warc_gz_destination, warc_gz_payload)
+            static_warc_gz_path = str(warc_gz_destination)
+
+        static_warc_path = ""
+        static_warc_sha256 = ""
+        if warc_path:
+            _page, warc_payload = build_static_page_view_warc(input_data, gzip_output=False)
+            warc_destination = Path(warc_path)
+            static_warc_sha256 = _write_new_file(warc_destination, warc_payload)
+            static_warc_path = str(warc_destination)
+
+        statuses = []
+        if static_html_path:
+            statuses.append(STATIC_PAGE_VIEW_HTML_READY)
+        if static_warc_gz_path or static_warc_path:
+            statuses.append(STATIC_PAGE_VIEW_WARC_READY)
+        return StaticReplayPageViewStandaloneOutputResult(
+            status="+".join(statuses) if statuses else "STATIC_PAGE_VIEW_OUTPUT_NOT_REQUESTED",
+            static_page_view_url=page.static_url,
+            static_page_view_html_path=static_html_path,
+            static_page_view_html_sha256=static_html_sha256,
+            static_page_view_warc_gz_path=static_warc_gz_path,
+            static_page_view_warc_gz_sha256=static_warc_gz_sha256,
+            static_page_view_warc_path=static_warc_path,
+            static_page_view_warc_sha256=static_warc_sha256,
+        )
+    except Exception as error:
+        return StaticReplayPageViewStandaloneOutputResult(
+            status="STATIC_PAGE_VIEW_OUTPUT_FAILED",
+            static_page_view_url=input_data.static_url or build_static_page_view_url(input_data.source_url, site_hint="msn"),
             errors=(str(error),),
         )

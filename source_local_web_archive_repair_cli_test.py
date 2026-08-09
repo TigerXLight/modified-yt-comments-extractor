@@ -262,9 +262,15 @@ def test_repair_cli_writes_standalone_static_outputs_for_wacz_lookup_fallback() 
         html_path = static_dir / "static-evidence.html"
         warc_gz_path = static_dir / "static-evidence.warc.gz"
         warc_path = static_dir / "static-evidence.warc"
+        page_html_path = static_dir / "static-page-view.html"
+        page_warc_gz_path = static_dir / "static-page-view.warc.gz"
+        page_warc_path = static_dir / "static-page-view.warc"
         assert html_path.is_file()
         assert warc_gz_path.is_file()
         assert warc_path.is_file()
+        assert page_html_path.is_file()
+        assert page_warc_gz_path.is_file()
+        assert page_warc_path.is_file()
         html_text = html_path.read_text(encoding="utf-8")
         assert "Derived static replay/evidence view generated from local archived evidence" in html_text
         assert "Archived Page Not Found" in html_text
@@ -276,6 +282,17 @@ def test_repair_cli_writes_standalone_static_outputs_for_wacz_lookup_fallback() 
         assert "HTTP/1.1 200 OK" in raw_warc_gz
         assert "Content-Type: text/html; charset=utf-8" in raw_warc_gz
         assert "REPLAY_VISUALLY_VERIFIED" not in raw_warc_gz
+        page_html_text = page_html_path.read_text(encoding="utf-8")
+        assert "Derived static archived webpage view generated from local captured evidence" in page_html_text
+        assert "Captured article body text was not available in the local manifest" in page_html_text
+        assert "<script" not in page_html_text.lower()
+        assert "<iframe" not in page_html_text.lower()
+        raw_page_warc_gz = gzip.decompress(page_warc_gz_path.read_bytes()).decode("utf-8", errors="replace")
+        assert "WARC-Target-URI: https://source-evidence.local/replay/msn/ar-AA123/static-page-view.html" in raw_page_warc_gz
+        assert "GET /replay/msn/ar-AA123/static-page-view.html HTTP/1.1" in raw_page_warc_gz
+        assert "HTTP/1.1 200 OK" in raw_page_warc_gz
+        assert "Content-Type: text/html; charset=utf-8" in raw_page_warc_gz
+        assert "REPLAY_VISUALLY_VERIFIED" not in raw_page_warc_gz
 
 
 def test_repair_cli_refuses_in_place_static_evidence_output() -> None:

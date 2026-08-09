@@ -21,8 +21,12 @@ from source_replay_static_snapshot import (
     REPLAYWEB_RUNTIME_PARTIAL_RENDER,
     STATIC_EVIDENCE_VIEW_READY,
     StaticReplayCommentsEvidence,
+    StaticReplayCommentItem,
     StaticReplayEvidenceInput,
+    StaticReplayEvidenceReference,
+    StaticReplayPageViewInput,
     build_static_evidence_url,
+    build_static_page_view_url,
     build_static_replay_evidence_page,
 )
 
@@ -847,6 +851,200 @@ def build_static_replay_evidence_input_for_wacz(
         replay_runtime_notes=runtime_notes,
         comments_evidence=_comments_evidence_from_verification(source_verification),
         static_url=static_evidence_url or build_static_evidence_url(static_source_url, site_hint="msn"),
+    )
+
+
+def _artifact_path(artifact: Mapping[str, Any]) -> Path | None:
+    path_text = str(artifact.get("path") or "")
+    if not path_text:
+        return None
+    return Path(path_text)
+
+
+def _manifest_artifacts_by_label(manifest: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    artifacts: dict[str, Mapping[str, Any]] = {}
+    for item in manifest.get("artifacts") or ():
+        if not isinstance(item, Mapping):
+            continue
+        label = str(item.get("label") or "")
+        if label:
+            artifacts[label] = item
+    return artifacts
+
+
+def _first_artifact_matching(
+    artifacts: Mapping[str, Mapping[str, Any]],
+    *label_parts: str,
+    preferred_prefix: str = "android_mobile_chromium",
+) -> Mapping[str, Any] | None:
+    lowered_parts = tuple(part.lower() for part in label_parts)
+    preferred = []
+    fallback = []
+    for label, item in sorted(artifacts.items()):
+        lowered_label = label.lower()
+        if all(part in lowered_label for part in lowered_parts):
+            if lowered_label.startswith(preferred_prefix):
+                preferred.append(item)
+            else:
+                fallback.append(item)
+    return (preferred or fallback or [None])[0]
+
+
+def _safe_read_declared_text_artifact(artifact: Mapping[str, Any] | None, *, max_bytes: int = 1_000_000) -> str:
+    if artifact is None:
+        return ""
+    path = _artifact_path(artifact)
+    if path is None or not path.is_file():
+        return ""
+    try:
+        if path.stat().st_size > max_bytes:
+            return ""
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _comment_item_from_mapping(item: Mapping[str, Any], index: int) -> StaticReplayCommentItem:
+    return StaticReplayCommentItem(
+        comment_id=str(item.get("comment_id") or item.get("stable_identifier") or ""),
+        parent_id=str(item.get("parent_comment_id") or item.get("reply_to") or ""),
+        author=str(item.get("author") or ""),
+        timestamp=str(item.get("posted_at") or item.get("timestamp") or ""),
+        text=str(item.get("text") or item.get("content") or ""),
+        permalink=str(item.get("permalink") or ""),
+        depth=int(item.get("depth") or 0),
+        status=str(item.get("visible_status") or item.get("status") or ""),
+        order=int(item.get("capture_order") or index),
+    )
+
+
+def _comment_items_from_artifact(
+    artifact: Mapping[str, Any] | None,
+    *,
+    max_bytes: int = 5_000_000,
+) -> tuple[StaticReplayCommentItem, ...]:
+    if artifact is None:
+        return ()
+    path = _artifact_path(artifact)
+    if path is None or not path.is_file():
+        return ()
+    try:
+        if path.stat().st_size > max_bytes:
+            return ()
+        payload = _load_json_file(path)
+    except (OSError, ValueError):
+        return ()
+    if isinstance(payload, Mapping):
+        rows = payload.get("comments") or payload.get("items") or ()
+    else:
+        rows = payload
+    output: list[StaticReplayCommentItem] = []
+    for index, row in enumerate(rows or (), start=1):
+        if isinstance(row, Mapping):
+            output.append(_comment_item_from_mapping(row, index))
+    return tuple(sorted(output, key=lambda item: (item.order or 0, item.comment_id)))
+
+
+def _references_from_manifest_artifacts(
+    artifacts: Mapping[str, Mapping[str, Any]],
+    *label_keywords: str,
+) -> tuple[StaticReplayEvidenceReference, ...]:
+    references: list[StaticReplayEvidenceReference] = []
+    lowered_keywords = tuple(keyword.lower() for keyword in label_keywords)
+    for label, artifact in sorted(artifacts.items()):
+        lowered_label = label.lower()
+        if not any(keyword in lowered_label for keyword in lowered_keywords):
+            continue
+        path = _artifact_path(artifact)
+        references.append(
+            StaticReplayEvidenceReference(
+                label=label,
+                name=path.name if path else str(artifact.get("name") or label),
+                sha256=str(artifact.get("sha256") or ""),
+            )
+        )
+    return tuple(references)
+
+
+def build_static_page_view_input_for_wacz(
+    wacz_path: str | Path,
+    *,
+    manifest_path: str | Path | None = None,
+    expected_source_url: str = "",
+    expected_comment_count: int = 0,
+    static_page_view_url: str = "",
+    static_page_view_title: str = "",
+    static_page_view_capture_timestamp: str = "",
+    static_page_view_runtime_notes: Sequence[str] = (),
+    evidence_report_path: str | Path | None = None,
+    evidence_report_url: str = "",
+) -> StaticReplayPageViewInput:
+    evidence_input = build_static_replay_evidence_input_for_wacz(
+        wacz_path,
+        manifest_path=manifest_path,
+        expected_source_url=expected_source_url,
+        expected_comment_count=expected_comment_count,
+        static_evidence_capture_timestamp=static_page_view_capture_timestamp,
+        static_evidence_runtime_notes=static_page_view_runtime_notes,
+    )
+    manifest_payload: Mapping[str, Any] = {}
+    manifest_refs: tuple[StaticReplayEvidenceReference, ...] = ()
+    article_text = ""
+    captured_text_snippet = evidence_input.captured_text_snippet
+    comment_items: tuple[StaticReplayCommentItem, ...] = ()
+    screenshot_refs: tuple[StaticReplayEvidenceReference, ...] = evidence_input.screenshot_references
+    manifest_file = Path(manifest_path) if manifest_path else None
+    if manifest_file and manifest_file.is_file():
+        loaded_manifest = _load_json_file(manifest_file)
+        if isinstance(loaded_manifest, Mapping):
+            manifest_payload = loaded_manifest
+            manifest_refs = (
+                StaticReplayEvidenceReference(
+                    label="manifest",
+                    name=manifest_file.name,
+                    sha256=_sha256_file(manifest_file),
+                ),
+            )
+    if manifest_payload:
+        artifacts = _manifest_artifacts_by_label(manifest_payload)
+        article_text = _safe_read_declared_text_artifact(
+            _first_artifact_matching(artifacts, "article", "text")
+        )
+        comments_artifact = _first_artifact_matching(artifacts, "comments", "json")
+        comment_items = _comment_items_from_artifact(comments_artifact)
+        screenshot_refs = _references_from_manifest_artifacts(
+            artifacts,
+            "screenshot",
+            "faithful",
+            "derived_comments_full_thread",
+        )
+        summary = manifest_payload.get("summary") if isinstance(manifest_payload.get("summary"), Mapping) else {}
+        best_profile = summary.get("best_profile") if isinstance(summary.get("best_profile"), Mapping) else {}
+        if not captured_text_snippet:
+            captured_text_snippet = str(best_profile.get("body_text") or "")
+        title = (
+            static_page_view_title
+            or str(best_profile.get("title") or "")
+            or evidence_input.title
+            or "Static archived webpage view"
+        )
+    else:
+        title = static_page_view_title or evidence_input.title or "Static archived webpage view"
+    return StaticReplayPageViewInput(
+        source_url=evidence_input.source_url,
+        title=title,
+        capture_timestamp=static_page_view_capture_timestamp or evidence_input.capture_timestamp,
+        article_text=article_text,
+        captured_text_snippet=captured_text_snippet,
+        comments_evidence=evidence_input.comments_evidence,
+        comment_items=comment_items,
+        screenshot_references=screenshot_refs,
+        manifest_references=manifest_refs or evidence_input.manifest_references,
+        evidence_report_path=str(evidence_report_path or ""),
+        evidence_report_url=evidence_report_url,
+        replay_runtime_status=evidence_input.replay_runtime_status,
+        replay_runtime_notes=evidence_input.replay_runtime_notes,
+        static_url=static_page_view_url or build_static_page_view_url(evidence_input.source_url, site_hint="msn"),
     )
 
 
