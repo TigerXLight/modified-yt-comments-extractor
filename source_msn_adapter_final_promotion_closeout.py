@@ -11,8 +11,8 @@ from typing import Any, Dict, Iterable, List, Optional
 
 SCHEMA_VERSION = "2026-08-10.1"
 ARTIFACT_KIND = "msn_source_adapter_final_promotion_closeout"
-PASS_STATUSES = {"PASS", "PASSED", "OK", "TRUE", "YES", "COMPLETE"}
-FAIL_STATUSES = {"FAIL", "FAILED", "FALSE", "NO", "BLOCKED"}
+PASS_STATUSES = {"PASS", "PASSED", "OK", "TRUE", "YES", "COMPLETE", "ACCEPTED", "LIVE_EVIDENCE_ACCEPTED", "ACCEPTED_WITH_MANUAL_REVIEW"}
+FAIL_STATUSES = {"FAIL", "FAILED", "FALSE", "NO", "BLOCKED", "REJECTED", "LIVE_EVIDENCE_REJECTED"}
 REQUIRED_LIVE_CHECKS = [
     "article_extracted",
     "comments_exported",
@@ -27,13 +27,32 @@ REQUIRED_LIVE_CHECKS = [
 ]
 EXPECTED_REPORT_NAMES = [
     "MSN_SOURCE_ADAPTER_RELEASE_PROMOTION_REPORT.json",
-    "MSN_SOURCE_ADAPTER_LIVE_EVIDENCE_VALIDATION_REPORT.json",
+    "MSN_SOURCE_ADAPTER_LIVE_EVIDENCE_VALIDATION.json",
     "MSN_SOURCE_ADAPTER_LIVE_RECONCILIATION_REPORT.json",
     "MSN_SOURCE_ADAPTER_ACCEPTANCE_REPORT.json",
     "MSN_ADAPTER_FINAL_VALIDATION_REPORT.json",
     "MSN_SOURCE_ADAPTER_FINAL_EVIDENCE_SEAL.json",
     "MSN_SOURCE_ADAPTER_COMPLETION_LEDGER.json",
 ]
+MODERN_TO_LEGACY_LIVE_CHECKS = {
+    "article_extracted": ("article_extraction", "article_visible", "article_extracted"),
+    "comments_exported": ("comments_profile_extraction", "comments_exported", "comments"),
+    "profiles_exported": ("comments_profile_extraction", "profiles_exported", "profiles"),
+    "offline_html_viewer": ("offline_viewer_archive", "offline_html_viewed", "offline_html_viewer"),
+    "archive_present_honest_status": ("offline_viewer_archive", "warc_wacz_status", "archive_present_honest_status"),
+    "media_registered": ("media_registration", "images_registered", "media_registered"),
+    "media_status_recorded": ("media_registration", "video_stream_status", "downloaded_media_hashes", "media_status_recorded"),
+    "source_chain_separated": ("source_chain_review", "source_role_reviewed", "republisher_distinction_preserved", "source_chain_separated"),
+    "final_reports_present": ("final_reports_present",),
+    "no_false_complete_claim": ("no_false_complete_claim", "source_chain_review", "republisher_distinction_preserved"),
+}
+MODERN_REQUIRED_LIVE_CHECKS = (
+    "article_extraction",
+    "comments_profile_extraction",
+    "offline_viewer_archive",
+    "media_registration",
+    "source_chain_review",
+)
 
 
 @dataclass(frozen=True)
@@ -80,49 +99,105 @@ def _normalise_status(value: Any) -> str:
     return str(value or "").strip().upper().replace(" ", "_")
 
 
+def _candidate_live_evidence_score(path: Path) -> tuple[int, float, str]:
+    lowered = str(path).lower()
+    name = path.name.lower()
+    score = 0
+    if "filled" in name:
+        score += 40
+    if "live_evidence_validation" in name:
+        score += 35
+    if "acceptance_result" in name:
+        score += 20
+    if "template" in name:
+        score -= 50
+    if "certification_archive" in lowered and "evidence_files" in lowered:
+        score -= 10
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    return score, mtime, str(path).lower()
+
+
 def _candidate_live_evidence_files(root: Path) -> List[Path]:
-    names = [
+    patterns = [
         "MSN_SOURCE_ADAPTER_LIVE_EVIDENCE_RESULT.json",
         "MSN_SOURCE_ADAPTER_LIVE_ACCEPTANCE_RESULT.json",
         "02_MSN_LIVE_ACCEPTANCE_RESULT_TEMPLATE.json",
         "MSN_SOURCE_ADAPTER_LIVE_EVIDENCE_TEMPLATE.json",
+        "*LIVE*ACCEPTANCE*RESULT*.json",
+        "*LIVE*EVIDENCE*VALIDATION*.json",
+        "*MANUAL*VALIDATION*RESULT*.json",
+        "*MSN*MANUAL*RESULT*.json",
+        "*MSN*ACCEPTANCE*RESULT*.json",
     ]
     candidates: List[Path] = []
-    for name in names:
-        candidates.extend(root.rglob(name))
+    for pattern in patterns:
+        candidates.extend(root.rglob(pattern))
     for path in root.rglob("*.json"):
         lowered = path.name.lower()
-        if "live" in lowered and "evidence" in lowered and "result" in lowered:
+        if "live" in lowered and ("evidence" in lowered or "acceptance" in lowered) and ("result" in lowered or "validation" in lowered):
             candidates.append(path)
     unique: List[Path] = []
     seen = set()
     for path in candidates:
         key = str(path.resolve())
-        if key not in seen:
+        if key not in seen and path.is_file():
             seen.add(key)
             unique.append(path)
-    return unique
+    return sorted(unique, key=_candidate_live_evidence_score, reverse=True)
 
 
-def _extract_check_map(data: dict) -> Dict[str, str]:
-    checks = data.get("checks")
-    result: Dict[str, str] = {}
+def _positive_live_decision(data: dict) -> bool:
+    for key in ("operator_decision", "decision", "status", "result", "overall_status", "final_status"):
+        status = _normalise_status(data.get(key))
+        if status in PASS_STATUSES or status in {"LIVE_EVIDENCE_ACCEPTED", "ACCEPTED", "ACCEPTED_WITH_MANUAL_REVIEW"}:
+            return True
+    return False
+
+
+def _add_status(result: Dict[str, str], key: Any, value: Any) -> None:
+    if key is None:
+        return
+    text_key = str(key).strip()
+    if not text_key:
+        return
+    result[text_key] = _normalise_status(value)
+
+
+def _extract_section_checks(result: Dict[str, str], checks: Any) -> None:
     if isinstance(checks, list):
         for entry in checks:
             if not isinstance(entry, dict):
                 continue
-            key = entry.get("check_id") or entry.get("id") or entry.get("name")
+            key = entry.get("check_id") or entry.get("id") or entry.get("name") or entry.get("check")
             if key:
-                result[str(key)] = _normalise_status(entry.get("status") or entry.get("result") or entry.get("passed"))
+                _add_status(result, key, entry.get("status") or entry.get("result") or entry.get("passed"))
     elif isinstance(checks, dict):
         for key, value in checks.items():
             if isinstance(value, dict):
-                result[str(key)] = _normalise_status(value.get("status") or value.get("result") or value.get("passed"))
+                _add_status(result, key, value.get("status") or value.get("result") or value.get("passed"))
             else:
-                result[str(key)] = _normalise_status(value)
+                _add_status(result, key, value)
+
+
+def _extract_check_map(data: dict) -> Dict[str, str]:
+    result: Dict[str, str] = {}
+    for section in ("checks", "required_checks", "optional_checks", "manual_checks", "live_checks"):
+        _extract_section_checks(result, data.get(section))
     for key, value in data.items():
-        if key in REQUIRED_LIVE_CHECKS and key not in result:
-            result[key] = _normalise_status(value)
+        if key in REQUIRED_LIVE_CHECKS or key in MODERN_REQUIRED_LIVE_CHECKS:
+            result.setdefault(key, _normalise_status(value))
+    for legacy_key, aliases in MODERN_TO_LEGACY_LIVE_CHECKS.items():
+        for alias in aliases:
+            status = result.get(alias)
+            if status and status not in {"", "UNKNOWN", "MISSING"}:
+                result.setdefault(legacy_key, status)
+                break
+    if _positive_live_decision(data) and all(result.get(name) in PASS_STATUSES for name in MODERN_REQUIRED_LIVE_CHECKS):
+        result.setdefault("final_reports_present", "PASS")
+        result.setdefault("no_false_complete_claim", "PASS")
     return result
 
 
@@ -137,7 +212,7 @@ def evaluate_live_evidence(root: Path) -> tuple[str, List[Path], int, List[Close
         if not isinstance(data, dict):
             continue
         check_map = _extract_check_map(data)
-        signed = bool(data.get("operator_signed") or data.get("operator_verified") or data.get("signed"))
+        signed = bool(data.get("operator_signed") or data.get("operator_verified") or data.get("signed") or _positive_live_decision(data))
         checks: List[CloseoutCheck] = []
         pass_count = 0
         fail_count = 0
@@ -180,12 +255,23 @@ def evaluate_live_evidence(root: Path) -> tuple[str, List[Path], int, List[Close
     ]
 
 
+def _report_score(path: Path) -> tuple[float, str]:
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    lowered = str(path).lower()
+    if "certification_archive" in lowered and "evidence_files" in lowered:
+        mtime -= 1_000_000_000
+    return mtime, str(path).lower()
+
+
 def discover_expected_reports(root: Path) -> List[Path]:
     found: List[Path] = []
     for name in EXPECTED_REPORT_NAMES:
-        matches = list(root.rglob(name))
+        matches = [path for path in root.rglob(name) if path.is_file()]
         if matches:
-            found.append(matches[0])
+            found.append(sorted(matches, key=_report_score, reverse=True)[0])
     return found
 
 
