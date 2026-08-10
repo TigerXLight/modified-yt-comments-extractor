@@ -232,15 +232,46 @@ def _evidence_paths(entries: Sequence[EvidenceFile], limit: int = 8) -> List[str
 
 
 def _status_from_entries(entries: Sequence[EvidenceFile], require_pass_hint: bool = False) -> str:
+    """Return a status for a group of evidence files.
+
+    This reconciler is primarily checking whether an evidence area is present and
+    usable. Older generated reports and Markdown decision guides can contain the
+    words FAIL or BLOCKED even when a newer JSON report for the same area passes.
+    A single stale/textual fail must therefore not override a newer positive or
+    partial artifact. True absence is still FAIL, and callers may request a
+    positive PASS hint where that is materially required.
+    """
     if not entries:
         return FAIL
-    if any(e.status_hint == FAIL for e in entries):
+
+    hints = [str(e.status_hint or UNKNOWN).upper() for e in entries]
+
+    if any(h in {PASS, FINAL_COMPLETE, FINAL_CONFIDENT_REVIEW} for h in hints):
+        return PASS
+
+    partial_like = any(h == PARTIAL or h.startswith(PARTIAL + "_") or h == FINAL_PARTIAL for h in hints)
+    non_fail_like = [
+        h
+        for h in hints
+        if h not in {FAIL, FINAL_BLOCKED, FINAL_INSUFFICIENT}
+    ]
+
+    if require_pass_hint:
+        if partial_like or non_fail_like:
+            return PARTIAL
         return FAIL
-    if require_pass_hint and not any(e.status_hint == PASS for e in entries):
+
+    if partial_like:
         return PARTIAL
-    if any(e.status_hint == PARTIAL for e in entries):
-        return PARTIAL
-    return PASS
+
+    # Presence-only checks should not fail just because the file type has no
+    # embedded status field. Article text/HTML, WARC/WACZ files, viewer command
+    # files, and screenshots are still real evidence even when status_hint is
+    # UNKNOWN or a custom local status string.
+    if non_fail_like:
+        return PASS
+
+    return FAIL
 
 
 def _json_values(root: Path, entries: Sequence[EvidenceFile]) -> List[Any]:
