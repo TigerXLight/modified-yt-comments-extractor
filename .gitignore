@@ -77,3 +77,5 @@ INSTALL_FFMPEG7_SHARED_FOR_TORCHCODEC.py
 operator_approved_execution_receipts/
 operator_approved_provider_backend_receipts/
 operator_approved_gui_controller_receipts/
+# MSN generated local self-test reports
+/reports/msn_final_selftests_selected/
