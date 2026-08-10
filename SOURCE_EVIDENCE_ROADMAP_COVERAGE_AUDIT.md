@@ -724,3 +724,9 @@ Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
 - Source roles remain project evidence roles: primary/original authored, secondary/outside perspective, tertiary/propagated source, plus claim-level status fields.
 - Article, comments/profile exports, offline archive/viewer artifacts, media discovery/download registration, and visible source credits must be linked into Total Export provenance without duplicating the evidence hierarchy.
 - Images/video should preserve observed URL, publisher page, visible credits, claimed original source where visible, source-chain gaps, and local download/hash only when explicit capture is available.
+
+### 2026-08-10 — MSN total package and explicit media download workflow
+
+- Added MSN total-package bridge planning: joins article extraction, comments/profile exports, offline archive/viewer artifacts, media download sidecars, readiness/release reports, final validation reports, and source-role provenance into one reviewable output folder.
+- Added explicit MSN media download workflow: direct image/video/audio resources can be downloaded only when selected and host-allowed; stream manifests, frames, blobs, and playback-only media remain metadata/status records unless a separate approved video workflow captures them.
+- Preserved source-role rule: MSN, reposting publishers such as The Independent, visible source credits, and original primary media/source status remain separate.

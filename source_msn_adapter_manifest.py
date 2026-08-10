@@ -549,8 +549,16 @@ def _media_download_by_resource_id(
     for result in media_download_results or ():
         data = result.to_dict() if hasattr(result, "to_dict") else dict(result)
         resource_id = str(data.get("resource_id") or data.get("selected_resource_id") or "")
+        url = str(data.get("url") or "")
+        output_path = str(data.get("output_path") or "")
         if resource_id:
             output[resource_id] = data
+        # Media sidecars from manual or external tools sometimes know the final URL and
+        # local file/hash before the adapter has rebuilt the resource_id. Keep URL lookup
+        # as a safe second key so the MSN adapter can attach already-downloaded media
+        # without pretending the publisher/visible credit is the original primary source.
+        if url and output_path:
+            output[url] = data
     return output
 
 
@@ -585,7 +593,7 @@ def build_msn_media_records(
         if key in seen:
             continue
         seen.add(key)
-        download_data = downloads.get(resource.resource_id) or {}
+        download_data = downloads.get(resource.resource_id) or downloads.get(resource.url) or {}
         local_path = str(download_data.get("output_path") or "")
         local_hash = str(download_data.get("sha256") or "")
         source_role = SourceRole.SECONDARY_OUTSIDE_PERSPECTIVE
