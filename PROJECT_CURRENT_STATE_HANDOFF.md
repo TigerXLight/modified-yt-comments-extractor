@@ -1071,3 +1071,9 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 - Accepted-reference check: the supplied V34 JSON pair rebuilds to 34 parents / 88 items / 3 deleted placeholders / 77 voted items / 48 profiles / 48 profiles with account stats. The committed tests use sanitized miniature fixtures, not raw MSN payloads.
 - Outputs now cover JSON, compact/full TXT, Markdown, HTML viewer/exporter, profile JSON/CSV/TXT/HTML, and an article+comments integration manifest for source-evidence/export packaging.
 - Boundary: no live/manual MSN capture was auto-run in this slice; future Top/Newest captures remain operator-selected and approval-gated.
+
+## MSN Offline Archive Replay Output Hardening - 2026-08-10
+
+- The article archive/viewer workflow is now labelled for reviewer use without weakening the accepted capture boundary: direct `rendered-page.html` is the best viewable page, raw `rendered-page.warc.gz` is the partial ReplayWeb archive, strict `archive.viewable-live-capture.wacz` is retained as experimental/possibly unsupported, and `archive.replayweb-compatible.wacz` is surfaced only when safely present.
+- `validation.json` / `capture-manifest.json` now carry strict-WACZ status, optional ReplayWeb-compatible WACZ status, comments screenshot health metadata, and offline article completeness checks for title, source/publisher, author/date/read-time when available, hero image, article body/bullets, and original source URL.
+- Tiny, corrupt, unreadable, or missing comments screenshots are recorded as partial/failed/missing and must not be treated as successful comments evidence. ReplayWeb/WACZ success remains manual validation metadata only.

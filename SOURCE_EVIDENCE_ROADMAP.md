@@ -1212,3 +1212,10 @@ The database roadmap recognizes existing user repository trees and proposes prev
 - The exporter supports top-level comments, nested replies, deleted placeholders, comment votes, canonical profile URLs, profile CIDs, profile account comments/likes/followers from profile-card text or embedded user objects, and profile-stat propagation across shared profile CIDs/canonical URLs.
 - Export package targets: nested JSON, compact TXT, full/additional-info TXT, Markdown, HTML viewer/exporter with search/copy/download controls, profile JSON/CSV/TXT/HTML, and an integration manifest.
 - Remaining roadmap boundary: manual/live MSN Top/Newest capture is still explicitly operator-gated; this slice adds local import/export processing and fixture tests, not automatic browser capture.
+
+## MSN Offline Archive Replay Output Hardening - 2026-08-10
+
+- Roadmap status: offline article archive/viewer hardening implemented for the MSN side-by-side capture workflow without changing the completed comments/profile export.
+- Local viewer/replay labels now identify `rendered-page.html` as the best viewable page, `rendered-page.warc.gz` as the partial ReplayWeb raw archive, strict `archive.viewable-live-capture.wacz` as experimental/possibly unsupported, and `archive.replayweb-compatible.wacz` as the preferred WACZ candidate only when present and manually valid.
+- Validation/capture manifests now record strict-WACZ status, optional ReplayWeb-compatible WACZ metadata, comments screenshot health, and offline completeness checks for title, source/publisher, optional author/date/read-time, hero image, body/bullets, and original source URL.
+- Remaining boundary: original dynamic ReplayWeb/WACZ success is still not claimed, and tiny/corrupt/missing comment screenshots remain partial/failed evidence until a later approved capture proves otherwise.

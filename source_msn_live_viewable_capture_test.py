@@ -11,6 +11,11 @@ from source_msn_live_viewable_capture_cli import (
     LIVE_VIEWABLE_CAPTURE_BLOCKED,
     LIVE_VIEWABLE_CAPTURE_COMPLETED,
     LIVE_VIEWABLE_CAPTURE_DRY_RUN,
+    REPLAYWEB_COMPATIBLE_WACZ_READY,
+    REPLAYWEB_COMPATIBLE_WACZ_UNAVAILABLE,
+    SCREENSHOT_FAILED,
+    SCREENSHOT_MISSING,
+    STRICT_WACZ_EXPERIMENTAL_STATUS,
     build_live_viewable_capture_plan,
     run_live_viewable_capture,
 )
@@ -78,6 +83,29 @@ def _fake_validation_runner(*, source_url: str, output_directory: str | Path, he
                 "final_url": source_url,
             }
         },
+    )
+
+
+def _fake_validation_runner_with_compatible_wacz(*, source_url: str, output_directory: str | Path, headless: bool = True):
+    result = _fake_validation_runner(source_url=source_url, output_directory=output_directory, headless=headless)
+    compatible = _write(Path(result.output_directory) / "local_web_archive" / "archive.replayweb-compatible.wacz", b"compatible-wacz")
+    return SimpleNamespace(
+        source_url=result.source_url,
+        canonical_url=result.canonical_url,
+        output_directory=result.output_directory,
+        status_matrix=result.status_matrix,
+        manifest_path=result.manifest_path,
+        manifest_sha256=result.manifest_sha256,
+        artifacts=tuple(result.artifacts)
+        + (
+            {
+                "label": "replayweb_compatible_wacz",
+                "path": str(compatible),
+                "sha256": hashlib.sha256(compatible.read_bytes()).hexdigest(),
+                "size_bytes": compatible.stat().st_size,
+            },
+        ),
+        summary=result.summary,
     )
 
 
@@ -194,6 +222,14 @@ def test_fake_live_capture_writes_expected_side_by_side_outputs() -> None:
         assert validation["article_body_found"] is True
         assert validation["comments_found"] is True
         assert validation["comment_count"] == 1
+        assert validation["strict_wacz_status"] == STRICT_WACZ_EXPERIMENTAL_STATUS
+        assert validation["strict_wacz_path"].endswith("archive.viewable-live-capture.wacz")
+        assert validation["replayweb_compatible_wacz_status"] == REPLAYWEB_COMPATIBLE_WACZ_UNAVAILABLE
+        assert validation["comment_screenshot_validation"]["comments_region"]["status"] == SCREENSHOT_FAILED
+        assert validation["comment_screenshot_validation"]["full_comments_thread"]["status"] == SCREENSHOT_MISSING
+        assert validation["offline_archive_completeness"]["checks"]["title"]["status"] == "found"
+        assert validation["offline_archive_completeness"]["checks"]["article_body"]["status"] == "found"
+        assert validation["offline_archive_completeness"]["checks"]["original_source_url"]["status"] == "recorded"
         assert validation["replay_tested"] is False
         assert validation["replay_result"] == "NOT_TESTED"
         assert validation["archived_page_not_found"] == "manual_review_required"
@@ -201,6 +237,28 @@ def test_fake_live_capture_writes_expected_side_by_side_outputs() -> None:
             warc_text = handle.read().decode("utf-8", errors="replace")
         assert "GET /en-gb/news/other/arrest-made-after-shot-fired-outside-york-mosque/ar-AA29207o" in warc_text
         assert accepted.read_bytes() == before
+
+
+def test_replayweb_compatible_wacz_is_copied_when_source_provides_it() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        output_dir = Path(tmp) / "capture"
+        result = run_live_viewable_capture(
+            target_url=TARGET_URL,
+            output_dir=output_dir,
+            runner_source_url=DEFAULT_MSN_VERTICAL_URL,
+            write_wacz=True,
+            write_warc=True,
+            write_rendered_html=True,
+            write_screenshots=False,
+            write_validation_json=True,
+            dependency_check=lambda: (),
+            validation_runner=_fake_validation_runner_with_compatible_wacz,
+        )
+        assert result.status == LIVE_VIEWABLE_CAPTURE_COMPLETED
+        validation = json.loads((output_dir / "validation.json").read_text(encoding="utf-8"))
+        assert validation["replayweb_compatible_wacz_status"] == REPLAYWEB_COMPATIBLE_WACZ_READY
+        assert (output_dir / "archive.replayweb-compatible.wacz").is_file()
+        assert "archive.replayweb-compatible.wacz" in validation["side_by_side_output_names"]
 
 
 def test_runner_value_error_is_written_to_validation_json() -> None:
@@ -290,6 +348,7 @@ def run_self_test() -> None:
     test_existing_nonempty_output_dir_is_refused()
     test_missing_runtime_dependencies_write_actionable_validation_json()
     test_fake_live_capture_writes_expected_side_by_side_outputs()
+    test_replayweb_compatible_wacz_is_copied_when_source_provides_it()
     test_runner_value_error_is_written_to_validation_json()
     test_rendered_html_fallback_writes_warc_when_browser_warc_is_missing()
     test_validation_json_never_claims_replay_visual_success_before_manual_review()

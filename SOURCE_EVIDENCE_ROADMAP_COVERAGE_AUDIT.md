@@ -705,3 +705,15 @@ Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
 | Export files | Covered | JSON, compact/full TXT, Markdown, HTML, profile JSON/CSV/TXT/HTML, and manifest outputs are fixture-tested. |
 | HTML viewer rules | Covered | Search UI, all/any mode, separate additional-info toggles, copy/download controls, and compact/full label separation are tested. |
 | Accepted V35 headline counts | Verified from supplied references | 34 parents, 88 items, 3 deleted placeholders, 77 voted items, 48 profiles, 48 profile-stat records. Raw reference files are not committed. |
+
+## MSN Offline Archive Replay Output Coverage - 2026-08-10
+
+| Requirement | Coverage | Notes |
+| --- | --- | --- |
+| Preserve direct offline article view | Covered | `rendered-page.html` remains the best viewable page and is labelled that way in the local viewer. |
+| Preserve raw ReplayWeb archive | Covered | `rendered-page.warc.gz` is labelled as the partial/useful raw ReplayWeb archive candidate. |
+| Strict WACZ honesty | Covered | `archive.viewable-live-capture.wacz` is preserved but labelled `STRICT_WACZ_EXPERIMENTAL_POSSIBLY_UNSUPPORTED`; no visual success is claimed. |
+| ReplayWeb-compatible WACZ support path | Covered when available | `archive.replayweb-compatible.wacz` is copied and labelled as preferred only when a compatible candidate exists. |
+| Comments screenshot validation | Covered | Tiny, corrupt, unreadable, and missing `comments-region.png` / `full-comments-thread.png` states are recorded as partial/failed/missing. |
+| Offline article completeness checks | Covered | Title, source/publisher, optional author/date/read-time, hero image, article body/bullets, and original source URL are reported in validation/manifest metadata. |
+| Remaining replay boundary | Not claimed | Dynamic WACZ/ReplayWeb success remains manual-review-only and MSN JS-heavy page completeness remains partial unless manually validated. |

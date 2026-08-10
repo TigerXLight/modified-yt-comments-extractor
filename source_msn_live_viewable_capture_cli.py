@@ -5,6 +5,7 @@ import gzip
 import hashlib
 import importlib.util
 import json
+import re
 import shutil
 import sys
 from dataclasses import asdict, dataclass, is_dataclass
@@ -24,11 +25,21 @@ LIVE_VIEWABLE_CAPTURE_BLOCKED = "LIVE_VIEWABLE_CAPTURE_BLOCKED"
 LIVE_VIEWABLE_CAPTURE_FAILED = "LIVE_VIEWABLE_CAPTURE_FAILED"
 REPLAY_RESULT_NOT_TESTED = "NOT_TESTED"
 DEFAULT_DEVICE_PROFILE = "android-mobile"
+STRICT_WACZ_EXPERIMENTAL_STATUS = "STRICT_WACZ_EXPERIMENTAL_POSSIBLY_UNSUPPORTED"
+REPLAYWEB_COMPATIBLE_WACZ_READY = "REPLAYWEB_COMPATIBLE_WACZ_READY"
+REPLAYWEB_COMPATIBLE_WACZ_UNAVAILABLE = "REPLAYWEB_COMPATIBLE_WACZ_UNAVAILABLE"
+SCREENSHOT_READY = "SCREENSHOT_READY"
+SCREENSHOT_PARTIAL = "SCREENSHOT_PARTIAL"
+SCREENSHOT_FAILED = "SCREENSHOT_FAILED"
+SCREENSHOT_MISSING = "SCREENSHOT_MISSING"
+OFFLINE_ARCHIVE_COMPLETENESS_READY = "OFFLINE_ARCHIVE_COMPLETENESS_READY"
+OFFLINE_ARCHIVE_COMPLETENESS_PARTIAL = "OFFLINE_ARCHIVE_COMPLETENESS_PARTIAL"
 
 MANUAL_REPLAY_STEPS = (
     "Open rendered-page.html directly in a browser and confirm the article is visible.",
     "Open rendered-page.warc.gz in ReplayWeb.page and report whether the article is visible.",
-    "Open archive.viewable-live-capture.wacz in ReplayWeb.page only as a separate WACZ replay check.",
+    "Open archive.viewable-live-capture.wacz in ReplayWeb.page only as an experimental strict-WACZ replay check.",
+    "Open archive.replayweb-compatible.wacz when present; treat it as the preferred WACZ candidate.",
     "Record whether comments are visible, partial, or absent.",
     "Record whether ReplayWeb shows Archived Page Not Found, a privacy modal, or a slow-page warning.",
 )
@@ -262,6 +273,112 @@ def _gzip_file(source: Path, destination: Path) -> tuple[str, str]:
     return str(destination), _sha256_file(destination)
 
 
+def _sha256_if_file(path: Path) -> str:
+    return _sha256_file(path) if path.is_file() else ""
+
+
+def _png_dimensions(path: Path) -> tuple[int, int] | None:
+    try:
+        with path.open("rb") as handle:
+            header = handle.read(24)
+    except OSError:
+        return None
+    if len(header) < 24 or not header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    return int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
+
+
+def _validate_comment_screenshot(path: Path, label: str) -> dict[str, Any]:
+    if not path.is_file():
+        return {
+            "label": label,
+            "path": str(path),
+            "status": SCREENSHOT_MISSING,
+            "present": False,
+            "reason": "missing",
+        }
+    size = path.stat().st_size
+    dimensions = _png_dimensions(path)
+    payload: dict[str, Any] = {
+        "label": label,
+        "path": str(path),
+        "present": True,
+        "size_bytes": size,
+        "sha256": _sha256_if_file(path),
+    }
+    if dimensions is None:
+        payload.update({"status": SCREENSHOT_FAILED, "reason": "not_a_readable_png"})
+        return payload
+    width, height = dimensions
+    payload.update({"width": width, "height": height})
+    if size < 1024:
+        payload.update({"status": SCREENSHOT_PARTIAL, "reason": "tiny_file"})
+    elif width < 160 or height < 100:
+        payload.update({"status": SCREENSHOT_PARTIAL, "reason": "tiny_dimensions"})
+    else:
+        payload.update({"status": SCREENSHOT_READY, "reason": "readable_png"})
+    return payload
+
+
+def _strip_html_text(html_text: str) -> str:
+    text = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", html_text)
+    text = re.sub(r"(?s)<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _offline_archive_completeness(*, html_path: str, source_url: str, hero_image_path: str) -> dict[str, Any]:
+    html_text = ""
+    if html_path and Path(html_path).is_file():
+        html_text = Path(html_path).read_text(encoding="utf-8", errors="replace")
+    text = _strip_html_text(html_text)
+    title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", html_text)
+    h1_match = re.search(r"(?is)<h1[^>]*>(.*?)</h1>", html_text)
+    title_text = _strip_html_text(title_match.group(1)) if title_match else _strip_html_text(h1_match.group(1)) if h1_match else ""
+    checks = {
+        "title": {"status": "found" if title_text else "missing", "value": title_text},
+        "source_or_publisher": {
+            "status": "found" if re.search(r"\b(MSN|The Independent|publisher|source)\b", text, flags=re.I) else "not_available",
+        },
+        "author_date_read_time": {
+            "status": "found"
+            if re.search(r"\b(Story by|By |min read|Updated|Published|\d{1,2}\s+[A-Z][a-z]{2})\b", text)
+            else "not_available",
+        },
+        "hero_image": {"status": "found" if hero_image_path else "missing"},
+        "article_body": {"status": "found" if len(text) >= 40 else "missing", "text_chars": len(text)},
+        "article_bullets": {
+            "status": "found" if ("<li" in html_text.lower() or "\u2022" in text or re.search(r"\s-\s+", text)) else "not_available",
+        },
+        "original_source_url": {"status": "recorded" if source_url else "missing", "value": source_url},
+    }
+    required_ok = checks["title"]["status"] == "found" and checks["article_body"]["status"] == "found" and checks["original_source_url"]["status"] == "recorded"
+    return {
+        "status": OFFLINE_ARCHIVE_COMPLETENESS_READY if required_ok and checks["hero_image"]["status"] == "found" else OFFLINE_ARCHIVE_COMPLETENESS_PARTIAL,
+        "checks": checks,
+        "note": "MSN is JS-heavy; this completeness check describes local offline archive artifacts and does not claim dynamic replay success.",
+    }
+
+
+def _find_replayweb_compatible_wacz(source_capture_root: Path, artifacts: Sequence[Any]) -> Path | None:
+    candidate_names = (
+        "archive.replayweb-compatible.wacz",
+        "archive.replayweb-static-evidence-view-standalone-20260809.wacz",
+        "archive.replayweb-static-evidence-view.wacz",
+    )
+    for name in candidate_names:
+        for root in (source_capture_root / "local_web_archive", source_capture_root):
+            candidate = root / name
+            if candidate.is_file():
+                return candidate
+    for artifact in artifacts:
+        data = artifact.to_dict() if hasattr(artifact, "to_dict") else dict(artifact)
+        label = str(data.get("label") or "").lower()
+        path = Path(str(data.get("path") or ""))
+        if "replayweb" in label and "wacz" in label and path.is_file():
+            return path
+    return None
+
+
 def _artifact_path_by_label(artifacts: Sequence[Any], fragment: str) -> str:
     needle = fragment.lower()
     for artifact in artifacts:
@@ -447,6 +564,10 @@ def _normalize_outputs(
     wacz_path = ""
     wacz_hash = ""
     wacz_source = ""
+    strict_wacz_status = STRICT_WACZ_EXPERIMENTAL_STATUS
+    replayweb_compatible_wacz_path = ""
+    replayweb_compatible_wacz_hash = ""
+    replayweb_compatible_wacz_status = REPLAYWEB_COMPATIBLE_WACZ_UNAVAILABLE
     if write_wacz:
         source_wacz = source_capture_root / "local_web_archive" / "archive.wacz"
         wacz_path, wacz_hash = _copy_file(
@@ -454,6 +575,13 @@ def _normalize_outputs(
             output_root / "archive.viewable-live-capture.wacz",
         )
         wacz_source = "captured_browser_wacz" if wacz_path else "unavailable"
+        compatible_source = _find_replayweb_compatible_wacz(source_capture_root, artifacts)
+        if compatible_source:
+            replayweb_compatible_wacz_path, replayweb_compatible_wacz_hash = _copy_file(
+                compatible_source,
+                output_root / "archive.replayweb-compatible.wacz",
+            )
+            replayweb_compatible_wacz_status = REPLAYWEB_COMPATIBLE_WACZ_READY if replayweb_compatible_wacz_path else REPLAYWEB_COMPATIBLE_WACZ_UNAVAILABLE
 
     screenshot_outputs: dict[str, str] = {}
     if write_screenshots:
@@ -468,9 +596,18 @@ def _normalize_outputs(
             if source:
                 copied, _ = _copy_file(Path(source), screenshot_root / filename)
                 screenshot_outputs[key] = copied
+    comment_screenshot_validation = {
+        "comments_region": _validate_comment_screenshot(output_root / "screenshots" / "comments-region.png", "comments-region.png"),
+        "full_comments_thread": _validate_comment_screenshot(output_root / "screenshots" / "full-comments-thread.png", "full-comments-thread.png"),
+    }
 
     comments_count = int(best_profile.get("comment_count") or summary.get("comment_count") or 0)
     canonical_source_url = str(getattr(validation_result, "canonical_url", "") or best_profile.get("final_url") or runner_source_url)
+    offline_completeness = _offline_archive_completeness(
+        html_path=rendered_html_path,
+        source_url=canonical_source_url or requested_target_url,
+        hero_image_path=screenshot_outputs.get("article_top", ""),
+    )
     validation_payload: dict[str, Any] = {
         "schema_version": MSN_LIVE_VIEWABLE_CAPTURE_SCHEMA_VERSION,
         "status": LIVE_VIEWABLE_CAPTURE_COMPLETED,
@@ -497,6 +634,13 @@ def _normalize_outputs(
         "warc_gz_hash": warc_gz_hash,
         "wacz_path": wacz_path,
         "wacz_hash": wacz_hash,
+        "strict_wacz_path": wacz_path,
+        "strict_wacz_hash": wacz_hash,
+        "strict_wacz_status": strict_wacz_status,
+        "strict_wacz_note": "Strict WACZ is retained as generated but may be unsupported by ReplayWeb.page; manual smoke metadata is required before treating it as usable replay.",
+        "replayweb_compatible_wacz_path": replayweb_compatible_wacz_path,
+        "replayweb_compatible_wacz_hash": replayweb_compatible_wacz_hash,
+        "replayweb_compatible_wacz_status": replayweb_compatible_wacz_status,
         "replay_tested": False,
         "replay_result": REPLAY_RESULT_NOT_TESTED,
         "article_visible": "manual_review_required",
@@ -507,10 +651,24 @@ def _normalize_outputs(
         "rendered_output_status": "side_by_side_outputs_ready",
         "warc_source": warc_source,
         "wacz_source": wacz_source,
-        "side_by_side_output_names": [name for name, value in {"rendered-page.html": rendered_html_path, "rendered-page.warc": warc_path, "rendered-page.warc.gz": warc_gz_path, "archive.viewable-live-capture.wacz": wacz_path}.items() if value],
+        "comment_screenshot_validation": comment_screenshot_validation,
+        "offline_archive_completeness": offline_completeness,
+        "side_by_side_output_names": [
+            name
+            for name, value in {
+                "rendered-page.html": rendered_html_path,
+                "rendered-page.warc": warc_path,
+                "rendered-page.warc.gz": warc_gz_path,
+                "archive.viewable-live-capture.wacz": wacz_path,
+                "archive.replayweb-compatible.wacz": replayweb_compatible_wacz_path,
+            }.items()
+            if value
+        ],
         "notes": [
             "Live MSN capture workflow generated side-by-side outputs; manual ReplayWeb/browser validation is still required.",
             "No claim is made that the original dynamic WACZ replay is visually successful.",
+            "Use rendered-page.html as the best viewable offline page and rendered-page.warc.gz as the partial ReplayWeb archive candidate.",
+            "Strict WACZ remains experimental/possibly unsupported unless manual ReplayWeb validation proves otherwise.",
         ],
         "manual_next_steps": list(MANUAL_REPLAY_STEPS),
         "previous_accepted_archive_preserved": True,

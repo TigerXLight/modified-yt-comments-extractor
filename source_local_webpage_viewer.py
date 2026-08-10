@@ -80,10 +80,11 @@ class LocalWebpageViewerResult:
 
 def _known_capture_files(capture_dir: Path) -> tuple[tuple[str, Path], ...]:
     candidates: list[tuple[str, Path]] = [
-        ("Direct webpage view", capture_dir / "rendered-page.html"),
-        ("Raw ReplayWeb WARC.GZ", capture_dir / "rendered-page.warc.gz"),
-        ("Raw WARC", capture_dir / "rendered-page.warc"),
-        ("WACZ package", capture_dir / "archive.viewable-live-capture.wacz"),
+        ("Best viewable page: rendered-page.html", capture_dir / "rendered-page.html"),
+        ("ReplayWeb partial archive: rendered-page.warc.gz", capture_dir / "rendered-page.warc.gz"),
+        ("Raw WARC source: rendered-page.warc", capture_dir / "rendered-page.warc"),
+        ("Strict WACZ: experimental/possibly unsupported", capture_dir / "archive.viewable-live-capture.wacz"),
+        ("ReplayWeb-compatible WACZ: preferred when valid", capture_dir / "archive.replayweb-compatible.wacz"),
         ("Validation JSON", capture_dir / "validation.json"),
         ("Capture manifest", capture_dir / "capture-manifest.json"),
         ("Static evidence view", capture_dir / "static-evidence.html"),
@@ -131,7 +132,7 @@ def _build_index_html(
     links: Sequence[LocalViewerLinkedFile],
     validation_preview: str,
 ) -> str:
-    primary = [item for item in links if item.label in {"Direct webpage view", "Validation JSON", "Capture manifest"}]
+    primary = [item for item in links if item.label in {"Best viewable page: rendered-page.html", "Validation JSON", "Capture manifest"}]
     replay = [item for item in links if "WARC" in item.label or "WACZ" in item.label]
     screenshots = [item for item in links if item.label.startswith("Screenshot:")]
     text_meta = [item for item in links if item not in primary and item not in replay and item not in screenshots]
@@ -164,15 +165,19 @@ def _build_index_html(
     <p class="warning">This is an offline local review launcher/index. It is not a new browser engine and does not prove ReplayWeb or dynamic MSN runtime visual success.</p>
   </header>
   <details open><summary>Primary files</summary>{_link_rows(primary)}</details>
-  <details open><summary>Direct webpage view</summary>{_link_rows([item for item in primary if item.label == "Direct webpage view"])}</details>
-  <details><summary>ReplayWeb files</summary>{_link_rows(replay)}</details>
+  <details open><summary>Best viewable page</summary>{_link_rows([item for item in primary if item.label == "Best viewable page: rendered-page.html"])}</details>
+  <details><summary>ReplayWeb files</summary>
+    <p class="meta">Use <code>rendered-page.warc.gz</code> as the partial/useful ReplayWeb archive candidate. The strict WACZ is preserved but experimental/possibly unsupported; use a ReplayWeb-compatible WACZ only when present and manually validated.</p>
+    {_link_rows(replay)}
+  </details>
   <details><summary>Screenshots</summary>{_link_rows(screenshots)}</details>
   <details><summary>Text / metadata files</summary>{_link_rows(text_meta)}</details>
   <details><summary>Manual validation checklist</summary>
     <ul>
       <li>Open <code>rendered-page.html</code> and record article/comments visibility.</li>
       <li>Open <code>rendered-page.warc.gz</code> in ReplayWeb.page and record whether the page opens.</li>
-      <li>Open <code>archive.viewable-live-capture.wacz</code> in ReplayWeb.page separately.</li>
+      <li>Open <code>archive.viewable-live-capture.wacz</code> in ReplayWeb.page separately as an experimental strict-WACZ check.</li>
+      <li>Open <code>archive.replayweb-compatible.wacz</code> when present; it is the preferred WACZ candidate, but still requires manual validation.</li>
       <li>Record privacy modal, slow-page warning, and Archived Page Not Found states in <code>validation.json</code> only after manual viewing.</li>
     </ul>
   </details>

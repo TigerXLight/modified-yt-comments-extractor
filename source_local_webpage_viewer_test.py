@@ -27,6 +27,7 @@ def test_local_viewer_writes_index_scripts_and_relative_links() -> None:
         _write(root / "rendered-page.html", "<html><body>Article</body></html>")
         _write(root / "rendered-page.warc.gz", b"warc-gz")
         _write(root / "archive.viewable-live-capture.wacz", b"wacz")
+        _write(root / "archive.replayweb-compatible.wacz", b"compatible-wacz")
         _write(root / "validation.json", '{"status":"manual_review_required"}')
         _write(root / "capture-manifest.json", "{}")
         _write(root / "screenshots" / "article-top.png", b"png")
@@ -48,9 +49,14 @@ def test_local_viewer_writes_index_scripts_and_relative_links() -> None:
         assert "https://fonts." not in lowered
         assert "<details open>" in lowered
         assert "<summary>replayweb files</summary>" in lowered
+        assert "Best viewable page: rendered-page.html" in html
+        assert "ReplayWeb partial archive: rendered-page.warc.gz" in html
+        assert "Strict WACZ: experimental/possibly unsupported" in html
+        assert "ReplayWeb-compatible WACZ: preferred when valid" in html
         assert "../rendered-page.html" in html
         assert "../rendered-page.warc.gz" in html
         assert "../archive.viewable-live-capture.wacz" in html
+        assert "../archive.replayweb-compatible.wacz" in html
         assert "../screenshots/article-top.png" in html
         assert str(root) not in html
 

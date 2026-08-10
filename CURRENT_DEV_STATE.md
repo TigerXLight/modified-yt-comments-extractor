@@ -1353,3 +1353,10 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 - One-off reference verification against the supplied accepted V34 JSONs reproduced the accepted V35 counts: 34 parents, 88 items, 3 deleted placeholders, 77 items with comment votes, 48 profiles, and 48 profiles with account stats. Raw reference payloads remain uncommitted; repo tests use sanitized fixtures.
 - Export outputs include nested JSON, compact TXT, full/additional-info TXT, Markdown, HTML viewer/exporter, `profiles.json`, `profiles.csv`, `profiles.txt`, `profiles.html`, and a manifest that records the offline article archive preservation boundary.
 - Manual/live MSN capture remains explicitly gated. No new live smoke run was auto-started for this integration slice.
+
+## MSN Offline Archive Replay Output Hardening - 2026-08-10
+
+- The MSN offline article archive/viewer path is hardened without changing the accepted comments/profile exporter: `rendered-page.html`, `rendered-page.warc.gz`, `capture-manifest.json`, `validation.json`, and `local_viewer` remain the preserved review path.
+- Local viewer labels now distinguish the best viewable page (`rendered-page.html`), the partial/useful ReplayWeb raw archive (`rendered-page.warc.gz`), the strict WACZ (`archive.viewable-live-capture.wacz`, experimental/possibly unsupported), and a `archive.replayweb-compatible.wacz` artifact only when a compatible candidate is available.
+- Validation metadata records `strict_wacz_status=STRICT_WACZ_EXPERIMENTAL_POSSIBLY_UNSUPPORTED`, optional ReplayWeb-compatible WACZ readiness, comments screenshot health for `comments-region.png` / `full-comments-thread.png`, and offline archive completeness checks for title, source/publisher, author/date/read-time when available, hero image, article body/bullets, and original source URL.
+- WACZ/ReplayWeb success is still manual-review-only. Tiny, corrupt, unreadable, or missing comments screenshots are marked partial/failed/missing rather than treated as successful comment evidence.
