@@ -717,3 +717,10 @@ Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
 | Comments screenshot validation | Covered | Tiny, corrupt, unreadable, and missing `comments-region.png` / `full-comments-thread.png` states are recorded as partial/failed/missing. |
 | Offline article completeness checks | Covered | Title, source/publisher, optional author/date/read-time, hero image, article body/bullets, and original source URL are reported in validation/manifest metadata. |
 | Remaining replay boundary | Not claimed | Dynamic WACZ/ReplayWeb success remains manual-review-only and MSN JS-heavy page completeness remains partial unless manually validated. |
+
+### 2026-08-10 – MSN source adapter completion planning: media + source-role provenance
+- Baseline for this patch workflow is `3506fda5375bf4a744e424613a16aa1161786c8a`.
+- The MSN adapter completion slice must treat MSN as a republishing/platform surface when it reposts from outlets such as The Independent; MSN is not automatically the primary/original source for article claims or media.
+- Source roles remain project evidence roles: primary/original authored, secondary/outside perspective, tertiary/propagated source, plus claim-level status fields.
+- Article, comments/profile exports, offline archive/viewer artifacts, media discovery/download registration, and visible source credits must be linked into Total Export provenance without duplicating the evidence hierarchy.
+- Images/video should preserve observed URL, publisher page, visible credits, claimed original source where visible, source-chain gaps, and local download/hash only when explicit capture is available.

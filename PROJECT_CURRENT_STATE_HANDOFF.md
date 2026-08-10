@@ -1077,3 +1077,10 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 - The article archive/viewer workflow is now labelled for reviewer use without weakening the accepted capture boundary: direct `rendered-page.html` is the best viewable page, raw `rendered-page.warc.gz` is the partial ReplayWeb archive, strict `archive.viewable-live-capture.wacz` is retained as experimental/possibly unsupported, and `archive.replayweb-compatible.wacz` is surfaced only when safely present.
 - `validation.json` / `capture-manifest.json` now carry strict-WACZ status, optional ReplayWeb-compatible WACZ status, comments screenshot health metadata, and offline article completeness checks for title, source/publisher, author/date/read-time when available, hero image, article body/bullets, and original source URL.
 - Tiny, corrupt, unreadable, or missing comments screenshots are recorded as partial/failed/missing and must not be treated as successful comments evidence. ReplayWeb/WACZ success remains manual validation metadata only.
+
+### 2026-08-10 – MSN source adapter completion planning: media + source-role provenance
+- Baseline for this patch workflow is `3506fda5375bf4a744e424613a16aa1161786c8a`.
+- The MSN adapter completion slice must treat MSN as a republishing/platform surface when it reposts from outlets such as The Independent; MSN is not automatically the primary/original source for article claims or media.
+- Source roles remain project evidence roles: primary/original authored, secondary/outside perspective, tertiary/propagated source, plus claim-level status fields.
+- Article, comments/profile exports, offline archive/viewer artifacts, media discovery/download registration, and visible source credits must be linked into Total Export provenance without duplicating the evidence hierarchy.
+- Images/video should preserve observed URL, publisher page, visible credits, claimed original source where visible, source-chain gaps, and local download/hash only when explicit capture is available.

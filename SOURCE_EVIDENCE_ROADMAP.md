@@ -1219,3 +1219,10 @@ The database roadmap recognizes existing user repository trees and proposes prev
 - Local viewer/replay labels now identify `rendered-page.html` as the best viewable page, `rendered-page.warc.gz` as the partial ReplayWeb raw archive, strict `archive.viewable-live-capture.wacz` as experimental/possibly unsupported, and `archive.replayweb-compatible.wacz` as the preferred WACZ candidate only when present and manually valid.
 - Validation/capture manifests now record strict-WACZ status, optional ReplayWeb-compatible WACZ metadata, comments screenshot health, and offline completeness checks for title, source/publisher, optional author/date/read-time, hero image, body/bullets, and original source URL.
 - Remaining boundary: original dynamic ReplayWeb/WACZ success is still not claimed, and tiny/corrupt/missing comment screenshots remain partial/failed evidence until a later approved capture proves otherwise.
+
+### 2026-08-10 – MSN source adapter completion planning: media + source-role provenance
+- Baseline for this patch workflow is `3506fda5375bf4a744e424613a16aa1161786c8a`.
+- The MSN adapter completion slice must treat MSN as a republishing/platform surface when it reposts from outlets such as The Independent; MSN is not automatically the primary/original source for article claims or media.
+- Source roles remain project evidence roles: primary/original authored, secondary/outside perspective, tertiary/propagated source, plus claim-level status fields.
+- Article, comments/profile exports, offline archive/viewer artifacts, media discovery/download registration, and visible source credits must be linked into Total Export provenance without duplicating the evidence hierarchy.
+- Images/video should preserve observed URL, publisher page, visible credits, claimed original source where visible, source-chain gaps, and local download/hash only when explicit capture is available.
