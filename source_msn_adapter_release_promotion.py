@@ -80,6 +80,14 @@ def _extract_status(data: Any) -> str:
 
 
 def _scan_no_network_reports(root: Path) -> tuple[int, list[str]]:
+    """Scan canonical no-network report JSON files without treating old run output as current.
+
+    The MSN output folder may contain many generated strict/live evidence run folders from
+    earlier attempts.  Those historical reports are useful evidence, but they must not
+    block the current promotion decision after a later run has superseded them.  This scan
+    therefore ignores generated/recheck/archive bundles and only evaluates canonical
+    report locations that belong to the selected output folder itself.
+    """
     names = (
         "MSN_ADAPTER_FINAL_VALIDATION_REPORT.json",
         "MSN_SOURCE_ADAPTER_ACCEPTANCE_REPORT.json",
@@ -91,11 +99,36 @@ def _scan_no_network_reports(root: Path) -> tuple[int, list[str]]:
         "MSN_SOURCE_ADAPTER_FINAL_EVIDENCE_SEAL.json",
         "MSN_SOURCE_ADAPTER_RELEASE_CANDIDATE_LOCK.json",
     )
+
+    generated_dir_prefixes = (
+        "final_msn_live_evidence",
+        "live_reconciliation_recheck",
+        "acceptance_recheck",
+    )
+    generated_dir_names = {
+        "certification_archive",
+        "evidence_files",
+    }
+
+    def is_generated_or_superseded(path: Path) -> bool:
+        try:
+            parts = [part.lower() for part in path.relative_to(root).parts[:-1]]
+        except ValueError:
+            return True
+        for part in parts:
+            if part in generated_dir_names:
+                return True
+            if any(part.startswith(prefix) for prefix in generated_dir_prefixes):
+                return True
+        return False
+
     found = 0
     failing: list[str] = []
     for name in names:
         for path in root.rglob(name):
             if not path.is_file():
+                continue
+            if is_generated_or_superseded(path):
                 continue
             found += 1
             try:
@@ -103,11 +136,9 @@ def _scan_no_network_reports(root: Path) -> tuple[int, list[str]]:
             except Exception:
                 failing.append(f"{path.relative_to(root)}: unreadable")
                 continue
-            if status and status not in NON_FAILING_NO_NETWORK and "FAIL" in status or "BLOCK" in status:
+            if status and status not in NON_FAILING_NO_NETWORK and ("FAIL" in status or "BLOCK" in status):
                 failing.append(f"{path.relative_to(root)}: {status}")
     return found, failing
-
-
 def build_release_promotion(root: str | Path, evidence_out_dir: str | Path | None = None) -> ReleasePromotionReport:
     root_path = Path(root).expanduser().resolve()
     live = validate_live_evidence(root_path)
