@@ -1090,3 +1090,10 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 - Added MSN total-package bridge planning: joins article extraction, comments/profile exports, offline archive/viewer artifacts, media download sidecars, readiness/release reports, final validation reports, and source-role provenance into one reviewable output folder.
 - Added explicit MSN media download workflow: direct image/video/audio resources can be downloaded only when selected and host-allowed; stream manifests, frames, blobs, and playback-only media remain metadata/status records unless a separate approved video workflow captures them.
 - Preserved source-role rule: MSN, reposting publishers such as The Independent, visible source credits, and original primary media/source status remain separate.
+
+## 2026-08-10 — MSN adapter completion CLI and manual validation intake
+
+- Added an operator-facing MSN adapter completion command that joins the rendered article, comments/profile exports, offline archive/viewer artifacts, media inventory/download sidecars, total package, readiness/release reports, and final validation into one completion output folder.
+- Added manual validation intake/template/result outputs so real MSN capture checks can be recorded without auto-running live capture.
+- Media remains safe-by-default: candidates are registered in dry-run mode unless direct downloads are explicitly selected and allowed.
+- Source-chain logic remains explicit: MSN, republishers such as The Independent, visible credits such as Google Street View, agencies/family/authority claims, and unknown original uploaders are not silently promoted into primary/original sources.
