@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import html as html_lib
 import json
 import re
 from dataclasses import asdict, dataclass, field, is_dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 from capture_media_discovery import (
+    MEDIA_DISCOVERY_MANIFEST,
     MEDIA_RESOURCE_KIND_BLOB,
     MEDIA_RESOURCE_KIND_IMAGE,
     MEDIA_RESOURCE_KIND_MANIFEST,
@@ -18,6 +20,7 @@ from capture_media_discovery import (
     discover_media_resources_from_request_log,
 )
 from capture_media_download import MediaDownloadResult
+from capture_status import DRM_NONE_DETECTED
 from evidence_schema import (
     AccessMode,
     CaptureMethod,
@@ -48,6 +51,12 @@ from total_export_manifest import (
 MSN_SOURCE_ADAPTER_SCHEMA_VERSION = "msn_source_adapter_bundle_v1"
 MSN_SOURCE_ADAPTER_NAME = "msn_source_adapter"
 MSN_SOURCE_PLATFORM = "MSN"
+MSN_MEDIA_DISCOVERY_ARTICLE_HERO = "article_hero"
+MSN_MEDIA_DISCOVERY_OPENGRAPH = "opengraph"
+MSN_MEDIA_DISCOVERY_TWITTER_CARD = "twitter_card"
+MSN_MEDIA_DISCOVERY_JSON_LD = "json_ld"
+
+
 MSN_PUBLISHER_SECONDARY_NOTE = (
     "MSN page/publisher framing is preserved separately from the original authored source. "
     "Do not substitute MSN, a reposting outlet, an agency loop, an authority statement, or a family "
@@ -91,6 +100,241 @@ def _read_text_if_file(path: str | Path) -> str:
     if not candidate.is_file():
         return ""
     return candidate.read_text(encoding="utf-8", errors="replace")
+
+
+
+
+_MSN_META_MEDIA_FIELDS = {
+    "og:image": (MEDIA_RESOURCE_KIND_IMAGE, MSN_MEDIA_DISCOVERY_OPENGRAPH),
+    "og:image:url": (MEDIA_RESOURCE_KIND_IMAGE, MSN_MEDIA_DISCOVERY_OPENGRAPH),
+    "og:image:secure_url": (MEDIA_RESOURCE_KIND_IMAGE, MSN_MEDIA_DISCOVERY_OPENGRAPH),
+    "twitter:image": (MEDIA_RESOURCE_KIND_IMAGE, MSN_MEDIA_DISCOVERY_TWITTER_CARD),
+    "twitter:image:src": (MEDIA_RESOURCE_KIND_IMAGE, MSN_MEDIA_DISCOVERY_TWITTER_CARD),
+    "og:video": (MEDIA_RESOURCE_KIND_VIDEO, MSN_MEDIA_DISCOVERY_OPENGRAPH),
+    "og:video:url": (MEDIA_RESOURCE_KIND_VIDEO, MSN_MEDIA_DISCOVERY_OPENGRAPH),
+    "og:video:secure_url": (MEDIA_RESOURCE_KIND_VIDEO, MSN_MEDIA_DISCOVERY_OPENGRAPH),
+    "twitter:player": (MEDIA_RESOURCE_KIND_VIDEO, MSN_MEDIA_DISCOVERY_TWITTER_CARD),
+    "twitter:player:stream": (MEDIA_RESOURCE_KIND_VIDEO, MSN_MEDIA_DISCOVERY_TWITTER_CARD),
+}
+
+
+def _media_resource_id(kind: str, url: str, method: str) -> str:
+    digest = re.sub(r"[^a-f0-9]", "", __import__("hashlib").sha256(f"{kind}:{url}:{method}".encode("utf-8")).hexdigest())[:16]
+    return f"media_{digest}"
+
+
+def _media_kind_and_manifest(url: str, kind_hint: str = "") -> tuple[str, str, bool]:
+    lowered = f"{url} {kind_hint}".lower()
+    if ".m3u8" in lowered or "mpegurl" in lowered:
+        return MEDIA_RESOURCE_KIND_MANIFEST, "hls", False
+    if ".mpd" in lowered or "dash+xml" in lowered:
+        return MEDIA_RESOURCE_KIND_MANIFEST, "dash", False
+    if any(ext in lowered for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", "image/")):
+        return MEDIA_RESOURCE_KIND_IMAGE, "", True
+    if any(ext in lowered for ext in (".mp4", ".webm", ".mov", ".m4v", "video/")):
+        return MEDIA_RESOURCE_KIND_VIDEO, "", True
+    return kind_hint or MEDIA_RESOURCE_KIND_VIDEO, "", True
+
+
+def _structured_media_resource(
+    *,
+    source_url: str,
+    url: str,
+    source_tag: str,
+    kind_hint: str,
+    method: str,
+    display_name: str = "",
+) -> MediaResource | None:
+    if not url:
+        return None
+    resolved = urljoin(source_url, str(url).strip())
+    if not resolved or resolved.startswith("data:"):
+        return None
+    kind, manifest_kind, downloadable = _media_kind_and_manifest(resolved, kind_hint)
+    methods = (method, MEDIA_DISCOVERY_MANIFEST) if manifest_kind else (method,)
+    mime_type = ""
+    if kind == MEDIA_RESOURCE_KIND_IMAGE:
+        mime_type = "image/*"
+    elif kind == MEDIA_RESOURCE_KIND_VIDEO:
+        mime_type = "video/*"
+    elif kind == MEDIA_RESOURCE_KIND_MANIFEST and manifest_kind == "hls":
+        mime_type = "application/x-mpegURL"
+    elif kind == MEDIA_RESOURCE_KIND_MANIFEST and manifest_kind == "dash":
+        mime_type = "application/dash+xml"
+    return MediaResource(
+        resource_id=_media_resource_id(kind, resolved, ",".join(methods)),
+        kind=kind,
+        url=resolved,
+        source_tag=source_tag,
+        mime_type=mime_type,
+        display_name=_clean_text(display_name),
+        downloadable=downloadable,
+        requires_playback=kind in {MEDIA_RESOURCE_KIND_VIDEO, MEDIA_RESOURCE_KIND_MANIFEST},
+        drm_status=DRM_NONE_DETECTED,
+        warnings=("Structured MSN/OpenGraph/JSON-LD media candidate; source-chain review required.",),
+        discovery_methods=methods,
+        final_url=resolved,
+        manifest_kind=manifest_kind,
+        skipped_reason="metadata_only_manifest_or_stream" if manifest_kind else "",
+    )
+
+
+class _StructuredMediaParser(HTMLParser):
+    def __init__(self, source_url: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.source_url = source_url
+        self.resources: list[MediaResource] = []
+        self._script_type = ""
+        self._script_parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        lowered = tag.lower()
+        attrs_map = {key.lower(): value or "" for key, value in attrs}
+        if lowered == "meta":
+            prop = _clean_text(attrs_map.get("property") or attrs_map.get("name")).lower()
+            content = attrs_map.get("content", "")
+            if prop in _MSN_META_MEDIA_FIELDS and content:
+                kind, method = _MSN_META_MEDIA_FIELDS[prop]
+                resource = _structured_media_resource(
+                    source_url=self.source_url,
+                    url=content,
+                    source_tag=f"meta:{prop}",
+                    kind_hint=kind,
+                    method=method,
+                    display_name=prop,
+                )
+                if resource is not None:
+                    self.resources.append(resource)
+        elif lowered == "script" and "ld+json" in attrs_map.get("type", "").lower():
+            self._script_type = "ld+json"
+            self._script_parts = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "script" and self._script_type == "ld+json":
+            self._parse_json_ld("".join(self._script_parts))
+            self._script_type = ""
+            self._script_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._script_type == "ld+json":
+            self._script_parts.append(data)
+
+    def _parse_json_ld(self, payload: str) -> None:
+        try:
+            value = json.loads(html_lib.unescape(payload or ""))
+        except Exception:
+            return
+        for resource in _resources_from_json_ld(value, source_url=self.source_url):
+            self.resources.append(resource)
+
+
+def _iter_json_values(value: Any) -> Iterable[Any]:
+    if isinstance(value, Mapping):
+        yield value
+        for item in value.values():
+            yield from _iter_json_values(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _iter_json_values(item)
+
+
+def _json_ld_type(value: Mapping[str, Any]) -> str:
+    raw_type = value.get("@type") or value.get("type") or ""
+    if isinstance(raw_type, list):
+        return " ".join(str(item) for item in raw_type)
+    return str(raw_type)
+
+
+def _add_json_ld_url(resources: list[MediaResource], *, source_url: str, url: str, source_tag: str, kind_hint: str, display_name: str = "") -> None:
+    resource = _structured_media_resource(
+        source_url=source_url,
+        url=url,
+        source_tag=source_tag,
+        kind_hint=kind_hint,
+        method=MSN_MEDIA_DISCOVERY_JSON_LD,
+        display_name=display_name,
+    )
+    if resource is not None:
+        resources.append(resource)
+
+
+def _resources_from_json_ld(value: Any, *, source_url: str) -> tuple[MediaResource, ...]:
+    resources: list[MediaResource] = []
+    for node in _iter_json_values(value):
+        if not isinstance(node, Mapping):
+            continue
+        node_type = _json_ld_type(node).lower()
+        name = _clean_text(node.get("name") or node.get("caption") or node.get("description") or "")
+        image_value = node.get("image") or node.get("thumbnailUrl") or node.get("thumbnail")
+        if image_value:
+            for image_url in _flatten_json_ld_urls(image_value):
+                _add_json_ld_url(
+                    resources,
+                    source_url=source_url,
+                    url=image_url,
+                    source_tag="jsonld:image",
+                    kind_hint=MEDIA_RESOURCE_KIND_IMAGE,
+                    display_name=name or "JSON-LD image",
+                )
+        if "video" in node_type or "mediaobject" in node_type:
+            for key in ("contentUrl", "embedUrl", "url"):
+                for media_url in _flatten_json_ld_urls(node.get(key)):
+                    _add_json_ld_url(
+                        resources,
+                        source_url=source_url,
+                        url=media_url,
+                        source_tag=f"jsonld:{key}",
+                        kind_hint=MEDIA_RESOURCE_KIND_VIDEO,
+                        display_name=name or "JSON-LD video/media",
+                    )
+    return tuple(_dedupe_media_resources(resources))
+
+
+def _flatten_json_ld_urls(value: Any) -> Iterable[str]:
+    if isinstance(value, str):
+        if value.strip():
+            yield value.strip()
+    elif isinstance(value, Mapping):
+        url = value.get("url") or value.get("contentUrl") or value.get("embedUrl")
+        if isinstance(url, str) and url.strip():
+            yield url.strip()
+    elif isinstance(value, list):
+        for item in value:
+            yield from _flatten_json_ld_urls(item)
+
+
+def _discover_msn_structured_media_resources(html: str, *, article: MsnArticleExtraction) -> tuple[MediaResource, ...]:
+    resources: list[MediaResource] = []
+    if article.hero_image_url:
+        hero = _structured_media_resource(
+            source_url=article.source_url,
+            url=article.hero_image_url,
+            source_tag="article:hero_image",
+            kind_hint=MEDIA_RESOURCE_KIND_IMAGE,
+            method=MSN_MEDIA_DISCOVERY_ARTICLE_HERO,
+            display_name=article.hero_image_alt or article.title,
+        )
+        if hero is not None:
+            resources.append(hero)
+    parser = _StructuredMediaParser(source_url=article.source_url)
+    try:
+        parser.feed(html or "")
+    except Exception:
+        pass
+    resources.extend(parser.resources)
+    return tuple(_dedupe_media_resources(resources))
+
+
+def _dedupe_media_resources(resources: Iterable[MediaResource]) -> tuple[MediaResource, ...]:
+    seen: set[tuple[str, str]] = set()
+    output: list[MediaResource] = []
+    for resource in resources:
+        key = (resource.kind, resource.url)
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(resource)
+    return tuple(output)
 
 
 def _asset_from_path(
@@ -330,6 +574,7 @@ def build_msn_media_records(
     media_download_results: Iterable[Mapping[str, Any] | MediaDownloadResult] = (),
 ) -> tuple[MsnAdapterMediaRecord, ...]:
     discovered = list(discover_media_resources_from_html(html, source_url=article.source_url).resources)
+    discovered.extend(_discover_msn_structured_media_resources(html, article=article))
     if request_log_entries:
         discovered.extend(discover_media_resources_from_request_log(request_log_entries, source_url=article.source_url).resources)
     seen: set[tuple[str, str]] = set()
