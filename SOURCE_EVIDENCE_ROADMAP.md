@@ -1204,3 +1204,11 @@ The database roadmap recognizes existing user repository trees and proposes prev
 - Follow-up fix: `DEFAULT_MSN_VERTICAL_URL` is now the exact raw approved MSN URL, preserving the safety gate while removing the malformed configured URL failure.
 - The workflow now writes an offline `local_viewer` bundle for easy review of the side-by-side capture outputs. The local viewer indexes local files only and does not claim ReplayWeb/browser visual success.
 - ReplayWeb/browser success is never claimed automatically: `replay_tested` remains false and article/comments visibility, privacy modal, slow-page warning, and `Archived Page Not Found` remain manual validation fields until the user records results.
+
+## MSN Comments/Profile Export Integration - 2026-08-10
+
+- Roadmap status: V34 snapshot accumulator accepted, V35 profile-stats rebuild accepted, and local comments/profile export integration implemented.
+- The integration keeps the offline MSN article archive/viewer artifact set intact while adding comments/profile exports beside it. The local viewer can index generated `msn-comments-v35-profile-stats*` files when they are present in the capture folder.
+- The exporter supports top-level comments, nested replies, deleted placeholders, comment votes, canonical profile URLs, profile CIDs, profile account comments/likes/followers from profile-card text or embedded user objects, and profile-stat propagation across shared profile CIDs/canonical URLs.
+- Export package targets: nested JSON, compact TXT, full/additional-info TXT, Markdown, HTML viewer/exporter with search/copy/download controls, profile JSON/CSV/TXT/HTML, and an integration manifest.
+- Remaining roadmap boundary: manual/live MSN Top/Newest capture is still explicitly operator-gated; this slice adds local import/export processing and fixture tests, not automatic browser capture.

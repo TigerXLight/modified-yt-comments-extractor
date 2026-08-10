@@ -691,3 +691,17 @@ Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
 - Follow-up fix: the approved MSN target constant now stores the exact raw URL, with no Markdown-link syntax or escaped Markdown ampersand, while keeping the single-URL live safety gate.
 - The workflow now writes an offline `local_viewer` review bundle beside the generated capture outputs. The local viewer is a local-file index/launcher only and does not claim the original dynamic ReplayWeb/WACZ replay is fixed.
 - ReplayWeb/browser success is never claimed automatically: `replay_tested` remains false and article/comments visibility, privacy modal, slow-page warning, and `Archived Page Not Found` remain manual validation fields until the user records results.
+
+## MSN Comments/Profile Export Coverage - 2026-08-10
+
+| Requirement | Coverage | Notes |
+| --- | --- | --- |
+| Offline MSN article archive/viewer preservation | Covered | Existing article/archive/viewer files remain side-by-side; comments/profile export does not replace them. |
+| V34 snapshot accumulator local JSON intake | Covered | Local JSON inputs are normalized/merged; live capture remains operator-gated. |
+| Nested comments/replies/deleted placeholders | Covered | Sanitized tests cover parent/reply parsing and deleted placeholder preservation. |
+| Comment votes | Covered | Likes/dislikes are normalized and counted. |
+| Profile URL/CID normalization | Covered | Query/hash-stripped canonical URLs and `cid-*` extraction are tested. |
+| V35 profile stats rebuild/propagation | Covered | Profile-card and embedded-user stats are extracted into profile records and propagated to matching comments/replies. |
+| Export files | Covered | JSON, compact/full TXT, Markdown, HTML, profile JSON/CSV/TXT/HTML, and manifest outputs are fixture-tested. |
+| HTML viewer rules | Covered | Search UI, all/any mode, separate additional-info toggles, copy/download controls, and compact/full label separation are tested. |
+| Accepted V35 headline counts | Verified from supplied references | 34 parents, 88 items, 3 deleted placeholders, 77 voted items, 48 profiles, 48 profile-stat records. Raw reference files are not committed. |

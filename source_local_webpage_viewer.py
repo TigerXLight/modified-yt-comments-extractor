@@ -94,6 +94,9 @@ def _known_capture_files(capture_dir: Path) -> tuple[tuple[str, Path], ...]:
     screenshot_dir = capture_dir / "screenshots"
     for name in ("article-top.png", "full-page.png", "comments-region.png", "full-comments-thread.png"):
         candidates.append((f"Screenshot: {name}", screenshot_dir / name))
+    for path in sorted(capture_dir.glob("msn-comments-v35-profile-stats*")):
+        if path.is_file() and path.suffix.lower() in {".json", ".txt", ".md", ".html", ".csv"}:
+            candidates.append((f"MSN comments/profile export: {path.name}", path))
     return tuple(candidates)
 
 

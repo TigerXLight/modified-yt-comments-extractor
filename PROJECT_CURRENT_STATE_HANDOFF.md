@@ -1063,3 +1063,11 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 - Follow-up fix: `DEFAULT_MSN_VERTICAL_URL` is now the exact raw approved MSN URL, so the rendered-browser safety gate remains in place without rejecting the approved capture target because of malformed URL text.
 - The live-capture workflow now writes a lightweight `local_viewer` bundle with `local-viewer-index.html`, manifest, README, and Windows open scripts. It is an offline local review launcher/index over generated files, not a replacement browser engine.
 - ReplayWeb/browser success is never claimed automatically: `replay_tested` remains false and article/comments visibility, privacy modal, slow-page warning, and `Archived Page Not Found` remain manual validation fields until the user records results.
+
+## MSN Comments/Profile Export Integration - 2026-08-10
+
+- Offline article archive/viewer preservation remains required and implemented: article HTML, WARC.GZ, WACZ, capture/validation manifests, screenshots, and local viewer files are not replaced by the comments/profile exporter.
+- `source_msn_comments_profile_export.py` adds a local V34/V35-compatible comments/profile export path. It handles virtualized snapshot-accumulator JSON after manual capture, preserving parents, replies, deleted placeholders, votes, profile URLs/CIDs, profile card or embedded-user account stats, and profile-stat propagation back to comments/replies.
+- Accepted-reference check: the supplied V34 JSON pair rebuilds to 34 parents / 88 items / 3 deleted placeholders / 77 voted items / 48 profiles / 48 profiles with account stats. The committed tests use sanitized miniature fixtures, not raw MSN payloads.
+- Outputs now cover JSON, compact/full TXT, Markdown, HTML viewer/exporter, profile JSON/CSV/TXT/HTML, and an article+comments integration manifest for source-evidence/export packaging.
+- Boundary: no live/manual MSN capture was auto-run in this slice; future Top/Newest captures remain operator-selected and approval-gated.

@@ -1345,3 +1345,11 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 - Follow-up fix: `DEFAULT_MSN_VERTICAL_URL` is now the exact raw approved MSN URL, so the rendered-browser safety gate is preserved while avoiding the prior malformed configured URL rejection.
 - The live-capture workflow now writes a lightweight `local_viewer` bundle with `local-viewer-index.html`, manifest, README, and Windows open scripts. This viewer is an offline local review launcher/index over generated files, not a new browser engine.
 - ReplayWeb/browser success is never claimed automatically: `replay_tested` remains false and article/comments visibility, privacy modal, slow-page warning, and `Archived Page Not Found` remain manual validation fields until the user records results.
+
+## MSN Comments/Profile Export Integration - 2026-08-10
+
+- The working MSN offline article archive/viewer flow remains preserved: `rendered-page.html`, `rendered-page.warc.gz`, `archive.viewable-live-capture.wacz`, `capture-manifest.json`, `validation.json`, and `local_viewer/open_local_viewer.cmd` stay side-by-side with new comments/profile outputs.
+- `source_msn_comments_profile_export.py` integrates the accepted V34 snapshot-accumulator / V35 profile-stats rebuild workflow using local JSON inputs only. It normalizes top-level comments, nested replies, deleted placeholders, comment likes/dislikes, profile URLs/CIDs, account comment/like/follower stats, and propagates profile stats back onto every matching comment/reply.
+- One-off reference verification against the supplied accepted V34 JSONs reproduced the accepted V35 counts: 34 parents, 88 items, 3 deleted placeholders, 77 items with comment votes, 48 profiles, and 48 profiles with account stats. Raw reference payloads remain uncommitted; repo tests use sanitized fixtures.
+- Export outputs include nested JSON, compact TXT, full/additional-info TXT, Markdown, HTML viewer/exporter, `profiles.json`, `profiles.csv`, `profiles.txt`, `profiles.html`, and a manifest that records the offline article archive preservation boundary.
+- Manual/live MSN capture remains explicitly gated. No new live smoke run was auto-started for this integration slice.
