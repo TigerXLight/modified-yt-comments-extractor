@@ -1220,6 +1220,13 @@ The database roadmap recognizes existing user repository trees and proposes prev
 - Validation/capture manifests now record strict-WACZ status, optional ReplayWeb-compatible WACZ metadata, comments screenshot health, and offline completeness checks for title, source/publisher, optional author/date/read-time, hero image, body/bullets, and original source URL.
 - Remaining boundary: original dynamic ReplayWeb/WACZ success is still not claimed, and tiny/corrupt/missing comment screenshots remain partial/failed evidence until a later approved capture proves otherwise.
 
+## MSN Source Adapter Production Facade - 2026-08-11
+
+- Roadmap status: MSN adapter closeout is now a normal production codepath through `msn_source_adapter.py`, using the validated article/viewer, V15 comments screenshot naming, V34 search/filter HTML, and V35 profile/account-stat export methods.
+- The facade provides URL normalization, target ID separation, York 25 versus AA27 87/88 count boundaries, required York image identity (`AA292lx3.img`), accepted normal output names, debug-only diagnostic policy, media receipts, sidecar comments/profile exports, and a concise closeout report.
+- CLI flags are available for `--source-adapter msn`, MSN screenshot requests, comments sort selection, `--headed`, `--debug`, and `--keep-browser-open`; the default remains headless/background.
+- Remaining boundary: live browser capture is operator-run, WARC/WACZ replay remains validation-dependent, and the current underlying runner does not keep the browser open after capture even when the opt-in flag is recorded.
+
 ### 2026-08-10 – MSN source adapter completion planning: media + source-role provenance
 - Baseline for this patch workflow is `3506fda5375bf4a744e424613a16aa1161786c8a`.
 - The MSN adapter completion slice must treat MSN as a republishing/platform surface when it reposts from outlets such as The Independent; MSN is not automatically the primary/original source for article claims or media.

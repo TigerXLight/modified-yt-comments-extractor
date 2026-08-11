@@ -1361,6 +1361,13 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 - Validation metadata records `strict_wacz_status=STRICT_WACZ_EXPERIMENTAL_POSSIBLY_UNSUPPORTED`, optional ReplayWeb-compatible WACZ readiness, comments screenshot health for `comments-region.png` / `full-comments-thread.png`, and offline archive completeness checks for title, source/publisher, author/date/read-time when available, hero image, article body/bullets, and original source URL.
 - WACZ/ReplayWeb success is still manual-review-only. Tiny, corrupt, unreadable, or missing comments screenshots are marked partial/failed/missing rather than treated as successful comment evidence.
 
+## MSN Source Adapter Production Facade - 2026-08-11
+
+- `msn_source_adapter.py` now provides the normal repo-facing MSN closeout path instead of relying on ad-hoc external kits: raw York/AA27 URL boundaries, York image identity normalization (`AA292lx3.img`), V34-style searchable comments HTML via the existing V35 profile-stats export data, accepted screenshot output names, media receipts, and a concise final closeout block.
+- The adapter CLI accepts `--source-adapter msn`, `--capture-msn-screenshots`, `--capture-msn-article-screenshot`, `--capture-msn-comments-screenshot`, `--msn-comments-sort`, `--headed`, `--debug`, and `--keep-browser-open`. Browser capture remains headless by default; visible mode is opt-in only through `--headed`.
+- Normal output excludes diagnostic screenshots, DOM/scroller dumps, and `comments_stitch_segments`; debug output may include those diagnostics. The completed comments/profile exporter remains unchanged and is reused as the production comments/profile sidecar writer.
+- The MSN source adapter metadata now advertises explicit operator-invoked headless browser capture support while keeping no-credential, no-account, no-visible-browser-by-default, and no-unvalidated-WACZ-success boundaries explicit.
+
 ### 2026-08-10 – MSN source adapter completion planning: media + source-role provenance
 - Baseline for this patch workflow is `3506fda5375bf4a744e424613a16aa1161786c8a`.
 - The MSN adapter completion slice must treat MSN as a republishing/platform surface when it reposts from outlets such as The Independent; MSN is not automatically the primary/original source for article claims or media.

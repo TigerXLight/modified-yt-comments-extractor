@@ -718,6 +718,19 @@ Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
 | Offline article completeness checks | Covered | Title, source/publisher, optional author/date/read-time, hero image, article body/bullets, and original source URL are reported in validation/manifest metadata. |
 | Remaining replay boundary | Not claimed | Dynamic WACZ/ReplayWeb success remains manual-review-only and MSN JS-heavy page completeness remains partial unless manually validated. |
 
+## MSN Source Adapter Production Facade Coverage - 2026-08-11
+
+| Requirement | Coverage | Notes |
+| --- | --- | --- |
+| Production MSN repo path | Covered | `msn_source_adapter.py` provides the normal adapter facade and closeout CLI. |
+| Headless default | Covered | Browser capture wrapper passes `headed=False` unless `--headed` is supplied. |
+| V34 search/filter UI plus V35 profile stats | Covered | Existing comments/profile exporter is reused; facade tests assert search controls, additional-info toggles, Profiles, and account-stat fields. |
+| Accepted screenshot output names | Covered | Normal outputs promote article/comments screenshots to `android_article_MAIN_SINGLE_reference_style.png` and `android_comments_all_expanded_SINGLE_INTERNAL_STITCH.png`. |
+| Debug-only diagnostics | Covered | Normal output policy excludes diagnostic screenshots and `comments_stitch_segments`; debug policy may include them. |
+| York media identity | Covered | Required York image normalizes to `AA292lx3.img` and media receipts record URL, local path, hash, and status when downloaded. |
+| Count boundaries | Covered | Tests keep York 25 and AA27 87/manual, 88/V35 items separate. |
+| Replay/archive honesty | Covered | WARC/WACZ status remains generated/present/review metadata and no replay success is claimed automatically. |
+
 ### 2026-08-10 – MSN source adapter completion planning: media + source-role provenance
 - Baseline for this patch workflow is `3506fda5375bf4a744e424613a16aa1161786c8a`.
 - The MSN adapter completion slice must treat MSN as a republishing/platform surface when it reposts from outlets such as The Independent; MSN is not automatically the primary/original source for article claims or media.

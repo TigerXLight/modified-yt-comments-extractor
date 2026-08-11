@@ -2,6 +2,7 @@ from source_adapters import (
     AVAILABLE_SOURCE_ADAPTERS,
     MSN_SOURCE_ADAPTER,
     NEWS_WEBSITE_SOURCE_ADAPTER,
+    TWITTER_X_SOURCE_ADAPTER,
     YOUTUBE_SOURCE_ADAPTER,
     find_source_adapter,
     find_source_adapter_by_name,
@@ -11,12 +12,13 @@ from source_adapters import (
 
 def run_self_test() -> None:
     names = source_adapter_names()
-    assert names == ("youtube", "msn", "news_website")
+    assert names == ("youtube", "msn", "twitter_x", "news_website")
 
     assert find_source_adapter_by_name("youtube") is YOUTUBE_SOURCE_ADAPTER
     assert find_source_adapter_by_name(" YouTube ") is YOUTUBE_SOURCE_ADAPTER
     assert find_source_adapter_by_name("msn") is MSN_SOURCE_ADAPTER
     assert find_source_adapter_by_name(" MSN ") is MSN_SOURCE_ADAPTER
+    assert find_source_adapter_by_name("twitter_x") is TWITTER_X_SOURCE_ADAPTER
     assert find_source_adapter_by_name("news_website") is NEWS_WEBSITE_SOURCE_ADAPTER
     assert find_source_adapter_by_name(" News_Website ") is NEWS_WEBSITE_SOURCE_ADAPTER
     assert find_source_adapter_by_name("missing") is None
@@ -29,6 +31,7 @@ def run_self_test() -> None:
 
     assert find_source_adapter("https://www.youtube.com/watch?v=dQw4w9WgXcQ") is YOUTUBE_SOURCE_ADAPTER
     assert find_source_adapter("https://www.msn.com/en-gb/news/example/ar-AA123") is MSN_SOURCE_ADAPTER
+    assert find_source_adapter("https://x.com/example/status/123") is TWITTER_X_SOURCE_ADAPTER
     assert find_source_adapter("https://www.telegraph.co.uk/news/example") is NEWS_WEBSITE_SOURCE_ADAPTER
     assert find_source_adapter("https://example.com/not-supported") is None
 

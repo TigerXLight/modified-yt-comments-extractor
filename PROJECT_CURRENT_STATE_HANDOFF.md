@@ -1078,6 +1078,13 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 - `validation.json` / `capture-manifest.json` now carry strict-WACZ status, optional ReplayWeb-compatible WACZ status, comments screenshot health metadata, and offline article completeness checks for title, source/publisher, author/date/read-time when available, hero image, article body/bullets, and original source URL.
 - Tiny, corrupt, unreadable, or missing comments screenshots are recorded as partial/failed/missing and must not be treated as successful comments evidence. ReplayWeb/WACZ success remains manual validation metadata only.
 
+## MSN Source Adapter Production Facade - 2026-08-11
+
+- The validated MSN article/comments/media/archive workflow is now exposed as a reusable repo path in `msn_source_adapter.py`, rather than only as external validation-kit scripts.
+- The facade composes existing validated pieces: York/AA27 URL parsing and count boundaries, V34-style search/filter HTML, V35 profile/account-stat comments data, accepted screenshot filenames, York required image identity/download receipts, normal/debug output filtering, and a final closeout report with the requested `DECISION`, URL, count, screenshot, media, export, and warning fields.
+- Production browser mode is headless/background by default. `--headed` is required for visible browser mode; diagnostics and stitch segments remain debug-only. WARC/WACZ replay success is not claimed unless validation metadata is supplied.
+- `source_adapters.py` now describes MSN as an explicit operator-invoked headless browser capture adapter with no credentials/accounts and no visible browser by default, while preserving existing YouTube and ASR behavior.
+
 ### 2026-08-10 – MSN source adapter completion planning: media + source-role provenance
 - Baseline for this patch workflow is `3506fda5375bf4a744e424613a16aa1161786c8a`.
 - The MSN adapter completion slice must treat MSN as a republishing/platform surface when it reposts from outlets such as The Independent; MSN is not automatically the primary/original source for article claims or media.

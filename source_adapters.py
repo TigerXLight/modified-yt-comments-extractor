@@ -260,11 +260,11 @@ class MsnSourceAdapter:
         credential_type=CREDENTIAL_NONE,
         credentials_required=False,
         credentials_optional=False,
-        supports_browser_capture=False,
+        supports_browser_capture=True,
         supports_manual_import=True,
         setup_hint=(
-            "Local fixture-backed MSN article/resource/comment metadata scaffold. "
-            "Future capture must remain explicit and site-specific."
+            "Production MSN adapter supports explicit headless browser capture plus local V34/V35 comments/profile imports. "
+            "Visible browser mode is opt-in with headed/debug options."
         ),
         test_connection_supported=False,
         privacy_notes=(
@@ -275,9 +275,10 @@ class MsnSourceAdapter:
             "No cost or rate limits are used by this adapter scaffold because it performs no network calls."
         ),
         access_limitations=(
-            "This adapter recognizes and canonicalizes representative MSN article URLs and supports "
-            "deterministic local fixture comments/resources only. It does not fetch pages, scrape comments, "
-            "capture screenshots, inspect archives, download media, bypass access controls, or execute browser automation."
+            "This adapter recognizes/canonicalizes MSN article URLs and routes explicit operator-invoked "
+            "headless browser capture, article/comments screenshots, local comments/profile exports, article media "
+            "receipts, and archive/viewer metadata. It does not use accounts/cookies, bypass access controls, "
+            "open a visible browser by default, or claim WARC/WACZ replay success without validation metadata."
         ),
     )
 

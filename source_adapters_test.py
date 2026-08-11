@@ -131,10 +131,11 @@ def run_self_test() -> None:
     assert msn_metadata.platform_family == "news_website"
     assert msn_metadata.credential_type == "none"
     assert not msn_metadata.credentials_required
+    assert msn_metadata.supports_browser_capture
     assert msn_metadata.supports_manual_import
-    assert "fixture" in msn_metadata.setup_hint.lower()
-    assert "does not fetch" in msn_metadata.access_limitations
-    assert "browser automation" in msn_metadata.access_limitations
+    assert "headless browser capture" in msn_metadata.setup_hint.lower()
+    assert "open a visible browser by default" in msn_metadata.access_limitations
+    assert "replay success" in msn_metadata.access_limitations
 
     twitter_url = "https://x.com/example/status/1234567890?utm_source=test"
     twitter_adapter = TWITTER_X_SOURCE_ADAPTER
