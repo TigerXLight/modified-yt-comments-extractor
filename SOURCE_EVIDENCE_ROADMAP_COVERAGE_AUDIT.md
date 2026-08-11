@@ -776,3 +776,15 @@ Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
 | York Independent layer | Covered | Police-derived incident claims map The Independent as propagated for those claims, while preserving its own framing separately. |
 | York police layer | Covered | North Yorkshire Police maps as `SECONDARY_AUTHORITY_SOURCE` and `PRIMARY_SOURCE_LOCATED` for the authority statement itself. |
 | York image media chain | Covered | `AA292lx3.img` keeps observed publisher page, visible/claimed Google Street View credit, blank original URL unless captured, claimed-but-unverified primary status, and source-chain gap. |
+
+## MSN Production Closeout Gate Tightening Coverage - 2026-08-11
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Failed real run preserved | Covered | `msn_york_adapter_closeout_20260811_065300` remains review-required because comments were not imported, media was missing, V15 scroller selection failed, and screenshots were fallback-promoted. |
+| Live comments import | Covered | Completed live capture `browser_capture/*/comments.json` rows are converted into the production V34/V35 comments/profile export path. Zero imported comments with expected 25 remains review-required. |
+| V15 scroller selection parity | Covered | Production selector now follows the accepted V15 nested-shadow scrollport ranking rule without the extra text/ancestry filter that blocked the real run. |
+| V15 failure diagnostics | Covered | Closeout warnings include host/shadow/overlay, candidate count, selection reason, URL, body/shadow length, comment/reply word counts, see-more counts, and page-scroll-change fields. |
+| Fallback screenshot gate | Covered | Fallback-promoted live-capture screenshots do not count as accepted V6/V15 method success. |
+| Required York media gate | Covered | The York `AA292lx3.img` downloader records source-chain metadata and hash receipts when satisfied; missing media remains a fatal closeout warning. |
+| WARC/WACZ honesty | Covered | Generated-but-not-replay-tested WARC/WACZ warnings are nonfatal only when the concrete comments/media/screenshot/source-role evidence gates pass. |

@@ -15,8 +15,12 @@ from msn_source_adapter import (
     MEDIA_SOURCE_CHAIN_FIELDS,
     MSN_MEDIA_SATISFIED,
     MSN_COMMENTS_CAPTURE_MODE_V15,
+    MSN_V15_SHADOW_LOADER_JS,
     MSN_WACZ_REPLAY_NOT_TESTED,
     MSN_WARC_REPLAY_NOT_TESTED,
+    MsnOfflineArchiveStatus,
+    MsnMediaReceipt,
+    MsnV15CaptureError,
     PRIMARY_ORIGINAL_AUTHORED_SOURCE,
     PRIMARY_SOURCE_CLAIMED_BUT_UNVERIFIED,
     PRIMARY_SOURCE_LOCATED,
@@ -36,6 +40,7 @@ from msn_source_adapter import (
     build_msn_comments_v15_capture_metadata,
     build_msn_url_parts,
     build_offline_archive_status,
+    build_msn_closeout_result,
     build_york_article_claim_source_role_records,
     capture_msn_android_comments_stitched_screenshot,
     default_msn_article_claim_source_role,
@@ -47,6 +52,7 @@ from msn_source_adapter import (
     promote_accepted_screenshot_outputs,
     render_msn_comments_html_export,
     run_msn_closeout_validation,
+    write_msn_adapter_comment_exports,
     write_york_source_role_sidecars,
 )
 from source_msn_comments_profile_export import build_msn_comments_profile_export
@@ -93,6 +99,44 @@ def _capture_with_count(count: int, *, source_url: str = YORK_COMMENTS_URL) -> d
     }
 
 
+def _write_live_capture_comments(root: Path, count: int) -> None:
+    live = root / "live_capture"
+    rows = []
+    for index in range(1, count + 1):
+        rows.append(
+            {
+                "author": f"Live Author {index:02d}",
+                "author_reference_id": f"cid-live-{index:02d}",
+                "capture_order": index,
+                "capture_source": "msn_comments_api_same_session.root",
+                "comment_id": f"live-comment-{index:02d}",
+                "depth": 0,
+                "parent_comment_id": "",
+                "posted_at": "2026-07-30T10:00:00Z",
+                "reaction_count": index,
+                "text": f"Live captured comment {index}",
+                "visible_status": "Normal",
+            }
+        )
+    _write(live / "browser_capture" / "android_mobile_chromium" / "comments.json", json.dumps(rows, ensure_ascii=False))
+    _write(
+        live / "validation.json",
+        json.dumps(
+            {
+                "status": "LIVE_VIEWABLE_CAPTURE_COMPLETED",
+                "target_url": YORK_COMMENTS_URL,
+                "comment_count": count,
+                "title": "Arrest made after shot fired outside York mosque",
+            },
+            ensure_ascii=False,
+        ),
+    )
+    _write(live / "rendered-page.html", "<html>rendered</html>")
+    _write(live / "rendered-page.warc.gz", b"warc")
+    _write(live / "archive.viewable-live-capture.wacz", b"wacz")
+    _write(live / "local_viewer" / "local-viewer-index.html", "<html>viewer</html>")
+
+
 def test_msn_url_and_media_identity_normalization() -> None:
     article = build_msn_url_parts(YORK_ARTICLE_URL)
     comments = build_msn_url_parts(YORK_COMMENTS_URL)
@@ -130,6 +174,8 @@ def test_v15_comments_screenshot_method_is_present_and_debug_only_outputs_are_ga
     assert ACCEPTED_COMMENTS_SCREENSHOT_NAME in metadata["normal_output"]
     assert "window.__MSN_V15_SELECTED_SCROLLER" in source
     assert "scrollTop" in source
+    assert "delta > 8 && /(auto|scroll|overlay)/i.test(style.overflowY || \"\")" in MSN_V15_SHADOW_LOADER_JS
+    assert 'text.includes("comment") || text.includes("reply")' not in MSN_V15_SHADOW_LOADER_JS
     assert "comments_stitch_segments" in source
     assert "diagnostic_before_internal_loading.png" not in production_output_names(debug=False)
     assert "comments_stitch_segments" not in production_output_names(debug=False)
@@ -213,6 +259,152 @@ def test_york_source_role_sidecars_are_written_with_current_schema_fields() -> N
         assert "visible_source_credit" in media["media_source_chain_fields"]
         assert "source_author_correction_url" in media["media_source_chain_fields"]
         assert media["records"][0]["primary_source_status"] == PRIMARY_SOURCE_CLAIMED_BUT_UNVERIFIED
+
+
+def test_live_capture_comments_are_imported_into_production_exports() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        def fake_live_capture_runner(**kwargs):
+            _write_live_capture_comments(Path(kwargs["output_dir"]).parent, YORK_EXPECTED_COMMENT_COUNT)
+            return SimpleNamespace(status="LIVE_VIEWABLE_CAPTURE_COMPLETED")
+
+        def fake_screenshot_runner(**kwargs):
+            out = Path(kwargs["output_dir"])
+            _write(out / "screenshots" / ACCEPTED_ARTICLE_SCREENSHOT_NAME, _png_payload(412, 1000))
+            _write(out / "screenshots" / ACCEPTED_COMMENTS_SCREENSHOT_NAME, _png_payload(1082, 13362))
+            return {"comments": {"capture_mode": MSN_COMMENTS_CAPTURE_MODE_V15}}
+
+        result = run_msn_closeout_validation(
+            target_url=YORK_COMMENTS_URL,
+            output_dir=root,
+            expected_comment_count=YORK_EXPECTED_COMMENT_COUNT,
+            capture_msn_screenshots=True,
+            live_capture_runner=fake_live_capture_runner,
+            screenshot_runner=fake_screenshot_runner,
+            download_media=True,
+            media_downloader=lambda _url: b"image-bytes",
+        )
+        assert result.comment_count == YORK_EXPECTED_COMMENT_COUNT
+        assert Path(result.html_export).name == "comments.html"
+        assert Path(result.json_export).name == "comments.json"
+        assert result.media_satisfied is True
+        assert result.media_downloaded_classified_count == 1
+        assert result.decision == MSN_PRODUCTION_READY
+        assert "warc_generated_but_replay_not_tested" in result.warnings
+        assert "wacz_generated_but_replay_not_tested" in result.warnings
+
+
+def test_live_capture_completed_with_zero_comments_stays_review_required() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        def fake_live_capture_runner(**kwargs):
+            _write_live_capture_comments(Path(kwargs["output_dir"]).parent, 0)
+            return SimpleNamespace(status="LIVE_VIEWABLE_CAPTURE_COMPLETED")
+
+        def fake_screenshot_runner(**kwargs):
+            out = Path(kwargs["output_dir"])
+            _write(out / "screenshots" / ACCEPTED_ARTICLE_SCREENSHOT_NAME, _png_payload(412, 1000))
+            _write(out / "screenshots" / ACCEPTED_COMMENTS_SCREENSHOT_NAME, _png_payload(1082, 13362))
+            return {}
+
+        result = run_msn_closeout_validation(
+            target_url=YORK_COMMENTS_URL,
+            output_dir=root,
+            expected_comment_count=YORK_EXPECTED_COMMENT_COUNT,
+            capture_msn_screenshots=True,
+            live_capture_runner=fake_live_capture_runner,
+            screenshot_runner=fake_screenshot_runner,
+            download_media=True,
+            media_downloader=lambda _url: b"image-bytes",
+        )
+        assert result.decision != MSN_PRODUCTION_READY
+        assert "comment_count_mismatch expected=25 actual=0" in result.warnings
+        assert "live_capture_completed_but_comments_export_missing" in result.warnings
+
+
+def test_fallback_promoted_screenshots_do_not_count_as_accepted_methods() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        def fake_live_capture_runner(**kwargs):
+            live = Path(kwargs["output_dir"])
+            _write(live / "screenshots" / "article-top.png", _png_payload(412, 1000))
+            _write(live / "screenshots" / "full-comments-thread.png", _png_payload(1082, 13362))
+            _write_live_capture_comments(live.parent, YORK_EXPECTED_COMMENT_COUNT)
+            return SimpleNamespace(status="LIVE_VIEWABLE_CAPTURE_COMPLETED")
+
+        def failing_screenshot_runner(**kwargs):
+            raise MsnV15CaptureError(
+                "MSN V15 comments screenshot failed: no selected internal comments scroller",
+                {
+                    "social_comment_wc_found": True,
+                    "shadow_root_found": True,
+                    "overlay_opened": True,
+                    "scroller_candidate_count": 0,
+                    "selected_scroller_reason": "no_selected_internal_comments_scroller",
+                    "page_url_after_open": YORK_COMMENTS_URL,
+                    "body_or_shadow_text_len": 123,
+                    "comments_word_count": 4,
+                    "reply_word_count": 2,
+                    "see_more_reply_count": 0,
+                    "see_more_text_count": 0,
+                    "page_scroll_changed": False,
+                },
+            )
+
+        result = run_msn_closeout_validation(
+            target_url=YORK_COMMENTS_URL,
+            output_dir=root,
+            expected_comment_count=YORK_EXPECTED_COMMENT_COUNT,
+            capture_msn_screenshots=True,
+            live_capture_runner=fake_live_capture_runner,
+            screenshot_runner=failing_screenshot_runner,
+            download_media=True,
+            media_downloader=lambda _url: b"image-bytes",
+        )
+        assert result.decision != MSN_PRODUCTION_READY
+        assert "accepted_screenshot_outputs_promoted_from_live_capture_fallback" in result.warnings
+        assert any(warning.startswith("accepted_screenshot_methods_failed=MSN V15 comments screenshot failed") for warning in result.warnings)
+        assert "v15_diagnostic_scroller_candidate_count=0" in result.warnings
+        assert "v15_diagnostic_page_scroll_changed=False" in result.warnings
+
+
+def test_warc_wacz_not_tested_is_nonfatal_when_other_evidence_passes() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write(root / "screenshots" / ACCEPTED_ARTICLE_SCREENSHOT_NAME, _png_payload(412, 1400))
+        _write(root / "screenshots" / ACCEPTED_COMMENTS_SCREENSHOT_NAME, _png_payload(1082, 13362))
+        export = build_msn_comments_profile_export([_capture_with_count(YORK_EXPECTED_COMMENT_COUNT)])
+        files = write_msn_adapter_comment_exports(export, root)
+        result = build_msn_closeout_result(
+            output_dir=root,
+            url=YORK_COMMENTS_URL,
+            expected_comment_count=YORK_EXPECTED_COMMENT_COUNT,
+            comments_export=export,
+            comments_files=files,
+            media_receipts=(
+                MsnMediaReceipt(
+                    original_url=YORK_REQUIRED_IMAGE_URL,
+                    normalized_identity=YORK_REQUIRED_IMAGE_IDENTITY,
+                    local_path=str(root / "media" / YORK_REQUIRED_IMAGE_IDENTITY),
+                    sha256="abc",
+                    status=MSN_MEDIA_SATISFIED,
+                ),
+            ),
+            offline_archive=MsnOfflineArchiveStatus(
+                offline_archive_status="GENERATED_REPLAY_NOT_TESTED",
+                rendered_page_html_path=str(root / "rendered-page.html"),
+                warc_gz_path=str(root / "rendered-page.warc.gz"),
+                wacz_path=str(root / "archive.viewable-live-capture.wacz"),
+                warc_generated=True,
+                wacz_generated=True,
+            ),
+            source_role_fields_included=True,
+        )
+        assert result.decision == MSN_PRODUCTION_READY
+        assert set(result.warnings) == {"warc_generated_but_replay_not_tested", "wacz_generated_but_replay_not_tested"}
 
 
 def test_normal_output_policy_keeps_diagnostics_debug_only() -> None:
@@ -331,6 +523,10 @@ def run_self_test() -> None:
     test_source_role_and_media_chain_defaults_are_claim_scoped()
     test_york_source_role_mapping_records_current_claim_layers()
     test_york_source_role_sidecars_are_written_with_current_schema_fields()
+    test_live_capture_comments_are_imported_into_production_exports()
+    test_live_capture_completed_with_zero_comments_stays_review_required()
+    test_fallback_promoted_screenshots_do_not_count_as_accepted_methods()
+    test_warc_wacz_not_tested_is_nonfatal_when_other_evidence_passes()
     test_normal_output_policy_keeps_diagnostics_debug_only()
     test_screenshot_promotion_uses_accepted_names_without_segments()
     test_york_and_aa27_count_boundaries_are_distinct()

@@ -1115,3 +1115,10 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 
 - Source-role labels, claim-level source-role fields, media source-chain fields, disputed framing/source-author correction notes, manual source notes, closed-loop reporting flags, primary-source status, and source-chain gaps are now documented and tested as current manual/export metadata fields. Fully automated media extraction and perceptual hash/fingerprint matching remain separate future work.
 - The York article mapping writes source-role and media-source-chain JSON sidecars: MSN is a tertiary propagated republisher layer, The Independent is tertiary propagated for police-derived incident facts, and North Yorkshire Police is a secondary authority source / closest located authority statement, not an automatic eyewitness/original-primary source.
+
+## MSN Production Closeout Gate Tightening - 2026-08-11
+
+- The `msn_york_adapter_closeout_20260811_065300` run is preserved as a failed/review-required production signal, not accepted evidence: live browser capture completed, but closeout reported `COMMENT_COUNT: 0`, missing `AA292lx3.img`, fallback-promoted screenshots, and V15 `no selected internal comments scroller`.
+- The production closeout now consumes completed rendered-browser comments from `live_capture/browser_capture/*/comments.json` and writes the normal comments/profile HTML, JSON, Markdown, TXT, and profile sidecars from those rows. A completed live capture with zero comments remains review-required.
+- V15 scroller selection now matches the accepted V15 reference runner more closely by selecting/ranking nested open-shadow scrollports while page/feed scrolling is locked; if selection still fails, the final report includes scroller-candidate and overlay/shadow diagnostics.
+- Direct V6/V15 accepted screenshot paths, York required media, comment count, and source-role fields are fatal gates. WARC/WACZ generated-but-not-replay-tested warnings remain honest and nonfatal only after those evidence gates pass.

@@ -15,6 +15,7 @@ from urllib.parse import urlsplit, urlunsplit
 from source_msn_comments_profile_export import (
     MsnCommentsProfileExport,
     MsnCommentsProfileExportFiles,
+    build_msn_comments_profile_export,
     build_msn_comments_profile_export_from_paths,
     render_msn_comments_html,
     write_msn_comments_profile_exports,
@@ -32,6 +33,11 @@ MSN_WACZ_REPLAY_NOT_TESTED = "NOT_TESTED"
 MSN_COMMENTS_CAPTURE_MODE_V15 = "internal_scroller_visual_clip_stitch"
 MSN_ARTICLE_SCREENSHOT_METHOD_V6 = "android_article_print_layout_gate_v6"
 MSN_ACCEPTED_V15_DECISION = "YORK_ANDROID_COMMENTS_V15_PASS_INTERNAL_STITCH_CONSENT_VISUALLY_CLEAR"
+LIVE_VIEWABLE_CAPTURE_COMPLETED = "LIVE_VIEWABLE_CAPTURE_COMPLETED"
+NON_FATAL_CLOSEOUT_WARNINGS = {
+    "warc_generated_but_replay_not_tested",
+    "wacz_generated_but_replay_not_tested",
+}
 
 PRIMARY_SOURCE_LOCATED = "PRIMARY_SOURCE_LOCATED"
 PRIMARY_SOURCE_NOT_LOCATED = "PRIMARY_SOURCE_NOT_LOCATED"
@@ -199,9 +205,7 @@ async ({stableTarget, maxPasses}) => {
     return elements().filter(el => {
       const style = getComputedStyle(el);
       const delta = el.scrollHeight - el.clientHeight;
-      if (delta <= 8 || !/(auto|scroll|overlay)/i.test(style.overflowY || "")) return false;
-      const text = textOf(el).toLowerCase();
-      return text.includes("comment") || text.includes("reply") || el.closest("comment-list,reply-list,comment-item");
+      return delta > 8 && /(auto|scroll|overlay)/i.test(style.overflowY || "");
     }).map((el, index) => {
       const rect = el.getBoundingClientRect();
       const text = textOf(el);
@@ -396,11 +400,19 @@ class MsnMediaReceipt:
     normalized_identity: str
     local_path: str = ""
     sha256: str = ""
+    source_role: str = ""
+    media_source_chain: Mapping[str, Any] | None = None
     status: str = MSN_MEDIA_MISSING
     error: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return _value_for_dict(self)
+
+
+class MsnV15CaptureError(RuntimeError):
+    def __init__(self, message: str, diagnostics: Mapping[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.diagnostics = dict(diagnostics or {})
 
 
 @dataclass(frozen=True)
@@ -552,7 +564,14 @@ def normalize_msn_image_identity(url_or_path: str) -> str:
 def required_msn_article_media(url: str) -> tuple[MsnMediaReceipt, ...]:
     parts = build_msn_url_parts(url)
     if parts.target_id == YORK_TARGET_ID:
-        return (MsnMediaReceipt(original_url=YORK_REQUIRED_IMAGE_URL, normalized_identity=YORK_REQUIRED_IMAGE_IDENTITY),)
+        return (
+            MsnMediaReceipt(
+                original_url=YORK_REQUIRED_IMAGE_URL,
+                normalized_identity=YORK_REQUIRED_IMAGE_IDENTITY,
+                source_role=SECONDARY_OUTSIDE_PERSPECTIVE_SOURCE,
+                media_source_chain=default_york_image_source_chain(parts.article_url),
+            ),
+        )
     return ()
 
 
@@ -824,7 +843,21 @@ def download_msn_article_media(
     for item in required_msn_article_media(article_url):
         destination = out / item.normalized_identity
         try:
-            payload = downloader(item.original_url) if downloader else urllib.request.urlopen(item.original_url, timeout=30).read()
+            if downloader:
+                payload = downloader(item.original_url)
+            else:
+                request = urllib.request.Request(
+                    item.original_url,
+                    headers={
+                        "User-Agent": (
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                            "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+                        ),
+                        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                        "Referer": article_url,
+                    },
+                )
+                payload = urllib.request.urlopen(request, timeout=45).read()
             out.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(payload)
             receipts.append(
@@ -833,6 +866,13 @@ def download_msn_article_media(
                     normalized_identity=item.normalized_identity,
                     local_path=str(destination),
                     sha256=sha256_file(destination),
+                    source_role=item.source_role,
+                    media_source_chain={
+                        **dict(item.media_source_chain or {}),
+                        "local_media_path": str(destination),
+                        "media_hash": sha256_file(destination),
+                        "checksum": sha256_file(destination),
+                    },
                     status=MSN_MEDIA_SATISFIED,
                 )
             )
@@ -842,6 +882,8 @@ def download_msn_article_media(
                     original_url=item.original_url,
                     normalized_identity=item.normalized_identity,
                     local_path=str(destination),
+                    source_role=item.source_role,
+                    media_source_chain=item.media_source_chain,
                     status=MSN_MEDIA_MISSING,
                     error=str(exc),
                 )
@@ -953,8 +995,88 @@ def suppress_msn_consent_for_capture(page: Any) -> Mapping[str, Any]:
     return page.evaluate(MSN_CONSENT_SUPPRESSION_JS)
 
 
+def open_msn_comments_overlay(page: Any, comments_url: str, *, target_id: str = YORK_TARGET_ID) -> Mapping[str, Any]:
+    diagnostics: dict[str, Any] = {
+        "requested_comments_url": comments_url,
+        "page_url_after_open": "",
+        "comments_url_contains_target_id": False,
+        "overlay_opened": False,
+        "social_comment_wc_found": False,
+        "shadow_root_found": False,
+    }
+    page.goto(comments_url, wait_until="domcontentloaded", timeout=70000)
+    page.wait_for_timeout(5000)
+    try:
+        suppress_msn_consent_for_capture(page)
+    except Exception:
+        pass
+    if target_id.lower() not in str(getattr(page, "url", "")).lower():
+        page.goto(comments_url, wait_until="domcontentloaded", timeout=70000)
+        page.wait_for_timeout(3000)
+    try:
+        page.evaluate("location.hash = '#comments'")
+    except Exception:
+        pass
+    page.wait_for_timeout(3000)
+    for _ in range(8):
+        try:
+            clicked = page.evaluate(
+                r"""
+                () => {
+                  let clicked = 0;
+                  for (const el of Array.from(document.querySelectorAll("button,a,[role=button]"))) {
+                    const text = ((el.innerText || el.textContent || "") + " " + (el.getAttribute("aria-label") || "")).replace(/\s+/g, " ").trim().toLowerCase();
+                    const href = el.getAttribute("href") || "";
+                    if (href && !href.includes("#comments")) continue;
+                    if (/\b(comment|comments)\b/.test(text) || text === "25" || text.includes("25 comments")) {
+                      try { el.click(); clicked += 1; } catch (_) {}
+                    }
+                  }
+                  return clicked;
+                }
+                """
+            )
+            diagnostics["comments_button_clicks"] = int(diagnostics.get("comments_button_clicks") or 0) + int(clicked or 0)
+        except Exception as exc:
+            diagnostics["comments_button_click_error"] = repr(exc)
+        page.wait_for_timeout(1800)
+        try:
+            found = bool(page.evaluate("() => !!document.querySelector('social-comment-wc')"))
+            diagnostics["social_comment_wc_found"] = found
+            diagnostics["shadow_root_found"] = bool(page.evaluate("() => { const h=document.querySelector('social-comment-wc'); return !!(h && h.shadowRoot); }"))
+            if found:
+                diagnostics["overlay_opened"] = True
+                break
+        except Exception as exc:
+            diagnostics["comments_overlay_probe_error"] = repr(exc)
+    diagnostics["page_url_after_open"] = str(getattr(page, "url", ""))
+    diagnostics["comments_url_contains_target_id"] = target_id.lower() in diagnostics["page_url_after_open"].lower()
+    return diagnostics
+
+
 def expand_msn_comment_shadow_roots(page: Any, *, stable_target: int = 10, max_passes: int = 260) -> Mapping[str, Any]:
     return page.evaluate(MSN_V15_SHADOW_LOADER_JS, {"stableTarget": stable_target, "maxPasses": max_passes})
+
+
+def collect_msn_v15_scroller_diagnostics(page: Any, loader: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    loader = dict(loader or {})
+    diagnostics = {
+        "social_comment_wc_found": bool(loader.get("host_found")),
+        "shadow_root_found": bool(loader.get("shadow_open")),
+        "overlay_opened": bool(loader.get("host_found") and loader.get("shadow_open")),
+        "scroller_candidate_count": len(loader.get("scroller_candidates") or []),
+        "selected_scroller_reason": "selected_top_ranked_internal_comment_scroller" if loader.get("selected_scroller_index") == 0 else str(loader.get("error") or "no_selected_internal_comments_scroller"),
+        "page_url_after_open": str(getattr(page, "url", "")),
+        "body_or_shadow_text_len": int(loader.get("body_or_shadow_len") or 0),
+        "comments_word_count": int(loader.get("comment_word_count") or 0),
+        "reply_word_count": int(loader.get("reply_word_count") or 0),
+        "see_more_reply_count": loader.get("see_more_reply_count"),
+        "see_more_text_count": loader.get("see_more_text_count"),
+        "page_scroll_changed": bool(loader.get("page_scroll_changed")),
+    }
+    if loader.get("load_more_comment_count") is not None:
+        diagnostics["load_more_comment_count"] = loader.get("load_more_comment_count")
+    return diagnostics
 
 
 def _selected_scroller_metrics(page: Any) -> Mapping[str, Any] | None:
@@ -1002,19 +1124,28 @@ def capture_msn_android_comments_stitched_screenshot(
     suppressions = [suppress_msn_consent_for_capture(page)]
     metrics = _selected_scroller_metrics(page)
     if not metrics:
-        raise RuntimeError("MSN V15 comments screenshot failed: no selected internal comments scroller")
+        raise MsnV15CaptureError(
+            "MSN V15 comments screenshot failed: no selected internal comments scroller",
+            collect_msn_v15_scroller_diagnostics(page, loader),
+        )
     rect = metrics["rect"]
     scroll_height = int(metrics.get("scrollHeight") or 0)
     client_height = int(metrics.get("clientHeight") or 0)
     if scroll_height <= 0 or client_height <= 0:
-        raise RuntimeError("MSN V15 comments screenshot failed: invalid internal scroller metrics")
+        raise MsnV15CaptureError(
+            "MSN V15 comments screenshot failed: invalid internal scroller metrics",
+            collect_msn_v15_scroller_diagnostics(page, loader),
+        )
 
     x = max(0.0, float(rect["x"]))
     y = max(0.0, float(rect["y"]))
     width = max(1.0, min(float(rect["width"]), 1082.0))
     height = max(1.0, min(float(rect["height"]), 1400.0 - y))
     if width < 100 or height < 180:
-        raise RuntimeError(f"MSN V15 comments screenshot failed: bad selected scroller rectangle {rect}")
+        raise MsnV15CaptureError(
+            f"MSN V15 comments screenshot failed: bad selected scroller rectangle {rect}",
+            collect_msn_v15_scroller_diagnostics(page, loader),
+        )
 
     step = max(120, int(height - overlap_css))
     max_scroll_top = max(0, scroll_height - client_height)
@@ -1137,13 +1268,7 @@ def run_msn_browser_screenshot_capture(
                 page.close()
             if capture_comments:
                 page = context.new_page()
-                page.goto(parts.comments_url, wait_until="domcontentloaded", timeout=70000)
-                page.wait_for_timeout(6000)
-                try:
-                    page.evaluate("location.hash = '#comments'")
-                    page.wait_for_timeout(1500)
-                except Exception:
-                    pass
+                result["comments_overlay_open"] = open_msn_comments_overlay(page, parts.comments_url, target_id=parts.target_id)
                 result["comments"] = capture_msn_android_comments_stitched_screenshot(page, output_dir, debug=debug)
                 page.close()
         finally:
@@ -1180,6 +1305,81 @@ def write_msn_adapter_comment_exports(
     return files
 
 
+def _rendered_comment_rows_to_capture(rows: Sequence[Mapping[str, Any]], *, source_url: str, title: str = "", shown_count: int = 0) -> dict[str, Any]:
+    by_id: dict[str, dict[str, Any]] = {}
+    roots: list[dict[str, Any]] = []
+    for row in sorted(rows, key=lambda item: int(item.get("capture_order") or 0)):
+        comment_id = str(row.get("comment_id") or row.get("stable_identifier") or row.get("network_api_correlation_id") or "")
+        parent_id = str(row.get("parent_comment_id") or row.get("reply_to") or "")
+        item = {
+            "source_comment_id": comment_id,
+            "type": "Reply" if parent_id or int(row.get("depth") or 0) > 0 else "Parent Comment",
+            "author": str(row.get("author") or "Unknown"),
+            "date": str(row.get("posted_at") or row.get("date") or ""),
+            "author_profile_url": str(row.get("author_profile_url") or ""),
+            "author_profile_cid": str(row.get("author_reference_id") or ""),
+            "likes": str(row.get("reaction_count") if row.get("reaction_count") is not None else row.get("likes") or ""),
+            "dislikes": str(row.get("dislikes") or ""),
+            "text": str(row.get("text") or ""),
+            "deleted_placeholder": str(row.get("visible_status") or "").lower() == "deleted",
+            "capture_source_note": str(row.get("capture_source") or "rendered_browser_validation"),
+            "replies": [],
+        }
+        by_id[comment_id] = item
+        if parent_id and parent_id in by_id:
+            by_id[parent_id]["replies"].append(item)
+        else:
+            roots.append(item)
+    return {
+        "file": "live_capture_rendered_browser_comments.json",
+        "source_url": source_url,
+        "title": title,
+        "sort_filter": "Top",
+        "shown_msn_count": shown_count or len(rows),
+        "comments": roots,
+    }
+
+
+def find_live_capture_comments_path(live_capture_dir: str | Path) -> Path | None:
+    root = Path(live_capture_dir)
+    candidates = (
+        root / "browser_capture" / "android_mobile_chromium" / "comments.json",
+        root / "browser_capture" / "desktop_chromium" / "comments.json",
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    matches = sorted(root.glob("browser_capture/*/comments.json"))
+    return matches[0] if matches else None
+
+
+def build_msn_comments_profile_export_from_live_capture(live_capture_dir: str | Path) -> MsnCommentsProfileExport | None:
+    root = Path(live_capture_dir)
+    comments_path = find_live_capture_comments_path(root)
+    if not comments_path:
+        return None
+    try:
+        rows = json.loads(comments_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(rows, list) or not rows:
+        return None
+    validation: Mapping[str, Any] = {}
+    validation_path = root / "validation.json"
+    if validation_path.is_file():
+        try:
+            validation = json.loads(validation_path.read_text(encoding="utf-8"))
+        except Exception:
+            validation = {}
+    capture = _rendered_comment_rows_to_capture(
+        [row for row in rows if isinstance(row, Mapping)],
+        source_url=str(validation.get("target_url") or YORK_COMMENTS_URL),
+        title=str(validation.get("title") or "Arrest made after shot fired outside York mosque"),
+        shown_count=int(validation.get("comment_count") or len(rows)),
+    )
+    return build_msn_comments_profile_export([capture])
+
+
 def build_msn_closeout_result(
     *,
     output_dir: str | Path,
@@ -1199,7 +1399,7 @@ def build_msn_closeout_result(
     comment_count = comments_export.items_captured if comments_export else 0
     profile_count = len(comments_export.profiles) if comments_export else 0
     warnings_list = list(warnings)
-    if expected_comment_count and comment_count and comment_count != expected_comment_count:
+    if expected_comment_count and comment_count != expected_comment_count:
         warnings_list.append(f"comment_count_mismatch expected={expected_comment_count} actual={comment_count}")
     if not article_screenshot.is_file():
         warnings_list.append("article_screenshot_missing")
@@ -1224,8 +1424,9 @@ def build_msn_closeout_result(
         media_source_chain_json = sidecars["media_source_chain_json"]
         source_role_fields_included = True
     files = comments_files
+    fatal_warnings = [warning for warning in warnings_list if warning not in NON_FATAL_CLOSEOUT_WARNINGS]
     result = MsnCloseoutResult(
-        decision=MSN_PRODUCTION_READY if not warnings_list else MSN_CLOSEOUT_REVIEW_REQUIRED,
+        decision=MSN_PRODUCTION_READY if not fatal_warnings else MSN_CLOSEOUT_REVIEW_REQUIRED,
         output_root=str(root),
         article_url=parts.article_url,
         comments_url=parts.comments_url,
@@ -1299,9 +1500,18 @@ def run_msn_closeout_validation(
             write_local_viewer=True,
             headed=headed,
         )
-        if getattr(capture_result, "status", ""):
+        if getattr(capture_result, "status", "") and getattr(capture_result, "status") != LIVE_VIEWABLE_CAPTURE_COMPLETED:
             warnings.append(f"live_capture_status={getattr(capture_result, 'status')}")
         offline_archive = build_offline_archive_status(root / "live_capture")
+        if comments_export is None:
+            comments_export = build_msn_comments_profile_export_from_live_capture(root / "live_capture")
+            if comments_export:
+                comments_files = write_msn_adapter_comment_exports(comments_export, root)
+                source_role_fields_included = all(
+                    bool(item.get("source_role_metadata")) for item in comments_export.comments
+                )
+            elif expected_comment_count:
+                warnings.append("live_capture_completed_but_comments_export_missing")
         if screenshot_runner is not None:
             try:
                 screenshot_runner(
@@ -1313,6 +1523,15 @@ def run_msn_closeout_validation(
                     debug=debug,
                     keep_browser_open=keep_browser_open,
                 )
+            except MsnV15CaptureError as exc:
+                warnings.append(f"accepted_screenshot_methods_failed={exc}")
+                for key, value in exc.diagnostics.items():
+                    warnings.append(f"v15_diagnostic_{key}={value}")
+                promoted = promote_accepted_screenshot_outputs(root / "live_capture", debug=debug)
+                for key, value in promoted.items():
+                    if value and key in {"article", "comments"}:
+                        _copy_if_present(Path(value), root / "screenshots" / Path(value).name)
+                warnings.append("accepted_screenshot_outputs_promoted_from_live_capture_fallback")
             except Exception as exc:
                 warnings.append(f"accepted_screenshot_methods_failed={exc}")
                 promoted = promote_accepted_screenshot_outputs(root / "live_capture", debug=debug)
