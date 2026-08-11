@@ -162,6 +162,14 @@ def run_self_test() -> None:
     assert msn_profile.archive_fallback_supported
     assert msn_profile.manual_import_supported
     assert msn_profile.network_actions_performed is False
+    assert "source_role_labels" in msn_profile.supported_modes
+    assert "media_source_chain_fields" in msn_profile.supported_modes
+    assert "disputed_framing_source_author_correction_notes" in msn_profile.supported_modes
+    assert "source_role_labels_future" not in msn_profile.supported_modes
+    assert "media_source_chain_fields_future" not in msn_profile.supported_modes
+    assert "disputed_framing_source_author_correction_notes_future" not in msn_profile.supported_modes
+    assert "media_source_chain_sidecar" in msn_profile.expected_artifact_types
+    assert "disputed_framing_manual_notes" in msn_profile.expected_artifact_types
     twitter_profile = default_source_method_profile_for_adapter("twitter_x")
     assert twitter_profile.profile_id == "twitter_x_post_reply_archive_fallback"
     assert "archive_result" in twitter_profile.expected_artifact_types

@@ -43,6 +43,7 @@ MANUAL_SOURCE_NOTE = "MANUAL_SOURCE_NOTE"
 
 PRIMARY_ORIGINAL_AUTHORED_SOURCE = "PRIMARY_ORIGINAL_AUTHORED_SOURCE"
 SECONDARY_OUTSIDE_PERSPECTIVE_SOURCE = "SECONDARY_OUTSIDE_PERSPECTIVE_SOURCE"
+SECONDARY_AUTHORITY_SOURCE = "SECONDARY_AUTHORITY_SOURCE"
 TERTIARY_PROPAGATED_SOURCE = "TERTIARY_PROPAGATED_SOURCE"
 
 CURRENTNESS_STATUSES = ("CURRENT", "HISTORICAL", "UNKNOWN", "REPOSTED", "UNDATED")
@@ -115,9 +116,19 @@ YORK_ARTICLE_URL = (
     "?ocid=edgemobile&PC=EMMX01"
 )
 YORK_COMMENTS_URL = YORK_ARTICLE_URL + "#comments"
+YORK_INDEPENDENT_URL = "https://www.independent.co.uk/news/uk/home-news/york-mosque-arrest-north-yorkshire-police-b3024303.html"
+YORK_POLICE_URL = "https://www.northyorkshire.police.uk/news/north-yorkshire/news/news/2026/07-july/man-arrested-following-incident-at-york-mosque-and-islamic-centre/"
+YORK_POLICE_ARCHIVE_URL = "https://web.archive.org/web/20260730140502/https://www.northyorkshire.police.uk/news/north-yorkshire/news/news/2026/07-july/man-arrested-following-incident-at-york-mosque-and-islamic-centre/"
 YORK_EXPECTED_COMMENT_COUNT = 25
 YORK_REQUIRED_IMAGE_URL = "https://img-s-msn-com.akamaized.net/tenant/amp/entityid/AA292lx3.img?w=534&h=356&m=6"
 YORK_REQUIRED_IMAGE_IDENTITY = "AA292lx3.img"
+YORK_ARTICLE_BULLET_CLAIMS = (
+    "A 44-year-old man has been arrested after a firearm was discharged outside York Mosque and Islamic Centre on Bull Lane at 2.19am on Thursday.",
+    "No one was injured in the incident, and the firearm is believed to have been an air weapon.",
+    "North Yorkshire Police confirmed the arrested man is a white UK national from York, who was traced after leaving the scene in a silver vehicle.",
+    "Police inquiries are ongoing to establish the motivation behind the incident, and the man remains in custody for questioning.",
+    "Authorities are providing reassurance to the Muslim community, with increased patrols around the mosque and officers meeting with the imam.",
+)
 
 AA27_TARGET_ID = "AA27OIhw"
 AA27_COMMENTS_URL = "https://www.msn.com/en-gb/news/uknews/twelve-arrested-over-terror-threat-at-islamic-festival/ar-AA27OIhw?#comments"
@@ -458,6 +469,8 @@ class MsnCloseoutResult:
     txt_export: str = ""
     profiles_json: str = ""
     profiles_txt: str = ""
+    source_role_claims_json: str = ""
+    media_source_chain_json: str = ""
     offline_archive: Mapping[str, Any] | None = None
     media_downloaded_classified_count: int = 0
     source_role_fields_included: bool = False
@@ -504,6 +517,8 @@ class MsnCloseoutResult:
                 f"TXT_EXPORT: {self.txt_export}",
                 f"PROFILES_JSON: {self.profiles_json}",
                 f"PROFILES_TXT: {self.profiles_txt}",
+                f"SOURCE_ROLE_CLAIMS_JSON: {self.source_role_claims_json}",
+                f"MEDIA_SOURCE_CHAIN_JSON: {self.media_source_chain_json}",
                 f"WARNINGS: {warnings}",
             ]
         )
@@ -640,6 +655,162 @@ def default_york_image_source_chain(article_url: str = YORK_ARTICLE_URL) -> dict
         }
     )
     return values
+
+
+def _base_claim_source_role_record(
+    *,
+    claim_text: str,
+    claim_type: str,
+    claim_source_role: str,
+    source_role_scope: str,
+    source_role_limitation: str,
+    publisher_framing_summary: str,
+    primary_source_status: str,
+    source_chain_gap: bool,
+    source_url: str,
+    publisher_page_url: str,
+    source_platform: str,
+    publisher_name: str,
+    capture_method: str,
+    captured_at_utc: str = "",
+) -> dict[str, Any]:
+    values = {field: "" for field in CLAIM_SOURCE_ROLE_FIELDS}
+    values.update(
+        {
+            "claim_text": claim_text,
+            "claim_type": claim_type,
+            "claim_source_role": claim_source_role,
+            "source_role_scope": source_role_scope,
+            "source_role_limitation": source_role_limitation,
+            "authored_or_posted_at": "",
+            "captured_at_utc": captured_at_utc,
+            "event_time_or_claim_time": "",
+            "temporal_gap_note": "",
+            "currentness_status": "HISTORICAL",
+            "primary_source_status": primary_source_status,
+            "source_chain_gap": source_chain_gap,
+            "closed_loop_reporting_flag": False,
+            "publisher_framing_summary": publisher_framing_summary,
+            "corroborating_sources": [YORK_POLICE_URL, YORK_POLICE_ARCHIVE_URL],
+            "contradicting_sources": [],
+            "verification_notes": (
+                "Project evidence-role mapping preserves the observed source layer separately from primary/original evidence. "
+                "People mentioned in the article are not assigned primary/original source status unless their own direct authored/raw source is captured."
+            ),
+        }
+    )
+    values.update(
+        {
+            "source_url": source_url,
+            "canonical_url": source_url,
+            "publisher_page_url": publisher_page_url,
+            "source_platform": source_platform,
+            "publisher_name": publisher_name,
+            "adapter_name": "msn_source_adapter",
+            "access_mode": "operator_approved_or_local_reference",
+            "capture_method": capture_method,
+            "capture_purpose": "source_role_claim_mapping",
+        }
+    )
+    return values
+
+
+def build_york_article_claim_source_role_records(
+    *,
+    captured_at_utc: str = "",
+    capture_method: str = "msn_source_adapter_mapping",
+) -> tuple[Mapping[str, Any], ...]:
+    records: list[Mapping[str, Any]] = []
+    for claim in YORK_ARTICLE_BULLET_CLAIMS:
+        records.append(
+            _base_claim_source_role_record(
+                claim_text=claim,
+                claim_type="police_derived_incident_detail",
+                claim_source_role=TERTIARY_PROPAGATED_SOURCE,
+                source_role_scope="MSN is a repost/republisher of The Independent article.",
+                source_role_limitation="MSN is not the primary/original source for police-derived incident claims.",
+                publisher_framing_summary="MSN / Microsoft Start reposts The Independent article.",
+                primary_source_status=PRIMARY_SOURCE_NOT_LOCATED,
+                source_chain_gap=True,
+                source_url=YORK_ARTICLE_URL,
+                publisher_page_url=YORK_ARTICLE_URL,
+                source_platform="MSN",
+                publisher_name="MSN / Microsoft Start",
+                capture_method=capture_method,
+                captured_at_utc=captured_at_utc,
+            )
+        )
+        records.append(
+            _base_claim_source_role_record(
+                claim_text=claim,
+                claim_type="police_derived_incident_detail",
+                claim_source_role=TERTIARY_PROPAGATED_SOURCE,
+                source_role_scope="The Independent relays/publishes details attributed to North Yorkshire Police.",
+                source_role_limitation=(
+                    "The Independent may be secondary for its own framing/headline/presentation, but is not primary/original "
+                    "for police-derived incident facts unless the direct police source is linked for that claim."
+                ),
+                publisher_framing_summary="The Independent presents the article framing and relays police-derived incident details.",
+                primary_source_status=PRIMARY_SOURCE_NOT_LOCATED,
+                source_chain_gap=True,
+                source_url=YORK_INDEPENDENT_URL,
+                publisher_page_url=YORK_INDEPENDENT_URL,
+                source_platform="Independent",
+                publisher_name="The Independent",
+                capture_method=capture_method,
+                captured_at_utc=captured_at_utc,
+            )
+        )
+        records.append(
+            _base_claim_source_role_record(
+                claim_text=claim,
+                claim_type="authority_incident_statement",
+                claim_source_role=SECONDARY_AUTHORITY_SOURCE,
+                source_role_scope="official police/investigation statement and authority perspective.",
+                source_role_limitation=(
+                    "This is the closest located authority source for the York incident claims, not primary/original "
+                    "eyewitness evidence unless direct raw media, witness statement, or officer observation is captured."
+                ),
+                publisher_framing_summary="North Yorkshire Police official statement.",
+                primary_source_status=PRIMARY_SOURCE_LOCATED,
+                source_chain_gap=False,
+                source_url=YORK_POLICE_URL,
+                publisher_page_url=YORK_POLICE_URL,
+                source_platform="North Yorkshire Police",
+                publisher_name="North Yorkshire Police",
+                capture_method=capture_method,
+                captured_at_utc=captured_at_utc,
+            )
+        )
+    return tuple(records)
+
+
+def write_york_source_role_sidecars(output_dir: str | Path, *, captured_at_utc: str = "") -> dict[str, str]:
+    root = Path(output_dir)
+    claims_path = root / "source-role-claims.json"
+    media_path = root / "media-source-chain.json"
+    claims_hash = _write_json(
+        claims_path,
+        {
+            "schema_version": MSN_SOURCE_ADAPTER_SCHEMA_VERSION,
+            "source_role_fields": list(CLAIM_SOURCE_ROLE_FIELDS),
+            "records": list(build_york_article_claim_source_role_records(captured_at_utc=captured_at_utc)),
+        },
+    )
+    media_hash = _write_json(
+        media_path,
+        {
+            "schema_version": MSN_SOURCE_ADAPTER_SCHEMA_VERSION,
+            "media_source_chain_fields": list(MEDIA_SOURCE_CHAIN_FIELDS),
+            "records": [default_york_image_source_chain(YORK_ARTICLE_URL)],
+        },
+    )
+    return {
+        "source_role_claims_json": str(claims_path),
+        "source_role_claims_sha256": claims_hash,
+        "media_source_chain_json": str(media_path),
+        "media_source_chain_sha256": media_hash,
+    }
 
 
 def download_msn_article_media(
@@ -1045,6 +1216,13 @@ def build_msn_closeout_result(
         warnings_list.append("wacz_generated_but_replay_not_tested")
     if comments_files and not source_role_fields_included:
         warnings_list.append("source_role_fields_absent_from_comments_export")
+    source_role_claims_json = ""
+    media_source_chain_json = ""
+    if parts.target_id == YORK_TARGET_ID:
+        sidecars = write_york_source_role_sidecars(root)
+        source_role_claims_json = sidecars["source_role_claims_json"]
+        media_source_chain_json = sidecars["media_source_chain_json"]
+        source_role_fields_included = True
     files = comments_files
     result = MsnCloseoutResult(
         decision=MSN_PRODUCTION_READY if not warnings_list else MSN_CLOSEOUT_REVIEW_REQUIRED,
@@ -1065,6 +1243,8 @@ def build_msn_closeout_result(
         txt_export=str(root / "comments.txt") if (root / "comments.txt").is_file() else (files.txt_path if files else ""),
         profiles_json=str(root / "profiles.json") if (root / "profiles.json").is_file() else (files.profiles_json_path if files else ""),
         profiles_txt=str(root / "profiles.txt") if (root / "profiles.txt").is_file() else (files.profiles_txt_path if files else ""),
+        source_role_claims_json=source_role_claims_json,
+        media_source_chain_json=media_source_chain_json,
         offline_archive=archive.to_dict(),
         media_downloaded_classified_count=sum(1 for item in required if item.status == MSN_MEDIA_SATISFIED),
         source_role_fields_included=source_role_fields_included,

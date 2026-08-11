@@ -2,9 +2,13 @@ from capture_options import (
     CAPTURE_ARCHIVE_CHECK,
     CAPTURE_ARCHIVE_SUBMIT,
     CAPTURE_COMMENTS,
+    CAPTURE_DISPUTED_FRAMING_NOTES,
     CAPTURE_LIVE_CHAT,
+    CAPTURE_MEDIA_SOURCE_CHAIN_FIELDS,
     CAPTURE_REPLIES,
     CAPTURE_STAGE_FUTURE_ONLY,
+    CAPTURE_STAGE_PLANNED,
+    CAPTURE_SOURCE_ROLE_LABELS,
     CAPTURE_VIDEO_MEDIA_EVIDENCE,
     available_capture_options,
     capture_options_requiring_confirmation,
@@ -40,16 +44,35 @@ def run_self_test() -> None:
     assert not video_media.default_enabled_for_total_export
     assert video_media.requires_user_confirmation
 
+    for current_manual_id in (
+        CAPTURE_MEDIA_SOURCE_CHAIN_FIELDS,
+        CAPTURE_DISPUTED_FRAMING_NOTES,
+        CAPTURE_SOURCE_ROLE_LABELS,
+    ):
+        option = get_capture_option(current_manual_id)
+        assert option is not None
+        assert option.stage == CAPTURE_STAGE_PLANNED
+        assert option.stage != CAPTURE_STAGE_FUTURE_ONLY
+        assert option.default_enabled_for_total_export
+        assert "Future" not in option.description
+        assert "future" not in option.description
+
     default_ids = default_total_export_capture_option_ids()
     assert CAPTURE_COMMENTS in default_ids
     assert CAPTURE_REPLIES in default_ids
     assert CAPTURE_LIVE_CHAT in default_ids
     assert CAPTURE_ARCHIVE_CHECK in default_ids
+    assert CAPTURE_MEDIA_SOURCE_CHAIN_FIELDS in default_ids
+    assert CAPTURE_DISPUTED_FRAMING_NOTES in default_ids
+    assert CAPTURE_SOURCE_ROLE_LABELS in default_ids
     assert CAPTURE_ARCHIVE_SUBMIT not in default_ids
     assert CAPTURE_VIDEO_MEDIA_EVIDENCE not in default_ids
 
     future_only_ids = future_only_capture_option_ids()
     assert CAPTURE_VIDEO_MEDIA_EVIDENCE in future_only_ids
+    assert CAPTURE_MEDIA_SOURCE_CHAIN_FIELDS not in future_only_ids
+    assert CAPTURE_DISPUTED_FRAMING_NOTES not in future_only_ids
+    assert CAPTURE_SOURCE_ROLE_LABELS not in future_only_ids
 
     confirmation_ids = {
         option.option_id for option in capture_options_requiring_confirmation()

@@ -49,6 +49,20 @@ CLAIM_SOURCE_ROLE_FIELDS = (
     "contradicting_sources",
     "verification_notes",
 )
+MANUAL_EVIDENCE_NOTE_FIELDS = (
+    "source_role",
+    "publisher_name",
+    "publisher_framing_summary",
+    "visible_source_credit",
+    "claimed_original_source",
+    "original_source_url",
+    "original_author_or_uploader",
+    "same_media_seen_on_other_urls",
+    "source_author_correction_url",
+    "source_author_correction_text_or_path",
+    "notes_on_context_dispute",
+    "manual_source_note",
+)
 
 
 def _value_for_dict(value: Any) -> Any:
@@ -257,6 +271,17 @@ def default_msn_comment_source_role_metadata(item: Mapping[str, Any]) -> Ordered
             ("media_acquired_at_utc", ""),
             ("file_obtained_delay_note", ""),
             ("publisher_framing_summary", ""),
+            ("source_role", PRIMARY_ORIGINAL_AUTHORED_SOURCE),
+            ("publisher_name", ""),
+            ("visible_source_credit", ""),
+            ("claimed_original_source", ""),
+            ("original_source_url", ""),
+            ("original_author_or_uploader", ""),
+            ("same_media_seen_on_other_urls", []),
+            ("source_author_correction_url", ""),
+            ("source_author_correction_text_or_path", ""),
+            ("notes_on_context_dispute", ""),
+            ("manual_source_note", ""),
             ("removed_or_missing_context_note", ""),
             ("identity_claim_basis", ""),
             ("appearance_claim_basis", ""),
@@ -601,7 +626,12 @@ def full_comment_block(item: Mapping[str, Any], *, index: int | None = None, ind
         pad + f"Deleted placeholder: {item.get('deleted_placeholder')}",
         pad + "Evidence/source-role details:",
         pad + f"Claim source role: {(item.get('source_role_metadata') or {}).get('claim_source_role','')}",
+        pad + f"Source role: {(item.get('source_role_metadata') or {}).get('source_role','')}",
         pad + f"Primary source status: {(item.get('source_role_metadata') or {}).get('primary_source_status','')}",
+        pad + f"Source chain gap: {(item.get('source_role_metadata') or {}).get('source_chain_gap','')}",
+        pad + f"Publisher framing summary: {(item.get('source_role_metadata') or {}).get('publisher_framing_summary','')}",
+        pad + f"Claimed original source: {(item.get('source_role_metadata') or {}).get('claimed_original_source','')}",
+        pad + f"Notes on context dispute: {(item.get('source_role_metadata') or {}).get('notes_on_context_dispute','')}",
         pad + f"Source role scope: {(item.get('source_role_metadata') or {}).get('source_role_scope','')}",
         pad + f"Source role limitation: {(item.get('source_role_metadata') or {}).get('source_role_limitation','')}",
         pad + "Result:",
@@ -738,7 +768,7 @@ a {{ color: #8ab4ff; }}
   <textarea id="fullExportBox" class="single-field" spellcheck="false"></textarea>
 </section>
 <details><summary>Profiles</summary><pre>{html.escape(profiles_txt)}</pre></details>
-<details><summary>Evidence/source-role details</summary><pre>{html.escape(", ".join(CLAIM_SOURCE_ROLE_FIELDS))}</pre></details>
+<details><summary>Evidence/source-role details</summary><pre>{html.escape(", ".join(CLAIM_SOURCE_ROLE_FIELDS + MANUAL_EVIDENCE_NOTE_FIELDS))}</pre></details>
 <script>
 const comments = {json.dumps(_value_for_dict(list(export.comments)), ensure_ascii=False)};
 const compactExport = {json.dumps(compact_txt, ensure_ascii=False)};
@@ -768,7 +798,17 @@ function infoBlock(item) {{
     "Account followers: " + (item.account_followers || ""),
     "Evidence/source-role details:",
     "Claim source role: " + (role.claim_source_role || ""),
+    "Source role: " + (role.source_role || ""),
     "Primary source status: " + (role.primary_source_status || ""),
+    "Source chain gap: " + String(role.source_chain_gap ?? ""),
+    "Publisher name: " + (role.publisher_name || ""),
+    "Publisher framing summary: " + (role.publisher_framing_summary || ""),
+    "Visible source credit: " + (role.visible_source_credit || ""),
+    "Claimed original source: " + (role.claimed_original_source || ""),
+    "Original source URL: " + (role.original_source_url || ""),
+    "Source-author correction URL: " + (role.source_author_correction_url || ""),
+    "Source-author correction text/path: " + (role.source_author_correction_text_or_path || ""),
+    "Notes on context dispute: " + (role.notes_on_context_dispute || ""),
     "Source role scope: " + (role.source_role_scope || ""),
     "Source role limitation: " + (role.source_role_limitation || ""),
     "Result:",
@@ -777,7 +817,13 @@ function infoBlock(item) {{
 }}
 function terms() {{ return document.getElementById("searchBox").value.toLowerCase().split(/\\s+/).filter(Boolean); }}
 function matches(item, words, mode) {{
-  const haystack = [item.author, item.date, item.text, item.author_profile_url, item.author_profile_cid].join(" ").toLowerCase();
+  const role = item.source_role_metadata || {{}};
+  const haystack = [
+    item.author, item.date, item.text, item.author_profile_url, item.author_profile_cid,
+    role.claim_source_role, role.source_role, role.primary_source_status, role.publisher_name,
+    role.publisher_framing_summary, role.claimed_original_source, role.notes_on_context_dispute,
+    String(role.source_chain_gap ?? "")
+  ].join(" ").toLowerCase();
   return mode === "any" ? words.some(word => haystack.includes(word)) : words.every(word => haystack.includes(word));
 }}
 function runSearch() {{

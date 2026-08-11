@@ -21,17 +21,22 @@ from msn_source_adapter import (
     PRIMARY_SOURCE_CLAIMED_BUT_UNVERIFIED,
     PRIMARY_SOURCE_LOCATED,
     PRIMARY_SOURCE_NOT_LOCATED,
+    SECONDARY_AUTHORITY_SOURCE,
     SECONDARY_OUTSIDE_PERSPECTIVE_SOURCE,
+    TERTIARY_PROPAGATED_SOURCE,
     MSN_PRODUCTION_READY,
     YORK_ARTICLE_URL,
     YORK_COMMENTS_URL,
     YORK_EXPECTED_COMMENT_COUNT,
+    YORK_INDEPENDENT_URL,
+    YORK_POLICE_URL,
     YORK_REQUIRED_IMAGE_IDENTITY,
     YORK_REQUIRED_IMAGE_URL,
     build_msn_article_v6_capture_metadata,
     build_msn_comments_v15_capture_metadata,
     build_msn_url_parts,
     build_offline_archive_status,
+    build_york_article_claim_source_role_records,
     capture_msn_android_comments_stitched_screenshot,
     default_msn_article_claim_source_role,
     default_msn_comment_claim_source_role,
@@ -42,6 +47,7 @@ from msn_source_adapter import (
     promote_accepted_screenshot_outputs,
     render_msn_comments_html_export,
     run_msn_closeout_validation,
+    write_york_source_role_sidecars,
 )
 from source_msn_comments_profile_export import build_msn_comments_profile_export
 
@@ -176,6 +182,39 @@ def test_source_role_and_media_chain_defaults_are_claim_scoped() -> None:
     assert media_chain["source_chain_gap"] is True
 
 
+def test_york_source_role_mapping_records_current_claim_layers() -> None:
+    records = list(build_york_article_claim_source_role_records(captured_at_utc="2026-08-11T00:00:00Z"))
+    assert len(records) == 15
+    msn_records = [record for record in records if record["source_url"] == YORK_ARTICLE_URL]
+    independent_records = [record for record in records if record["source_url"] == YORK_INDEPENDENT_URL]
+    police_records = [record for record in records if record["source_url"] == YORK_POLICE_URL]
+    assert len(msn_records) == 5
+    assert len(independent_records) == 5
+    assert len(police_records) == 5
+    assert all(record["claim_source_role"] == TERTIARY_PROPAGATED_SOURCE for record in msn_records)
+    assert all(record["source_platform"] == "MSN" for record in msn_records)
+    assert all(record["publisher_name"] == "MSN / Microsoft Start" for record in msn_records)
+    assert all(record["source_chain_gap"] is True for record in msn_records)
+    assert all(record["claim_source_role"] == TERTIARY_PROPAGATED_SOURCE for record in independent_records)
+    assert all(record["primary_source_status"] == PRIMARY_SOURCE_NOT_LOCATED for record in independent_records)
+    assert all(record["claim_source_role"] == SECONDARY_AUTHORITY_SOURCE for record in police_records)
+    assert all(record["primary_source_status"] == PRIMARY_SOURCE_LOCATED for record in police_records)
+    assert all(record["source_chain_gap"] is False for record in police_records)
+
+
+def test_york_source_role_sidecars_are_written_with_current_schema_fields() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        sidecars = write_york_source_role_sidecars(tmp, captured_at_utc="2026-08-11T00:00:00Z")
+        claims = json.loads(Path(sidecars["source_role_claims_json"]).read_text(encoding="utf-8"))
+        media = json.loads(Path(sidecars["media_source_chain_json"]).read_text(encoding="utf-8"))
+        assert "claim_source_role" in claims["source_role_fields"]
+        assert "source_chain_gap" in claims["source_role_fields"]
+        assert claims["records"][0]["claim_source_role"] == TERTIARY_PROPAGATED_SOURCE
+        assert "visible_source_credit" in media["media_source_chain_fields"]
+        assert "source_author_correction_url" in media["media_source_chain_fields"]
+        assert media["records"][0]["primary_source_status"] == PRIMARY_SOURCE_CLAIMED_BUT_UNVERIFIED
+
+
 def test_normal_output_policy_keeps_diagnostics_debug_only() -> None:
     normal = production_output_names(debug=False)
     debug = production_output_names(debug=True)
@@ -235,6 +274,9 @@ def test_closeout_validation_writes_clean_york_report_from_fixture_inputs() -> N
         assert Path(result.txt_export).name == "comments.txt"
         assert Path(result.profiles_json).name == "profiles.json"
         assert Path(result.profiles_txt).name == "profiles.txt"
+        assert Path(result.source_role_claims_json).name == "source-role-claims.json"
+        assert Path(result.media_source_chain_json).name == "media-source-chain.json"
+        assert result.source_role_fields_included is True
         assert "WARNINGS: NONE" in result.final_block()
         assert (root / "msn-closeout-report.json").is_file()
         assert (root / "media" / YORK_REQUIRED_IMAGE_IDENTITY).is_file()
@@ -287,6 +329,8 @@ def run_self_test() -> None:
     test_v6_article_screenshot_method_is_present()
     test_offline_archive_generation_and_replay_test_status_are_separate()
     test_source_role_and_media_chain_defaults_are_claim_scoped()
+    test_york_source_role_mapping_records_current_claim_layers()
+    test_york_source_role_sidecars_are_written_with_current_schema_fields()
     test_normal_output_policy_keeps_diagnostics_debug_only()
     test_screenshot_promotion_uses_accepted_names_without_segments()
     test_york_and_aa27_count_boundaries_are_distinct()

@@ -764,3 +764,15 @@ Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
 | WACZ replay verification | Not automatic | Reports `WACZ_REPLAY_STATUS: NOT_TESTED` unless explicit validation metadata is supplied. |
 | Source-role fields in comments/profile exports | Covered | JSON and HTML Additional information preserve claim-scoped source-role metadata. |
 | Media source-chain defaults | Covered for York image | `AA292lx3.img` records MSN/publisher observation, visible Google Street View credit, claimed-but-unverified primary status, and source-chain gap. |
+
+## MSN Source Role Current-Field Tightening Coverage - 2026-08-11
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Source-role labels | Current/manual/export field | Automatic classification is not implied. |
+| Media source-chain fields | Current/manual/export field | Acquisition/matching/fingerprinting may remain future, but fields and sidecars exist now. |
+| Disputed framing/source-author correction notes | Current/manual/export field | Empty/manual fields are preserved in JSON/HTML Additional information. |
+| York MSN layer | Covered | Five York bullet claims map MSN as `TERTIARY_PROPAGATED_SOURCE` / republisher layer. |
+| York Independent layer | Covered | Police-derived incident claims map The Independent as propagated for those claims, while preserving its own framing separately. |
+| York police layer | Covered | North Yorkshire Police maps as `SECONDARY_AUTHORITY_SOURCE` and `PRIMARY_SOURCE_LOCATED` for the authority statement itself. |
+| York image media chain | Covered | `AA292lx3.img` keeps observed publisher page, visible/claimed Google Street View credit, blank original URL unless captured, claimed-but-unverified primary status, and source-chain gap. |

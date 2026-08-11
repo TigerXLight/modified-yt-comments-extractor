@@ -286,10 +286,10 @@ Current local implementation note:
 - HTML snapshot.
 - Archive check.
 - Archive submit.
-- Video/media evidence, future only.
-- Media source-chain fields, manual metadata only; acquisition/matching future.
-- Disputed framing/source-author correction notes, future only.
-- Source-role labels, future only.
+- Video/media evidence automation, future only.
+- Media source-chain fields, current manual/export metadata; acquisition, matching, and fingerprinting future.
+- Disputed framing/source-author correction notes, current manual/export metadata.
+- Source-role labels, current claim-level/export metadata.
 
 ## Provenance / Purpose Fields To Plan
 
@@ -1253,3 +1253,9 @@ The database roadmap recognizes existing user repository trees and proposes prev
 - The accepted V15 comments screenshot method is represented as an actual callable production method, not only an output filename: `social-comment-wc` open shadow DOM is traversed recursively, the internal comments scroller is selected and driven while page/feed scroll is locked, replies and clamped text are expanded, the final visual suppresses Microsoft cookie/privacy overlays, and normal output remains one `android_comments_all_expanded_SINGLE_INTERNAL_STITCH.png`.
 - The accepted V6 Android article screenshot method is callable and targets the article URL without `#comments`, aligning to headline/body and stopping before sponsored/recommendation content where detectable.
 - MSN source-role and media source-chain fields are now preserved in comments/profile JSON and HTML Additional information. The roadmap distinction remains: comments are primary/original authored sources only for their own authored text, publisher article framing is secondary/outside perspective, authority/family/agency repetition is not promoted to primary sourcing, and visible media credits such as Google Street View remain claimed/unverified unless the original source URL is captured.
+
+## MSN Source Role Current-Field Tightening - 2026-08-11
+
+- Source-role labels, claim-level source-role fields, media source-chain fields, disputed framing/source-author correction notes, manual source notes, closed-loop reporting flags, primary-source status, and source-chain gaps are current schema/export fields. They may be automatically populated when visible, manually populated by operator notes or dataset-linked evidence, or left empty/unknown.
+- York source-role support now maps five article bullet claims across the observed MSN republisher page, The Independent layer, and North Yorkshire Police page. MSN is `TERTIARY_PROPAGATED_SOURCE`, The Independent is `TERTIARY_PROPAGATED_SOURCE` for police-derived facts while remaining secondary for its own framing, and North Yorkshire Police is `SECONDARY_AUTHORITY_SOURCE` / `PRIMARY_SOURCE_LOCATED` for the police statement itself.
+- York media source-chain support records `AA292lx3.img` as observed on the MSN article, publisher page `MSN / reposted Independent`, visible/claimed Google Street View credit when available, blank original source URL unless captured, `PRIMARY_SOURCE_CLAIMED_BUT_UNVERIFIED`, and `source_chain_gap=true`.
