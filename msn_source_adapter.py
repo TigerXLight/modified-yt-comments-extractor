@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import shutil
 import sys
@@ -26,6 +27,86 @@ MSN_PRODUCTION_READY = "MSN_SOURCE_ADAPTER_PRODUCTION_READY"
 MSN_CLOSEOUT_REVIEW_REQUIRED = "MSN_SOURCE_ADAPTER_REVIEW_REQUIRED"
 MSN_MEDIA_SATISFIED = "MSN_MEDIA_SATISFIED"
 MSN_MEDIA_MISSING = "MSN_MEDIA_MISSING"
+MSN_WARC_REPLAY_NOT_TESTED = "NOT_TESTED"
+MSN_WACZ_REPLAY_NOT_TESTED = "NOT_TESTED"
+MSN_COMMENTS_CAPTURE_MODE_V15 = "internal_scroller_visual_clip_stitch"
+MSN_ARTICLE_SCREENSHOT_METHOD_V6 = "android_article_print_layout_gate_v6"
+MSN_ACCEPTED_V15_DECISION = "YORK_ANDROID_COMMENTS_V15_PASS_INTERNAL_STITCH_CONSENT_VISUALLY_CLEAR"
+
+PRIMARY_SOURCE_LOCATED = "PRIMARY_SOURCE_LOCATED"
+PRIMARY_SOURCE_NOT_LOCATED = "PRIMARY_SOURCE_NOT_LOCATED"
+PRIMARY_SOURCE_CLAIMED_BUT_UNVERIFIED = "PRIMARY_SOURCE_CLAIMED_BUT_UNVERIFIED"
+PRIMARY_SOURCE_DISPUTED = "PRIMARY_SOURCE_DISPUTED"
+SECONDARY_FRAMING_ONLY = "SECONDARY_FRAMING_ONLY"
+TERTIARY_PROPAGATED_CLAIM = "TERTIARY_PROPAGATED_CLAIM"
+MANUAL_SOURCE_NOTE = "MANUAL_SOURCE_NOTE"
+
+PRIMARY_ORIGINAL_AUTHORED_SOURCE = "PRIMARY_ORIGINAL_AUTHORED_SOURCE"
+SECONDARY_OUTSIDE_PERSPECTIVE_SOURCE = "SECONDARY_OUTSIDE_PERSPECTIVE_SOURCE"
+TERTIARY_PROPAGATED_SOURCE = "TERTIARY_PROPAGATED_SOURCE"
+
+CURRENTNESS_STATUSES = ("CURRENT", "HISTORICAL", "UNKNOWN", "REPOSTED", "UNDATED")
+CLAIM_SOURCE_ROLE_FIELDS = (
+    "claim_text",
+    "claim_type",
+    "claim_source_role",
+    "source_role_scope",
+    "source_role_limitation",
+    "authored_or_posted_at",
+    "captured_at_utc",
+    "event_time_or_claim_time",
+    "temporal_gap_note",
+    "currentness_status",
+    "primary_source_status",
+    "source_chain_gap",
+    "closed_loop_reporting_flag",
+    "first_uploader_known",
+    "first_uploader_url",
+    "first_seen_by_user_utc",
+    "media_acquired_at_utc",
+    "file_obtained_delay_note",
+    "publisher_framing_summary",
+    "removed_or_missing_context_note",
+    "identity_claim_basis",
+    "appearance_claim_basis",
+    "forensic_claim_basis",
+    "family_or_authority_claim_basis",
+    "open_source_media_available",
+    "corroborating_sources",
+    "contradicting_sources",
+    "verification_notes",
+)
+MEDIA_SOURCE_CHAIN_FIELDS = (
+    "media_observed_on_url",
+    "publisher_page_url",
+    "publisher_name",
+    "publisher_headline_or_caption",
+    "publisher_framing_summary",
+    "visible_source_credit",
+    "claimed_original_source",
+    "original_source_url",
+    "original_author_or_uploader",
+    "primary_source_status",
+    "source_role",
+    "source_chain_gap",
+    "social_source_url",
+    "wire_agency_source_credit",
+    "caption_context_around_media",
+    "first_seen_by_user_utc",
+    "capture_time_utc",
+    "media_hash",
+    "checksum",
+    "perceptual_hash_future",
+    "same_media_seen_on_other_urls",
+    "repost_platform",
+    "repost_uploader_account",
+    "repost_timestamp",
+    "source_author_correction_url",
+    "source_author_correction_text_or_path",
+    "notes_on_context_dispute",
+    "confidence",
+    "verification_notes",
+)
 
 YORK_TARGET_ID = "AA29207o"
 YORK_ARTICLE_URL = (
@@ -51,6 +132,213 @@ DEBUG_ONLY_NAMES = (
     "scroller_diagnostic.json",
     "dom_diagnostic.json",
 )
+
+MSN_V15_SHADOW_LOADER_JS = r"""
+async ({stableTarget, maxPasses}) => {
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const result = {
+    capture_mode: "internal_scroller_visual_clip_stitch",
+    host_found: false,
+    shadow_open: false,
+    passes: 0,
+    stable_passes: 0,
+    total_reply_expand_clicks: 0,
+    total_text_expand_clicks: 0,
+    total_load_clicks: 0,
+    page_scroll_start: Math.round(window.scrollY || 0),
+    page_scroll_end: null,
+    page_scroll_changed: false,
+    selected_scroller_index: -1,
+    scroller_candidates: [],
+    body_or_shadow_len: 0,
+    comment_word_count: 0,
+    reply_word_count: 0,
+    see_more_reply_count: null,
+    see_more_text_count: null,
+    load_more_comment_count: null,
+    error: null
+  };
+  const host = document.querySelector("social-comment-wc");
+  result.host_found = !!host;
+  result.shadow_open = !!(host && host.shadowRoot);
+  if (!host || !host.shadowRoot) {
+    result.error = "social-comment-wc shadow root not found";
+    return result;
+  }
+  const lockY = Math.round(window.scrollY || 0);
+  document.documentElement.style.setProperty("overflow", "hidden", "important");
+  document.body.style.setProperty("overflow", "hidden", "important");
+  document.documentElement.style.setProperty("overscroll-behavior", "none", "important");
+  document.body.style.setProperty("overscroll-behavior", "none", "important");
+  window.scrollTo(0, lockY);
+  function roots() {
+    const queue = [host.shadowRoot];
+    for (let i = 0; i < queue.length; i += 1) {
+      for (const el of queue[i].querySelectorAll("*")) {
+        if (el.shadowRoot && !queue.includes(el.shadowRoot)) queue.push(el.shadowRoot);
+      }
+    }
+    return queue;
+  }
+  function elements() { return roots().flatMap(root => Array.from(root.querySelectorAll("*"))); }
+  function textOf(el) {
+    return ((el.innerText || el.textContent || "") + " " + (el.getAttribute?.("aria-label") || "")).replace(/\s+/g, " ").trim();
+  }
+  function scrollers() {
+    return elements().filter(el => {
+      const style = getComputedStyle(el);
+      const delta = el.scrollHeight - el.clientHeight;
+      if (delta <= 8 || !/(auto|scroll|overlay)/i.test(style.overflowY || "")) return false;
+      const text = textOf(el).toLowerCase();
+      return text.includes("comment") || text.includes("reply") || el.closest("comment-list,reply-list,comment-item");
+    }).map((el, index) => {
+      const rect = el.getBoundingClientRect();
+      const text = textOf(el);
+      const delta = el.scrollHeight - el.clientHeight;
+      const score = delta + Math.min(text.length, 24000) + (/comment/i.test(text) ? 3000 : 0) + (/reply/i.test(text) ? 1500 : 0);
+      return {el, index, score, delta, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, scrollTop: el.scrollTop, tag: el.tagName, cls: String(el.className || ""), rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height}, textSample: text.slice(0, 280)};
+    }).sort((a, b) => b.score - a.score);
+  }
+  function clickExpands() {
+    let replies = 0, texts = 0, loads = 0;
+    for (const el of elements()) {
+      if (!el.matches?.("button,[role='button'],a") || el.disabled) continue;
+      const t = textOf(el);
+      if (!t) continue;
+      if (/\b(show|view|see|load)\b.*\b(more\s+)?repl(?:y|ies)\b/i.test(t) || /^\d+\s+more\s+repl(?:y|ies)$/i.test(t) || /^see\s+\d+\s+more\s+repl(?:y|ies)$/i.test(t)) {
+        try { el.click(); replies += 1; } catch (_) {}
+      } else if (/\b(show|see|read)\s+more\b/i.test(t) && !/sponsored|ad|privacy|sign in/i.test(t)) {
+        try { el.click(); texts += 1; } catch (_) {}
+      } else if (/\b(load|show|view|see)\b.*\b(more\s+)?comments\b/i.test(t)) {
+        try { el.click(); loads += 1; } catch (_) {}
+      }
+    }
+    return {replies, texts, loads};
+  }
+  let previousSignature = "";
+  let stable = 0;
+  for (let pass = 1; pass <= maxPasses && stable < stableTarget; pass += 1) {
+    const clicks = clickExpands();
+    result.total_reply_expand_clicks += clicks.replies;
+    result.total_text_expand_clicks += clicks.texts;
+    result.total_load_clicks += clicks.loads;
+    const candidates = scrollers();
+    if (!candidates.length) { await wait(600); continue; }
+    for (const candidate of candidates.slice(0, 8)) {
+      try {
+        candidate.el.scrollTop = Math.max(0, candidate.el.scrollHeight - candidate.el.clientHeight - 4);
+        candidate.el.dispatchEvent(new Event("scroll", {bubbles: true, composed: true}));
+        candidate.el.dispatchEvent(new WheelEvent("wheel", {deltaY: 1200, bubbles: true, composed: true}));
+        await wait(100);
+        candidate.el.scrollTop = candidate.el.scrollHeight;
+        candidate.el.dispatchEvent(new Event("scroll", {bubbles: true, composed: true}));
+      } catch (_) {}
+    }
+    window.scrollTo(0, lockY);
+    await wait(750);
+    const all = elements();
+    const leafTextLength = all.reduce((total, el) => el.children.length ? total : total + (el.textContent || "").length, 0);
+    const current = scrollers();
+    const signature = [all.length, leafTextLength, ...current.slice(0, 8).map(item => `${item.scrollHeight}/${item.clientHeight}/${Math.round(item.el.scrollTop)}`)].join("|");
+    stable = signature === previousSignature ? stable + 1 : 0;
+    previousSignature = signature;
+    result.passes = pass;
+    result.stable_passes = stable;
+  }
+  const all = elements();
+  const allText = all.map(textOf).join("\n");
+  const lower = allText.toLowerCase();
+  result.body_or_shadow_len = allText.length;
+  result.comment_word_count = (lower.match(/comment/g) || []).length;
+  result.reply_word_count = (lower.match(/reply/g) || []).length;
+  result.see_more_reply_count = (allText.match(/see\s+\d+\s+more\s+repl(?:y|ies)|\b(show|view|see|load)\b[^\n]{0,80}\brepl(?:y|ies)\b/ig) || []).length;
+  result.see_more_text_count = (allText.match(/\b(show|see|read)\s+more\b/ig) || []).length;
+  result.load_more_comment_count = (allText.match(/\b(load|show|view|see)\b[^\n]{0,80}\bcomments\b/ig) || []).length;
+  const candidates = scrollers();
+  result.scroller_candidates = candidates.slice(0, 20).map((item, rank) => ({rank, score: item.score, delta: item.delta, scrollHeight: item.scrollHeight, clientHeight: item.clientHeight, scrollTop: item.el.scrollTop, tag: item.tag, cls: item.cls, rect: item.rect, textSample: item.textSample}));
+  if (candidates.length) {
+    window.__MSN_V15_SELECTED_SCROLLER = candidates[0].el;
+    result.selected_scroller_index = 0;
+    try { candidates[0].el.scrollTop = 0; candidates[0].el.dispatchEvent(new Event("scroll", {bubbles: true, composed: true})); } catch (_) {}
+  }
+  result.page_scroll_end = Math.round(window.scrollY || 0);
+  result.page_scroll_changed = result.page_scroll_end !== result.page_scroll_start;
+  return result;
+}
+"""
+
+MSN_CONSENT_SUPPRESSION_JS = r"""
+() => {
+  const selected = window.__MSN_V15_SELECTED_SCROLLER || window.__MSN_V12_SELECTED_SCROLLER;
+  const protectedNodes = new Set();
+  function protect(node) { while (node) { protectedNodes.add(node); node = node.parentElement || node.host; } }
+  if (selected) protect(selected);
+  const hidden = [];
+  function visible(el) {
+    const r = el.getBoundingClientRect();
+    const st = getComputedStyle(el);
+    return {r, st, z: parseInt(st.zIndex || "0", 10) || 0};
+  }
+  function textOf(el) { return (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase(); }
+  function hide(el, reason) {
+    if (!el || protectedNodes.has(el)) return;
+    el.setAttribute("data-msn-v15-consent-hidden", reason);
+    el.style.setProperty("display", "none", "important");
+    el.style.setProperty("visibility", "hidden", "important");
+    hidden.push({tag: el.tagName, reason});
+  }
+  const elements = Array.from(document.querySelectorAll("*")).reverse();
+  const consentAttrs = /(consent|privacy|cookie|gdpr|cmp|onetrust|ot-sdk|usercentrics|truste|didomi|quantcast)/i;
+  const consentButton = /^(i accept|accept|accept all|reject all|reject|manage preferences|manage options|privacy settings|save choices|confirm my choices)$/i;
+  for (const el of elements) {
+    if (protectedNodes.has(el)) continue;
+    const t = textOf(el);
+    const attrs = [el.tagName, el.id || "", el.className || "", el.getAttribute?.("src") || "", el.getAttribute?.("title") || "", el.getAttribute?.("aria-label") || ""].join(" ");
+    const v = visible(el);
+    const fixedish = /fixed|sticky|absolute/.test(v.st.position) || v.z >= 10;
+    const largePanel = v.r.width > 160 && v.r.height > 70;
+    const bottomBanner = v.r.width >= window.innerWidth * 0.55 && v.r.bottom > window.innerHeight * 0.45;
+    const consentText = t.includes("microsoft cares about your privacy") || ((t.includes("privacy") || t.includes("cookies")) && (t.includes("accept") || t.includes("reject") || t.includes("manage")));
+    if ((consentButton.test(t) || consentText || consentAttrs.test(attrs)) && (fixedish || bottomBanner || largePanel)) {
+      hide(el, "consent_or_privacy_overlay");
+    }
+  }
+  return {hidden_count: hidden.length, hidden};
+}
+"""
+
+MSN_V6_ARTICLE_ALIGN_JS = r"""
+(title) => {
+  function textOf(el) { return (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim(); }
+  const candidates = Array.from(document.querySelectorAll("h1,h2,[role='heading'],article *,main *"));
+  let titleEl = candidates.find(el => textOf(el).toLowerCase().includes(String(title || "").toLowerCase()));
+  if (!titleEl) titleEl = document.querySelector("h1,[role='heading']");
+  if (!titleEl) return {ok: false, reason: "title element not found"};
+  titleEl.scrollIntoView({block: "start", inline: "nearest"});
+  window.scrollBy(0, -90);
+  const article = titleEl.closest("article") || titleEl.closest("main") || document.querySelector("article,main") || titleEl.parentElement;
+  let boundary = null;
+  for (const el of Array.from(document.querySelectorAll("section,div,h2,h3"))) {
+    const t = textOf(el).toLowerCase();
+    if (/sponsored content|more for you|recommended|from around the web/.test(t)) {
+      boundary = el;
+      break;
+    }
+  }
+  const ar = article ? article.getBoundingClientRect() : titleEl.getBoundingClientRect();
+  const br = boundary ? boundary.getBoundingClientRect() : null;
+  const viewportW = window.innerWidth || document.documentElement.clientWidth || 412;
+  const viewportH = window.innerHeight || document.documentElement.clientHeight || 915;
+  const y = Math.max(0, Math.min(titleEl.getBoundingClientRect().top - 16, viewportH - 120));
+  const bottom = br && br.top > y + 260 ? Math.min(br.top - 8, viewportH) : Math.min(Math.max(ar.bottom + 120, y + 700), viewportH);
+  return {
+    ok: true,
+    method: "android_article_print_layout_gate_v6",
+    titleText: textOf(titleEl).slice(0, 200),
+    clip: {x: 0, y, width: viewportW, height: Math.max(260, bottom - y)}
+  };
+}
+"""
 
 
 def _value_for_dict(value: Any) -> Any:
@@ -105,6 +393,25 @@ class MsnMediaReceipt:
 
 
 @dataclass(frozen=True)
+class MsnOfflineArchiveStatus:
+    offline_archive_status: str
+    rendered_page_html_path: str = ""
+    local_viewer_path: str = ""
+    warc_gz_path: str = ""
+    wacz_path: str = ""
+    warc_generated: bool = False
+    wacz_generated: bool = False
+    warc_replay_tested: bool = False
+    wacz_replay_tested: bool = False
+    warc_replay_status: str = MSN_WARC_REPLAY_NOT_TESTED
+    wacz_replay_status: str = MSN_WACZ_REPLAY_NOT_TESTED
+    archive_limitations: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
 class MsnProductionCaptureOptions:
     target_url: str
     output_dir: str
@@ -151,6 +458,9 @@ class MsnCloseoutResult:
     txt_export: str = ""
     profiles_json: str = ""
     profiles_txt: str = ""
+    offline_archive: Mapping[str, Any] | None = None
+    media_downloaded_classified_count: int = 0
+    source_role_fields_included: bool = False
     warnings: tuple[str, ...] = ()
     schema_version: str = MSN_SOURCE_ADAPTER_SCHEMA_VERSION
 
@@ -160,6 +470,7 @@ class MsnCloseoutResult:
     def final_block(self) -> str:
         warnings = "NONE" if not self.warnings else "; ".join(self.warnings)
         media_required = ", ".join(item.get("normalized_identity", "") for item in self.media_required) or "NONE"
+        archive = self.offline_archive or {}
         return "\n".join(
             [
                 f"DECISION: {self.decision}",
@@ -174,6 +485,19 @@ class MsnCloseoutResult:
                 f"COMMENTS_SCREENSHOT: {self.comments_screenshot}",
                 f"MEDIA_REQUIRED: {media_required}",
                 f"MEDIA_SATISFIED: {self.media_satisfied}",
+                f"MEDIA_DOWNLOADED_CLASSIFIED_COUNT: {self.media_downloaded_classified_count}",
+                f"OFFLINE_ARCHIVE_STATUS: {archive.get('offline_archive_status', 'NOT_PRESENT')}",
+                f"RENDERED_PAGE_HTML: {archive.get('rendered_page_html_path', '')}",
+                f"LOCAL_VIEWER: {archive.get('local_viewer_path', '')}",
+                f"WARC_GZ: {archive.get('warc_gz_path', '')}",
+                f"WACZ: {archive.get('wacz_path', '')}",
+                f"WARC_GENERATED: {archive.get('warc_generated', False)}",
+                f"WACZ_GENERATED: {archive.get('wacz_generated', False)}",
+                f"WARC_REPLAY_TESTED: {archive.get('warc_replay_tested', False)}",
+                f"WACZ_REPLAY_TESTED: {archive.get('wacz_replay_tested', False)}",
+                f"WARC_REPLAY_STATUS: {archive.get('warc_replay_status', MSN_WARC_REPLAY_NOT_TESTED)}",
+                f"WACZ_REPLAY_STATUS: {archive.get('wacz_replay_status', MSN_WACZ_REPLAY_NOT_TESTED)}",
+                f"SOURCE_ROLE_FIELDS_INCLUDED: {self.source_role_fields_included}",
                 f"HTML_EXPORT: {self.html_export}",
                 f"JSON_EXPORT: {self.json_export}",
                 f"MD_EXPORT: {self.md_export}",
@@ -215,6 +539,107 @@ def required_msn_article_media(url: str) -> tuple[MsnMediaReceipt, ...]:
     if parts.target_id == YORK_TARGET_ID:
         return (MsnMediaReceipt(original_url=YORK_REQUIRED_IMAGE_URL, normalized_identity=YORK_REQUIRED_IMAGE_IDENTITY),)
     return ()
+
+
+def default_msn_comment_claim_source_role(item: Mapping[str, Any]) -> dict[str, Any]:
+    text = str(item.get("text") or "")
+    return {
+        "claim_text": text,
+        "claim_type": "comment_authorship",
+        "claim_source_role": PRIMARY_ORIGINAL_AUTHORED_SOURCE,
+        "source_role_scope": "limited_to_comment_or_reply_text_authored_by_the_commenter_at_capture_time",
+        "source_role_limitation": (
+            "The commenter's own comment/reply is primary/original authored evidence only for the claim "
+            "that this user authored this comment text. It is not automatically primary evidence for "
+            "real-world incident claims contained inside the comment."
+        ),
+        "authored_or_posted_at": str(item.get("date") or item.get("comment_or_post_timestamp") or ""),
+        "captured_at_utc": str(item.get("captured_at_utc") or ""),
+        "event_time_or_claim_time": "",
+        "temporal_gap_note": "",
+        "currentness_status": "UNKNOWN",
+        "primary_source_status": PRIMARY_SOURCE_LOCATED,
+        "source_chain_gap": False,
+        "closed_loop_reporting_flag": False,
+        "first_uploader_known": False,
+        "first_uploader_url": "",
+        "first_seen_by_user_utc": "",
+        "media_acquired_at_utc": "",
+        "file_obtained_delay_note": "",
+        "publisher_framing_summary": "",
+        "removed_or_missing_context_note": "",
+        "identity_claim_basis": "",
+        "appearance_claim_basis": "",
+        "forensic_claim_basis": "",
+        "family_or_authority_claim_basis": "",
+        "open_source_media_available": "",
+        "corroborating_sources": [],
+        "contradicting_sources": [],
+        "verification_notes": "MSN adapter default; operator review required for any incident-level claim.",
+    }
+
+
+def default_msn_article_claim_source_role(*, article_url: str, publisher_name: str = "The Independent") -> dict[str, Any]:
+    return {
+        "claim_text": "",
+        "claim_type": "publisher_article_framing",
+        "claim_source_role": SECONDARY_OUTSIDE_PERSPECTIVE_SOURCE,
+        "source_role_scope": "publisher_or_reporter_framing_observed_on_msn_page",
+        "source_role_limitation": (
+            "MSN/the republished outlet is an observed platform/publisher source for article framing; it is not "
+            "silently promoted to the primary/original source for each factual incident claim."
+        ),
+        "authored_or_posted_at": "",
+        "captured_at_utc": "",
+        "event_time_or_claim_time": "",
+        "temporal_gap_note": "",
+        "currentness_status": "UNKNOWN",
+        "primary_source_status": PRIMARY_SOURCE_NOT_LOCATED,
+        "source_chain_gap": True,
+        "closed_loop_reporting_flag": False,
+        "first_uploader_known": False,
+        "first_uploader_url": "",
+        "first_seen_by_user_utc": "",
+        "media_acquired_at_utc": "",
+        "file_obtained_delay_note": "",
+        "publisher_framing_summary": f"Observed MSN article republished/framed by {publisher_name}.",
+        "removed_or_missing_context_note": "",
+        "identity_claim_basis": "",
+        "appearance_claim_basis": "",
+        "forensic_claim_basis": "",
+        "family_or_authority_claim_basis": "",
+        "open_source_media_available": "",
+        "corroborating_sources": [],
+        "contradicting_sources": [],
+        "verification_notes": f"Publisher page observed at {article_url}; direct original/primary statement is not implied.",
+    }
+
+
+def default_york_image_source_chain(article_url: str = YORK_ARTICLE_URL) -> dict[str, Any]:
+    values = {field: "" for field in MEDIA_SOURCE_CHAIN_FIELDS}
+    values.update(
+        {
+            "media_observed_on_url": article_url,
+            "publisher_page_url": article_url,
+            "publisher_name": "The Independent via MSN",
+            "publisher_headline_or_caption": "Arrest made after shot fired outside York mosque",
+            "visible_source_credit": "Google Street View",
+            "claimed_original_source": "Google Street View",
+            "original_source_url": "",
+            "original_author_or_uploader": "",
+            "primary_source_status": PRIMARY_SOURCE_CLAIMED_BUT_UNVERIFIED,
+            "source_role": SECONDARY_OUTSIDE_PERSPECTIVE_SOURCE,
+            "source_chain_gap": True,
+            "media_url": YORK_REQUIRED_IMAGE_URL,
+            "normalized_identity": YORK_REQUIRED_IMAGE_IDENTITY,
+            "confidence": "visible_credit_claimed_not_independently_verified",
+            "verification_notes": (
+                "The captured MSN/Independent page is the observed publisher page for this image. "
+                "The original Google Street View source URL was not captured by the adapter."
+            ),
+        }
+    )
+    return values
 
 
 def download_msn_article_media(
@@ -298,6 +723,265 @@ def promote_accepted_screenshot_outputs(output_dir: str | Path, *, debug: bool =
     return promoted
 
 
+def build_offline_archive_status(output_dir: str | Path) -> MsnOfflineArchiveStatus:
+    root = Path(output_dir)
+    rendered = root / "rendered-page.html"
+    local_viewer = root / "local_viewer" / "local-viewer-index.html"
+    if not local_viewer.is_file():
+        local_viewer = root / "local_viewer" / "open_local_viewer.cmd"
+    warc_gz = root / "rendered-page.warc.gz"
+    wacz = root / "archive.viewable-live-capture.wacz"
+    limitations: list[str] = []
+    if warc_gz.is_file():
+        limitations.append("raw_warc_replay_not_tested_by_adapter")
+    if wacz.is_file():
+        limitations.append("wacz_replay_not_tested_by_adapter")
+    if not rendered.is_file() and not warc_gz.is_file() and not wacz.is_file() and not local_viewer.is_file():
+        return MsnOfflineArchiveStatus(offline_archive_status="NOT_PRESENT")
+    return MsnOfflineArchiveStatus(
+        offline_archive_status="GENERATED_REPLAY_NOT_TESTED",
+        rendered_page_html_path=str(rendered) if rendered.is_file() else "",
+        local_viewer_path=str(local_viewer) if local_viewer.is_file() else "",
+        warc_gz_path=str(warc_gz) if warc_gz.is_file() else "",
+        wacz_path=str(wacz) if wacz.is_file() else "",
+        warc_generated=warc_gz.is_file(),
+        wacz_generated=wacz.is_file(),
+        warc_replay_tested=False,
+        wacz_replay_tested=False,
+        warc_replay_status=MSN_WARC_REPLAY_NOT_TESTED,
+        wacz_replay_status=MSN_WACZ_REPLAY_NOT_TESTED,
+        archive_limitations=tuple(limitations),
+    )
+
+
+def build_msn_comments_v15_capture_metadata() -> dict[str, Any]:
+    return {
+        "decision_reference": MSN_ACCEPTED_V15_DECISION,
+        "capture_mode": MSN_COMMENTS_CAPTURE_MODE_V15,
+        "normal_output": f"screenshots/{ACCEPTED_COMMENTS_SCREENSHOT_NAME}",
+        "host": "social-comment-wc",
+        "shadow_dom": "open nested shadow roots traversed recursively",
+        "scroller_rule": "internal MSN comments scroller only; document/page/feed scroll locked",
+        "reply_expansion": "reply controls and clamped See more text controls expanded before stitching",
+        "consent_handling": "Microsoft cookie/privacy/grey overlays suppressed for final capture without hiding the selected scroller",
+        "debug_only_outputs": list(DEBUG_ONLY_NAMES),
+    }
+
+
+def build_msn_article_v6_capture_metadata() -> dict[str, Any]:
+    return {
+        "capture_method": MSN_ARTICLE_SCREENSHOT_METHOD_V6,
+        "normal_output": f"screenshots/{ACCEPTED_ARTICLE_SCREENSHOT_NAME}",
+        "url_rule": "article URL without #comments",
+        "viewport": "Android/mobile viewport and user agent",
+        "alignment": "headline/body aligned and clipped before sponsored/recommendation boundary where detected",
+    }
+
+
+def suppress_msn_consent_for_capture(page: Any) -> Mapping[str, Any]:
+    return page.evaluate(MSN_CONSENT_SUPPRESSION_JS)
+
+
+def expand_msn_comment_shadow_roots(page: Any, *, stable_target: int = 10, max_passes: int = 260) -> Mapping[str, Any]:
+    return page.evaluate(MSN_V15_SHADOW_LOADER_JS, {"stableTarget": stable_target, "maxPasses": max_passes})
+
+
+def _selected_scroller_metrics(page: Any) -> Mapping[str, Any] | None:
+    return page.evaluate(
+        r"""
+        () => {
+          const el = window.__MSN_V15_SELECTED_SCROLLER || window.__MSN_V12_SELECTED_SCROLLER;
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return {
+            scrollHeight: el.scrollHeight,
+            clientHeight: el.clientHeight,
+            scrollTop: el.scrollTop,
+            rect: {x: r.x, y: r.y, width: r.width, height: r.height},
+            textLen: ((el.innerText || el.textContent || "")).length
+          };
+        }
+        """
+    )
+
+
+def capture_msn_android_comments_stitched_screenshot(
+    page: Any,
+    output_dir: str | Path,
+    *,
+    debug: bool = False,
+    stable_target: int = 10,
+    max_passes: int = 260,
+    max_segments: int = 90,
+    overlap_css: int = 80,
+) -> dict[str, Any]:
+    try:
+        from PIL import Image
+    except Exception as exc:  # pragma: no cover - exercised only when optional dependency is missing
+        raise RuntimeError("Pillow is required for MSN V15 internal scroller image stitching") from exc
+
+    root = Path(output_dir)
+    screenshots = root / "screenshots"
+    screenshots.mkdir(parents=True, exist_ok=True)
+    debug_segments = screenshots / "comments_stitch_segments"
+    if debug:
+        debug_segments.mkdir(parents=True, exist_ok=True)
+
+    loader = expand_msn_comment_shadow_roots(page, stable_target=stable_target, max_passes=max_passes)
+    suppressions = [suppress_msn_consent_for_capture(page)]
+    metrics = _selected_scroller_metrics(page)
+    if not metrics:
+        raise RuntimeError("MSN V15 comments screenshot failed: no selected internal comments scroller")
+    rect = metrics["rect"]
+    scroll_height = int(metrics.get("scrollHeight") or 0)
+    client_height = int(metrics.get("clientHeight") or 0)
+    if scroll_height <= 0 or client_height <= 0:
+        raise RuntimeError("MSN V15 comments screenshot failed: invalid internal scroller metrics")
+
+    x = max(0.0, float(rect["x"]))
+    y = max(0.0, float(rect["y"]))
+    width = max(1.0, min(float(rect["width"]), 1082.0))
+    height = max(1.0, min(float(rect["height"]), 1400.0 - y))
+    if width < 100 or height < 180:
+        raise RuntimeError(f"MSN V15 comments screenshot failed: bad selected scroller rectangle {rect}")
+
+    step = max(120, int(height - overlap_css))
+    max_scroll_top = max(0, scroll_height - client_height)
+    positions = list(range(0, max_scroll_top + 1, step))
+    if not positions or positions[-1] != max_scroll_top:
+        positions.append(max_scroll_top)
+    positions = positions[:max_segments]
+
+    segments = []
+    for index, position in enumerate(positions):
+        page.evaluate(
+            "(y) => { const el = window.__MSN_V15_SELECTED_SCROLLER || window.__MSN_V12_SELECTED_SCROLLER; if (el) { el.scrollTop = y; el.dispatchEvent(new Event('scroll', {bubbles:true, composed:true})); } }",
+            position,
+        )
+        page.wait_for_timeout(250)
+        suppressions.append(suppress_msn_consent_for_capture(page))
+        page.wait_for_timeout(80)
+        png_bytes = page.screenshot(
+            full_page=False,
+            clip={"x": x, "y": y, "width": width, "height": height},
+            timeout=30000,
+        )
+        image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+        segments.append(image)
+        if debug:
+            image.save(debug_segments / f"segment_{index:03d}_{position}.png")
+    if not segments:
+        raise RuntimeError("MSN V15 comments screenshot failed: no scroller segments captured")
+    final = Image.new("RGB", (max(segment.width for segment in segments), sum(segment.height for segment in segments)))
+    y_offset = 0
+    for segment in segments:
+        final.paste(segment, (0, y_offset))
+        y_offset += segment.height
+    output = screenshots / ACCEPTED_COMMENTS_SCREENSHOT_NAME
+    final.save(output)
+    return {
+        "capture_mode": MSN_COMMENTS_CAPTURE_MODE_V15,
+        "comments_single_screenshot": str(output),
+        "comments_single_dims": [final.width, final.height],
+        "segments": len(segments),
+        "debug_segments_written": debug,
+        "page_scroll_changed_during_comments_load": bool(loader.get("page_scroll_changed")),
+        "reply_expand_clicks": loader.get("total_reply_expand_clicks"),
+        "comment_text_expand_clicks": loader.get("total_text_expand_clicks"),
+        "comment_load_clicks": loader.get("total_load_clicks"),
+        "see_more_reply_count_after_expansion": loader.get("see_more_reply_count"),
+        "see_more_text_count_after_expansion": loader.get("see_more_text_count"),
+        "load_more_comment_count_after_expansion": loader.get("load_more_comment_count"),
+        "consent_suppressions": suppressions,
+    }
+
+
+def capture_msn_android_article_screenshot(
+    page: Any,
+    output_dir: str | Path,
+    *,
+    title: str = "Arrest made after shot fired outside York mosque",
+) -> dict[str, Any]:
+    screenshots = Path(output_dir) / "screenshots"
+    screenshots.mkdir(parents=True, exist_ok=True)
+    align = page.evaluate(MSN_V6_ARTICLE_ALIGN_JS, title)
+    page.wait_for_timeout(1000)
+    output = screenshots / ACCEPTED_ARTICLE_SCREENSHOT_NAME
+    clip = align.get("clip") if isinstance(align, Mapping) else None
+    if clip:
+        page.screenshot(path=str(output), full_page=False, clip=clip, timeout=30000)
+    else:
+        page.screenshot(path=str(output), full_page=False, timeout=30000)
+    return {
+        "capture_method": MSN_ARTICLE_SCREENSHOT_METHOD_V6,
+        "article_screenshot": str(output),
+        "align": _value_for_dict(align),
+    }
+
+
+def run_msn_browser_screenshot_capture(
+    *,
+    target_url: str,
+    output_dir: str | Path,
+    capture_article: bool = True,
+    capture_comments: bool = True,
+    headed: bool = False,
+    debug: bool = False,
+    keep_browser_open: bool = False,
+) -> dict[str, Any]:
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as exc:  # pragma: no cover - depends on operator environment
+        raise RuntimeError("Playwright is required for MSN browser screenshot capture") from exc
+
+    parts = build_msn_url_parts(target_url)
+    result: dict[str, Any] = {
+        "headless": not headed,
+        "article": None,
+        "comments": None,
+        "debug": debug,
+        "capture_methods": {
+            "article": build_msn_article_v6_capture_metadata(),
+            "comments": build_msn_comments_v15_capture_metadata(),
+        },
+    }
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=not headed)
+        context = browser.new_context(
+            viewport={"width": 412, "height": 915},
+            device_scale_factor=2.625,
+            is_mobile=True,
+            has_touch=True,
+            user_agent=(
+                "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+            ),
+        )
+        try:
+            if capture_article:
+                page = context.new_page()
+                page.goto(parts.article_url, wait_until="domcontentloaded", timeout=70000)
+                page.wait_for_timeout(6000)
+                result["article"] = capture_msn_android_article_screenshot(page, output_dir)
+                page.close()
+            if capture_comments:
+                page = context.new_page()
+                page.goto(parts.comments_url, wait_until="domcontentloaded", timeout=70000)
+                page.wait_for_timeout(6000)
+                try:
+                    page.evaluate("location.hash = '#comments'")
+                    page.wait_for_timeout(1500)
+                except Exception:
+                    pass
+                result["comments"] = capture_msn_android_comments_stitched_screenshot(page, output_dir, debug=debug)
+                page.close()
+        finally:
+            if not keep_browser_open:
+                context.close()
+                browser.close()
+    return result
+
+
 def write_msn_adapter_comment_exports(
     export: MsnCommentsProfileExport,
     output_dir: str | Path,
@@ -333,6 +1017,8 @@ def build_msn_closeout_result(
     comments_export: MsnCommentsProfileExport | None = None,
     comments_files: MsnCommentsProfileExportFiles | None = None,
     media_receipts: Sequence[MsnMediaReceipt] = (),
+    offline_archive: MsnOfflineArchiveStatus | None = None,
+    source_role_fields_included: bool = False,
     warnings: Sequence[str] = (),
 ) -> MsnCloseoutResult:
     parts = build_msn_url_parts(url)
@@ -352,6 +1038,13 @@ def build_msn_closeout_result(
     media_satisfied = bool(required) and all(item.status == MSN_MEDIA_SATISFIED for item in required)
     if required and not media_satisfied:
         warnings_list.append("required_media_missing")
+    archive = offline_archive or build_offline_archive_status(root)
+    if archive.warc_generated and not archive.warc_replay_tested:
+        warnings_list.append("warc_generated_but_replay_not_tested")
+    if archive.wacz_generated and not archive.wacz_replay_tested:
+        warnings_list.append("wacz_generated_but_replay_not_tested")
+    if comments_files and not source_role_fields_included:
+        warnings_list.append("source_role_fields_absent_from_comments_export")
     files = comments_files
     result = MsnCloseoutResult(
         decision=MSN_PRODUCTION_READY if not warnings_list else MSN_CLOSEOUT_REVIEW_REQUIRED,
@@ -372,6 +1065,9 @@ def build_msn_closeout_result(
         txt_export=str(root / "comments.txt") if (root / "comments.txt").is_file() else (files.txt_path if files else ""),
         profiles_json=str(root / "profiles.json") if (root / "profiles.json").is_file() else (files.profiles_json_path if files else ""),
         profiles_txt=str(root / "profiles.txt") if (root / "profiles.txt").is_file() else (files.profiles_txt_path if files else ""),
+        offline_archive=archive.to_dict(),
+        media_downloaded_classified_count=sum(1 for item in required if item.status == MSN_MEDIA_SATISFIED),
+        source_role_fields_included=source_role_fields_included,
         warnings=tuple(sorted(set(warnings_list))),
     )
     _write_json(root / "msn-closeout-report.json", result.to_dict())
@@ -393,6 +1089,7 @@ def run_msn_closeout_validation(
     debug: bool = False,
     keep_browser_open: bool = False,
     live_capture_runner: Callable[..., Any] = run_live_viewable_capture,
+    screenshot_runner: Callable[..., Any] | None = run_msn_browser_screenshot_capture,
     media_downloader: Callable[[str], bytes] | None = None,
 ) -> MsnCloseoutResult:
     parts = build_msn_url_parts(target_url)
@@ -401,9 +1098,14 @@ def run_msn_closeout_validation(
     comments_export: MsnCommentsProfileExport | None = None
     comments_files: MsnCommentsProfileExportFiles | None = None
     warnings: list[str] = []
+    source_role_fields_included = False
     if comments_capture_paths:
         comments_export = build_msn_comments_profile_export_from_paths(comments_capture_paths)
         comments_files = write_msn_adapter_comment_exports(comments_export, root)
+        source_role_fields_included = all(
+            bool(item.get("source_role_metadata")) for item in comments_export.comments
+        )
+    offline_archive = build_offline_archive_status(root / "live_capture")
     if capture_msn_screenshots or capture_msn_article_screenshot or capture_msn_comments_screenshot:
         capture_result = live_capture_runner(
             target_url=parts.comments_url,
@@ -419,10 +1121,31 @@ def run_msn_closeout_validation(
         )
         if getattr(capture_result, "status", ""):
             warnings.append(f"live_capture_status={getattr(capture_result, 'status')}")
-        promoted = promote_accepted_screenshot_outputs(root / "live_capture", debug=debug)
-        for key, value in promoted.items():
-            if value and key in {"article", "comments"}:
-                _copy_if_present(Path(value), root / "screenshots" / Path(value).name)
+        offline_archive = build_offline_archive_status(root / "live_capture")
+        if screenshot_runner is not None:
+            try:
+                screenshot_runner(
+                    target_url=parts.comments_url,
+                    output_dir=root,
+                    capture_article=capture_msn_screenshots or capture_msn_article_screenshot,
+                    capture_comments=capture_msn_screenshots or capture_msn_comments_screenshot,
+                    headed=headed,
+                    debug=debug,
+                    keep_browser_open=keep_browser_open,
+                )
+            except Exception as exc:
+                warnings.append(f"accepted_screenshot_methods_failed={exc}")
+                promoted = promote_accepted_screenshot_outputs(root / "live_capture", debug=debug)
+                for key, value in promoted.items():
+                    if value and key in {"article", "comments"}:
+                        _copy_if_present(Path(value), root / "screenshots" / Path(value).name)
+                warnings.append("accepted_screenshot_outputs_promoted_from_live_capture_fallback")
+        else:
+            promoted = promote_accepted_screenshot_outputs(root / "live_capture", debug=debug)
+            for key, value in promoted.items():
+                if value and key in {"article", "comments"}:
+                    _copy_if_present(Path(value), root / "screenshots" / Path(value).name)
+            warnings.append("accepted_v15_v6_screenshot_methods_not_run")
     if keep_browser_open and not headed:
         warnings.append("keep_browser_open_ignored_without_headed")
     elif keep_browser_open:
@@ -435,6 +1158,8 @@ def run_msn_closeout_validation(
         comments_export=comments_export,
         comments_files=comments_files,
         media_receipts=media_receipts,
+        offline_archive=offline_archive,
+        source_role_fields_included=source_role_fields_included,
         warnings=warnings,
     )
 

@@ -15,6 +15,40 @@ from urllib.parse import urlsplit, urlunsplit
 MSN_COMMENTS_PROFILE_EXPORT_SCHEMA_VERSION = "msn_comments_profile_export_v1"
 MSN_COMMENTS_PROFILE_EXPORTER = "msn_comments_v35_profile_stats_export"
 MSN_DELETED_PLACEHOLDER_TEXT = "This comment was deleted because it didn't meet our guidelines"
+PRIMARY_SOURCE_LOCATED = "PRIMARY_SOURCE_LOCATED"
+PRIMARY_ORIGINAL_AUTHORED_SOURCE = "PRIMARY_ORIGINAL_AUTHORED_SOURCE"
+COMMENT_SOURCE_ROLE_SCOPE = "limited_to_comment_or_reply_text_authored_by_the_commenter_at_capture_time"
+
+CLAIM_SOURCE_ROLE_FIELDS = (
+    "claim_text",
+    "claim_type",
+    "claim_source_role",
+    "source_role_scope",
+    "source_role_limitation",
+    "authored_or_posted_at",
+    "captured_at_utc",
+    "event_time_or_claim_time",
+    "temporal_gap_note",
+    "currentness_status",
+    "primary_source_status",
+    "source_chain_gap",
+    "closed_loop_reporting_flag",
+    "first_uploader_known",
+    "first_uploader_url",
+    "first_seen_by_user_utc",
+    "media_acquired_at_utc",
+    "file_obtained_delay_note",
+    "publisher_framing_summary",
+    "removed_or_missing_context_note",
+    "identity_claim_basis",
+    "appearance_claim_basis",
+    "forensic_claim_basis",
+    "family_or_authority_claim_basis",
+    "open_source_media_available",
+    "corroborating_sources",
+    "contradicting_sources",
+    "verification_notes",
+)
 
 
 def _value_for_dict(value: Any) -> Any:
@@ -197,6 +231,45 @@ def profile_stats_from_item(item: Mapping[str, Any]) -> dict[str, str]:
     }
 
 
+def default_msn_comment_source_role_metadata(item: Mapping[str, Any]) -> OrderedDict[str, Any]:
+    text = clean_text(item.get("text"))
+    return OrderedDict(
+        (
+            ("claim_text", text),
+            ("claim_type", "comment_authorship"),
+            ("claim_source_role", PRIMARY_ORIGINAL_AUTHORED_SOURCE),
+            ("source_role_scope", COMMENT_SOURCE_ROLE_SCOPE),
+            (
+                "source_role_limitation",
+                "The commenter's own comment/reply is primary/original authored evidence only for authorship of this captured text; it is not automatically primary evidence for real-world incident claims inside the comment.",
+            ),
+            ("authored_or_posted_at", str(item.get("date") or item.get("published_at") or item.get("posted_at") or "")),
+            ("captured_at_utc", str(item.get("captured_at_utc") or "")),
+            ("event_time_or_claim_time", ""),
+            ("temporal_gap_note", ""),
+            ("currentness_status", "UNKNOWN"),
+            ("primary_source_status", PRIMARY_SOURCE_LOCATED),
+            ("source_chain_gap", False),
+            ("closed_loop_reporting_flag", False),
+            ("first_uploader_known", False),
+            ("first_uploader_url", ""),
+            ("first_seen_by_user_utc", ""),
+            ("media_acquired_at_utc", ""),
+            ("file_obtained_delay_note", ""),
+            ("publisher_framing_summary", ""),
+            ("removed_or_missing_context_note", ""),
+            ("identity_claim_basis", ""),
+            ("appearance_claim_basis", ""),
+            ("forensic_claim_basis", ""),
+            ("family_or_authority_claim_basis", ""),
+            ("open_source_media_available", ""),
+            ("corroborating_sources", []),
+            ("contradicting_sources", []),
+            ("verification_notes", "MSN comments/profile exporter default; incident-level claims still require operator review."),
+        )
+    )
+
+
 def normalize_comment_item(item: Mapping[str, Any]) -> OrderedDict[str, Any]:
     stats = profile_stats_from_item(item)
     raw_profile_url = str(
@@ -231,6 +304,7 @@ def normalize_comment_item(item: Mapping[str, Any]) -> OrderedDict[str, Any]:
     out["deleted_placeholder"] = deleted
     out["source_filter"] = str(item.get("source_filter") or item.get("sort_filter") or "")
     out["capture_source_note"] = str(item.get("capture_source_note") or "")
+    out["source_role_metadata"] = default_msn_comment_source_role_metadata(out)
     out["replies"] = [normalize_comment_item(reply) for reply in item.get("replies") or []]
     return out
 
@@ -284,6 +358,7 @@ def merge_comment_item(existing: OrderedDict[str, Any], incoming: Mapping[str, A
             existing[field] = incoming[field]
     if len(str(incoming.get("text") or "")) > len(str(existing.get("text") or "")):
         existing["text"] = incoming.get("text", "")
+        existing["source_role_metadata"] = default_msn_comment_source_role_metadata(existing)
     if incoming.get("profile_stats_status") == "found":
         existing["profile_stats_status"] = "found"
         if incoming.get("profile_stats_method"):
@@ -524,6 +599,11 @@ def full_comment_block(item: Mapping[str, Any], *, index: int | None = None, ind
         pad + f"Account likes: {item.get('account_likes','')}",
         pad + f"Account followers: {item.get('account_followers','')}",
         pad + f"Deleted placeholder: {item.get('deleted_placeholder')}",
+        pad + "Evidence/source-role details:",
+        pad + f"Claim source role: {(item.get('source_role_metadata') or {}).get('claim_source_role','')}",
+        pad + f"Primary source status: {(item.get('source_role_metadata') or {}).get('primary_source_status','')}",
+        pad + f"Source role scope: {(item.get('source_role_metadata') or {}).get('source_role_scope','')}",
+        pad + f"Source role limitation: {(item.get('source_role_metadata') or {}).get('source_role_limitation','')}",
         pad + "Result:",
         compact_comment_block(item, indent=indent),
     ]
@@ -658,6 +738,7 @@ a {{ color: #8ab4ff; }}
   <textarea id="fullExportBox" class="single-field" spellcheck="false"></textarea>
 </section>
 <details><summary>Profiles</summary><pre>{html.escape(profiles_txt)}</pre></details>
+<details><summary>Evidence/source-role details</summary><pre>{html.escape(", ".join(CLAIM_SOURCE_ROLE_FIELDS))}</pre></details>
 <script>
 const comments = {json.dumps(_value_for_dict(list(export.comments)), ensure_ascii=False)};
 const compactExport = {json.dumps(compact_txt, ensure_ascii=False)};
@@ -675,6 +756,7 @@ function plainBlock(item) {{
   return [header, "", item.text || "", "", "👍 " + (item.likes || "") + " 👎 " + (item.dislikes || "")].join("\\n").trim();
 }}
 function infoBlock(item) {{
+  const role = item.source_role_metadata || {{}};
   return [
     "Comment label: " + (item.human_id || ""),
     "Type: " + (item.type || ""),
@@ -684,6 +766,11 @@ function infoBlock(item) {{
     "Account comments: " + (item.account_comments || ""),
     "Account likes: " + (item.account_likes || ""),
     "Account followers: " + (item.account_followers || ""),
+    "Evidence/source-role details:",
+    "Claim source role: " + (role.claim_source_role || ""),
+    "Primary source status: " + (role.primary_source_status || ""),
+    "Source role scope: " + (role.source_role_scope || ""),
+    "Source role limitation: " + (role.source_role_limitation || ""),
     "Result:",
     plainBlock(item)
   ].join("\\n");

@@ -750,3 +750,17 @@ Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
 - Added manual validation intake/template/result outputs so real MSN capture checks can be recorded without auto-running live capture.
 - Media remains safe-by-default: candidates are registered in dry-run mode unless direct downloads are explicitly selected and allowed.
 - Source-chain logic remains explicit: MSN, republishers such as The Independent, visible credits such as Google Street View, agencies/family/authority claims, and unknown original uploaders are not silently promoted into primary/original sources.
+
+## MSN Source Adapter Audit Hardening Coverage - 2026-08-11
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| V15 comments screenshot method | Implemented callable path | Uses `internal_scroller_visual_clip_stitch`, nested `social-comment-wc` open-shadow traversal, internal-scroller-only loading, reply/text expansion, final overlay suppression, and one accepted screenshot name. Debug stitch segments remain debug-only. |
+| V6 article screenshot method | Implemented callable path | Uses article URL without `#comments`, Android/mobile framing, headline/body alignment, and sponsored/recommendation boundary clipping where detected. |
+| Offline rendered page/local viewer | Already wired | Preserved through the existing live viewable capture/local viewer path. |
+| Raw WARC generation | Already wired | Closeout metadata now distinguishes generation from replay verification. |
+| WACZ generation | Already wired | Strict/compatible WACZ presence is not treated as replay success. |
+| Raw WARC replay verification | Not automatic | Reports `WARC_REPLAY_STATUS: NOT_TESTED` unless explicit validation metadata is supplied. |
+| WACZ replay verification | Not automatic | Reports `WACZ_REPLAY_STATUS: NOT_TESTED` unless explicit validation metadata is supplied. |
+| Source-role fields in comments/profile exports | Covered | JSON and HTML Additional information preserve claim-scoped source-role metadata. |
+| Media source-chain defaults | Covered for York image | `AA292lx3.img` records MSN/publisher observation, visible Google Street View credit, claimed-but-unverified primary status, and source-chain gap. |

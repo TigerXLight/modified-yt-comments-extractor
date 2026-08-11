@@ -365,14 +365,47 @@ AVAILABLE_SOURCE_ADAPTERS: Sequence[SourceAdapter] = (
 MSN_ARTICLE_COMMENT_PROFILE = SourceMethodProfile(
     profile_id="msn_article_comments_shadow_manual_import",
     adapter_id="msn",
-    display_name="MSN article/comments manual observation profile",
-    method_family="article_comments_manual_observation",
-    supported_modes=("webpage", "comments", "archive_check", "archive_submit"),
-    expected_artifact_types=("raw_html", "final_dom", "article_text", "comments_jsonl", "archive_result"),
-    required_operator_fields=("source_url", "selected_modes", "manual_observation_reference"),
+    display_name="MSN article/comments source adapter profile",
+    method_family="article_comments_browser_and_local_import",
+    supported_modes=(
+        "posts",
+        "comments",
+        "replies",
+        "live_chat_future",
+        "captions_transcripts_future",
+        "full_page_screenshot",
+        "visible_page_text",
+        "readable_article_text",
+        "html_snapshot",
+        "archive_check",
+        "archive_submit",
+        "video_media_evidence_future",
+        "media_source_chain_fields_future",
+        "disputed_framing_source_author_correction_notes_future",
+        "source_role_labels_future",
+    ),
+    expected_artifact_types=(
+        "raw_html",
+        "rendered_page_html",
+        "final_dom",
+        "article_text",
+        "comments_json",
+        "comments_html",
+        "profiles_json",
+        "article_screenshot",
+        "comments_stitched_screenshot",
+        "media_receipt",
+        "archive_result",
+        "source_role_sidecar",
+    ),
+    required_operator_fields=("source_url", "selected_modes", "manual_observation_reference", "operator_approval_for_live_capture"),
     archive_fallback_supported=True,
     manual_import_supported=True,
-    notes="Uses supplied/manual observations and archive fallback metadata; no live browser or network execution.",
+    notes=(
+        "Production path supports explicit headless/browser-gated MSN article and comments capture plus V34/V35 local "
+        "comments/profile imports. Live execution is opt-in; source-role/media-chain labels are preserved as metadata "
+        "and do not automatically classify real-world incident claims."
+    ),
 )
 TWITTER_X_ARCHIVE_FALLBACK_PROFILE = SourceMethodProfile(
     profile_id="twitter_x_post_reply_archive_fallback",

@@ -1246,3 +1246,10 @@ The database roadmap recognizes existing user repository trees and proposes prev
 - Added manual validation intake/template/result outputs so real MSN capture checks can be recorded without auto-running live capture.
 - Media remains safe-by-default: candidates are registered in dry-run mode unless direct downloads are explicitly selected and allowed.
 - Source-chain logic remains explicit: MSN, republishers such as The Independent, visible credits such as Google Street View, agencies/family/authority claims, and unknown original uploaders are not silently promoted into primary/original sources.
+
+## MSN Source Adapter Audit Hardening - 2026-08-11
+
+- The MSN production facade has been hardened after auditing `480f21e`. It now records offline archive artifact generation separately from replay verification: `rendered-page.html` and the local viewer are reviewable local outputs, while raw WARC/WACZ replay remains `NOT_TESTED` unless an explicit replay validation result is imported.
+- The accepted V15 comments screenshot method is represented as an actual callable production method, not only an output filename: `social-comment-wc` open shadow DOM is traversed recursively, the internal comments scroller is selected and driven while page/feed scroll is locked, replies and clamped text are expanded, the final visual suppresses Microsoft cookie/privacy overlays, and normal output remains one `android_comments_all_expanded_SINGLE_INTERNAL_STITCH.png`.
+- The accepted V6 Android article screenshot method is callable and targets the article URL without `#comments`, aligning to headline/body and stopping before sponsored/recommendation content where detectable.
+- MSN source-role and media source-chain fields are now preserved in comments/profile JSON and HTML Additional information. The roadmap distinction remains: comments are primary/original authored sources only for their own authored text, publisher article framing is secondary/outside perspective, authority/family/agency repetition is not promoted to primary sourcing, and visible media credits such as Google Street View remain claimed/unverified unless the original source URL is captured.

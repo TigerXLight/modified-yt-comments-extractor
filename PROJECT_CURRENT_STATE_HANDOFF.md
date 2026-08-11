@@ -1104,3 +1104,9 @@ Added roadmap/model coverage for source website/method catalogue, claim-level so
 - Added manual validation intake/template/result outputs so real MSN capture checks can be recorded without auto-running live capture.
 - Media remains safe-by-default: candidates are registered in dry-run mode unless direct downloads are explicitly selected and allowed.
 - Source-chain logic remains explicit: MSN, republishers such as The Independent, visible credits such as Google Street View, agencies/family/authority claims, and unknown original uploaders are not silently promoted into primary/original sources.
+
+## MSN Source Adapter Audit Hardening - 2026-08-11
+
+- Commit `480f21e` was audited for completion gaps. Offline archive/viewer generation was already wired (`rendered-page.html`, local viewer, `.warc.gz`, `.wacz` where available), but raw WARC and WACZ replay verification are not automatic; closeout metadata now keeps generation separate from `NOT_TESTED` replay status.
+- The production adapter now has callable V15 and V6 screenshot methods instead of filename-only promotion: V15 uses `social-comment-wc` nested open-shadow traversal, internal-scroller-only loading, reply/text expansion, stable scrolling, consent/privacy overlay suppression, and a single accepted stitched comments screenshot; V6 aligns the Android article screenshot to headline/body and avoids the endless feed boundary where detected.
+- Comments/profile exports now carry claim-level source-role metadata in JSON and Additional information HTML. MSN comments are primary/original authored only for the commenter-authorship claim, MSN/article publisher framing is secondary/outside perspective by default, and York article media records visible Google Street View credit as claimed but unverified with a source-chain gap.

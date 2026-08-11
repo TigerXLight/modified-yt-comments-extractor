@@ -142,6 +142,9 @@ def test_nested_comments_deleted_placeholders_votes_and_profile_propagation() ->
     assert pete["human_id"] == "C0001"
     assert pete["likes"] == "69"
     assert pete["dislikes"] == "4"
+    assert pete["source_role_metadata"]["claim_source_role"] == "PRIMARY_ORIGINAL_AUTHORED_SOURCE"
+    assert pete["source_role_metadata"]["primary_source_status"] == "PRIMARY_SOURCE_LOCATED"
+    assert "not automatically primary evidence for real-world incident claims" in pete["source_role_metadata"]["source_role_limitation"]
     assert pete["account_comments"] == "704"
     assert pete["account_likes"] == "4920"
     assert pete["account_followers"] == "1"
@@ -175,6 +178,9 @@ def test_html_plain_copy_and_additional_info_rules() -> None:
     assert "downloadSearchJson" in html
     assert "<textarea id=\"fullExportBox\"" in html
     assert "Comment label: [1] Parent Comment C0001" in html
+    assert "Evidence/source-role details" in html
+    assert "Claim source role" in html
+    assert "Primary source status" in html
     assert "Stand against hatred" in html
 
 
@@ -217,6 +223,7 @@ def test_export_files_and_article_archive_integration_manifest() -> None:
         payload = json.loads(Path(files.json_path).read_text(encoding="utf-8"))
         assert payload["parents_captured"] == 3
         assert payload["profiles_with_account_stats"] == 2
+        assert payload["comments"][0]["source_role_metadata"]["claim_type"] == "comment_authorship"
         csv_rows = list(csv.DictReader(Path(files.profiles_csv_path).open(encoding="utf-8-sig")))
         assert {row["profile_cid"] for row in csv_rows} == {"cid-a6e6cba6625dfecb", "cid-profilealex"}
 

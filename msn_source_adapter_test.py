@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,14 +11,32 @@ from msn_source_adapter import (
     AA27_EXPECTED_V35_ITEMS,
     ACCEPTED_ARTICLE_SCREENSHOT_NAME,
     ACCEPTED_COMMENTS_SCREENSHOT_NAME,
+    CLAIM_SOURCE_ROLE_FIELDS,
+    MEDIA_SOURCE_CHAIN_FIELDS,
     MSN_MEDIA_SATISFIED,
+    MSN_COMMENTS_CAPTURE_MODE_V15,
+    MSN_WACZ_REPLAY_NOT_TESTED,
+    MSN_WARC_REPLAY_NOT_TESTED,
+    PRIMARY_ORIGINAL_AUTHORED_SOURCE,
+    PRIMARY_SOURCE_CLAIMED_BUT_UNVERIFIED,
+    PRIMARY_SOURCE_LOCATED,
+    PRIMARY_SOURCE_NOT_LOCATED,
+    SECONDARY_OUTSIDE_PERSPECTIVE_SOURCE,
     MSN_PRODUCTION_READY,
     YORK_ARTICLE_URL,
     YORK_COMMENTS_URL,
     YORK_EXPECTED_COMMENT_COUNT,
     YORK_REQUIRED_IMAGE_IDENTITY,
     YORK_REQUIRED_IMAGE_URL,
+    build_msn_article_v6_capture_metadata,
+    build_msn_comments_v15_capture_metadata,
     build_msn_url_parts,
+    build_offline_archive_status,
+    capture_msn_android_comments_stitched_screenshot,
+    default_msn_article_claim_source_role,
+    default_msn_comment_claim_source_role,
+    default_york_image_source_chain,
+    expand_msn_comment_shadow_roots,
     normalize_msn_image_identity,
     production_output_names,
     promote_accepted_screenshot_outputs,
@@ -92,6 +111,69 @@ def test_v34_search_ui_and_v35_profile_data_are_in_final_html() -> None:
     assert "Profiles" in html
     assert "Account comments" in html
     assert "Profiles with account stats" in html
+    assert "Evidence/source-role details" in html
+    assert "Primary source status" in html
+
+
+def test_v15_comments_screenshot_method_is_present_and_debug_only_outputs_are_gated() -> None:
+    metadata = build_msn_comments_v15_capture_metadata()
+    source = inspect.getsource(expand_msn_comment_shadow_roots) + inspect.getsource(capture_msn_android_comments_stitched_screenshot)
+    assert metadata["capture_mode"] == MSN_COMMENTS_CAPTURE_MODE_V15
+    assert "social-comment-wc" in metadata["host"]
+    assert "internal MSN comments scroller only" in metadata["scroller_rule"]
+    assert ACCEPTED_COMMENTS_SCREENSHOT_NAME in metadata["normal_output"]
+    assert "window.__MSN_V15_SELECTED_SCROLLER" in source
+    assert "scrollTop" in source
+    assert "comments_stitch_segments" in source
+    assert "diagnostic_before_internal_loading.png" not in production_output_names(debug=False)
+    assert "comments_stitch_segments" not in production_output_names(debug=False)
+    assert "comments_stitch_segments" in production_output_names(debug=True)
+
+
+def test_v6_article_screenshot_method_is_present() -> None:
+    metadata = build_msn_article_v6_capture_metadata()
+    assert metadata["capture_method"] == "android_article_print_layout_gate_v6"
+    assert ACCEPTED_ARTICLE_SCREENSHOT_NAME in metadata["normal_output"]
+    assert "article URL without #comments" in metadata["url_rule"]
+
+
+def test_offline_archive_generation_and_replay_test_status_are_separate() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write(root / "rendered-page.html", "<html></html>")
+        _write(root / "rendered-page.warc.gz", b"warc")
+        _write(root / "archive.viewable-live-capture.wacz", b"wacz")
+        _write(root / "local_viewer" / "local-viewer-index.html", "<html></html>")
+        status = build_offline_archive_status(root)
+        assert status.rendered_page_html_path.endswith("rendered-page.html")
+        assert status.local_viewer_path.endswith("local-viewer-index.html")
+        assert status.warc_generated is True
+        assert status.wacz_generated is True
+        assert status.warc_replay_tested is False
+        assert status.wacz_replay_tested is False
+        assert status.warc_replay_status == MSN_WARC_REPLAY_NOT_TESTED
+        assert status.wacz_replay_status == MSN_WACZ_REPLAY_NOT_TESTED
+
+
+def test_source_role_and_media_chain_defaults_are_claim_scoped() -> None:
+    for field in ("claim_text", "claim_source_role", "primary_source_status", "source_chain_gap"):
+        assert field in CLAIM_SOURCE_ROLE_FIELDS
+    for field in ("media_observed_on_url", "publisher_page_url", "claimed_original_source", "source_chain_gap"):
+        assert field in MEDIA_SOURCE_CHAIN_FIELDS
+    comment_role = default_msn_comment_claim_source_role({"text": "Fixture comment", "date": "13 Jul"})
+    assert comment_role["claim_source_role"] == PRIMARY_ORIGINAL_AUTHORED_SOURCE
+    assert comment_role["primary_source_status"] == PRIMARY_SOURCE_LOCATED
+    assert comment_role["source_chain_gap"] is False
+    assert "not automatically primary evidence for real-world incident claims" in comment_role["source_role_limitation"]
+    article_role = default_msn_article_claim_source_role(article_url=YORK_ARTICLE_URL)
+    assert article_role["claim_source_role"] == SECONDARY_OUTSIDE_PERSPECTIVE_SOURCE
+    assert article_role["primary_source_status"] == PRIMARY_SOURCE_NOT_LOCATED
+    assert article_role["source_chain_gap"] is True
+    media_chain = default_york_image_source_chain(YORK_ARTICLE_URL)
+    assert media_chain["media_observed_on_url"] == YORK_ARTICLE_URL
+    assert media_chain["claimed_original_source"] == "Google Street View"
+    assert media_chain["primary_source_status"] == PRIMARY_SOURCE_CLAIMED_BUT_UNVERIFIED
+    assert media_chain["source_chain_gap"] is True
 
 
 def test_normal_output_policy_keeps_diagnostics_debug_only() -> None:
@@ -170,14 +252,26 @@ def test_live_capture_wrapper_defaults_to_headless_and_promotes_outputs() -> Non
             _write(out / "screenshots" / "full-comments-thread.png", _png_payload(1082, 13362))
             return SimpleNamespace()
 
+        def fake_screenshot_runner(**kwargs):
+            seen["screenshot_runner"] = kwargs
+            out = Path(kwargs["output_dir"])
+            _write(out / "screenshots" / ACCEPTED_ARTICLE_SCREENSHOT_NAME, _png_payload(412, 1000))
+            _write(out / "screenshots" / ACCEPTED_COMMENTS_SCREENSHOT_NAME, _png_payload(1082, 13362))
+            return {
+                "article": {"capture_method": "android_article_print_layout_gate_v6"},
+                "comments": {"capture_mode": MSN_COMMENTS_CAPTURE_MODE_V15},
+            }
+
         result = run_msn_closeout_validation(
             target_url=YORK_COMMENTS_URL,
             output_dir=root,
             expected_comment_count=0,
             capture_msn_screenshots=True,
             live_capture_runner=fake_live_capture_runner,
+            screenshot_runner=fake_screenshot_runner,
         )
         assert seen["headed"] is False
+        assert seen["screenshot_runner"]["headed"] is False
         assert seen["write_screenshots"] is True
         assert (root / "screenshots" / ACCEPTED_ARTICLE_SCREENSHOT_NAME).is_file()
         assert (root / "screenshots" / ACCEPTED_COMMENTS_SCREENSHOT_NAME).is_file()
@@ -189,6 +283,10 @@ def test_live_capture_wrapper_defaults_to_headless_and_promotes_outputs() -> Non
 def run_self_test() -> None:
     test_msn_url_and_media_identity_normalization()
     test_v34_search_ui_and_v35_profile_data_are_in_final_html()
+    test_v15_comments_screenshot_method_is_present_and_debug_only_outputs_are_gated()
+    test_v6_article_screenshot_method_is_present()
+    test_offline_archive_generation_and_replay_test_status_are_separate()
+    test_source_role_and_media_chain_defaults_are_claim_scoped()
     test_normal_output_policy_keeps_diagnostics_debug_only()
     test_screenshot_promotion_uses_accepted_names_without_segments()
     test_york_and_aa27_count_boundaries_are_distinct()
