@@ -788,3 +788,39 @@ Marker: SOURCE ROADMAP CONSOLIDATION 9DDC226 PATCH BUNDLE
 | Fallback screenshot gate | Covered | Fallback-promoted live-capture screenshots do not count as accepted V6/V15 method success. |
 | Required York media gate | Covered | The York `AA292lx3.img` downloader records source-chain metadata and hash receipts when satisfied; missing media remains a fatal closeout warning. |
 | WARC/WACZ honesty | Covered | Generated-but-not-replay-tested WARC/WACZ warnings are nonfatal only when the concrete comments/media/screenshot/source-role evidence gates pass. |
+
+## MEMENTO_AND_WARCREATE_NOW_IMPLEMENTATION_20260811
+
+Current archive/replay implementation note:
+
+- Memento/Mink-style archive discovery is current implementation material, not future-only. It records Internet Archive CDX/TimeMap-style date tracking, first/latest mementos, and manual archive candidates.
+- WARCreate is not added as an old browser-extension dependency, but its useful design principle is current: record browser interactions before capture, including scroll, click, expand, internal comments scrolling, consent/overlay handling, screenshots, and resource inventory.
+- ctx-zip is explicitly not selected for MSN WARC/WACZ replay; it is an AI/tool-output context packaging project, not a WARC viewer.
+- Archive discovery, browser-interaction metadata, production capture/export, and ReplayWeb/pywb replay QA must remain separate status layers.
+
+## MEMENTO_WARCREATE_URL_NORMALIZATION_FIX_20260811
+
+Current archive/replay implementation correction:
+
+- Archive-discovery URLs are normalized before CDX/TimeMap queries, so CMD escaping such as `^&` is not preserved as a literal URL character and cannot produce false no-memento results.
+- Memento/Mink-style discovery now records raw target URL, normalized target URL, command-escape detection, CDX/TimeMap/TimeGate query URLs, first/latest mementos when found, and manual archive candidates.
+- WARCreate-style interaction metadata now distinguishes accepted primary screenshots from diagnostic screenshots, scans both production output roots and live-capture roots, and records missing accepted screenshot warnings instead of silently leaving the accepted list blank.
+- pywb visual replay, ReplayWeb replay, archive generation, Memento discovery, and browser-interaction metadata remain separate status layers.
+
+## MEMENTO_AND_WARCREATE_FULL_IMPLEMENTATION_20260811
+
+Current archive/replay implementation note:
+
+- Memento/Mink-style archive discovery is implemented as code in `source_archive_discovery.py` and `source_archive_metadata_cli.py`; it normalizes CMD/Markdown URL escaping, queries Internet Archive CDX variants, records TimeMap/TimeGate/manual archive candidates, and writes JSON/TXT sidecars.
+- WARCreate-style interaction metadata is implemented as code in `source_capture_interaction_metadata.py`; it scans concrete capture/production artifacts, records resource hashes, classifies accepted primary screenshots versus diagnostic screenshots, and marks interaction steps as `RECORDED`, `INFERRED_FROM_ARTIFACTS`, or `MISSING_OR_NOT_FOUND`.
+- The old WARCreate/Mink browser extensions are not runtime dependencies. Their useful principles are implemented directly: archive date discovery plus interaction-before-capture metadata.
+- ctx-zip remains excluded from MSN WARC/WACZ replay because it is not a WARC/WACZ viewer or replay engine.
+
+## MSN_ADAPTER_ARCHIVE_METADATA_INTEGRATION_20260811
+
+Current adapter integration note:
+
+- MSN production closeout now attempts to emit Memento/Mink archive-discovery sidecars inside the closeout output directory.
+- MSN production closeout now attempts to emit WARCreate-style browser-interaction/resource-inventory sidecars inside the closeout output directory.
+- Archive metadata sidecar generation is nonfatal: capture/export decisions remain controlled by comments, screenshots, media, source-role fields, and honest WARC/WACZ replay status.
+- This integrates the already-tested standalone archive metadata modules into the production adapter path.

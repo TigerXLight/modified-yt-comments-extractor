@@ -1585,6 +1585,20 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# BEGIN MSN_ARCHIVE_METADATA_CLOSEOUT_INTEGRATION_20260811
+_run_msn_closeout_validation_without_archive_metadata = run_msn_closeout_validation
+
+
+def run_msn_closeout_validation(*args, **kwargs):
+    result = _run_msn_closeout_validation_without_archive_metadata(*args, **kwargs)
+    try:
+        from source_archive_closeout_integration import attach_archive_metadata_to_closeout_result
+        attach_archive_metadata_to_closeout_result(result=result, args=args, kwargs=kwargs)
+    except Exception as exc:
+        print("ARCHIVE_METADATA_WARNING: " + exc.__class__.__name__ + ": " + str(exc))
+    return result
+# END MSN_ARCHIVE_METADATA_CLOSEOUT_INTEGRATION_20260811
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     result = run_msn_closeout_validation(
