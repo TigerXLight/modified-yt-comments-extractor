@@ -1599,6 +1599,31 @@ def run_msn_closeout_validation(*args, **kwargs):
     return result
 # END MSN_ARCHIVE_METADATA_CLOSEOUT_INTEGRATION_20260811
 
+
+# BEGIN MSN_REPLAY_HARDENING_INTEGRATION_20260811
+try:
+    _msn_replay_hardening_previous_run_msn_closeout_validation
+except NameError:
+    _msn_replay_hardening_previous_run_msn_closeout_validation = run_msn_closeout_validation
+
+    def run_msn_closeout_validation(*args, **kwargs):
+        result = _msn_replay_hardening_previous_run_msn_closeout_validation(*args, **kwargs)
+        try:
+            from source_warc_replay_hardening import integrate_replay_hardening_for_closeout
+            integrate_replay_hardening_for_closeout(result=result, args=args, kwargs=kwargs)
+        except Exception as exc:
+            message = f"replay_hardening_failed: {type(exc).__name__}: {exc}"
+            print("REPLAY_HARDENING_WARNING: " + message)
+            if isinstance(result, dict):
+                warnings = result.setdefault("warnings", [])
+                if isinstance(warnings, list):
+                    warnings.append(message)
+                else:
+                    result["warnings"] = str(warnings) + "; " + message
+        return result
+# END MSN_REPLAY_HARDENING_INTEGRATION_20260811
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     result = run_msn_closeout_validation(

@@ -1158,3 +1158,12 @@ Current adapter integration note:
 - MSN production closeout now attempts to emit WARCreate-style browser-interaction/resource-inventory sidecars inside the closeout output directory.
 - Archive metadata sidecar generation is nonfatal: capture/export decisions remain controlled by comments, screenshots, media, source-role fields, and honest WARC/WACZ replay status.
 - This integrates the already-tested standalone archive metadata modules into the production adapter path.
+
+## MSN_REPLAY_HARDENING_COMPLETION_20260811
+
+Current MSN adapter replay-hardening implementation note:
+
+- The production closeout now emits a pywb-indexable `rendered-page.pywb-indexable.warc.gz` sidecar by rewriting WARC records as separate gzip members.
+- Replay status is separated into structural WARC status, ReplayWeb/manual visual status, pywb visual status, and WACZ compatibility status instead of a single ambiguous `NOT_TESTED` field.
+- WACZ files are inspected as ZIP packages and marked compatibility-review-required when the package profile/shape remains unverified or previously failed ReplayWeb compatibility.
+- CMD/Markdown URL escaping is normalized before final closeout result fields are printed, preventing literal `^&` from being preserved as evidence URLs.
