@@ -168,6 +168,10 @@ from source_resource_state import (
     select_all_resources,
     clear_resource_selection,
 )
+from source_media_gui_bridge import (
+    MEDIA_GUI_DOWNLOAD_STATUS_READY,
+    run_source_media_gui_download,
+)
 
 
 SESSION_FILE_KIND_TRANSCRIPT = "transcript"
@@ -5098,14 +5102,83 @@ class App(ctk.CTk):
                 var.set(resource_id in cleared_state.selected_resource_ids)
             refresh_count()
 
-        def download_dry_run() -> None:
+        def download_selected_resources() -> None:
             selected_state = current_state()
-            dry_run = build_resource_download_dry_run(selected_state)
             self.source_resource_selections[row.row_id] = selected_state.selected_resource_ids
-            messagebox.showinfo("Download dry run", dry_run.message)
+            if not selected_state.selected_resource_ids:
+                messagebox.showinfo("Media download", "No media resources were selected.")
+                return
+
+            if row.adapter_id != "msn":
+                dry_run = build_resource_download_dry_run(selected_state)
+                messagebox.showinfo("Media download not yet connected", dry_run.message)
+                self.log_message(
+                    f"Media selection retained for {row.adapter_id}; direct GUI download backend not connected for this source.",
+                    "muted",
+                )
+                return
+
+            rendered_html = filedialog.askopenfilename(
+                parent=window,
+                title="Select rendered MSN article HTML",
+                filetypes=(("HTML files", "*.html *.htm"), ("All files", "*.*")),
+            )
+            if not rendered_html:
+                self.log_message("MSN media download cancelled before rendered HTML selection.", "muted")
+                return
+
+            output_dir = filedialog.askdirectory(
+                parent=window,
+                title="Choose folder for MSN media inventory/download results",
+            )
+            if not output_dir:
+                self.log_message("MSN media download cancelled before output folder selection.", "muted")
+                return
+
+            review = run_source_media_gui_download(
+                row=row,
+                state=selected_state,
+                rendered_html_path=rendered_html,
+                output_dir=output_dir,
+                dry_run=True,
+            )
+            if review.status != MEDIA_GUI_DOWNLOAD_STATUS_READY:
+                messagebox.showinfo("MSN media review", review.message)
+                self.log_message(review.message.replace("\n", " "), "warning")
+                return
+
+            hostnames = review.selected_direct_hostnames
+            if hostnames:
+                host_lines = "\n".join(f"- {host}" for host in hostnames)
+                allow_download = messagebox.askyesno(
+                    "Confirm media download hosts",
+                    (
+                        "The selected MSN media candidates are direct downloadable resources.\n\n"
+                        "Allow downloads from these hostnames?\n"
+                        f"{host_lines}\n\n"
+                        "Choosing No keeps the inventory/review files only."
+                    ),
+                )
+            else:
+                allow_download = False
+
+            result = run_source_media_gui_download(
+                row=row,
+                state=selected_state,
+                rendered_html_path=rendered_html,
+                output_dir=output_dir,
+                allowed_hostnames=hostnames if allow_download else (),
+                dry_run=not allow_download,
+            )
+            title = "MSN media download" if allow_download else "MSN media review"
+            messagebox.showinfo(title, result.message)
             self.log_message(
-                f"Dry-run resource download plan: {dry_run.selected_count} selected; downloads performed: none.",
-                "muted",
+                (
+                    f"{title}: discovered={result.resources_discovered}; "
+                    f"selected={result.resources_selected}; downloaded={result.resources_downloaded}; "
+                    f"summary={result.summary_markdown or 'not written'}"
+                ),
+                "success" if result.resources_downloaded else "muted",
             )
 
         button_row = ctk.CTkFrame(window, fg_color="transparent")
@@ -5113,7 +5186,7 @@ class App(ctk.CTk):
         ctk.CTkButton(button_row, text="All", width=80, command=select_all).pack(side="left")
         ctk.CTkButton(button_row, text="Clear all", width=90, command=clear_all).pack(side="left", padx=(8, 0))
         ctk.CTkButton(button_row, text="Cancel", width=90, command=window.destroy).pack(side="right")
-        ctk.CTkButton(button_row, text="Download", width=105, command=download_dry_run).pack(side="right", padx=(0, 8))
+        ctk.CTkButton(button_row, text="Download", width=105, command=download_selected_resources).pack(side="right", padx=(0, 8))
         refresh_count()
 
     def _on_discussion_source_selected(self, selected_label: str) -> None:

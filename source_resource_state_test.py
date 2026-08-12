@@ -45,19 +45,17 @@ def test_msn_canonicalization_removes_tracking_and_preserves_article_id() -> Non
     assert "#comments" not in canonical
 
 
-def test_source_row_uses_msn_fixture_resources_and_comments_without_livechat() -> None:
+def test_source_row_uses_real_msn_title_without_fake_fixture_media() -> None:
     row = build_source_resource_row(MSN_URL)
 
     assert row.adapter_id == "msn"
     assert row.adapter_display_name == "MSN"
-    assert row.title == "Special DJ by TAKU INOUE"
+    assert row.title == "Special Dj By Taku Inoue"
     assert row.comments_supported is True
     assert row.livechat_supported is False
-    assert row.image_resources[0].display_name == "Special DJ hero image"
-    assert row.image_resources[1].animated is True
-    assert row.video_audio_resources[0].media_type == "video"
-    assert row.video_audio_resources[1].extension == "mp3"
-    assert any("shadow-root" in warning for warning in row.warnings)
+    assert row.image_resources == ()
+    assert row.video_audio_resources == ()
+    assert any("no longer injects fake fixture media" in warning for warning in row.warnings)
 
 
 def test_archive_status_presentation_is_accessible_and_does_not_fabricate_dates() -> None:
@@ -97,7 +95,6 @@ def test_archive_auto_check_disabled_starts_gray_without_checks() -> None:
         ARCHIVE_SERVICE_WAYBACK,
         ARCHIVE_SERVICE_ARCHIVE_TODAY,
         ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
-        ARCHIVE_SERVICE_ARCHIVEBOX,
     ]
 
 
@@ -191,20 +188,20 @@ def test_resource_dialog_selection_all_clear_cancel_and_dry_run() -> None:
     cancelled = cancel_resource_selection(selected)
     dry_run = build_resource_download_dry_run(selected)
 
-    assert len(state.resources) == 2
-    assert selected.selection_count == 2
+    assert len(state.resources) == 0
+    assert selected.selection_count == 0
     assert cleared.selected_resource_ids == ()
     assert cancelled.selected_resource_ids == state.committed_resource_ids
-    assert dry_run.selected_count == 2
+    assert dry_run.selected_count == 0
     assert dry_run.downloads_performed == "none"
     assert "not enabled" in dry_run.message
 
 
-def test_video_audio_resource_dialog_filters_media_resources() -> None:
+def test_video_audio_resource_dialog_has_no_fake_fixture_media() -> None:
     row = build_source_resource_row(MSN_URL)
     state = resource_dialog_state_for_row(row, RESOURCE_KIND_VIDEO_AUDIO)
 
-    assert [item.media_type for item in state.resources] == ["video", "audio"]
+    assert state.resources == ()
 
 
 def test_action_plan_and_json_are_deterministic_and_local_only() -> None:
@@ -241,7 +238,7 @@ def test_action_plan_and_json_are_deterministic_and_local_only() -> None:
 
 def run_self_test() -> None:
     test_msn_canonicalization_removes_tracking_and_preserves_article_id()
-    test_source_row_uses_msn_fixture_resources_and_comments_without_livechat()
+    test_source_row_uses_real_msn_title_without_fake_fixture_media()
     test_archive_status_presentation_is_accessible_and_does_not_fabricate_dates()
     test_archive_auto_check_disabled_starts_gray_without_checks()
     test_url_token_parser_accepts_mixed_separators_and_encoded_commas()
@@ -250,7 +247,7 @@ def run_self_test() -> None:
     test_screenshot_intents_are_independent_and_inactive_when_parent_off()
     test_source_removal_updates_selection_and_allows_readd()
     test_resource_dialog_selection_all_clear_cancel_and_dry_run()
-    test_video_audio_resource_dialog_filters_media_resources()
+    test_video_audio_resource_dialog_has_no_fake_fixture_media()
     test_action_plan_and_json_are_deterministic_and_local_only()
 
 

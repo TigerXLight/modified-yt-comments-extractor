@@ -292,10 +292,6 @@ def _default_archive_statuses(auto_check_enabled: bool) -> tuple[ArchiveServiceS
                 ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
                 ARCHIVE_STATUS_NOT_CHECKED,
             ),
-            archive_status_presentation(
-                ARCHIVE_SERVICE_ARCHIVEBOX,
-                ARCHIVE_STATUS_NOT_CHECKED,
-            ),
         )
     return (
         archive_status_presentation(
@@ -308,10 +304,6 @@ def _default_archive_statuses(auto_check_enabled: bool) -> tuple[ArchiveServiceS
         ),
         archive_status_presentation(
             ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
-            ARCHIVE_STATUS_AUTO_CHECK_DISABLED,
-        ),
-        archive_status_presentation(
-            ARCHIVE_SERVICE_ARCHIVEBOX,
             ARCHIVE_STATUS_AUTO_CHECK_DISABLED,
         ),
     )
@@ -404,13 +396,13 @@ def build_source_resource_row(
     livechat_status = "Livechat supported by existing YouTube runtime elsewhere."
     provenance = "adapter metadata"
     if adapter.source_name == "msn":
-        display_title = title.strip() or "Special DJ by TAKU INOUE"
-        image_items, media_items = _msn_fixture_resources(row_id)
-        comments_status = "MSN comment fixture support only; no live fetch."
+        display_title = title.strip() or _fallback_title_from_url(canonical)
+        image_items, media_items = (), ()
+        comments_status = "MSN comment planning/support is adapter-specific; use explicit capture/export flows."
         livechat_status = "MSN livechat is not supported."
-        provenance = "local MSN fixture"
+        provenance = "adapter metadata; media discovery is user-triggered"
         warnings.append(
-            "MSN source row uses deterministic local fixture data; no page fetch, shadow-root traversal, or comment capture performed."
+            "MSN source row no longer injects fake fixture media. Use Images/GIFs or Video/Audio, then run discovery against rendered MSN HTML."
         )
     elif adapter.source_name != "youtube":
         comments_status = "Discussion capture is not supported for this adapter."
