@@ -15,12 +15,12 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 
-RECAPTURE_ID = "msn_dynamic_replay_recapture_v4_20260812"
-SCHEMA_VERSION = "msn_dynamic_replay_recapture_v4"
-STATUS_READY = "DYNAMIC_RECAPTURE_V4_NETWORK_MATERIALIZED_GENERATED_MANUAL_REPLAY_REQUIRED"
-STATUS_BLOCKED = "DYNAMIC_RECAPTURE_V4_BLOCKED_NO_ARTICLE_DETAIL_JSON"
-STATUS_DEPENDENCY_BLOCKED = "DYNAMIC_RECAPTURE_V4_BLOCKED_DEPENDENCY"
-STATUS_FAILED = "DYNAMIC_RECAPTURE_V4_FAILED"
+RECAPTURE_ID = "msn_desktop_json_first_dynamic_recapture_v5_20260812"
+SCHEMA_VERSION = "msn_desktop_json_first_dynamic_recapture_v5"
+STATUS_READY = "DESKTOP_JSON_FIRST_DYNAMIC_RECAPTURE_V5_GENERATED_MANUAL_REPLAY_REQUIRED"
+STATUS_BLOCKED = "DESKTOP_JSON_FIRST_DYNAMIC_RECAPTURE_V5_BLOCKED_NO_ARTICLE_DETAIL_JSON"
+STATUS_DEPENDENCY_BLOCKED = "DESKTOP_JSON_FIRST_DYNAMIC_RECAPTURE_V5_BLOCKED_DEPENDENCY"
+STATUS_FAILED = "DESKTOP_JSON_FIRST_DYNAMIC_RECAPTURE_V5_FAILED"
 
 MAIN_URL_FALLBACK = (
     "https://www.msn.com/en-gb/news/other/"
@@ -28,8 +28,8 @@ MAIN_URL_FALLBACK = (
 )
 ARTICLE_REQUIRED_TERMS = ("york", "mosque")
 ARTICLE_HELPER_TERMS = ("shot fired", "arrest made", "outside york mosque", "ar-aa29207o")
-MAX_CAPTURED_RESPONSES = 260
-MAX_RESPONSE_BODY_BYTES = 36 * 1024 * 1024
+MAX_CAPTURED_RESPONSES = 320
+MAX_RESPONSE_BODY_BYTES = 48 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,7 @@ class CapturedResponse:
         return any(x in ct for x in ("text/", "json", "javascript", "xml", "html"))
 
     def row(self) -> dict[str, Any]:
-        probe = self.body[:2000].decode("utf-8", errors="replace") if self.is_textual else ""
+        probe = self.body[:2400].decode("utf-8", errors="replace") if self.is_textual else ""
         return {
             "url": self.url,
             "status": self.status,
@@ -113,13 +113,22 @@ def canonical_article_url(url: str | None) -> str:
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", parsed.query, ""))
 
 
+def desktop_article_url(url: str | None) -> str:
+    """Keep the same article id, but remove mobile-specific fragments and prefer a clean desktop URL.
+
+    The MSN URL path is already shared across desktop/mobile. We remove the fragment and keep
+    query parameters only because the live endpoint sometimes uses them for routing/source tracking.
+    """
+    return canonical_article_url(url or MAIN_URL_FALLBACK)
+
+
 def no_query_url(url: str) -> str:
     parsed = urlparse(raw_target_url(url))
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
 
 
 def url_variants(url: str) -> list[str]:
-    base = canonical_article_url(url)
+    base = desktop_article_url(url)
     parsed = urlparse(base)
     pairs = parse_qsl(parsed.query, keep_blank_values=True)
     lower_names = urlencode([(k.lower(), v) for k, v in pairs], doseq=True)
@@ -201,7 +210,8 @@ def find_article_detail(responses: Sequence[CapturedResponse]) -> tuple[dict[str
             continue
         title = str(data.get("title") or "")
         body = str(data.get("body") or "")
-        sample = " ".join([title, body, str(data.get("abstract") or ""), response.url])
+        abstract = str(data.get("abstract") or "")
+        sample = " ".join([title, body, abstract, response.url])
         if "content/view/v2/detail" in response.url.lower() and article_terms_verified(sample):
             return data, response
         if data.get("body") and data.get("title") and article_terms_verified(sample):
@@ -244,15 +254,20 @@ def materialize_body_html(article: Mapping[str, Any]) -> str:
     return body
 
 
-def render_social_summary(summary: Mapping[str, Any] | None) -> str:
+def render_social_summary(summary: Mapping[str, Any] | None) -> tuple[str, Any, bool]:
     if not summary:
-        return "<section class='social-summary'><h2>MSN social/comment summary</h2><p>No community-summary API response was captured.</p></section>"
+        return (
+            "<section class='social-summary'><h2>MSN social/comment summary</h2><p>No community-summary API response was captured.</p></section>",
+            None,
+            False,
+        )
     comment_summary = summary.get("commentSummary") if isinstance(summary.get("commentSummary"), dict) else {}
     reaction_summary = summary.get("reactionSummary") if isinstance(summary.get("reactionSummary"), dict) else {}
     total_comments = comment_summary.get("totalCount", "Not captured")
     reaction_total = reaction_summary.get("totalCount", "Not captured")
     sub_comments = comment_summary.get("subCommentSummaries") if isinstance(comment_summary.get("subCommentSummaries"), list) else []
     sub_reactions = reaction_summary.get("subReactionSummaries") if isinstance(reaction_summary.get("subReactionSummaries"), list) else []
+
     def rows(items: Any) -> str:
         out = []
         if isinstance(items, list):
@@ -260,16 +275,18 @@ def render_social_summary(summary: Mapping[str, Any] | None) -> str:
                 if isinstance(item, dict):
                     out.append(f"<li>{html.escape(str(item.get('type')))}: {html.escape(str(item.get('totalCount')))}</li>")
         return "\n".join(out)
-    return (
+
+    markup = (
         "<section class='social-summary'>"
         "<h2>MSN captured social/comment summary</h2>"
         f"<p>Total comments/replies reported by captured MSN community API: <strong>{html.escape(str(total_comments))}</strong></p>"
         f"<ul>{rows(sub_comments)}</ul>"
         f"<p>Total reactions reported by captured MSN community API: <strong>{html.escape(str(reaction_total))}</strong></p>"
         f"<ul>{rows(sub_reactions)}</ul>"
-        "<p class='note'>Actual comment text was not captured in this dynamic recapture; this section preserves only the captured community-summary counts.</p>"
+        "<p class='note'>Actual comment text was not captured in this desktop JSON-first dynamic recapture; this section preserves only the captured community-summary counts.</p>"
         "</section>"
     )
+    return markup, total_comments, False
 
 
 def build_materialized_article_html(
@@ -280,8 +297,8 @@ def build_materialized_article_html(
     social_summary: Mapping[str, Any] | None,
     social_response: CapturedResponse | None,
     visible_body_text: str,
-    dom_verified: bool,
-) -> str:
+    visible_dom_verified: bool,
+) -> tuple[str, Any, bool]:
     title = str(article.get("title") or "MSN captured article")
     abstract = str(article.get("abstract") or "")
     source_href = str(article.get("sourceHref") or "")
@@ -296,7 +313,9 @@ def build_materialized_article_html(
     body_html = materialize_body_html(article)
     article_text = text_from_html(body_html)
     generated_at = utc_now_iso()
-    return f"""<!doctype html>
+    social_markup, comment_total, actual_comment_text_captured = render_social_summary(social_summary)
+
+    html_doc = f"""<!doctype html>
 <html lang="en-GB">
 <head>
 <meta charset="utf-8" />
@@ -305,20 +324,20 @@ def build_materialized_article_html(
 <style>
 :root {{ color-scheme: light; }}
 body {{ margin:0; background:#f3f4f6; color:#111827; font-family: Arial, Helvetica, sans-serif; line-height:1.55; }}
-.page {{ max-width: 860px; margin: 0 auto; background: #fff; min-height:100vh; box-shadow: 0 0 0 1px #e5e7eb; }}
-.header {{ padding: 24px 24px 12px; border-bottom: 1px solid #e5e7eb; }}
+.page {{ max-width: 900px; margin: 0 auto; background: #fff; min-height:100vh; box-shadow: 0 0 0 1px #e5e7eb; }}
+.header {{ padding: 28px 30px 14px; border-bottom: 1px solid #e5e7eb; }}
 .kicker {{ color:#6b7280; font-size: 14px; text-transform: uppercase; letter-spacing:.04em; }}
-h1 {{ font-size: 34px; line-height:1.12; margin: 10px 0; }}
+h1 {{ font-size: 38px; line-height:1.12; margin: 10px 0; }}
 .meta {{ color:#4b5563; font-size: 15px; }}
-.article-body {{ padding: 20px 24px; font-size: 18px; }}
+.article-body {{ padding: 22px 30px; font-size: 18px; }}
 .article-body ul {{ padding-left: 1.3em; }}
 .article-body li {{ margin: 0.55em 0; }}
 .article-body a {{ color: #0b5cad; }}
 .article-image {{ margin: 18px 0; }}
 .article-image img {{ max-width: 100%; border-radius: 10px; display:block; }}
 .article-image figcaption {{ color:#6b7280; font-size: 13px; margin-top: 6px; }}
-.social-summary, .recapture-panel {{ margin: 18px 24px; padding: 14px; border:1px solid #d1d5db; border-radius:10px; background:#f9fafb; }}
-.recapture-panel {{ border-color:#f59e0b; background:#fff7ed; }}
+.social-summary, .recapture-panel {{ margin: 18px 30px; padding: 14px; border:1px solid #d1d5db; border-radius:10px; background:#f9fafb; }}
+.recapture-panel {{ border-color:#2563eb; background:#eff6ff; }}
 .note {{ color:#6b7280; font-size: 14px; }}
 pre {{ white-space: pre-wrap; word-break: break-word; }}
 </style>
@@ -326,31 +345,32 @@ pre {{ white-space: pre-wrap; word-break: break-word; }}
 <body>
 <main class="page">
   <section class="header">
-    <div class="kicker">MSN dynamic network recapture V4</div>
+    <div class="kicker">MSN desktop JSON-first dynamic recapture V5</div>
     <h1>{html.escape(title)}</h1>
     <p class="meta">{html.escape(provider_name)}{(" • " + html.escape(", ".join(author_names))) if author_names else ""}</p>
     <p>{html.escape(abstract)}</p>
   </section>
   <section class="recapture-panel">
-    <strong>YTCE MSN dynamic recapture V4 — network-materialized replay candidate</strong>
-    <p>This page is generated from article JSON captured during the live MSN browser session, because the replay-visible DOM remained an MSN shell/More-for-You state.</p>
+    <strong>YTCE MSN desktop JSON-first dynamic recapture V5 — article-only replay candidate</strong>
+    <p>This page is generated from article JSON captured during a desktop live MSN browser session. It intentionally materializes the article only, not the infinite MSN feed below it.</p>
     <ul>
       <li>MSN source URL: {html.escape(raw_target_url(source_url))}</li>
       <li>Article JSON endpoint: {html.escape(article_response.url)}</li>
       <li>Article JSON SHA-256: {article_response.body_sha256}</li>
       <li>Community summary endpoint: {html.escape(social_response.url) if social_response else "Not captured"}</li>
       <li>Generated at UTC: {generated_at}</li>
-      <li>Visible DOM body verified: {str(article_terms_verified(visible_body_text))}</li>
-      <li>DOM/network article verified: {str(dom_verified)}</li>
+      <li>Desktop visible DOM article verified: {str(visible_dom_verified)}</li>
+      <li>Network article JSON verified: {str(article_terms_verified(article_text))}</li>
+      <li>Actual comment text captured: {str(actual_comment_text_captured)}</li>
       <li>Dynamic replay success claimed: False; manual ReplayWeb review required.</li>
     </ul>
   </section>
   <article class="article-body">
     {body_html}
   </article>
-  {render_social_summary(social_summary)}
+  {social_markup}
   <section class="recapture-panel">
-    <h2>Article text evidence extracted from captured JSON</h2>
+    <h2>Article text evidence extracted from captured MSN JSON</h2>
     <pre>{html.escape(article_text)}</pre>
     <p class="note">Original provider link captured in MSN JSON: {html.escape(source_href)}</p>
   </section>
@@ -358,6 +378,7 @@ pre {{ white-space: pre-wrap; word-break: break-word; }}
 </body>
 </html>
 """
+    return html_doc, comment_total, actual_comment_text_captured
 
 
 def http_response_payload(body: bytes, content_type: str = "text/html; charset=utf-8", status: int = 200) -> bytes:
@@ -489,7 +510,14 @@ def write_wacz(destination: Path, source_url: str, title: str, warc_gz: bytes, m
     pages = (
         json.dumps({"format": "json-pages-1.0", "id": "pages", "title": "All Pages"}, sort_keys=True)
         + "\n"
-        + json.dumps({"id": "msn_dynamic_recapture_v4_main_page", "title": title, "url": raw_target_url(source_url), "ts": timestamp_utc, "size": len(warc_gz), "text": "MSN dynamic network-materialized article replay candidate."}, sort_keys=True)
+        + json.dumps({
+            "id": "msn_desktop_json_first_dynamic_v5_main_page",
+            "title": title,
+            "url": raw_target_url(source_url),
+            "ts": timestamp_utc,
+            "size": len(warc_gz),
+            "text": "MSN desktop JSON-first dynamic article-only replay candidate.",
+        }, sort_keys=True)
         + "\n"
     ).encode("utf-8")
     resources = [
@@ -505,15 +533,16 @@ def write_wacz(destination: Path, source_url: str, title: str, warc_gz: bytes, m
         "created": timestamp_utc,
         "modified": timestamp_utc,
         "title": title,
-        "description": "MSN dynamic recapture V4: article materialized from captured MSN JSON endpoint. Manual ReplayWeb review required.",
+        "description": "MSN desktop JSON-first dynamic recapture V5. WACZ remains experimental until manual ReplayWeb review.",
         "home": {"url": raw_target_url(source_url), "ts": timestamp_utc},
         "resources": resources,
         "ytce_recapture_note": {
             "recapture_id": RECAPTURE_ID,
             "schema_version": SCHEMA_VERSION,
-            "candidate_type": "network_materialized_dynamic_article",
+            "candidate_type": "desktop_json_first_dynamic_article",
             "dynamic_replay_success_claimed": False,
             "manual_replayweb_visual_review_required": True,
+            "wacz_status": "experimental",
         },
     }
     dp = (json.dumps(datapackage, indent=2, sort_keys=True) + "\n").encode("utf-8")
@@ -552,24 +581,27 @@ def build_warc(source_url: str, materialized_html: str, responses: Sequence[Capt
     return bytes(out)
 
 
-def run_browser_capture(source_url: str, output_root: Path, headless: bool, timeout_ms: int, scroll_passes: int) -> tuple[list[CapturedResponse], str, str, bool, str]:
+def run_desktop_browser_capture(source_url: str, output_root: Path, headless: bool, timeout_ms: int, scroll_passes: int) -> tuple[list[CapturedResponse], str, str, bool, str]:
     from playwright.sync_api import sync_playwright  # type: ignore
 
     responses: list[CapturedResponse] = []
     total_bytes = 0
     final_dom = ""
     final_text = ""
-    title = ""
     screenshot_hash = ""
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         context = browser.new_context(
-            viewport={"width": 412, "height": 915},
-            device_scale_factor=2,
-            is_mobile=True,
-            has_touch=True,
-            user_agent=("Mozilla/5.0 (Linux; Android 14; Xperia 1 IV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36 EdgA/139.0.0.0"),
+            viewport={"width": 1366, "height": 900},
+            device_scale_factor=1,
+            is_mobile=False,
+            has_touch=False,
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0"
+            ),
             locale="en-GB",
         )
         page = context.new_page()
@@ -590,7 +622,11 @@ def run_browser_capture(source_url: str, output_root: Path, headless: bool, time
             except Exception:
                 headers = {}
             content_type = str(headers.get("content-type") or headers.get("Content-Type") or "")
-            interesting = "msn.com" in url.lower() or "akamaized" in url.lower() or resource_type in {"document", "stylesheet", "script", "image", "font", "xhr", "fetch"}
+            interesting = (
+                "msn.com" in url.lower()
+                or "akamaized" in url.lower()
+                or resource_type in {"document", "stylesheet", "script", "image", "font", "xhr", "fetch"}
+            )
             if not interesting:
                 return
             try:
@@ -608,35 +644,34 @@ def run_browser_capture(source_url: str, output_root: Path, headless: bool, time
 
         page.on("response", on_response)
 
-        # Try variants but retain the first that yields the article JSON endpoint.
         for attempt_url in url_variants(source_url):
             page.goto(attempt_url, wait_until="domcontentloaded", timeout=timeout_ms)
             page.wait_for_timeout(2500)
             try:
-                page.wait_for_load_state("networkidle", timeout=8000)
+                page.wait_for_load_state("networkidle", timeout=9000)
             except Exception:
                 pass
 
-            # Remove consent/privacy where possible and trigger expansions, but V4 does not depend on visible DOM.
-            for label in ("Reject all", "Reject All", "Accept all", "Accept All", "Agree", "I agree", "Save", "Confirm choices"):
+            # Desktop consent/expand interactions. This is best-effort; V5's success target is JSON-first.
+            for label in ("Reject all", "Reject All", "Accept all", "Accept All", "Agree", "I agree", "Save", "Confirm choices", "Manage preferences"):
                 try:
                     loc = page.get_by_text(label, exact=False)
-                    for i in range(min(loc.count(), 3)):
+                    for i in range(min(loc.count(), 4)):
                         try:
-                            loc.nth(i).click(timeout=800)
+                            loc.nth(i).click(timeout=900)
                             page.wait_for_timeout(500)
                         except Exception:
                             pass
                 except Exception:
                     pass
 
-            for label in ("Continue reading", "Expand article", "Read more", "Comments", "See comments", "Show comments", "Join the conversation"):
+            for label in ("Continue reading", "Expand article", "Read more", "Show more", "Comments", "See comments", "Show comments", "Join the conversation"):
                 try:
                     loc = page.get_by_text(label, exact=False)
                     for i in range(min(loc.count(), 4)):
                         try:
-                            loc.nth(i).click(timeout=800)
-                            page.wait_for_timeout(600)
+                            loc.nth(i).click(timeout=900)
+                            page.wait_for_timeout(650)
                         except Exception:
                             pass
                 except Exception:
@@ -644,10 +679,10 @@ def run_browser_capture(source_url: str, output_root: Path, headless: bool, time
 
             for _ in range(max(1, scroll_passes)):
                 try:
-                    page.evaluate("window.scrollBy(0, Math.max(700, window.innerHeight * 0.85))")
+                    page.evaluate("window.scrollBy(0, Math.max(800, window.innerHeight * 0.80))")
                 except Exception:
                     pass
-                page.wait_for_timeout(550)
+                page.wait_for_timeout(650)
 
             article, _resp = find_article_detail(responses)
             if article:
@@ -664,15 +699,11 @@ def run_browser_capture(source_url: str, output_root: Path, headless: bool, time
         except Exception:
             final_dom = ""
         try:
-            final_text = str(page.locator("body").inner_text(timeout=3000))
+            final_text = str(page.locator("body").inner_text(timeout=3500))
         except Exception:
             final_text = ""
         try:
-            title = page.title()
-        except Exception:
-            title = ""
-        try:
-            shot = output_root / "screenshots" / "dynamic-recapture-v4-final-full-page.png"
+            shot = output_root / "screenshots" / "desktop-json-first-v5-final-full-page.png"
             shot.parent.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(shot), full_page=True, timeout=15000)
             screenshot_hash = sha256_file(shot)
@@ -682,31 +713,31 @@ def run_browser_capture(source_url: str, output_root: Path, headless: bool, time
     return responses, final_dom, final_text, bool(article_terms_verified(final_text) or article_terms_verified(final_dom)), screenshot_hash
 
 
-def run_dynamic_replay_recapture_v4(source_url: str | None, output_root: str | Path, headless: bool, timeout_ms: int, scroll_passes: int, dry_run: bool = False) -> dict[str, Any]:
+def run_desktop_json_first_dynamic_recapture_v5(source_url: str | None, output_root: str | Path, headless: bool, timeout_ms: int, scroll_passes: int, dry_run: bool = False) -> dict[str, Any]:
     output_root = Path(output_root)
-    source_url = canonical_article_url(source_url or try_default_msn_url())
+    source_url = desktop_article_url(source_url or try_default_msn_url())
     errors = dependency_errors()
     if dry_run:
-        return {"status": "DYNAMIC_RECAPTURE_V4_DRY_RUN", "source_url": source_url, "output_root": str(output_root), "dependency_errors": errors, "dynamic_replay_success_claimed": False}
+        return {"status": "DESKTOP_JSON_FIRST_DYNAMIC_RECAPTURE_V5_DRY_RUN", "source_url": source_url, "output_root": str(output_root), "dependency_errors": errors, "dynamic_replay_success_claimed": False}
     output_root.mkdir(parents=True, exist_ok=True)
     if errors:
         result = {"status": STATUS_DEPENDENCY_BLOCKED, "source_url": source_url, "output_root": str(output_root), "dependency_errors": errors, "dynamic_replay_success_claimed": False, "manual_replayweb_visual_review_required": False}
-        write_text(output_root / "dynamic-recapture-v4-manifest.json", json.dumps(result, indent=2, sort_keys=True) + "\n")
+        write_text(output_root / "desktop-json-first-v5-manifest.json", json.dumps(result, indent=2, sort_keys=True) + "\n")
         return result
 
     try:
-        responses, final_dom, final_text, visible_dom_verified, screenshot_hash = run_browser_capture(source_url, output_root, headless, timeout_ms, scroll_passes)
+        responses, final_dom, final_text, visible_dom_verified, screenshot_hash = run_desktop_browser_capture(source_url, output_root, headless, timeout_ms, scroll_passes)
     except Exception as exc:
         result = {"status": STATUS_FAILED, "source_url": source_url, "output_root": str(output_root), "error": f"{type(exc).__name__}: {exc}", "dynamic_replay_success_claimed": False, "manual_replayweb_visual_review_required": False}
-        write_text(output_root / "dynamic-recapture-v4-manifest.json", json.dumps(result, indent=2, sort_keys=True) + "\n")
+        write_text(output_root / "desktop-json-first-v5-manifest.json", json.dumps(result, indent=2, sort_keys=True) + "\n")
         return result
 
     article, article_response = find_article_detail(responses)
     social_summary, social_response = find_social_summary(responses)
     response_rows = [r.row() for r in responses]
-    write_text(output_root / "captured-network-responses-v4.json", json.dumps(response_rows, indent=2, sort_keys=True) + "\n")
-    write_text(output_root / "rendered-visible-dom-v4.html", final_dom)
-    write_text(output_root / "rendered-visible-text-v4.txt", final_text)
+    write_text(output_root / "desktop-captured-network-responses-v5.json", json.dumps(response_rows, indent=2, sort_keys=True) + "\n")
+    write_text(output_root / "desktop-visible-dom-v5.html", final_dom)
+    write_text(output_root / "desktop-visible-text-v5.txt", final_text)
 
     if not article or not article_response:
         result = {
@@ -715,65 +746,68 @@ def run_dynamic_replay_recapture_v4(source_url: str | None, output_root: str | P
             "status": STATUS_BLOCKED,
             "source_url": source_url,
             "output_root": str(output_root),
-            "visible_dom_article_verified": visible_dom_verified,
+            "desktop_visible_dom_article_verified": visible_dom_verified,
+            "desktop_network_detail_article_verified": False,
+            "desktop_body_text_length": len(final_text),
             "captured_network_response_count": len(responses),
             "dynamic_replay_success_claimed": False,
             "manual_replayweb_visual_review_required": False,
         }
-        write_text(output_root / "dynamic-recapture-v4-manifest.json", json.dumps(result, indent=2, sort_keys=True) + "\n")
+        write_text(output_root / "desktop-json-first-v5-manifest.json", json.dumps(result, indent=2, sort_keys=True) + "\n")
         return result
 
-    materialized_html = build_materialized_article_html(
+    materialized_html, comment_total, actual_comment_text_captured = build_materialized_article_html(
         source_url=source_url,
         article=article,
         article_response=article_response,
         social_summary=social_summary,
         social_response=social_response,
         visible_body_text=final_text,
-        dom_verified=visible_dom_verified,
+        visible_dom_verified=visible_dom_verified,
     )
     article_text = text_from_html(str(article.get("body") or ""))
-    materialized_article_verified = article_terms_verified(article_text)
-    html_path = output_root / "network-materialized-article-v4.html"
+    network_detail_article_verified = article_terms_verified(article_text)
+    html_path = output_root / "desktop-json-first-article-v5.html"
     html_hash = write_text(html_path, materialized_html)
-    article_json_path = output_root / "captured-article-detail-v4.json"
+    article_json_path = output_root / "desktop-captured-article-detail-v5.json"
     article_json_hash = write_text(article_json_path, json.dumps(article, indent=2, sort_keys=True) + "\n")
-    social_json_path = output_root / "captured-community-summary-v4.json"
+    social_json_path = output_root / "desktop-captured-community-summary-v5.json"
     social_json_hash = write_text(social_json_path, json.dumps(social_summary or {}, indent=2, sort_keys=True) + "\n")
 
     ts = utc_now_iso()
     warc_bytes = build_warc(source_url, materialized_html, responses, ts)
-    warc_path = output_root / "archive" / "dynamic-network-materialized-v4.warc"
+    warc_path = output_root / "archive" / "desktop-json-first-v5.warc"
     warc_hash = write_bytes(warc_path, warc_bytes)
     warc_gz, members = gzip_warc_members(warc_bytes)
-    warc_gz_path = output_root / "archive" / "dynamic-network-materialized-v4.warc.gz"
+    warc_gz_path = output_root / "archive" / "desktop-json-first-v5.warc.gz"
     warc_gz_hash = write_bytes(warc_gz_path, warc_gz)
-    wacz_path = output_root / "archive" / "dynamic-network-materialized-v4.wacz"
-    title = str(article.get("title") or "MSN dynamic network recapture V4")
+    wacz_path = output_root / "archive" / "desktop-json-first-v5.experimental.wacz"
+    title = str(article.get("title") or "MSN desktop JSON-first dynamic recapture V5")
     wacz = write_wacz(wacz_path, source_url, title, warc_gz, members, ts)
 
     result = {
         "schema_version": SCHEMA_VERSION,
         "recapture_id": RECAPTURE_ID,
         "status": STATUS_READY,
-        "candidate_type": "network_materialized_dynamic_article",
+        "candidate_type": "desktop_json_first_dynamic_article",
         "source_url": source_url,
         "output_root": str(output_root),
         "title": title,
-        "visible_dom_article_verified": visible_dom_verified,
-        "network_detail_article_verified": materialized_article_verified,
+        "desktop_visible_dom_article_verified": visible_dom_verified,
+        "desktop_network_detail_article_verified": network_detail_article_verified,
+        "desktop_body_text_length": len(final_text),
         "article_json_endpoint": article_response.url,
         "article_json_sha256": article_response.body_sha256,
         "community_summary_endpoint": social_response.url if social_response else "",
         "community_summary_sha256": social_response.body_sha256 if social_response else "",
-        "comment_summary_total_count": ((social_summary or {}).get("commentSummary") or {}).get("totalCount") if isinstance((social_summary or {}).get("commentSummary"), dict) else None,
-        "actual_comment_text_captured": False,
+        "comment_summary_total_count": comment_total,
+        "actual_comment_text_captured": actual_comment_text_captured,
         "captured_network_response_count": len(responses),
         "warc_record_count": len(members),
         "materialized_html_path": str(html_path),
         "materialized_html_sha256": html_hash,
         "article_json_path": str(article_json_path),
-        "article_json_sha256": article_json_hash,
+        "article_json_sha256_local_copy": article_json_hash,
         "social_json_path": str(social_json_path),
         "social_json_sha256": social_json_hash,
         "screenshot_sha256": screenshot_hash,
@@ -785,10 +819,11 @@ def run_dynamic_replay_recapture_v4(source_url: str | None, output_root: str | P
         "wacz_sha256": wacz["sha256"],
         "wacz_main_surt_key": wacz["main_surt_key"],
         "wacz_cdx_timestamp": wacz["cdx_timestamp"],
+        "wacz_status": "experimental_manual_review_required",
         "dynamic_replay_success_claimed": False,
         "manual_replayweb_visual_review_required": True,
     }
-    manifest_path = output_root / "dynamic-recapture-v4-manifest.json"
+    manifest_path = output_root / "desktop-json-first-v5-manifest.json"
     result["manifest_path"] = str(manifest_path)
     write_text(manifest_path, json.dumps(result, indent=2, sort_keys=True) + "\n")
     result["manifest_sha256"] = sha256_file(manifest_path)
@@ -798,34 +833,36 @@ def run_dynamic_replay_recapture_v4(source_url: str | None, output_root: str | P
 
 def render_result_lines(result: Mapping[str, Any]) -> list[str]:
     lines = [
-        f"DYNAMIC_RECAPTURE_V4_STATUS={result.get('status')}",
-        f"DYNAMIC_RECAPTURE_V4_OUTPUT_ROOT={result.get('output_root')}",
-        f"DYNAMIC_RECAPTURE_V4_SOURCE_URL={result.get('source_url')}",
+        f"DESKTOP_JSON_FIRST_DYNAMIC_RECAPTURE_V5_STATUS={result.get('status')}",
+        f"DESKTOP_JSON_FIRST_DYNAMIC_RECAPTURE_V5_OUTPUT_ROOT={result.get('output_root')}",
+        f"DESKTOP_JSON_FIRST_DYNAMIC_RECAPTURE_V5_SOURCE_URL={result.get('source_url')}",
         f"CANDIDATE_TYPE={result.get('candidate_type')}",
-        f"VISIBLE_DOM_ARTICLE_VERIFIED={result.get('visible_dom_article_verified')}",
-        f"NETWORK_DETAIL_ARTICLE_VERIFIED={result.get('network_detail_article_verified')}",
+        f"DESKTOP_VISIBLE_DOM_ARTICLE_VERIFIED={result.get('desktop_visible_dom_article_verified')}",
+        f"DESKTOP_NETWORK_DETAIL_ARTICLE_VERIFIED={result.get('desktop_network_detail_article_verified')}",
+        f"DESKTOP_BODY_TEXT_LENGTH={result.get('desktop_body_text_length')}",
         f"COMMENT_SUMMARY_TOTAL_COUNT={result.get('comment_summary_total_count')}",
         f"ACTUAL_COMMENT_TEXT_CAPTURED={result.get('actual_comment_text_captured')}",
         f"CAPTURED_NETWORK_RESPONSE_COUNT={result.get('captured_network_response_count')}",
         f"WARC_RECORD_COUNT={result.get('warc_record_count')}",
+        f"WACZ_STATUS={result.get('wacz_status')}",
         f"WACZ_CDX_TIMESTAMP={result.get('wacz_cdx_timestamp')}",
         f"DYNAMIC_REPLAY_SUCCESS_CLAIMED={result.get('dynamic_replay_success_claimed')}",
         f"MANUAL_REPLAYWEB_VISUAL_REVIEW_REQUIRED={result.get('manual_replayweb_visual_review_required')}",
     ]
     for key, label in [
-        ("materialized_html_path", "NETWORK_MATERIALIZED_HTML_V4"),
-        ("article_json_path", "CAPTURED_ARTICLE_JSON_V4"),
-        ("social_json_path", "CAPTURED_COMMUNITY_SUMMARY_V4"),
-        ("warc_gz_path", "DYNAMIC_RECAPTURE_V4_WARC_GZ"),
-        ("wacz_path", "DYNAMIC_RECAPTURE_V4_WACZ"),
-        ("manifest_path", "DYNAMIC_RECAPTURE_V4_MANIFEST"),
+        ("materialized_html_path", "DESKTOP_JSON_FIRST_HTML_V5"),
+        ("article_json_path", "DESKTOP_CAPTURED_ARTICLE_JSON_V5"),
+        ("social_json_path", "DESKTOP_CAPTURED_COMMUNITY_SUMMARY_V5"),
+        ("warc_gz_path", "DESKTOP_JSON_FIRST_WARC_GZ_V5"),
+        ("wacz_path", "DESKTOP_JSON_FIRST_EXPERIMENTAL_WACZ_V5"),
+        ("manifest_path", "DESKTOP_JSON_FIRST_MANIFEST_V5"),
     ]:
         if result.get(key):
             lines.append(f"{label}={result.get(key)}")
     if result.get("status") == STATUS_READY:
-        lines.append("DYNAMIC_RECAPTURE_V4_READY_FOR_MANUAL_REPLAYWEB_TEST")
+        lines.append("DESKTOP_JSON_FIRST_DYNAMIC_RECAPTURE_V5_READY_FOR_MANUAL_REPLAYWEB_TEST")
     elif result.get("status") == STATUS_BLOCKED:
-        lines.append("DYNAMIC_RECAPTURE_V4_BLOCKED_NO_REPLAY_ACCEPTANCE_CLAIM")
+        lines.append("DESKTOP_JSON_FIRST_DYNAMIC_RECAPTURE_V5_BLOCKED_NO_REPLAY_ACCEPTANCE_CLAIM")
     if result.get("error"):
         lines.append("ERROR=" + str(result.get("error")))
     return lines
@@ -836,15 +873,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-url", default="")
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--headless", action="store_true")
-    parser.add_argument("--timeout-ms", type=int, default=45000)
+    parser.add_argument("--timeout-ms", type=int, default=50000)
     parser.add_argument("--scroll-passes", type=int, default=8)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     if args.dry_run:
-        result = {"status": "DYNAMIC_RECAPTURE_V4_DRY_RUN", "source_url": canonical_article_url(args.source_url or try_default_msn_url()), "output_root": args.output_root, "dependency_errors": dependency_errors(), "dynamic_replay_success_claimed": False}
+        result = {"status": "DESKTOP_JSON_FIRST_DYNAMIC_RECAPTURE_V5_DRY_RUN", "source_url": desktop_article_url(args.source_url or try_default_msn_url()), "output_root": args.output_root, "dependency_errors": dependency_errors(), "dynamic_replay_success_claimed": False}
     else:
-        result = run_dynamic_replay_recapture_v4(args.source_url or None, args.output_root, bool(args.headless), int(args.timeout_ms), int(args.scroll_passes))
+        result = run_desktop_json_first_dynamic_recapture_v5(args.source_url or None, args.output_root, bool(args.headless), int(args.timeout_ms), int(args.scroll_passes))
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
