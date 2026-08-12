@@ -1311,3 +1311,42 @@ Current MSN adapter replay-hardening implementation note:
 - Replay status is separated into structural WARC status, ReplayWeb/manual visual status, pywb visual status, and WACZ compatibility status instead of a single ambiguous `NOT_TESTED` field.
 - WACZ files are inspected as ZIP packages and marked compatibility-review-required when the package profile/shape remains unverified or previously failed ReplayWeb compatibility.
 - CMD/Markdown URL escaping is normalized before final closeout result fields are printed, preventing literal `^&` from being preserved as evidence URLs.
+
+## OFFLINE_BACKUP_VIEWER_IMPLEMENTATION_20260811
+
+- MSN closeouts now support a static offline evidence backup viewer for human-readable browser viewing when WARC/WACZ/pywb visual replay is not accepted.
+- The viewer records accepted article/comments screenshots, structured comments, profiles, source-role/media-chain metadata, Memento date tracking, replay-status limitations, WARC/WACZ/pywb-indexable artifacts, and file hashes.
+- This viewer is distinct from archive replay: it is the stable offline evidence review interface, while WARC/WACZ/pywb remain preserved archive/replay candidates with honest status fields.
+
+## OFFLINE_BACKUP_VIEWER_PROFILE_REFERENCE_REPAIR_20260812
+
+- Offline backup viewer reference selection is now acceptance-gated: the York repair generator verifies and installs the accepted V6 article screenshot and accepted V15 comments screenshot before viewer generation.
+- Structured comments are canonical text and nested replies are rendered/countable from the structured comments export; screenshots remain supporting visual evidence only.
+- Profiles are rendered with V35-style fields: author, comments count, likes count, followers count, and MSN community profile URL. Missing York account statistics remain explicitly `Not captured`; they are not inferred or borrowed from the separate V35 reference capture.
+- Stored MSN profile CIDs may be used to reconstruct the corresponding community profile URL, with that basis labelled in the viewer.
+- WARC/WACZ/ReplayWeb.page/pywb remain partial or experimental archive/replay artifacts unless separately verified; the static viewer is the stable human-readable backup layer.
+
+## STATIC_VISUAL_WARC_REPAIR_20260812
+
+- The accepted static offline viewer screenshots are visually accepted, but the raw dynamic WARC/WACZ/ReplayWeb.page output remains unchanged and still does not visually match the accepted MSN desktop page closely enough.
+- A separate derived static visual replay candidate generator is added in `source_offline_visual_warc_repair.py` / `source_offline_visual_warc_repair_cli.py`.
+- The generator writes `static_visual_replay/msn-static-visual-replay.html`, `static_visual_replay/static-msn-visual-replay.warc`, `static_visual_replay/static-msn-visual-replay.warc.gz`, a manifest, README, and direct-open command under the existing MSN closeout output root.
+- This derived static WARC is intended for manual ReplayWeb.page visual testing against the accepted MSN desktop reference appearance; it does not overwrite or replace the raw dynamic WARC/WACZ files, does not perform live recapture, does not fetch network resources, and does not claim dynamic replay success.
+- Manual visual acceptance remains required before any final commit or closeout ZIP.
+
+## STATIC_VISUAL_WARC_REPAIR_V2_20260812
+
+- The first derived static visual WARC candidate looked closer to the accepted MSN desktop page, but its lower screenshot-proof section embedded the wrong desktop full-page/feed screenshot and image click-to-expand behavior was missing.
+- V2 updates `source_offline_visual_warc_repair.py` / `source_offline_visual_warc_repair_cli.py` so the lower proof section embeds the accepted single-article screenshot `screenshots/android_article_MAIN_SINGLE_reference_style.png` when present; the desktop full-page screenshot is preserved only as metadata/diagnostic input, not as the accepted embedded proof.
+- V2 adds no-JavaScript hash/CSS click-to-expand lightbox behavior for the hero image and the accepted article screenshot proof, so the direct HTML and static WARC candidate can be manually tested for image expansion.
+- The derived static WARC remains a separate replay candidate under `static_visual_replay/`; it does not overwrite or replace raw dynamic WARC/WACZ files, does not perform live recapture, does not fetch network resources, and does not claim dynamic ReplayWeb.page success.
+- Manual visual acceptance remains required before any final commit or closeout ZIP.
+
+## STATIC_VISUAL_WARC_REPAIR_V3_20260812
+
+- V2 direct HTML corrected the accepted article screenshot reference, but ReplayWeb could still show the old static visual WARC content because the synthetic WARC target URL and output filenames were reused; browser/ReplayWeb caching could therefore preserve the old lower screenshot-proof page.
+- V3 writes to a new `static_visual_replay_v3/` folder with unique V3 output names and a cache-busting synthetic target URL `ytce_static_visual_replay_v3=20260812_reference_image_expander`.
+- V3 keeps the accepted single-article screenshot `screenshots/android_article_MAIN_SINGLE_reference_style.png` as the lower proof image and preserves the unrelated desktop full-page/feed screenshot only as metadata/diagnostic input.
+- V3 changes image expansion from hash/anchor navigation to a no-JavaScript checkbox/label lightbox so ReplayWeb is less likely to treat image expansion as a page navigation.
+- The derived static WARC remains a separate replay candidate; it does not overwrite or replace raw dynamic WARC/WACZ files, does not perform live recapture, does not fetch network resources, and does not claim dynamic ReplayWeb.page success.
+- Manual visual acceptance remains required before any final commit or closeout ZIP.

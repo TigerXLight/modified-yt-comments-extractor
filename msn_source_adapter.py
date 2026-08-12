@@ -1624,6 +1624,27 @@ except NameError:
 # END MSN_REPLAY_HARDENING_INTEGRATION_20260811
 
 
+
+
+# MSN_OFFLINE_BACKUP_VIEWER_CLOSEOUT_WRAPPER_20260811
+try:
+    _msn_offline_backup_viewer_original_run_msn_closeout_validation = run_msn_closeout_validation
+
+    def run_msn_closeout_validation(*args, **kwargs):  # type: ignore[no-redef]
+        result = _msn_offline_backup_viewer_original_run_msn_closeout_validation(*args, **kwargs)
+        try:
+            from source_offline_evidence_viewer_closeout_integration import patch_result_with_offline_viewer
+            output_root = None
+            if isinstance(result, dict):
+                output_root = result.get("output_root") or result.get("OUTPUT_ROOT") or result.get("output_dir") or result.get("OUTPUT_DIR")
+            output_root = output_root or kwargs.get("output_root") or kwargs.get("output_dir") or kwargs.get("out_dir")
+            result = patch_result_with_offline_viewer(result, output_root=output_root)
+        except Exception as exc:
+            print("OFFLINE_BACKUP_VIEWER_WARNING:", repr(exc))
+        return result
+except NameError:
+    pass
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     result = run_msn_closeout_validation(
