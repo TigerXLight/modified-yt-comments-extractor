@@ -143,19 +143,8 @@ from source_local_web_archive_actions import (
     build_local_web_archive_action_state,
     local_web_archive_status_lines,
 )
-from capture_twitter_exporter_source_import import (
-    build_twitter_exporter_queue_review_draft,
-    build_twitter_exporter_queue_review_draft_summary,
-    build_twitter_exporter_source_row_summary,
-    preview_twitter_exporter_local_import_source,
-)
-from capture_twitter_exporter_review_flow import (
-    build_twitter_exporter_local_review_flow,
-    build_twitter_exporter_review_flow_summary,
-)
 from source_resource_state import (
     ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
-    ARCHIVE_SERVICE_ARCHIVEBOX,
     RESOURCE_KIND_IMAGE,
     RESOURCE_KIND_VIDEO_AUDIO,
     SourceResourceRowState,
@@ -608,7 +597,6 @@ class App(ctk.CTk):
         self.selected_discussion_source_id: str = ""
         self.source_archive_auto_check_enabled: bool = True
         self.source_screenshot_preferences: dict[str, dict[str, bool]] = {}
-        self._archivebox_icon: ctk.CTkImage | None = None
         self._main_pointer_wheel_bound: bool = False
         self.source_resource_selections: dict[str, tuple[str, ...]] = {}
 
@@ -2826,9 +2814,6 @@ class App(ctk.CTk):
         comments_column.grid(row=2, column=2, sticky="nw", padx=(14, 0), pady=(6, 0))
         livechat_column = ctk.CTkFrame(action_frame, fg_color="transparent")
         livechat_column.grid(row=2, column=3, sticky="nw", padx=(10, 0), pady=(6, 0))
-        local_import_column = ctk.CTkFrame(action_frame, fg_color="transparent")
-        local_import_column.grid(row=2, column=4, sticky="ne", padx=(10, 0), pady=(6, 0))
-
         self.extract_webpage_var = ctk.BooleanVar(value=False)
         self.extract_comments_var = ctk.BooleanVar(value=True)
         self.extract_live_chat_var = ctk.BooleanVar(value=False)
@@ -2920,46 +2905,6 @@ class App(ctk.CTk):
             checkmark_color="#000000",
         )
         self.livechat_screenshot_checkbox.pack(anchor="w", pady=(4, 0))
-
-        self.twitter_exporter_import_button = ctk.CTkButton(
-            local_import_column,
-            text="Twitter/X Local Export",
-            command=self.import_twitter_exporter_local_export_clicked,
-            width=178,
-            height=34,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["accent_secondary"],
-            hover_color=COLORS["border"],
-            text_color=COLORS["text_primary"],
-            corner_radius=8,
-        )
-        self.twitter_exporter_import_button.pack(anchor="e")
-        self.twitter_exporter_queue_draft_button = ctk.CTkButton(
-            local_import_column,
-            text="Add Review Draft",
-            command=self.queue_twitter_exporter_review_draft_clicked,
-            width=178,
-            height=30,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["accent_secondary"],
-            hover_color=COLORS["border"],
-            text_color=COLORS["text_primary"],
-            corner_radius=8,
-        )
-        self.twitter_exporter_queue_draft_button.pack(anchor="e", pady=(4, 0))
-        self.twitter_exporter_review_flow_button = ctk.CTkButton(
-            local_import_column,
-            text="Review Flow Summary",
-            command=self.review_twitter_exporter_flow_summary_clicked,
-            width=178,
-            height=30,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["accent_secondary"],
-            hover_color=COLORS["border"],
-            text_color=COLORS["text_primary"],
-            corner_radius=8,
-        )
-        self.twitter_exporter_review_flow_button.pack(anchor="e", pady=(4, 0))
 
         self.cancel_button = ctk.CTkButton(
             action_frame,
@@ -4604,148 +4549,6 @@ class App(ctk.CTk):
             self.url_status.configure(text="", text_color=COLORS["text_muted"])
         return "break"
 
-    def _twitter_exporter_local_filetypes(self) -> list[tuple[str, str]]:
-        return [
-            ("Twitter/X exporter files", "*.txt *.json *.jsonl *.csv *.tsv *.zip"),
-            ("Text files", "*.txt"),
-            ("JSON files", "*.json *.jsonl"),
-            ("CSV/TSV files", "*.csv *.tsv"),
-            ("ZIP archives", "*.zip"),
-        ]
-
-    def import_twitter_exporter_local_export_clicked(self) -> None:
-        files = filedialog.askopenfilenames(
-            title="Import Twitter/X Exporter Local Files",
-            filetypes=self._twitter_exporter_local_filetypes(),
-        )
-        if not files:
-            return
-        self._run_twitter_exporter_local_import_review_action(tuple(files))
-
-    def queue_twitter_exporter_review_draft_clicked(self) -> None:
-        self._run_twitter_exporter_queue_review_draft_action()
-
-    def review_twitter_exporter_flow_summary_clicked(self) -> None:
-        files = filedialog.askopenfilenames(
-            title="Twitter/X Review Flow Summary",
-            filetypes=self._twitter_exporter_local_filetypes(),
-        )
-        self._run_twitter_exporter_review_flow_summary_action(tuple(files))
-
-    def _run_twitter_exporter_local_import_review_action(
-        self,
-        input_paths: Sequence[str],
-    ) -> Any:
-        state = preview_twitter_exporter_local_import_source(
-            input_paths,
-            as_queue_metadata=False,
-        )
-        self.last_twitter_exporter_import_review_state = state
-        summary = build_twitter_exporter_source_row_summary(state)
-        status = (
-            "Twitter/X local export review: "
-            f"{state.input_count} file(s), "
-            f"{state.total_parsed_record_count} parsed, "
-            f"{state.total_skipped_record_count} skipped, "
-            f"{state.total_warning_count} warning(s), "
-            f"{state.total_error_count} error(s)."
-        )
-        status_color = COLORS["warning"] if state.total_error_count else COLORS["success"]
-        if hasattr(self, "url_status"):
-            self.url_status.configure(text=status, text_color=status_color)
-        self.log_message(
-            f"{status} Network actions performed: none. Source files were not moved.",
-            "warning" if state.total_error_count else "success",
-        )
-        try:
-            messagebox.showinfo("Twitter/X Local Export Review", summary)
-        except Exception:
-            logger.debug("Could not show Twitter/X local export review summary.", exc_info=True)
-        return state
-
-    def _run_twitter_exporter_queue_review_draft_action(self) -> Any:
-        state = self.__dict__.get("last_twitter_exporter_import_review_state")
-        if state is None:
-            status = "Twitter/X queue review draft skipped: import a local export first."
-            if hasattr(self, "url_status"):
-                self.url_status.configure(text=status, text_color=COLORS["warning"])
-            self.log_message(f"{status} Network actions performed: none.", "warning")
-            try:
-                messagebox.showinfo("Twitter/X Queue Review Draft", status)
-            except Exception:
-                logger.debug("Could not show Twitter/X queue draft missing-state summary.", exc_info=True)
-            return None
-
-        draft = build_twitter_exporter_queue_review_draft(state)
-        self.last_twitter_exporter_queue_review_draft = draft
-        summary = build_twitter_exporter_queue_review_draft_summary(draft)
-        status = (
-            "Twitter/X queue review draft: "
-            f"{draft.eligible_input_count} draft item(s), "
-            f"{draft.rejected_input_count} rejected input(s), "
-            f"{draft.total_parsed_record_count} parsed, "
-            f"{draft.total_error_count} error(s)."
-        )
-        status_color = COLORS["warning"] if not draft.queue_items else COLORS["success"]
-        if hasattr(self, "url_status"):
-            self.url_status.configure(text=status, text_color=status_color)
-        self.log_message(
-            f"{status} Metadata/counts only; source files were not moved.",
-            "warning" if not draft.queue_items else "success",
-        )
-        try:
-            messagebox.showinfo("Twitter/X Queue Review Draft", summary)
-        except Exception:
-            logger.debug("Could not show Twitter/X queue draft summary.", exc_info=True)
-        return draft
-
-    def _run_twitter_exporter_review_flow_summary_action(
-        self,
-        input_paths: Sequence[str],
-    ) -> Any:
-        if not input_paths:
-            status = "Twitter/X review flow skipped: no local export files selected."
-            if hasattr(self, "url_status"):
-                self.url_status.configure(text=status, text_color=COLORS["warning"])
-            self.log_message(f"{status} Network actions performed: none.", "warning")
-            try:
-                messagebox.showinfo("Twitter/X Review Flow Summary", status)
-            except Exception:
-                logger.debug("Could not show Twitter/X review flow missing-input summary.", exc_info=True)
-            return None
-
-        flow = build_twitter_exporter_local_review_flow(
-            input_paths,
-            session_id="ui-twitter-exporter-review-flow",
-            timestamp_utc="1970-01-01T00:00:00Z",
-            actor_id="ui",
-            app_version=APP_VERSION,
-        )
-        self.last_twitter_exporter_review_flow = flow
-        self.last_twitter_exporter_import_review_state = flow.source_review_state
-        self.last_twitter_exporter_queue_review_draft = flow.queue_draft
-        summary = build_twitter_exporter_review_flow_summary(flow)
-        status = (
-            "Twitter/X review flow summary: "
-            f"{flow.source_review_state.input_count} file(s), "
-            f"{flow.queue_draft.eligible_input_count} queue draft item(s), "
-            f"{len(flow.manifest_report.entries)} manifest/report item(s), "
-            f"{len(flow.action_receipt.file_entries)} receipt item(s). "
-            f"{flow.review_status} / {flow.provenance_status}."
-        )
-        status_color = COLORS["warning"] if flow.status != "USER_REVIEW_REQUIRED" else COLORS["success"]
-        if hasattr(self, "url_status"):
-            self.url_status.configure(text=status, text_color=status_color)
-        self.log_message(
-            f"{status} Summary/counts only; not live verified; not completed evidence.",
-            "warning" if flow.status != "USER_REVIEW_REQUIRED" else "success",
-        )
-        try:
-            messagebox.showinfo("Twitter/X Review Flow Summary", summary)
-        except Exception:
-            logger.debug("Could not show Twitter/X review flow summary.", exc_info=True)
-        return flow
-
     def _archive_status_color(self, color_name: str) -> str:
         return {
             "green": COLORS["success"],
@@ -4766,25 +4569,31 @@ class App(ctk.CTk):
             return archive_status.saved_date or "Date unavailable"
         return archive_status.label
 
-    def _ensure_archivebox_icon(self) -> ctk.CTkImage | None:
-        if self.__dict__.get("_archivebox_icon") is not None:
-            return self._archivebox_icon
-        try:
-            if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-                asset_base_dir = sys._MEIPASS
-            else:
-                asset_base_dir = os.path.dirname(os.path.abspath(__file__))
-            icon_path = os.path.join(asset_base_dir, "assets", "ui", "archivebox_icon.png")
-            image = Image.open(icon_path).convert("RGBA")
-            self._archivebox_icon = ctk.CTkImage(
-                light_image=image,
-                dark_image=image,
-                size=(22, 22),
+    @staticmethod
+    def _source_row_is_twitter(row: SourceResourceRowState) -> bool:
+        adapter_id = (row.adapter_id or "").lower()
+        domain = (row.domain or "").lower()
+        return adapter_id in {"twitter", "x", "twitter_x", "x_twitter"} or domain in {
+            "x.com",
+            "www.x.com",
+            "twitter.com",
+            "www.twitter.com",
+        }
+
+    def _twitter_mode_var_for_row(self, row_id: str) -> ctk.StringVar:
+        mode_vars = self.__dict__.setdefault("twitter_source_row_mode_vars", {})
+        if row_id not in mode_vars:
+            mode_vars[row_id] = ctk.StringVar(value="Post")
+        return mode_vars[row_id]
+
+    def _on_twitter_source_row_mode_changed(self, row_id: str, mode: str) -> None:
+        mode = mode if mode in {"Post", "Thread"} else "Post"
+        self.__dict__.setdefault("twitter_source_row_modes", {})[row_id] = mode
+        if hasattr(self, "url_status"):
+            self.url_status.configure(
+                text=f"Twitter/X source mode set to {mode}. Use Go for capture; media stays in Images/GIFs and Video/Audio.",
+                text_color=COLORS["text_secondary"],
             )
-        except Exception as error:
-            logger.warning("Could not load ArchiveBox icon: %s", error)
-            self._archivebox_icon = None
-        return self._archivebox_icon
 
     @staticmethod
     def _archive_service_button_text(service_id: str) -> str:
@@ -4794,8 +4603,6 @@ class App(ctk.CTk):
             return "archive.ph"
         if service_id == ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE:
             return "Local"
-        if service_id == ARCHIVE_SERVICE_ARCHIVEBOX:
-            return "AB"
         return service_id
 
     def _refresh_source_resource_rows(self) -> None:
@@ -4817,7 +4624,6 @@ class App(ctk.CTk):
             empty.pack(fill="x", anchor="w", padx=10, pady=8)
             return
 
-        archivebox_icon = self._ensure_archivebox_icon()
         for row_index, row in enumerate(rows):
             row_frame = ctk.CTkFrame(frame, fg_color="transparent")
             row_frame.pack(fill="x", padx=8, pady=(8 if row_index == 0 else 4, 6))
@@ -4880,24 +4686,39 @@ class App(ctk.CTk):
             media_button.grid(row=0, column=2, padx=(0, 6), sticky="n")
 
             next_action_column = 3
+            if self._source_row_is_twitter(row):
+                mode_var = self._twitter_mode_var_for_row(row.row_id)
+                mode_menu = ctk.CTkOptionMenu(
+                    actions,
+                    variable=mode_var,
+                    values=["Post", "Thread"],
+                    command=lambda value, row_id=row.row_id: self._on_twitter_source_row_mode_changed(
+                        row_id, value
+                    ),
+                    width=96,
+                    height=28,
+                    fg_color=COLORS["bg_input"],
+                    button_color=COLORS["accent_secondary"],
+                    button_hover_color=COLORS["border"],
+                    text_color=COLORS["text_primary"],
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    dropdown_fg_color=COLORS["bg_card"],
+                    dropdown_hover_color=COLORS["accent_secondary"],
+                    dropdown_text_color=COLORS["text_primary"],
+                )
+                mode_menu.grid(row=0, column=next_action_column, padx=(0, 6), sticky="n")
+                mode_menu.tooltip_text = "Twitter/X capture mode. Media still uses the Images/GIFs and Video/Audio buttons."
+                next_action_column += 1
             for archive_status in row.archive_statuses:
-                button_text = self._archive_service_button_text(archive_status.service_id)
-                button_kwargs: dict[str, Any] = {}
-                if archive_status.service_id == ARCHIVE_SERVICE_ARCHIVEBOX:
-                    button_kwargs["image"] = archivebox_icon
-                    button_kwargs["text"] = button_text if archivebox_icon is None else ""
-                    button_kwargs["width"] = 38
-                else:
-                    button_kwargs["text"] = button_text
-                    button_kwargs["width"] = 94
                 archive_button = ctk.CTkButton(
                     actions,
+                    text=self._archive_service_button_text(archive_status.service_id),
                     command=lambda status=archive_status: self._show_archive_status(status),
+                    width=94,
                     height=28,
                     fg_color=self._archive_status_color(archive_status.color_name),
                     hover_color=COLORS["border"],
                     text_color="#000000",
-                    **button_kwargs,
                 )
                 archive_button.grid(
                     row=0,
@@ -4908,25 +4729,22 @@ class App(ctk.CTk):
                 archive_button.tooltip_text = (
                     "Local Web Archive"
                     if archive_status.service_id == ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE
-                    else "ArchiveBox optional advanced backend"
-                    if archive_status.service_id == ARCHIVE_SERVICE_ARCHIVEBOX
                     else archive_status.tooltip
                 )
-                if archive_status.service_id != ARCHIVE_SERVICE_ARCHIVEBOX:
-                    status_label = ctk.CTkLabel(
-                        actions,
-                        text=self._archive_status_label_text(archive_status),
-                        font=ctk.CTkFont(size=9),
-                        text_color=COLORS["text_primary"],
-                        justify="center",
-                    )
-                    status_label.grid(
-                        row=1,
-                        column=next_action_column,
-                        padx=(0, 6),
-                        pady=(1, 0),
-                        sticky="n",
-                    )
+                status_label = ctk.CTkLabel(
+                    actions,
+                    text=self._archive_status_label_text(archive_status),
+                    font=ctk.CTkFont(size=9),
+                    text_color=COLORS["text_primary"],
+                    justify="center",
+                )
+                status_label.grid(
+                    row=1,
+                    column=next_action_column,
+                    padx=(0, 6),
+                    pady=(1, 0),
+                    sticky="n",
+                )
                 next_action_column += 1
 
             remove_button = ctk.CTkButton(
@@ -5002,16 +4820,6 @@ class App(ctk.CTk):
             details = list(self._local_web_archive_status_lines(archive_status))
             messagebox.showinfo("Local Web Archive", "\n".join(details))
             return
-        if archive_status.service_id == ARCHIVE_SERVICE_ARCHIVEBOX:
-            details = [
-                "ArchiveBox optional advanced backend",
-                "ArchiveBox execution performed: none",
-                "Files written: none",
-                "Network actions performed: none",
-            ]
-            messagebox.showinfo("ArchiveBox", "\n".join(details))
-            return
-
         status_text = self._archive_status_label_text(archive_status)
         details = [
             f"{archive_status.service_id}: {status_text}",
