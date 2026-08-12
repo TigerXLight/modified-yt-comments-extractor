@@ -13,13 +13,16 @@ import re
 import sys
 import array
 import csv
+import json
 import subprocess
 import random
 import shutil
 import threading
 import time
+import urllib.parse
+import urllib.request
 import webbrowser
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from tkinter import filedialog, messagebox, simpledialog
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -161,6 +164,17 @@ from source_media_gui_bridge import (
     MEDIA_GUI_DOWNLOAD_STATUS_READY,
     run_source_media_gui_download,
 )
+from youtube_gui_media_queue import (
+    YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY,
+    YOUTUBE_GUI_QUALITY_PRESETS,
+    YouTubeGuiMediaPreferences,
+    default_youtube_gui_media_preferences,
+    normalized_youtube_quality_labels,
+    queue_youtube_gui_source_row_selection,
+    youtube_available_quality_labels_from_discovery,
+    youtube_title_from_discovery,
+)
+from youtube_media_download_backend import discover_youtube_media_with_ytdlp
 
 
 SESSION_FILE_KIND_TRANSCRIPT = "transcript"
@@ -599,6 +613,11 @@ class App(ctk.CTk):
         self.source_screenshot_preferences: dict[str, dict[str, bool]] = {}
         self._main_pointer_wheel_bound: bool = False
         self.source_resource_selections: dict[str, tuple[str, ...]] = {}
+        self.youtube_source_row_quality_vars: dict[str, ctk.StringVar] = {}
+        self.youtube_source_row_quality_enabled_vars: dict[str, ctk.BooleanVar] = {}
+        self.youtube_source_row_preferences: dict[str, YouTubeGuiMediaPreferences] = {}
+        self.youtube_source_row_available_quality_labels: dict[str, tuple[str, ...]] = {}
+        self.youtube_source_row_discovery_status: dict[str, str] = {}
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
@@ -1622,6 +1641,8 @@ class App(ctk.CTk):
             row_frame = ctk.CTkFrame(self.files_list_frame, fg_color="transparent")
             row_frame.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
             row_frame.grid_columnconfigure(0, weight=1)
+            row_frame.grid_columnconfigure(1, weight=0)
+            row_frame.grid_columnconfigure(2, weight=0)
             selected = entry.normalized_path == self.selected_session_file_path
             active_media = (
                 self._is_session_media_kind(entry.file_kind)
@@ -4520,6 +4541,7 @@ class App(ctk.CTk):
             self.source_resource_rows.extend(intake.rows)
             self._refresh_source_resource_rows()
             self._refresh_discussion_source_controls()
+            self._start_youtube_source_row_metadata_probe(intake.rows)
             self.log_message(
                 f"Added {len(intake.rows)} source row(s). Network actions performed: none.",
                 "success",
@@ -4591,9 +4613,451 @@ class App(ctk.CTk):
         self.__dict__.setdefault("twitter_source_row_modes", {})[row_id] = mode
         if hasattr(self, "url_status"):
             self.url_status.configure(
-                text=f"Twitter/X source mode set to {mode}. Use Go for capture; media stays in Images/GIFs and Video/Audio.",
+                text=f"Twitter/X source mode set to {mode}. Use Go for capture; media stays in the row media controls.",
                 text_color=COLORS["text_secondary"],
             )
+
+    @staticmethod
+    def _source_row_is_youtube(row: SourceResourceRowState) -> bool:
+        adapter_id = (row.adapter_id or "").lower()
+        domain = (row.domain or "").lower()
+        return adapter_id == "youtube" or domain in {
+            "youtube.com",
+            "www.youtube.com",
+            "m.youtube.com",
+            "youtu.be",
+        }
+
+    def _youtube_preferences_for_row(self, row_id: str) -> YouTubeGuiMediaPreferences:
+        prefs = self.__dict__.setdefault("youtube_source_row_preferences", {})
+        if row_id not in prefs:
+            prefs[row_id] = default_youtube_gui_media_preferences()
+        return prefs[row_id]
+
+    def _youtube_quality_values_for_row(self, row_id: str) -> tuple[str, ...]:
+        prefs = self._youtube_preferences_for_row(row_id)
+        configured = normalized_youtube_quality_labels(prefs)
+        available = self.__dict__.setdefault("youtube_source_row_available_quality_labels", {}).get(row_id, ())
+        if available:
+            narrowed = tuple(label for label in configured if label in available)
+            return narrowed or tuple(label for label in available if label in {name for name, _height in YOUTUBE_GUI_QUALITY_PRESETS}) or available
+        # Until yt-dlp or the lightweight watch-page probe has supplied real
+        # formats, do not advertise fake quality levels.  Show only the saved
+        # default/current quality until discovery proves more are available.
+        default_label = prefs.default_quality_label if prefs.default_quality_label in configured else (configured[0] if configured else "1080")
+        return (default_label,)
+
+    def _youtube_quality_var_for_row(self, row_id: str) -> ctk.StringVar:
+        vars_by_row = self.__dict__.setdefault("youtube_source_row_quality_vars", {})
+        prefs = self._youtube_preferences_for_row(row_id)
+        values = self._youtube_quality_values_for_row(row_id)
+        default = prefs.default_quality_label if prefs.default_quality_label in values else values[0]
+        if row_id not in vars_by_row:
+            vars_by_row[row_id] = ctk.StringVar(value=default)
+        elif vars_by_row[row_id].get() not in values:
+            vars_by_row[row_id].set(default)
+        return vars_by_row[row_id]
+
+    def _youtube_quality_enabled_var_for_row(self, row_id: str) -> ctk.BooleanVar:
+        vars_by_row = self.__dict__.setdefault("youtube_source_row_quality_enabled_vars", {})
+        if row_id not in vars_by_row:
+            vars_by_row[row_id] = ctk.BooleanVar(value=True)
+        return vars_by_row[row_id]
+
+    @staticmethod
+    def _short_source_url_for_row(row: SourceResourceRowState, *, limit: int = 150) -> str:
+        url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "").strip()
+        if not url:
+            return str(getattr(row, "domain", "") or "").strip()
+        if len(url) <= limit:
+            return url
+        head = max(20, limit - 18)
+        return url[:head].rstrip("&?=/") + "…" + url[-14:]
+
+    @staticmethod
+    def _source_row_combo_label(row: SourceResourceRowState) -> str:
+        adapter_id = (getattr(row, "adapter_id", "") or "").lower()
+        domain = (getattr(row, "domain", "") or "").lower()
+        if adapter_id == "youtube" or domain in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}:
+            return f"{row.title} - YouTube"
+        return row.display_label
+
+    def _open_youtube_source_quality_picker(self, row_id: str) -> None:
+        """Legacy shim retained for older tests/call sites."""
+        return
+
+    def _open_youtube_source_quality_dropdown_menu(self, row_id: str, anchor_widget: Any, update_widget: Any | None = None) -> None:
+        """Open an inline menu-style dropdown for the compact YouTube quality control."""
+        if not self._youtube_quality_enabled_var_for_row(row_id).get():
+            return
+        quality_var = self._youtube_quality_var_for_row(row_id)
+        values = list(self._youtube_quality_values_for_row(row_id)) or [quality_var.get() or "1080"]
+        menu = tk.Menu(
+            self,
+            tearoff=False,
+            bg=COLORS["bg_card"],
+            fg=COLORS["text_primary"],
+            activebackground=COLORS["accent"],
+            activeforeground=COLORS["text_primary"],
+            bd=0,
+            relief="flat",
+        )
+
+        def select_quality(value: str) -> None:
+            quality_var.set(value)
+            try:
+                if update_widget is not None:
+                    update_widget.configure(text=value)
+            except Exception:
+                pass
+            self._on_youtube_source_quality_changed(row_id, value)
+
+        current = quality_var.get()
+        for value in values:
+            label = ("✓ " + value) if value == current else value
+            menu.add_command(label=label, command=lambda selected=value: select_quality(selected))
+        try:
+            x = int(anchor_widget.winfo_rootx())
+            y = int(anchor_widget.winfo_rooty() + anchor_widget.winfo_height())
+            menu.tk_popup(x, y)
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+
+    def _on_youtube_source_quality_changed(self, row_id: str, quality: str) -> None:
+        if hasattr(self, "url_status"):
+            self.url_status.configure(
+                text=f"YouTube media quality set to {quality}. Go will add the selected YouTube media package to FILES.",
+                text_color=COLORS["text_secondary"],
+            )
+
+    def _on_youtube_source_quality_enabled_changed(self, row_id: str) -> None:
+        if hasattr(self, "url_status"):
+            enabled = self._youtube_quality_enabled_var_for_row(row_id).get()
+            self.url_status.configure(
+                text="YouTube media enabled for Go." if enabled else "YouTube media disabled for Go; settings icon remains available.",
+                text_color=COLORS["text_secondary"],
+            )
+
+    def _youtube_oembed_title_probe(self, source_url: str) -> str:
+        """Fetch a lightweight YouTube title without needing the YouTube Data API.
+
+        This is only a display-title fallback for the source row.  Full media
+        discovery still uses yt-dlp, and comments/livechat still use the normal
+        YouTube runtime.
+        """
+        normalized_url = str(source_url or "").strip()
+        if not normalized_url:
+            return ""
+        endpoint = (
+            "https://www.youtube.com/oembed?format=json&url="
+            + urllib.parse.quote(normalized_url, safe="")
+        )
+        request = urllib.request.Request(
+            endpoint,
+            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"},
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:
+            payload = response.read().decode("utf-8", errors="replace")
+        data = json.loads(payload or "{}")
+        return str(data.get("title") or "").strip()
+
+    def _youtube_watch_html_quality_probe(self, source_url: str) -> tuple[str, ...]:
+        """Best-effort quality discovery from YouTube's watch page.
+
+        This is a fallback for row display only when yt-dlp is unavailable or
+        fails. It reads YouTube's embedded player response and extracts actual
+        video heights from streamingData formats/adaptiveFormats.
+        """
+        normalized_url = str(source_url or "").strip()
+        if not normalized_url:
+            return ()
+        request = urllib.request.Request(
+            normalized_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+                "Accept-Language": "en-GB,en;q=0.9",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            html = response.read().decode("utf-8", errors="replace")
+        match = re.search(r"ytInitialPlayerResponse\s*=\s*", html)
+        if not match:
+            return ()
+        tail = html[match.end():].lstrip()
+        data, _offset = json.JSONDecoder().raw_decode(tail)
+        streaming = data.get("streamingData", {}) if isinstance(data, dict) else {}
+        formats = []
+        if isinstance(streaming, dict):
+            for key in ("formats", "adaptiveFormats"):
+                items = streaming.get(key)
+                if isinstance(items, list):
+                    formats.extend(item for item in items if isinstance(item, dict))
+        heights: set[int] = set()
+        for item in formats:
+            mime = str(item.get("mimeType") or "")
+            if "video/" not in mime:
+                continue
+            try:
+                height = int(item.get("height") or 0)
+            except (TypeError, ValueError):
+                height = 0
+            if height > 0:
+                heights.add(height)
+        labels: list[str] = []
+        for label, preset_height in YOUTUBE_GUI_QUALITY_PRESETS:
+            if preset_height in heights or any(abs(height - preset_height) <= 8 for height in heights):
+                labels.append(label)
+        return tuple(labels)
+
+    def _apply_youtube_source_row_discovery(self, row_id: str, title: str, quality_labels: Sequence[str], status: str = "ready") -> None:
+        labels = tuple(label for label in quality_labels if label in {name for name, _height in YOUTUBE_GUI_QUALITY_PRESETS})
+        if labels:
+            self.youtube_source_row_available_quality_labels[row_id] = labels
+        self.youtube_source_row_discovery_status[row_id] = status
+        updated_rows: list[SourceResourceRowState] = []
+        for row in self.__dict__.get("source_resource_rows", ()):
+            if row.row_id == row_id and title:
+                updated_rows.append(replace(row, title=title, display_label=f"{title} - YouTube"))
+            else:
+                updated_rows.append(row)
+        self.source_resource_rows = updated_rows
+        quality_var = self.__dict__.setdefault("youtube_source_row_quality_vars", {}).get(row_id)
+        if quality_var is not None and labels and quality_var.get() not in labels:
+            quality_var.set(labels[0])
+        self._refresh_source_resource_rows()
+        self._refresh_discussion_source_controls()
+
+    def _start_youtube_source_row_metadata_probe(self, rows: Sequence[SourceResourceRowState]) -> None:
+        youtube_rows = [row for row in rows if self._source_row_is_youtube(row)]
+        if not youtube_rows:
+            return
+        for row in youtube_rows:
+            self.youtube_source_row_discovery_status[row.row_id] = "loading"
+
+        def worker(snapshot: tuple[SourceResourceRowState, ...]) -> None:
+            for row in snapshot:
+                try:
+                    discovery = discover_youtube_media_with_ytdlp(row.canonical_url)
+                    title = youtube_title_from_discovery(discovery, row.title)
+                    qualities = youtube_available_quality_labels_from_discovery(
+                        discovery,
+                        fallback=normalized_youtube_quality_labels(
+                            self._youtube_preferences_for_row(row.row_id)
+                        ),
+                    )
+                    self.after(
+                        0,
+                        lambda row_id=row.row_id, title=title, qualities=qualities: self._apply_youtube_source_row_discovery(
+                            row_id,
+                            title,
+                            qualities,
+                            "ready",
+                        ),
+                    )
+                    continue
+                except Exception as ytdlp_error:
+                    try:
+                        title = self._youtube_oembed_title_probe(row.canonical_url)
+                    except Exception as oembed_error:
+                        self.after(
+                            0,
+                            lambda row_id=row.row_id, err=ytdlp_error, fallback_err=oembed_error: self._mark_youtube_source_row_discovery_failed(
+                                row_id,
+                                err,
+                            ),
+                        )
+                        continue
+
+                    try:
+                        qualities = self._youtube_watch_html_quality_probe(row.canonical_url)
+                    except Exception:
+                        qualities = ()
+                    if not qualities:
+                        # Do not invent a list of qualities. Keep only the
+                        # current/default quality visible until real discovery
+                        # proves available formats.
+                        current = self._youtube_quality_var_for_row(row.row_id).get()
+                        qualities = (current,) if current else ()
+                    self.after(
+                        0,
+                        lambda row_id=row.row_id, title=title, qualities=qualities: self._apply_youtube_source_row_discovery(
+                            row_id,
+                            title,
+                            qualities,
+                            "title_only",
+                        ),
+                    )
+
+        threading.Thread(target=worker, args=(tuple(youtube_rows),), daemon=True).start()
+
+    def _mark_youtube_source_row_discovery_failed(self, row_id: str, error: Exception) -> None:
+        self.youtube_source_row_discovery_status[row_id] = "failed"
+        if hasattr(self, "url_status"):
+            self.url_status.configure(
+                text=f"YouTube details not loaded yet: {type(error).__name__}. Quality presets remain selectable.",
+                text_color=COLORS["warning"],
+            )
+
+    def _queue_youtube_source_row_media(self, row_id: str, parent: Any | None = None, *, show_message: bool = True) -> bool:
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            return False
+        prefs = self._youtube_preferences_for_row(row_id)
+        quality_var = self._youtube_quality_var_for_row(row_id)
+        quality_enabled = self._youtube_quality_enabled_var_for_row(row_id).get()
+        if not quality_enabled:
+            return False
+        quality = quality_var.get() if prefs.show_quality_dropdown else prefs.default_quality_label
+        result = queue_youtube_gui_source_row_selection(
+            row=row,
+            quality_label=quality,
+            preferences=prefs,
+            probe_metadata=True,
+        )
+        if result.status != YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY:
+            if show_message:
+                messagebox.showinfo("YouTube media", result.message, parent=parent or self)
+            self.log_message(result.message.replace("\n", " "), "warning")
+            return False
+        added = 0
+        for file_path in result.files_to_add:
+            if not os.path.isfile(file_path):
+                continue
+            suffix = os.path.splitext(file_path)[1].lower()
+            file_kind = SESSION_FILE_KIND_MEDIA if suffix in {".json", ".mp4", ".mkv", ".webm", ".mp3", ".m4a", ".wav"} else SESSION_FILE_KIND_OTHER
+            entry = self._add_session_file(file_path, file_kind, select=(added == 0))
+            if entry is not None:
+                added += 1
+        if show_message:
+            messagebox.showinfo("YouTube media queued", result.message, parent=parent or self)
+        self.log_message(
+            (
+                f"YouTube media queued by Go: quality={result.selected_quality_label}; "
+                f"components={', '.join(result.selected_components)}; "
+                f"FILES added={added}; auto mux={'yes' if result.auto_mux else 'no'}"
+            ),
+            "success" if added else "warning",
+        )
+        return added > 0
+
+    def _open_youtube_source_settings(self, row_id: str) -> None:
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            return
+        prefs = self._youtube_preferences_for_row(row_id)
+        window = ctk.CTkToplevel(self)
+        window.title("YouTube media settings")
+        window.geometry("560x500")
+        window.transient(self)
+        window.grab_set()
+
+        header = ctk.CTkLabel(
+            window,
+            text=f"YouTube media settings\n{row.title}\n{row.domain}",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS["text_primary"],
+            justify="left",
+        )
+        header.pack(anchor="w", padx=16, pady=(14, 8))
+
+        body = ctk.CTkScrollableFrame(window, fg_color=COLORS["bg_input"])
+        body.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+
+        video_var = ctk.BooleanVar(value=prefs.video_enabled)
+        audio_var = ctk.BooleanVar(value=prefs.separate_audio_enabled)
+        thumbnail_var = ctk.BooleanVar(value=prefs.thumbnail_enabled)
+        subtitles_var = ctk.BooleanVar(value=prefs.subtitles_enabled)
+        auto_subs_var = ctk.BooleanVar(value=prefs.auto_subtitles_enabled)
+        show_dropdown_var = ctk.BooleanVar(value=prefs.show_quality_dropdown)
+        quality_enabled_vars: dict[str, Any] = {}
+        for text_value, var in (
+            ("Muxed video + best audio (mp4)", video_var),
+            ("Separate audio file (m4a)", audio_var),
+            ("Thumbnail / image", thumbnail_var),
+            ("Manual subtitle files", subtitles_var),
+            ("Auto / ASR subtitle files", auto_subs_var),
+            ("Show quality dropdown on YouTube source row", show_dropdown_var),
+        ):
+            ctk.CTkCheckBox(
+                body,
+                text=text_value,
+                variable=var,
+                font=ctk.CTkFont(size=12),
+                text_color=COLORS["text_primary"],
+            ).pack(anchor="w", padx=8, pady=5)
+
+        ctk.CTkLabel(
+            body,
+            text="Enabled quality options",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["text_primary"],
+        ).pack(anchor="w", padx=8, pady=(12, 4))
+        enabled = set(prefs.enabled_quality_labels)
+        for label, _height in YOUTUBE_GUI_QUALITY_PRESETS:
+            var = ctk.BooleanVar(value=label in enabled)
+            quality_enabled_vars[label] = var
+            ctk.CTkCheckBox(
+                body,
+                text=label,
+                variable=var,
+                font=ctk.CTkFont(size=12),
+                text_color=COLORS["text_primary"],
+            ).pack(anchor="w", padx=24, pady=3)
+
+        default_label = prefs.default_quality_label if prefs.default_quality_label in {label for label, _ in YOUTUBE_GUI_QUALITY_PRESETS} else "1080"
+        default_var = ctk.StringVar(value=default_label)
+        ctk.CTkLabel(
+            body,
+            text="Default quality",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["text_primary"],
+        ).pack(anchor="w", padx=8, pady=(12, 4))
+        ctk.CTkOptionMenu(
+            body,
+            variable=default_var,
+            values=[label for label, _height in YOUTUBE_GUI_QUALITY_PRESETS],
+            width=140,
+            fg_color=COLORS["bg_card"],
+            button_color=COLORS["accent_secondary"],
+            button_hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            dropdown_fg_color=COLORS["bg_card"],
+            dropdown_hover_color=COLORS["accent_secondary"],
+            dropdown_text_color=COLORS["text_primary"],
+        ).pack(anchor="w", padx=8, pady=(0, 8))
+
+        def save_preferences() -> YouTubeGuiMediaPreferences:
+            enabled_labels = tuple(label for label, _height in YOUTUBE_GUI_QUALITY_PRESETS if quality_enabled_vars[label].get())
+            if not enabled_labels:
+                enabled_labels = (default_var.get() or "1080",)
+            saved = YouTubeGuiMediaPreferences(
+                video_enabled=bool(video_var.get()),
+                separate_audio_enabled=bool(audio_var.get()),
+                thumbnail_enabled=bool(thumbnail_var.get()),
+                subtitles_enabled=bool(subtitles_var.get()),
+                auto_subtitles_enabled=bool(auto_subs_var.get()),
+                show_quality_dropdown=bool(show_dropdown_var.get()),
+                enabled_quality_labels=enabled_labels,
+                default_quality_label=default_var.get() or enabled_labels[0],
+            )
+            self.youtube_source_row_preferences[row_id] = saved
+            self._youtube_quality_var_for_row(row_id).set(saved.default_quality_label if saved.default_quality_label in enabled_labels else enabled_labels[0])
+            self._refresh_source_resource_rows()
+            return saved
+
+        button_row = ctk.CTkFrame(window, fg_color="transparent")
+        button_row.pack(fill="x", padx=16, pady=(8, 14))
+        ctk.CTkButton(button_row, text="Cancel", width=90, command=window.destroy).pack(side="right")
+        ctk.CTkButton(button_row, text="Save", width=90, command=lambda: (save_preferences(), window.destroy())).pack(side="right", padx=(0, 8))
+        ctk.CTkLabel(
+            button_row,
+            text="Go adds enabled YouTube media to FILES automatically.",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 8))
 
     @staticmethod
     def _archive_service_button_text(service_id: str) -> str:
@@ -4628,6 +5092,8 @@ class App(ctk.CTk):
             row_frame = ctk.CTkFrame(frame, fg_color="transparent")
             row_frame.pack(fill="x", padx=8, pady=(8 if row_index == 0 else 4, 6))
             row_frame.grid_columnconfigure(0, weight=1)
+            row_frame.grid_columnconfigure(1, weight=0)
+            row_frame.grid_columnconfigure(2, weight=0)
 
             title_button = ctk.CTkButton(
                 row_frame,
@@ -4643,9 +5109,10 @@ class App(ctk.CTk):
             title_button.grid(row=0, column=0, sticky="ew")
             title_button.tooltip_text = row.canonical_url
 
+            detail_text = self._short_source_url_for_row(row)
             detail = ctk.CTkLabel(
                 row_frame,
-                text=row.domain,
+                text=detail_text,
                 font=ctk.CTkFont(size=10),
                 text_color=COLORS["text_muted"],
                 anchor="w",
@@ -4657,35 +5124,150 @@ class App(ctk.CTk):
             actions.grid(row=2, column=0, sticky="ew", pady=(6, 0))
             actions.grid_columnconfigure(0, weight=1)
 
-            images_button = ctk.CTkButton(
-                actions,
-                text="▧",
-                command=lambda row_id=row.row_id: self._open_source_resource_window(
-                    row_id, RESOURCE_KIND_IMAGE
-                ),
-                width=34,
-                height=28,
-                fg_color=COLORS["accent_secondary"],
-                hover_color=COLORS["border"],
-            )
-            images_button.tooltip_text = "Images and GIFs"
-            images_button.grid(row=0, column=1, padx=(0, 6), sticky="n")
+            next_action_column = 1
+            if self._source_row_is_youtube(row):
+                # YouTube media is controlled directly on the source card;
+                # generic row media buttons are reserved for non-YouTube rows.
+                prefs = self._youtube_preferences_for_row(row.row_id)
+                quality_enabled_var = self._youtube_quality_enabled_var_for_row(row.row_id)
+                youtube_header = ctk.CTkFrame(row_frame, fg_color="transparent")
+                youtube_header.grid(row=0, column=1, rowspan=2, sticky="ne", padx=(8, 4), pady=(0, 0))
+                youtube_header.grid_columnconfigure(0, weight=0)
 
-            media_button = ctk.CTkButton(
-                actions,
-                text="▶",
-                command=lambda row_id=row.row_id: self._open_source_resource_window(
-                    row_id, RESOURCE_KIND_VIDEO_AUDIO
-                ),
-                width=34,
-                height=28,
-                fg_color=COLORS["accent_secondary"],
-                hover_color=COLORS["border"],
-            )
-            media_button.tooltip_text = "Video and audio"
-            media_button.grid(row=0, column=2, padx=(0, 6), sticky="n")
+                def _open_youtube_settings(row_id=row.row_id) -> None:
+                    self._open_youtube_source_settings(row_id)
 
-            next_action_column = 3
+                if prefs.show_quality_dropdown:
+                    youtube_control = ctk.CTkFrame(
+                        youtube_header,
+                        fg_color=COLORS["bg_input"],
+                        border_width=1,
+                        border_color=COLORS["border"],
+                        corner_radius=7,
+                        width=128,
+                        height=30,
+                    )
+                    youtube_control.grid(row=0, column=0, sticky="ne")
+                    youtube_control.grid_propagate(False)
+
+                    quality_values = list(self._youtube_quality_values_for_row(row.row_id)) or ["1080"]
+                    quality_var = self._youtube_quality_var_for_row(row.row_id)
+                    if quality_var.get() not in quality_values:
+                        quality_var.set(quality_values[0])
+
+                    quality_button = ctk.CTkButton(
+                        youtube_control,
+                        text=quality_var.get(),
+                        command=lambda row_id=row.row_id: None,
+                        width=60,
+                        height=24,
+                        fg_color=COLORS["bg_input"],
+                        hover_color=COLORS["bg_card"],
+                        text_color=COLORS["text_primary"],
+                        font=ctk.CTkFont(size=11, weight="bold"),
+                        corner_radius=5,
+                    )
+                    quality_button.place(x=25, y=3)
+                    quality_button.tooltip_text = "Choose one of this YouTube video's available qualities."
+
+                    def _sync_youtube_quality_enabled(button=quality_button, var=quality_enabled_var):
+                        enabled = bool(var.get())
+                        try:
+                            button.configure(
+                                state="normal" if enabled else "disabled",
+                                text_color=COLORS["text_primary"] if enabled else COLORS["text_muted"],
+                                fg_color=COLORS["bg_input"],
+                                hover_color=COLORS["bg_card"] if enabled else COLORS["bg_input"],
+                            )
+                        except Exception:
+                            pass
+
+                    def _open_inline_quality_dropdown(row_id=row.row_id, button=quality_button):
+                        if not self._youtube_quality_enabled_var_for_row(row_id).get():
+                            return
+                        self._open_youtube_source_quality_dropdown_menu(row_id, button, button)
+
+                    quality_button.configure(command=_open_inline_quality_dropdown)
+
+                    def _toggle_youtube_quality(row_id=row.row_id):
+                        self._on_youtube_source_quality_enabled_changed(row_id)
+                        _sync_youtube_quality_enabled()
+
+                    quality_checkbox = ctk.CTkCheckBox(
+                        youtube_control,
+                        text="",
+                        variable=quality_enabled_var,
+                        command=_toggle_youtube_quality,
+                        width=18,
+                        height=18,
+                        checkbox_width=16,
+                        checkbox_height=16,
+                    )
+                    quality_checkbox.place(x=3, y=3)
+                    quality_checkbox.tooltip_text = "Enable/disable the selected YouTube media package for Go."
+
+                    youtube_button = ctk.CTkButton(
+                        youtube_control,
+                        text="▶",
+                        command=_open_youtube_settings,
+                        width=24,
+                        height=22,
+                        fg_color="#ff0000",
+                        hover_color="#cc0000",
+                        text_color="#ffffff",
+                        font=ctk.CTkFont(size=10, weight="bold"),
+                        corner_radius=5,
+                    )
+                    youtube_button.place(x=100, y=4)
+                    youtube_button.tooltip_text = "YouTube media settings."
+                    _sync_youtube_quality_enabled()
+                else:
+                    youtube_button = ctk.CTkButton(
+                        youtube_header,
+                        text="▶",
+                        command=_open_youtube_settings,
+                        width=30,
+                        height=26,
+                        fg_color="#ff0000",
+                        hover_color="#cc0000",
+                        text_color="#ffffff",
+                        font=ctk.CTkFont(size=12, weight="bold"),
+                        corner_radius=6,
+                    )
+                    youtube_button.grid(row=0, column=0, padx=(0, 0), pady=(0, 0), sticky="ne")
+                    youtube_button.tooltip_text = "YouTube media settings."
+                next_action_column = 1
+            else:
+                images_button = ctk.CTkButton(
+                    actions,
+                    text="▧",
+                    command=lambda row_id=row.row_id: self._open_source_resource_window(
+                        row_id, RESOURCE_KIND_IMAGE
+                    ),
+                    width=34,
+                    height=28,
+                    fg_color=COLORS["accent_secondary"],
+                    hover_color=COLORS["border"],
+                )
+                images_button.tooltip_text = "Images and GIFs"
+                images_button.grid(row=0, column=next_action_column, padx=(0, 6), sticky="n")
+                next_action_column += 1
+
+                media_button = ctk.CTkButton(
+                    actions,
+                    text="▶",
+                    command=lambda row_id=row.row_id: self._open_source_resource_window(
+                        row_id, RESOURCE_KIND_VIDEO_AUDIO
+                    ),
+                    width=34,
+                    height=28,
+                    fg_color=COLORS["accent_secondary"],
+                    hover_color=COLORS["border"],
+                )
+                media_button.tooltip_text = "Video and audio"
+                media_button.grid(row=0, column=next_action_column, padx=(0, 6), sticky="n")
+                next_action_column += 1
+
             if self._source_row_is_twitter(row):
                 mode_var = self._twitter_mode_var_for_row(row.row_id)
                 mode_menu = ctk.CTkOptionMenu(
@@ -4707,63 +5289,162 @@ class App(ctk.CTk):
                     dropdown_text_color=COLORS["text_primary"],
                 )
                 mode_menu.grid(row=0, column=next_action_column, padx=(0, 6), sticky="n")
-                mode_menu.tooltip_text = "Twitter/X capture mode. Media still uses the Images/GIFs and Video/Audio buttons."
+                mode_menu.tooltip_text = "Twitter/X capture mode. Media remains available through the row media controls."
                 next_action_column += 1
-            for archive_status in row.archive_statuses:
-                archive_button = ctk.CTkButton(
-                    actions,
-                    text=self._archive_service_button_text(archive_status.service_id),
-                    command=lambda status=archive_status: self._show_archive_status(status),
-                    width=94,
-                    height=28,
-                    fg_color=self._archive_status_color(archive_status.color_name),
-                    hover_color=COLORS["border"],
-                    text_color="#000000",
-                )
-                archive_button.grid(
-                    row=0,
-                    column=next_action_column,
-                    padx=(0, 6),
-                    sticky="n",
-                )
-                archive_button.tooltip_text = (
-                    "Local Web Archive"
-                    if archive_status.service_id == ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE
-                    else archive_status.tooltip
-                )
-                status_label = ctk.CTkLabel(
-                    actions,
-                    text=self._archive_status_label_text(archive_status),
-                    font=ctk.CTkFont(size=9),
-                    text_color=COLORS["text_primary"],
-                    justify="center",
-                )
-                status_label.grid(
-                    row=1,
-                    column=next_action_column,
-                    padx=(0, 6),
-                    pady=(1, 0),
-                    sticky="n",
-                )
-                next_action_column += 1
+            if not self._source_row_is_youtube(row):
+                for archive_status in row.archive_statuses:
+                    archive_text = self._archive_service_button_text(archive_status.service_id)
+                    if archive_status.service_id == ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE:
+                        self._ensure_asr_cog_icons()
+                        local_wrap = ctk.CTkFrame(actions, fg_color="transparent", width=94, height=28)
+                        local_wrap.grid(row=0, column=next_action_column, padx=(0, 6), sticky="n")
+                        local_wrap.grid_propagate(False)
+                        archive_button = ctk.CTkButton(
+                            local_wrap,
+                            text="Local",
+                            command=lambda status=archive_status: self._show_archive_status(status),
+                            width=94,
+                            height=28,
+                            fg_color=self._archive_status_color(archive_status.color_name),
+                            hover_color=COLORS["border"],
+                            text_color="#000000",
+                            anchor="w",
+                        )
+                        archive_button.place(x=0, y=0)
+                        if self.asr_cog_icon_image is not None:
+                            cog_label = tk.Label(
+                                local_wrap,
+                                image=self.asr_cog_icon_image,
+                                bg=self._archive_status_color(archive_status.color_name),
+                                activebackground=self._archive_status_color(archive_status.color_name),
+                                bd=0,
+                                relief="flat",
+                                highlightthickness=0,
+                                padx=0,
+                                pady=0,
+                                cursor="hand2",
+                            )
+                        else:
+                            cog_label = tk.Label(
+                                local_wrap,
+                                text=ASR_ACTION_BUTTON_SPEC["fallback_cog_text"],
+                                bg=self._archive_status_color(archive_status.color_name),
+                                fg=ASR_ACTION_BUTTON_SPEC["fallback_cog_normal_fg"],
+                                activebackground=self._archive_status_color(archive_status.color_name),
+                                activeforeground=ASR_ACTION_BUTTON_SPEC["fallback_cog_hover_fg"],
+                                bd=0,
+                                relief="flat",
+                                highlightthickness=0,
+                                padx=0,
+                                pady=0,
+                                font=ASR_ACTION_BUTTON_SPEC["fallback_cog_font"],
+                                cursor="hand2",
+                            )
+                        cog_label.place(x=64, y=2, width=24, height=24)
 
+                        def _local_archive_normal(button=archive_button, label=cog_label, status=archive_status):
+                            color = self._archive_status_color(status.color_name)
+                            try:
+                                button.configure(fg_color=color, hover_color=COLORS["border"])
+                                label.configure(bg=color, activebackground=color)
+                                if self.asr_cog_icon_image is not None:
+                                    label.configure(image=self.asr_cog_icon_image)
+                                else:
+                                    label.configure(fg=ASR_ACTION_BUTTON_SPEC["fallback_cog_normal_fg"])
+                            except Exception:
+                                pass
+
+                        def _local_archive_button_hover(button=archive_button, label=cog_label):
+                            try:
+                                button.configure(fg_color=COLORS["border"], hover_color=COLORS["border"])
+                                label.configure(bg=COLORS["border"], activebackground=COLORS["border"])
+                                if self.asr_cog_icon_image is not None:
+                                    label.configure(image=self.asr_cog_icon_image)
+                                else:
+                                    label.configure(fg=ASR_ACTION_BUTTON_SPEC["fallback_cog_normal_fg"])
+                            except Exception:
+                                pass
+
+                        def _local_archive_cog_hover(button=archive_button, label=cog_label, status=archive_status):
+                            color = self._archive_status_color(status.color_name)
+                            try:
+                                button.configure(fg_color=color, hover_color=COLORS["border"])
+                                label.configure(bg=color, activebackground=color)
+                                if self.asr_cog_icon_hover_image is not None:
+                                    label.configure(image=self.asr_cog_icon_hover_image)
+                                else:
+                                    label.configure(fg=ASR_ACTION_BUTTON_SPEC["fallback_cog_hover_fg"])
+                            except Exception:
+                                pass
+
+                        archive_button.bind("<Enter>", lambda _event: _local_archive_button_hover(), add="+")
+                        archive_button.bind("<Leave>", lambda _event: _local_archive_normal(), add="+")
+                        cog_label.bind("<Enter>", lambda _event: (_local_archive_cog_hover(), "break")[-1])
+                        cog_label.bind("<Leave>", lambda _event: (_local_archive_normal(), "break")[-1])
+                        cog_label.bind("<Button-1>", lambda _event, row_id=row.row_id, status=archive_status: self._open_local_web_archive_settings(row_id, status))
+                        archive_button.tooltip_text = "Local Web Archive"
+                    else:
+                        archive_button = ctk.CTkButton(
+                            actions,
+                            text=archive_text,
+                            command=lambda status=archive_status: self._show_archive_status(status),
+                            width=94,
+                            height=28,
+                            fg_color=self._archive_status_color(archive_status.color_name),
+                            hover_color=COLORS["border"],
+                            text_color="#000000",
+                        )
+                        archive_button.grid(
+                            row=0,
+                            column=next_action_column,
+                            padx=(0, 6),
+                            sticky="n",
+                        )
+                        archive_button.tooltip_text = archive_status.tooltip
+                    status_label = ctk.CTkLabel(
+                        actions,
+                        text=self._archive_status_label_text(archive_status),
+                        font=ctk.CTkFont(size=9),
+                        text_color=COLORS["text_primary"],
+                        justify="center",
+                    )
+                    status_label.grid(
+                        row=1,
+                        column=next_action_column,
+                        padx=(0, 6),
+                        pady=(1, 0),
+                        sticky="n",
+                    )
+                    next_action_column += 1
+
+            remove_parent = row_frame if self._source_row_is_youtube(row) else actions
             remove_button = ctk.CTkButton(
-                actions,
+                remove_parent,
                 text="×",
                 command=lambda row_id=row.row_id: self._remove_source_resource_row_clicked(row_id),
-                width=28,
-                height=28,
+                width=24 if self._source_row_is_youtube(row) else 28,
+                height=24 if self._source_row_is_youtube(row) else 28,
                 fg_color="transparent",
                 hover_color=COLORS["error"],
                 text_color=COLORS["text_secondary"],
             )
             remove_button.tooltip_text = "Remove source"
-            remove_button.grid(
-                row=0,
-                column=next_action_column,
-                padx=(0, 0),
-                sticky="n",
-            )
+            if self._source_row_is_youtube(row):
+                remove_button.grid(
+                    row=0,
+                    column=2,
+                    rowspan=2,
+                    padx=(6, 0),
+                    pady=(0, 0),
+                    sticky="ne",
+                )
+            else:
+                remove_button.grid(
+                    row=0,
+                    column=next_action_column,
+                    padx=(0, 0),
+                    sticky="n",
+                )
 
         self._bind_main_blank_scroll_targets(frame)
 
@@ -4791,18 +5472,10 @@ class App(ctk.CTk):
         row = self._source_row_by_id(row_id)
         if row is None:
             return
-        messagebox.showinfo(
-            "Source details",
-            "\n".join(
-                [
-                    row.title,
-                    f"Adapter: {row.adapter_display_name}",
-                    f"Canonical URL: {row.canonical_url}",
-                    f"Provenance: {row.provenance}",
-                    "Network actions performed: none",
-                ]
-            ),
-        )
+        details = [row.title, f"URL: {row.canonical_url}"]
+        if row.warnings:
+            details.extend(["", "Notes:", *[f"- {warning}" for warning in row.warnings]])
+        messagebox.showinfo("Source details", "\n".join(details))
 
     def _local_web_archive_status_lines(self, archive_status: Any) -> tuple[str, ...]:
         state = build_local_web_archive_action_state(
@@ -4814,6 +5487,60 @@ class App(ctk.CTk):
             expected_comment_count=int(getattr(archive_status, "expected_comment_count", 0) or 0),
         )
         return local_web_archive_status_lines(state)
+
+    def _open_local_web_archive_settings(self, row_id: str, archive_status: Any) -> None:
+        row = self._source_row_by_id(row_id)
+        title = row.title if row is not None else "Local Web Archive"
+        prefs_by_row = self.__dict__.setdefault("local_web_archive_source_preferences", {})
+        prefs = prefs_by_row.setdefault(row_id, {"static": True, "dynamic": True})
+
+        window = ctk.CTkToplevel(self)
+        window.title("Local archive settings")
+        window.geometry("420x250")
+        window.transient(self)
+        window.grab_set()
+        window.configure(fg_color=COLORS["bg_dark"])
+
+        ctk.CTkLabel(
+            window,
+            text=f"Local archive settings\n{title}",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=COLORS["text_primary"],
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", padx=16, pady=(16, 8))
+
+        static_var = ctk.BooleanVar(value=bool(prefs.get("static", True)))
+        dynamic_var = ctk.BooleanVar(value=bool(prefs.get("dynamic", True)))
+        ctk.CTkCheckBox(
+            window,
+            text="Static local snapshot",
+            variable=static_var,
+            text_color=COLORS["text_primary"],
+        ).pack(anchor="w", padx=20, pady=6)
+        ctk.CTkCheckBox(
+            window,
+            text="Dynamic browser replay / WARC",
+            variable=dynamic_var,
+            text_color=COLORS["text_primary"],
+        ).pack(anchor="w", padx=20, pady=6)
+
+        def save_settings() -> None:
+            prefs_by_row[row_id] = {"static": bool(static_var.get()), "dynamic": bool(dynamic_var.get())}
+            if hasattr(self, "url_status"):
+                self.url_status.configure(text="Local archive settings saved.", text_color=COLORS["text_secondary"])
+            window.destroy()
+
+        buttons = ctk.CTkFrame(window, fg_color="transparent")
+        buttons.pack(fill="x", padx=16, pady=(16, 12))
+        ctk.CTkButton(buttons, text="Cancel", width=90, command=window.destroy).pack(side="right")
+        ctk.CTkButton(buttons, text="Save", width=90, command=save_settings).pack(side="right", padx=(0, 8))
+        ctk.CTkButton(
+            buttons,
+            text="Status",
+            width=90,
+            command=lambda status=archive_status: self._show_archive_status(status),
+        ).pack(side="left")
 
     def _show_archive_status(self, archive_status: Any) -> None:
         if archive_status.service_id == ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE:
@@ -4854,7 +5581,7 @@ class App(ctk.CTk):
         if not state.resources:
             empty = ctk.CTkLabel(
                 list_frame,
-                text="No fixture resources are available for this source.",
+                text="No selectable media resources are available for this source.",
                 text_color=COLORS["text_muted"],
             )
             empty.pack(anchor="w", padx=8, pady=8)
@@ -5048,11 +5775,18 @@ class App(ctk.CTk):
         has_source = bool(selection.selected_row_id)
         self.discussion_source_menu.configure(state="normal" if has_source else "disabled")
         self.fetch_button.configure(state="normal" if has_source else "disabled")
-        self.webpage_checkbox.configure(state="normal" if has_source else "disabled")
-        webpage_active = bool(self.extract_webpage_var.get()) and has_source
-        self.webpage_screenshot_checkbox.configure(
-            state="normal" if webpage_active else "disabled"
-        )
+        selected_row = self._source_row_by_id(selection.selected_row_id) if has_source else None
+        youtube_selected = bool(selected_row is not None and self._source_row_is_youtube(selected_row))
+        if youtube_selected:
+            self.extract_webpage_var.set(False)
+            self.webpage_checkbox.configure(state="disabled")
+            self.webpage_screenshot_checkbox.configure(state="normal")
+        else:
+            self.webpage_checkbox.configure(state="normal" if has_source else "disabled")
+            webpage_active = bool(self.extract_webpage_var.get()) and has_source
+            self.webpage_screenshot_checkbox.configure(
+                state="normal" if webpage_active else "disabled"
+            )
         self.comments_checkbox.configure(
             state="normal" if has_source and selection.comments_supported else "disabled"
         )
@@ -5756,13 +6490,30 @@ class App(ctk.CTk):
         extract_webpage = self.extract_webpage_var.get()
         extract_comments = self.extract_comments_var.get()
         extract_live_chat = self.extract_live_chat_var.get()
-        if not extract_webpage and not extract_comments and not extract_live_chat:
+        youtube_media_requested = bool(
+            selected_discussion_row is not None
+            and self._source_row_is_youtube(selected_discussion_row)
+            and self._youtube_quality_enabled_var_for_row(selected_discussion_row.row_id).get()
+        )
+        youtube_screenshot_requested = bool(
+            selected_discussion_row is not None
+            and self._source_row_is_youtube(selected_discussion_row)
+            and self.webpage_screenshot_var.get()
+        )
+        if not extract_webpage and not extract_comments and not extract_live_chat and not youtube_media_requested and not youtube_screenshot_requested:
             self._set_operational_capture_status("Skipped: no selected source scopes.", "warning")
             messagebox.showerror(
                 "Selection Required",
-                "Please tick Webpage, Comments, Livechat, or a combination before pressing Go."
+                "Tick Comments, Livechat, a screenshot option, or enable YouTube media before pressing Go."
             )
             return
+
+        if youtube_media_requested and selected_discussion_row is not None:
+            self._queue_youtube_source_row_media(selected_discussion_row.row_id, self, show_message=False)
+            if not extract_webpage and not extract_comments and not extract_live_chat:
+                self.status_label.configure(text="YouTube media added to FILES", text_color=COLORS["success"])
+                self._set_operational_capture_status("YouTube media selection added to FILES. Export will include the queued files.", "success")
+                return
 
         if selected_discussion_row is not None:
             discussion = build_discussion_capture_options(

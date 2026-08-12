@@ -1,0 +1,399 @@
+from __future__ import annotations
+
+import json
+import tempfile
+import time
+from dataclasses import asdict, dataclass, field, is_dataclass
+from pathlib import Path
+from typing import Any, Mapping, Sequence
+
+from media_jdownloader_external_config import (
+    JDownloaderExternalConfigReport,
+    load_jdownloader_external_config,
+    resolve_jdownloader_source_path,
+)
+from source_resource_state import SourceResourceRowState
+from youtube_media_download_backend import (
+    YouTubeMediaDiscovery,
+    build_youtube_ytdlp_download_plan,
+    discover_youtube_media_with_ytdlp,
+    write_youtube_media_download_plan,
+)
+
+
+YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY = "ready"
+YOUTUBE_GUI_MEDIA_QUEUE_STATUS_NOT_SELECTED = "not_selected"
+YOUTUBE_GUI_MEDIA_QUEUE_STATUS_UNSUPPORTED = "unsupported"
+
+YOUTUBE_GUI_QUALITY_PRESETS: tuple[tuple[str, int], ...] = (
+    ("4k", 2160),
+    ("2k", 1440),
+    ("1080", 1080),
+    ("720", 720),
+    ("480", 480),
+    ("360", 360),
+    ("240", 240),
+    ("144", 144),
+)
+YOUTUBE_GUI_COMPONENT_VIDEO = "video"
+YOUTUBE_GUI_COMPONENT_AUDIO = "audio"
+YOUTUBE_GUI_COMPONENT_THUMBNAIL = "thumbnail"
+YOUTUBE_GUI_COMPONENT_SUBTITLES = "subtitles"
+YOUTUBE_GUI_COMPONENT_AUTO_SUBTITLES = "auto_subtitles"
+
+
+@dataclass(frozen=True)
+class YouTubeGuiMediaPreferences:
+    video_enabled: bool = True
+    separate_audio_enabled: bool = True
+    thumbnail_enabled: bool = True
+    subtitles_enabled: bool = True
+    auto_subtitles_enabled: bool = True
+    show_quality_dropdown: bool = True
+    enabled_quality_labels: tuple[str, ...] = ("4k", "2k", "1080", "720", "480", "360", "240", "144")
+    default_quality_label: str = "1080"
+
+
+@dataclass(frozen=True)
+class YouTubeGuiMediaQueueResult:
+    status: str
+    message: str
+    source_row_id: str = ""
+    source_url: str = ""
+    selected_quality_label: str = ""
+    selected_height: int = 0
+    queue_dir: str = ""
+    files_to_add: tuple[str, ...] = ()
+    metadata_txt_path: str = ""
+    manifest_json_path: str = ""
+    plan_json_paths: tuple[str, ...] = ()
+    selected_components: tuple[str, ...] = ()
+    auto_mux: bool = True
+    jdownloader_source: str = ""
+    ffmpeg_location: str = ""
+    warnings: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+def _value_for_dict(value: Any) -> Any:
+    if is_dataclass(value):
+        return {key: _value_for_dict(item) for key, item in asdict(value).items()}
+    if isinstance(value, tuple):
+        return [_value_for_dict(item) for item in value]
+    if isinstance(value, list):
+        return [_value_for_dict(item) for item in value]
+    if isinstance(value, Mapping):
+        return {str(key): _value_for_dict(item) for key, item in value.items()}
+    return value
+
+
+def default_youtube_gui_media_preferences() -> YouTubeGuiMediaPreferences:
+    return YouTubeGuiMediaPreferences()
+
+
+def normalized_youtube_quality_labels(preferences: YouTubeGuiMediaPreferences | None = None) -> tuple[str, ...]:
+    prefs = preferences or default_youtube_gui_media_preferences()
+    allowed = {label for label, _height in YOUTUBE_GUI_QUALITY_PRESETS}
+    labels = tuple(label for label in prefs.enabled_quality_labels if label in allowed)
+    return labels or (prefs.default_quality_label if prefs.default_quality_label in allowed else "1080",)
+
+
+def youtube_quality_height(label: str) -> int:
+    lookup = {name: height for name, height in YOUTUBE_GUI_QUALITY_PRESETS}
+    return lookup.get(str(label or "").strip(), 0)
+
+
+def youtube_available_quality_labels_from_discovery(
+    discovery: YouTubeMediaDiscovery | None,
+    *,
+    fallback: Sequence[str] = (),
+) -> tuple[str, ...]:
+    """Return row quality labels that are actually present in yt-dlp formats.
+
+    The GUI falls back to the configured preset list until yt-dlp discovery has
+    loaded, then narrows the row dropdown to available video heights.
+    """
+    allowed = {label for label, _height in YOUTUBE_GUI_QUALITY_PRESETS}
+    fallback_labels = tuple(label for label in fallback if label in allowed)
+    if discovery is None:
+        return fallback_labels
+    heights: set[int] = set()
+    for fmt in discovery.formats:
+        height = int(fmt.height or 0)
+        if height <= 0:
+            continue
+        # Skip audio-only entries. Combined or video-only entries both prove the
+        # quality exists; muxing is handled by yt-dlp/FFmpeg later.
+        if str(fmt.vcodec or "").lower() == "none":
+            continue
+        heights.add(height)
+    if not heights:
+        return fallback_labels
+    result: list[str] = []
+    for label, preset_height in YOUTUBE_GUI_QUALITY_PRESETS:
+        if preset_height in heights:
+            result.append(label)
+            continue
+        # Some providers use near-equivalent heights. Keep this conservative.
+        if any(abs(height - preset_height) <= 8 for height in heights):
+            result.append(label)
+    if not result:
+        return fallback_labels
+    return tuple(result)
+
+
+def youtube_title_from_discovery(discovery: YouTubeMediaDiscovery | None, fallback: str = "") -> str:
+    if discovery is None:
+        return fallback
+    return (discovery.title or fallback or "").strip()
+
+
+def selected_youtube_components(preferences: YouTubeGuiMediaPreferences | None = None) -> tuple[str, ...]:
+    prefs = preferences or default_youtube_gui_media_preferences()
+    components: list[str] = []
+    if prefs.video_enabled:
+        components.append(YOUTUBE_GUI_COMPONENT_VIDEO)
+    if prefs.separate_audio_enabled:
+        components.append(YOUTUBE_GUI_COMPONENT_AUDIO)
+    if prefs.thumbnail_enabled:
+        components.append(YOUTUBE_GUI_COMPONENT_THUMBNAIL)
+    if prefs.subtitles_enabled:
+        components.append(YOUTUBE_GUI_COMPONENT_SUBTITLES)
+    if prefs.auto_subtitles_enabled:
+        components.append(YOUTUBE_GUI_COMPONENT_AUTO_SUBTITLES)
+    return tuple(components)
+
+
+def _safe_name(value: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(value or "").strip())
+    cleaned = "_".join(part for part in cleaned.split("_") if part)
+    return cleaned[:96] or "youtube_media"
+
+
+def _default_queue_root() -> Path:
+    return Path(tempfile.gettempdir()) / "ytce_youtube_media_queue"
+
+
+def _load_optional_jdownloader_config(source: str | Path = "") -> tuple[JDownloaderExternalConfigReport | None, tuple[str, ...]]:
+    warnings: list[str] = []
+    try:
+        resolved = resolve_jdownloader_source_path(source)
+        return load_jdownloader_external_config(resolved), tuple(warnings)
+    except Exception as exc:
+        warnings.append(f"JDownloader config was not imported: {type(exc).__name__}: {exc}")
+        return None, tuple(warnings)
+
+
+def _ffmpeg_location_from_config(config: JDownloaderExternalConfigReport | None) -> str:
+    if config is None:
+        return ""
+    return str(config.ffmpeg_binary_path or "")
+
+
+
+
+def _format_youtube_date(value: str) -> str:
+    text = str(value or "").strip()
+    if len(text) == 8 and text.isdigit():
+        return f"{text[0:4]}-{text[4:6]}-{text[6:8]}"
+    return text
+
+
+def _format_int(value: int | None) -> str:
+    return f"{value:,}" if isinstance(value, int) else ""
+
+
+def _metadata_value(value: str) -> str:
+    return str(value or "").strip()
+
+def _metadata_txt(*, row: SourceResourceRowState, quality_label: str, components: Sequence[str], plan_paths: Sequence[str], discovery: YouTubeMediaDiscovery | None = None) -> str:
+    # This file intentionally mirrors the user's desired description-text shape.
+    # Full title/channel/date/views/description are filled by yt-dlp info-json on execution.
+    component_labels = {
+        YOUTUBE_GUI_COMPONENT_VIDEO: "Muxed video + best audio",
+        YOUTUBE_GUI_COMPONENT_AUDIO: "Separate audio file",
+        YOUTUBE_GUI_COMPONENT_THUMBNAIL: "Thumbnail / image",
+        YOUTUBE_GUI_COMPONENT_SUBTITLES: "Manual subtitles",
+        YOUTUBE_GUI_COMPONENT_AUTO_SUBTITLES: "Auto / ASR subtitles",
+    }
+    title = _metadata_value(discovery.title if discovery else row.title) or (row.title or "")
+    channel = _metadata_value((discovery.channel or discovery.uploader) if discovery else "")
+    subscribers = _format_int(discovery.channel_follower_count if discovery else None)
+    date = _format_youtube_date(discovery.upload_date if discovery else "")
+    views = _format_int(discovery.view_count if discovery else None)
+    description = _metadata_value(discovery.description if discovery else "")
+    lines = [
+        "Title: " + title,
+        "Channel: " + channel,
+        "Subscribers: " + subscribers,
+        "Date: " + date,
+        "Views: " + views,
+        "Description: " + description,
+        "Source: " + row.canonical_url,
+        "",
+        "YTCE YouTube Media Queue",
+        "=" * 80,
+        "Selected quality: " + quality_label,
+        "Selected files/components:",
+        *(f"- {component_labels.get(component, component)}" for component in components),
+        "",
+        "Auto mux: yes" if YOUTUBE_GUI_COMPONENT_VIDEO in components else "Auto mux: no video selected",
+        "Mux rule: yt-dlp selects bestvideo+bestaudio at or below the selected quality; FFmpeg merges when YouTube provides separate streams.",
+        "Queue behaviour: Go adds this YouTube media selection to FILES automatically. Export copies these local plan/metadata files with the rest of FILES.",
+        "",
+        "Plan files:",
+        *(f"- {path}" for path in plan_paths),
+        "",
+        "Metadata note: title/channel/date/views/full description/subtitle files/thumbnails are produced by yt-dlp info-json and selected write flags when the plan is executed.",
+    ]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def queue_youtube_gui_source_row_selection(
+    *,
+    row: SourceResourceRowState,
+    quality_label: str,
+    preferences: YouTubeGuiMediaPreferences | None = None,
+    output_root: str | Path | None = None,
+    jdownloader_source: str | Path = "",
+    yt_dlp_path: str = "yt-dlp",
+    probe_metadata: bool = False,
+    discovery: YouTubeMediaDiscovery | None = None,
+) -> YouTubeGuiMediaQueueResult:
+    if row.adapter_id != "youtube":
+        return YouTubeGuiMediaQueueResult(
+            status=YOUTUBE_GUI_MEDIA_QUEUE_STATUS_UNSUPPORTED,
+            message="YouTube media queueing only applies to YouTube source rows.",
+            source_row_id=row.row_id,
+            source_url=row.canonical_url,
+        )
+
+    prefs = preferences or default_youtube_gui_media_preferences()
+    quality_options = normalized_youtube_quality_labels(prefs)
+    selected_quality = quality_label if quality_label in quality_options else (prefs.default_quality_label if prefs.default_quality_label in quality_options else quality_options[0])
+    height = youtube_quality_height(selected_quality)
+    components = selected_youtube_components(prefs)
+    if not components:
+        return YouTubeGuiMediaQueueResult(
+            status=YOUTUBE_GUI_MEDIA_QUEUE_STATUS_NOT_SELECTED,
+            message="Select at least one YouTube media component in the YouTube settings first.",
+            source_row_id=row.row_id,
+            source_url=row.canonical_url,
+            selected_quality_label=selected_quality,
+            selected_height=height,
+        )
+
+    output_root_path = Path(output_root) if output_root is not None else _default_queue_root()
+    queue_dir = output_root_path / _safe_name(row.source_id or row.row_id) / time.strftime("%Y%m%d_%H%M%S")
+    queue_dir.mkdir(parents=True, exist_ok=True)
+
+    warnings_list: list[str] = []
+    if discovery is None and probe_metadata:
+        try:
+            discovery = discover_youtube_media_with_ytdlp(row.canonical_url, output_dir=queue_dir / "metadata")
+        except Exception as exc:
+            warnings_list.append(f"YouTube metadata discovery failed: {type(exc).__name__}: {exc}")
+
+    config, warnings = _load_optional_jdownloader_config(jdownloader_source)
+    warnings = tuple([*warnings_list, *warnings])
+    ffmpeg_location = _ffmpeg_location_from_config(config)
+    plan_paths: list[str] = []
+    plan_summaries: list[dict[str, Any]] = []
+
+    if YOUTUBE_GUI_COMPONENT_VIDEO in components:
+        selector = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best" if height else "bestvideo+bestaudio/best"
+        plan = build_youtube_ytdlp_download_plan(
+            row.canonical_url,
+            output_dir=queue_dir / "downloads",
+            yt_dlp_path=yt_dlp_path,
+            ffmpeg_location=ffmpeg_location,
+            jdownloader_config=config,
+            merge_output_format="mp4",
+            format_selector=selector,
+            write_thumbnail=YOUTUBE_GUI_COMPONENT_THUMBNAIL in components,
+            write_subtitles=YOUTUBE_GUI_COMPONENT_SUBTITLES in components,
+            write_auto_subtitles=YOUTUBE_GUI_COMPONENT_AUTO_SUBTITLES in components,
+            extract_audio=False,
+            dry_run=True,
+        )
+        path = queue_dir / f"youtube-video-mux-plan-{_safe_name(selected_quality)}.json"
+        write_youtube_media_download_plan(plan, path)
+        plan_paths.append(str(path))
+        plan_summaries.append({"component": YOUTUBE_GUI_COMPONENT_VIDEO, "quality": selected_quality, "height": height, "format_selector": plan.format_selector, "command": list(plan.command), "auto_mux": True, "plan_json": str(path)})
+
+    if YOUTUBE_GUI_COMPONENT_AUDIO in components:
+        plan = build_youtube_ytdlp_download_plan(
+            row.canonical_url,
+            output_dir=queue_dir / "downloads",
+            yt_dlp_path=yt_dlp_path,
+            ffmpeg_location=ffmpeg_location,
+            jdownloader_config=config,
+            format_selector="bestaudio[ext=m4a]/bestaudio/best",
+            write_thumbnail=False,
+            write_subtitles=False,
+            write_auto_subtitles=False,
+            extract_audio=True,
+            audio_format="m4a",
+            dry_run=True,
+        )
+        path = queue_dir / "youtube-audio-extract-plan-m4a.json"
+        write_youtube_media_download_plan(plan, path)
+        plan_paths.append(str(path))
+        plan_summaries.append({"component": YOUTUBE_GUI_COMPONENT_AUDIO, "quality": "audio", "format_selector": plan.format_selector, "command": list(plan.command), "extract_audio": True, "plan_json": str(path)})
+
+    manifest = {
+        "status": YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY,
+        "source_row_id": row.row_id,
+        "source_url": row.canonical_url,
+        "title": (discovery.title if discovery and discovery.title else row.title),
+        "channel": (discovery.channel if discovery else ""),
+        "upload_date": (discovery.upload_date if discovery else ""),
+        "view_count": (discovery.view_count if discovery else None),
+        "selected_quality_label": selected_quality,
+        "selected_height": height,
+        "selected_components": list(components),
+        "auto_mux": YOUTUBE_GUI_COMPONENT_VIDEO in components,
+        "jdownloader_source": config.source_path if config else "",
+        "ffmpeg_location": ffmpeg_location,
+        "plans": plan_summaries,
+        "warnings": list(warnings),
+    }
+    manifest_path = queue_dir / "youtube-media-selection-manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    metadata_path = queue_dir / "youtube-video-metadata.txt"
+    metadata_path.write_text(
+        _metadata_txt(row=row, quality_label=selected_quality, components=components, plan_paths=plan_paths, discovery=discovery),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    files_to_add = [str(metadata_path), str(manifest_path), *plan_paths]
+    message = (
+        "YouTube media selection added to FILES by Go.\n\n"
+        f"Quality: {selected_quality}\n"
+        f"Components: {', '.join(components)}\n"
+        f"Auto mux: {'yes' if YOUTUBE_GUI_COMPONENT_VIDEO in components else 'no video selected'}\n"
+        f"FILES added: {len(files_to_add)}\n\n"
+        "Export will copy these plan/metadata files with the rest of FILES."
+    )
+    return YouTubeGuiMediaQueueResult(
+        status=YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY,
+        message=message,
+        source_row_id=row.row_id,
+        source_url=row.canonical_url,
+        selected_quality_label=selected_quality,
+        selected_height=height,
+        queue_dir=str(queue_dir),
+        files_to_add=tuple(files_to_add),
+        metadata_txt_path=str(metadata_path),
+        manifest_json_path=str(manifest_path),
+        plan_json_paths=tuple(plan_paths),
+        selected_components=tuple(components),
+        auto_mux=YOUTUBE_GUI_COMPONENT_VIDEO in components,
+        jdownloader_source=config.source_path if config else "",
+        ffmpeg_location=ffmpeg_location,
+        warnings=tuple(warnings),
+    )

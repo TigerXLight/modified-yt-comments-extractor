@@ -40,6 +40,34 @@ _TRACKING_QUERY_PREFIXES = ("utm_",)
 _TRACKING_QUERY_KEYS = {"ocid", "cid", "cvid", "pc", "ei", "form", "spm"}
 
 
+def _normalize_chat_url_escapes(value: str) -> str:
+    text = str(value or "").strip()
+    for ch in ("_", "-", ".", "~", "(", ")"):
+        text = text.replace("\\" + ch, ch)
+    return text
+
+
+def normalize_source_url_token(value: str) -> str:
+    """Return a raw source URL from chat/Markdown-pasted input."""
+    text = _normalize_chat_url_escapes(str(value or "").strip().strip('"').strip("'"))
+    if not text:
+        return ""
+    # Prefer Markdown hrefs, including nested/broken links copied from chat.
+    separators = text
+    for token in ("](", "[", "]", "(", ")", "<", ">"):
+        separators = separators.replace(token, " ")
+    candidates = []
+    for candidate in re.findall(r"https?://[^\s\"']+", separators, flags=re.IGNORECASE):
+        cleaned = candidate.strip().strip('"').strip("'")
+        while cleaned and cleaned[-1] in ").,;:\\":
+            cleaned = cleaned[:-1].strip()
+        if cleaned.lower().startswith(("http://", "https://")):
+            candidates.append(cleaned)
+    if candidates:
+        return candidates[-1]
+    return text.strip("<>[]{}")
+
+
 @dataclass(frozen=True)
 class ArchiveServiceStatus:
     service_id: str
@@ -186,7 +214,7 @@ class ResourceSelectionDialogState:
 
 
 def _trim_url_token(value: str) -> str:
-    return (value or "").strip().strip("\"'<>[]{}").rstrip(".,;:)]}")
+    return normalize_source_url_token((value or "").strip().rstrip(".,;:)]}"))
 
 
 def extract_source_url_tokens(text: str) -> tuple[str, ...]:
@@ -235,6 +263,7 @@ def canonicalize_msn_url(url: str) -> str:
 
 
 def _canonicalize_for_adapter(url: str) -> tuple[Any, str, str]:
+    url = normalize_source_url_token(url)
     adapter = find_source_adapter(url)
     if adapter is None:
         raise ValueError(f"No supported source adapter for URL: {url}")
@@ -318,61 +347,57 @@ def _fallback_title_from_url(canonical_url: str) -> str:
     return candidate.replace("-", " ").replace("_", " ").strip().title() or parsed.netloc
 
 
-def _msn_fixture_resources(row_id: str) -> tuple[tuple[SourceResourceItem, ...], tuple[SourceResourceItem, ...]]:
+def _youtube_media_selection_resources(
+    row_id: str,
+    canonical_url: str,
+) -> tuple[tuple[SourceResourceItem, ...], tuple[SourceResourceItem, ...]]:
     image_items = (
         SourceResourceItem(
-            resource_id=f"{row_id}:image:hero",
+            resource_id=f"{row_id}:image:thumbnail",
             source_row_id=row_id,
             resource_kind=RESOURCE_KIND_IMAGE,
-            reference_url="fixture://msn/special-dj/hero.jpg",
-            display_name="Special DJ hero image",
+            reference_url=canonical_url,
+            canonical_url=canonical_url,
+            display_name="YouTube thumbnail / metadata image",
             media_type="image",
-            mime_type="image/jpeg",
-            extension="jpg",
-            width=1280,
-            height=720,
-        ),
-        SourceResourceItem(
-            resource_id=f"{row_id}:image:loop",
-            source_row_id=row_id,
-            resource_kind=RESOURCE_KIND_IMAGE,
-            reference_url="fixture://msn/special-dj/loop.gif",
-            display_name="Special DJ animated image",
-            media_type="gif",
-            mime_type="image/gif",
-            extension="gif",
-            width=640,
-            height=360,
-            animated=True,
+            mime_type="image/*",
+            extension="jpg/webp",
+            bitrate_or_quality="thumbnail",
+            status="queued",
+            selectable=True,
+            warning="Resolved by yt-dlp when the media plan is executed.",
+            provenance="youtube media backend selection",
         ),
     )
-    media_items = (
+    quality_presets = (
+        ("4k", 2160),
+        ("2k", 1440),
+        ("1080", 1080),
+        ("720", 720),
+        ("480", 480),
+        ("360", 360),
+        ("240", 240),
+        ("144", 144),
+    )
+    media_items = tuple(
         SourceResourceItem(
-            resource_id=f"{row_id}:media:clip",
+            resource_id=f"{row_id}:video_audio:{label}",
             source_row_id=row_id,
             resource_kind=RESOURCE_KIND_VIDEO_AUDIO,
-            reference_url="fixture://msn/special-dj/clip.mp4",
-            display_name="Special DJ video clip",
+            reference_url=canonical_url,
+            canonical_url=canonical_url,
+            display_name=f"{label} video + best audio",
             media_type="video",
             mime_type="video/mp4",
             extension="mp4",
-            width=1920,
-            height=1080,
-            duration_seconds=42.5,
-            bitrate_or_quality="1080p",
-        ),
-        SourceResourceItem(
-            resource_id=f"{row_id}:media:audio",
-            source_row_id=row_id,
-            resource_kind=RESOURCE_KIND_VIDEO_AUDIO,
-            reference_url="fixture://msn/special-dj/audio.mp3",
-            display_name="Special DJ audio",
-            media_type="audio",
-            mime_type="audio/mpeg",
-            extension="mp3",
-            duration_seconds=42.5,
-            bitrate_or_quality="128 kbps",
-        ),
+            height=height,
+            bitrate_or_quality=label,
+            status="queued",
+            selectable=True,
+            warning="Auto mux: yt-dlp selects bestvideo+bestaudio and FFmpeg merges when needed.",
+            provenance="youtube media backend selection",
+        )
+        for label, height in quality_presets
     )
     return image_items, media_items
 
@@ -383,7 +408,8 @@ def build_source_resource_row(
     archive_auto_check_enabled: bool = True,
     title: str = "",
 ) -> SourceResourceRowState:
-    adapter, canonical, source_id = _canonicalize_for_adapter(raw_url)
+    normalized_raw_url = normalize_source_url_token(raw_url)
+    adapter, canonical, source_id = _canonicalize_for_adapter(normalized_raw_url)
     parsed = urlsplit(canonical)
     metadata = getattr(adapter, "metadata", None)
     adapter_display_name = getattr(metadata, "display_name", adapter.source_name)
@@ -395,7 +421,11 @@ def build_source_resource_row(
     comments_status = "Comments supported by existing YouTube runtime elsewhere."
     livechat_status = "Livechat supported by existing YouTube runtime elsewhere."
     provenance = "adapter metadata"
-    if adapter.source_name == "msn":
+    if adapter.source_name == "youtube":
+        display_title = title.strip() or f"YouTube video {source_id}"
+        image_items, media_items = (), ()
+        provenance = "adapter metadata; YouTube media uses row quality selector and settings"
+    elif adapter.source_name == "msn":
         display_title = title.strip() or _fallback_title_from_url(canonical)
         image_items, media_items = (), ()
         comments_status = "MSN comment planning/support is adapter-specific; use explicit capture/export flows."
@@ -404,15 +434,15 @@ def build_source_resource_row(
         warnings.append(
             "MSN source row no longer injects fake fixture media. Use Images/GIFs or Video/Audio, then run discovery against rendered MSN HTML."
         )
-    elif adapter.source_name != "youtube":
+    else:
         comments_status = "Discussion capture is not supported for this adapter."
         livechat_status = "Livechat is not supported for this adapter."
 
-    display_label = f"{display_title} - {parsed.netloc}"
+    display_label = f"{display_title} - YouTube" if adapter.source_name == "youtube" else f"{display_title} - {parsed.netloc}"
     capabilities = adapter.capabilities
     return SourceResourceRowState(
         row_id=row_id,
-        raw_url=raw_url,
+        raw_url=normalized_raw_url,
         canonical_url=canonical,
         adapter_id=adapter.source_name,
         adapter_display_name=adapter_display_name,
@@ -424,7 +454,7 @@ def build_source_resource_row(
         livechat_supported=capabilities.supports_livechat,
         comments_status=comments_status,
         livechat_status=livechat_status,
-        archive_statuses=_default_archive_statuses(archive_auto_check_enabled),
+        archive_statuses=() if adapter.source_name == "youtube" else _default_archive_statuses(archive_auto_check_enabled),
         image_resources=image_items,
         video_audio_resources=media_items,
         warnings=tuple(warnings),

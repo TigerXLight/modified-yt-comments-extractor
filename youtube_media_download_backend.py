@@ -40,6 +40,11 @@ class YouTubeMediaDiscovery:
     source_url: str
     title: str = ""
     uploader: str = ""
+    channel: str = ""
+    channel_follower_count: int | None = None
+    upload_date: str = ""
+    view_count: int | None = None
+    description: str = ""
     duration: float | None = None
     thumbnail: str = ""
     webpage_url: str = ""
@@ -66,6 +71,8 @@ class YouTubeMediaDownloadPlan:
     write_thumbnail: bool = True
     write_subtitles: bool = True
     write_auto_subtitles: bool = False
+    extract_audio: bool = False
+    audio_format: str = "m4a"
     dry_run: bool = True
     jdownloader_max_resolution: str = ""
     notes: tuple[str, ...] = ()
@@ -206,6 +213,13 @@ def discover_youtube_media_with_ytdlp(
     if completed.returncode != 0:
         raise RuntimeError((completed.stderr or completed.stdout or "yt-dlp discovery failed").strip())
     data = json.loads(completed.stdout or "{}")
+
+    def int_or_none(value: Any) -> int | None:
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
     raw_path = ""
     if output_dir is not None:
         target_dir = Path(output_dir)
@@ -218,6 +232,11 @@ def discover_youtube_media_with_ytdlp(
         source_url=normalized_source_url,
         title=str(data.get("title") or ""),
         uploader=str(data.get("uploader") or data.get("channel") or ""),
+        channel=str(data.get("channel") or data.get("uploader") or ""),
+        channel_follower_count=int_or_none(data.get("channel_follower_count") or data.get("uploader_subscriber_count")),
+        upload_date=str(data.get("upload_date") or data.get("release_date") or ""),
+        view_count=int_or_none(data.get("view_count")),
+        description=str(data.get("description") or ""),
         duration=data.get("duration") if isinstance(data.get("duration"), (int, float)) else None,
         thumbnail=str(data.get("thumbnail") or ""),
         webpage_url=str(data.get("webpage_url") or normalized_source_url),
@@ -250,7 +269,12 @@ def build_youtube_ytdlp_download_plan(
     jdownloader_config: JDownloaderExternalConfigReport | None = None,
     merge_output_format: str = "mp4",
     format_selector: str = "",
+    write_info_json: bool = True,
+    write_thumbnail: bool = True,
+    write_subtitles: bool = True,
     write_auto_subtitles: bool = False,
+    extract_audio: bool = False,
+    audio_format: str = "m4a",
     dry_run: bool = True,
 ) -> YouTubeMediaDownloadPlan:
     normalized_source_url = normalize_media_source_url_arg_strict(source_url)
@@ -261,20 +285,23 @@ def build_youtube_ytdlp_download_plan(
         str(yt_dlp_path or "yt-dlp"),
         "--no-playlist",
         "--newline",
-        "--write-info-json",
-        "--write-thumbnail",
-        "--write-subs",
-        "--sub-langs",
-        "all,-live_chat",
         "-f",
         selector,
-        "--merge-output-format",
-        str(merge_output_format or "mp4"),
         "-o",
         output_template,
     ]
+    if write_info_json:
+        command.append("--write-info-json")
+    if write_thumbnail:
+        command.append("--write-thumbnail")
+    if write_subtitles:
+        command.extend(("--write-subs", "--sub-langs", "all,-live_chat"))
     if write_auto_subtitles:
         command.append("--write-auto-subs")
+    if extract_audio:
+        command.extend(("-x", "--audio-format", str(audio_format or "m4a")))
+    else:
+        command.extend(("--merge-output-format", str(merge_output_format or "mp4")))
     if ffmpeg_location:
         command.extend(("--ffmpeg-location", str(ffmpeg_location)))
     if dry_run:
@@ -294,7 +321,11 @@ def build_youtube_ytdlp_download_plan(
         output_template=output_template,
         command=tuple(command),
         ffmpeg_location=str(ffmpeg_location or ""),
+        write_thumbnail=write_thumbnail,
+        write_subtitles=write_subtitles,
         write_auto_subtitles=write_auto_subtitles,
+        extract_audio=extract_audio,
+        audio_format=str(audio_format or "m4a"),
         dry_run=dry_run,
         jdownloader_max_resolution=(jdownloader_config.max_video_resolution if jdownloader_config else ""),
         notes=tuple(notes),
