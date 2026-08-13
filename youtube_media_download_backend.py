@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -436,6 +437,76 @@ def run_youtube_ytdlp_download_plan(
     run = runner or _default_runner
     Path(plan.output_dir).mkdir(parents=True, exist_ok=True)
     return run(plan.command)
+
+
+def _format_count(value: int | None) -> str:
+    if value is None:
+        return ""
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _format_compact_count(value: int | None) -> str:
+    if value is None:
+        return ""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return ""
+    if number >= 1_000_000:
+        text = f"{number / 1_000_000:.2f}".rstrip("0").rstrip(".")
+        return text + "M"
+    if number >= 1_000:
+        text = f"{number / 1_000:.1f}".rstrip("0").rstrip(".")
+        return text + "K"
+    return str(number)
+
+
+def _format_upload_date(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if re.fullmatch(r"\d{8}", text):
+        try:
+            return datetime.strptime(text, "%Y%m%d").strftime("%b %-d, %Y")
+        except ValueError:
+            try:
+                return datetime.strptime(text, "%Y%m%d").strftime("%b %#d, %Y")
+            except ValueError:
+                return text
+    return text
+
+
+def youtube_metadata_text_from_discovery(discovery: YouTubeMediaDiscovery) -> str:
+    """Build the human-readable YouTube metadata TXT sidecar.
+
+    This mirrors the project workflow where a downloaded YouTube media item
+    carries title/channel/date/views/description/source evidence next to the
+    media files, thumbnail, subtitles, and JSON records.
+    """
+
+    channel = discovery.channel or discovery.uploader
+    lines = [
+        f"Title: {discovery.title}",
+        f"Channel: {channel}",
+        f"Subscribers: {_format_compact_count(discovery.channel_follower_count)}",
+        f"Date: {_format_upload_date(discovery.upload_date)}",
+        f"Views: {_format_count(discovery.view_count)}",
+        "Description: " + (discovery.description or ""),
+        "Source: " + (discovery.webpage_url or discovery.source_url),
+    ]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def write_youtube_media_metadata_text(
+    discovery: YouTubeMediaDiscovery,
+    output_path: str | Path,
+) -> None:
+    target = Path(output_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(youtube_metadata_text_from_discovery(discovery), encoding="utf-8")
 
 
 def write_youtube_media_download_plan(plan: YouTubeMediaDownloadPlan, output_path: str | Path) -> None:

@@ -14,6 +14,8 @@ from youtube_media_download_backend import (
     normalize_media_source_url_arg_strict,
     discover_youtube_media_with_ytdlp,
     youtube_format_selector_from_jdownloader,
+    youtube_metadata_text_from_discovery,
+    write_youtube_media_metadata_text,
 )
 
 
@@ -22,6 +24,10 @@ def _fake_ytdlp_runner(command):
         "title": "Example Video",
         "uploader": "Uploader",
         "duration": 12,
+        "upload_date": "20240225",
+        "view_count": 429265,
+        "channel_follower_count": 13500,
+        "description": "Line one.\nLine two.",
         "webpage_url": "https://www.youtube.com/watch?v=abc123",
         "formats": [
             {"format_id": "137", "ext": "mp4", "vcodec": "avc1", "acodec": "none", "height": 1080, "url": "https://example/video"},
@@ -76,6 +82,26 @@ def test_discover_youtube_media_with_ytdlp_parses_formats() -> None:
         assert len(discovery.formats) == 2
         assert discovery.formats[0].height == 1080
         assert Path(discovery.raw_info_json_path).is_file()
+
+
+def test_youtube_metadata_text_sidecar_matches_project_export_shape() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        discovery = discover_youtube_media_with_ytdlp(
+            "[https://www.youtube.com/watch?v=abc123](https://www.youtube.com/watch?v=abc123)",
+            output_dir=tmp,
+            runner=_fake_ytdlp_runner,
+        )
+        text = youtube_metadata_text_from_discovery(discovery)
+        assert "Title: Example Video" in text
+        assert "Channel: Uploader" in text
+        assert "Subscribers: 13.5K" in text
+        assert "Date: Feb " in text and "2024" in text
+        assert "Views: 429,265" in text
+        assert "Description: Line one." in text
+        assert "Source: https://www.youtube.com/watch?v=abc123" in text
+        target = Path(tmp) / "youtube-media-metadata.txt"
+        write_youtube_media_metadata_text(discovery, target)
+        assert target.read_text(encoding="utf-8") == text
 
 
 def test_youtube_format_selector_uses_jdownloader_max_resolution() -> None:
@@ -144,6 +170,7 @@ if __name__ == "__main__":
     test_normalize_media_source_url_arg_handles_cmd_markdown()
     test_normalize_media_source_url_arg_handles_nested_markdown_from_cmd()
     test_discover_youtube_media_with_ytdlp_parses_formats()
+    test_youtube_metadata_text_sidecar_matches_project_export_shape()
     test_youtube_format_selector_uses_jdownloader_max_resolution()
     test_build_youtube_ytdlp_download_plan_is_safe_dry_run_by_default()
     test_build_youtube_ytdlp_download_plan_normalizes_markdown_url()

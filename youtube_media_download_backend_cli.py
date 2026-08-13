@@ -12,6 +12,7 @@ from youtube_media_download_backend import (
     discover_youtube_media_with_ytdlp,
     run_youtube_ytdlp_download_plan,
     write_youtube_media_download_plan,
+    write_youtube_media_metadata_text,
 )
 
 
@@ -27,7 +28,8 @@ def main() -> int:
     parser.add_argument("--write-auto-subs", action="store_true")
     args = parser.parse_args()
 
-    source_url = normalize_media_source_url_arg_strict(args.source_url)
+    source_url_input = args.source_url
+    source_url = normalize_media_source_url_arg_strict(source_url_input)
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -62,6 +64,9 @@ def main() -> int:
             json.dumps(discovery.to_dict(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        metadata_text_path = out / "youtube-media-metadata.txt"
+        write_youtube_media_metadata_text(discovery, metadata_text_path)
+        print("YOUTUBE_MEDIA_METADATA_TEXT=" + str(metadata_text_path))
 
     plan = build_youtube_ytdlp_download_plan(
         source_url,
@@ -75,6 +80,8 @@ def main() -> int:
     write_youtube_media_download_plan(plan, out / "youtube-media-download-plan.json")
     print("YOUTUBE_MEDIA_BACKEND_MODULE=" + __import__("youtube_media_download_backend").__file__)
     print("YOUTUBE_MEDIA_DOWNLOAD_PLAN=" + str(out / "youtube-media-download-plan.json"))
+    if source_url_input != source_url:
+        print("YOUTUBE_MEDIA_SOURCE_URL_INPUT=" + source_url_input)
     print("YOUTUBE_MEDIA_SOURCE_URL=" + source_url)
     print("YOUTUBE_MEDIA_FORMAT_SELECTOR=" + plan.format_selector)
     print("YOUTUBE_MEDIA_DRY_RUN=" + str(plan.dry_run))
