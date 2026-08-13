@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
+import shutil
 import subprocess
+import sys
 from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -13,6 +16,94 @@ from media_jdownloader_external_config import (
 )
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
+
+
+@dataclass(frozen=True)
+class ExternalCommandResolution:
+    requested: str
+    command: tuple[str, ...]
+    source: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+def _is_sequence_command(value: object) -> bool:
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, Path))
+
+
+def _command_prefix(value: str | Path | Sequence[str]) -> tuple[str, ...]:
+    if _is_sequence_command(value):
+        return tuple(str(item) for item in value if str(item))
+    text = str(value or "").strip()
+    return (text or "yt-dlp",)
+
+
+def resolve_ytdlp_command(
+    requested: str | Path | Sequence[str] = "auto",
+    *,
+    repo_root: str | Path | None = None,
+    python_executable: str | Path | None = None,
+) -> ExternalCommandResolution:
+    """Resolve yt-dlp to an executable command tuple.
+
+    This avoids raw ``FileNotFoundError`` during real downloads.  It supports:
+    - an explicit yt-dlp executable path
+    - a command on PATH
+    - ``venv\\Scripts\\yt-dlp.exe`` under the repo
+    - ``python -m yt_dlp`` when the module is installed in the active venv
+    """
+
+    if _is_sequence_command(requested):
+        command = tuple(str(item) for item in requested if str(item))
+        if not command:
+            raise FileNotFoundError("Empty yt-dlp command.")
+        first = command[0]
+        if Path(first).is_file() or shutil.which(first):
+            return ExternalCommandResolution(requested=" ".join(command), command=command, source="explicit-sequence")
+        raise FileNotFoundError(
+            "yt-dlp command was not found: "
+            + " ".join(command)
+            + ". Install it with: venv\\Scripts\\python.exe -m pip install -U yt-dlp"
+        )
+
+    requested_text = str(requested or "auto").strip().strip('"').strip("'")
+    candidates: list[tuple[str, tuple[str, ...]]] = []
+
+    if requested_text and requested_text.lower() not in {"auto", "yt-dlp"}:
+        candidates.append(("explicit", (requested_text,)))
+
+    candidates.append(("path", ("yt-dlp",)))
+
+    roots: list[Path] = []
+    if repo_root:
+        roots.append(Path(repo_root))
+    roots.append(Path.cwd())
+    for root in roots:
+        candidates.extend(
+            (
+                ("repo-venv", (str(root / "venv" / "Scripts" / "yt-dlp.exe"),)),
+                ("repo-dotvenv", (str(root / ".venv" / "Scripts" / "yt-dlp.exe"),)),
+            )
+        )
+
+    for source, command in candidates:
+        first = command[0]
+        if Path(first).is_file():
+            return ExternalCommandResolution(requested=requested_text, command=command, source=source)
+        found = shutil.which(first)
+        if found:
+            return ExternalCommandResolution(requested=requested_text, command=(found,), source=source)
+
+    py = str(python_executable or sys.executable)
+    if importlib.util.find_spec("yt_dlp") is not None:
+        return ExternalCommandResolution(requested=requested_text, command=(py, "-m", "yt_dlp"), source="python-module")
+
+    raise FileNotFoundError(
+        "yt-dlp was not found. Install it into this repo venv with: "
+        "venv\\Scripts\\python.exe -m pip install -U yt-dlp "
+        "or pass --yt-dlp C:\\path\\to\\yt-dlp.exe"
+    )
 
 
 @dataclass(frozen=True)
@@ -154,13 +245,19 @@ def _value_for_dict(value: Any) -> Any:
 
 
 def _default_runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        list(command),
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    try:
+        return subprocess.run(
+            list(command),
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"External command not found: {command[0] if command else '<empty>'}. "
+            "Install yt-dlp with: venv\\Scripts\\python.exe -m pip install -U yt-dlp"
+        ) from exc
 
 
 def _format_from_dict(data: Mapping[str, Any]) -> YouTubeMediaFormat:
@@ -196,13 +293,12 @@ def _format_from_dict(data: Mapping[str, Any]) -> YouTubeMediaFormat:
 def discover_youtube_media_with_ytdlp(
     source_url: str,
     *,
-    yt_dlp_path: str = "yt-dlp",
+    yt_dlp_path: str | Path | Sequence[str] = "yt-dlp",
     output_dir: str | Path | None = None,
     runner: Runner | None = None,
 ) -> YouTubeMediaDiscovery:
     normalized_source_url = normalize_media_source_url_arg_strict(source_url)
-    command = (
-        str(yt_dlp_path or "yt-dlp"),
+    command = _command_prefix(yt_dlp_path) + (
         "--dump-single-json",
         "--skip-download",
         "--no-warnings",
@@ -264,7 +360,7 @@ def build_youtube_ytdlp_download_plan(
     source_url: str,
     *,
     output_dir: str | Path,
-    yt_dlp_path: str = "yt-dlp",
+    yt_dlp_path: str | Path | Sequence[str] = "yt-dlp",
     ffmpeg_location: str | Path = "",
     jdownloader_config: JDownloaderExternalConfigReport | None = None,
     merge_output_format: str = "mp4",
@@ -282,7 +378,7 @@ def build_youtube_ytdlp_download_plan(
     output_template = str(target_dir / "%(title).200B [%(id)s].%(ext)s")
     selector = format_selector or youtube_format_selector_from_jdownloader(jdownloader_config)
     command: list[str] = [
-        str(yt_dlp_path or "yt-dlp"),
+        *_command_prefix(yt_dlp_path),
         "--no-playlist",
         "--newline",
         "-f",

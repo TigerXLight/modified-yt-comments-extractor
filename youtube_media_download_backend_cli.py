@@ -8,6 +8,7 @@ from media_jdownloader_external_config import load_jdownloader_external_config, 
 from youtube_media_download_backend import (
     build_youtube_ytdlp_download_plan,
     normalize_media_source_url_arg_strict,
+    resolve_ytdlp_command,
     discover_youtube_media_with_ytdlp,
     run_youtube_ytdlp_download_plan,
     write_youtube_media_download_plan,
@@ -18,7 +19,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="YouTube media discovery/download backend using yt-dlp + FFmpeg.")
     parser.add_argument("--source-url", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--yt-dlp", default="yt-dlp")
+    parser.add_argument("--yt-dlp", default="auto")
     parser.add_argument("--ffmpeg-location", default="")
     parser.add_argument("--jdownloader-root-or-zip", default="")
     parser.add_argument("--discover", action="store_true")
@@ -29,6 +30,20 @@ def main() -> int:
     source_url = normalize_media_source_url_arg_strict(args.source_url)
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
+
+    try:
+        ytdlp_resolution = resolve_ytdlp_command(args.yt_dlp, repo_root=Path(__file__).resolve().parent)
+    except FileNotFoundError as exc:
+        message = str(exc)
+        (out / "youtube-media-download-tool-error.txt").write_text(message + "\n", encoding="utf-8")
+        print("YOUTUBE_MEDIA_YTDLP_NOT_FOUND=" + message)
+        print("YOUTUBE_MEDIA_INSTALL_YTDLP=venv\\Scripts\\python.exe -m pip install -U yt-dlp")
+        return 2
+
+    yt_dlp_command = ytdlp_resolution.command
+    print("YOUTUBE_MEDIA_YTDLP_SOURCE=" + ytdlp_resolution.source)
+    print("YOUTUBE_MEDIA_YTDLP_COMMAND=" + " ".join(yt_dlp_command))
+
     jd_config = None
     if args.jdownloader_root_or_zip:
         jd_source = resolve_jdownloader_source_path(args.jdownloader_root_or_zip)
@@ -40,7 +55,7 @@ def main() -> int:
     if args.discover:
         discovery = discover_youtube_media_with_ytdlp(
             source_url,
-            yt_dlp_path=args.yt_dlp,
+            yt_dlp_path=yt_dlp_command,
             output_dir=out,
         )
         (out / "youtube-media-discovery.json").write_text(
@@ -51,7 +66,7 @@ def main() -> int:
     plan = build_youtube_ytdlp_download_plan(
         source_url,
         output_dir=out,
-        yt_dlp_path=args.yt_dlp,
+        yt_dlp_path=yt_dlp_command,
         ffmpeg_location=args.ffmpeg_location,
         jdownloader_config=jd_config,
         write_auto_subtitles=args.write_auto_subs,
