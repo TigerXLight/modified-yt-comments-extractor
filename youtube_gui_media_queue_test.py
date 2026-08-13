@@ -11,6 +11,7 @@ from youtube_gui_media_queue import (
     YOUTUBE_GUI_COMPONENT_SUBTITLES,
     YOUTUBE_GUI_COMPONENT_THUMBNAIL,
     YOUTUBE_GUI_COMPONENT_VIDEO,
+    YOUTUBE_GUI_MEDIA_QUEUE_STATUS_BACKEND_FAILED,
     YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY,
     YouTubeGuiMediaPreferences,
     normalized_youtube_quality_labels,
@@ -228,6 +229,142 @@ def test_youtube_queue_prefers_internal_jdownloader_when_runtime_present() -> No
         queue.preferred_youtube_media_backend = original_preferred
 
 
+def test_internal_jdownloader_success_manifest_files_are_added_to_files() -> None:
+    import youtube_gui_media_queue as queue
+
+    original_detect = queue.detect_jdownloader_internal_capabilities
+    original_preferred = queue.preferred_youtube_media_backend
+    try:
+        queue.detect_jdownloader_internal_capabilities = lambda: JDownloaderInternalCapabilities(
+            vendor_present=True,
+            runtime_present=True,
+            source_present=True,
+        )
+        queue.preferred_youtube_media_backend = lambda: JDOWNLOADER_INTERNAL_BACKEND_ID
+        row = build_source_resource_row("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        with tempfile.TemporaryDirectory() as tmp:
+            def fake_runner(request):
+                output_dir = Path(request.output_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
+                video_path = output_dir / "Your Sunset (1080p_25fps_H264-128kbit_AAC).mp4"
+                audio_path = output_dir / "Your Sunset (128kbit_AAC).m4a"
+                video_path.write_bytes(b"video-bytes")
+                audio_path.write_bytes(b"audio-bytes")
+                manifest_path = Path(request.manifest_path)
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                manifest_path.write_text(
+                    json.dumps(
+                        {
+                            "backend_id": "jdownloader_internal",
+                            "status": "success",
+                            "phase": "completed",
+                            "files": [
+                                {"kind": "video", "path": str(video_path), "size": video_path.stat().st_size, "sha256": "v"},
+                                {"kind": "audio", "path": str(audio_path), "size": audio_path.stat().st_size, "sha256": "a"},
+                            ],
+                            "engine": {"status": "READY", "warm_job": True},
+                            "warnings": [],
+                            "errors": [],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                return InternalJDownloaderJobResult(
+                    status="success",
+                    phase="completed",
+                    manifest_path=str(manifest_path),
+                    source_url=request.source_url,
+                    output_dir=request.output_dir,
+                    engine_status="READY",
+                    readiness_status="READY",
+                    submission_status="accepted_or_unknown",
+                    files_count=2,
+                )
+
+            result = queue_youtube_gui_source_row_selection(
+                row=row,
+                quality_label="1080",
+                output_root=tmp,
+                internal_job_runner=fake_runner,
+            )
+
+            assert result.status == YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY
+            assert any(path.endswith(".mp4") for path in result.files_to_add)
+            assert any(path.endswith(".m4a") for path in result.files_to_add)
+            assert result.files_to_add[0].endswith(".mp4")
+            assert "Internal JDownloader completed files added: 2" in result.message
+            manifest = json.loads(Path(result.manifest_json_path).read_text(encoding="utf-8"))
+            assert manifest["jdownloader_completed_file_count"] == 2
+            assert manifest["jdownloader_completed_files"][0]["kind"] == "video"
+            assert manifest["jdownloader_duplicate_state_suspected"] is False
+    finally:
+        queue.detect_jdownloader_internal_capabilities = original_detect
+        queue.preferred_youtube_media_backend = original_preferred
+
+
+def test_internal_jdownloader_duplicate_timeout_is_reported_in_gui_message() -> None:
+    import youtube_gui_media_queue as queue
+
+    original_detect = queue.detect_jdownloader_internal_capabilities
+    original_preferred = queue.preferred_youtube_media_backend
+    try:
+        queue.detect_jdownloader_internal_capabilities = lambda: JDownloaderInternalCapabilities(
+            vendor_present=True,
+            runtime_present=True,
+            source_present=True,
+        )
+        queue.preferred_youtube_media_backend = lambda: JDOWNLOADER_INTERNAL_BACKEND_ID
+        row = build_source_resource_row("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        with tempfile.TemporaryDirectory() as tmp:
+            def fake_runner(request):
+                manifest_path = Path(request.manifest_path)
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                manifest_path.write_text(
+                    json.dumps(
+                        {
+                            "backend_id": "jdownloader_internal",
+                            "status": "timeout",
+                            "phase": "timeout",
+                            "files": [],
+                            "engine": {"status": "READY", "warm_job": True},
+                            "submission_status": "accepted_or_unknown",
+                            "warnings": [],
+                            "errors": ["No completed files appeared before timeout."],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                return InternalJDownloaderJobResult(
+                    status="timeout",
+                    phase="timeout",
+                    manifest_path=str(manifest_path),
+                    source_url=request.source_url,
+                    output_dir=request.output_dir,
+                    engine_status="READY",
+                    readiness_status="READY",
+                    submission_status="accepted_or_unknown",
+                    files_count=0,
+                    errors=("No completed files appeared before timeout.",),
+                )
+
+            result = queue_youtube_gui_source_row_selection(
+                row=row,
+                quality_label="1080",
+                output_root=tmp,
+                internal_job_runner=fake_runner,
+            )
+
+            assert result.status == YOUTUBE_GUI_MEDIA_QUEUE_STATUS_BACKEND_FAILED
+            assert "Possible duplicate/list-state" in result.message
+            assert any("may already exist in JDownloader LinkGrabber/Downloads" in warning for warning in result.warnings)
+            manifest = json.loads(Path(result.manifest_json_path).read_text(encoding="utf-8"))
+            assert manifest["jdownloader_completed_file_count"] == 0
+            assert manifest["jdownloader_duplicate_state_suspected"] is True
+    finally:
+        queue.detect_jdownloader_internal_capabilities = original_detect
+        queue.preferred_youtube_media_backend = original_preferred
+
+
 def main() -> None:
     test_source_url_token_accepts_markdown_youtube_url()
     test_youtube_quality_labels_and_heights()
@@ -237,6 +374,8 @@ def main() -> None:
     test_queue_youtube_gui_source_row_selection_audio_only_disables_mux_plan()
     test_youtube_backend_auto_falls_back_when_internal_runtime_missing()
     test_youtube_queue_prefers_internal_jdownloader_when_runtime_present()
+    test_internal_jdownloader_success_manifest_files_are_added_to_files()
+    test_internal_jdownloader_duplicate_timeout_is_reported_in_gui_message()
     print("youtube_gui_media_queue_test OK")
 
 

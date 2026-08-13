@@ -291,6 +291,61 @@ def _metadata_txt(*, row: SourceResourceRowState, quality_label: str, components
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _load_internal_jdownloader_execution_manifest(manifest_path: str | Path) -> tuple[dict[str, Any], tuple[str, ...]]:
+    if not manifest_path:
+        return {}, ()
+    path = Path(manifest_path)
+    if not path.is_file():
+        return {}, (f"Internal JDownloader execution manifest was not found: {path}",)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {}, (f"Internal JDownloader execution manifest could not be read: {type(exc).__name__}: {exc}",)
+    if not isinstance(data, dict):
+        return {}, (f"Internal JDownloader execution manifest was not a JSON object: {path}",)
+    return data, ()
+
+
+def _completed_internal_jdownloader_file_records(manifest: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+    records: list[dict[str, Any]] = []
+    raw_files = manifest.get("files", ())
+    if not isinstance(raw_files, list):
+        return ()
+    for item in raw_files:
+        if not isinstance(item, Mapping):
+            continue
+        file_path = str(item.get("path") or "").strip()
+        if not file_path:
+            continue
+        path = Path(file_path)
+        if not path.is_file():
+            continue
+        records.append(
+            {
+                "kind": str(item.get("kind") or "unknown"),
+                "path": str(path),
+                "size": int(item.get("size") or path.stat().st_size),
+                "sha256": str(item.get("sha256") or ""),
+            }
+        )
+    return tuple(records)
+
+
+def _internal_jdownloader_duplicate_state_warning(job_result: InternalJDownloaderJobResult) -> str:
+    if job_result.status != "timeout":
+        return ""
+    if job_result.submission_status != "accepted_or_unknown":
+        return ""
+    if job_result.files_count:
+        return ""
+    return (
+        "Internal JDownloader accepted the link, but no new files appeared in the YTCE output folder. "
+        "The URL may already exist in JDownloader LinkGrabber/Downloads, or JDownloader may have reused "
+        "an existing package instead of creating fresh files. Remove duplicate JD packages/list entries or "
+        "use a fresh output/link before retrying."
+    )
+
+
 def queue_youtube_gui_source_row_selection(
     *,
     row: SourceResourceRowState,
@@ -355,6 +410,9 @@ def queue_youtube_gui_source_row_selection(
     readiness_status = ""
     backend_error_log_path = ""
     backend_failed = False
+    internal_jdownloader_execution_manifest: dict[str, Any] = {}
+    internal_jdownloader_completed_files: tuple[dict[str, Any], ...] = ()
+    internal_jdownloader_duplicate_warning = ""
 
     if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID:
         job_request = build_youtube_job_request(
@@ -393,6 +451,18 @@ def queue_youtube_gui_source_row_selection(
         engine_status = job_result.engine_status
         readiness_status = job_result.readiness_status
         warnings_list.extend(job_result.warnings)
+        if execution_manifest_path:
+            internal_jdownloader_execution_manifest, manifest_warnings = _load_internal_jdownloader_execution_manifest(execution_manifest_path)
+            warnings_list.extend(manifest_warnings)
+            internal_jdownloader_completed_files = _completed_internal_jdownloader_file_records(internal_jdownloader_execution_manifest)
+            missing_finished_count = max(0, int(job_result.files_count or 0) - len(internal_jdownloader_completed_files))
+            if job_result.status == "success" and missing_finished_count:
+                warnings_list.append(
+                    "Internal JDownloader reported completed files, but one or more manifest file paths were not present on disk."
+                )
+        internal_jdownloader_duplicate_warning = _internal_jdownloader_duplicate_state_warning(job_result)
+        if internal_jdownloader_duplicate_warning:
+            warnings_list.append(internal_jdownloader_duplicate_warning)
         if job_result.errors:
             backend_failed = True
             warnings_list.extend(job_result.errors)
@@ -470,6 +540,9 @@ def queue_youtube_gui_source_row_selection(
         "engine_status": engine_status,
         "readiness_status": readiness_status,
         "execution_manifest_path": execution_manifest_path,
+        "jdownloader_completed_files": list(internal_jdownloader_completed_files),
+        "jdownloader_completed_file_count": len(internal_jdownloader_completed_files),
+        "jdownloader_duplicate_state_suspected": bool(internal_jdownloader_duplicate_warning),
         "auto_mux": YOUTUBE_GUI_COMPONENT_VIDEO in components,
         "jdownloader_source": config.source_path if config else "",
         "ffmpeg_location": ffmpeg_location,
@@ -486,7 +559,8 @@ def queue_youtube_gui_source_row_selection(
         newline="\n",
     )
 
-    files_to_add = [str(metadata_path), str(manifest_path), *plan_paths]
+    internal_jdownloader_file_paths = [str(item["path"]) for item in internal_jdownloader_completed_files]
+    files_to_add = [*internal_jdownloader_file_paths, str(metadata_path), str(manifest_path), *plan_paths]
     message = (
         "YouTube media selection added to FILES by Go.\n\n"
         f"Quality: {selected_quality}\n"
@@ -503,7 +577,12 @@ def queue_youtube_gui_source_row_selection(
             "Submitting YouTube job to internal JDownloader...\n"
             "Waiting for internal JDownloader output...\n"
             f"Manifest: {execution_manifest_path or manifest_path}\n"
-            + ("Internal JDownloader job needs review; see manifest/errors.\n\n" if backend_failed else "Added internal JDownloader files to FILES.\n\n")
+            f"Internal JDownloader completed files added: {len(internal_jdownloader_completed_files)}\n"
+            + (
+                "Possible duplicate/list-state: JD accepted the link but no new files appeared in the requested output folder.\n\n"
+                if internal_jdownloader_duplicate_warning
+                else ("Internal JDownloader job needs review; see manifest/errors.\n\n" if backend_failed else "Added internal JDownloader files to FILES.\n\n")
+            )
         )
     message += (
         "Export will copy these plan/metadata files with the rest of FILES."
