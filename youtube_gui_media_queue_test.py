@@ -15,9 +15,13 @@ from youtube_gui_media_queue import (
     YouTubeGuiMediaPreferences,
     normalized_youtube_quality_labels,
     queue_youtube_gui_source_row_selection,
+    resolve_youtube_gui_backend,
     youtube_available_quality_labels_from_discovery,
     youtube_quality_height,
 )
+from jdownloader_internal_backend import JDownloaderInternalCapabilities
+from jdownloader_internal_job import InternalJDownloaderJobResult
+from jdownloader_internal_paths import JDOWNLOADER_INTERNAL_BACKEND_ID, YTDLP_FALLBACK_BACKEND_ID
 from youtube_media_download_backend import YouTubeMediaDiscovery, YouTubeMediaFormat
 
 
@@ -78,6 +82,7 @@ def test_queue_youtube_gui_source_row_selection_writes_mux_audio_and_metadata_fi
         auto_subtitles_enabled=True,
         enabled_quality_labels=("1080", "720"),
         default_quality_label="1080",
+        backend_id=YTDLP_FALLBACK_BACKEND_ID,
     )
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -136,7 +141,7 @@ def test_queue_youtube_gui_source_row_selection_writes_mux_audio_and_metadata_fi
 
 def test_queue_youtube_gui_source_row_selection_audio_only_disables_mux_plan() -> None:
     row = build_source_resource_row("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-    prefs = YouTubeGuiMediaPreferences(video_enabled=False, separate_audio_enabled=True, thumbnail_enabled=False, subtitles_enabled=False, auto_subtitles_enabled=False)
+    prefs = YouTubeGuiMediaPreferences(video_enabled=False, separate_audio_enabled=True, thumbnail_enabled=False, subtitles_enabled=False, auto_subtitles_enabled=False, backend_id=YTDLP_FALLBACK_BACKEND_ID)
     with tempfile.TemporaryDirectory() as tmp:
         result = queue_youtube_gui_source_row_selection(row=row, quality_label="1080", preferences=prefs, output_root=tmp)
         assert result.status == YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY
@@ -148,6 +153,81 @@ def test_queue_youtube_gui_source_row_selection_audio_only_disables_mux_plan() -
         assert "--merge-output-format" not in plan["command"]
 
 
+def test_youtube_backend_auto_falls_back_when_internal_runtime_missing() -> None:
+    import youtube_gui_media_queue as queue
+
+    original_detect = queue.detect_jdownloader_internal_capabilities
+    original_preferred = queue.preferred_youtube_media_backend
+    try:
+        queue.detect_jdownloader_internal_capabilities = lambda: JDownloaderInternalCapabilities(
+            runtime_present=False,
+            warnings=("missing internal runtime",),
+        )
+        queue.preferred_youtube_media_backend = lambda: YTDLP_FALLBACK_BACKEND_ID
+        backend_id, status, warnings = resolve_youtube_gui_backend()
+        assert backend_id == YTDLP_FALLBACK_BACKEND_ID
+        assert status == "internal_missing_using_yt_dlp_fallback"
+        assert "missing internal runtime" in warnings
+    finally:
+        queue.detect_jdownloader_internal_capabilities = original_detect
+        queue.preferred_youtube_media_backend = original_preferred
+
+
+def test_youtube_queue_prefers_internal_jdownloader_when_runtime_present() -> None:
+    import youtube_gui_media_queue as queue
+
+    original_detect = queue.detect_jdownloader_internal_capabilities
+    original_preferred = queue.preferred_youtube_media_backend
+    try:
+        queue.detect_jdownloader_internal_capabilities = lambda: JDownloaderInternalCapabilities(
+            vendor_present=True,
+            runtime_present=True,
+            source_present=True,
+        )
+        queue.preferred_youtube_media_backend = lambda: JDOWNLOADER_INTERNAL_BACKEND_ID
+        row = build_source_resource_row("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        with tempfile.TemporaryDirectory() as tmp:
+            def fake_runner(request):
+                manifest_path = Path(request.manifest_path)
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                manifest_path.write_text('{"backend_id":"jdownloader_internal","status":"partial"}', encoding="utf-8")
+                return InternalJDownloaderJobResult(
+                    status="partial",
+                    manifest_path=str(manifest_path),
+                    source_url=request.source_url,
+                    output_dir=request.output_dir,
+                    engine_status="started",
+                    readiness_status="READY",
+                    submission_status="submitted",
+                    warnings=("fake runner did not wait",),
+                )
+
+            result = queue_youtube_gui_source_row_selection(
+                row=row,
+                quality_label="1080",
+                output_root=tmp,
+                internal_job_runner=fake_runner,
+            )
+            assert result.backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID
+            assert result.backend_status == "internal_runtime_ready"
+            assert result.engine_status == "started"
+            assert result.readiness_status == "READY"
+            assert result.execution_manifest_path
+            assert len(result.plan_json_paths) == 2
+            plan = json.loads(Path(result.plan_json_paths[0]).read_text(encoding="utf-8"))
+            assert plan["backend_id"] == JDOWNLOADER_INTERNAL_BACKEND_ID
+            assert "YtceJDownloaderEngine" in " ".join(plan["command"])
+            assert "yt-dlp" not in " ".join(plan["command"]).lower()
+            assert "--submit-job" in plan["command"]
+            manifest = json.loads(Path(result.manifest_json_path).read_text(encoding="utf-8"))
+            assert manifest["execution_manifest_path"] == result.execution_manifest_path
+            assert manifest["readiness_status"] == "READY"
+            assert "fake runner did not wait" in manifest["warnings"]
+    finally:
+        queue.detect_jdownloader_internal_capabilities = original_detect
+        queue.preferred_youtube_media_backend = original_preferred
+
+
 def main() -> None:
     test_source_url_token_accepts_markdown_youtube_url()
     test_youtube_quality_labels_and_heights()
@@ -155,6 +235,8 @@ def main() -> None:
     test_youtube_available_quality_labels_does_not_invent_fallbacks_without_formats()
     test_queue_youtube_gui_source_row_selection_writes_mux_audio_and_metadata_files()
     test_queue_youtube_gui_source_row_selection_audio_only_disables_mux_plan()
+    test_youtube_backend_auto_falls_back_when_internal_runtime_missing()
+    test_youtube_queue_prefers_internal_jdownloader_when_runtime_present()
     print("youtube_gui_media_queue_test OK")
 
 

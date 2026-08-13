@@ -425,6 +425,12 @@ def build_source_resource_row(
         display_title = title.strip() or f"YouTube video {source_id}"
         image_items, media_items = (), ()
         provenance = "adapter metadata; YouTube media uses row quality selector and settings"
+    elif adapter.source_name == "twitter_x":
+        display_title = title.strip() or _fallback_title_from_url(canonical)
+        image_items, media_items = (), ()
+        comments_status = "X/Twitter Post/Thread capture mode is selected in-row; media download stays inside X settings."
+        livechat_status = "X/Twitter livechat is not supported."
+        provenance = "adapter metadata; X/Twitter media controls are settings-only"
     elif adapter.source_name == "msn":
         display_title = title.strip() or _fallback_title_from_url(canonical)
         image_items, media_items = (), ()
@@ -454,7 +460,7 @@ def build_source_resource_row(
         livechat_supported=capabilities.supports_livechat,
         comments_status=comments_status,
         livechat_status=livechat_status,
-        archive_statuses=() if adapter.source_name == "youtube" else _default_archive_statuses(archive_auto_check_enabled),
+        archive_statuses=() if adapter.source_name in {"youtube", "twitter_x"} else _default_archive_statuses(archive_auto_check_enabled),
         image_resources=image_items,
         video_audio_resources=media_items,
         warnings=tuple(warnings),

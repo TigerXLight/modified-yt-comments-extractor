@@ -32,6 +32,7 @@ MSN_URL = (
     "ar-AA123456?ocid=feeds&utm_source=tracking#comments"
 )
 YOUTUBE_URL = "https://www.youtube.com/watch?v=aB3_dE-9xYz"
+TWITTER_URL = "https://x.com/example/status/12345"
 
 
 def test_msn_canonicalization_removes_tracking_and_preserves_article_id() -> None:
@@ -96,6 +97,18 @@ def test_archive_auto_check_disabled_starts_gray_without_checks() -> None:
         ARCHIVE_SERVICE_ARCHIVE_TODAY,
         ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
     ]
+
+
+def test_twitter_row_uses_compact_settings_only_controls() -> None:
+    row = build_source_resource_row(TWITTER_URL)
+
+    assert row.adapter_id == "twitter_x"
+    assert row.archive_statuses == ()
+    assert row.image_resources == ()
+    assert row.video_audio_resources == ()
+    assert "Post/Thread" in row.comments_status
+    assert "settings" in row.comments_status
+    assert "settings-only" in row.provenance
 
 
 def test_url_token_parser_accepts_mixed_separators_and_encoded_commas() -> None:
@@ -241,6 +254,7 @@ def run_self_test() -> None:
     test_source_row_uses_real_msn_title_without_fake_fixture_media()
     test_archive_status_presentation_is_accessible_and_does_not_fabricate_dates()
     test_archive_auto_check_disabled_starts_gray_without_checks()
+    test_twitter_row_uses_compact_settings_only_controls()
     test_url_token_parser_accepts_mixed_separators_and_encoded_commas()
     test_source_url_intake_preserves_order_dedupes_and_retains_invalid_text()
     test_discussion_selection_persists_and_falls_back_after_removal()

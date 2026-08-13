@@ -12,6 +12,21 @@ from media_jdownloader_external_config import (
     load_jdownloader_external_config,
     resolve_jdownloader_source_path,
 )
+from jdownloader_internal_backend import (
+    build_internal_youtube_download_command,
+    detect_jdownloader_internal_capabilities,
+    preferred_youtube_media_backend,
+)
+from jdownloader_internal_job import (
+    InternalJDownloaderJobRequest,
+    InternalJDownloaderJobResult,
+    build_youtube_job_request,
+    run_internal_youtube_job,
+)
+from jdownloader_internal_paths import (
+    JDOWNLOADER_INTERNAL_BACKEND_ID,
+    YTDLP_FALLBACK_BACKEND_ID,
+)
 from source_resource_state import SourceResourceRowState
 from youtube_media_download_backend import (
     YouTubeMediaDiscovery,
@@ -24,6 +39,7 @@ from youtube_media_download_backend import (
 YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY = "ready"
 YOUTUBE_GUI_MEDIA_QUEUE_STATUS_NOT_SELECTED = "not_selected"
 YOUTUBE_GUI_MEDIA_QUEUE_STATUS_UNSUPPORTED = "unsupported"
+YOUTUBE_GUI_MEDIA_QUEUE_STATUS_BACKEND_FAILED = "backend_failed"
 
 YOUTUBE_GUI_QUALITY_PRESETS: tuple[tuple[str, int], ...] = (
     ("4k", 2160),
@@ -40,6 +56,7 @@ YOUTUBE_GUI_COMPONENT_AUDIO = "audio"
 YOUTUBE_GUI_COMPONENT_THUMBNAIL = "thumbnail"
 YOUTUBE_GUI_COMPONENT_SUBTITLES = "subtitles"
 YOUTUBE_GUI_COMPONENT_AUTO_SUBTITLES = "auto_subtitles"
+YOUTUBE_GUI_BACKEND_AUTO = "auto"
 
 
 @dataclass(frozen=True)
@@ -52,6 +69,7 @@ class YouTubeGuiMediaPreferences:
     show_quality_dropdown: bool = True
     enabled_quality_labels: tuple[str, ...] = ("4k", "2k", "1080", "720", "480", "360", "240", "144")
     default_quality_label: str = "1080"
+    backend_id: str = YOUTUBE_GUI_BACKEND_AUTO
 
 
 @dataclass(frozen=True)
@@ -66,8 +84,14 @@ class YouTubeGuiMediaQueueResult:
     files_to_add: tuple[str, ...] = ()
     metadata_txt_path: str = ""
     manifest_json_path: str = ""
+    execution_manifest_path: str = ""
     plan_json_paths: tuple[str, ...] = ()
     selected_components: tuple[str, ...] = ()
+    backend_id: str = YTDLP_FALLBACK_BACKEND_ID
+    backend_status: str = ""
+    engine_status: str = ""
+    readiness_status: str = ""
+    backend_error_log_path: str = ""
     auto_mux: bool = True
     jdownloader_source: str = ""
     ffmpeg_location: str = ""
@@ -166,6 +190,22 @@ def selected_youtube_components(preferences: YouTubeGuiMediaPreferences | None =
     return tuple(components)
 
 
+def resolve_youtube_gui_backend(preferences: YouTubeGuiMediaPreferences | None = None) -> tuple[str, str, tuple[str, ...]]:
+    prefs = preferences or default_youtube_gui_media_preferences()
+    requested = str(prefs.backend_id or YOUTUBE_GUI_BACKEND_AUTO)
+    capabilities = detect_jdownloader_internal_capabilities()
+    if requested == JDOWNLOADER_INTERNAL_BACKEND_ID:
+        if capabilities.runtime_present:
+            return JDOWNLOADER_INTERNAL_BACKEND_ID, "internal_runtime_ready", capabilities.warnings
+        return JDOWNLOADER_INTERNAL_BACKEND_ID, "internal_runtime_missing", capabilities.warnings
+    if requested == YTDLP_FALLBACK_BACKEND_ID:
+        return YTDLP_FALLBACK_BACKEND_ID, "yt_dlp_fallback_selected", ()
+    preferred = preferred_youtube_media_backend()
+    if preferred == JDOWNLOADER_INTERNAL_BACKEND_ID:
+        return JDOWNLOADER_INTERNAL_BACKEND_ID, "internal_runtime_ready", capabilities.warnings
+    return YTDLP_FALLBACK_BACKEND_ID, "internal_missing_using_yt_dlp_fallback", capabilities.warnings
+
+
 def _safe_name(value: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(value or "").strip())
     cleaned = "_".join(part for part in cleaned.split("_") if part)
@@ -261,6 +301,7 @@ def queue_youtube_gui_source_row_selection(
     yt_dlp_path: str = "yt-dlp",
     probe_metadata: bool = False,
     discovery: YouTubeMediaDiscovery | None = None,
+    internal_job_runner: Any = run_internal_youtube_job,
 ) -> YouTubeGuiMediaQueueResult:
     if row.adapter_id != "youtube":
         return YouTubeGuiMediaQueueResult(
@@ -275,6 +316,7 @@ def queue_youtube_gui_source_row_selection(
     selected_quality = quality_label if quality_label in quality_options else (prefs.default_quality_label if prefs.default_quality_label in quality_options else quality_options[0])
     height = youtube_quality_height(selected_quality)
     components = selected_youtube_components(prefs)
+    backend_id, backend_status, backend_warnings = resolve_youtube_gui_backend(prefs)
     if not components:
         return YouTubeGuiMediaQueueResult(
             status=YOUTUBE_GUI_MEDIA_QUEUE_STATUS_NOT_SELECTED,
@@ -283,26 +325,93 @@ def queue_youtube_gui_source_row_selection(
             source_url=row.canonical_url,
             selected_quality_label=selected_quality,
             selected_height=height,
+            backend_id=backend_id,
+            backend_status=backend_status,
         )
 
     output_root_path = Path(output_root) if output_root is not None else _default_queue_root()
     queue_dir = output_root_path / _safe_name(row.source_id or row.row_id) / time.strftime("%Y%m%d_%H%M%S")
     queue_dir.mkdir(parents=True, exist_ok=True)
 
-    warnings_list: list[str] = []
+    warnings_list: list[str] = list(backend_warnings)
     if discovery is None and probe_metadata:
         try:
             discovery = discover_youtube_media_with_ytdlp(row.canonical_url, output_dir=queue_dir / "metadata")
         except Exception as exc:
             warnings_list.append(f"YouTube metadata discovery failed: {type(exc).__name__}: {exc}")
 
-    config, warnings = _load_optional_jdownloader_config(jdownloader_source)
-    warnings = tuple([*warnings_list, *warnings])
-    ffmpeg_location = _ffmpeg_location_from_config(config)
+    config: JDownloaderExternalConfigReport | None = None
+    ffmpeg_location = ""
+    if backend_id == YTDLP_FALLBACK_BACKEND_ID:
+        config, warnings = _load_optional_jdownloader_config(jdownloader_source)
+        warnings = tuple([*warnings_list, *warnings])
+        ffmpeg_location = _ffmpeg_location_from_config(config)
+    else:
+        warnings = tuple(warnings_list)
     plan_paths: list[str] = []
     plan_summaries: list[dict[str, Any]] = []
+    execution_manifest_path = ""
+    engine_status = ""
+    readiness_status = ""
+    backend_error_log_path = ""
+    backend_failed = False
 
-    if YOUTUBE_GUI_COMPONENT_VIDEO in components:
+    if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID:
+        job_request = build_youtube_job_request(
+            source_url=row.canonical_url,
+            output_dir=queue_dir / "downloads",
+            package_name=row.title or row.source_id or "YTCE YouTube media",
+            source_title_or_id=row.source_id or row.row_id,
+            max_height=height,
+            video=YOUTUBE_GUI_COMPONENT_VIDEO in components,
+            audio=YOUTUBE_GUI_COMPONENT_AUDIO in components,
+            image=YOUTUBE_GUI_COMPONENT_THUMBNAIL in components,
+            description=True,
+            wait=False,
+            timeout_seconds=600,
+        )
+        command = build_internal_youtube_download_command(
+            source_url=row.canonical_url,
+            output_dir=job_request.output_dir,
+            package_name=job_request.package_name,
+            max_height=height,
+            video=YOUTUBE_GUI_COMPONENT_VIDEO in components,
+            audio=YOUTUBE_GUI_COMPONENT_AUDIO in components,
+            image=YOUTUBE_GUI_COMPONENT_THUMBNAIL in components,
+            description=True,
+            manifest_path=job_request.manifest_path,
+            wait=job_request.wait,
+            timeout_seconds=job_request.timeout_seconds,
+        )
+        path = queue_dir / "jdownloader-internal-command.json"
+        path.write_text(json.dumps(command.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
+        plan_paths.append(str(path))
+        job_result: InternalJDownloaderJobResult = internal_job_runner(job_request)
+        execution_manifest_path = job_result.manifest_path
+        if execution_manifest_path:
+            plan_paths.append(execution_manifest_path)
+        engine_status = job_result.engine_status
+        readiness_status = job_result.readiness_status
+        warnings_list.extend(job_result.warnings)
+        if job_result.errors:
+            backend_failed = True
+            warnings_list.extend(job_result.errors)
+        if job_result.status == "failed":
+            backend_failed = True
+        plan_summaries.append(
+            {
+                "component": "jdownloader_internal",
+                "backend_id": command.backend_id,
+                "quality": selected_quality,
+                "height": height,
+                "command": list(command.command),
+                "plan_json": str(path),
+                "job_request": job_request.to_dict(),
+                "job_result": job_result.to_dict(),
+                "yt_dlp_fallback_backend_id": command.fallback_backend_id,
+            }
+        )
+    elif YOUTUBE_GUI_COMPONENT_VIDEO in components:
         selector = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best" if height else "bestvideo+bestaudio/best"
         plan = build_youtube_ytdlp_download_plan(
             row.canonical_url,
@@ -323,7 +432,7 @@ def queue_youtube_gui_source_row_selection(
         plan_paths.append(str(path))
         plan_summaries.append({"component": YOUTUBE_GUI_COMPONENT_VIDEO, "quality": selected_quality, "height": height, "format_selector": plan.format_selector, "command": list(plan.command), "auto_mux": True, "plan_json": str(path)})
 
-    if YOUTUBE_GUI_COMPONENT_AUDIO in components:
+    if backend_id == YTDLP_FALLBACK_BACKEND_ID and YOUTUBE_GUI_COMPONENT_AUDIO in components:
         plan = build_youtube_ytdlp_download_plan(
             row.canonical_url,
             output_dir=queue_dir / "downloads",
@@ -343,8 +452,10 @@ def queue_youtube_gui_source_row_selection(
         plan_paths.append(str(path))
         plan_summaries.append({"component": YOUTUBE_GUI_COMPONENT_AUDIO, "quality": "audio", "format_selector": plan.format_selector, "command": list(plan.command), "extract_audio": True, "plan_json": str(path)})
 
+    warnings = tuple(warnings_list)
+    queue_status = YOUTUBE_GUI_MEDIA_QUEUE_STATUS_BACKEND_FAILED if backend_failed else YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY
     manifest = {
-        "status": YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY,
+        "status": queue_status,
         "source_row_id": row.row_id,
         "source_url": row.canonical_url,
         "title": (discovery.title if discovery and discovery.title else row.title),
@@ -354,6 +465,11 @@ def queue_youtube_gui_source_row_selection(
         "selected_quality_label": selected_quality,
         "selected_height": height,
         "selected_components": list(components),
+        "backend_id": backend_id,
+        "backend_status": backend_status,
+        "engine_status": engine_status,
+        "readiness_status": readiness_status,
+        "execution_manifest_path": execution_manifest_path,
         "auto_mux": YOUTUBE_GUI_COMPONENT_VIDEO in components,
         "jdownloader_source": config.source_path if config else "",
         "ffmpeg_location": ffmpeg_location,
@@ -377,10 +493,23 @@ def queue_youtube_gui_source_row_selection(
         f"Components: {', '.join(components)}\n"
         f"Auto mux: {'yes' if YOUTUBE_GUI_COMPONENT_VIDEO in components else 'no video selected'}\n"
         f"FILES added: {len(files_to_add)}\n\n"
+    )
+    if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID:
+        message += "Backend: internal JDownloader\n"
+    if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID:
+        message += (
+            "Starting internal JDownloader engine...\n"
+            "Internal JDownloader engine ready.\n"
+            "Submitting YouTube job to internal JDownloader...\n"
+            "Waiting for internal JDownloader output...\n"
+            f"Manifest: {execution_manifest_path or manifest_path}\n"
+            + ("Internal JDownloader job needs review; see manifest/errors.\n\n" if backend_failed else "Added internal JDownloader files to FILES.\n\n")
+        )
+    message += (
         "Export will copy these plan/metadata files with the rest of FILES."
     )
     return YouTubeGuiMediaQueueResult(
-        status=YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY,
+        status=queue_status,
         message=message,
         source_row_id=row.row_id,
         source_url=row.canonical_url,
@@ -390,8 +519,14 @@ def queue_youtube_gui_source_row_selection(
         files_to_add=tuple(files_to_add),
         metadata_txt_path=str(metadata_path),
         manifest_json_path=str(manifest_path),
+        execution_manifest_path=execution_manifest_path,
         plan_json_paths=tuple(plan_paths),
         selected_components=tuple(components),
+        backend_id=backend_id,
+        backend_status=backend_status,
+        engine_status=engine_status,
+        readiness_status=readiness_status,
+        backend_error_log_path=backend_error_log_path,
         auto_mux=YOUTUBE_GUI_COMPONENT_VIDEO in components,
         jdownloader_source=config.source_path if config else "",
         ffmpeg_location=ffmpeg_location,

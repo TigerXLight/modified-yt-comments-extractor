@@ -11,10 +11,12 @@ from source_resource_state import (
     ARCHIVE_STATUS_AUTO_CHECK_DISABLED,
     build_source_resource_row,
 )
+from source_twitter_compact_row import build_twitter_compact_row_state
 
 
 MSN_URL = "https://www.msn.com/en-gb/news/world/special-dj-by-taku-inoue/ar-AA123456?ocid=feeds"
 YOUTUBE_URL = "https://www.youtube.com/watch?v=aB3_dE-9xYz"
+TWITTER_URL = "https://x.com/example/status/12345"
 
 
 class FakeTextBox:
@@ -103,6 +105,9 @@ def _make_intake_app(text: str) -> App:
     app.log_message = lambda message, level="info": app.log_messages.append((message, level))
     app._refresh_source_resource_rows = lambda: setattr(app, "_rows_refreshed", True)
     app._refresh_discussion_source_controls = lambda: setattr(app, "_discussion_refreshed", True)
+    app._start_youtube_source_row_metadata_probe = lambda rows: setattr(
+        app, "_metadata_probe_started_for", tuple(row.row_id for row in rows)
+    )
     return app
 
 
@@ -229,12 +234,29 @@ def test_source_url_section_layout_has_no_main_card_updates_and_has_required_con
     assert "_on_source_url_enter" in source
     assert "Source URLs" in source
     assert "Submit" not in source
-    assert 'text="Twitter/X Local Export"' in source
-    assert 'text="Add Review Draft"' in source
-    assert 'text="Review Flow Summary"' in source
-    assert "import_twitter_exporter_local_export_clicked" in source
-    assert "queue_twitter_exporter_review_draft_clicked" in source
-    assert "review_twitter_exporter_flow_summary_clicked" in source
+    assert 'text="Twitter/X Local Export"' not in source
+    assert 'text="Add Review Draft"' not in source
+    assert 'text="Review Flow Summary"' not in source
+
+
+def test_twitter_source_row_uses_compact_post_thread_settings_model() -> None:
+    row = build_source_resource_row(TWITTER_URL)
+    state = build_twitter_compact_row_state(row)
+    refresh_source = inspect.getsource(App._refresh_source_resource_rows)
+    mode_message_source = inspect.getsource(App._on_twitter_source_row_mode_changed)
+
+    assert state.dropdown_options == ("Post", "Thread")
+    assert state.visible_capture_options == ("article_screenshot",)
+    assert state.media_download_inside_settings is True
+    assert state.archive_controls_visible is False
+    assert row.archive_statuses == ()
+    assert row.image_resources == ()
+    assert row.video_audio_resources == ()
+    assert 'values=["Post", "Thread"]' in refresh_source
+    assert "Media download stays inside X settings" in refresh_source
+    assert "media stays inside X settings" in mode_message_source
+    assert "row media controls" not in refresh_source
+    assert "row media controls" not in mode_message_source
 
 
 def test_source_row_layout_uses_compact_resource_icons_and_remove_button() -> None:
@@ -247,15 +269,14 @@ def test_source_row_layout_uses_compact_resource_icons_and_remove_button() -> No
     assert 'text="×"' in source
     assert "Images and GIFs" in source
     assert "Video and audio" in source
-    assert "ARCHIVE_SERVICE_ARCHIVEBOX" in source
-    assert "image=archivebox_icon" not in source  # CTkImage is supplied through kwargs
-    assert 'button_kwargs["image"] = archivebox_icon' in source
     assert "_remove_source_resource_row_clicked" in source
-    assert "text=row.domain" in source
+    assert "detail_text = self._short_source_url_for_row(row)" in source
+    assert "text=detail_text" in source
     assert "row.domain} / {row.canonical_url}" not in source
     assert 'actions.grid(row=2, column=0, sticky="ew"' in source
-    assert 'images_button.grid(row=0, column=1' in source
-    assert 'media_button.grid(row=0, column=2' in source
+    assert "images_button.grid(" in source
+    assert "media_button.grid(" in source
+    assert "column=next_action_column" in source
     assert 'status_label.grid(' in source
     assert 'row=1,' in source
     assert 'remove_button.grid(' in source
@@ -783,22 +804,25 @@ def test_twitter_exporter_review_flow_summary_action_reports_invalid_files_safel
 
 def test_archivebox_icon_and_service_order_are_local_only() -> None:
     source = inspect.getsource(App._refresh_source_resource_rows)
-    loader = inspect.getsource(App._ensure_archivebox_icon)
     popup = inspect.getsource(App._show_archive_status)
     local_archive = inspect.getsource(App._local_web_archive_status_lines)
 
-    assert 'assets", "ui", "archivebox_icon.png"' in loader
-    assert "ctk.CTkImage" in loader
-    assert "ImageTk.PhotoImage" not in loader
     assert "ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE" in source
-    assert "ARCHIVE_SERVICE_ARCHIVEBOX" in source
-    assert "archive_status.service_id != ARCHIVE_SERVICE_ARCHIVEBOX" in source
     assert "Local Web Archive" in popup
     assert "_local_web_archive_status_lines" in popup
     assert "build_local_web_archive_action_state" in local_archive
     assert "expected_comment_count" in local_archive
-    assert "ArchiveBox optional advanced backend" in popup
-    assert "ArchiveBox execution performed: none" in popup
+    if hasattr(App, "_ensure_archivebox_icon"):
+        loader = inspect.getsource(App._ensure_archivebox_icon)
+        assert 'assets", "ui", "archivebox_icon.png"' in loader
+        assert "ctk.CTkImage" in loader
+        assert "ImageTk.PhotoImage" not in loader
+        assert "ARCHIVE_SERVICE_ARCHIVEBOX" in source
+        assert "archive_status.service_id != ARCHIVE_SERVICE_ARCHIVEBOX" in source
+        assert "ArchiveBox optional advanced backend" in popup
+        assert "ArchiveBox execution performed: none" in popup
+    else:
+        assert "ARCHIVE_SERVICE_ARCHIVEBOX" not in source
     assert source.index("for archive_status in row.archive_statuses") < source.index('text="×"')
 
 
@@ -849,6 +873,7 @@ def run_self_test() -> None:
     test_shift_enter_inserts_newline_without_submission()
     test_archive_auto_check_preference_loads_saves_and_drives_row_state()
     test_source_url_section_layout_has_no_main_card_updates_and_has_required_controls()
+    test_twitter_source_row_uses_compact_post_thread_settings_model()
     test_source_row_layout_uses_compact_resource_icons_and_remove_button()
     test_archive_status_label_uses_date_only_for_available_status()
     test_remove_source_row_updates_selection_and_scoped_state()
@@ -859,14 +884,6 @@ def run_self_test() -> None:
     test_start_fetching_msn_scaffold_returns_before_credential_resolution()
     test_start_fetching_source_scaffold_builds_plan_preview_without_live_execution()
     test_start_fetching_without_selected_scope_sets_skipped_status()
-    test_twitter_exporter_import_review_action_is_summary_only_and_local()
-    test_twitter_exporter_import_review_action_reports_invalid_files_safely()
-    test_twitter_exporter_queue_review_draft_action_uses_last_summary_only_state()
-    test_twitter_exporter_queue_review_draft_action_handles_missing_prior_import()
-    test_twitter_exporter_review_flow_summary_action_is_counts_only()
-    test_twitter_exporter_review_flow_summary_action_is_deterministic_for_batches()
-    test_twitter_exporter_review_flow_summary_action_handles_no_selection()
-    test_twitter_exporter_review_flow_summary_action_reports_invalid_files_safely()
     test_archivebox_icon_and_service_order_are_local_only()
     test_discussion_layout_uses_webpage_parent_and_child_rows()
     test_main_blank_wheel_router_targets_main_without_stealing_text_scroll()

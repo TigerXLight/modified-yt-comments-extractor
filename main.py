@@ -4615,7 +4615,7 @@ class App(ctk.CTk):
         self.__dict__.setdefault("twitter_source_row_modes", {})[row_id] = mode
         if hasattr(self, "url_status"):
             self.url_status.configure(
-                text=f"Twitter/X source mode set to {mode}. Use Go for capture; media stays in the row media controls.",
+                text=f"Twitter/X source mode set to {mode}. Use Go for capture; media stays inside X settings.",
                 text_color=COLORS["text_secondary"],
             )
 
@@ -5311,7 +5311,7 @@ class App(ctk.CTk):
                     dropdown_text_color=COLORS["text_primary"],
                 )
                 mode_menu.grid(row=0, column=next_action_column, padx=(0, 6), sticky="n")
-                mode_menu.tooltip_text = "Twitter/X capture mode. Media remains available through the row media controls."
+                mode_menu.tooltip_text = "Twitter/X capture mode. Media download stays inside X settings."
                 next_action_column += 1
             if not self._source_row_is_youtube(row):
                 for archive_status in row.archive_statuses:
