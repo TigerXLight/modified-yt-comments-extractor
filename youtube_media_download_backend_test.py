@@ -9,6 +9,7 @@ from pathlib import Path
 from media_jdownloader_external_config import JDownloaderExternalConfigReport
 from youtube_media_download_backend import (
     build_youtube_ytdlp_download_plan,
+    run_youtube_ytdlp_download_plan,
     resolve_ytdlp_command,
     normalize_media_source_url_arg,
     normalize_media_source_url_arg_strict,
@@ -146,6 +147,46 @@ def test_build_youtube_ytdlp_download_plan_normalizes_markdown_url() -> None:
         assert plan.command[-1] == "https://www.youtube.com/watch?v=abc123"
 
 
+def test_build_youtube_ytdlp_download_plan_can_queue_separate_audio() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = build_youtube_ytdlp_download_plan(
+            "https://www.youtube.com/watch?v=abc123",
+            output_dir=tmp,
+            separate_audio=True,
+            audio_format="m4a",
+            dry_run=True,
+        )
+        assert len(plan.extra_commands) == 1
+        audio_command = plan.extra_commands[0]
+        assert "-x" in audio_command
+        assert "--audio-format" in audio_command
+        assert "m4a" in audio_command
+        assert "bestaudio/best" in audio_command
+        assert "--simulate" in audio_command
+
+
+def test_run_youtube_ytdlp_download_plan_runs_extra_audio_command() -> None:
+    seen = []
+
+    def runner(command):
+        seen.append(tuple(command))
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = build_youtube_ytdlp_download_plan(
+            "https://www.youtube.com/watch?v=abc123",
+            output_dir=tmp,
+            yt_dlp_path=("python", "-m", "yt_dlp"),
+            separate_audio=True,
+        )
+        completed = run_youtube_ytdlp_download_plan(plan, runner=runner)
+        assert completed.returncode == 0
+        assert len(seen) == 2
+        assert seen[0] == plan.command
+        assert seen[1] == plan.extra_commands[0]
+        assert "extra-1" in (completed.stdout or "")
+
+
 def test_resolve_ytdlp_command_accepts_explicit_sequence() -> None:
     resolution = resolve_ytdlp_command([sys.executable, "-m", "yt_dlp"])
     assert resolution.command == (sys.executable, "-m", "yt_dlp")
@@ -174,6 +215,8 @@ if __name__ == "__main__":
     test_youtube_format_selector_uses_jdownloader_max_resolution()
     test_build_youtube_ytdlp_download_plan_is_safe_dry_run_by_default()
     test_build_youtube_ytdlp_download_plan_normalizes_markdown_url()
+    test_build_youtube_ytdlp_download_plan_can_queue_separate_audio()
+    test_run_youtube_ytdlp_download_plan_runs_extra_audio_command()
     test_resolve_ytdlp_command_accepts_explicit_sequence()
     test_build_youtube_ytdlp_download_plan_accepts_command_sequence()
     print("youtube_media_download_backend_test OK")

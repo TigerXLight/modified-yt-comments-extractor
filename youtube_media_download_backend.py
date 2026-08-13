@@ -158,6 +158,7 @@ class YouTubeMediaDownloadPlan:
     merge_output_format: str
     output_template: str
     command: tuple[str, ...]
+    extra_commands: tuple[tuple[str, ...], ...] = ()
     ffmpeg_location: str = ""
     write_info_json: bool = True
     write_thumbnail: bool = True
@@ -371,6 +372,7 @@ def build_youtube_ytdlp_download_plan(
     write_subtitles: bool = True,
     write_auto_subtitles: bool = False,
     extract_audio: bool = False,
+    separate_audio: bool = False,
     audio_format: str = "m4a",
     dry_run: bool = True,
 ) -> YouTubeMediaDownloadPlan:
@@ -404,12 +406,36 @@ def build_youtube_ytdlp_download_plan(
     if dry_run:
         command.append("--simulate")
     command.append(normalized_source_url)
+
+    extra_commands: list[tuple[str, ...]] = []
+    if separate_audio and not extract_audio:
+        audio_command: list[str] = [
+            *_command_prefix(yt_dlp_path),
+            "--no-playlist",
+            "--newline",
+            "-f",
+            "bestaudio/best",
+            "-o",
+            output_template,
+            "-x",
+            "--audio-format",
+            str(audio_format or "m4a"),
+        ]
+        if ffmpeg_location:
+            audio_command.extend(("--ffmpeg-location", str(ffmpeg_location)))
+        if dry_run:
+            audio_command.append("--simulate")
+        audio_command.append(normalized_source_url)
+        extra_commands.append(tuple(audio_command))
+
     notes = [
         "yt-dlp is used as the external media backend; FFmpeg handles muxing through yt-dlp when needed.",
         "Downloads require explicit user selection/execution; dry_run=True adds --simulate.",
     ]
     if jdownloader_config is not None:
         notes.append("JDownloader YouTube config imported for max resolution / muxing preference mapping.")
+    if separate_audio and not extract_audio:
+        notes.append("Separate bestaudio extraction is queued to mirror JDownloader-style video + audio outputs.")
     return YouTubeMediaDownloadPlan(
         source_url=normalized_source_url,
         output_dir=str(target_dir),
@@ -417,6 +443,7 @@ def build_youtube_ytdlp_download_plan(
         merge_output_format=str(merge_output_format or "mp4"),
         output_template=output_template,
         command=tuple(command),
+        extra_commands=tuple(extra_commands),
         ffmpeg_location=str(ffmpeg_location or ""),
         write_thumbnail=write_thumbnail,
         write_subtitles=write_subtitles,
@@ -436,7 +463,30 @@ def run_youtube_ytdlp_download_plan(
 ) -> subprocess.CompletedProcess[str]:
     run = runner or _default_runner
     Path(plan.output_dir).mkdir(parents=True, exist_ok=True)
-    return run(plan.command)
+
+    commands = (plan.command,) + tuple(plan.extra_commands or ())
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    return_code = 0
+    for index, command in enumerate(commands, start=1):
+        label = "main" if index == 1 else f"extra-{index - 1}"
+        completed = run(command)
+        stdout_parts.append(f"===== yt-dlp {label} command =====\n" + " ".join(command) + "\n")
+        if completed.stdout:
+            stdout_parts.append(completed.stdout)
+        stderr_parts.append(f"===== yt-dlp {label} command =====\n" + " ".join(command) + "\n")
+        if completed.stderr:
+            stderr_parts.append(completed.stderr)
+        if completed.returncode:
+            return_code = int(completed.returncode)
+            break
+
+    return subprocess.CompletedProcess(
+        list(plan.command),
+        return_code,
+        stdout="\n".join(stdout_parts),
+        stderr="\n".join(stderr_parts),
+    )
 
 
 def _format_count(value: int | None) -> str:

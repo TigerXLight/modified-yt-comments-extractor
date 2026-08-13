@@ -26,6 +26,11 @@ def main() -> int:
     parser.add_argument("--discover", action="store_true")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--write-auto-subs", action="store_true")
+    parser.add_argument(
+        "--no-separate-audio",
+        action="store_true",
+        help="Do not queue the separate m4a audio extraction step.",
+    )
     args = parser.parse_args()
 
     source_url_input = args.source_url
@@ -75,6 +80,7 @@ def main() -> int:
         ffmpeg_location=args.ffmpeg_location,
         jdownloader_config=jd_config,
         write_auto_subtitles=args.write_auto_subs,
+        separate_audio=not args.no_separate_audio,
         dry_run=not args.execute,
     )
     write_youtube_media_download_plan(plan, out / "youtube-media-download-plan.json")
@@ -84,6 +90,8 @@ def main() -> int:
         print("YOUTUBE_MEDIA_SOURCE_URL_INPUT=" + source_url_input)
     print("YOUTUBE_MEDIA_SOURCE_URL=" + source_url)
     print("YOUTUBE_MEDIA_FORMAT_SELECTOR=" + plan.format_selector)
+    print("YOUTUBE_MEDIA_SEPARATE_AUDIO=" + str(bool(plan.extra_commands)))
+    print("YOUTUBE_MEDIA_EXTRA_COMMANDS=" + str(len(plan.extra_commands)))
     print("YOUTUBE_MEDIA_DRY_RUN=" + str(plan.dry_run))
     if discovery is not None:
         print("YOUTUBE_MEDIA_DISCOVERED_FORMATS=" + str(len(discovery.formats)))
