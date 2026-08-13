@@ -4538,7 +4538,9 @@ class App(ctk.CTk):
             ),
         )
         if intake.rows:
-            self.source_resource_rows.extend(intake.rows)
+            # Show the newly entered/pasted batch directly under the Source URLs
+            # input while preserving the order inside that batch.
+            self.source_resource_rows = list(intake.rows) + list(getattr(self, "source_resource_rows", ()))
             self._refresh_source_resource_rows()
             self._refresh_discussion_source_controls()
             self._start_youtube_source_row_metadata_probe(intake.rows)
@@ -5089,8 +5091,10 @@ class App(ctk.CTk):
             return
 
         for row_index, row in enumerate(rows):
-            row_frame = ctk.CTkFrame(frame, fg_color="transparent")
+            row_height = 72 if self._source_row_is_youtube(row) else 98
+            row_frame = ctk.CTkFrame(frame, fg_color="transparent", height=row_height)
             row_frame.pack(fill="x", padx=8, pady=(8 if row_index == 0 else 4, 6))
+            row_frame.grid_propagate(False)
             row_frame.grid_columnconfigure(0, weight=1)
             row_frame.grid_columnconfigure(1, weight=0)
             row_frame.grid_columnconfigure(2, weight=0)
@@ -5144,8 +5148,8 @@ class App(ctk.CTk):
                         border_width=1,
                         border_color=COLORS["border"],
                         corner_radius=7,
-                        width=128,
-                        height=30,
+                        width=76,
+                        height=28,
                     )
                     youtube_control.grid(row=0, column=0, sticky="ne")
                     youtube_control.grid_propagate(False)
@@ -5155,39 +5159,57 @@ class App(ctk.CTk):
                     if quality_var.get() not in quality_values:
                         quality_var.set(quality_values[0])
 
-                    quality_button = ctk.CTkButton(
+                    quality_label = ctk.CTkLabel(
                         youtube_control,
                         text=quality_var.get(),
-                        command=lambda row_id=row.row_id: None,
-                        width=60,
-                        height=24,
                         fg_color=COLORS["bg_input"],
-                        hover_color=COLORS["bg_card"],
                         text_color=COLORS["text_primary"],
                         font=ctk.CTkFont(size=11, weight="bold"),
-                        corner_radius=5,
+                        anchor="w",
+                        width=30,
+                        height=20,
                     )
-                    quality_button.place(x=25, y=3)
-                    quality_button.tooltip_text = "Choose one of this YouTube video's available qualities."
+                    quality_label.place(x=20, y=4)
+                    quality_label.tooltip_text = "Choose one of this YouTube video's available qualities."
+                    try:
+                        quality_label.configure(cursor="hand2")
+                    except Exception:
+                        pass
 
-                    def _sync_youtube_quality_enabled(button=quality_button, var=quality_enabled_var):
+                    def _sync_youtube_quality_enabled(label=quality_label, var=quality_enabled_var):
                         enabled = bool(var.get())
                         try:
-                            button.configure(
-                                state="normal" if enabled else "disabled",
+                            label.configure(
                                 text_color=COLORS["text_primary"] if enabled else COLORS["text_muted"],
-                                fg_color=COLORS["bg_input"],
-                                hover_color=COLORS["bg_card"] if enabled else COLORS["bg_input"],
                             )
+                            label.configure(cursor="hand2" if enabled else "arrow")
                         except Exception:
                             pass
 
-                    def _open_inline_quality_dropdown(row_id=row.row_id, button=quality_button):
+                    def _open_inline_quality_dropdown(row_id=row.row_id, label=quality_label):
                         if not self._youtube_quality_enabled_var_for_row(row_id).get():
                             return
-                        self._open_youtube_source_quality_dropdown_menu(row_id, button, button)
+                        self._open_youtube_source_quality_dropdown_menu(row_id, label, label)
 
-                    quality_button.configure(command=_open_inline_quality_dropdown)
+                    def _quality_label_enter(_event=None, label=quality_label, var=quality_enabled_var):
+                        if not bool(var.get()):
+                            return "break"
+                        try:
+                            label.configure(fg_color=COLORS["border"])
+                        except Exception:
+                            pass
+                        return "break"
+
+                    def _quality_label_leave(_event=None, label=quality_label):
+                        try:
+                            label.configure(fg_color=COLORS["bg_input"])
+                        except Exception:
+                            pass
+                        return "break"
+
+                    quality_label.bind("<Enter>", _quality_label_enter)
+                    quality_label.bind("<Leave>", _quality_label_leave)
+                    quality_label.bind("<Button-1>", lambda _event: _open_inline_quality_dropdown())
 
                     def _toggle_youtube_quality(row_id=row.row_id):
                         self._on_youtube_source_quality_enabled_changed(row_id)
@@ -5198,27 +5220,27 @@ class App(ctk.CTk):
                         text="",
                         variable=quality_enabled_var,
                         command=_toggle_youtube_quality,
-                        width=18,
-                        height=18,
-                        checkbox_width=16,
-                        checkbox_height=16,
+                        width=14,
+                        height=14,
+                        checkbox_width=12,
+                        checkbox_height=12,
                     )
-                    quality_checkbox.place(x=3, y=3)
+                    quality_checkbox.place(x=4, y=2)
                     quality_checkbox.tooltip_text = "Enable/disable the selected YouTube media package for Go."
 
                     youtube_button = ctk.CTkButton(
                         youtube_control,
                         text="▶",
                         command=_open_youtube_settings,
-                        width=24,
-                        height=22,
+                        width=16,
+                        height=16,
                         fg_color="#ff0000",
                         hover_color="#cc0000",
                         text_color="#ffffff",
-                        font=ctk.CTkFont(size=10, weight="bold"),
-                        corner_radius=5,
+                        font=ctk.CTkFont(size=7, weight="bold"),
+                        corner_radius=4,
                     )
-                    youtube_button.place(x=100, y=4)
+                    youtube_button.place(x=56, y=2)
                     youtube_button.tooltip_text = "YouTube media settings."
                     _sync_youtube_quality_enabled()
                 else:
@@ -5490,7 +5512,6 @@ class App(ctk.CTk):
 
     def _open_local_web_archive_settings(self, row_id: str, archive_status: Any) -> None:
         row = self._source_row_by_id(row_id)
-        title = row.title if row is not None else "Local Web Archive"
         prefs_by_row = self.__dict__.setdefault("local_web_archive_source_preferences", {})
         prefs = prefs_by_row.setdefault(row_id, {"static": True, "dynamic": True})
 
@@ -5503,7 +5524,7 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(
             window,
-            text=f"Local archive settings\n{title}",
+            text="Local archive settings",
             font=ctk.CTkFont(size=13, weight="bold"),
             text_color=COLORS["text_primary"],
             justify="left",
