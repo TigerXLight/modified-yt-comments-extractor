@@ -451,9 +451,9 @@ def build_source_resource_row(
     elif adapter.source_name == "twitter_x":
         display_title = _twitter_title_from_url(canonical, title)
         image_items, media_items = (), ()
-        comments_status = "X/Twitter Post/Thread capture mode is selected in-row; media download stays inside X settings."
+        comments_status = "X/Twitter Post/Thread capture mode is selected in-row; settings and shared backend can route media when enabled."
         livechat_status = "X/Twitter livechat is not supported."
-        provenance = "adapter metadata; X/Twitter media controls are settings-only"
+        provenance = "adapter metadata; X/Twitter media controls use settings plus shared backend"
     elif adapter.source_name == "msn":
         display_title = title.strip() or _fallback_title_from_url(canonical)
         image_items, media_items = (), ()

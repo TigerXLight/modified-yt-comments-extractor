@@ -108,7 +108,8 @@ def test_twitter_row_uses_compact_settings_only_controls() -> None:
     assert row.video_audio_resources == ()
     assert "Post/Thread" in row.comments_status
     assert "settings" in row.comments_status
-    assert "settings-only" in row.provenance
+    assert "shared backend" in row.comments_status
+    assert "shared backend" in row.provenance
     assert row.title in {"Twitter/X post", "This stuff is still happening. It hasn’t stopped."}
     assert row.display_title in {"Twitter/X post", "This stuff is still happening. It hasn’t stopped."}
     assert row.preview_text in {"", "This stuff is still happening. It hasn’t stopped."}

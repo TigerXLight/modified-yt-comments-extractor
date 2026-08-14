@@ -316,15 +316,24 @@ class TwitterXSourceAdapter:
         credential_type=CREDENTIAL_MANUAL,
         credentials_required=False,
         credentials_optional=True,
-        supports_browser_capture=False,
+        supports_browser_capture=True,
         supports_manual_import=True,
-        setup_hint="Local/manual import and archive-fallback profile only; no X/Twitter API or browser automation.",
+        setup_hint=(
+            "Supports X/Twitter URL recognition, local exporter imports, opt-in browser/reference capture paths, "
+            "and shared JDownloader media-backend routing for public media URLs."
+        ),
         test_connection_supported=False,
-        privacy_notes="No X/Twitter request is made by this adapter metadata path.",
-        cost_or_rate_limit_notes="No API cost or rate limits are used because no network/API call is performed.",
+        privacy_notes=(
+            "Public-media backend runs only when explicitly invoked. Local exporter imports remain user-supplied files; "
+            "browser automation/cookies are separate opt-in implementation paths, not startup behavior."
+        ),
+        cost_or_rate_limit_notes=(
+            "No paid X API is required for the shared JDownloader public-media route. Browser/API-like routes may still "
+            "inherit platform rate limits if implemented and explicitly run."
+        ),
         access_limitations=(
-            "Recognizes public X/Twitter URLs for local review metadata and archive-fallback planning only. "
-            "It does not browse X/Twitter, automate a browser, call the API, use cookies, or download media."
+            "Recognizes public X/Twitter URLs for source handling. V68 adds a shared JDownloader media backend route "
+            "and reference-source registry; browser automation/exporter flows are implementation-specific opt-in paths."
         ),
     )
 
@@ -462,6 +471,42 @@ TWITTER_X_REPLY_THREAD_ARCHIVE_PROFILE = SourceMethodProfile(
         "deletion/completeness remain manual-review metadata, not live X/Twitter execution."
     ),
 )
+TWITTER_X_MEDIA_SHARED_BACKEND_PROFILE = SourceMethodProfile(
+    profile_id="twitter_x_media_shared_backend",
+    adapter_id="twitter_x",
+    display_name="X/Twitter public media shared-backend profile",
+    method_family="public_media_shared_backend",
+    supported_modes=(
+        "media",
+        "webpage",
+        "jdownloader_api3128",
+        "shared_media_backend",
+        "browser_capture_reference",
+        "manual_export_reference",
+    ),
+    expected_artifact_types=(
+        "media_files",
+        "media_inventory",
+        "download_manifest",
+        "shared_backend_receipt",
+        "source_url_sidecar",
+        "optional_browser_capture_notes",
+    ),
+    required_operator_fields=("source_url", "selected_media_modes", "backend_receipt_reference"),
+    approval_required=False,
+    manual_operator_only=False,
+    live_execution_default_enabled=False,
+    archive_fallback_supported=True,
+    manual_import_supported=True,
+    network_actions_performed=True,
+    browser_automation_performed=True,
+    provider_api_calls_performed=False,
+    notes=(
+        "V68 implementation profile for YTCE-owned X/Twitter source handling: public media can be routed through "
+        "the shared JDownloader API3128 backend; browser automation and exporter-derived workflows are separate "
+        "opt-in paths using the reference-source registry."
+    ),
+)
 YOUTUBE_MEDIA_TRANSCRIPT_COMMENT_PROFILE = SourceMethodProfile(
     profile_id="youtube_media_transcript_comment",
     adapter_id="youtube",
@@ -564,6 +609,7 @@ SOURCE_METHOD_PROFILES: Sequence[SourceMethodProfile] = (
     TWITTER_X_ARCHIVE_FALLBACK_PROFILE,
     TWITTER_X_PUBLIC_POST_ARCHIVE_PROFILE,
     TWITTER_X_REPLY_THREAD_ARCHIVE_PROFILE,
+    TWITTER_X_MEDIA_SHARED_BACKEND_PROFILE,
     YOUTUBE_MEDIA_TRANSCRIPT_COMMENT_PROFILE,
     GENERIC_ARTICLE_COMMENT_PROFILE,
     GENERIC_ARTICLE_HTML_PROFILE,

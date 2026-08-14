@@ -147,7 +147,8 @@ def run_self_test() -> None:
     twitter_metadata = twitter_adapter.metadata
     assert twitter_metadata.display_name == "X / Twitter"
     assert twitter_metadata.supports_manual_import
-    assert "does not browse" in twitter_metadata.access_limitations
+    assert twitter_metadata.supports_browser_capture
+    assert "shared JDownloader media backend" in twitter_metadata.access_limitations
 
     assert AVAILABLE_SOURCE_ADAPTERS == (
         YOUTUBE_SOURCE_ADAPTER,
@@ -180,6 +181,12 @@ def run_self_test() -> None:
     twitter_reply_profile = find_source_method_profile("twitter_x_reply_thread_archive")
     assert twitter_reply_profile.adapter_id == "twitter_x"
     assert "parent_post_reference" in twitter_reply_profile.required_operator_fields
+    twitter_media_profile = find_source_method_profile("twitter_x_media_shared_backend")
+    assert twitter_media_profile.adapter_id == "twitter_x"
+    assert "jdownloader_api3128" in twitter_media_profile.supported_modes
+    assert "media_files" in twitter_media_profile.expected_artifact_types
+    assert twitter_media_profile.network_actions_performed is True
+    assert twitter_media_profile.browser_automation_performed is True
     assert find_source_method_profile("youtube_media_transcript_comment").adapter_id == "youtube"
     assert find_source_method_profile("generic_article_html").adapter_id == "news_website"
     assert find_source_method_profile("generic_article_comments").adapter_id == "news_website"
