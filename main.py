@@ -8,6 +8,7 @@ YouTube comments with advanced spam detection.
 from __future__ import annotations
 
 import logging
+import html
 import os
 import re
 import sys
@@ -164,6 +165,12 @@ from source_resource_state import (
 from source_media_gui_bridge import (
     MEDIA_GUI_DOWNLOAD_STATUS_READY,
     run_source_media_gui_download,
+)
+from source_twitter_compact_row import (
+    TWITTER_COMPACT_MODES,
+    TWITTER_SCREENSHOT_MODES,
+    TWITTER_SCREENSHOT_MODE_VALUES,
+    build_twitter_compact_row_state,
 )
 from youtube_gui_media_queue import (
     YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY,
@@ -6097,8 +6104,9 @@ class App(ctk.CTk):
             self._refresh_source_resource_rows()
             self._refresh_discussion_source_controls()
             self._start_youtube_source_row_metadata_probe(intake.rows)
+            self._start_twitter_source_row_metadata_probe(intake.rows)
             self.log_message(
-                f"Added {len(intake.rows)} source row(s). Network actions performed: none.",
+                f"Added {len(intake.rows)} source row(s). Metadata probes may run for supported source rows.",
                 "success",
             )
         if intake.duplicate_raw_urls:
@@ -6163,14 +6171,279 @@ class App(ctk.CTk):
             mode_vars[row_id] = ctk.StringVar(value="Post")
         return mode_vars[row_id]
 
+    def _normalise_twitter_source_settings(self, row_id: str) -> dict[str, Any]:
+        settings_by_row = self.__dict__.setdefault("twitter_source_row_settings", {})
+        settings = dict(settings_by_row.get(row_id, {}))
+        if "show_type_dropdown" not in settings:
+            if "disable_type_dropdown" in settings:
+                settings["show_type_dropdown"] = not bool(settings.pop("disable_type_dropdown"))
+            else:
+                settings["show_type_dropdown"] = True
+        else:
+            settings.pop("disable_type_dropdown", None)
+        if str(settings.get("screenshot_mode") or "none").lower() not in TWITTER_SCREENSHOT_MODE_VALUES:
+            settings["screenshot_mode"] = "none"
+        settings_by_row[row_id] = settings
+        return settings
+
+    def _twitter_row_enabled_var_for_row(self, row_id: str) -> ctk.BooleanVar:
+        enabled_vars = self.__dict__.setdefault("twitter_source_row_enabled_vars", {})
+        if row_id not in enabled_vars:
+            settings = self._normalise_twitter_source_settings(row_id)
+            enabled_vars[row_id] = ctk.BooleanVar(value=bool(settings.get("row_enabled", True)))
+        return enabled_vars[row_id]
+
+    def _twitter_show_type_dropdown_var_for_row(self, row_id: str) -> ctk.BooleanVar:
+        show_vars = self.__dict__.setdefault("twitter_source_row_show_type_dropdown_vars", {})
+        if row_id not in show_vars:
+            settings = self._normalise_twitter_source_settings(row_id)
+            show_vars[row_id] = ctk.BooleanVar(value=bool(settings.get("show_type_dropdown", True)))
+        return show_vars[row_id]
+
+    def _twitter_setting_bool_var_for_row(self, row_id: str, key: str, default: bool = True) -> ctk.BooleanVar:
+        vars_by_row = self.__dict__.setdefault("twitter_source_row_setting_bool_vars", {})
+        row_vars = vars_by_row.setdefault(row_id, {})
+        if key not in row_vars:
+            settings = self._normalise_twitter_source_settings(row_id)
+            row_vars[key] = ctk.BooleanVar(value=bool(settings.get(key, default)))
+        return row_vars[key]
+
+    def _twitter_screenshot_mode_var_for_row(self, row_id: str) -> ctk.StringVar:
+        mode_vars = self.__dict__.setdefault("twitter_source_row_screenshot_mode_vars", {})
+        if row_id not in mode_vars:
+            settings = self._normalise_twitter_source_settings(row_id)
+            value = str(settings.get("screenshot_mode") or "none").lower()
+            mode_vars[row_id] = ctk.StringVar(value=value if value in TWITTER_SCREENSHOT_MODE_VALUES else "none")
+        return mode_vars[row_id]
+
+    def _ensure_twitter_x_icon(self) -> None:
+        if hasattr(self, "twitter_x_icon_image"):
+            return
+        self.twitter_x_icon_image = None
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "ytce_x_icon.png")
+        try:
+            if os.path.isfile(icon_path):
+                icon_image = Image.open(icon_path).convert("RGBA")
+                self.twitter_x_icon_image = ctk.CTkImage(light_image=icon_image, dark_image=icon_image, size=(16, 16))
+        except Exception as icon_error:
+            logger.warning(f"Could not load X/Twitter source-row icon: {icon_error}")
+            self.twitter_x_icon_image = None
+
     def _on_twitter_source_row_mode_changed(self, row_id: str, mode: str) -> None:
-        mode = mode if mode in {"Post", "Thread"} else "Post"
+        mode = mode if mode in set(TWITTER_COMPACT_MODES) else "Post"
         self.__dict__.setdefault("twitter_source_row_modes", {})[row_id] = mode
         if hasattr(self, "url_status"):
             self.url_status.configure(
                 text=f"Twitter/X source mode set to {mode}. Use Go for capture; media stays inside X settings.",
                 text_color=COLORS["text_secondary"],
             )
+
+    def _on_twitter_row_enabled_changed(self, row_id: str, update_label: Any | None = None) -> None:
+        enabled = bool(self._twitter_row_enabled_var_for_row(row_id).get())
+        settings = self._normalise_twitter_source_settings(row_id)
+        settings["row_enabled"] = enabled
+        self.twitter_source_row_settings[row_id] = settings
+        if update_label is not None:
+            try:
+                update_label.configure(
+                    text_color=COLORS["text_primary"] if enabled else COLORS["text_muted"],
+                    fg_color=COLORS["bg_input"],
+                    cursor="hand2" if enabled else "arrow",
+                )
+            except Exception:
+                pass
+        if hasattr(self, "url_status"):
+            self.url_status.configure(
+                text=(
+                    "Twitter/X row enabled for Go."
+                    if enabled
+                    else "Twitter/X row disabled for Go."
+                ),
+                text_color=COLORS["text_secondary"],
+            )
+
+    def _on_twitter_show_type_dropdown_changed(self, row_id: str) -> None:
+        settings = self._normalise_twitter_source_settings(row_id)
+        settings["show_type_dropdown"] = bool(self._twitter_show_type_dropdown_var_for_row(row_id).get())
+        self.twitter_source_row_settings[row_id] = settings
+        self._refresh_source_resource_rows()
+        if hasattr(self, "url_status"):
+            self.url_status.configure(
+                text=(
+                    "Twitter/X type dropdown shown on source row."
+                    if settings["show_type_dropdown"]
+                    else "Twitter/X type dropdown hidden from source row."
+                ),
+                text_color=COLORS["text_secondary"],
+            )
+
+    def _save_twitter_source_settings(self, row_id: str) -> None:
+        settings = self._normalise_twitter_source_settings(row_id)
+        for key, default in (
+            ("post", True),
+            ("threads", True),
+            ("media", False),
+        ):
+            settings[key] = bool(self._twitter_setting_bool_var_for_row(row_id, key, default).get())
+        settings["show_type_dropdown"] = bool(self._twitter_show_type_dropdown_var_for_row(row_id).get())
+        settings["row_enabled"] = bool(self._twitter_row_enabled_var_for_row(row_id).get())
+        screenshot_mode = self._twitter_screenshot_mode_var_for_row(row_id).get()
+        settings["screenshot_mode"] = screenshot_mode if screenshot_mode in TWITTER_SCREENSHOT_MODE_VALUES else "none"
+        self.twitter_source_row_settings[row_id] = settings
+        self.source_screenshot_preferences[row_id] = {
+            **dict(self.__dict__.setdefault("source_screenshot_preferences", {}).get(row_id, {})),
+            "webpage": settings["screenshot_mode"] != "none",
+            "webpage_screenshot": settings["screenshot_mode"] != "none",
+            "twitter_screenshot_mode": settings["screenshot_mode"],
+        }
+        self._refresh_source_resource_rows()
+
+    def _open_twitter_source_mode_dropdown_menu(self, row_id: str, anchor_widget: Any, update_widget: Any | None = None) -> None:
+        if not bool(self._twitter_row_enabled_var_for_row(row_id).get()):
+            return
+        mode_var = self._twitter_mode_var_for_row(row_id)
+        menu = tk.Menu(
+            self,
+            tearoff=False,
+            bg=COLORS["bg_card"],
+            fg=COLORS["text_primary"],
+            activebackground=COLORS["accent"],
+            activeforeground=COLORS["text_primary"],
+            bd=0,
+            relief="flat",
+        )
+
+        def select_mode(value: str) -> None:
+            mode_var.set(value)
+            self._on_twitter_source_row_mode_changed(row_id, value)
+            self.after(1, self._refresh_source_resource_rows)
+            self.after(1, self._refresh_discussion_source_controls)
+
+        current = mode_var.get()
+        for value in TWITTER_COMPACT_MODES:
+            label = ("* " + value) if value == current else value
+            menu.add_command(label=label, command=lambda selected=value: select_mode(selected))
+        try:
+            x = int(anchor_widget.winfo_rootx())
+            y = int(anchor_widget.winfo_rooty() + anchor_widget.winfo_height())
+            menu.tk_popup(x, y)
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+
+    def _open_twitter_source_settings(self, row_id: str) -> None:
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            return
+        state = build_twitter_compact_row_state(row)
+        window = ctk.CTkToplevel(self)
+        window.title("X/Twitter source settings")
+        window.geometry("460x390")
+        window.transient(self)
+        window.grab_set()
+        window.configure(fg_color=COLORS["bg_dark"])
+
+        ctk.CTkLabel(
+            window,
+            text=f"X/Twitter source settings\n{state.display_title}\n{row.domain}",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS["text_primary"],
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", padx=16, pady=(16, 8))
+
+        body = ctk.CTkFrame(window, fg_color=COLORS["bg_input"])
+        body.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+        mode_var = self._twitter_mode_var_for_row(row_id)
+        post_var = self._twitter_setting_bool_var_for_row(row_id, "post", True)
+        threads_var = self._twitter_setting_bool_var_for_row(row_id, "threads", True)
+        media_var = self._twitter_setting_bool_var_for_row(row_id, "media", False)
+        show_type_dropdown_var = self._twitter_show_type_dropdown_var_for_row(row_id)
+        screenshot_mode_var = self._twitter_screenshot_mode_var_for_row(row_id)
+        ctk.CTkLabel(
+            body,
+            text="Capture mode",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["text_primary"],
+            anchor="w",
+        ).pack(fill="x", padx=12, pady=(12, 4))
+        ctk.CTkOptionMenu(
+            body,
+            variable=mode_var,
+            values=list(TWITTER_COMPACT_MODES),
+            command=lambda value: self._on_twitter_source_row_mode_changed(row_id, value),
+            width=120,
+            fg_color=COLORS["bg_card"],
+            button_color=COLORS["accent_secondary"],
+            button_hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            dropdown_fg_color=COLORS["bg_card"],
+            dropdown_hover_color=COLORS["accent_secondary"],
+            dropdown_text_color=COLORS["text_primary"],
+        ).pack(anchor="w", padx=12, pady=(0, 10))
+        for label, var in (
+            ("Post", post_var),
+            ("Threads", threads_var),
+            ("Media", media_var),
+            ("Show type dropdown on X/Twitter source row", show_type_dropdown_var),
+        ):
+            ctk.CTkCheckBox(
+                body,
+                text=label,
+                variable=var,
+                command=(
+                    (lambda row_id=row_id: self._on_twitter_show_type_dropdown_changed(row_id))
+                    if label.startswith("Show type dropdown")
+                    else (lambda row_id=row_id: self._save_twitter_source_settings(row_id))
+                ),
+                font=ctk.CTkFont(size=12),
+                text_color=COLORS["text_primary"],
+            ).pack(anchor="w", padx=12, pady=4)
+
+        ctk.CTkLabel(
+            body,
+            text="Screenshot",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["text_primary"],
+            anchor="w",
+        ).pack(fill="x", padx=12, pady=(12, 4))
+        screenshot_row = ctk.CTkFrame(body, fg_color="transparent")
+        screenshot_row.pack(fill="x", padx=12, pady=(0, 8))
+        for label, value in zip(TWITTER_SCREENSHOT_MODES, TWITTER_SCREENSHOT_MODE_VALUES):
+            ctk.CTkRadioButton(
+                screenshot_row,
+                text=label,
+                value=value,
+                variable=screenshot_mode_var,
+                command=lambda row_id=row_id: self._save_twitter_source_settings(row_id),
+                font=ctk.CTkFont(size=12),
+                text_color=COLORS["text_primary"],
+            ).pack(side="left", padx=(0, 16))
+        ctk.CTkLabel(
+            body,
+            text=(
+                "Media download stays inside this settings path and will use "
+                "the shared media capability model when the X/Twitter backend is approved."
+            ),
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_secondary"],
+            justify="left",
+            wraplength=400,
+        ).pack(anchor="w", padx=12, pady=(8, 2))
+        ctk.CTkLabel(
+            body,
+            text=state.account_thread_semantics,
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_secondary"],
+            justify="left",
+            wraplength=400,
+        ).pack(anchor="w", padx=12, pady=(4, 8))
+
+        buttons = ctk.CTkFrame(window, fg_color="transparent")
+        buttons.pack(fill="x", padx=16, pady=(0, 14))
+        ctk.CTkButton(buttons, text="Close", width=90, command=window.destroy).pack(side="right")
 
     @staticmethod
     def _source_row_is_youtube(row: SourceResourceRowState) -> bool:
@@ -6456,6 +6729,118 @@ class App(ctk.CTk):
                 text_color=COLORS["warning"],
             )
 
+    def _twitter_oembed_text_probe(self, source_url: str) -> str:
+        # Fetch a lightweight X/Twitter public post text preview for row display.
+        # This uses the public publish.twitter.com oEmbed endpoint only for a
+        # short display title. It does not use an X account, cookies, browser
+        # automation, scraping, or the X API.
+        normalized_url = str(source_url or "").strip()
+        if not normalized_url:
+            return ""
+        preview_parts = urllib.parse.urlsplit(normalized_url)
+        if preview_parts.netloc.lower() in {"x.com", "www.x.com"}:
+            normalized_url = urllib.parse.urlunsplit(
+                (
+                    "https",
+                    "twitter.com",
+                    preview_parts.path,
+                    preview_parts.query,
+                    preview_parts.fragment,
+                )
+            )
+        endpoint = (
+            "https://publish.twitter.com/oembed?omit_script=1&dnt=1&url="
+            + urllib.parse.quote(normalized_url, safe="")
+        )
+        request = urllib.request.Request(
+            endpoint,
+            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"},
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:
+            payload = response.read().decode("utf-8", errors="replace")
+        data = json.loads(payload or "{}")
+        html_text = str(data.get("html") or "")
+        title_text = str(data.get("title") or "")
+        candidates: list[str] = []
+        match = re.search(r"<p\b[^>]*>(.*?)</p>", html_text, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            candidates.append(match.group(1))
+        if title_text:
+            candidates.append(title_text)
+
+        for candidate in candidates:
+            text = re.sub(r"<br\s*/?>", " ", candidate, flags=re.IGNORECASE)
+            text = re.sub(r"<a\b[^>]*>.*?</a>", " ", text, flags=re.IGNORECASE | re.DOTALL)
+            text = re.sub(r"<[^>]+>", " ", text)
+            text = html.unescape(text)
+            text = re.sub(r"\s+", " ", text).strip()
+            text = re.sub(r"\s+pic\.twitter\.com/\S+\s*$", "", text).strip()
+            if text and not re.fullmatch(r"https?://\S+", text):
+                return text[:180]
+        return ""
+
+    def _apply_twitter_source_row_preview(self, row_id: str, preview_text: str) -> None:
+        preview = " ".join(str(preview_text or "").split()).strip()
+        if not preview:
+            return
+        updated_rows: list[SourceResourceRowState] = []
+        changed = False
+        for row in self.__dict__.get("source_resource_rows", ()):
+            if row.row_id == row_id:
+                updated_rows.append(
+                    replace(
+                        row,
+                        title=preview,
+                        display_title=preview,
+                        display_label=f"{preview} - X/Twitter",
+                        preview_text=preview,
+                    )
+                )
+                changed = True
+            else:
+                updated_rows.append(row)
+        if not changed:
+            return
+        self.source_resource_rows = updated_rows
+        self._refresh_source_resource_rows()
+        self._refresh_discussion_source_controls()
+
+    def _mark_twitter_source_row_preview_failed(self, row_id: str, error: Exception) -> None:
+        if hasattr(self, "url_status"):
+            self.url_status.configure(
+                text=f"X/Twitter post text preview unavailable: {type(error).__name__}. Fallback title kept.",
+                text_color=COLORS["warning"],
+            )
+
+    def _start_twitter_source_row_metadata_probe(self, rows: Sequence[SourceResourceRowState]) -> None:
+        twitter_rows = [row for row in rows if self._source_row_is_twitter(row)]
+        if not twitter_rows:
+            return
+
+        def worker(snapshot: tuple[SourceResourceRowState, ...]) -> None:
+            for row in snapshot:
+                try:
+                    preview = self._twitter_oembed_text_probe(row.canonical_url)
+                except Exception as error:
+                    self.after(
+                        0,
+                        lambda row_id=row.row_id, err=error: self._mark_twitter_source_row_preview_failed(
+                            row_id,
+                            err,
+                        ),
+                    )
+                    continue
+                if preview:
+                    self.after(
+                        0,
+                        lambda row_id=row.row_id, preview=preview: self._apply_twitter_source_row_preview(
+                            row_id,
+                            preview,
+                        ),
+                    )
+
+        threading.Thread(target=worker, args=(tuple(twitter_rows),), daemon=True).start()
+
     def _process_youtube_source_row_media_result(self, result: Any, parent: Any | None = None, *, show_message: bool = True) -> bool:
         """Import a completed YouTube media queue result into FILES on the Tk/UI thread."""
         if result.status != YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY:
@@ -6627,6 +7012,46 @@ class App(ctk.CTk):
         auto_subs_var = ctk.BooleanVar(value=prefs.auto_subtitles_enabled)
         show_dropdown_var = ctk.BooleanVar(value=prefs.show_quality_dropdown)
         quality_enabled_vars: dict[str, Any] = {}
+        quality_labels = tuple(label for label, _height in YOUTUBE_GUI_QUALITY_PRESETS)
+
+        default_label = (
+            prefs.default_quality_label
+            if prefs.default_quality_label in set(quality_labels)
+            else "1080"
+        )
+        default_var = ctk.StringVar(value=default_label)
+
+        def apply_preferences() -> YouTubeGuiMediaPreferences:
+            enabled_labels = tuple(
+                label
+                for label, _height in YOUTUBE_GUI_QUALITY_PRESETS
+                if quality_enabled_vars.get(label) is not None
+                and bool(quality_enabled_vars[label].get())
+            )
+            if not enabled_labels:
+                enabled_labels = (default_var.get() or "1080",)
+            default_choice = default_var.get() or enabled_labels[0]
+            saved_default = default_choice if default_choice in enabled_labels else enabled_labels[0]
+            saved = YouTubeGuiMediaPreferences(
+                video_enabled=bool(video_var.get()),
+                separate_audio_enabled=bool(audio_var.get()),
+                thumbnail_enabled=bool(thumbnail_var.get()),
+                subtitles_enabled=bool(subtitles_var.get()),
+                auto_subtitles_enabled=bool(auto_subs_var.get()),
+                show_quality_dropdown=bool(show_dropdown_var.get()),
+                enabled_quality_labels=enabled_labels,
+                default_quality_label=saved_default,
+            )
+            self.youtube_source_row_preferences[row_id] = saved
+            self._youtube_quality_var_for_row(row_id).set(saved.default_quality_label)
+            self._refresh_source_resource_rows()
+            if hasattr(self, "url_status"):
+                self.url_status.configure(
+                    text="YouTube media settings applied.",
+                    text_color=COLORS["text_secondary"],
+                )
+            return saved
+
         for text_value, var in (
             ("Muxed video + best audio (mp4)", video_var),
             ("Separate audio file (m4a)", audio_var),
@@ -6639,6 +7064,7 @@ class App(ctk.CTk):
                 body,
                 text=text_value,
                 variable=var,
+                command=apply_preferences,
                 font=ctk.CTkFont(size=12),
                 text_color=COLORS["text_primary"],
             ).pack(anchor="w", padx=8, pady=5)
@@ -6657,12 +7083,11 @@ class App(ctk.CTk):
                 body,
                 text=label,
                 variable=var,
+                command=apply_preferences,
                 font=ctk.CTkFont(size=12),
                 text_color=COLORS["text_primary"],
             ).pack(anchor="w", padx=24, pady=3)
 
-        default_label = prefs.default_quality_label if prefs.default_quality_label in {label for label, _ in YOUTUBE_GUI_QUALITY_PRESETS} else "1080"
-        default_var = ctk.StringVar(value=default_label)
         ctk.CTkLabel(
             body,
             text="Default quality",
@@ -6672,7 +7097,8 @@ class App(ctk.CTk):
         ctk.CTkOptionMenu(
             body,
             variable=default_var,
-            values=[label for label, _height in YOUTUBE_GUI_QUALITY_PRESETS],
+            values=list(quality_labels),
+            command=lambda _choice: apply_preferences(),
             width=140,
             fg_color=COLORS["bg_card"],
             button_color=COLORS["accent_secondary"],
@@ -6683,32 +7109,11 @@ class App(ctk.CTk):
             dropdown_text_color=COLORS["text_primary"],
         ).pack(anchor="w", padx=8, pady=(0, 8))
 
-        def save_preferences() -> YouTubeGuiMediaPreferences:
-            enabled_labels = tuple(label for label, _height in YOUTUBE_GUI_QUALITY_PRESETS if quality_enabled_vars[label].get())
-            if not enabled_labels:
-                enabled_labels = (default_var.get() or "1080",)
-            saved = YouTubeGuiMediaPreferences(
-                video_enabled=bool(video_var.get()),
-                separate_audio_enabled=bool(audio_var.get()),
-                thumbnail_enabled=bool(thumbnail_var.get()),
-                subtitles_enabled=bool(subtitles_var.get()),
-                auto_subtitles_enabled=bool(auto_subs_var.get()),
-                show_quality_dropdown=bool(show_dropdown_var.get()),
-                enabled_quality_labels=enabled_labels,
-                default_quality_label=default_var.get() or enabled_labels[0],
-            )
-            self.youtube_source_row_preferences[row_id] = saved
-            self._youtube_quality_var_for_row(row_id).set(saved.default_quality_label if saved.default_quality_label in enabled_labels else enabled_labels[0])
-            self._refresh_source_resource_rows()
-            return saved
-
-        button_row = ctk.CTkFrame(window, fg_color="transparent")
-        button_row.pack(fill="x", padx=16, pady=(8, 14))
-        ctk.CTkButton(button_row, text="Cancel", width=90, command=window.destroy).pack(side="right")
-        ctk.CTkButton(button_row, text="Save", width=90, command=lambda: (save_preferences(), window.destroy())).pack(side="right", padx=(0, 8))
+        footer = ctk.CTkFrame(window, fg_color="transparent")
+        footer.pack(fill="x", padx=16, pady=(8, 14))
         ctk.CTkLabel(
-            button_row,
-            text="Go adds enabled YouTube media to FILES automatically.",
+            footer,
+            text="Settings apply immediately. Go adds enabled YouTube media to FILES automatically.",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_secondary"],
         ).pack(side="left", padx=(0, 8))
@@ -6743,7 +7148,9 @@ class App(ctk.CTk):
             return
 
         for row_index, row in enumerate(rows):
-            row_height = 72 if self._source_row_is_youtube(row) else 98
+            row_is_youtube = self._source_row_is_youtube(row)
+            row_is_twitter = self._source_row_is_twitter(row)
+            row_height = 72 if row_is_youtube or row_is_twitter else 98
             row_frame = ctk.CTkFrame(frame, fg_color="transparent", height=row_height)
             row_frame.pack(fill="x", padx=8, pady=(8 if row_index == 0 else 4, 6))
             row_frame.grid_propagate(False)
@@ -6781,7 +7188,7 @@ class App(ctk.CTk):
             actions.grid_columnconfigure(0, weight=1)
 
             next_action_column = 1
-            if self._source_row_is_youtube(row):
+            if row_is_youtube:
                 # YouTube media is controlled directly on the source card;
                 # generic row media buttons are reserved for non-YouTube rows.
                 prefs = self._youtube_preferences_for_row(row.row_id)
@@ -6884,8 +7291,8 @@ class App(ctk.CTk):
                         youtube_control,
                         text="▶",
                         command=_open_youtube_settings,
-                        width=16,
-                        height=16,
+                        width=twitter_button_width,
+                        height=twitter_button_height,
                         fg_color="#ff0000",
                         hover_color="#cc0000",
                         text_color="#ffffff",
@@ -6900,8 +7307,8 @@ class App(ctk.CTk):
                         youtube_header,
                         text="▶",
                         command=_open_youtube_settings,
-                        width=30,
-                        height=26,
+                        width=28,
+                        height=28,
                         fg_color="#ff0000",
                         hover_color="#cc0000",
                         text_color="#ffffff",
@@ -6910,6 +7317,136 @@ class App(ctk.CTk):
                     )
                     youtube_button.grid(row=0, column=0, padx=(0, 0), pady=(0, 0), sticky="ne")
                     youtube_button.tooltip_text = "YouTube media settings."
+                next_action_column = 1
+            elif row_is_twitter:
+                twitter_state = build_twitter_compact_row_state(row)
+                self._ensure_twitter_x_icon()
+                twitter_header = ctk.CTkFrame(row_frame, fg_color="transparent")
+                twitter_header.grid(row=0, column=1, rowspan=2, sticky="ne", padx=(8, 4), pady=(0, 0))
+                twitter_header.grid_columnconfigure(0, weight=0)
+
+                mode_var = self._twitter_mode_var_for_row(row.row_id)
+                if mode_var.get() not in twitter_state.dropdown_options:
+                    mode_var.set(twitter_state.dropdown_options[0])
+                row_enabled_var = self._twitter_row_enabled_var_for_row(row.row_id)
+                show_type_dropdown_var = self._twitter_show_type_dropdown_var_for_row(row.row_id)
+                twitter_mode_text = mode_var.get()
+                twitter_is_thread = twitter_mode_text == "Thread"
+                twitter_mode_display_text = "Thread  " if twitter_is_thread else twitter_mode_text
+                twitter_control_width = 97 if twitter_is_thread else 95
+                twitter_button_width = 16
+                twitter_button_height = 16
+                twitter_button_right_pad = 18
+                twitter_checkbox_x = 4
+                twitter_label_x = 22
+                twitter_button_x = twitter_control_width - twitter_button_width - twitter_button_right_pad
+                twitter_label_width = max(72 if twitter_is_thread else 32, twitter_button_x - twitter_label_x)
+
+                if bool(show_type_dropdown_var.get()):
+                    twitter_control = ctk.CTkFrame(
+                        twitter_header,
+                        fg_color=COLORS["bg_input"],
+                        border_width=1,
+                        border_color=COLORS["border"],
+                        corner_radius=7,
+                        width=twitter_control_width,
+                        height=twitter_state.compact_control_height,
+                    )
+                    twitter_control.grid(row=0, column=0, sticky="ne")
+                    twitter_control.grid_propagate(False)
+
+                    row_enabled_checkbox = ctk.CTkCheckBox(
+                        twitter_control,
+                        text="",
+                        variable=row_enabled_var,
+                        command=lambda row_id=row.row_id: self._on_twitter_row_enabled_changed(row_id, mode_label),
+                        width=14,
+                        height=14,
+                        checkbox_width=12,
+                        checkbox_height=12,
+                    )
+                    row_enabled_checkbox.place(x=twitter_checkbox_x, y=2)
+                    row_enabled_checkbox.tooltip_text = "Enable/disable this X/Twitter source row for Go."
+
+                    mode_label = ctk.CTkLabel(
+                        twitter_control,
+                        text=twitter_mode_display_text,
+                        fg_color=COLORS["bg_input"],
+                        text_color=COLORS["text_primary"] if bool(row_enabled_var.get()) else COLORS["text_muted"],
+                        font=ctk.CTkFont(size=9 if twitter_is_thread else 11, weight="bold"),
+                        anchor="w",
+                        width=twitter_label_width,
+                        height=20,
+                    )
+                    mode_label.place(x=twitter_label_x, y=4)
+                    mode_label.tooltip_text = (
+                        "X/Twitter capture mode: Post captures the current post target; "
+                        "Thread captures the whole thread/conversation where supported."
+                    )
+                    try:
+                        mode_label.configure(cursor="hand2" if bool(row_enabled_var.get()) else "arrow")
+                    except Exception:
+                        pass
+
+                    def _open_inline_twitter_mode(row_id=row.row_id, label=mode_label):
+                        if not bool(self._twitter_row_enabled_var_for_row(row_id).get()):
+                            return "break"
+                        self._open_twitter_source_mode_dropdown_menu(row_id, label, label)
+                        return "break"
+
+                    def _twitter_mode_label_enter(_event=None, label=mode_label):
+                        if not bool(row_enabled_var.get()):
+                            return "break"
+                        try:
+                            label.configure(fg_color=COLORS["border"])
+                        except Exception:
+                            pass
+                        return "break"
+
+                    def _twitter_mode_label_leave(_event=None, label=mode_label):
+                        try:
+                            label.configure(fg_color=COLORS["bg_input"])
+                        except Exception:
+                            pass
+                        return "break"
+
+                    mode_label.bind("<Enter>", _twitter_mode_label_enter)
+                    mode_label.bind("<Leave>", _twitter_mode_label_leave)
+                    mode_label.bind("<Button-1>", lambda _event: _open_inline_twitter_mode())
+
+                    twitter_settings_button = ctk.CTkButton(
+                        twitter_control,
+                        text="" if self.twitter_x_icon_image is not None else "X",
+                        image=self.twitter_x_icon_image,
+                        command=lambda row_id=row.row_id: self._open_twitter_source_settings(row_id),
+                        width=twitter_button_width,
+                        height=twitter_button_height,
+                        fg_color=COLORS["bg_input"],
+                        hover_color=COLORS["border"],
+                        text_color=COLORS["text_primary"],
+                        font=ctk.CTkFont(size=11, weight="bold"),
+                        corner_radius=4,
+                    )
+                    twitter_settings_button.place(x=twitter_button_x, y=2)
+                    twitter_settings_button.tooltip_text = (
+                        "X/Twitter settings. Media download stays inside X settings and uses the shared media capability model."
+                    )
+                else:
+                    twitter_settings_button = ctk.CTkButton(
+                        twitter_header,
+                        text="" if self.twitter_x_icon_image is not None else "X",
+                        image=self.twitter_x_icon_image,
+                        command=lambda row_id=row.row_id: self._open_twitter_source_settings(row_id),
+                        width=28,
+                        height=28,
+                        fg_color=COLORS["bg_input"],
+                        hover_color=COLORS["border"],
+                        text_color=COLORS["text_primary"],
+                        font=ctk.CTkFont(size=12, weight="bold"),
+                        corner_radius=6,
+                    )
+                    twitter_settings_button.grid(row=0, column=0, padx=(0, 0), pady=(0, 0), sticky="ne")
+                    twitter_settings_button.tooltip_text = "X/Twitter source settings."
                 next_action_column = 1
             else:
                 images_button = ctk.CTkButton(
@@ -6942,30 +7479,7 @@ class App(ctk.CTk):
                 media_button.grid(row=0, column=next_action_column, padx=(0, 6), sticky="n")
                 next_action_column += 1
 
-            if self._source_row_is_twitter(row):
-                mode_var = self._twitter_mode_var_for_row(row.row_id)
-                mode_menu = ctk.CTkOptionMenu(
-                    actions,
-                    variable=mode_var,
-                    values=["Post", "Thread"],
-                    command=lambda value, row_id=row.row_id: self._on_twitter_source_row_mode_changed(
-                        row_id, value
-                    ),
-                    width=96,
-                    height=28,
-                    fg_color=COLORS["bg_input"],
-                    button_color=COLORS["accent_secondary"],
-                    button_hover_color=COLORS["border"],
-                    text_color=COLORS["text_primary"],
-                    font=ctk.CTkFont(size=11, weight="bold"),
-                    dropdown_fg_color=COLORS["bg_card"],
-                    dropdown_hover_color=COLORS["accent_secondary"],
-                    dropdown_text_color=COLORS["text_primary"],
-                )
-                mode_menu.grid(row=0, column=next_action_column, padx=(0, 6), sticky="n")
-                mode_menu.tooltip_text = "Twitter/X capture mode. Media download stays inside X settings."
-                next_action_column += 1
-            if not self._source_row_is_youtube(row):
+            if not row_is_youtube and not row_is_twitter:
                 for archive_status in row.archive_statuses:
                     archive_text = self._archive_service_button_text(archive_status.service_id)
                     if archive_status.service_id == ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE:
@@ -7091,19 +7605,19 @@ class App(ctk.CTk):
                     )
                     next_action_column += 1
 
-            remove_parent = row_frame if self._source_row_is_youtube(row) else actions
+            remove_parent = row_frame if row_is_youtube or row_is_twitter else actions
             remove_button = ctk.CTkButton(
                 remove_parent,
                 text="×",
                 command=lambda row_id=row.row_id: self._remove_source_resource_row_clicked(row_id),
-                width=24 if self._source_row_is_youtube(row) else 28,
-                height=24 if self._source_row_is_youtube(row) else 28,
+                width=24 if row_is_youtube or row_is_twitter else 28,
+                height=24 if row_is_youtube or row_is_twitter else 28,
                 fg_color="transparent",
                 hover_color=COLORS["error"],
                 text_color=COLORS["text_secondary"],
             )
             remove_button.tooltip_text = "Remove source"
-            if self._source_row_is_youtube(row):
+            if row_is_youtube or row_is_twitter:
                 remove_button.grid(
                     row=0,
                     column=2,

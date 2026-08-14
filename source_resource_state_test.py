@@ -109,6 +109,19 @@ def test_twitter_row_uses_compact_settings_only_controls() -> None:
     assert "Post/Thread" in row.comments_status
     assert "settings" in row.comments_status
     assert "settings-only" in row.provenance
+    assert row.title in {"Twitter/X post", "This stuff is still happening. It hasn’t stopped."}
+    assert row.display_title in {"Twitter/X post", "This stuff is still happening. It hasn’t stopped."}
+    assert row.preview_text in {"", "This stuff is still happening. It hasn’t stopped."}
+
+    preview = "This stuff is still happening. It hasn't stopped."
+    preview_row = build_source_resource_row(
+        "https://x.com/elonmusk/status/1877644315867963403",
+        title=preview,
+    )
+    assert preview_row.title == preview
+    assert preview_row.display_title == preview
+    assert preview_row.preview_text == preview
+    assert "1877644315867963403" not in preview_row.title
 
 
 def test_url_token_parser_accepts_mixed_separators_and_encoded_commas() -> None:

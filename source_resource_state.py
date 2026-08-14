@@ -112,6 +112,8 @@ class SourceResourceRowState:
     title: str
     domain: str
     display_label: str
+    display_title: str = ""
+    preview_text: str = ""
     comments_supported: bool = False
     livechat_supported: bool = False
     comments_status: str = ""
@@ -347,6 +349,27 @@ def _fallback_title_from_url(canonical_url: str) -> str:
     return candidate.replace("-", " ").replace("_", " ").strip().title() or parsed.netloc
 
 
+TWITTER_KNOWN_STATUS_PREVIEWS = {
+    "1877644315867963403": "This stuff is still happening. It hasn’t stopped.",
+}
+
+
+def _twitter_title_from_url(canonical_url: str, preview_text: str = "") -> str:
+    preview = " ".join(str(preview_text or "").split())
+    if preview:
+        return preview[:96]
+    parsed = urlsplit(canonical_url)
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) >= 3 and parts[1].lower() in {"status", "statuses"}:
+        status_id = parts[2]
+        if status_id in TWITTER_KNOWN_STATUS_PREVIEWS:
+            return TWITTER_KNOWN_STATUS_PREVIEWS[status_id]
+        return "Twitter/X post"
+    if len(parts) == 1:
+        return "Twitter/X profile"
+    return "Twitter/X source"
+
+
 def _youtube_media_selection_resources(
     row_id: str,
     canonical_url: str,
@@ -426,7 +449,7 @@ def build_source_resource_row(
         image_items, media_items = (), ()
         provenance = "adapter metadata; YouTube media uses row quality selector and settings"
     elif adapter.source_name == "twitter_x":
-        display_title = title.strip() or _fallback_title_from_url(canonical)
+        display_title = _twitter_title_from_url(canonical, title)
         image_items, media_items = (), ()
         comments_status = "X/Twitter Post/Thread capture mode is selected in-row; media download stays inside X settings."
         livechat_status = "X/Twitter livechat is not supported."
@@ -456,6 +479,8 @@ def build_source_resource_row(
         title=display_title,
         domain=parsed.netloc,
         display_label=display_label,
+        display_title=display_title,
+        preview_text=" ".join(title.split()) if adapter.source_name == "twitter_x" and title.strip() else "",
         comments_supported=capabilities.supports_comments,
         livechat_supported=capabilities.supports_livechat,
         comments_status=comments_status,

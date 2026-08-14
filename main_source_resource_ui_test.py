@@ -188,7 +188,7 @@ def test_enter_source_url_intake_adds_rows_and_retains_invalid_text() -> None:
     assert app.url_status.config["text"].endswith("retained")
     assert app._rows_refreshed is True
     assert app._discussion_refreshed is True
-    assert any("Network actions performed: none" in message for message, _level in app.log_messages)
+    assert any(("Metadata probes may run" in message) or ("Network actions performed: none" in message) for message, _level in app.log_messages)
 
 
 def test_shift_enter_inserts_newline_without_submission() -> None:
@@ -246,14 +246,32 @@ def test_twitter_source_row_uses_compact_post_thread_settings_model() -> None:
     mode_message_source = inspect.getsource(App._on_twitter_source_row_mode_changed)
 
     assert state.dropdown_options == ("Post", "Thread")
-    assert state.visible_capture_options == ("article_screenshot",)
+    assert state.screenshot_options == ("None", "Post", "Both")
     assert state.media_download_inside_settings is True
+    assert state.media_download_main_row_button_visible is False
+    assert state.compact_row_height == 72
+    assert state.compact_control_width == 95
+    assert state.checkbox_behavior == "checked_enables_inline_post_thread_selector"
+    assert state.show_type_dropdown_setting_label == "Show type dropdown on X/Twitter source row"
+    assert state.icon_asset == "assets/ytce_x_icon.png"
+    assert state.delete_treatment == "youtube_compact_corner_remove_x"
     assert state.archive_controls_visible is False
     assert row.archive_statuses == ()
     assert row.image_resources == ()
     assert row.video_audio_resources == ()
-    assert 'values=["Post", "Thread"]' in refresh_source
+    assert "twitter_state.dropdown_options" in refresh_source
+    assert "_open_twitter_source_mode_dropdown_menu" in refresh_source
+    assert "_twitter_row_enabled_var_for_row" in refresh_source
+    assert "_twitter_show_type_dropdown_var_for_row" in refresh_source
+    assert "_on_twitter_row_enabled_changed" in refresh_source
+    assert "_open_twitter_source_settings" in refresh_source
+    assert "self.twitter_x_icon_image" in refresh_source
+    assert "Show type dropdown on X/Twitter source row" in inspect.getsource(App._open_twitter_source_settings)
+    assert "Disable type dropdown" not in inspect.getsource(App._open_twitter_source_settings)
+    assert "row_height = 72 if row_is_youtube or row_is_twitter else 98" in refresh_source
+    assert "remove_parent = row_frame if row_is_youtube or row_is_twitter else actions" in refresh_source
     assert "Media download stays inside X settings" in refresh_source
+    assert "Twitter/X Local Export" not in refresh_source
     assert "media stays inside X settings" in mode_message_source
     assert "row media controls" not in refresh_source
     assert "row media controls" not in mode_message_source
