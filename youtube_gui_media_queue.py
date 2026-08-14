@@ -13,15 +13,12 @@ from media_jdownloader_external_config import (
     resolve_jdownloader_source_path,
 )
 from jdownloader_internal_backend import (
-    build_internal_youtube_download_command,
     detect_jdownloader_internal_capabilities,
     preferred_youtube_media_backend,
 )
-from jdownloader_internal_job import (
-    InternalJDownloaderJobRequest,
-    InternalJDownloaderJobResult,
-    build_youtube_job_request,
-    run_internal_youtube_job,
+from shared_media_backend import (
+    build_shared_jdownloader_media_request,
+    run_shared_jdownloader_media_backend,
 )
 from jdownloader_internal_paths import (
     JDOWNLOADER_INTERNAL_BACKEND_ID,
@@ -356,7 +353,7 @@ def queue_youtube_gui_source_row_selection(
     yt_dlp_path: str = "yt-dlp",
     probe_metadata: bool = False,
     discovery: YouTubeMediaDiscovery | None = None,
-    internal_job_runner: Any = run_internal_youtube_job,
+    internal_job_runner: Any = None,
 ) -> YouTubeGuiMediaQueueResult:
     if row.adapter_id != "youtube":
         return YouTubeGuiMediaQueueResult(
@@ -421,12 +418,14 @@ def queue_youtube_gui_source_row_selection(
     internal_jdownloader_duplicate_warning = ""
 
     if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID:
-        job_request = build_youtube_job_request(
+        backend_request = build_shared_jdownloader_media_request(
+            source_adapter_id=row.adapter_id,
             source_url=row.canonical_url,
             output_dir=queue_dir / "downloads",
             package_name=job_package_name,
             source_title_or_id=f"{display_title} {run_stamp}",
             max_height=height,
+            components=components,
             video=YOUTUBE_GUI_COMPONENT_VIDEO in components,
             audio=YOUTUBE_GUI_COMPONENT_AUDIO in components,
             image=YOUTUBE_GUI_COMPONENT_THUMBNAIL in components,
@@ -435,60 +434,40 @@ def queue_youtube_gui_source_row_selection(
             timeout_seconds=180,
             monitor_timeout_seconds=120.0,
             overall_timeout_seconds=180.0,
+            plan_json_path=queue_dir / "jdownloader-internal-command.json",
         )
-        command = build_internal_youtube_download_command(
-            source_url=row.canonical_url,
-            output_dir=job_request.output_dir,
-            package_name=job_request.package_name,
-            max_height=height,
-            video=YOUTUBE_GUI_COMPONENT_VIDEO in components,
-            audio=YOUTUBE_GUI_COMPONENT_AUDIO in components,
-            image=YOUTUBE_GUI_COMPONENT_THUMBNAIL in components,
-            description=True,
-            manifest_path=job_request.manifest_path,
-            wait=job_request.wait,
-            timeout_seconds=job_request.timeout_seconds,
+        backend_result = run_shared_jdownloader_media_backend(
+            backend_request,
+            internal_job_runner=internal_job_runner,
         )
-        path = queue_dir / "jdownloader-internal-command.json"
-        path.write_text(json.dumps(command.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
-        plan_paths.append(str(path))
-        job_result: InternalJDownloaderJobResult = internal_job_runner(job_request)
-        execution_manifest_path = job_result.manifest_path
-        if execution_manifest_path:
-            plan_paths.append(execution_manifest_path)
-        engine_status = job_result.engine_status
-        readiness_status = job_result.readiness_status
-        warnings_list.extend(job_result.warnings)
+        plan_paths.extend(backend_result.plan_json_paths)
+        execution_manifest_path = backend_result.execution_manifest_path
+        engine_status = backend_result.engine_status
+        readiness_status = backend_result.readiness_status
+        warnings_list.extend(backend_result.warnings)
         if execution_manifest_path:
             internal_jdownloader_execution_manifest, manifest_warnings = _load_internal_jdownloader_execution_manifest(execution_manifest_path)
             warnings_list.extend(manifest_warnings)
             internal_jdownloader_completed_files = _completed_internal_jdownloader_file_records(internal_jdownloader_execution_manifest)
-            missing_finished_count = max(0, int(job_result.files_count or 0) - len(internal_jdownloader_completed_files))
-            if job_result.status == "success" and missing_finished_count:
+            missing_finished_count = max(0, int(backend_result.files_count or 0) - len(internal_jdownloader_completed_files))
+            if backend_result.status == "success" and missing_finished_count:
                 warnings_list.append(
                     "Internal JDownloader reported completed files, but one or more manifest file paths were not present on disk."
                 )
-        internal_jdownloader_duplicate_warning = _internal_jdownloader_duplicate_state_warning(job_result)
+        if backend_result.internal_job_result is not None:
+            internal_jdownloader_duplicate_warning = _internal_jdownloader_duplicate_state_warning(backend_result.internal_job_result)
         if internal_jdownloader_duplicate_warning:
             warnings_list.append(internal_jdownloader_duplicate_warning)
-        if job_result.errors:
+        if backend_result.errors:
             backend_failed = True
-            warnings_list.extend(job_result.errors)
-        if job_result.status == "failed":
+            warnings_list.extend(backend_result.errors)
+        if backend_result.status == "failed":
             backend_failed = True
-        plan_summaries.append(
-            {
-                "component": "jdownloader_internal",
-                "backend_id": command.backend_id,
-                "quality": selected_quality,
-                "height": height,
-                "command": list(command.command),
-                "plan_json": str(path),
-                "job_request": job_request.to_dict(),
-                "job_result": job_result.to_dict(),
-                "yt_dlp_fallback_backend_id": command.fallback_backend_id,
-            }
-        )
+        if backend_result.plan_summary:
+            plan_summary = dict(backend_result.plan_summary)
+            plan_summary["quality"] = selected_quality
+            plan_summary["height"] = height
+            plan_summaries.append(plan_summary)
     elif YOUTUBE_GUI_COMPONENT_VIDEO in components:
         selector = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best" if height else "bestvideo+bestaudio/best"
         plan = build_youtube_ytdlp_download_plan(
