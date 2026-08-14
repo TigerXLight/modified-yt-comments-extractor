@@ -18,6 +18,7 @@ from jdownloader_internal_cnl import (
     CnlRouteAttempt,
     inspect_cnl_source_routes,
     normalize_internal_jdownloader_url,
+    submit_api3128_then_flashgot_fallback,
     submit_cnl_multiroute,
 )
 from jdownloader_internal_paths import JDOWNLOADER_INTERNAL_BACKEND_ID
@@ -49,6 +50,7 @@ class CnlSubmissionResult:
     response_text: str = ""
     elapsed_ms: int = 0
     attempts: tuple[CnlRouteAttempt, ...] = ()
+    route_metadata: dict[str, Any] | None = None
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
 
@@ -136,6 +138,7 @@ def _write_job_manifest(
     submission_attempts: Sequence[Mapping[str, Any]] = (),
     warnings: Sequence[str] = (),
     errors: Sequence[str] = (),
+    route_metadata: Mapping[str, Any] | None = None,
 ) -> None:
     manifest = build_download_manifest(
         source_url=request.source_url,
@@ -149,6 +152,7 @@ def _write_job_manifest(
         files=files,
         submission_status=submission_status,
         submission_attempts=submission_attempts,
+        route_metadata=route_metadata,
         warnings=warnings,
         errors=errors,
     )
@@ -210,7 +214,7 @@ def inspect_cnl_source_support(source_tree_dir: str | Path | None = None) -> Cnl
 
 def submit_youtube_job_via_cnl(request: InternalJDownloaderJobRequest, *, timeout_seconds: float = 15.0) -> CnlSubmissionResult:
     start = time.monotonic()
-    report = submit_cnl_multiroute(
+    report = submit_api3128_then_flashgot_fallback(
         source_url=request.source_url,
         output_dir=request.output_dir,
         package_name=request.package_name,
@@ -227,6 +231,7 @@ def submit_youtube_job_via_cnl(request: InternalJDownloaderJobRequest, *, timeou
         response_text=accepted_attempt.response_excerpt if accepted_attempt else "",
         elapsed_ms=int((time.monotonic() - start) * 1000),
         attempts=report.attempts,
+        route_metadata=dict(report.route_metadata or {}),
         warnings=warnings,
         errors=report.errors,
     )
@@ -283,6 +288,10 @@ def _zero_timings() -> dict[str, int]:
         "job_submit_ms": 0,
         "link_resolution_ms": 0,
         "download_wait_ms": 0,
+        "first_file_seen_ms": 0,
+        "pre_download_wait_ms": 0,
+        "jd_finding_links_wait_ms": 0,
+        "active_download_ms": 0,
         "postprocess_import_ms": 0,
         "total_ms": 0,
     }
@@ -309,6 +318,19 @@ def run_internal_youtube_job(
     engine_report: Any = None
     submission: CnlSubmissionResult | None = None
     submission_attempts: tuple[dict[str, Any], ...] = ()
+    route_metadata: dict[str, Any] = {
+        "api3128_enabled": True,
+        "api3128_used": False,
+        "api3128_addlinks_ms": 0,
+        "api3128_package_complete_ms": 0,
+        "api3128_child_count": 0,
+        "api3128_move_ms": 0,
+        "api3128_start_ms": 0,
+        "api3128_first_running_ms": 0,
+        "api3128_finished_ms": 0,
+        "flashgot_fallback_used": False,
+        "route_used": "",
+    }
     files: tuple[Any, ...] = ()
 
     def set_phase(phase: str) -> None:
@@ -327,6 +349,7 @@ def run_internal_youtube_job(
             files=files,
             submission_status=submission_status or (submission.status if submission is not None else ""),
             submission_attempts=submission_attempts,
+            route_metadata=route_metadata,
             warnings=warnings,
             errors=active_errors,
         )
@@ -425,6 +448,7 @@ def run_internal_youtube_job(
         warnings.extend(submission.warnings)
         errors.extend(submission.errors)
         submission_attempts = _submission_attempt_dicts(submission)
+        route_metadata.update(dict(submission.route_metadata or {}))
         write_phase("cnl_submission", "running" if _submission_accepted(submission.status) else "failed")
 
         if not _submission_accepted(submission.status):
@@ -464,6 +488,16 @@ def run_internal_youtube_job(
                 stable_checks_required=1,
             )
             timings["download_wait_ms"] = int((time.monotonic() - wait_start) * 1000)
+            timings["first_file_seen_ms"] = int(monitor.first_file_seen_ms or 0)
+            timings["pre_download_wait_ms"] = int(monitor.pre_download_wait_ms or 0)
+            timings["jd_finding_links_wait_ms"] = int(monitor.pre_download_wait_ms or 0)
+            timings["link_resolution_ms"] = int(monitor.pre_download_wait_ms or 0)
+            timings["active_download_ms"] = int(monitor.active_download_ms or 0)
+            if route_metadata.get("api3128_used"):
+                route_metadata["api3128_finished_ms"] = int(
+                    int(route_metadata.get("api3128_package_complete_ms", 0) or 0)
+                    + int(monitor.elapsed_ms or timings["download_wait_ms"])
+                )
             files = monitor.files
             warnings.extend(monitor.warnings)
             errors.extend(monitor.errors)

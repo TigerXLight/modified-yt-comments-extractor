@@ -21,6 +21,7 @@ MARKDOWN_URL_RE = re.compile(
 
 JD_BASE_URL = f"http://{CNL_HOST}:{CNL_PORT}"
 CNL_PERMISSION_BYPASS_REFERER = f"{JD_BASE_URL}/flashgot"
+JD_DEPRECATED_API_BASE_URL = "http://127.0.0.1:3128"
 
 
 
@@ -66,6 +67,7 @@ class CnlSubmissionReport:
     submission_status: str
     attempts: tuple[CnlRouteAttempt, ...]
     accepted_route: str = ""
+    route_metadata: dict[str, Any] | None = None
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
 
@@ -275,7 +277,7 @@ def _cnl_attempt_is_accepted(attempt: CnlRouteAttempt) -> bool:
         return False
     if attempt.route == "/flashgot" and body:
         return True
-    return "success" in body or "jdownloader" in body or body == "true"
+    return "success" in body or "jdownloader" in body or body in {"true", "ok"}
 
 
 def _cnl_attempt_was_sent_but_response_timed_out(attempt: CnlRouteAttempt) -> bool:
@@ -293,7 +295,7 @@ def _cnl_attempt_was_sent_but_response_timed_out(attempt: CnlRouteAttempt) -> bo
         return False
     if not attempt.error.lower().startswith("timeouterror:"):
         return False
-    return attempt.route in ("/flashgot", "/flash/add")
+    return attempt.route == "/flashgot"
 
 
 def _remoteapi_arg(value: Any) -> str:
@@ -303,6 +305,55 @@ def _remoteapi_arg(value: Any) -> str:
 def _remoteapi_get_url(route: str, args: Sequence[Any]) -> str:
     query = "&".join(_remoteapi_arg(arg) for arg in args)
     return f"{JD_BASE_URL}{route}?{query}" if query else f"{JD_BASE_URL}{route}"
+
+
+def _api3128_url(route: str) -> str:
+    return f"{JD_DEPRECATED_API_BASE_URL}{route}"
+
+
+def _attempt_api3128_route(
+    *,
+    route: str,
+    args: Sequence[Any],
+    timeout_seconds: float,
+    opener: UrlOpener,
+) -> CnlRouteAttempt:
+    start = time.monotonic()
+    url = _api3128_url(route)
+    body = json.dumps({"params": list(args)}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    request = Request(
+        url,
+        data=body,
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "User-Agent": "YTCE-Internal-JDownloader/1.0",
+            "Accept": "application/json,*/*",
+            "Connection": "close",
+        },
+        method="POST",
+    )
+    try:
+        status, response_body = opener(request, timeout_seconds)
+        return CnlRouteAttempt(
+            route=route,
+            method="POST",
+            url=url,
+            parameters=tuple(f"param{i}" for i, _arg in enumerate(args)),
+            timeout_seconds=timeout_seconds,
+            http_status=status,
+            response_excerpt=(response_body or "")[:1000],
+            duration_ms=int((time.monotonic() - start) * 1000),
+        )
+    except Exception as exc:
+        return CnlRouteAttempt(
+            route=route,
+            method="POST",
+            url=url,
+            parameters=tuple(f"param{i}" for i, _arg in enumerate(args)),
+            timeout_seconds=timeout_seconds,
+            duration_ms=int((time.monotonic() - start) * 1000),
+            error=f"{type(exc).__name__}: {exc}",
+        )
 
 
 def _attempt_remoteapi_route(
@@ -372,6 +423,52 @@ def _remoteapi_response_data(attempt: CnlRouteAttempt) -> Any:
     return payload
 
 
+def _api3128_attempt_is_accepted(attempt: CnlRouteAttempt) -> bool:
+    return _remoteapi_attempt_is_accepted(attempt)
+
+
+def _api3128_response_data(attempt: CnlRouteAttempt) -> Any:
+    return _remoteapi_response_data(attempt)
+
+
+def _api3128_extract_job_id(attempt: CnlRouteAttempt) -> int | None:
+    data = _api3128_response_data(attempt)
+    values: list[Any]
+    if isinstance(data, list):
+        values = data
+    else:
+        values = [data]
+    for value in values:
+        if isinstance(value, int):
+            return int(value)
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        if isinstance(value, Mapping):
+            for key in ("id", "jobId", "jobID", "crawlerJobId", "uuid"):
+                raw = value.get(key)
+                try:
+                    if raw is not None:
+                        return int(raw)
+                except Exception:
+                    continue
+    return None
+
+
+def _api3128_query_linkcrawler_jobs(
+    *,
+    job_id: int | None,
+    timeout_seconds: float,
+    opener: UrlOpener,
+) -> CnlRouteAttempt:
+    args: tuple[Any, ...] = ([job_id],) if job_id is not None else ()
+    return _attempt_api3128_route(
+        route="/linkgrabberv2/queryLinkCrawlerJobs",
+        args=args,
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+    )
+
+
 def _query_linkgrabber_packages(
     *,
     timeout_seconds: float,
@@ -389,6 +486,56 @@ def _query_linkgrabber_packages(
     }
     return _attempt_remoteapi_route(
         route="/linkgrabberv2/queryPackages",
+        args=(query,),
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+    )
+
+
+def _api3128_query_linkgrabber_packages(
+    *,
+    timeout_seconds: float,
+    opener: UrlOpener,
+) -> CnlRouteAttempt:
+    query = {
+        "startAt": 0,
+        "maxResults": 1000,
+        "bytesTotal": True,
+        "childCount": True,
+        "enabled": True,
+        "hosts": True,
+        "name": True,
+        "saveTo": True,
+        "status": True,
+        "uuid": True,
+    }
+    return _attempt_api3128_route(
+        route="/linkgrabberv2/queryPackages",
+        args=(query,),
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+    )
+
+
+def _api3128_query_linkgrabber_links(
+    *,
+    package_uuid: int | None,
+    timeout_seconds: float,
+    opener: UrlOpener,
+) -> CnlRouteAttempt:
+    query: dict[str, Any] = {
+        "startAt": 0,
+        "maxResults": 1000,
+        "enabled": True,
+        "host": True,
+        "name": True,
+        "packageUUIDs": [package_uuid] if package_uuid is not None else [],
+        "status": True,
+        "url": True,
+        "uuid": True,
+    }
+    return _attempt_api3128_route(
+        route="/linkgrabberv2/queryLinks",
         args=(query,),
         timeout_seconds=timeout_seconds,
         opener=opener,
@@ -451,6 +598,34 @@ def _find_remoteapi_package_uuid(attempt: CnlRouteAttempt, *, package_name: str,
             except Exception:
                 return fallback_uuid
     return fallback_uuid
+
+
+def _api3128_package_from_attempt(attempt: CnlRouteAttempt, *, package_name: str, output_dir: str | Path) -> Mapping[str, Any] | None:
+    data = _api3128_response_data(attempt)
+    if not isinstance(data, list):
+        return None
+    fallback: Mapping[str, Any] | None = None
+    for package in data:
+        if not isinstance(package, Mapping):
+            continue
+        if str(package.get("name") or "") == package_name and fallback is None:
+            fallback = package
+        if _package_uuid_matches_output(package, package_name=package_name, output_dir=output_dir):
+            return package
+    return fallback
+
+
+def _api3128_child_count(package: Mapping[str, Any] | None, links_attempt: CnlRouteAttempt | None = None) -> int:
+    if package is not None:
+        try:
+            return int(package.get("childCount") or 0)
+        except Exception:
+            pass
+    if links_attempt is not None:
+        data = _api3128_response_data(links_attempt)
+        if isinstance(data, list):
+            return len(data)
+    return 0
 
 
 def _force_linkgrabber_package_to_downloads(
@@ -568,6 +743,180 @@ def _attempt_linkgrabber_v2_addlinks(
         opener=opener,
     )
 
+
+def submit_api3128_download_route(
+    *,
+    source_url: str,
+    output_dir: str | Path,
+    package_name: str,
+    timeout_seconds: float = 5.0,
+    package_complete_timeout_seconds: float = 8.0,
+    expected_child_count: int = 4,
+    opener: UrlOpener = _default_url_opener,
+) -> CnlSubmissionReport:
+    started = time.monotonic()
+    attempts: list[CnlRouteAttempt] = []
+    warnings: list[str] = []
+    errors: list[str] = []
+    metadata: dict[str, Any] = {
+        "api3128_enabled": True,
+        "api3128_used": False,
+        "api3128_addlinks_ms": 0,
+        "api3128_package_complete_ms": 0,
+        "api3128_child_count": 0,
+        "api3128_move_ms": 0,
+        "api3128_start_ms": 0,
+        "api3128_first_running_ms": 0,
+        "api3128_finished_ms": 0,
+        "flashgot_fallback_used": False,
+        "route_used": "",
+    }
+    query = {
+        "links": source_url,
+        "packageName": package_name,
+        "destinationFolder": str(output_dir),
+        "sourceUrl": source_url,
+        "autostart": False,
+        "overwritePackagizerRules": True,
+        "assignJobID": True,
+    }
+    add_attempt = _attempt_api3128_route(
+        route="/linkgrabberv2/addLinks",
+        args=(query,),
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+    )
+    attempts.append(add_attempt)
+    metadata["api3128_addlinks_ms"] = int(add_attempt.duration_ms or 0)
+    if not _api3128_attempt_is_accepted(add_attempt):
+        errors.append("API3128 addLinks did not confirm acceptance.")
+        return CnlSubmissionReport("failed", tuple(attempts), route_metadata=metadata, warnings=tuple(warnings), errors=tuple(errors))
+
+    job_id = _api3128_extract_job_id(add_attempt)
+    package_uuid: int | None = None
+    package_complete = False
+    stable_count = 0
+    last_child_count = -1
+    best_child_count = 0
+
+    while time.monotonic() - started < max(1.0, package_complete_timeout_seconds):
+        jobs_attempt = _api3128_query_linkcrawler_jobs(job_id=job_id, timeout_seconds=timeout_seconds, opener=opener)
+        attempts.append(jobs_attempt)
+        packages_attempt = _api3128_query_linkgrabber_packages(timeout_seconds=timeout_seconds, opener=opener)
+        attempts.append(packages_attempt)
+        package = _api3128_package_from_attempt(packages_attempt, package_name=package_name, output_dir=output_dir)
+        if package is not None:
+            try:
+                package_uuid = int(package.get("uuid"))
+            except Exception:
+                package_uuid = None
+            links_attempt = _api3128_query_linkgrabber_links(
+                package_uuid=package_uuid,
+                timeout_seconds=timeout_seconds,
+                opener=opener,
+            )
+            attempts.append(links_attempt)
+            child_count = _api3128_child_count(package, links_attempt)
+            best_child_count = max(best_child_count, child_count)
+            metadata["api3128_child_count"] = best_child_count
+            if child_count == last_child_count and child_count > 0:
+                stable_count += 1
+            else:
+                stable_count = 0
+            last_child_count = child_count
+            if child_count >= max(1, expected_child_count) or stable_count >= 2:
+                package_complete = True
+                break
+        time.sleep(0.25)
+
+    metadata["api3128_package_complete_ms"] = int((time.monotonic() - started) * 1000)
+    if not package_complete or package_uuid is None:
+        errors.append("API3128 package never reached a complete/stable LinkGrabber state before timeout.")
+        return CnlSubmissionReport("failed", tuple(attempts), route_metadata=metadata, warnings=tuple(warnings), errors=tuple(errors))
+
+    move_attempt = _attempt_api3128_route(
+        route="/linkgrabberv2/moveToDownloadlist",
+        args=([], [package_uuid]),
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+    )
+    attempts.append(move_attempt)
+    metadata["api3128_move_ms"] = int(move_attempt.duration_ms or 0)
+    if not _api3128_attempt_is_accepted(move_attempt):
+        errors.append("API3128 moveToDownloadlist did not confirm acceptance.")
+        return CnlSubmissionReport("failed", tuple(attempts), route_metadata=metadata, warnings=tuple(warnings), errors=tuple(errors))
+
+    start_attempt = _attempt_api3128_route(
+        route="/downloadcontroller/start",
+        args=(),
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+    )
+    attempts.append(start_attempt)
+    metadata["api3128_start_ms"] = int(start_attempt.duration_ms or 0)
+    metadata["api3128_first_running_ms"] = int((time.monotonic() - started) * 1000)
+    if not _api3128_attempt_is_accepted(start_attempt):
+        errors.append("API3128 downloadcontroller/start did not confirm acceptance.")
+        return CnlSubmissionReport("failed", tuple(attempts), route_metadata=metadata, warnings=tuple(warnings), errors=tuple(errors))
+
+    metadata["api3128_used"] = True
+    metadata["route_used"] = "api3128"
+    warnings.append("Submitted via local Deprecated API 127.0.0.1:3128 after LinkGrabber package completed/stabilized.")
+    return CnlSubmissionReport(
+        submission_status="accepted_or_unknown",
+        attempts=tuple(attempts),
+        accepted_route="/api3128/linkgrabberv2/addLinks+moveToDownloadlist+downloadcontroller/start",
+        route_metadata=metadata,
+        warnings=tuple(warnings),
+        errors=tuple(errors),
+    )
+
+
+def submit_api3128_then_flashgot_fallback(
+    *,
+    source_url: str,
+    output_dir: str | Path,
+    package_name: str,
+    timeout_seconds: float = 5.0,
+    total_timeout_seconds: float = 18.0,
+    opener: UrlOpener = _default_url_opener,
+) -> CnlSubmissionReport:
+    api_report = submit_api3128_download_route(
+        source_url=source_url,
+        output_dir=output_dir,
+        package_name=package_name,
+        timeout_seconds=timeout_seconds,
+        package_complete_timeout_seconds=min(8.0, max(1.0, total_timeout_seconds)),
+        opener=opener,
+    )
+    if api_report.submission_status == "accepted_or_unknown" and api_report.route_metadata and api_report.route_metadata.get("api3128_used"):
+        return api_report
+
+    fallback = submit_cnl_multiroute(
+        source_url=source_url,
+        output_dir=output_dir,
+        package_name=package_name,
+        timeout_seconds=timeout_seconds,
+        total_timeout_seconds=max(1.0, total_timeout_seconds),
+        opener=opener,
+        routes=("/flashgot",),
+    )
+    metadata = dict(api_report.route_metadata or {})
+    metadata["flashgot_fallback_used"] = True
+    metadata["route_used"] = "/flashgot" if fallback.submission_status == "accepted_or_unknown" else "api3128_failed"
+    attempts = tuple([*api_report.attempts, *fallback.attempts])
+    warnings = tuple([*api_report.warnings, *fallback.warnings, "API3128 fast route failed; used /flashgot fallback."])
+    errors = tuple(fallback.errors if fallback.submission_status == "accepted_or_unknown" else [*api_report.errors, *fallback.errors])
+    return CnlSubmissionReport(
+        submission_status=fallback.submission_status,
+        attempts=attempts,
+        accepted_route=fallback.accepted_route,
+        route_metadata=metadata,
+        warnings=warnings,
+        errors=errors,
+    )
+
+
 def submit_cnl_multiroute(
     *,
     source_url: str,
@@ -683,6 +1032,13 @@ def submit_cnl_multiroute(
                 opener=opener,
             )
             attempts.append(attempt)
+            if total_timeout_seconds > 0 and time.monotonic() - started >= total_timeout_seconds and not _cnl_attempt_is_accepted(attempt):
+                return CnlSubmissionReport(
+                    submission_status="failed",
+                    attempts=tuple(attempts),
+                    warnings=tuple(warnings),
+                    errors=("CNL submission total timeout elapsed before all routes were attempted.",),
+                )
             if _cnl_attempt_is_accepted(attempt):
                 return CnlSubmissionReport(
                     submission_status="accepted_or_unknown",

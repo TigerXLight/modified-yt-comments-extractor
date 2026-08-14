@@ -49,6 +49,18 @@ class JDownloaderInternalManifest:
     original_source_url: str = ""
     submission_status: str = ""
     submission_attempts: tuple[dict[str, Any], ...] = ()
+    route_metadata: dict[str, Any] | None = None
+    api3128_enabled: bool = False
+    api3128_used: bool = False
+    api3128_addlinks_ms: int = 0
+    api3128_package_complete_ms: int = 0
+    api3128_child_count: int = 0
+    api3128_move_ms: int = 0
+    api3128_start_ms: int = 0
+    api3128_first_running_ms: int = 0
+    api3128_finished_ms: int = 0
+    flashgot_fallback_used: bool = False
+    route_used: str = ""
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
 
@@ -63,6 +75,9 @@ class MonitorResult:
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
     elapsed_ms: int = 0
+    first_file_seen_ms: int = 0
+    pre_download_wait_ms: int = 0
+    active_download_ms: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return _value_for_dict(self)
@@ -175,10 +190,13 @@ def wait_for_download_completion(
     stable_checks = 0
     last_sizes: dict[str, int] = {}
     warnings: list[str] = []
+    first_file_seen_at: float | None = None
     while True:
         elapsed = clock() - start
         files = collect_completed_files(output_dir)
         active = has_active_part_files(output_dir)
+        if files and first_file_seen_at is None:
+            first_file_seen_at = clock()
         current_sizes = {record.path: record.size for record in files}
         if files and not active and current_sizes == last_sizes:
             stable_checks += 1
@@ -186,23 +204,35 @@ def wait_for_download_completion(
             stable_checks = 0
         last_sizes = current_sizes
         if files and not active and stable_checks >= stable_checks_required:
+            done_at = clock()
+            elapsed_ms = int((done_at - start) * 1000)
+            first_seen_ms = int(((first_file_seen_at or done_at) - start) * 1000)
             return MonitorResult(
                 status="success",
                 files=files,
                 warnings=tuple(warnings),
-                elapsed_ms=int((clock() - start) * 1000),
+                elapsed_ms=elapsed_ms,
+                first_file_seen_ms=first_seen_ms,
+                pre_download_wait_ms=first_seen_ms,
+                active_download_ms=max(0, elapsed_ms - first_seen_ms),
             )
         if elapsed >= timeout_seconds:
             status = "partial" if files else "timeout"
             errors = () if files else ("No completed files appeared before timeout.",)
             if active:
                 warnings.append("Active .part files were still present at timeout.")
+            done_at = clock()
+            elapsed_ms = int((done_at - start) * 1000)
+            first_seen_ms = int(((first_file_seen_at or done_at) - start) * 1000) if first_file_seen_at is not None else 0
             return MonitorResult(
                 status=status,
                 files=files,
                 warnings=tuple(warnings),
                 errors=errors,
-                elapsed_ms=int((clock() - start) * 1000),
+                elapsed_ms=elapsed_ms,
+                first_file_seen_ms=first_seen_ms,
+                pre_download_wait_ms=first_seen_ms if first_seen_ms else elapsed_ms,
+                active_download_ms=max(0, elapsed_ms - first_seen_ms) if first_seen_ms else 0,
             )
         sleeper(poll_interval_seconds)
 
@@ -220,9 +250,11 @@ def build_download_manifest(
     phase: str = "",
     submission_status: str = "",
     submission_attempts: Sequence[Mapping[str, Any]] = (),
+    route_metadata: Mapping[str, Any] | None = None,
     warnings: Sequence[str] = (),
     errors: Sequence[str] = (),
 ) -> JDownloaderInternalManifest:
+    route = dict(route_metadata or {})
     return JDownloaderInternalManifest(
         backend_id=JDOWNLOADER_INTERNAL_BACKEND_ID,
         source_url=source_url,
@@ -236,6 +268,18 @@ def build_download_manifest(
         files=tuple(files),
         submission_status=str(submission_status or ""),
         submission_attempts=tuple(dict(attempt) for attempt in submission_attempts),
+        route_metadata=route,
+        api3128_enabled=bool(route.get("api3128_enabled", False)),
+        api3128_used=bool(route.get("api3128_used", False)),
+        api3128_addlinks_ms=int(route.get("api3128_addlinks_ms", 0) or 0),
+        api3128_package_complete_ms=int(route.get("api3128_package_complete_ms", 0) or 0),
+        api3128_child_count=int(route.get("api3128_child_count", 0) or 0),
+        api3128_move_ms=int(route.get("api3128_move_ms", 0) or 0),
+        api3128_start_ms=int(route.get("api3128_start_ms", 0) or 0),
+        api3128_first_running_ms=int(route.get("api3128_first_running_ms", 0) or 0),
+        api3128_finished_ms=int(route.get("api3128_finished_ms", 0) or 0),
+        flashgot_fallback_used=bool(route.get("flashgot_fallback_used", False)),
+        route_used=str(route.get("route_used", "") or ""),
         warnings=tuple(warnings),
         errors=tuple(errors),
     )

@@ -19,6 +19,7 @@ from jdownloader_internal_paths import JD_RUNTIME_DIR, JDOWNLOADER_INTERNAL_BACK
 CNL_HOST = "127.0.0.1"
 CNL_PORT = 9666
 CNL_JDCHECK_URL = f"http://{CNL_HOST}:{CNL_PORT}/jdcheckjson"
+DEPRECATED_API_PORT = 3128
 
 LAUNCH_ATTEMPTED = "LAUNCH_ATTEMPTED"
 INSTALLATION_VALIDATING = "INSTALLATION_VALIDATING"
@@ -173,6 +174,35 @@ def runtime_preflight(runtime_dir: str | Path = JD_RUNTIME_DIR) -> JDownloaderRu
         present=tuple(present),
         warnings=tuple(warnings),
     )
+
+
+def ensure_project_local_deprecated_api_config(runtime_dir: str | Path = JD_RUNTIME_DIR) -> Path:
+    """Enable JD's localhost-only Deprecated API in the project runtime config."""
+    runtime = Path(runtime_dir)
+    if not is_project_local_runtime(runtime):
+        raise ValueError("Refusing to edit Deprecated API config outside the project-local JDownloader runtime.")
+    cfg_dir = runtime / "cfg"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    config_path = cfg_dir / "org.jdownloader.api.RemoteAPIConfig.json"
+    data: dict[str, Any] = {}
+    if config_path.is_file():
+        try:
+            loaded = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data.update(loaded)
+        except Exception:
+            data = {}
+    data.update(
+        {
+            "deprecatedapienabled": True,
+            "deprecatedapilocalhostonly": True,
+            "deprecatedapiport": DEPRECATED_API_PORT,
+            "externinterfaceenabled": True,
+            "externinterfacelocalhostonly": True,
+        }
+    )
+    config_path.write_text(json.dumps(data, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+    return config_path
 
 
 def repair_project_local_runtime(
@@ -335,6 +365,10 @@ class JDownloaderInternalProcessManager:
             return self._report("failed", errors=("Runtime directory is not under third_party/jdownloader/runtime.",))
         if not self.runtime_dir.is_dir():
             return self._report("failed", errors=("Project-local JDownloader runtime directory is missing.",))
+        try:
+            ensure_project_local_deprecated_api_config(self.runtime_dir)
+        except Exception as exc:
+            return self._report("failed", errors=(f"Could not enable project-local Deprecated API config: {type(exc).__name__}: {exc}",))
         preflight = runtime_preflight(self.runtime_dir)
         if not (preflight.ready_for_exe_launch or preflight.ready_for_jar_launch):
             return self._report(
