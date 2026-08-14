@@ -119,9 +119,45 @@ def test_wait_for_download_completion_success_and_timeout() -> None:
         assert "No completed files" in timeout.errors[0]
 
 
+
+def test_collect_completed_files_skips_temporarily_locked_files() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        ok = root / "video.mp4"
+        locked = root / "audio.dashAudio"
+        ok.write_bytes(b"video")
+        locked.write_bytes(b"audio")
+
+        import jdownloader_internal_download_monitor as monitor_module
+
+        original_sha = monitor_module.sha256_file
+
+        def fake_sha(path):
+            if Path(path).name == "audio.dashAudio":
+                raise PermissionError(13, "Permission denied", str(path))
+            return original_sha(path)
+
+        try:
+            monitor_module.sha256_file = fake_sha
+            records = collect_completed_files(root)
+        finally:
+            monitor_module.sha256_file = original_sha
+
+        assert len(records) == 1
+        assert records[0].kind == "video"
+        assert Path(records[0].path).name == "video.mp4"
+
+
+def test_dash_audio_and_video_extensions_are_classified() -> None:
+    assert classify_download_file("sample.dashAudio") == "audio"
+    assert classify_download_file("sample.dashVideo") == "video"
+
+
 def main() -> None:
     test_classifies_files_and_writes_manifest_shape()
     test_wait_for_download_completion_success_and_timeout()
+    test_collect_completed_files_skips_temporarily_locked_files()
+    test_dash_audio_and_video_extensions_are_classified()
     print("jdownloader_internal_download_monitor_test OK")
 
 

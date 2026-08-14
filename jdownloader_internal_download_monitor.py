@@ -11,8 +11,8 @@ from typing import Any, Callable, Mapping, Sequence
 from jdownloader_internal_paths import JDOWNLOADER_INTERNAL_BACKEND_ID
 
 
-VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".m4v"}
-AUDIO_EXTENSIONS = {".m4a", ".mp3", ".opus", ".ogg", ".wav", ".aac", ".flac"}
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".m4v", ".dashvideo"}
+AUDIO_EXTENSIONS = {".m4a", ".mp3", ".opus", ".ogg", ".wav", ".aac", ".flac", ".dashaudio"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
 DESCRIPTION_EXTENSIONS = {".description", ".txt", ".md", ".srt", ".vtt"}
 METADATA_EXTENSIONS = {".json", ".info.json", ".xml", ".nfo"}
@@ -151,25 +151,49 @@ def _is_active_download_path(path: Path) -> bool:
     return any(lower_name.endswith(suffix) for suffix in ACTIVE_SUFFIXES)
 
 
-def collect_completed_files(output_dir: str | Path) -> tuple[JDownloaderInternalFileRecord, ...]:
+
+def _is_transient_download_file_access_error(exc: BaseException) -> bool:
+    """Return True for temporary file locks while JDownloader is finalizing files."""
+    if isinstance(exc, PermissionError):
+        return True
+    winerror = getattr(exc, "winerror", None)
+    errno = getattr(exc, "errno", None)
+    return winerror in {32, 33} or errno in {13}
+
+
+def _scan_completed_files(output_dir: str | Path) -> tuple[tuple[JDownloaderInternalFileRecord, ...], tuple[str, ...]]:
     root = Path(output_dir)
     if not root.exists():
-        return ()
+        return (), ()
     records: list[JDownloaderInternalFileRecord] = []
+    locked_paths: list[str] = []
     for path in sorted(root.rglob("*")):
-        if not path.is_file() or _is_active_download_path(path):
-            continue
-        if path.name in INTERNAL_MANIFEST_NAMES:
-            continue
+        try:
+            if not path.is_file() or _is_active_download_path(path):
+                continue
+            if path.name in INTERNAL_MANIFEST_NAMES:
+                continue
+            size = path.stat().st_size
+            digest = sha256_file(path)
+        except OSError as exc:
+            if _is_transient_download_file_access_error(exc):
+                locked_paths.append(str(path))
+                continue
+            raise
         records.append(
             JDownloaderInternalFileRecord(
                 kind=classify_download_file(path),
                 path=str(path),
-                size=path.stat().st_size,
-                sha256=sha256_file(path),
+                size=size,
+                sha256=digest,
             )
         )
-    return tuple(records)
+    return tuple(records), tuple(locked_paths)
+
+
+def collect_completed_files(output_dir: str | Path) -> tuple[JDownloaderInternalFileRecord, ...]:
+    records, _locked_paths = _scan_completed_files(output_dir)
+    return records
 
 
 def has_active_part_files(output_dir: str | Path) -> bool:
@@ -191,10 +215,16 @@ def wait_for_download_completion(
     last_sizes: dict[str, int] = {}
     warnings: list[str] = []
     first_file_seen_at: float | None = None
+    locked_warning_emitted = False
+    last_locked_paths: tuple[str, ...] = ()
     while True:
         elapsed = clock() - start
-        files = collect_completed_files(output_dir)
-        active = has_active_part_files(output_dir)
+        files, locked_paths = _scan_completed_files(output_dir)
+        last_locked_paths = locked_paths
+        active = has_active_part_files(output_dir) or bool(locked_paths)
+        if locked_paths and not locked_warning_emitted:
+            warnings.append("One or more completed-looking files are still locked by JDownloader; waiting for unlock before importing.")
+            locked_warning_emitted = True
         if files and first_file_seen_at is None:
             first_file_seen_at = clock()
         current_sizes = {record.path: record.size for record in files}
@@ -219,8 +249,10 @@ def wait_for_download_completion(
         if elapsed >= timeout_seconds:
             status = "partial" if files else "timeout"
             errors = () if files else ("No completed files appeared before timeout.",)
+            if last_locked_paths:
+                warnings.append("Completed-looking files remained locked by JDownloader at timeout: " + "; ".join(last_locked_paths[:3]))
             if active:
-                warnings.append("Active .part files were still present at timeout.")
+                warnings.append("Active .part or locked files were still present at timeout.")
             done_at = clock()
             elapsed_ms = int((done_at - start) * 1000)
             first_seen_ms = int(((first_file_seen_at or done_at) - start) * 1000) if first_file_seen_at is not None else 0

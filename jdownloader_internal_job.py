@@ -153,7 +153,7 @@ def _write_job_manifest(
         submission_status=submission_status,
         submission_attempts=submission_attempts,
         route_metadata=route_metadata,
-        warnings=warnings,
+        warnings=tuple(warnings),
         errors=errors,
     )
     write_download_manifest(manifest, manifest_path)
@@ -212,6 +212,19 @@ def inspect_cnl_source_support(source_tree_dir: str | Path | None = None) -> Cnl
     )
 
 
+
+def _cnl_operator_permission_warning_needed(accepted_route: str, route_metadata: Mapping[str, Any] | None) -> bool:
+    # True only for legacy CNL/FlashGot. API3128 does not use the CNL permission-dialog route.
+    route = dict(route_metadata or {})
+    if bool(route.get("api3128_used")) or str(route.get("route_used", "")).lower() == "api3128":
+        return False
+    if bool(route.get("flashgot_fallback_used")):
+        return True
+    accepted = str(accepted_route or "").lower()
+    route_used = str(route.get("route_used", "") or "").lower()
+    return accepted.startswith("/flash") or route_used in {"flashgot", "/flashgot", "flash/add", "/flash/add"}
+
+
 def submit_youtube_job_via_cnl(request: InternalJDownloaderJobRequest, *, timeout_seconds: float = 15.0) -> CnlSubmissionResult:
     start = time.monotonic()
     report = submit_api3128_then_flashgot_fallback(
@@ -222,7 +235,9 @@ def submit_youtube_job_via_cnl(request: InternalJDownloaderJobRequest, *, timeou
         total_timeout_seconds=request.cnl_total_timeout_seconds,
     )
     accepted_attempt = next((attempt for attempt in report.attempts if attempt.route == report.accepted_route and not attempt.error), None)
-    warnings = tuple(report.warnings) + ("CNL may require operator permission inside JDownloader if this source is not pre-authorized.",)
+    warnings = list(report.warnings)
+    if _cnl_operator_permission_warning_needed(report.accepted_route, report.route_metadata):
+        warnings.append('CNL may require operator permission inside JDownloader if this source is not pre-authorized.')
     return CnlSubmissionResult(
         status=report.submission_status,
         endpoint_url=accepted_attempt.url if accepted_attempt else CNL_FLASHGOT_URL,

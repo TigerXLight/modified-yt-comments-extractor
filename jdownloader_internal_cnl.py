@@ -761,6 +761,11 @@ def submit_api3128_download_route(
     metadata: dict[str, Any] = {
         "api3128_enabled": True,
         "api3128_used": False,
+        "api3128_api_host": "127.0.0.1",
+        "api3128_api_port": 3128,
+        "api3128_localhost_only": True,
+        "api3128_execution_plan": "addLinks -> wait LinkGrabber stable -> moveToDownloadlist -> downloadcontroller/start",
+        "api3128_route_note": "",
         "api3128_addlinks_ms": 0,
         "api3128_package_complete_ms": 0,
         "api3128_child_count": 0,
@@ -861,7 +866,7 @@ def submit_api3128_download_route(
 
     metadata["api3128_used"] = True
     metadata["route_used"] = "api3128"
-    warnings.append("Submitted via local Deprecated API 127.0.0.1:3128 after LinkGrabber package completed/stabilized.")
+    metadata["api3128_route_note"] = "Submitted via local Deprecated API 127.0.0.1:3128 after LinkGrabber package completed/stabilized."
     return CnlSubmissionReport(
         submission_status="accepted_or_unknown",
         attempts=tuple(attempts),
@@ -903,7 +908,7 @@ def submit_api3128_then_flashgot_fallback(
     )
     metadata = dict(api_report.route_metadata or {})
     metadata["flashgot_fallback_used"] = True
-    metadata["route_used"] = "/flashgot" if fallback.submission_status == "accepted_or_unknown" else "api3128_failed"
+    metadata["route_used"] = "flashgot" if fallback.submission_status == "accepted_or_unknown" else "api3128_failed"
     attempts = tuple([*api_report.attempts, *fallback.attempts])
     warnings = tuple([*api_report.warnings, *fallback.warnings, "API3128 fast route failed; used /flashgot fallback."])
     errors = tuple(fallback.errors if fallback.submission_status == "accepted_or_unknown" else [*api_report.errors, *fallback.errors])

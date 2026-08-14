@@ -11,6 +11,7 @@ from jdownloader_internal_job import (
     inspect_cnl_source_support,
     normalize_jdownloader_source_url,
     run_internal_youtube_job,
+    submit_youtube_job_via_cnl,
 )
 from jdownloader_internal_paths import JD_RUNTIME_DIR
 from jdownloader_internal_process import JDownloaderInternalProcessManager
@@ -339,6 +340,105 @@ def test_failed_submission_remains_failed_with_attempts() -> None:
         assert manifest["submission_attempts"][0]["error"] == "TimeoutError: timed out"
 
 
+
+def test_api3128_submission_does_not_emit_legacy_cnl_permission_warning() -> None:
+    import jdownloader_internal_job as job_module
+    from jdownloader_internal_cnl import CnlSubmissionReport
+
+    request = build_youtube_job_request(
+        source_url="https://youtu.be/example",
+        output_dir=Path(tempfile.gettempdir()) / "ytce_v65b_api3128_warning_test",
+        package_name="YTCE api3128 package",
+        wait=False,
+    )
+
+    def fake_submitter(**_kwargs):
+        attempt = CnlRouteAttempt(
+            route="/linkgrabberv2/addLinks",
+            method="POST",
+            url="http://127.0.0.1:3128/linkgrabberv2/addLinks",
+            parameters=(),
+            timeout_seconds=1,
+            http_status=200,
+            response_excerpt="ok",
+        )
+        return CnlSubmissionReport(
+            submission_status="accepted_or_unknown",
+            attempts=(attempt,),
+            accepted_route="/api3128/linkgrabberv2/addLinks+moveToDownloadlist+downloadcontroller/start",
+            route_metadata={
+                "api3128_enabled": True,
+                "api3128_used": True,
+                "api3128_api_host": "127.0.0.1",
+                "api3128_api_port": 3128,
+                "api3128_localhost_only": True,
+                "api3128_route_note": "submitted by test",
+                "flashgot_fallback_used": False,
+                "route_used": "api3128",
+            },
+            warnings=(),
+            errors=(),
+        )
+
+    original = job_module.submit_api3128_then_flashgot_fallback
+    try:
+        job_module.submit_api3128_then_flashgot_fallback = fake_submitter
+        result = submit_youtube_job_via_cnl(request)
+    finally:
+        job_module.submit_api3128_then_flashgot_fallback = original
+
+    assert result.accepted_route.startswith("/api3128/")
+    assert result.route_metadata["route_used"] == "api3128"
+    assert result.route_metadata["api3128_used"] is True
+    assert not any("CNL may require operator permission" in warning for warning in result.warnings)
+
+
+def test_flashgot_fallback_keeps_cnl_permission_warning() -> None:
+    import jdownloader_internal_job as job_module
+    from jdownloader_internal_cnl import CnlSubmissionReport
+
+    request = build_youtube_job_request(
+        source_url="https://youtu.be/example",
+        output_dir=Path(tempfile.gettempdir()) / "ytce_v65b_flashgot_warning_test",
+        package_name="YTCE flashgot package",
+        wait=False,
+    )
+
+    def fake_submitter(**_kwargs):
+        attempt = CnlRouteAttempt(
+            route="/flashgot",
+            method="POST",
+            url="http://127.0.0.1:9666/flashgot",
+            parameters=(),
+            timeout_seconds=1,
+            http_status=200,
+            response_excerpt="JDownloader",
+        )
+        return CnlSubmissionReport(
+            submission_status="accepted_or_unknown",
+            attempts=(attempt,),
+            accepted_route="/flashgot",
+            route_metadata={
+                "api3128_enabled": True,
+                "api3128_used": False,
+                "flashgot_fallback_used": True,
+                "route_used": "flashgot",
+            },
+            warnings=("API3128 fast route failed; used /flashgot fallback.",),
+            errors=(),
+        )
+
+    original = job_module.submit_api3128_then_flashgot_fallback
+    try:
+        job_module.submit_api3128_then_flashgot_fallback = fake_submitter
+        result = submit_youtube_job_via_cnl(request)
+    finally:
+        job_module.submit_api3128_then_flashgot_fallback = original
+
+    assert result.accepted_route == "/flashgot"
+    assert result.route_metadata["flashgot_fallback_used"] is True
+    assert any("CNL may require operator permission" in warning for warning in result.warnings)
+
 def main() -> None:
     test_markdown_url_is_normalized_and_garbage_rejected()
     test_cnl_source_support_is_verified_from_vendored_source()
@@ -351,6 +451,8 @@ def main() -> None:
     test_keyboard_interrupt_writes_cancelled_manifest()
     test_accepted_without_files_is_partial_not_failed()
     test_failed_submission_remains_failed_with_attempts()
+    test_api3128_submission_does_not_emit_legacy_cnl_permission_warning()
+    test_flashgot_fallback_keeps_cnl_permission_warning()
     print("jdownloader_internal_job_test OK")
 
 
