@@ -7,7 +7,7 @@ import time
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from jdownloader_internal_download_monitor import create_youtube_download_output_dir, safe_download_folder_name
@@ -295,6 +295,279 @@ def _cnl_attempt_was_sent_but_response_timed_out(attempt: CnlRouteAttempt) -> bo
         return False
     return attempt.route in ("/flashgot", "/flash/add")
 
+
+def _remoteapi_arg(value: Any) -> str:
+    return quote(json.dumps(value, ensure_ascii=False, separators=(",", ":")), safe="{}[]:,\"")
+
+
+def _remoteapi_get_url(route: str, args: Sequence[Any]) -> str:
+    query = "&".join(_remoteapi_arg(arg) for arg in args)
+    return f"{JD_BASE_URL}{route}?{query}" if query else f"{JD_BASE_URL}{route}"
+
+
+def _attempt_remoteapi_route(
+    *,
+    route: str,
+    args: Sequence[Any],
+    timeout_seconds: float,
+    opener: UrlOpener,
+) -> CnlRouteAttempt:
+    start = time.monotonic()
+    url = _remoteapi_get_url(route, args)
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "YTCE-Internal-JDownloader/1.0",
+            "Accept": "application/json,*/*",
+            "Connection": "close",
+        },
+        method="GET",
+    )
+    try:
+        status, body = opener(request, timeout_seconds)
+        return CnlRouteAttempt(
+            route=route,
+            method="GET",
+            url=url,
+            parameters=tuple(f"arg{i}" for i, _arg in enumerate(args)),
+            timeout_seconds=timeout_seconds,
+            http_status=status,
+            response_excerpt=(body or "")[:1000],
+            duration_ms=int((time.monotonic() - start) * 1000),
+        )
+    except Exception as exc:
+        return CnlRouteAttempt(
+            route=route,
+            method="GET",
+            url=url,
+            parameters=tuple(f"arg{i}" for i, _arg in enumerate(args)),
+            timeout_seconds=timeout_seconds,
+            duration_ms=int((time.monotonic() - start) * 1000),
+            error=f"{type(exc).__name__}: {exc}",
+        )
+
+
+def _remoteapi_attempt_is_accepted(attempt: CnlRouteAttempt) -> bool:
+    if attempt.error or not (200 <= attempt.http_status < 300):
+        return False
+    body = (attempt.response_excerpt or "").strip()
+    if not body:
+        return True
+    lowered = body.lower()
+    if lowered.startswith("failed") or "exception" in lowered or "badparameter" in lowered:
+        return False
+    return True
+
+
+def _remoteapi_response_data(attempt: CnlRouteAttempt) -> Any:
+    body = (attempt.response_excerpt or "").strip()
+    if not body:
+        return None
+    try:
+        payload = json.loads(body)
+    except Exception:
+        return None
+    if isinstance(payload, Mapping) and "data" in payload:
+        return payload.get("data")
+    return payload
+
+
+def _query_linkgrabber_packages(
+    *,
+    timeout_seconds: float,
+    opener: UrlOpener,
+) -> CnlRouteAttempt:
+    query = {
+        "startAt": 0,
+        "maxResults": 1000,
+        "bytesTotal": True,
+        "childCount": True,
+        "enabled": True,
+        "hosts": True,
+        "saveTo": True,
+        "status": True,
+    }
+    return _attempt_remoteapi_route(
+        route="/linkgrabberv2/queryPackages",
+        args=(query,),
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+    )
+
+
+def _query_download_packages(
+    *,
+    timeout_seconds: float,
+    opener: UrlOpener,
+) -> CnlRouteAttempt:
+    query = {
+        "startAt": 0,
+        "maxResults": 1000,
+        "bytesTotal": True,
+        "childCount": True,
+        "enabled": True,
+        "hosts": True,
+        "saveTo": True,
+        "status": True,
+        "running": True,
+        "finished": True,
+    }
+    return _attempt_remoteapi_route(
+        route="/downloadsV2/queryPackages",
+        args=(query,),
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+    )
+
+
+def _package_uuid_matches_output(package: Mapping[str, Any], *, package_name: str, output_dir: str | Path) -> bool:
+    name = str(package.get("name") or "")
+    save_to = str(package.get("saveTo") or "")
+    expected_output = str(output_dir)
+    if name != package_name:
+        return False
+    if expected_output and save_to:
+        return save_to.lower().rstrip("\\/") == expected_output.lower().rstrip("\\/")
+    return True
+
+
+def _find_remoteapi_package_uuid(attempt: CnlRouteAttempt, *, package_name: str, output_dir: str | Path) -> int | None:
+    data = _remoteapi_response_data(attempt)
+    if not isinstance(data, list):
+        return None
+    fallback_uuid: int | None = None
+    for package in data:
+        if not isinstance(package, Mapping):
+            continue
+        name = str(package.get("name") or "")
+        if name == package_name and fallback_uuid is None:
+            try:
+                fallback_uuid = int(package.get("uuid"))
+            except Exception:
+                fallback_uuid = None
+        if _package_uuid_matches_output(package, package_name=package_name, output_dir=output_dir):
+            try:
+                return int(package.get("uuid"))
+            except Exception:
+                return fallback_uuid
+    return fallback_uuid
+
+
+def _force_linkgrabber_package_to_downloads(
+    *,
+    package_name: str,
+    output_dir: str | Path,
+    timeout_seconds: float,
+    opener: UrlOpener,
+) -> tuple[list[CnlRouteAttempt], list[str], list[str]]:
+    attempts: list[CnlRouteAttempt] = []
+    warnings: list[str] = []
+    errors: list[str] = []
+    started = time.monotonic()
+    package_uuid: int | None = None
+
+    # Crawler jobs can finish after addLinks returns. Poll LinkGrabber for the
+    # exact YTCE package, then explicitly move it to the Downloads list.
+    while time.monotonic() - started < max(3.0, timeout_seconds):
+        query_attempt = _query_linkgrabber_packages(timeout_seconds=3.0, opener=opener)
+        attempts.append(query_attempt)
+        package_uuid = _find_remoteapi_package_uuid(
+            query_attempt,
+            package_name=package_name,
+            output_dir=output_dir,
+        )
+        if package_uuid is not None:
+            break
+        time.sleep(1.0)
+
+    if package_uuid is None:
+        errors.append(f"Could not find LinkGrabber package {package_name!r} to move into Downloads.")
+        return attempts, warnings, errors
+
+    set_dir_attempt = _attempt_remoteapi_route(
+        route="/linkgrabberv2/setDownloadDirectory",
+        args=(str(output_dir), [package_uuid]),
+        timeout_seconds=5.0,
+        opener=opener,
+    )
+    attempts.append(set_dir_attempt)
+    if not _remoteapi_attempt_is_accepted(set_dir_attempt):
+        warnings.append("Could not confirm LinkGrabber package download directory before moving it to Downloads.")
+
+    move_attempt = _attempt_remoteapi_route(
+        route="/linkgrabberv2/moveToDownloadlist",
+        args=([], [package_uuid]),
+        timeout_seconds=8.0,
+        opener=opener,
+    )
+    attempts.append(move_attempt)
+    if not _remoteapi_attempt_is_accepted(move_attempt):
+        errors.append("Could not confirm LinkGrabber package moveToDownloadlist.")
+        return attempts, warnings, errors
+
+    # Start the global download controller as a belt-and-braces step. The
+    # package-specific IDs change after moving into Downloads, so use start first
+    # and only force-download if we can find the moved package in downloadsV2.
+    start_attempt = _attempt_remoteapi_route(
+        route="/downloadcontroller/start",
+        args=(),
+        timeout_seconds=5.0,
+        opener=opener,
+    )
+    attempts.append(start_attempt)
+    if not _remoteapi_attempt_is_accepted(start_attempt):
+        warnings.append("Could not confirm downloadcontroller/start after moveToDownloadlist.")
+
+    download_query_attempt = _query_download_packages(timeout_seconds=5.0, opener=opener)
+    attempts.append(download_query_attempt)
+    download_uuid = _find_remoteapi_package_uuid(
+        download_query_attempt,
+        package_name=package_name,
+        output_dir=output_dir,
+    )
+    if download_uuid is not None:
+        force_attempt = _attempt_remoteapi_route(
+            route="/downloadcontroller/forceDownload",
+            args=([], [download_uuid]),
+            timeout_seconds=5.0,
+            opener=opener,
+        )
+        attempts.append(force_attempt)
+        if not _remoteapi_attempt_is_accepted(force_attempt):
+            warnings.append("Could not confirm package-specific forceDownload after moveToDownloadlist.")
+    else:
+        warnings.append("Moved YTCE package to Downloads but could not re-query the new package UUID for forceDownload.")
+
+    warnings.append("Forced YTCE LinkGrabber package into Downloads and requested download start.")
+    return attempts, warnings, errors
+
+
+def _attempt_linkgrabber_v2_addlinks(
+    *,
+    source_url: str,
+    output_dir: str | Path,
+    package_name: str,
+    timeout_seconds: float,
+    opener: UrlOpener,
+) -> CnlRouteAttempt:
+    query = {
+        "links": source_url,
+        "packageName": package_name,
+        "destinationFolder": str(output_dir),
+        "autostart": True,
+        "deepDecrypt": False,
+        "overwritePackagizerRules": True,
+        "assignJobID": True,
+        "sourceUrl": CNL_PERMISSION_BYPASS_REFERER,
+        "comment": "YTCE internal JDownloader RemoteAPI submission",
+    }
+    return _attempt_remoteapi_route(
+        route="/linkgrabberv2/addLinks",
+        args=(query,),
+        timeout_seconds=timeout_seconds,
+        opener=opener,
+    )
+
 def submit_cnl_multiroute(
     *,
     source_url: str,
@@ -308,6 +581,11 @@ def submit_cnl_multiroute(
     started = time.monotonic()
     route_report = inspect_cnl_source_routes()
     supported = set(route_report.supported_routes)
+    # The local 9666 interface is the CNL/FlashGot API, not the MyJDownloader
+    # RemoteAPI. On this runtime, /linkgrabberv2/* returns HTTP 501. Prefer the
+    # /flash/add returns quickly and accepts autostart=true. Keep /flashgot as
+    # fallback; it accepts autostart=1 but may spend longer in the JD crawler
+    # before returning.
     ordered_routes = tuple(routes or ("/flashgot", "/flash/add"))
     attempts: list[CnlRouteAttempt] = []
     warnings: list[str] = list(route_report.warnings)
@@ -319,6 +597,8 @@ def submit_cnl_multiroute(
         "package": package_name,
         "packageName": package_name,
         "dir": str(output_dir),
+        # Route-specific value is normalised below:
+        # /flashgot expects "1"; /flash/add expects "true".
         "autostart": "1",
         "autoStart": "1",
         "autoConfirm": "1",
@@ -332,6 +612,43 @@ def submit_cnl_multiroute(
                 warnings=tuple(warnings),
                 errors=("CNL submission total timeout elapsed before all routes were attempted.",),
             )
+        if route == "/remoteapi/linkgrabberv2/addLinks":
+            remaining = total_timeout_seconds - (time.monotonic() - started) if total_timeout_seconds > 0 else timeout_seconds
+            effective_timeout = max(0.01, min(timeout_seconds, remaining)) if total_timeout_seconds > 0 else timeout_seconds
+            attempt = _attempt_linkgrabber_v2_addlinks(
+                source_url=source_url,
+                output_dir=output_dir,
+                package_name=package_name,
+                timeout_seconds=effective_timeout,
+                opener=opener,
+            )
+            attempts.append(attempt)
+            if _remoteapi_attempt_is_accepted(attempt):
+                force_attempts, force_warnings, force_errors = _force_linkgrabber_package_to_downloads(
+                    package_name=package_name,
+                    output_dir=output_dir,
+                    timeout_seconds=max(12.0, min(30.0, total_timeout_seconds)),
+                    opener=opener,
+                )
+                attempts.extend(force_attempts)
+                warnings.extend(force_warnings)
+                errors.extend(force_errors)
+                if force_errors:
+                    warnings.append("RemoteAPI addLinks accepted the package, but the forced move/start step did not fully confirm.")
+                return CnlSubmissionReport(
+                    submission_status="accepted_or_unknown",
+                    attempts=tuple(attempts),
+                    accepted_route="/linkgrabberv2/addLinks+moveToDownloadlist",
+                    warnings=tuple(
+                        warnings
+                        + [
+                            "Submitted via local JDownloader LinkGrabber v2 RemoteAPI, then explicitly moved the YTCE package to Downloads.",
+                        ]
+                    ),
+                    errors=tuple(errors),
+                )
+            warnings.append("Local LinkGrabber v2 RemoteAPI addLinks did not confirm acceptance; falling back to CNL routes.")
+            continue
         if route not in supported:
             warnings.append(f"Route {route} is not present in vendored source; skipped.")
             continue
@@ -346,10 +663,22 @@ def submit_cnl_multiroute(
                 )
             remaining = total_timeout_seconds - (time.monotonic() - started) if total_timeout_seconds > 0 else timeout_seconds
             effective_timeout = max(0.01, min(timeout_seconds, remaining)) if total_timeout_seconds > 0 else timeout_seconds
+            route_params = dict(base_params)
+            if route == "/flash/add":
+                # ExternInterfaceImpl.java checks "true". A value of "1" queues
+                # the package but does not set AutoConfirm/AutoStart.
+                route_params["autostart"] = "true"
+                route_params["autoStart"] = "true"
+                route_params["autoConfirm"] = "true"
+            elif route == "/flashgot":
+                # FlashGotAPI checks for "1".
+                route_params["autostart"] = "1"
+                route_params["autoStart"] = "1"
+                route_params["autoConfirm"] = "1"
             attempt = _attempt_route(
                 route=route,
                 method=method,
-                params=base_params,
+                params=route_params,
                 timeout_seconds=effective_timeout,
                 opener=opener,
             )

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import tempfile
@@ -128,7 +128,6 @@ def test_queue_youtube_gui_source_row_selection_writes_mux_audio_and_metadata_fi
         assert "Views: 429,265" in metadata
         assert "Description: Provided to YouTube by NexTone Inc." in metadata
         assert "Source:" in metadata
-        assert "Go adds this YouTube media selection to FILES automatically" in metadata
         video_plan = json.loads(Path(result.plan_json_paths[0]).read_text(encoding="utf-8"))
         audio_plan = json.loads(Path(result.plan_json_paths[1]).read_text(encoding="utf-8"))
         assert "+bestaudio" in video_plan["format_selector"]
@@ -381,3 +380,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

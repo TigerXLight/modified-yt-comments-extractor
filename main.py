@@ -23,6 +23,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 from dataclasses import dataclass, replace
+from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -186,6 +187,7 @@ SESSION_FILE_KIND_OTHER = "other"
 TRANSCRIPT_FILE_EXTENSIONS = {".srt", ".vtt", ".txt"}
 AUDIO_FILE_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 VIDEO_FILE_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
+IMAGE_FILE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
 
 
 @dataclass(frozen=True)
@@ -1102,7 +1104,33 @@ class App(ctk.CTk):
             text_color=COLORS["text_primary"],
             corner_radius=6,
         )
-        self.files_add_button.grid(row=0, column=1, sticky="e")
+        self.files_expand_all_button = ctk.CTkButton(
+            self.files_header_frame,
+            text="Expand all",
+            width=70,
+            height=24,
+            command=lambda: self._set_all_session_folders_collapsed(False),
+            fg_color=COLORS["bg_input"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+        )
+        self.files_expand_all_button.grid(row=0, column=1, sticky="e", padx=(0, 4))
+
+        self.files_collapse_all_button = ctk.CTkButton(
+            self.files_header_frame,
+            text="Collapse all",
+            width=76,
+            height=24,
+            command=lambda: self._set_all_session_folders_collapsed(True),
+            fg_color=COLORS["bg_input"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+        )
+        self.files_collapse_all_button.grid(row=0, column=2, sticky="e", padx=(0, 4))
+
+        self.files_add_button.grid(row=0, column=3, sticky="e")
 
         self.files_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
         self.files_frame.pack(fill="x", padx=20)
@@ -1139,11 +1167,12 @@ class App(ctk.CTk):
         return [
             (
                 "Supported session files",
-                "*.srt *.vtt *.txt *.mp3 *.wav *.m4a *.aac *.flac *.ogg *.mp4 *.mkv *.mov *.avi *.webm",
+                "*.srt *.vtt *.txt *.mp3 *.wav *.m4a *.aac *.flac *.ogg *.mp4 *.mkv *.mov *.avi *.webm *.jpg *.jpeg *.png *.webp *.gif *.bmp *.tif *.tiff",
             ),
             ("Transcript files", "*.srt *.vtt *.txt"),
             ("Audio files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
             ("Video files", "*.mp4 *.mkv *.mov *.avi *.webm"),
+            ("Image files", "*.jpg *.jpeg *.png *.webp *.gif *.bmp *.tif *.tiff"),
             ("All files", "*.*"),
         ]
 
@@ -1426,19 +1455,9 @@ class App(ctk.CTk):
                 added.append(path)
             candidates.append(entry)
 
+        # Adding files to FILES must not auto-open Transcript/Text Editor/media panels.
+        # The user opens those explicitly with CC/TXT/ASR/open actions.
         selected_path = ""
-        if select_first and candidates:
-            transcript_candidate = next(
-                (
-                    entry
-                    for entry in candidates
-                    if entry.file_kind == SESSION_FILE_KIND_TRANSCRIPT
-                ),
-                None,
-            )
-            selected_entry = transcript_candidate or candidates[0]
-            self._select_session_file(selected_entry.normalized_path)
-            selected_path = selected_entry.path
 
         result = SessionFileIntakeResult(
             added_paths=tuple(added),
@@ -1448,6 +1467,8 @@ class App(ctk.CTk):
             selected_path=selected_path,
         )
         self._report_session_file_intake_result(result, source_label=source_label)
+        if result.added_paths:
+            self._reset_editor_panels_after_file_intake()
         return result
 
     def _report_session_file_intake_result(
@@ -1487,6 +1508,50 @@ class App(ctk.CTk):
             self.active_media_file_path = ""
         if "active_transcript_file_path" not in state:
             self.active_transcript_file_path = ""
+        if "session_file_folders" not in state:
+            self.session_file_folders = {}
+        if "session_file_folder_names" not in state:
+            self.session_file_folder_names = []
+        if "session_file_folder_collapsed" not in state:
+            self.session_file_folder_collapsed = {}
+        if "session_file_folder_editing" not in state:
+            self.session_file_folder_editing = ""
+        if "session_file_drag_source_path" not in state:
+            self.session_file_drag_source_path = ""
+        if "session_file_drag_hover_path" not in state:
+            self.session_file_drag_hover_path = ""
+        if "last_session_file_click_path" not in state:
+            self.last_session_file_click_path = ""
+        if "last_session_file_click_time" not in state:
+            self.last_session_file_click_time = 0.0
+        if "session_file_label_widgets" not in state:
+            self.session_file_label_widgets = {}
+
+    def _has_exportable_session_content(self) -> bool:
+        """Return whether the sidebar EXPORT entry should be enabled."""
+        self._ensure_session_files_state()
+        return bool(
+            getattr(self, "session_files", [])
+            or getattr(self, "transcript_segments", [])
+            or getattr(self, "all_comments", [])
+        )
+
+    def _refresh_export_entry_state(self) -> None:
+        """Keep the sidebar EXPORT button enabled for FILES/transcript/comment content."""
+        if "evidence_button" not in getattr(self, "__dict__", {}):
+            return
+        fetch_state = getattr(self, "fetch_state", None)
+        fetching = False
+        if fetch_state is not None:
+            try:
+                fetching = bool(fetch_state.is_fetching or fetch_state.cancel_requested)
+            except Exception:
+                fetching = bool(getattr(fetch_state, "is_fetching", False))
+        state = "normal" if self._has_exportable_session_content() and not fetching else "disabled"
+        try:
+            self.evidence_button.configure(state=state)
+        except Exception:
+            logger.debug("Could not refresh EXPORT button state.", exc_info=True)
 
     def _normalise_session_file_path(self, path: str) -> str:
         return os.path.normcase(os.path.abspath(os.path.expanduser(path or "")))
@@ -1499,6 +1564,8 @@ class App(ctk.CTk):
             return SESSION_FILE_KIND_AUDIO
         if suffix in VIDEO_FILE_EXTENSIONS:
             return SESSION_FILE_KIND_VIDEO
+        if suffix in IMAGE_FILE_EXTENSIONS:
+            return SESSION_FILE_KIND_MEDIA
         return SESSION_FILE_KIND_OTHER
 
     def _session_file_icon_for_kind(self, file_kind: str) -> str:
@@ -1509,7 +1576,7 @@ class App(ctk.CTk):
         if file_kind == SESSION_FILE_KIND_VIDEO:
             return "VID"
         if file_kind == SESSION_FILE_KIND_MEDIA:
-            return "MED"
+            return "IMG"
         return "FILE"
 
     def _is_session_media_kind(self, file_kind: str) -> bool:
@@ -1518,6 +1585,65 @@ class App(ctk.CTk):
             SESSION_FILE_KIND_VIDEO,
             SESSION_FILE_KIND_MEDIA,
         }
+
+    def _is_session_asr_source_kind(self, file_kind: str) -> bool:
+        """Only audio/video files should expose Local ASR / Online ASR actions."""
+        return file_kind in {
+            SESSION_FILE_KIND_AUDIO,
+            SESSION_FILE_KIND_VIDEO,
+        }
+
+    def _is_session_caption_candidate_entry(self, entry: SessionFileEntry) -> bool:
+        """Text/subtitle rows that can be explicitly imported as Transcript via CC."""
+        suffix = os.path.splitext(entry.path or "")[1].lower()
+        return suffix in {".txt", ".srt", ".vtt"}
+
+    def _is_session_plain_text_entry(self, entry: SessionFileEntry) -> bool:
+        """Plain .txt rows that should expose the Text Editor action."""
+        return os.path.splitext(entry.path or "")[1].lower() == ".txt"
+
+    def _ensure_session_file_action_icons(self) -> None:
+        if hasattr(self, "session_text_file_icon_image") and hasattr(self, "session_caption_icon_image"):
+            return
+        self.session_text_file_icon_image = None
+        self.session_caption_icon_image = None
+        asset_base_dir = os.path.dirname(os.path.abspath(__file__))
+
+        def _load_icon(filename: str) -> Optional[ctk.CTkImage]:
+            icon_path = os.path.join(asset_base_dir, "assets", filename)
+            if not os.path.exists(icon_path):
+                return None
+            icon_image = Image.open(icon_path).convert("RGBA")
+            return ctk.CTkImage(light_image=icon_image, dark_image=icon_image, size=(18, 18))
+
+        try:
+            self.session_text_file_icon_image = _load_icon("ytce_file_text_icon.png")
+            self.session_caption_icon_image = _load_icon("ytce_file_cc_icon.png")
+        except Exception as icon_error:
+            logger.warning(f"Could not load FILES action icons: {icon_error}")
+            self.session_text_file_icon_image = None
+            self.session_caption_icon_image = None
+
+    def _open_session_text_file_action(self, normalized_path: str) -> None:
+        """Open a .txt file in the in-app Text Editor panel."""
+        self._load_session_text_editor_file(normalized_path)
+
+    def _reset_editor_panels_after_file_intake(self) -> None:
+        """Adding files to FILES should not force Transcript/Text Editor open."""
+        self.active_text_editor_file_path = ""
+        if hasattr(self, "text_editor_status_label"):
+            self.text_editor_status_label.configure(text="No text file loaded")
+        if hasattr(self, "text_editor_textbox"):
+            self.text_editor_textbox.configure(state="normal")
+            self.text_editor_textbox.delete("1.0", "end")
+            self.text_editor_textbox.insert("1.0", "Open a .txt file from FILES with the TXT icon.")
+            self.text_editor_textbox.configure(state="disabled")
+        if hasattr(self, "text_editor_save_button"):
+            self.text_editor_save_button.configure(state="disabled")
+        if hasattr(self, "text_editor_external_open_button"):
+            self.text_editor_external_open_button.configure(state="disabled")
+        self._hide_text_editor_panel()
+        self._hide_transcript_panel()
 
     def _session_media_entries(self) -> List[SessionFileEntry]:
         self._ensure_session_files_state()
@@ -1541,6 +1667,317 @@ class App(ctk.CTk):
             ),
             None,
         )
+
+    def _normalise_session_file_folder_state(self) -> None:
+        self._ensure_session_files_state()
+        names = list(getattr(self, "session_file_folder_names", []) or [])
+        folders = getattr(self, "session_file_folders", {}) or {}
+        for folder_name in folders.values():
+            if folder_name and folder_name not in names:
+                names.append(folder_name)
+        self.session_file_folder_names = names
+        collapsed = dict(getattr(self, "session_file_folder_collapsed", {}) or {})
+        for folder_name in names:
+            collapsed.setdefault(folder_name, True)
+        self.session_file_folder_collapsed = {
+            folder_name: bool(collapsed.get(folder_name, True))
+            for folder_name in names
+        }
+
+    def _set_all_session_folders_collapsed(self, collapsed: bool) -> None:
+        self._normalise_session_file_folder_state()
+        self.session_file_folder_collapsed = {
+            folder_name: bool(collapsed)
+            for folder_name in getattr(self, "session_file_folder_names", [])
+        }
+        self._refresh_session_files_list()
+
+    def _toggle_session_file_folder_collapsed(self, folder_name: str) -> None:
+        self._normalise_session_file_folder_state()
+        folder_name = str(folder_name or "")
+        if not folder_name:
+            return
+        current = bool(getattr(self, "session_file_folder_collapsed", {}).get(folder_name, True))
+        self.session_file_folder_collapsed[folder_name] = not current
+        self._refresh_session_files_list()
+
+    def _remove_session_file_folder(self, folder_name: str) -> None:
+        """Remove a FILES folder object and move any children back to root."""
+        self._normalise_session_file_folder_state()
+        folder_name = str(folder_name or "")
+        if not folder_name:
+            return
+        moved_count = sum(
+            1
+            for folder in getattr(self, "session_file_folders", {}).values()
+            if folder == folder_name
+        )
+        self.session_file_folders = {
+            path: folder
+            for path, folder in getattr(self, "session_file_folders", {}).items()
+            if folder != folder_name
+        }
+        self.session_file_folder_names = [
+            name for name in getattr(self, "session_file_folder_names", []) if name != folder_name
+        ]
+        self.session_file_folder_collapsed.pop(folder_name, None)
+        if getattr(self, "session_file_folder_editing", "") == folder_name:
+            self.session_file_folder_editing = ""
+        if moved_count:
+            self.log_message(f"Removed FILES folder '{folder_name}' and moved {moved_count} item(s) to root.", "success")
+        else:
+            self.log_message(f"Removed empty FILES folder '{folder_name}'.", "success")
+        self._refresh_session_files_list()
+
+    def _move_session_file_out_of_folder(self, normalized_path: str) -> None:
+        self._ensure_session_files_state()
+        normalized_path = self._normalise_session_file_path(normalized_path)
+        if normalized_path in getattr(self, "session_file_folders", {}):
+            self.session_file_folders.pop(normalized_path, None)
+            self._refresh_session_files_list()
+
+    def _open_session_file_external(self, normalized_path: str) -> None:
+        self._ensure_session_files_state()
+        entry = self._find_session_file_by_normalized_path(normalized_path)
+        if entry is None:
+            return
+        try:
+            os.startfile(entry.path)  # type: ignore[attr-defined]
+        except Exception as error:
+            self.log_message(f"Could not open file externally: {error}", "error")
+            try:
+                messagebox.showerror("Open File", str(error), parent=self)
+            except Exception:
+                logger.debug("Could not show external open error.", exc_info=True)
+
+    def _session_file_folder_for_entry(self, entry: SessionFileEntry) -> str:
+        self._ensure_session_files_state()
+        return str(getattr(self, "session_file_folders", {}).get(entry.normalized_path, "") or "")
+
+    def _session_file_export_display_name(self, entry: SessionFileEntry) -> str:
+        folder = self._session_file_folder_for_entry(entry)
+        return f"{folder} / {entry.display_name}" if folder else entry.display_name
+
+    def _safe_session_folder_name(self, value: str) -> str:
+        cleaned = "".join(ch if ch not in '<>:"/\\|?*' else "_" for ch in str(value or "").strip())
+        cleaned = cleaned.strip(" .")
+        return cleaned or "New folder"
+
+    def _unique_session_file_folder_name(self, preferred: str, *, excluding: str = "") -> str:
+        self._ensure_session_files_state()
+        base = self._safe_session_folder_name(preferred)
+        existing = {
+            str(name)
+            for name in [
+                *list(getattr(self, "session_file_folder_names", []) or []),
+                *list(getattr(self, "session_file_folders", {}).values()),
+            ]
+            if str(name) and str(name) != excluding
+        }
+        if base not in existing:
+            return base
+        index = 2
+        while f"{base} {index}" in existing:
+            index += 1
+        return f"{base} {index}"
+
+    def _suggest_session_folder_name(self, first: SessionFileEntry, second: SessionFileEntry) -> str:
+        first_stem = os.path.splitext(first.display_name)[0].strip()
+        second_stem = os.path.splitext(second.display_name)[0].strip()
+        prefix = os.path.commonprefix([first_stem, second_stem]).strip(" -_()[]{}.")
+        if len(prefix) >= 3:
+            return prefix
+        return "New folder"
+
+    def _rename_session_file_folder(self, old_name: str, new_name: str) -> None:
+        self._ensure_session_files_state()
+        old_name = str(old_name or "")
+        if not old_name:
+            return
+        new_name = self._unique_session_file_folder_name(new_name or old_name, excluding=old_name)
+        if new_name != old_name:
+            self.session_file_folders = {
+                path: (new_name if folder == old_name else folder)
+                for path, folder in getattr(self, "session_file_folders", {}).items()
+            }
+            self.session_file_folder_names = [
+                (new_name if folder == old_name else folder)
+                for folder in getattr(self, "session_file_folder_names", [])
+            ]
+            collapsed_value = bool(getattr(self, "session_file_folder_collapsed", {}).pop(old_name, True))
+            self.session_file_folder_collapsed[new_name] = collapsed_value
+        if getattr(self, "session_file_folder_editing", "") == old_name:
+            self.session_file_folder_editing = ""
+        self._refresh_session_files_list()
+
+    def _session_file_label_text(self, entry: SessionFileEntry, *, drag_hover: bool = False) -> str:
+        text = f"{self._session_file_icon_for_kind(entry.file_kind)}  {entry.display_name}"
+        return f"Drop here → {text}" if drag_hover else text
+
+    def _session_file_label_colors(self, entry: SessionFileEntry, *, drag_hover: bool = False) -> tuple[str, str]:
+        selected = entry.normalized_path == self.selected_session_file_path
+        active_media = (
+            self._is_session_media_kind(entry.file_kind)
+            and entry.normalized_path == getattr(self, "active_media_file_path", "")
+        )
+        if drag_hover:
+            return COLORS["accent"], COLORS["bg_dark"]
+        if active_media:
+            return "#4b2d73", "#f4ecff"
+        if selected:
+            return COLORS["accent_secondary"], COLORS["text_primary"]
+        return "transparent", COLORS["text_primary"]
+
+    def _set_session_file_label_visual(self, normalized_path: str, *, drag_hover: bool = False) -> None:
+        normalized_path = self._normalise_session_file_path(normalized_path)
+        entry = self._find_session_file_by_normalized_path(normalized_path)
+        label = getattr(self, "session_file_label_widgets", {}).get(normalized_path)
+        if entry is None or label is None:
+            return
+        row_color, text_color = self._session_file_label_colors(entry, drag_hover=drag_hover)
+        try:
+            label.configure(
+                text=self._session_file_label_text(entry, drag_hover=drag_hover),
+                fg_color=row_color,
+                text_color=text_color,
+            )
+        except Exception:
+            logger.debug("Could not update FILES drag-hover visual.", exc_info=True)
+
+    def _cancel_session_file_global_drag_bindings(self) -> None:
+        try:
+            self.unbind_all("<B1-Motion>")
+            self.unbind_all("<ButtonRelease-1>")
+        except Exception:
+            logger.debug("Could not unbind global FILES drag handlers.", exc_info=True)
+
+    def _handle_session_file_label_press(self, normalized_path: str, _event: Any = None) -> str | None:
+        """Start filename-label drag, or open externally on a quick second click.
+
+        Tk/CustomTkinter double-click delivery can be inconsistent when the same
+        label is also draggable. This press-time fallback makes quick repeated
+        clicks open the file without needing three or more clicks.
+        """
+        self._ensure_session_files_state()
+        normalized_path = self._normalise_session_file_path(normalized_path)
+        now = time.monotonic()
+        if (
+            normalized_path == getattr(self, "last_session_file_click_path", "")
+            and now - float(getattr(self, "last_session_file_click_time", 0.0) or 0.0) <= 0.55
+        ):
+            self.last_session_file_click_path = ""
+            self.last_session_file_click_time = 0.0
+            self._handle_session_file_external_open(normalized_path, _event)
+            return "break"
+        self.last_session_file_click_path = normalized_path
+        self.last_session_file_click_time = now
+        self._begin_session_file_drag(normalized_path)
+        return None
+
+    def _handle_session_file_external_open(self, normalized_path: str, _event: Any = None) -> str:
+        self._cancel_session_file_global_drag_bindings()
+        self.session_file_drag_source_path = ""
+        self.session_file_drag_hover_path = ""
+        self._open_session_file_external(normalized_path)
+        return "break"
+
+    def _begin_session_file_drag(self, normalized_path: str) -> None:
+        self._ensure_session_files_state()
+        self.session_file_drag_source_path = self._normalise_session_file_path(normalized_path)
+        self.session_file_drag_hover_path = ""
+
+    def _session_file_path_for_widget(self, widget: Any) -> str:
+        row_widgets = getattr(self, "session_file_row_widgets", {}) or {}
+        current = widget
+        while current is not None:
+            for path, row_widget in row_widgets.items():
+                if current == row_widget:
+                    return path
+            current = getattr(current, "master", None)
+        return ""
+
+    def _update_session_file_drag_hover(self, event: Any) -> None:
+        if not getattr(self, "session_file_drag_source_path", ""):
+            return
+        target_widget = None
+        try:
+            target_widget = self.winfo_containing(event.x_root, event.y_root)
+        except Exception:
+            target_widget = None
+        target_path = self._session_file_path_for_widget(target_widget) if target_widget is not None else ""
+        target_path = self._normalise_session_file_path(target_path) if target_path else ""
+        if target_path == getattr(self, "session_file_drag_source_path", ""):
+            target_path = ""
+        previous_path = getattr(self, "session_file_drag_hover_path", "") or ""
+        if target_path != previous_path:
+            if previous_path:
+                self._set_session_file_label_visual(previous_path, drag_hover=False)
+            self.session_file_drag_hover_path = target_path
+            if target_path:
+                self._set_session_file_label_visual(target_path, drag_hover=True)
+
+    def _finish_session_file_drag(self, normalized_path: str, event: Any) -> None:
+        self._ensure_session_files_state()
+        source_path = self._normalise_session_file_path(
+            getattr(self, "session_file_drag_source_path", "") or normalized_path
+        )
+        target_path = getattr(self, "session_file_drag_hover_path", "") or ""
+        if not target_path:
+            target_widget = None
+            try:
+                target_widget = self.winfo_containing(event.x_root, event.y_root)
+            except Exception:
+                target_widget = None
+            target_path = self._session_file_path_for_widget(target_widget) if target_widget is not None else ""
+        self.session_file_drag_source_path = ""
+        self.session_file_drag_hover_path = ""
+        self._cancel_session_file_global_drag_bindings()
+        if target_path and self._normalise_session_file_path(target_path) != source_path:
+            self._create_session_file_folder_from_drop(source_path, target_path)
+        else:
+            self._refresh_session_files_list()
+
+    def _bind_session_file_drag_handlers(self, widget: Any, normalized_path: str) -> None:
+        """Bind FILES filename label: drag by label, double-click to open externally."""
+        try:
+            widget.bind("<ButtonPress-1>", lambda event, path=normalized_path: self._handle_session_file_label_press(path, event), add="+")
+            widget.bind("<B1-Motion>", self._update_session_file_drag_hover, add="+")
+            widget.bind("<ButtonRelease-1>", lambda event, path=normalized_path: self._finish_session_file_drag(path, event), add="+")
+            widget.bind("<Double-Button-1>", lambda event, path=normalized_path: self._handle_session_file_external_open(path, event), add="+")
+        except Exception:
+            logger.debug("Could not bind FILES row label handlers.", exc_info=True)
+
+    def _create_session_file_folder_from_drop(self, source_path: str, target_path: str) -> None:
+        self._ensure_session_files_state()
+        source_path = self._normalise_session_file_path(source_path)
+        target_path = self._normalise_session_file_path(target_path)
+        if source_path == target_path:
+            return
+        source = self._find_session_file_by_normalized_path(source_path)
+        target = self._find_session_file_by_normalized_path(target_path)
+        if source is None or target is None:
+            return
+        folders = getattr(self, "session_file_folders", {})
+        folder_name = folders.get(target_path) or folders.get(source_path)
+        created_new_folder = False
+        if not folder_name:
+            folder_name = self._unique_session_file_folder_name(
+                self._suggest_session_folder_name(source, target)
+            )
+            created_new_folder = True
+        if folder_name not in getattr(self, "session_file_folder_names", []):
+            self.session_file_folder_names.append(folder_name)
+            created_new_folder = True
+        self.session_file_folders[source_path] = folder_name
+        self.session_file_folders[target_path] = folder_name
+        self.session_file_folder_collapsed[folder_name] = True
+        if created_new_folder:
+            self.session_file_folder_editing = folder_name
+        self.log_message(
+            f"{'Created' if created_new_folder else 'Updated'} FILES folder '{folder_name}' with {source.display_name} and {target.display_name}.",
+            "success",
+        )
+        self._refresh_session_files_list()
 
     def _default_session_media_path(self) -> str:
         self._ensure_session_files_state()
@@ -1613,6 +2050,8 @@ class App(ctk.CTk):
             for entry in self.session_files
             if entry.normalized_path != normalized_path
         ]
+        if hasattr(self, "session_file_folders"):
+            self.session_file_folders.pop(normalized_path, None)
         if self.selected_session_file_path == normalized_path:
             self.selected_session_file_path = ""
         if self.active_media_file_path == normalized_path:
@@ -1631,50 +2070,155 @@ class App(ctk.CTk):
             except Exception:
                 pass
         self.session_file_row_widgets = {}
+        self.session_file_label_widgets = {}
 
-        if not getattr(self, "session_files", []):
+        self._normalise_session_file_folder_state()
+        folder_map = getattr(self, "session_file_folders", {}) or {}
+        folder_names = list(getattr(self, "session_file_folder_names", []) or [])
+        has_files = bool(getattr(self, "session_files", []))
+        if not has_files and not folder_names:
             self.files_empty_label.grid(row=0, column=0, sticky="ew", padx=8, pady=6)
+            self._refresh_export_entry_state()
             return
         self.files_empty_label.grid_remove()
 
-        for row, entry in enumerate(self.session_files):
+        render_row = 0
+
+        def render_folder_header(folder_name: str) -> None:
+            nonlocal render_row
+            collapsed = bool(getattr(self, "session_file_folder_collapsed", {}).get(folder_name, True))
+            header = ctk.CTkFrame(self.files_list_frame, fg_color="transparent")
+            header.grid(row=render_row, column=0, sticky="ew", padx=4, pady=(8, 2))
+            header.grid_columnconfigure(1, weight=1)
+            toggle_button = ctk.CTkButton(
+                header,
+                text="▸" if collapsed else "▾",
+                width=22,
+                height=24,
+                fg_color="transparent",
+                hover_color=COLORS["border"],
+                text_color=COLORS["text_secondary"],
+                command=lambda name=folder_name: self._toggle_session_file_folder_collapsed(name),
+            )
+            toggle_button.grid(row=0, column=0, sticky="w", padx=(0, 2))
+            if folder_name == getattr(self, "session_file_folder_editing", ""):
+                entry = ctk.CTkEntry(
+                    header,
+                    height=26,
+                    fg_color=COLORS["bg_input"],
+                    text_color=COLORS["text_primary"],
+                    border_color=COLORS["accent"],
+                    border_width=1,
+                )
+                entry.insert(0, folder_name)
+                entry.grid(row=0, column=1, sticky="ew")
+                entry.focus_set()
+                entry.select_range(0, "end")
+                entry.bind("<Return>", lambda _event, old=folder_name, widget=entry: self._rename_session_file_folder(old, widget.get()))
+                entry.bind("<FocusOut>", lambda _event, old=folder_name, widget=entry: self._rename_session_file_folder(old, widget.get()))
+                remove_folder_button = ctk.CTkButton(
+                    header,
+                    text="×",
+                    width=24,
+                    height=24,
+                    fg_color="transparent",
+                    hover_color=COLORS["border"],
+                    text_color=COLORS["text_muted"],
+                    command=lambda name=folder_name: self._remove_session_file_folder(name),
+                )
+                remove_folder_button.bind(
+                    "<ButtonPress-1>",
+                    lambda _event, name=folder_name: (self._remove_session_file_folder(name), "break")[-1],
+                    add="+",
+                )
+                remove_folder_button.grid(row=0, column=2, sticky="e", padx=(4, 0))
+            else:
+                folder_title = ctk.CTkLabel(
+                    header,
+                    text=f"📁 {folder_name}",
+                    anchor="w",
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text_color=COLORS["text_secondary"],
+                    cursor="hand2",
+                )
+                folder_title.grid(row=0, column=1, sticky="ew")
+                folder_title.bind(
+                    "<Button-1>",
+                    lambda _event, name=folder_name: self._toggle_session_file_folder_collapsed(name),
+                    add="+",
+                )
+                edit_button = ctk.CTkButton(
+                    header,
+                    text="Rename",
+                    width=58,
+                    height=24,
+                    fg_color="transparent",
+                    hover_color=COLORS["border"],
+                    text_color=COLORS["text_muted"],
+                    command=lambda name=folder_name: (
+                        setattr(self, "session_file_folder_editing", name),
+                        self._refresh_session_files_list(),
+                    ),
+                )
+                edit_button.grid(row=0, column=2, sticky="e", padx=(4, 0))
+                remove_folder_button = ctk.CTkButton(
+                    header,
+                    text="×",
+                    width=24,
+                    height=24,
+                    fg_color="transparent",
+                    hover_color=COLORS["border"],
+                    text_color=COLORS["text_muted"],
+                    command=lambda name=folder_name: self._remove_session_file_folder(name),
+                )
+                remove_folder_button.bind(
+                    "<ButtonPress-1>",
+                    lambda _event, name=folder_name: (self._remove_session_file_folder(name), "break")[-1],
+                    add="+",
+                )
+                remove_folder_button.grid(row=0, column=3, sticky="e", padx=(4, 0))
+            render_row += 1
+
+        def render_file_row(entry: SessionFileEntry, *, nested: bool = False) -> None:
+            nonlocal render_row
+            self._ensure_session_file_action_icons()
             row_frame = ctk.CTkFrame(self.files_list_frame, fg_color="transparent")
-            row_frame.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
+            row_frame.grid(row=render_row, column=0, sticky="ew", padx=(18 if nested else 4, 4), pady=2)
             row_frame.grid_columnconfigure(0, weight=1)
             row_frame.grid_columnconfigure(1, weight=0)
             row_frame.grid_columnconfigure(2, weight=0)
-            selected = entry.normalized_path == self.selected_session_file_path
-            active_media = (
-                self._is_session_media_kind(entry.file_kind)
-                and entry.normalized_path == getattr(self, "active_media_file_path", "")
-            )
-            text = f"{self._session_file_icon_for_kind(entry.file_kind)}  {entry.display_name}"
-            if (
-                selected
-                and entry.file_kind == SESSION_FILE_KIND_TRANSCRIPT
-                and getattr(self, "transcript_has_unsaved_edits", False)
-            ):
-                text += " *"
-            row_color = "transparent"
-            text_color = COLORS["text_primary"]
-            if active_media:
-                row_color = "#4b2d73"
-                text_color = "#f4ecff"
-            elif selected:
-                row_color = COLORS["accent_secondary"]
-            button = ctk.CTkButton(
+            drag_hover = entry.normalized_path == getattr(self, "session_file_drag_hover_path", "")
+            row_color, text_color = self._session_file_label_colors(entry, drag_hover=drag_hover)
+            label = ctk.CTkLabel(
                 row_frame,
-                text=text,
+                text=self._session_file_label_text(entry, drag_hover=drag_hover),
                 anchor="w",
                 height=26,
                 fg_color=row_color,
-                hover_color=COLORS["border"],
                 text_color=text_color,
-                command=lambda path=entry.normalized_path: self._select_session_file(path),
+                corner_radius=6,
             )
-            button.grid(row=0, column=0, sticky="ew")
+            label.grid(row=0, column=0, sticky="ew")
+            self._bind_session_file_drag_handlers(label, entry.normalized_path)
+            self.session_file_row_widgets[entry.normalized_path] = row_frame
+            self.session_file_label_widgets[entry.normalized_path] = label
             action_column = 1
-            if self._is_session_media_kind(entry.file_kind):
+
+            if nested:
+                out_button = ctk.CTkButton(
+                    row_frame,
+                    text="Out",
+                    width=36,
+                    height=26,
+                    fg_color="transparent",
+                    hover_color=COLORS["border"],
+                    text_color=COLORS["text_muted"],
+                    command=lambda path=entry.normalized_path: self._move_session_file_out_of_folder(path),
+                )
+                out_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
+                action_column += 1
+
+            if self._is_session_asr_source_kind(entry.file_kind):
                 local_button = ctk.CTkButton(
                     row_frame,
                     text="⌂",
@@ -1699,6 +2243,39 @@ class App(ctk.CTk):
                 )
                 online_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
                 action_column += 1
+
+            if self._is_session_caption_candidate_entry(entry):
+                cc_button_kwargs = {
+                    "text": "" if self.session_caption_icon_image is not None else "CC",
+                    "width": 30,
+                    "height": 26,
+                    "fg_color": "transparent",
+                    "hover_color": COLORS["border"],
+                    "text_color": COLORS["text_primary"],
+                    "command": lambda item=entry: self._load_session_transcript_file(item),
+                }
+                if self.session_caption_icon_image is not None:
+                    cc_button_kwargs["image"] = self.session_caption_icon_image
+                cc_button = ctk.CTkButton(row_frame, **cc_button_kwargs)
+                cc_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
+                action_column += 1
+
+            if self._is_session_plain_text_entry(entry):
+                text_button_kwargs = {
+                    "text": "" if self.session_text_file_icon_image is not None else "TXT",
+                    "width": 30,
+                    "height": 26,
+                    "fg_color": "transparent",
+                    "hover_color": COLORS["border"],
+                    "text_color": COLORS["text_primary"],
+                    "command": lambda path=entry.normalized_path: self._open_session_text_file_action(path),
+                }
+                if self.session_text_file_icon_image is not None:
+                    text_button_kwargs["image"] = self.session_text_file_icon_image
+                text_button = ctk.CTkButton(row_frame, **text_button_kwargs)
+                text_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
+                action_column += 1
+
             remove_button = ctk.CTkButton(
                 row_frame,
                 text="×",
@@ -1710,7 +2287,28 @@ class App(ctk.CTk):
                 command=lambda path=entry.normalized_path: self._remove_session_file(path),
             )
             remove_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
-            self.session_file_row_widgets[entry.normalized_path] = row_frame
+            render_row += 1
+
+        rendered_in_folders: set[str] = set()
+        for folder_name in folder_names:
+            render_folder_header(folder_name)
+            if not bool(getattr(self, "session_file_folder_collapsed", {}).get(folder_name, True)):
+                for nested_entry in self.session_files:
+                    if str(folder_map.get(nested_entry.normalized_path, "") or "") == folder_name:
+                        rendered_in_folders.add(nested_entry.normalized_path)
+                        render_file_row(nested_entry, nested=True)
+            else:
+                for nested_entry in self.session_files:
+                    if str(folder_map.get(nested_entry.normalized_path, "") or "") == folder_name:
+                        rendered_in_folders.add(nested_entry.normalized_path)
+
+        for entry in self.session_files:
+            if entry.normalized_path in rendered_in_folders:
+                continue
+            if str(folder_map.get(entry.normalized_path, "") or ""):
+                continue
+            render_file_row(entry, nested=False)
+        self._refresh_export_entry_state()
 
     def _save_transcript_before_session_switch(self) -> bool:
         if not self.transcript_segments:
@@ -1756,6 +2354,17 @@ class App(ctk.CTk):
     def _select_session_file(self, normalized_path: str) -> None:
         self._ensure_session_files_state()
         normalized_path = self._normalise_session_file_path(normalized_path)
+        now = time.monotonic()
+        if (
+            normalized_path == getattr(self, "last_session_file_click_path", "")
+            and now - float(getattr(self, "last_session_file_click_time", 0.0) or 0.0) <= 0.55
+        ):
+            self.last_session_file_click_path = ""
+            self.last_session_file_click_time = 0.0
+            self._open_session_file_external(normalized_path)
+            return
+        self.last_session_file_click_path = normalized_path
+        self.last_session_file_click_time = now
         entry = next(
             (
                 candidate
@@ -1791,6 +2400,7 @@ class App(ctk.CTk):
         if not self._confirm_transcript_media_duration_link(segments):
             return False
 
+        self._show_transcript_panel()
         self.transcript_segments = segments
         self.last_transcript_source = f"Imported file: {entry.display_name}"
         self.transcript_has_unsaved_edits = False
@@ -2660,10 +3270,11 @@ class App(ctk.CTk):
         )
         self.main_frame.grid(row=row, column=column, sticky="nsew", padx=20, pady=20)
         self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(3, weight=0)
+        self.main_frame.grid_rowconfigure(4, weight=0)
 
         self._create_url_section()
         self._create_progress_section()
+        self._create_text_editor_section()
         self._create_transcript_section()
         self._create_log_section()
 
@@ -2836,7 +3447,7 @@ class App(ctk.CTk):
         livechat_column = ctk.CTkFrame(action_frame, fg_color="transparent")
         livechat_column.grid(row=2, column=3, sticky="nw", padx=(10, 0), pady=(6, 0))
         self.extract_webpage_var = ctk.BooleanVar(value=False)
-        self.extract_comments_var = ctk.BooleanVar(value=True)
+        self.extract_comments_var = ctk.BooleanVar(value=False)
         self.extract_live_chat_var = ctk.BooleanVar(value=False)
         self.webpage_screenshot_var = ctk.BooleanVar(value=False)
         self.comments_screenshot_var = ctk.BooleanVar(value=False)
@@ -3102,6 +3713,944 @@ class App(ctk.CTk):
         self.progress_bar.pack(fill="x", pady=(8, 0))
         self.progress_bar.set(0)
 
+        self.editor_toggle_row = ctk.CTkFrame(self.progress_section, fg_color="transparent")
+        self.editor_toggle_row.pack(fill="x", pady=(8, 0))
+
+        self.show_transcript_panel_button = ctk.CTkButton(
+            self.editor_toggle_row,
+            text="Transcript",
+            command=self._toggle_transcript_panel,
+            width=105,
+            height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+        )
+        self.show_transcript_panel_button.pack(side="left")
+
+        self.show_text_editor_panel_button = ctk.CTkButton(
+            self.editor_toggle_row,
+            text="Text Editor",
+            command=self._toggle_text_editor_panel,
+            width=115,
+            height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+        )
+        self.show_text_editor_panel_button.pack(side="left", padx=(8, 0))
+
+    def _show_transcript_panel(self) -> None:
+        if hasattr(self, "transcript_card"):
+            self.transcript_card.grid()
+            try:
+                self.show_transcript_panel_button.configure(fg_color=COLORS["accent"])
+            except Exception:
+                pass
+
+    def _hide_transcript_panel(self) -> None:
+        if hasattr(self, "transcript_card"):
+            self.transcript_card.grid_remove()
+            try:
+                self.show_transcript_panel_button.configure(fg_color=COLORS["accent_secondary"])
+            except Exception:
+                pass
+
+    def _toggle_transcript_panel(self) -> None:
+        if not hasattr(self, "transcript_card"):
+            return
+        if self.transcript_card.winfo_ismapped():
+            self._hide_transcript_panel()
+        else:
+            self._show_transcript_panel()
+
+    def _show_text_editor_panel(self) -> None:
+        if hasattr(self, "text_editor_card"):
+            self.text_editor_card.grid()
+            try:
+                self.show_text_editor_panel_button.configure(fg_color=COLORS["accent"])
+            except Exception:
+                pass
+
+    def _hide_text_editor_panel(self) -> None:
+        if hasattr(self, "text_editor_card"):
+            self._hide_text_editor_spell_popup()
+            self.text_editor_card.grid_remove()
+            try:
+                self.show_text_editor_panel_button.configure(fg_color=COLORS["accent_secondary"])
+            except Exception:
+                pass
+
+    def _toggle_text_editor_panel(self) -> None:
+        if not hasattr(self, "text_editor_card"):
+            return
+        if self.text_editor_card.winfo_ismapped():
+            self._hide_text_editor_panel()
+        else:
+            self._show_text_editor_panel()
+
+    def _create_text_editor_section(self) -> None:
+        """Create an in-app plain text editor panel."""
+        self.text_editor_card = ctk.CTkFrame(
+            self.main_frame,
+            fg_color=COLORS["bg_card"],
+            corner_radius=12,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        self.text_editor_card.grid(row=2, column=0, sticky="ew", pady=(0, 15))
+        self.text_editor_card.grid_columnconfigure(0, weight=1)
+
+        header = ctk.CTkFrame(self.text_editor_card, fg_color="transparent")
+        header.pack(fill="x", padx=15, pady=(12, 8))
+
+        self.text_editor_title_label = ctk.CTkLabel(
+            header,
+            text="📝 Text Editor",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS["text_primary"],
+            cursor="hand2",
+        )
+        self.text_editor_title_label.pack(side="left")
+        self.text_editor_title_label.bind("<Button-1>", lambda _event: self._toggle_text_editor_panel(), add="+")
+
+        self.text_editor_status_label = ctk.CTkLabel(
+            header,
+            text="No text file loaded",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+        )
+        self.text_editor_status_label.pack(side="left", padx=(12, 0))
+
+        action_row = ctk.CTkFrame(self.text_editor_card, fg_color="transparent")
+        action_row.pack(fill="x", padx=15, pady=(0, 8))
+
+        self.text_editor_save_button = ctk.CTkButton(
+            action_row,
+            text="Save",
+            command=self._save_text_editor_file,
+            width=80,
+            height=30,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled",
+        )
+        self.text_editor_save_button.pack(side="left")
+
+        self.text_editor_external_open_button = ctk.CTkButton(
+            action_row,
+            text="Open externally",
+            command=lambda: self._open_session_file_external(getattr(self, "active_text_editor_file_path", "")),
+            width=120,
+            height=30,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+            state="disabled",
+        )
+        self.text_editor_external_open_button.pack(side="left", padx=(8, 0))
+
+        self.text_editor_textbox = ctk.CTkTextbox(
+            self.text_editor_card,
+            height=220,
+            font=ctk.CTkFont(family="Cascadia Mono", size=13),
+            fg_color=COLORS["bg_input"],
+            border_color=COLORS["border"],
+            border_width=1,
+            corner_radius=8,
+            wrap="word",
+        )
+        self.text_editor_textbox.pack(fill="x", padx=15, pady=(0, 10))
+        self.text_editor_textbox.insert("1.0", "Open a .txt file from FILES with the TXT icon.")
+        self._configure_text_editor_undo_redo()
+        self.text_editor_textbox.configure(state="disabled")
+        self.active_text_editor_file_path = ""
+        self.text_editor_spell_after_id = None
+        self.text_editor_spell_popup = None
+        self.text_editor_spell_popup_key = ""
+        self.text_editor_spell_popup_bridge_bounds: tuple[int, int, int, int] | None = None
+        self.text_editor_spell_popup_hide_after_id = None
+        self.text_editor_active_spelling_word = ""
+        self.text_editor_active_spelling_start = ""
+        self.text_editor_active_spelling_end = ""
+        self.text_editor_custom_dictionary: set[str] = set()
+        self.text_editor_spellchecker = None
+        self._bind_text_editor_spellcheck()
+        self.text_editor_card.grid_remove()
+
+    def _handle_text_editor_key_press(self, event: Any) -> None:
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return
+        try:
+            key = str(getattr(event, "keysym", "") or "")
+            if len(str(getattr(event, "char", "") or "")) == 1 or key in {
+                "BackSpace",
+                "Delete",
+                "Return",
+                "space",
+                "Tab",
+            }:
+                self._hide_text_editor_spell_popup()
+                widget.edit_separator()
+        except Exception:
+            logger.debug("Could not add pre-edit Text Editor undo separator.", exc_info=True)
+
+    def _handle_text_editor_key_release(self, event: Any) -> None:
+        self._schedule_text_editor_spellcheck()
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return
+        try:
+            key = str(getattr(event, "keysym", "") or "")
+            if len(str(getattr(event, "char", "") or "")) == 1 or key in {
+                "BackSpace",
+                "Delete",
+                "Return",
+                "space",
+                "Tab",
+            }:
+                widget.edit_separator()
+        except Exception:
+            logger.debug("Could not add Text Editor undo separator.", exc_info=True)
+
+    def _configure_text_editor_undo_redo(self) -> None:
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return
+        try:
+            widget.configure(undo=True, maxundo=-1, autoseparators=True)
+        except Exception:
+            logger.debug("Could not enable Text Editor undo stack.", exc_info=True)
+        try:
+            widget.bind("<Control-z>", lambda event: self._text_editor_undo(event), add="+")
+            widget.bind("<Control-Z>", lambda event: self._text_editor_undo(event), add="+")
+            widget.bind("<Control-y>", lambda event: self._text_editor_redo(event), add="+")
+            widget.bind("<Control-Y>", lambda event: self._text_editor_redo(event), add="+")
+        except Exception:
+            logger.debug("Could not bind Text Editor undo/redo shortcuts.", exc_info=True)
+
+    def _text_editor_undo(self, _event: Any = None) -> str:
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return "break"
+        try:
+            widget.edit_undo()
+        except tk.TclError:
+            pass
+        return "break"
+
+    def _text_editor_redo(self, _event: Any = None) -> str:
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return "break"
+        try:
+            widget.edit_redo()
+        except tk.TclError:
+            pass
+        return "break"
+
+    def _load_session_text_editor_file(self, normalized_path: str) -> None:
+        entry = self._find_session_file_by_normalized_path(normalized_path)
+        if entry is None:
+            return
+        try:
+            text_content = Path(entry.path).read_text(encoding="utf-8", errors="replace")
+        except Exception as error:
+            self.log_message(f"Text Editor could not open file: {error}", "error")
+            messagebox.showerror("Text Editor", str(error), parent=self)
+            return
+        self.active_text_editor_file_path = entry.normalized_path
+        self._show_text_editor_panel()
+        self.text_editor_textbox.configure(state="normal")
+        self.text_editor_textbox.delete("1.0", "end")
+        self.text_editor_textbox.insert("1.0", text_content)
+        try:
+            self._get_text_editor_text_widget().edit_reset()
+        except Exception:
+            pass
+        self.text_editor_status_label.configure(text=entry.display_name)
+        self.text_editor_save_button.configure(state="normal")
+        self.text_editor_external_open_button.configure(state="normal")
+        self._hide_text_editor_spell_popup()
+        self._schedule_text_editor_spellcheck()
+        self.log_message(f"Opened text file in Text Editor: {entry.display_name}", "success")
+
+    def _save_text_editor_file(self) -> None:
+        entry = self._find_session_file_by_normalized_path(getattr(self, "active_text_editor_file_path", ""))
+        if entry is None:
+            return
+        try:
+            content = self.text_editor_textbox.get("1.0", "end-1c")
+            Path(entry.path).write_text(content, encoding="utf-8")
+        except Exception as error:
+            self.log_message(f"Text Editor save failed: {error}", "error")
+            messagebox.showerror("Text Editor", str(error), parent=self)
+            return
+        try:
+            self._get_text_editor_text_widget().edit_modified(False)
+        except Exception:
+            pass
+        self._schedule_text_editor_spellcheck()
+        self.log_message(f"Saved text file: {entry.display_name}", "success")
+
+    def _get_text_editor_text_widget(self) -> Any:
+        return getattr(getattr(self, "text_editor_textbox", None), "_textbox", getattr(self, "text_editor_textbox", None))
+
+    def _bind_text_editor_spellcheck(self) -> None:
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return
+        try:
+            widget.bind("<KeyPress>", self._handle_text_editor_key_press, add="+")
+            widget.bind("<KeyRelease>", self._handle_text_editor_key_release, add="+")
+            widget.bind("<Button-1>", self._handle_text_editor_spell_click, add="+")
+            widget.bind("<Escape>", lambda _event: (self._hide_text_editor_spell_popup(), "break")[1], add="+")
+            widget.bind("<MouseWheel>", lambda _event: self._hide_text_editor_spell_popup(), add="+")
+            widget.bind("<Button-4>", lambda _event: self._hide_text_editor_spell_popup(), add="+")
+            widget.bind("<Button-5>", lambda _event: self._hide_text_editor_spell_popup(), add="+")
+            # Motion-based hover is more reliable than tag-enter alone when
+            # the app window is resized, restored, or not maximised.
+            widget.bind("<Motion>", self._handle_text_editor_spell_motion, add="+")
+            widget.bind("<Leave>", lambda _event: self._schedule_hide_text_editor_spell_popup(500), add="+")
+            self.bind("<Unmap>", self._handle_text_editor_spell_app_unmap, add="+")
+            self.bind("<FocusOut>", self._handle_text_editor_spell_app_focus_out, add="+")
+        except Exception:
+            logger.debug("Could not bind Text Editor spell-check events.", exc_info=True)
+
+    def _default_text_editor_spell_words(self) -> set[str]:
+        words = """
+        a able about above across action actions active add added after again all allow allowed
+        already also an and any app application are as asr at audio auto available back be because
+        been before below best both button by can cannot car cars channel check clear click clicked
+        clicking collapse collapsed comment comments completed content correct could create created
+        date default description dictionary do does done download downloaded editor empty entry export
+        external externally file files folder folders for from go good has have hidden icon image
+        import in inside internal into is it item items jdownloader label line link links load loaded
+        local media metadata move moved name new no not of on one online open opened opens or other
+        output package path panel plain project quality queue ready remove removed rename root row save
+        saved selected session should show source status subtitle subtitles text the them there this
+        title to transcript txt ungroup updated upload url urls use video views with within word wrong
+        yes your you youtube ytce
+
+        after before between both but by can could did do does done each either every for from had
+        has have having he her here him his how i if in into is it its itself just like may me more
+        most my no nor not now of off on once only or other our out over own same she should so some
+        such than that the their theirs them then there these they this those through to too under up
+        very was we were what when where which while who whom why will with would you your yours
+
+        title channel subscribers date views description source selected quality music original auto
+        generated released provided project game soundtrack bandai namco tekken sunset
+
+        png jpg jpeg gif bmp webp images accepted drag drop dragging dropped spell checker spelling
+        weird behaviour behavior hovering hover amount meant underlined underline red opens opened
+        small window popup upwards line inline description actually implement implemented corrector
+        correction cursor away close closes closed menu dictionary details source details filetype
+        metadata transcript editor notepad external saved saving clickable visible invisible hidden
+        default reset both appear appears appeared disappear disappears copy copies copied copying
+        paste pastes pasted pasting cuts cut undo redo select selected selecting prints printed friendly
+        pdf inspect accessibility properties chatbot languages check checking checked words worded cursor
+        delayed delay deactivate activated activation effect effects result results still working works
+        misspelled misspelling misspellings checker popup box boxes window windows hover hovering
+        underline underlines underlined style pattern same above below line inline exact ordinary
+        """
+        return {word.strip().lower() for word in words.split() if word.strip()}
+
+    def _text_editor_spell_words(self) -> set[str]:
+        if not hasattr(self, "text_editor_spell_words"):
+            self.text_editor_spell_words = self._default_text_editor_spell_words()
+        return set(getattr(self, "text_editor_spell_words", set())) | set(
+            getattr(self, "text_editor_custom_dictionary", set())
+        )
+
+    def _get_text_editor_spellchecker(self) -> Any:
+        """Return optional pyspellchecker engine when installed.
+
+        The app stays usable without the package, but installing pyspellchecker
+        gives proper English word coverage instead of relying on a tiny fallback
+        list.
+        """
+        if hasattr(self, "text_editor_spellchecker"):
+            return getattr(self, "text_editor_spellchecker")
+        try:
+            from spellchecker import SpellChecker  # type: ignore
+
+            self.text_editor_spellchecker = SpellChecker(language="en")
+        except Exception:
+            self.text_editor_spellchecker = None
+        return getattr(self, "text_editor_spellchecker")
+
+    def _text_editor_word_is_known(self, lowered: str) -> bool:
+        if not lowered:
+            return True
+        if lowered in self._text_editor_spell_words():
+            return True
+        checker = self._get_text_editor_spellchecker()
+        if checker is None:
+            return False
+        try:
+            return not checker.unknown([lowered])
+        except Exception:
+            return False
+
+    def _text_editor_line_is_spellcheck_exempt(self, line_text: str) -> bool:
+        line = str(line_text or "").strip()
+        if not line:
+            return False
+        lowered = line.lower()
+        metadata_prefixes = (
+            "title:",
+            "channel:",
+            "subscribers:",
+            "date:",
+            "views:",
+            "description:",
+            "source:",
+            "selected quality:",
+            "selected files:",
+            "selected components:",
+            "plan files:",
+            "ytce youtube media queue",
+        )
+        if lowered.startswith(metadata_prefixes):
+            return True
+        if re.search(r"https?://|www\.", lowered):
+            return True
+        if re.search(r"(^|\s)[a-zA-Z]:[\\/]", line):
+            return True
+        if "\\\\" in line or re.search(r"[\\/][A-Za-z0-9_. -]+[\\/]", line):
+            return True
+        return False
+
+    def _should_spellcheck_word(self, word: str, *, line_text: str = "", line_offset: int = -1) -> bool:
+        if line_text and self._text_editor_line_is_spellcheck_exempt(line_text):
+            return False
+        if len(word) < 3:
+            return False
+        if any(ch.isdigit() for ch in word):
+            return False
+        lowered = word.lower().strip("'")
+        if lowered.startswith(("http", "www")):
+            return False
+        if any(char in word for char in "/?=&:._-\\"):
+            return False
+        if word.isupper() and len(word) <= 8:
+            return False
+        # Treat proper nouns / CamelCase / project tokens conservatively.
+        if any(char.isupper() for char in word[1:]):
+            return False
+        if word[:1].isupper() and lowered not in self._text_editor_spell_words():
+            return False
+        # Do not mark metadata keys such as "Title:" or "Description:".
+        if line_text and line_offset >= 0:
+            colon_index = line_text.find(":")
+            if colon_index != -1 and line_offset < colon_index:
+                return False
+        return bool(re.search(r"[A-Za-z]", word))
+
+    def _looks_like_text_editor_gibberish(self, word: str) -> bool:
+        lowered = re.sub(r"[^a-z]", "", str(word or "").lower())
+        if len(lowered) < 4:
+            return False
+        if self._text_editor_word_is_known(lowered):
+            return False
+        keyboard_mash_clusters = (
+            "asd",
+            "sda",
+            "das",
+            "dsa",
+            "sdf",
+            "fds",
+            "dsf",
+            "dfg",
+            "gfd",
+            "gfa",
+            "fga",
+            "qwe",
+            "ewq",
+            "wer",
+            "zxc",
+            "xcv",
+            "jkl",
+            "vqe",
+            "qfe",
+            "oyf",
+            "yfg",
+        )
+        if any(cluster in lowered for cluster in keyboard_mash_clusters):
+            return True
+        vowels = sum(1 for char in lowered if char in "aeiou")
+        consonants = len(lowered) - vowels
+        if vowels <= 1 and consonants >= 4:
+            return True
+        if re.search(r"[^aeiou]{4,}", lowered):
+            return True
+        # Repeated non-word-looking fragments such as adasd/dasda/gfafa.
+        if len(lowered) <= 8 and len(set(lowered)) <= 4:
+            return True
+        # Long lower-case unknown words with few normal English bigrams are usually
+        # pasted/typed gibberish in this editor; pyspellchecker handles normal words.
+        common_bigrams = (
+            "th", "he", "in", "er", "an", "re", "on", "at", "en", "nd", "ti", "es",
+            "or", "te", "of", "ed", "is", "it", "al", "ar", "st", "to", "nt", "ng",
+            "se", "ha", "as", "ou", "io", "le", "ve", "co", "me", "de", "hi", "ri",
+            "ro", "ic", "ne", "ea", "ra", "ce", "li", "ch", "ll", "be", "ma", "si",
+            "om", "ur", "ca", "el", "ta", "la", "ns", "di", "fo", "ho", "pe", "ec",
+            "pr", "no", "ct",
+        )
+        if len(lowered) >= 6 and sum(1 for pair in common_bigrams if pair in lowered) <= 1:
+            return True
+        return False
+
+    def _text_editor_manual_spelling_corrections(self) -> dict[str, List[str]]:
+        return {
+            "cobuld": ["could"],
+            "woudl": ["would"],
+            "teh": ["the"],
+            "recieve": ["receive"],
+            "seperate": ["separate"],
+        }
+
+    def _text_editor_spell_suggestions(self, word: str) -> List[str]:
+        import difflib
+
+        lowered = word.lower()
+        manual = self._text_editor_manual_spelling_corrections()
+        if lowered in manual:
+            return [
+                suggestion.capitalize() if word[:1].isupper() else suggestion
+                for suggestion in manual[lowered]
+            ]
+
+        suggestions: List[str] = []
+        checker = self._get_text_editor_spellchecker()
+        if checker is not None:
+            try:
+                correction = checker.correction(lowered)
+                candidates = sorted(checker.candidates(lowered) or [])
+                ordered = []
+                if correction:
+                    ordered.append(correction)
+                ordered.extend(candidate for candidate in candidates if candidate not in ordered)
+                for candidate in ordered:
+                    if candidate == lowered:
+                        continue
+                    if len(lowered) >= 4 and candidate[:1] != lowered[:1]:
+                        continue
+                    suggestions.append(candidate.capitalize() if word[:1].isupper() else candidate)
+                    if len(suggestions) >= 4:
+                        return suggestions
+            except Exception:
+                logger.debug("pyspellchecker suggestion lookup failed.", exc_info=True)
+
+        matches = difflib.get_close_matches(
+            lowered,
+            sorted(self._text_editor_spell_words()),
+            n=4,
+            cutoff=0.84,
+        )
+        for match in matches:
+            if match == lowered:
+                continue
+            # Avoid unrelated suggestions like copies -> opens.
+            if len(lowered) >= 4 and match[:1] != lowered[:1]:
+                continue
+            suggestions.append(match.capitalize() if word[:1].isupper() else match)
+        return suggestions
+
+    def _schedule_text_editor_spellcheck(self) -> None:
+        if not hasattr(self, "text_editor_textbox"):
+            return
+        previous = getattr(self, "text_editor_spell_after_id", None)
+        if previous:
+            try:
+                self.after_cancel(previous)
+            except Exception:
+                pass
+        self.text_editor_spell_after_id = self.after(300, self._run_text_editor_spellcheck)
+
+    def _clear_text_editor_spell_tags(self) -> None:
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return
+        try:
+            for tag_name in tuple(widget.tag_names()):
+                if str(tag_name).startswith("spell_error_"):
+                    widget.tag_delete(tag_name)
+        except Exception:
+            logger.debug("Could not clear Text Editor spelling tags.", exc_info=True)
+
+    def _run_text_editor_spellcheck(self) -> None:
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return
+        self.text_editor_spell_after_id = None
+        try:
+            if str(widget.cget("state")) == "disabled":
+                return
+        except Exception:
+            pass
+        self._clear_text_editor_spell_tags()
+        try:
+            content = widget.get("1.0", "end-1c")
+        except Exception:
+            return
+        dictionary = self._text_editor_spell_words()
+        manual_corrections = self._text_editor_manual_spelling_corrections()
+        line_starts: List[int] = []
+        offset = 0
+        for line in content.splitlines(True):
+            line_starts.append(offset)
+            offset += len(line)
+        match_index = 0
+        for line_number, line_start in enumerate(line_starts, start=1):
+            line_end = line_starts[line_number] if line_number < len(line_starts) else len(content)
+            line_text = content[line_start:line_end]
+            for match in re.finditer(r"\b[A-Za-z][A-Za-z']*[A-Za-z]\b", line_text):
+                word = match.group(0)
+                lowered = word.lower().strip("'")
+                if not self._should_spellcheck_word(word, line_text=line_text, line_offset=match.start()):
+                    continue
+                if lowered in dictionary:
+                    continue
+                is_known_misspelling = lowered in manual_corrections
+                is_gibberish = self._looks_like_text_editor_gibberish(word)
+                checker = self._get_text_editor_spellchecker()
+                if checker is not None and not is_known_misspelling and not is_gibberish:
+                    if self._text_editor_word_is_known(lowered):
+                        continue
+                    # With pyspellchecker installed, plain lower-case unknown
+                    # words are safe to underline. This catches gibberish such as
+                    # adasd/gfafa even when there is no good correction candidate.
+                    if not word.islower() or len(lowered) < 4:
+                        suggestions = self._text_editor_spell_suggestions(word)
+                        if not suggestions:
+                            continue
+                elif not is_known_misspelling and not is_gibberish:
+                    continue
+                suggestions = self._text_editor_spell_suggestions(word)
+                start = f"{line_number}.{match.start()}"
+                end = f"{line_number}.{match.end()}"
+                tag_name = f"spell_error_{match_index}"
+                match_index += 1
+                try:
+                    widget.tag_add(tag_name, start, end)
+                    self._configure_text_editor_spell_tag(widget, tag_name)
+                    widget.tag_bind(
+                        tag_name,
+                        "<Enter>",
+                        lambda event, w=word, s=start, e=end: self._show_text_editor_spell_popup(w, s, e, event),
+                    )
+                    widget.tag_bind(
+                        tag_name,
+                        "<Leave>",
+                        lambda _event: self._cancel_hide_text_editor_spell_popup(),
+                    )
+                    widget.tag_bind(
+                        tag_name,
+                        "<Button-1>",
+                        lambda event, w=word, s=start, e=end: self._show_text_editor_spell_popup(w, s, e, event),
+                    )
+                    widget.tag_bind(
+                        tag_name,
+                        "<Button-3>",
+                        lambda event, w=word, s=start, e=end: self._show_text_editor_spell_popup(w, s, e, event),
+                    )
+                except Exception:
+                    logger.debug("Could not tag Text Editor spelling error.", exc_info=True)
+
+    def _configure_text_editor_spell_tag(self, widget: Any, tag_name: str) -> None:
+        """Try to use a red underline without changing text colour.
+
+        Tk 8.7 supports underlinefg. Older Tk builds do not, so the fallback is
+        still a straight underline using the widget default colour.
+        """
+        try:
+            widget.tag_configure(tag_name, underline=True, underlinefg="#ff4d4d")
+        except Exception:
+            try:
+                widget.tag_configure(tag_name, underline=True)
+            except Exception:
+                pass
+
+    def _cancel_hide_text_editor_spell_popup(self) -> None:
+        after_id = getattr(self, "text_editor_spell_popup_hide_after_id", None)
+        if after_id:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+        self.text_editor_spell_popup_hide_after_id = None
+
+    def _handle_text_editor_spell_app_unmap(self, event: Any) -> None:
+        if getattr(event, "widget", None) is self:
+            self._hide_text_editor_spell_popup()
+
+    def _handle_text_editor_spell_app_focus_out(self, event: Any) -> None:
+        widget = getattr(event, "widget", None)
+        popup = getattr(self, "text_editor_spell_popup", None)
+        try:
+            if popup is not None and (widget is popup or str(widget).startswith(str(popup))):
+                return
+        except Exception:
+            pass
+        self._hide_text_editor_spell_popup()
+
+    def _schedule_hide_text_editor_spell_popup(self, delay_ms: int = 0) -> None:
+        self._cancel_hide_text_editor_spell_popup()
+        if delay_ms <= 0:
+            self._hide_text_editor_spell_popup()
+            return
+        self.text_editor_spell_popup_hide_after_id = self.after(
+            delay_ms,
+            self._hide_text_editor_spell_popup,
+        )
+
+    def _text_editor_spell_tag_range_at_index(self, index: str) -> tuple[str, str, str]:
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return "", "", ""
+        try:
+            for tag_name in widget.tag_names(index):
+                tag_text = str(tag_name)
+                if not tag_text.startswith("spell_error_"):
+                    continue
+                ranges = widget.tag_ranges(tag_text)
+                for start_index, end_index in zip(ranges[0::2], ranges[1::2]):
+                    start = str(start_index)
+                    end = str(end_index)
+                    if widget.compare(start, "<=", index) and widget.compare(index, "<=", end):
+                        return tag_text, start, end
+        except Exception:
+            logger.debug("Could not resolve spelling tag under cursor.", exc_info=True)
+        return "", "", ""
+
+    def _text_editor_pointer_in_spell_popup_bridge(self, event: Any) -> bool:
+        try:
+            x = int(getattr(event, "x_root", 0))
+            y = int(getattr(event, "y_root", 0))
+        except Exception:
+            return False
+
+        popup = getattr(self, "text_editor_spell_popup", None)
+        if popup is not None:
+            try:
+                px1 = popup.winfo_rootx()
+                py1 = popup.winfo_rooty()
+                px2 = px1 + popup.winfo_width()
+                py2 = py1 + popup.winfo_height()
+                if px1 - 20 <= x <= px2 + 20 and py1 - 20 <= y <= py2 + 20:
+                    return True
+            except Exception:
+                pass
+
+        bounds = getattr(self, "text_editor_spell_popup_bridge_bounds", None)
+        if not bounds:
+            return False
+        try:
+            x1, y1, x2, y2 = bounds
+            return x1 <= x <= x2 and y1 <= y <= y2
+        except Exception:
+            return False
+
+    def _handle_text_editor_spell_motion(self, event: Any) -> str | None:
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return None
+        try:
+            index = widget.index(f"@{event.x},{event.y}")
+            _tag_name, start, end = self._text_editor_spell_tag_range_at_index(index)
+            if not start or not end:
+                if getattr(self, "text_editor_spell_popup", None) is not None and not self._text_editor_pointer_in_spell_popup_bridge(event):
+                    self._hide_text_editor_spell_popup()
+                return None
+            word = widget.get(start, end).strip()
+            if not word:
+                self._hide_text_editor_spell_popup()
+                return None
+            return self._show_text_editor_spell_popup(word, start, end, event)
+        except Exception:
+            logger.debug("Text Editor spell motion failed.", exc_info=True)
+        return None
+
+    def _handle_text_editor_spell_click(self, event: Any) -> str | None:
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return None
+        try:
+            index = widget.index(f"@{event.x},{event.y}")
+            _tag_name, start, end = self._text_editor_spell_tag_range_at_index(index)
+            if not start or not end:
+                self._hide_text_editor_spell_popup()
+                return None
+            word = widget.get(start, end).strip()
+            if not word:
+                self._hide_text_editor_spell_popup()
+                return None
+            return self._show_text_editor_spell_popup(word, start, end, event)
+        except Exception:
+            logger.debug("Text Editor spell click failed.", exc_info=True)
+            self._hide_text_editor_spell_popup()
+        return None
+
+    def _text_editor_spell_popup_position(self, start: str, popup_width: int, popup_height: int, event: Any) -> tuple[int, int]:
+        widget = self._get_text_editor_text_widget()
+        card = getattr(self, "text_editor_card", None)
+        fallback_x = max(8, int(getattr(event, "x", 0)) + 10)
+        fallback_y = max(8, int(getattr(event, "y", 0)) + 18)
+        if widget is None or card is None:
+            return fallback_x, fallback_y
+        try:
+            bbox = widget.bbox(start)
+            if not bbox:
+                return fallback_x, fallback_y
+            x, y, _width, height = bbox
+            word_root_x = widget.winfo_rootx() + x
+            word_root_y = widget.winfo_rooty() + y
+            card_root_x = card.winfo_rootx()
+            card_root_y = card.winfo_rooty()
+            card_width = max(240, card.winfo_width())
+            card_height = max(120, card.winfo_height())
+            popup_x = max(8, min(word_root_x - card_root_x, card_width - popup_width - 8))
+            below_y = word_root_y - card_root_y + height + 10
+            above_y = max(8, word_root_y - card_root_y - popup_height - 10)
+            popup_y = below_y if below_y + popup_height + 8 < card_height else above_y
+            return (popup_x, popup_y)
+        except Exception:
+            return fallback_x, fallback_y
+
+    def _hide_text_editor_spell_popup(self) -> None:
+        self._cancel_hide_text_editor_spell_popup()
+        popup = getattr(self, "text_editor_spell_popup", None)
+        if popup is not None:
+            try:
+                popup.destroy()
+            except Exception:
+                pass
+        self.text_editor_active_spelling_word = ""
+        self.text_editor_active_spelling_start = ""
+        self.text_editor_active_spelling_end = ""
+        self.text_editor_spell_popup = None
+        self.text_editor_spell_popup_key = ""
+        self.text_editor_spell_popup_bridge_bounds = None
+
+    def _replace_text_editor_misspelling(self, start: str, end: str, replacement: str) -> None:
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return
+        try:
+            widget.edit_separator()
+            widget.delete(start, end)
+            widget.insert(start, replacement)
+            widget.edit_separator()
+        except Exception as error:
+            self.log_message(f"Spelling replacement failed: {error}", "error")
+            return
+        self._hide_text_editor_spell_popup()
+        self._schedule_text_editor_spellcheck()
+
+    def _add_text_editor_spelling_word(self, word: str) -> None:
+        cleaned = str(word or "").lower().strip("'")
+        if cleaned:
+            self.text_editor_custom_dictionary.add(cleaned)
+        self._hide_text_editor_spell_popup()
+        self._schedule_text_editor_spellcheck()
+
+    def _show_text_editor_spell_popup(self, word: str, start: str, end: str, event: Any) -> str:
+        popup_key = f"{start}:{end}:{word}"
+        existing_popup = getattr(self, "text_editor_spell_popup", None)
+        existing_popup_alive = False
+        if existing_popup is not None:
+            try:
+                existing_popup_alive = bool(existing_popup.winfo_exists())
+            except Exception:
+                existing_popup_alive = False
+        if (
+            existing_popup_alive
+            and getattr(self, "text_editor_spell_popup_key", "") == popup_key
+            and getattr(self, "text_editor_active_spelling_word", "")
+        ):
+            self._cancel_hide_text_editor_spell_popup()
+            return "break"
+        self._hide_text_editor_spell_popup()
+        self.text_editor_spell_popup_key = popup_key
+        self.text_editor_active_spelling_word = word
+        self.text_editor_active_spelling_start = start
+        self.text_editor_active_spelling_end = end
+        suggestions = self._text_editor_spell_suggestions(word)
+
+        parent = getattr(self, "text_editor_card", None)
+        if parent is None:
+            return "break"
+        popup = tk.Frame(
+            parent,
+            bg=COLORS["bg_input"],
+            highlightbackground=COLORS["border"],
+            highlightthickness=1,
+            bd=0,
+        )
+
+        rows = [("Add to Dictionary", lambda w=word: self._add_text_editor_spelling_word(w))]
+        rows.extend(
+            (suggestion, lambda value=suggestion, s=start, e=end: self._replace_text_editor_misspelling(s, e, value))
+            for suggestion in suggestions[:4]
+        )
+
+        def _button_enter(button: tk.Button) -> None:
+            button.configure(bg=COLORS["accent"], fg=COLORS["bg_dark"])
+
+        def _button_leave(button: tk.Button) -> None:
+            button.configure(bg=COLORS["bg_input"], fg=COLORS["text_primary"])
+
+        for index, (label, command) in enumerate(rows):
+            button = tk.Button(
+                popup,
+                text=label,
+                anchor="w",
+                command=command,
+                bg=COLORS["bg_input"],
+                fg=COLORS["text_primary"],
+                activebackground=COLORS["accent"],
+                activeforeground=COLORS["bg_dark"],
+                relief="flat",
+                bd=0,
+                padx=10,
+                pady=4,
+                font=("Segoe UI", 10),
+                cursor="hand2",
+            )
+            button.bind("<Enter>", lambda _event, item=button: _button_enter(item), add="+")
+            button.bind("<Leave>", lambda _event, item=button: _button_leave(item), add="+")
+            button.pack(fill="x")
+            if index == 0 and len(rows) > 1:
+                separator = tk.Frame(popup, height=1, bg=COLORS["border"])
+                separator.pack(fill="x", padx=6, pady=(1, 1))
+
+        popup.bind("<Escape>", lambda _event: self._hide_text_editor_spell_popup())
+        popup.bind("<Enter>", lambda _event: self._cancel_hide_text_editor_spell_popup(), add="+")
+        popup.bind("<Leave>", lambda _event: self._schedule_hide_text_editor_spell_popup(350), add="+")
+        popup.bind("<Button-1>", lambda _event: self._cancel_hide_text_editor_spell_popup(), add="+")
+
+        self.text_editor_spell_popup = popup
+        popup.update_idletasks()
+        popup_width = max(150, min(240, popup.winfo_reqwidth()))
+        popup_height = max(30, popup.winfo_reqheight())
+        x, y = self._text_editor_spell_popup_position(start, popup_width, popup_height, event)
+        popup.place(x=x, y=y, width=popup_width)
+        popup.lift()
+        try:
+            x1 = popup.winfo_rootx() - 18
+            y1 = popup.winfo_rooty() - 18
+            x2 = x1 + popup_width + 36
+            y2 = y1 + popup_height + 36
+            self.text_editor_spell_popup_bridge_bounds = (x1, y1, x2, y2)
+        except Exception:
+            self.text_editor_spell_popup_bridge_bounds = None
+        return "break"
+
     def _create_transcript_section(self) -> None:
         """Create transcript import/export section."""
         self.transcript_card = ctk.CTkFrame(
@@ -3111,20 +4660,22 @@ class App(ctk.CTk):
             border_width=1,
             border_color=COLORS["border"]
         )
-        self.transcript_card.grid(row=2, column=0, sticky="ew", pady=(0, 15))
+        self.transcript_card.grid(row=3, column=0, sticky="ew", pady=(0, 15))
         self.transcript_card.grid_columnconfigure(0, weight=1)
 
         # Header row
         header = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
         header.pack(fill="x", padx=15, pady=(12, 8))
 
-        title = ctk.CTkLabel(
+        self.transcript_title_label = ctk.CTkLabel(
             header,
             text="🗣 Transcript",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=COLORS["text_primary"]
+            text_color=COLORS["text_primary"],
+            cursor="hand2",
         )
-        title.pack(side="left")
+        self.transcript_title_label.pack(side="left")
+        self.transcript_title_label.bind("<Button-1>", lambda _event: self._toggle_transcript_panel(), add="+")
 
         self.transcript_stats_label = ctk.CTkLabel(
             header,
@@ -4101,6 +5652,8 @@ class App(ctk.CTk):
         self._refresh_transcript_display()
         self._bind_final_file_drop_targets()
 
+        self.transcript_card.grid_remove()
+
     def _create_log_section(self) -> None:
         """Create the activity log section."""
         self.log_card = ctk.CTkFrame(
@@ -4110,7 +5663,7 @@ class App(ctk.CTk):
             border_width=1,
             border_color=COLORS["border"]
         )
-        self.log_card.grid(row=3, column=0, sticky="ew")
+        self.log_card.grid(row=4, column=0, sticky="ew")
         self.log_card.grid_rowconfigure(1, weight=0)
         self.log_card.grid_columnconfigure(0, weight=1)
 
@@ -4903,6 +6456,33 @@ class App(ctk.CTk):
                 text_color=COLORS["warning"],
             )
 
+    def _process_youtube_source_row_media_result(self, result: Any, parent: Any | None = None, *, show_message: bool = True) -> bool:
+        """Import a completed YouTube media queue result into FILES on the Tk/UI thread."""
+        if result.status != YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY:
+            if show_message:
+                messagebox.showinfo("YouTube media", result.message, parent=parent or self)
+            self.log_message(result.message.replace("\n", " "), "warning")
+            return False
+        added = 0
+        for file_path in result.files_to_add:
+            if not os.path.isfile(file_path):
+                continue
+            file_kind = self._session_file_kind_for_path(file_path)
+            entry = self._add_session_file(file_path, file_kind, select=(added == 0))
+            if entry is not None:
+                added += 1
+        if show_message:
+            messagebox.showinfo("YouTube media", result.message, parent=parent or self)
+        self.log_message(
+            (
+                f"YouTube media completed by Go: quality={result.selected_quality_label}; "
+                f"components={', '.join(result.selected_components)}; "
+                f"FILES added={added}; auto mux={'yes' if result.auto_mux else 'no'}"
+            ),
+            "success" if added else "warning",
+        )
+        return added > 0
+
     def _queue_youtube_source_row_media(self, row_id: str, parent: Any | None = None, *, show_message: bool = True) -> bool:
         row = self._source_row_by_id(row_id)
         if row is None:
@@ -4919,31 +6499,103 @@ class App(ctk.CTk):
             preferences=prefs,
             probe_metadata=True,
         )
-        if result.status != YOUTUBE_GUI_MEDIA_QUEUE_STATUS_READY:
-            if show_message:
-                messagebox.showinfo("YouTube media", result.message, parent=parent or self)
-            self.log_message(result.message.replace("\n", " "), "warning")
-            return False
-        added = 0
-        for file_path in result.files_to_add:
-            if not os.path.isfile(file_path):
-                continue
-            suffix = os.path.splitext(file_path)[1].lower()
-            file_kind = SESSION_FILE_KIND_MEDIA if suffix in {".json", ".mp4", ".mkv", ".webm", ".mp3", ".m4a", ".wav"} else SESSION_FILE_KIND_OTHER
-            entry = self._add_session_file(file_path, file_kind, select=(added == 0))
-            if entry is not None:
-                added += 1
-        if show_message:
-            messagebox.showinfo("YouTube media queued", result.message, parent=parent or self)
-        self.log_message(
-            (
-                f"YouTube media queued by Go: quality={result.selected_quality_label}; "
-                f"components={', '.join(result.selected_components)}; "
-                f"FILES added={added}; auto mux={'yes' if result.auto_mux else 'no'}"
-            ),
-            "success" if added else "warning",
-        )
-        return added > 0
+        return self._process_youtube_source_row_media_result(result, parent=parent, show_message=show_message)
+
+    def _start_youtube_source_row_media_worker(self, row_id: str, parent: Any | None = None, *, show_message: bool = False) -> None:
+        """Download YouTube media in a worker so the Tk window does not freeze."""
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            return
+        prefs = self._youtube_preferences_for_row(row_id)
+        quality_var = self._youtube_quality_var_for_row(row_id)
+        quality_enabled = self._youtube_quality_enabled_var_for_row(row_id).get()
+        if not quality_enabled:
+            return
+        quality = quality_var.get() if prefs.show_quality_dropdown else prefs.default_quality_label
+
+        worker_token = object()
+        self._youtube_media_worker_token = worker_token
+        self._youtube_media_worker_cancel_requested = False
+
+        self.fetch_state.start()
+        if hasattr(self.fetch_button, "grid_remove"):
+            self.fetch_button.grid_remove()
+        else:
+            self.fetch_button.pack_forget()
+        if hasattr(self.cancel_button, "grid"):
+            self.cancel_button.grid(row=2, column=0, sticky="w", pady=(6, 0))
+        else:
+            self.cancel_button.pack(side="left")
+        self.export_button.configure(state="disabled")
+        self.export_excel_button.configure(state="disabled")
+        self.export_txt_button.configure(state="disabled")
+        self.evidence_button.configure(state="disabled")
+        self.progress_bar.set(0)
+        try:
+            self.progress_bar.start()
+        except Exception:
+            logger.debug("Could not start progress animation for YouTube media worker.", exc_info=True)
+        self.status_label.configure(text="Downloading YouTube media with internal JDownloader...", text_color=COLORS["text_secondary"])
+        self._set_operational_capture_status("Downloading YouTube media with internal JDownloader...", "muted")
+        self._refresh_export_entry_state()
+
+        def worker() -> None:
+            try:
+                result = queue_youtube_gui_source_row_selection(
+                    row=row,
+                    quality_label=quality,
+                    preferences=prefs,
+                    probe_metadata=True,
+                )
+            except Exception as error:
+                logger.exception("YouTube media worker failed")
+
+                def fail() -> None:
+                    if getattr(self, "_youtube_media_worker_token", None) is not worker_token:
+                        return
+                    self._youtube_media_worker_token = None
+                    try:
+                        self.progress_bar.stop()
+                    except Exception:
+                        pass
+                    self.status_label.configure(text="YouTube media download failed", text_color=COLORS["error"])
+                    self._set_operational_capture_status(f"YouTube media download failed: {error}", "error")
+                    self.log_message(f"YouTube media download failed: {error}", "error")
+                    if show_message:
+                        messagebox.showerror("YouTube media", f"YouTube media download failed:\n\n{error}", parent=parent or self)
+                    self._reset_fetch_ui()
+                    self._refresh_export_entry_state()
+
+                self.after(0, fail)
+                return
+
+            def complete() -> None:
+                if getattr(self, "_youtube_media_worker_token", None) is not worker_token:
+                    return
+                self._youtube_media_worker_token = None
+                try:
+                    self.progress_bar.stop()
+                except Exception:
+                    pass
+                added = self._process_youtube_source_row_media_result(result, parent=parent, show_message=show_message)
+                if added:
+                    self.status_label.configure(text="YouTube media downloaded and added to FILES", text_color=COLORS["success"])
+                    self._set_operational_capture_status(
+                        "YouTube media downloaded and added to FILES. Export will include the completed media files.",
+                        "success",
+                    )
+                else:
+                    self.status_label.configure(text="YouTube media finished but no files were added", text_color=COLORS["warning"])
+                    self._set_operational_capture_status(
+                        result.message or "YouTube media finished but no files were added.",
+                        "warning",
+                    )
+                self._reset_fetch_ui()
+                self._refresh_export_entry_state()
+
+            self.after(0, complete)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _open_youtube_source_settings(self, row_id: str) -> None:
         row = self._source_row_by_id(row_id)
@@ -6195,7 +7847,7 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(
             container,
-            text="Export",
+            text="FILES",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color=COLORS["text_primary"],
             anchor="w",
@@ -6203,7 +7855,7 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(
             container,
-            text="Copy selected FILES entries or use the existing transcript/comment export actions.",
+            text="Choose FILES entries to export to a folder. TXT, CSV, and Excel combine selected text entries.",
             font=ctk.CTkFont(size=12),
             text_color=COLORS["text_secondary"],
             wraplength=460,
@@ -6220,7 +7872,7 @@ class App(ctk.CTk):
             selected_vars[entry.normalized_path] = var
             ctk.CTkCheckBox(
                 files_frame,
-                text=entry.display_name,
+                text=self._session_file_export_display_name(entry),
                 variable=var,
                 font=ctk.CTkFont(size=12),
                 fg_color=COLORS["accent"],
@@ -6280,7 +7932,12 @@ class App(ctk.CTk):
                 source = entry.path
                 if not os.path.isfile(source):
                     continue
-                destination = os.path.join(folder, os.path.basename(source))
+                destination_folder = folder
+                folder_name = self._session_file_folder_for_entry(entry)
+                if folder_name:
+                    destination_folder = os.path.join(folder, self._safe_session_folder_name(folder_name))
+                    os.makedirs(destination_folder, exist_ok=True)
+                destination = os.path.join(destination_folder, os.path.basename(source))
                 stem, ext = os.path.splitext(destination)
                 counter = 1
                 while os.path.exists(destination):
@@ -6288,8 +7945,8 @@ class App(ctk.CTk):
                     counter += 1
                 shutil.copy2(source, destination)
                 copied += 1
-            self.log_message(f"Copied {copied} FILES item(s) to export folder.", "success")
-            messagebox.showinfo("Export FILES", f"Copied {copied} file(s).")
+            self.log_message(f"Exported {copied} FILES item(s) to export folder.", "success")
+            messagebox.showinfo("Export FILES", f"Exported {copied} file(s).")
 
         def read_entry_text(entry: SessionFileEntry) -> str:
             try:
@@ -6403,7 +8060,7 @@ class App(ctk.CTk):
         ).pack(side="left", padx=(8, 0))
         ctk.CTkButton(
             select_row,
-            text="Copy selected",
+            text="Export",
             command=copy_selected_files,
             width=120,
             height=28,
@@ -6499,6 +8156,26 @@ class App(ctk.CTk):
         """Request cancellation of the fetch operation."""
         if self.fetch_state.is_fetching:
             self.fetch_state.request_cancel()
+            active_media_worker = getattr(self, "_youtube_media_worker_token", None) is not None
+            if active_media_worker:
+                self._youtube_media_worker_cancel_requested = True
+                self._youtube_media_worker_token = None
+                try:
+                    self.progress_bar.stop()
+                except Exception:
+                    pass
+                self.status_label.configure(text="Cancelled YouTube media download wait", text_color=COLORS["warning"])
+                self._set_operational_capture_status(
+                    "Cancelled YouTube media download wait. JDownloader may still finish any package it already received.",
+                    "warning",
+                )
+                self.log_message(
+                    "YouTube media wait cancelled in YTCE. JDownloader may still finish any package it already received.",
+                    "warning",
+                )
+                self._reset_fetch_ui()
+                self._refresh_export_entry_state()
+                return
             self.status_label.configure(text="Cancelling...", text_color=COLORS["warning"])
             self.log_message("Cancellation requested...", "warning")
 
@@ -6530,11 +8207,10 @@ class App(ctk.CTk):
             return
 
         if youtube_media_requested and selected_discussion_row is not None:
-            self._queue_youtube_source_row_media(selected_discussion_row.row_id, self, show_message=False)
             if not extract_webpage and not extract_comments and not extract_live_chat:
-                self.status_label.configure(text="YouTube media added to FILES", text_color=COLORS["success"])
-                self._set_operational_capture_status("YouTube media selection added to FILES. Export will include the queued files.", "success")
+                self._start_youtube_source_row_media_worker(selected_discussion_row.row_id, self, show_message=False)
                 return
+            self._queue_youtube_source_row_media(selected_discussion_row.row_id, self, show_message=False)
 
         if selected_discussion_row is not None:
             discussion = build_discussion_capture_options(

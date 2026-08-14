@@ -281,7 +281,7 @@ def _metadata_txt(*, row: SourceResourceRowState, quality_label: str, components
         "",
         "Auto mux: yes" if YOUTUBE_GUI_COMPONENT_VIDEO in components else "Auto mux: no video selected",
         "Mux rule: yt-dlp selects bestvideo+bestaudio at or below the selected quality; FFmpeg merges when YouTube provides separate streams.",
-        "Queue behaviour: Go adds this YouTube media selection to FILES automatically. Export copies these local plan/metadata files with the rest of FILES.",
+        "Queue behaviour: Go submits the selected YouTube media job to internal JDownloader, waits for completed files, and adds the resulting media plus manifest/metadata files to FILES.",
         "",
         "Plan files:",
         *(f"- {path}" for path in plan_paths),
@@ -385,11 +385,17 @@ def queue_youtube_gui_source_row_selection(
         )
 
     output_root_path = Path(output_root) if output_root is not None else _default_queue_root()
-    queue_dir = output_root_path / _safe_name(row.source_id or row.row_id) / time.strftime("%Y%m%d_%H%M%S")
+    run_stamp = time.strftime("%Y%m%d_%H%M%S")
+    queue_dir = output_root_path / _safe_name(row.source_id or row.row_id) / run_stamp
     queue_dir.mkdir(parents=True, exist_ok=True)
+    display_title = (row.title or row.source_id or "YouTube media").strip()
+    job_package_name = f"YTCE - {display_title} - {run_stamp}"
 
     warnings_list: list[str] = list(backend_warnings)
-    if discovery is None and probe_metadata:
+    # Do not run yt-dlp metadata probing before internal JDownloader jobs.
+    # On some YouTube links that pre-probe can hang or delay the GUI worker even
+    # though the selected media backend is internal JDownloader.
+    if discovery is None and probe_metadata and backend_id == YTDLP_FALLBACK_BACKEND_ID:
         try:
             discovery = discover_youtube_media_with_ytdlp(row.canonical_url, output_dir=queue_dir / "metadata")
         except Exception as exc:
@@ -418,15 +424,17 @@ def queue_youtube_gui_source_row_selection(
         job_request = build_youtube_job_request(
             source_url=row.canonical_url,
             output_dir=queue_dir / "downloads",
-            package_name=row.title or row.source_id or "YTCE YouTube media",
-            source_title_or_id=row.source_id or row.row_id,
+            package_name=job_package_name,
+            source_title_or_id=f"{display_title} {run_stamp}",
             max_height=height,
             video=YOUTUBE_GUI_COMPONENT_VIDEO in components,
             audio=YOUTUBE_GUI_COMPONENT_AUDIO in components,
             image=YOUTUBE_GUI_COMPONENT_THUMBNAIL in components,
             description=True,
-            wait=False,
-            timeout_seconds=600,
+            wait=True,
+            timeout_seconds=180,
+            monitor_timeout_seconds=120.0,
+            overall_timeout_seconds=180.0,
         )
         command = build_internal_youtube_download_command(
             source_url=row.canonical_url,
@@ -540,6 +548,7 @@ def queue_youtube_gui_source_row_selection(
         "engine_status": engine_status,
         "readiness_status": readiness_status,
         "execution_manifest_path": execution_manifest_path,
+        "jdownloader_package_name": job_package_name if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID else "",
         "jdownloader_completed_files": list(internal_jdownloader_completed_files),
         "jdownloader_completed_file_count": len(internal_jdownloader_completed_files),
         "jdownloader_duplicate_state_suspected": bool(internal_jdownloader_duplicate_warning),
@@ -560,9 +569,13 @@ def queue_youtube_gui_source_row_selection(
     )
 
     internal_jdownloader_file_paths = [str(item["path"]) for item in internal_jdownloader_completed_files]
-    files_to_add = [*internal_jdownloader_file_paths, str(metadata_path), str(manifest_path), *plan_paths]
+    # User-facing FILES should contain downloaded media and a lightweight
+    # provenance text file by default. Technical JSON manifests/command files
+    # are still written beside the run for debugging, but are not exported unless
+    # the user manually adds them.
+    files_to_add = [*internal_jdownloader_file_paths, str(metadata_path)]
     message = (
-        "YouTube media selection added to FILES by Go.\n\n"
+        "YouTube media downloaded and added to FILES by Go.\n\n"
         f"Quality: {selected_quality}\n"
         f"Components: {', '.join(components)}\n"
         f"Auto mux: {'yes' if YOUTUBE_GUI_COMPONENT_VIDEO in components else 'no video selected'}\n"
@@ -585,7 +598,7 @@ def queue_youtube_gui_source_row_selection(
             )
         )
     message += (
-        "Export will copy these plan/metadata files with the rest of FILES."
+        "Export will copy the downloaded media files plus youtube-video-metadata.txt."
     )
     return YouTubeGuiMediaQueueResult(
         status=queue_status,

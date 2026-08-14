@@ -457,7 +457,12 @@ def run_internal_youtube_job(
             monitor_timeout = request.monitor_timeout_seconds if request.monitor_timeout_seconds > 0 else request.timeout_seconds
             if remaining is not None:
                 monitor_timeout = max(0.01, min(monitor_timeout, remaining))
-            monitor = wait_for_download_completion(output_dir, timeout_seconds=monitor_timeout)
+            monitor = wait_for_download_completion(
+                output_dir,
+                timeout_seconds=monitor_timeout,
+                poll_interval_seconds=0.25,
+                stable_checks_required=1,
+            )
             timings["download_wait_ms"] = int((time.monotonic() - wait_start) * 1000)
             files = monitor.files
             warnings.extend(monitor.warnings)
