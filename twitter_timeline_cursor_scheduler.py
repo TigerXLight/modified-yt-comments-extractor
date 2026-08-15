@@ -26,10 +26,10 @@ from twitter_browser_timeline_pagination import (
     timeline_rows_from_har,
 )
 
-TWITTER_CURSOR_SCHEDULER_SCHEMA_VERSION = "twitter_timeline_cursor_scheduler.v74e"
-CURSOR_PAGE_SCHEMA_VERSION = "twitter_timeline_cursor_page.v74e"
-CURSOR_STATE_SCHEMA_VERSION = "twitter_timeline_cursor_state.v74e"
-CURSOR_MANIFEST_SCHEMA_VERSION = "twitter_timeline_cursor_manifest.v74e"
+TWITTER_CURSOR_SCHEDULER_SCHEMA_VERSION = "twitter_timeline_cursor_scheduler.v74f2"
+CURSOR_PAGE_SCHEMA_VERSION = "twitter_timeline_cursor_page.v74f2"
+CURSOR_STATE_SCHEMA_VERSION = "twitter_timeline_cursor_state.v74f2"
+CURSOR_MANIFEST_SCHEMA_VERSION = "twitter_timeline_cursor_manifest.v74f2"
 CURSOR_OUTPUT_FILES = (
     "cursor_pages.jsonl",
     "cursor_entries.jsonl",
@@ -39,7 +39,7 @@ CURSOR_OUTPUT_FILES = (
     "cursor_errors.jsonl",
 )
 
-SAFE_REPLAY_HEADER_NAMES = {
+CURSOR_FETCH_HEADER_NAMES = {
     "accept",
     "authorization",
     "content-type",
@@ -49,6 +49,14 @@ SAFE_REPLAY_HEADER_NAMES = {
     "x-twitter-active-user",
     "x-twitter-auth-type",
     "x-twitter-client-language",
+}
+
+SENSITIVE_CURSOR_HEADER_NAMES = {
+    "authorization",
+    "cookie",
+    "x-client-transaction-id",
+    "x-client-uuid",
+    "x-csrf-token",
 }
 
 
@@ -279,13 +287,47 @@ def _url_with_cursor(url: str, cursor: str) -> str:
 
 
 def _headers_for_replay(headers: Mapping[str, Any] | None) -> dict[str, str]:
+    """Return request headers allowed for in-memory cursor fetches.
+
+    These values may include session-bound authorization/CSRF material captured
+    from the user's already logged-in browser profile.  They must not be written
+    to output files without redaction.
+    """
     out: dict[str, str] = {}
     for key, value in (headers or {}).items():
         lower = str(key).lower()
-        if lower in SAFE_REPLAY_HEADER_NAMES and value is not None:
-            out[lower] = str(value)
+        if lower in CURSOR_FETCH_HEADER_NAMES and value is not None:
+            value_text = str(value)
+            if value_text:
+                out[lower] = value_text
     out.setdefault("accept", "*/*")
     return out
+
+
+def _merge_replay_headers(*header_sets: Mapping[str, Any] | None) -> dict[str, str]:
+    merged: dict[str, str] = {}
+    for header_set in header_sets:
+        for key, value in _headers_for_replay(header_set).items():
+            if value:
+                merged[str(key).lower()] = str(value)
+    merged.setdefault("accept", "*/*")
+    return merged
+
+
+def _redacted_headers_for_output(headers: Mapping[str, Any] | None) -> dict[str, str]:
+    redacted: dict[str, str] = {}
+    for key, value in _headers_for_replay(headers).items():
+        lower = str(key).lower()
+        if lower in SENSITIVE_CURSOR_HEADER_NAMES or "token" in lower or "auth" in lower or "csrf" in lower or lower == "cookie":
+            redacted[lower] = "[redacted]"
+        else:
+            redacted[lower] = str(value)
+    return redacted
+
+
+def _request_headers_are_authenticated(headers: Mapping[str, Any] | None) -> bool:
+    replay_headers = _headers_for_replay(headers)
+    return bool(replay_headers.get("authorization")) and bool(replay_headers.get("x-csrf-token"))
 
 
 def _record_body(record: Mapping[str, Any]) -> dict[str, Any] | list[Any] | None:
@@ -539,19 +581,22 @@ def _page_from_record(
     return page, tuple(unique_entries), cursor_out
 
 
-def run_twitter_cursor_scheduler_from_records(
+
+
+def _seed_state_from_records(
     *,
     records: Sequence[Mapping[str, Any]],
     source_url: str,
-    output_dir: str | Path,
     profile_tab: str = "replies",
     max_pages: int = 10,
     max_records: int = 0,
-    seed_capture_dir: str | Path = "",
-    har_path: str | Path = "",
-) -> TwitterCursorSchedulerResult:
-    output = Path(output_dir)
-    output.mkdir(parents=True, exist_ok=True)
+) -> dict[str, Any]:
+    """Prepare a cursor scheduler state from existing browser/HAR records.
+
+    This is used both by offline seed replay and by V74F live continuation.
+    Keeping seed preparation separate lets the live scheduler continue from an
+    already-captured bottom cursor without forcing another scroll-first capture.
+    """
     canonical_url = _profile_tab_url(source_url, profile_tab)
     pages: list[TwitterCursorPage] = []
     all_entries: list[Any] = []
@@ -561,12 +606,13 @@ def run_twitter_cursor_scheduler_from_records(
     errors: list[str] = []
     stop_reason = "no_timeline_seed_records_found"
     next_cursor_url = ""
+    request_headers: dict[str, str] = {}
 
     filtered = [record for record in records if is_timeline_query_name(_record_query_name(record))]
     filtered, duplicate_records = _dedupe_timeline_records(filtered)
     if duplicate_records:
         warnings.append(f"deduped_seed_records:{duplicate_records}")
-    for index, record in enumerate(filtered, start=1):
+    for record in filtered:
         if max_pages and len(pages) >= int(max_pages):
             stop_reason = "max_pages_reached"
             break
@@ -583,6 +629,8 @@ def run_twitter_cursor_scheduler_from_records(
             break
         pages.append(page)
         all_entries.extend(entries)
+        if isinstance(record.get("request_headers"), Mapping):
+            request_headers = {str(k).lower(): str(v) for k, v in record.get("request_headers", {}).items() if v is not None}
         if cursor_out:
             if cursor_out in cursor_history:
                 stop_reason = "repeated_cursor_boundary"
@@ -602,19 +650,52 @@ def run_twitter_cursor_scheduler_from_records(
     elif not any(page.cursor_out for page in pages):
         stop_reason = "no_bottom_cursor_observed"
 
+    return {
+        "canonical_url": canonical_url,
+        "pages": pages,
+        "entries": all_entries,
+        "seen_ids": seen_ids,
+        "cursor_history": cursor_history,
+        "warnings": warnings,
+        "errors": errors,
+        "stop_reason": stop_reason,
+        "next_cursor_url": next_cursor_url,
+        "request_headers": request_headers,
+    }
+
+def run_twitter_cursor_scheduler_from_records(
+    *,
+    records: Sequence[Mapping[str, Any]],
+    source_url: str,
+    output_dir: str | Path,
+    profile_tab: str = "replies",
+    max_pages: int = 10,
+    max_records: int = 0,
+    seed_capture_dir: str | Path = "",
+    har_path: str | Path = "",
+) -> TwitterCursorSchedulerResult:
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    prepared = _seed_state_from_records(
+        records=records,
+        source_url=source_url,
+        profile_tab=profile_tab,
+        max_pages=max_pages,
+        max_records=max_records,
+    )
     return _write_scheduler_output(
         output=output,
         source_url=source_url,
-        canonical_url=canonical_url,
+        canonical_url=str(prepared["canonical_url"]),
         profile_tab=profile_tab,
-        pages=pages,
-        entries=all_entries,
-        unique_count=len(seen_ids),
-        cursor_history=cursor_history,
-        stop_reason=stop_reason,
-        next_cursor_url=next_cursor_url,
-        warnings=warnings,
-        errors=errors,
+        pages=prepared["pages"],
+        entries=prepared["entries"],
+        unique_count=len(prepared["seen_ids"]),
+        cursor_history=prepared["cursor_history"],
+        stop_reason=str(prepared["stop_reason"]),
+        next_cursor_url=str(prepared["next_cursor_url"]),
+        warnings=prepared["warnings"],
+        errors=prepared["errors"],
         seed_capture_dir=str(seed_capture_dir or ""),
         har_path=str(har_path or ""),
     )
@@ -762,6 +843,237 @@ def run_twitter_cursor_scheduler_from_har(
     )
 
 
+
+
+def run_twitter_cursor_scheduler_live_from_seed(
+    *,
+    seed_records: Sequence[Mapping[str, Any]],
+    source_url: str,
+    output_dir: str | Path,
+    browser_user_data_dir: str | Path,
+    reuse_existing_profile: bool = False,
+    profile_tab: str = "replies",
+    headless: bool = False,
+    timeout_ms: int = 120000,
+    initial_wait_ms: int = 2500,
+    max_pages: int = 2,
+    max_records: int = 0,
+    page_delay_ms: int = 4500,
+    page_jitter_ms: int = 1500,
+    cooldown_ms: int = 180000,
+    max_runtime_minutes: float = 0.0,
+    stop_on_rate_limit: bool = True,
+    max_no_new_pages: int = 2,
+    rate_limit_safety_floor: int = 1,
+    soft_page_budget: int = 0,
+    max_transient_retries: int = 2,
+    transient_base_delay_ms: int = 15000,
+    sleep_on_rate_limit: bool = False,
+    auth_probe_scroll_steps: int = 0,
+    auth_probe_scroll_pixels: int = 900,
+    auth_probe_wait_ms: int = 1500,
+    seed_capture_dir: str | Path = "",
+    har_path: str | Path = "",
+) -> TwitterCursorSchedulerResult:
+    """Continue from a seed cursor using the logged-in browser context.
+
+    V74F deliberately avoids another scroll-first discovery pass when a seed
+    capture/HAR already contains a usable bottom cursor.  It replays the seed
+    page(s), opens the manually logged-in Chromium profile, waits on the X page
+    origin, then performs read-only fetches for subsequent cursor URLs with the
+    V74E rate-limit policy applied to every response.
+    """
+    if not browser_user_data_dir:
+        raise ValueError("browser_user_data_dir is required for live cursor continuation; log in manually first and close Chromium before running")
+    if not reuse_existing_profile:
+        raise ValueError("reuse_existing_profile must be explicit for live cursor continuation")
+
+    from playwright.sync_api import sync_playwright
+
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    prepared = _seed_state_from_records(
+        records=seed_records,
+        source_url=source_url,
+        profile_tab=profile_tab,
+        max_pages=max_pages,
+        max_records=max_records,
+    )
+    canonical_url = str(prepared["canonical_url"])
+    pages: list[TwitterCursorPage] = list(prepared["pages"])
+    entries: list[Any] = list(prepared["entries"])
+    seen_ids: set[str] = set(prepared["seen_ids"])
+    cursor_history: list[str] = list(prepared["cursor_history"])
+    warnings: list[str] = list(prepared["warnings"])
+    errors: list[str] = list(prepared["errors"])
+    stop_reason = str(prepared["stop_reason"])
+    next_cursor_url = str(prepared["next_cursor_url"] or "")
+    request_headers = prepared["request_headers"] if isinstance(prepared.get("request_headers"), Mapping) else {}
+    request_templates: list[dict[str, Any]] = []
+    error_rows: list[dict[str, Any]] = []
+    latest_rate_limit_observation: Any = None
+    latest_rate_limit_decision: Any = None
+    transient_error_count = 0
+    pages_since_cooldown = len(pages)
+    started = time.monotonic()
+
+    if not pages:
+        stop_reason = "no_timeline_seed_records_found"
+    elif not next_cursor_url:
+        stop_reason = "no_seed_bottom_cursor_observed"
+    elif max_pages and len(pages) >= int(max_pages):
+        stop_reason = "max_pages_reached"
+    else:
+        with sync_playwright() as playwright:
+            context = playwright.chromium.launch_persistent_context(user_data_dir=str(browser_user_data_dir), headless=headless)
+            try:
+                page = context.new_page()
+                # Establish the x.com origin and harvest the web app's own GraphQL
+                # auth header envelope.  A cookie-only fetch can return HTTP 403.
+                auth_probe = _capture_live_cursor_auth_headers(
+                    page,
+                    canonical_url=canonical_url,
+                    timeout_ms=timeout_ms,
+                    initial_wait_ms=initial_wait_ms,
+                    auth_probe_scroll_steps=auth_probe_scroll_steps,
+                    auth_probe_scroll_pixels=auth_probe_scroll_pixels,
+                    auth_probe_wait_ms=auth_probe_wait_ms,
+                )
+                live_headers = auth_probe.get("headers") if isinstance(auth_probe.get("headers"), Mapping) else {}
+                request_headers = _merge_replay_headers(request_headers, live_headers)
+                if live_headers:
+                    warnings.append(f"live_request_headers_captured:{auth_probe.get('query_name') or 'graphql'}:{auth_probe.get('candidate_count') or 1}")
+                else:
+                    warnings.append("live_request_headers_not_captured")
+                while next_cursor_url and (not max_pages or len(pages) < int(max_pages)):
+                    if max_runtime_minutes and (time.monotonic() - started) >= float(max_runtime_minutes) * 60.0:
+                        stop_reason = "max_runtime_reached"
+                        break
+                    normal_delay = max(0, int(page_delay_ms)) + (random.randint(0, max(0, int(page_jitter_ms))) if int(page_jitter_ms) > 0 else 0)
+                    if normal_delay:
+                        page.wait_for_timeout(normal_delay)
+                    current_record = _fetch_cursor_page(page, url=next_cursor_url, request_headers=request_headers)
+                    latest_rate_limit_observation = _rate_limit_observation_for_record(current_record)
+                    latest_rate_limit_decision = decide_rate_limit_action(
+                        observation=latest_rate_limit_observation,
+                        normal_delay_ms=0,
+                        pages_since_cooldown=pages_since_cooldown + 1,
+                        safety_floor=rate_limit_safety_floor,
+                        soft_page_budget=soft_page_budget,
+                        transient_error_count=transient_error_count,
+                        max_transient_retries=max_transient_retries,
+                        transient_base_delay_ms=transient_base_delay_ms,
+                    )
+                    current_record = dict(current_record)
+                    current_record["rate_limit_observation"] = latest_rate_limit_observation.to_dict()
+                    current_record["rate_limit_decision"] = latest_rate_limit_decision.to_dict()
+                    page_obj, page_entries, cursor_out = _page_from_record(
+                        current_record,
+                        source_url=canonical_url,
+                        page_number=len(pages) + 1,
+                        seen_ids=seen_ids,
+                        delay_ms_after_page=latest_rate_limit_decision.delay_ms,
+                        replay_mode="browser_fetch_cursor_continuation_v74f",
+                    )
+                    pages.append(page_obj)
+                    entries.extend(page_entries)
+                    pages_since_cooldown += 1
+
+                    if latest_rate_limit_decision.transient_error:
+                        transient_error_count += 1
+                        error_rows.append(_record_retryable_error(current_record))
+                    else:
+                        transient_error_count = 0
+
+                    request_templates.append(
+                        {
+                            "page_number_completed": page_obj.page_number,
+                            "cursor_in": page_obj.cursor_in,
+                            "cursor_out": cursor_out,
+                            "next_cursor_url": _url_with_cursor(page_obj.request_url, cursor_out) if cursor_out and page_obj.request_url else "",
+                            "request_headers_used": _redacted_headers_for_output(request_headers),
+                            "rate_limit_observation": latest_rate_limit_observation.to_dict(),
+                            "rate_limit_decision": latest_rate_limit_decision.to_dict(),
+                        }
+                    )
+
+                    if latest_rate_limit_decision.should_stop and latest_rate_limit_decision.decision != "continue_after_delay":
+                        warnings.append(f"rate_limit_decision:{latest_rate_limit_decision.decision}")
+                        if latest_rate_limit_decision.rate_limited:
+                            stop_reason = "rate_limited_pause_boundary"
+                        elif latest_rate_limit_decision.auth_or_access_boundary:
+                            stop_reason = "auth_or_access_boundary"
+                        elif latest_rate_limit_decision.soft_page_budget_reached:
+                            stop_reason = "soft_page_budget_pause_boundary"
+                        elif latest_rate_limit_decision.transient_error:
+                            stop_reason = "transient_retry_pause_boundary"
+                        else:
+                            stop_reason = latest_rate_limit_decision.decision
+                        if sleep_on_rate_limit and latest_rate_limit_decision.delay_ms > 0:
+                            page.wait_for_timeout(max(0, min(int(latest_rate_limit_decision.delay_ms), 900000)))
+                        break
+                    if page_obj.rate_limited:
+                        warnings.append(f"rate_limited_status:{page_obj.response_status}")
+                        stop_reason = "rate_limited_pause_boundary"
+                        if sleep_on_rate_limit and cooldown_ms > 0:
+                            page.wait_for_timeout(max(0, min(int(cooldown_ms), 900000)))
+                        break
+                    if not cursor_out:
+                        stop_reason = "no_bottom_cursor_observed"
+                        break
+                    if cursor_out in cursor_history:
+                        stop_reason = "repeated_cursor_boundary"
+                        break
+                    cursor_history.append(cursor_out)
+                    next_cursor_url = _url_with_cursor(page_obj.request_url, cursor_out) if page_obj.request_url else ""
+                    if max_records and len(seen_ids) >= int(max_records):
+                        stop_reason = "max_records_reached"
+                        break
+                    if max_pages and len(pages) >= int(max_pages):
+                        stop_reason = "max_pages_reached"
+                        break
+                    if int(max_no_new_pages) > 0:
+                        recent = pages[-int(max_no_new_pages):]
+                        if len(recent) == int(max_no_new_pages) and all(item.unique_items_count == 0 for item in recent):
+                            stop_reason = "no_new_records_boundary"
+                            break
+                    stop_reason = "cursor_boundary_reached"
+            except Exception as exc:
+                errors.append(str(exc))
+                stop_reason = "cursor_scheduler_exception"
+            finally:
+                context.close()
+
+    templates_path = output / "cursor_request_templates.json"
+    _write_json(templates_path, {"request_templates": request_templates, "next_cursor_url": next_cursor_url})
+    result = _write_scheduler_output(
+        output=output,
+        source_url=source_url,
+        canonical_url=canonical_url,
+        profile_tab=profile_tab,
+        pages=pages,
+        entries=entries,
+        unique_count=len(seen_ids),
+        cursor_history=cursor_history,
+        stop_reason=stop_reason,
+        next_cursor_url=next_cursor_url,
+        warnings=warnings,
+        errors=errors,
+        seed_capture_dir=str(seed_capture_dir or ""),
+        har_path=str(har_path or ""),
+        rate_limit_state=build_rate_limit_state(
+            observation=latest_rate_limit_observation,
+            decision=latest_rate_limit_decision,
+            safety_floor=rate_limit_safety_floor,
+            soft_page_budget=soft_page_budget,
+            pages_since_cooldown=pages_since_cooldown,
+            transient_error_count=transient_error_count,
+        ).to_dict(),
+        error_rows=error_rows,
+    )
+    _write_json(templates_path, {"request_templates": request_templates, "next_cursor_url": next_cursor_url})
+    return result
+
 def _capture_initial_timeline_records(
     *,
     page: Any,
@@ -815,6 +1127,78 @@ def _capture_initial_timeline_records(
         page.mouse.wheel(0, max(400, int(scroll_pixels)))
         page.wait_for_timeout(max(750, int(scroll_delay_ms)))
     return records
+
+
+def _capture_live_cursor_auth_headers(
+    page: Any,
+    *,
+    canonical_url: str,
+    timeout_ms: int,
+    initial_wait_ms: int,
+    auth_probe_scroll_steps: int = 0,
+    auth_probe_scroll_pixels: int = 900,
+    auth_probe_wait_ms: int = 1500,
+) -> dict[str, Any]:
+    """Capture the X web app's own GraphQL request header envelope.
+
+    A bare browser fetch with cookies can receive HTTP 403 because X's web
+    GraphQL calls are normally sent with an authorization bearer and ct0-derived
+    CSRF header.  V74F2 observes those headers from the already logged-in browser
+    page and reuses only the allowlisted headers in memory.  Output files only
+    receive redacted header summaries.
+    """
+    candidates: list[dict[str, Any]] = []
+
+    def capture_request(request: Any) -> None:
+        try:
+            request_url = str(request.url or "")
+            query_name = _query_name_from_url(request_url)
+            if "/graphql/" not in request_url:
+                return
+            try:
+                raw_headers = request.all_headers()
+            except Exception:
+                raw_headers = getattr(request, "headers", {}) or {}
+            headers = _headers_for_replay(raw_headers if isinstance(raw_headers, Mapping) else {})
+            if not headers:
+                return
+            score = 0
+            if is_timeline_query_name(query_name):
+                score += 10
+            if query_name == "UserRepliesTimeline":
+                score += 10
+            if _request_headers_are_authenticated(headers):
+                score += 20
+            if headers.get("x-client-transaction-id"):
+                score += 3
+            candidates.append(
+                {
+                    "query_name": query_name,
+                    "request_url": request_url,
+                    "headers": headers,
+                    "score": score,
+                }
+            )
+        except Exception:
+            return
+
+    page.on("request", capture_request)
+    page.goto(canonical_url, wait_until="domcontentloaded", timeout=timeout_ms)
+    page.wait_for_timeout(max(1000, int(initial_wait_ms)))
+    for _ in range(max(0, int(auth_probe_scroll_steps))):
+        page.mouse.wheel(0, max(200, int(auth_probe_scroll_pixels)))
+        page.wait_for_timeout(max(500, int(auth_probe_wait_ms)))
+
+    if not candidates:
+        return {"headers": {}, "query_name": "", "request_url": "", "captured": False, "candidate_count": 0}
+    best = sorted(candidates, key=lambda item: int(item.get("score") or 0), reverse=True)[0]
+    return {
+        "headers": best.get("headers") if isinstance(best.get("headers"), Mapping) else {},
+        "query_name": str(best.get("query_name") or ""),
+        "request_url": str(best.get("request_url") or ""),
+        "captured": True,
+        "candidate_count": len(candidates),
+    }
 
 
 def _fetch_cursor_page(page: Any, *, url: str, request_headers: Mapping[str, Any]) -> dict[str, Any]:
@@ -996,7 +1380,7 @@ def run_twitter_cursor_scheduler_live(
                             "page_number_completed": page_obj.page_number,
                             "cursor_out": cursor_out,
                             "next_cursor_url": next_cursor_url,
-                            "request_headers_used": _headers_for_replay(request_headers),
+                            "request_headers_used": _redacted_headers_for_output(request_headers),
                             "rate_limit_observation": latest_rate_limit_observation.to_dict(),
                             "rate_limit_decision": latest_rate_limit_decision.to_dict(),
                         }
@@ -1085,7 +1469,68 @@ def run_twitter_cursor_scheduler(
     max_transient_retries: int = 2,
     transient_base_delay_ms: int = 15000,
     sleep_on_rate_limit: bool = False,
+    auth_probe_scroll_steps: int = 0,
+    auth_probe_scroll_pixels: int = 900,
+    auth_probe_wait_ms: int = 1500,
 ) -> TwitterCursorSchedulerResult:
+    if live and seed_capture_dir:
+        return run_twitter_cursor_scheduler_live_from_seed(
+            seed_records=_timeline_records_from_capture(seed_capture_dir),
+            source_url=source_url,
+            output_dir=output_dir,
+            browser_user_data_dir=browser_user_data_dir,
+            reuse_existing_profile=reuse_existing_profile,
+            profile_tab=profile_tab,
+            headless=headless,
+            timeout_ms=timeout_ms,
+            initial_wait_ms=initial_wait_ms,
+            max_pages=max_pages,
+            max_records=max_records,
+            page_delay_ms=page_delay_ms,
+            page_jitter_ms=page_jitter_ms,
+            cooldown_ms=cooldown_ms,
+            max_runtime_minutes=max_runtime_minutes,
+            stop_on_rate_limit=stop_on_rate_limit,
+            max_no_new_pages=max_no_new_pages,
+            rate_limit_safety_floor=rate_limit_safety_floor,
+            soft_page_budget=soft_page_budget,
+            max_transient_retries=max_transient_retries,
+            transient_base_delay_ms=transient_base_delay_ms,
+            sleep_on_rate_limit=sleep_on_rate_limit,
+            auth_probe_scroll_steps=auth_probe_scroll_steps,
+            auth_probe_scroll_pixels=auth_probe_scroll_pixels,
+            auth_probe_wait_ms=auth_probe_wait_ms,
+            seed_capture_dir=seed_capture_dir,
+        )
+    if live and har_path:
+        return run_twitter_cursor_scheduler_live_from_seed(
+            seed_records=_timeline_records_from_har(har_path),
+            source_url=source_url,
+            output_dir=output_dir,
+            browser_user_data_dir=browser_user_data_dir,
+            reuse_existing_profile=reuse_existing_profile,
+            profile_tab=profile_tab,
+            headless=headless,
+            timeout_ms=timeout_ms,
+            initial_wait_ms=initial_wait_ms,
+            max_pages=max_pages,
+            max_records=max_records,
+            page_delay_ms=page_delay_ms,
+            page_jitter_ms=page_jitter_ms,
+            cooldown_ms=cooldown_ms,
+            max_runtime_minutes=max_runtime_minutes,
+            stop_on_rate_limit=stop_on_rate_limit,
+            max_no_new_pages=max_no_new_pages,
+            rate_limit_safety_floor=rate_limit_safety_floor,
+            soft_page_budget=soft_page_budget,
+            max_transient_retries=max_transient_retries,
+            transient_base_delay_ms=transient_base_delay_ms,
+            sleep_on_rate_limit=sleep_on_rate_limit,
+            auth_probe_scroll_steps=auth_probe_scroll_steps,
+            auth_probe_scroll_pixels=auth_probe_scroll_pixels,
+            auth_probe_wait_ms=auth_probe_wait_ms,
+            har_path=har_path,
+        )
     if har_path:
         return run_twitter_cursor_scheduler_from_har(
             har_path=har_path,

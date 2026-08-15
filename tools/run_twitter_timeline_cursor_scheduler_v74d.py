@@ -46,6 +46,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-transient-retries", type=int, default=2)
     parser.add_argument("--transient-base-delay-ms", type=int, default=15000)
     parser.add_argument("--sleep-on-rate-limit", action="store_true", help="Sleep up to the capped cooldown in the browser instead of writing a pause/resume state and exiting.")
+    parser.add_argument("--auth-probe-scroll-steps", type=int, default=0, help="Optional tiny scroll steps while harvesting the X web app GraphQL auth header envelope before cursor continuation.")
+    parser.add_argument("--auth-probe-scroll-pixels", type=int, default=900)
+    parser.add_argument("--auth-probe-wait-ms", type=int, default=1500)
     args = parser.parse_args(argv)
 
     result = run_twitter_cursor_scheduler(
@@ -76,6 +79,9 @@ def main(argv: list[str] | None = None) -> int:
         max_transient_retries=args.max_transient_retries,
         transient_base_delay_ms=args.transient_base_delay_ms,
         sleep_on_rate_limit=args.sleep_on_rate_limit,
+        auth_probe_scroll_steps=args.auth_probe_scroll_steps,
+        auth_probe_scroll_pixels=args.auth_probe_scroll_pixels,
+        auth_probe_wait_ms=args.auth_probe_wait_ms,
     )
     print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
     return 0 if result.status in {"success", "needs_review", "planned"} else 1

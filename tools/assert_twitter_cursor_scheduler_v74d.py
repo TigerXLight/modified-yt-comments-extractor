@@ -12,6 +12,10 @@ if str(ROOT) not in sys.path:
 
 from twitter_rate_limit_policy import decide_rate_limit_action, observe_rate_limit
 from twitter_timeline_cursor_scheduler import (
+    _merge_replay_headers,
+    _redacted_headers_for_output,
+    _request_headers_are_authenticated,
+    _seed_state_from_records,
     _url_with_cursor,
     run_twitter_cursor_scheduler_from_records,
 )
@@ -102,6 +106,18 @@ def main() -> int:
             "promotion_source": "unit_seed_page_2",
         },
     ]
+    prepared = _seed_state_from_records(
+        records=records,
+        source_url="https://x.com/examaddaorg",
+        profile_tab="replies",
+        max_pages=10,
+    )
+    assert len(prepared["pages"]) == 2, prepared
+    assert len(prepared["entries"]) == 2, prepared
+    assert prepared["cursor_history"][-1] == "CURSOR_TWO", prepared
+    assert "cursor" in prepared["next_cursor_url"], prepared
+    assert any(str(w).startswith("deduped_seed_records:1") for w in prepared["warnings"]), prepared
+
     with tempfile.TemporaryDirectory() as tmp:
         result = run_twitter_cursor_scheduler_from_records(
             records=records,
@@ -127,6 +143,17 @@ def main() -> int:
         assert rate_state["schema_version"] == "twitter_rate_limit_state.v74e", rate_state
         assert (Path(tmp) / "cursor_errors.jsonl").exists(), tmp
 
+    merged_headers = _merge_replay_headers(
+        {"accept": "application/json", "authorization": "Bearer SECRET"},
+        {"x-csrf-token": "CT0SECRET", "x-twitter-active-user": "yes"},
+    )
+    assert _request_headers_are_authenticated(merged_headers), merged_headers
+    redacted_headers = _redacted_headers_for_output(merged_headers)
+    assert redacted_headers["authorization"] == "[redacted]", redacted_headers
+    assert redacted_headers["x-csrf-token"] == "[redacted]", redacted_headers
+    assert redacted_headers["x-twitter-active-user"] == "yes", redacted_headers
+    assert "SECRET" not in json.dumps(redacted_headers), redacted_headers
+
     obs = observe_rate_limit(
         response_status=429,
         headers={"x-rate-limit-limit": "50", "x-rate-limit-remaining": "0", "x-rate-limit-reset": "2000000000"},
@@ -142,7 +169,7 @@ def main() -> int:
     decision2 = decide_rate_limit_action(observation=obs2, normal_delay_ms=1000, safety_floor=1)
     assert decision2.decision == "pause_until_reset", decision2
     assert decision2.reason == "rate_limit_remaining_safety_floor", decision2
-    print("assert_twitter_cursor_scheduler_v74e OK")
+    print("assert_twitter_cursor_scheduler_v74f2 OK")
     return 0
 
 
