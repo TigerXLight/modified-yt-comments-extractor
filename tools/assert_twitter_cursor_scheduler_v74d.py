@@ -76,14 +76,23 @@ def main() -> int:
     parsed_vars = json.loads(parse_qs(urlsplit(next_url).query)["variables"][0])
     assert parsed_vars["cursor"] == "CURSOR_ONE", next_url
 
+    first_page = {
+        "url": base_url,
+        "query_name": "UserRepliesTimeline",
+        "status": 200,
+        "body_json": _timeline_body("100", "first page", "CURSOR_ONE"),
+        "promotion_source": "network_response_bodies.jsonl",
+    }
+    duplicate_first_page = {
+        "raw_event_url": "https://x.com/examaddaorg/with_replies",
+        "query_name": "UserRepliesTimeline",
+        "response_status": 200,
+        "body_json": _timeline_body("100", "first page", "CURSOR_ONE"),
+        "promotion_source": "api_pages.jsonl",
+    }
     records = [
-        {
-            "url": base_url,
-            "query_name": "UserRepliesTimeline",
-            "status": 200,
-            "body_json": _timeline_body("100", "first page", "CURSOR_ONE"),
-            "promotion_source": "unit_seed_page_1",
-        },
+        first_page,
+        duplicate_first_page,
         {
             "url": next_url,
             "query_name": "UserRepliesTimeline",
@@ -104,6 +113,7 @@ def main() -> int:
         assert result.pages_count == 2, result
         assert result.entries_count == 2, result
         assert result.unique_entries_count == 2, result
+        assert any(str(w).startswith("deduped_seed_records:1") for w in result.warnings), result
         state = json.loads((Path(tmp) / "cursor_scheduler_state.json").read_text(encoding="utf-8"))
         assert state["last_cursor_out"] == "CURSOR_TWO", state
         assert state["read_only"] is True, state
@@ -112,7 +122,7 @@ def main() -> int:
         assert "UserRepliesTimeline" in pages, pages
         entries = (Path(tmp) / "cursor_entries.jsonl").read_text(encoding="utf-8")
         assert "https://x.com/examaddaorg/status/100" in entries, entries
-    print("assert_twitter_cursor_scheduler_v74d OK")
+    print("assert_twitter_cursor_scheduler_v74d2 OK")
     return 0
 
 

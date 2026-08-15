@@ -271,6 +271,112 @@ def _record_query_name(record: Mapping[str, Any]) -> str:
     return str(record.get("query_name") or _query_name_from_url(str(record.get("url") or record.get("request_url") or "")) or "")
 
 
+def _record_url(record: Mapping[str, Any]) -> str:
+    return str(record.get("url") or record.get("request_url") or record.get("raw_event_url") or record.get("source_url") or "")
+
+
+def _entry_mapping(entry: Any) -> Mapping[str, Any]:
+    if isinstance(entry, Mapping):
+        return entry
+    if hasattr(entry, "to_dict"):
+        try:
+            mapped = entry.to_dict()
+            if isinstance(mapped, Mapping):
+                return mapped
+        except Exception:
+            pass
+    return {}
+
+
+def _status_id_from_url(value: Any) -> str:
+    import re
+
+    match = re.search(r"/(?:status|statuses)/(\d+)", str(value or ""))
+    return match.group(1) if match else ""
+
+
+def _entry_status_id(entry: Any) -> str:
+    if hasattr(entry, "status_id"):
+        direct = str(getattr(entry, "status_id", "") or "")
+        if direct:
+            return direct
+    mapped = _entry_mapping(entry)
+    for key in ("status_id", "id_str", "rest_id", "id"):
+        value = str(mapped.get(key) or "")
+        if value:
+            return value
+    for key in ("canonical_url", "url", "tweet_url"):
+        value = _status_id_from_url(mapped.get(key))
+        if value:
+            return value
+    if hasattr(entry, "canonical_url"):
+        value = _status_id_from_url(getattr(entry, "canonical_url", ""))
+        if value:
+            return value
+    return ""
+
+
+def _entry_dedupe_key(entry: Any) -> str:
+    status_id = _entry_status_id(entry)
+    if status_id:
+        return "status:" + status_id
+    mapped = _entry_mapping(entry)
+    if mapped:
+        for key in ("canonical_url", "post_text", "created_at", "conversation_id"):
+            value = str(mapped.get(key) or "")
+            if value:
+                # Use a content fallback only when an upstream representation omitted status_id.
+                payload = {k: str(mapped.get(k) or "") for k in ("canonical_url", "post_text", "created_at", "conversation_id", "source_query_name")}
+                return "fallback:" + _sha256_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    return "fallback:" + _sha256_text(json.dumps(_value_for_dict(entry), ensure_ascii=False, sort_keys=True))
+
+
+def _record_fingerprint(record: Mapping[str, Any]) -> str:
+    """Return a stable page fingerprint across V74B promotion sources.
+
+    The same X response may be present in both network_response_bodies.jsonl and
+    api_pages.jsonl.  Fingerprinting by query, cursor boundary, and status IDs
+    prevents seed replay from double-counting the same page while still allowing
+    distinct cursor pages with overlapping tweets to be kept.
+    """
+    query_name = _record_query_name(record)
+    url = _record_url(record)
+    body = _record_body(record)
+    status = int(record.get("response_status") or record.get("status") or 0)
+    cursor_in = str(record.get("cursor_in") or _cursor_from_url(url) or "")
+    cursor_out = str(record.get("cursor_out") or "")
+    ids: tuple[str, ...] = ()
+    body_sha = str(record.get("body_sha256") or "")
+    if body is not None:
+        cursors = extract_timeline_cursors(body)
+        cursor_out = cursor_out or str(cursors.get("cursor_out") or "")
+        extracted = extract_timeline_entries_from_body(
+            body,
+            source_url="https://x.com/",
+            query_name=query_name,
+            page_number=0,
+        )
+        ids = tuple(_entry_status_id(entry) for entry in extracted if _entry_status_id(entry))
+        body_sha = body_sha or _sha256_text(json.dumps(body, ensure_ascii=False, sort_keys=True))
+    if ids or cursor_out or cursor_in:
+        return "|".join([query_name, str(status), cursor_in, cursor_out, ",".join(ids)])
+    return "|".join([query_name, str(status), body_sha or url])
+
+
+def _dedupe_timeline_records(records: Sequence[Mapping[str, Any]]) -> tuple[list[Mapping[str, Any]], int]:
+    deduped: list[Mapping[str, Any]] = []
+    seen: set[str] = set()
+    duplicates = 0
+    for record in records:
+        fingerprint = _record_fingerprint(record)
+        if fingerprint in seen:
+            duplicates += 1
+            continue
+        seen.add(fingerprint)
+        deduped.append(record)
+    return deduped, duplicates
+
+
 def _timeline_records_from_capture(capture_dir: str | Path) -> list[dict[str, Any]]:
     capture = Path(capture_dir)
     records: list[dict[str, Any]] = []
@@ -285,7 +391,7 @@ def _timeline_records_from_capture(capture_dir: str | Path) -> list[dict[str, An
             rec = dict(row)
             rec["query_name"] = query_name
             rec["body_json"] = body
-            rec.setdefault("url", row.get("url") or row.get("raw_event_url") or row.get("source_url") or "")
+            rec.setdefault("url", row.get("url") or row.get("request_url") or row.get("raw_event_url") or row.get("source_url") or "")
             rec.setdefault("status", row.get("response_status") or row.get("status") or 0)
             rec.setdefault("promotion_source", filename)
             records.append(rec)
@@ -313,7 +419,7 @@ def _page_from_record(
     delay_ms_after_page: int = 0,
     replay_mode: str = "seed_record",
 ) -> tuple[TwitterCursorPage, tuple[Any, ...], str]:
-    url = str(record.get("url") or record.get("request_url") or record.get("raw_event_url") or record.get("source_url") or "")
+    url = _record_url(record)
     query_name = _record_query_name(record)
     body = _record_body(record)
     response_status = int(record.get("response_status") or record.get("status") or 0)
@@ -326,11 +432,13 @@ def _page_from_record(
         page_number=page_number,
     ) if body is not None else ()
     unique_count = 0
+    unique_entries: list[Any] = []
     for entry in entries:
-        status_id = getattr(entry, "status_id", "")
-        if status_id and status_id not in seen_ids:
-            seen_ids.add(status_id)
+        dedupe_key = _entry_dedupe_key(entry)
+        if dedupe_key not in seen_ids:
+            seen_ids.add(dedupe_key)
             unique_count += 1
+            unique_entries.append(entry)
     cursor_out = str(cursors.get("cursor_out") or record.get("cursor_out") or "")
     body_text = record.get("body_text")
     body_sha = str(record.get("body_sha256") or "")
@@ -358,7 +466,7 @@ def _page_from_record(
         delay_ms_after_page=delay_ms_after_page,
         replay_mode=replay_mode,
     )
-    return page, entries, cursor_out
+    return page, tuple(unique_entries), cursor_out
 
 
 def run_twitter_cursor_scheduler_from_records(
@@ -385,6 +493,9 @@ def run_twitter_cursor_scheduler_from_records(
     next_cursor_url = ""
 
     filtered = [record for record in records if is_timeline_query_name(_record_query_name(record))]
+    filtered, duplicate_records = _dedupe_timeline_records(filtered)
+    if duplicate_records:
+        warnings.append(f"deduped_seed_records:{duplicate_records}")
     for index, record in enumerate(filtered, start=1):
         if max_pages and len(pages) >= int(max_pages):
             stop_reason = "max_pages_reached"
@@ -396,6 +507,10 @@ def run_twitter_cursor_scheduler_from_records(
             seen_ids=seen_ids,
             replay_mode=str(record.get("promotion_source") or "seed_record"),
         )
+        if cursor_out and cursor_out in cursor_history and not entries:
+            warnings.append(f"deduped_seed_page_repeated_cursor:{cursor_out}")
+            stop_reason = "repeated_cursor_boundary"
+            break
         pages.append(page)
         all_entries.extend(entries)
         if cursor_out:
