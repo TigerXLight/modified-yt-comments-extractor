@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import replace, asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -31,6 +31,9 @@ class TwitterBrowserCaptureInspection:
     cursor_boundaries_exists: bool = False
     safe_to_handoff_to_jd: bool = False
     evidence_completion_claim: str = ""
+    rendered_dom_status_available: bool = False
+    rendered_dom_media_item_count: int = 0
+    rendered_dom_fallback_used: bool = False
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
     next_action: str = ""
@@ -82,7 +85,38 @@ def _unique(values: list[str]) -> tuple[str, ...]:
     return tuple(sorted({value for value in values if value}))
 
 
-def inspect_twitter_browser_capture_output(output_dir: str | Path) -> TwitterBrowserCaptureInspection:
+def _media_items_include_rendered_dom(media_items: Any) -> int:
+    if not isinstance(media_items, list):
+        return 0
+    count = 0
+    for item in media_items:
+        if not isinstance(item, Mapping):
+            continue
+        source_kind = str(item.get("source_kind") or "").lower()
+        from_query = str(item.get("from_query_name") or "").lower()
+        provenance = str(item.get("provenance") or "").lower()
+        if source_kind.startswith("rendered_dom") or from_query == "rendered_dom" or provenance.startswith("rendered_dom"):
+            count += 1
+    return count
+
+
+def _boundaries_are_http_404_no_items(boundaries: Any) -> bool:
+    if not isinstance(boundaries, list) or not boundaries:
+        return False
+    saw_404 = False
+    for item in boundaries:
+        if not isinstance(item, Mapping):
+            continue
+        status = int(item.get("http_status") or 0)
+        returned = int(item.get("returned_items_count") or 0)
+        if status == 404:
+            saw_404 = True
+        if returned > 0:
+            return False
+    return saw_404
+
+
+def _inspect_twitter_browser_capture_output_impl(output_dir: str | Path) -> TwitterBrowserCaptureInspection:
     output = Path(output_dir)
     manifest_path = output / "browser_session_manifest.json"
     network_path = output / "network_events.jsonl"
@@ -100,6 +134,8 @@ def inspect_twitter_browser_capture_output(output_dir: str | Path) -> TwitterBro
 
     errors = tuple(str(item) for item in manifest.get("errors", ()) or ())
     warnings = tuple(str(item) for item in manifest.get("warnings", ()) or ())
+    rendered_dom_media_count = _media_items_include_rendered_dom(media_items)
+    api_404_no_items = _boundaries_are_http_404_no_items(boundaries)
     matched_query_names = _unique(
         [str(row.get("query_name") or "") for row in network_rows if isinstance(row, Mapping)]
         + [str(row.get("query_name") or "") for row in api_pages if isinstance(row, Mapping)]
@@ -128,6 +164,12 @@ def inspect_twitter_browser_capture_output(output_dir: str | Path) -> TwitterBro
     elif api_pages and not matched_query_names:
         diagnosis = "api_pages_without_query_names"
         next_action = "inspect api_pages.jsonl query matching"
+    elif rendered_dom_media_count and api_404_no_items:
+        diagnosis = "rendered_dom_status_available_api_404"
+        next_action = "safe to hand rendered-DOM media URLs to the shared media backend/JDownloader; API 404 zero-items was preserved as an API-only result"
+    elif rendered_dom_media_count:
+        diagnosis = "rendered_dom_media_metadata_captured"
+        next_action = "safe to hand rendered-DOM media URLs to the shared media backend/JDownloader"
     elif media_items:
         diagnosis = "media_discovered"
         next_action = "safe to hand discovered media URLs to the shared media backend/JDownloader"
@@ -137,7 +179,11 @@ def inspect_twitter_browser_capture_output(output_dir: str | Path) -> TwitterBro
     else:
         diagnosis = "needs_review"
 
-    safe_to_handoff = bool(media_items) and diagnosis == "media_discovered"
+    safe_to_handoff = bool(media_items) and diagnosis in {
+        "media_discovered",
+        "rendered_dom_media_metadata_captured",
+        "rendered_dom_status_available_api_404",
+    }
 
     return TwitterBrowserCaptureInspection(
         schema_version=TWITTER_BROWSER_CAPTURE_INSPECTOR_SCHEMA_VERSION,
@@ -160,6 +206,9 @@ def inspect_twitter_browser_capture_output(output_dir: str | Path) -> TwitterBro
         cursor_boundaries_exists=boundaries_path.exists(),
         safe_to_handoff_to_jd=safe_to_handoff,
         evidence_completion_claim=str(manifest.get("evidence_completion_claim") or ""),
+        rendered_dom_status_available=bool(manifest.get("rendered_dom_status_available") or rendered_dom_media_count),
+        rendered_dom_media_item_count=int(manifest.get("rendered_dom_media_item_count") or rendered_dom_media_count),
+        rendered_dom_fallback_used=bool(manifest.get("rendered_dom_fallback_used") or (rendered_dom_media_count and api_404_no_items)),
         warnings=warnings,
         errors=errors,
         next_action=next_action,
@@ -171,3 +220,64 @@ def write_twitter_browser_capture_inspection(output_path: str | Path, inspection
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(inspection.to_dict(), indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
     return output
+
+
+# --- V72B inspection policy hardening ---
+
+def _ytce_v72b_inspector_read_json(path: str | Path, default: Any) -> Any:
+    try:
+        p = Path(path)
+        if not p.exists():
+            return default
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def _ytce_v72b_inspector_is_markdown_url(value: Any) -> bool:
+    text = str(value or "").strip()
+    return text.startswith("[") and "](" in text and text.endswith(")")
+
+
+def _ytce_v72b_inspector_boundaries_are_http_404_no_items(boundaries: Any) -> bool:
+    if not isinstance(boundaries, list) or not boundaries:
+        return False
+    saw_404 = False
+    for item in boundaries:
+        if not isinstance(item, Mapping):
+            continue
+        status = int(item.get("http_status") or 0)
+        returned = int(item.get("returned_items_count") or 0)
+        if status == 404:
+            saw_404 = True
+        if returned > 0:
+            return False
+    return saw_404
+
+
+def inspect_twitter_browser_capture_output(output_dir: str | Path) -> TwitterBrowserCaptureInspection:
+    inspection = _inspect_twitter_browser_capture_output_impl(output_dir)
+    output = Path(output_dir)
+    boundaries = _ytce_v72b_inspector_read_json(output / "cursor_boundaries.json", [])
+    media_items = _ytce_v72b_inspector_read_json(output / "media_inventory.json", [])
+
+    if _ytce_v72b_inspector_is_markdown_url(inspection.source_url) or _ytce_v72b_inspector_is_markdown_url(inspection.canonical_url):
+        return replace(
+            inspection,
+            diagnosis="runner_url_not_normalized",
+            safe_to_handoff_to_jd=False,
+            evidence_completion_claim="not_completed",
+            next_action="rerun after runner URL unwrapping, using a plain https://x.com/... URL",
+        )
+
+    if _ytce_v72b_inspector_boundaries_are_http_404_no_items(boundaries) and not media_items:
+        return replace(
+            inspection,
+            status="needs_review",
+            diagnosis="twitter_api_http_404_no_items",
+            safe_to_handoff_to_jd=False,
+            evidence_completion_claim="not_completed",
+            next_action="use a real public status/list/user URL or a logged-in isolated profile; do not treat the 404 zero-item capture as completed",
+        )
+
+    return inspection

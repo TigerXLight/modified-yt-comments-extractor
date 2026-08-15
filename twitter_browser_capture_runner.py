@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import base64
+import html
 import json
 import re
 import time
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import replace, asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 from urllib.parse import urlsplit
@@ -90,6 +91,10 @@ class TwitterMediaInventoryItem:
     width: int = 0
     height: int = 0
     from_query_name: str = ""
+    source_kind: str = ""
+    status_id: str = ""
+    page_url: str = ""
+    provenance: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return _value_for_dict(self)
@@ -130,6 +135,10 @@ class TwitterBrowserCaptureRunResult:
     media_backend_result_paths: tuple[str, ...] = ()
     completion_state: str = ""
     evidence_completion_claim: str = ""
+    api_completion_state: str = ""
+    rendered_dom_status_available: bool = False
+    rendered_dom_media_item_count: int = 0
+    rendered_dom_fallback_used: bool = False
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
 
@@ -337,6 +346,121 @@ def extract_media_inventory_from_api_pages(pages: Sequence[TwitterApiPage]) -> t
     return tuple(items)
 
 
+def _extract_status_id_from_url(url: str) -> str:
+    match = re.search(r"/(?:i/)?status/(\d+)", str(url or ""))
+    return match.group(1) if match else ""
+
+
+def _extract_attr_value(tag: str, attr_name: str) -> str:
+    pattern = r"\b" + re.escape(attr_name) + r"\s*=\s*(['\"])(.*?)\1"
+    match = re.search(pattern, tag, flags=re.I | re.S)
+    if not match:
+        return ""
+    return html.unescape(match.group(2).strip())
+
+
+def _extract_meta_contents(dom: str, names: Sequence[str]) -> tuple[str, ...]:
+    wanted = {name.lower() for name in names}
+    values: list[str] = []
+    seen: set[str] = set()
+    for match in re.finditer(r"<meta\b[^>]*>", str(dom or ""), flags=re.I | re.S):
+        tag = match.group(0)
+        key = (_extract_attr_value(tag, "property") or _extract_attr_value(tag, "name")).lower()
+        if key not in wanted:
+            continue
+        content = _extract_attr_value(tag, "content")
+        if content and content not in seen:
+            seen.add(content)
+            values.append(content)
+    return tuple(values)
+
+
+def _rendered_dom_contains_status(dom: str, *, status_id: str, canonical_url: str) -> bool:
+    if not dom or not status_id:
+        return False
+    quoted = re.escape(status_id)
+    if re.search(r"\bdata-tweet-id\s*=\s*(['\"])(?:" + quoted + r")\1", dom, flags=re.I):
+        return True
+    if re.search(r"\bitemid\s*=\s*(['\"])https://x\.com/i/status/(?:" + quoted + r")\1", dom, flags=re.I):
+        return True
+    expected = canonicalize_browser_capture_url(canonical_url)
+    for value in _extract_meta_contents(dom, ("og:url", "twitter:url")):
+        if canonicalize_browser_capture_url(value) == expected:
+            return True
+    for link in re.finditer(r"<link\b[^>]*>", dom, flags=re.I | re.S):
+        tag = link.group(0)
+        if _extract_attr_value(tag, "rel").lower() == "canonical":
+            if canonicalize_browser_capture_url(_extract_attr_value(tag, "href")) == expected:
+                return True
+    return False
+
+
+def _media_type_from_url(url: str) -> str:
+    lower = str(url or "").lower().split("?", 1)[0]
+    if any(part in lower for part in (".jpg", ".jpeg", ".png", ".webp", ".gif")):
+        return "image"
+    if any(part in lower for part in (".mp4", ".m3u8", ".mov")):
+        return "video"
+    return "unknown_image" if "pbs.twimg.com/media/" in lower else "unknown"
+
+
+def extract_rendered_dom_media_inventory(dom: str, *, source_url: str) -> tuple[TwitterMediaInventoryItem, ...]:
+    """Extract conservative media metadata from a rendered public X status page.
+
+    This is a V72D fallback for logged-out/public pages where the browser renders
+    the status and OpenGraph metadata but the browser-visible API route returns
+    404/zero items. It records provenance as rendered DOM metadata and does not
+    claim that TweetDetail/TweetResultByRestId succeeded.
+    """
+    status_id = _extract_status_id_from_url(source_url)
+    if not _rendered_dom_contains_status(dom, status_id=status_id, canonical_url=source_url):
+        return ()
+
+    urls = _extract_meta_contents(dom, ("og:image", "og:image:secure_url", "twitter:image", "twitter:image:src"))
+    items: list[TwitterMediaInventoryItem] = []
+    seen: set[str] = set()
+    for index, url in enumerate(urls, start=1):
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        items.append(
+            TwitterMediaInventoryItem(
+                media_id=f"rendered_dom:{status_id}:{index}" if status_id else f"rendered_dom:{index}",
+                media_type=_media_type_from_url(url),
+                source_url=source_url,
+                media_url=url,
+                preview_url=url,
+                from_query_name="rendered_dom",
+                source_kind="rendered_dom_og_image",
+                status_id=status_id,
+                page_url=source_url,
+                provenance="rendered_dom_status_metadata",
+            )
+        )
+    return tuple(items)
+
+
+def _merge_media_inventory_items(*groups: Sequence[TwitterMediaInventoryItem]) -> tuple[TwitterMediaInventoryItem, ...]:
+    merged: list[TwitterMediaInventoryItem] = []
+    seen: set[tuple[str, str]] = set()
+    for group in groups:
+        for item in group:
+            key = (item.media_id or item.status_id or "", item.media_url)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+    return tuple(merged)
+
+
+def _api_completion_state_from_boundaries(boundaries: Sequence[TwitterNetworkPageBoundary]) -> str:
+    if _ytce_v72b_boundaries_are_http_404_no_items([boundary.to_dict() for boundary in boundaries]):
+        return "needs_review_http_404_no_items"
+    if boundaries:
+        return "captured_with_boundaries"
+    return "captured_without_api_page_boundary"
+
+
 def _write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="\n") as fh:
@@ -434,7 +558,7 @@ def _playwright_browser_capture_executor(plan: TwitterBrowserCapturePlan, *, hea
     )
 
 
-def run_twitter_browser_capture(
+def _run_twitter_browser_capture_impl(
     *,
     source_url: str,
     output_dir: str | Path,
@@ -480,7 +604,26 @@ def run_twitter_browser_capture(
     errors.extend(payload.errors)
     pages = build_api_pages_from_events(payload.events, source_url=plan.canonical_url)
     boundaries = build_boundaries_from_api_pages(pages)
-    media_items = extract_media_inventory_from_api_pages(pages)
+    api_media_items = extract_media_inventory_from_api_pages(pages)
+    rendered_dom_media_items = (
+        extract_rendered_dom_media_inventory(payload.final_dom, source_url=plan.canonical_url)
+        if plan.route_kind == "single_status_media" and payload.final_dom
+        else ()
+    )
+    media_items = _merge_media_inventory_items(api_media_items, rendered_dom_media_items)
+    api_completion_state = _api_completion_state_from_boundaries(boundaries)
+    rendered_dom_status_available = bool(rendered_dom_media_items) or (
+        plan.route_kind == "single_status_media"
+        and bool(payload.final_dom)
+        and _rendered_dom_contains_status(
+            payload.final_dom,
+            status_id=_extract_status_id_from_url(plan.canonical_url),
+            canonical_url=plan.canonical_url,
+        )
+    )
+    rendered_dom_fallback_used = bool(rendered_dom_media_items) and api_completion_state == "needs_review_http_404_no_items"
+    if rendered_dom_fallback_used:
+        warnings.append("twitter_rendered_dom_fallback_used_api_404_zero_items")
 
     network_path = output / "network_events.jsonl"
     api_pages_path = output / "api_pages.jsonl"
@@ -517,12 +660,17 @@ def run_twitter_browser_capture(
         status = "failed"
         completion = "failed"
         claim = "not_completed"
+    elif rendered_dom_fallback_used:
+        status = "needs_review"
+        completion = "rendered_dom_status_media_metadata_captured"
+        claim = "rendered_status_media_metadata_captured"
+    elif rendered_dom_media_items:
+        status = "needs_review"
+        completion = "rendered_dom_status_media_metadata_captured"
+        claim = "rendered_status_media_metadata_captured"
     elif payload.events:
         status = "success"
-        if boundaries:
-            completion = "captured_with_boundaries"
-        else:
-            completion = "captured_without_api_page_boundary"
+        completion = api_completion_state
         claim = "completed" if media_items or pages else "needs_review"
     else:
         status = "planned"
@@ -550,8 +698,102 @@ def run_twitter_browser_capture(
         media_backend_result_paths=tuple(backend_paths),
         completion_state=completion,
         evidence_completion_claim=claim,
+        api_completion_state=api_completion_state,
+        rendered_dom_status_available=rendered_dom_status_available,
+        rendered_dom_media_item_count=len(rendered_dom_media_items),
+        rendered_dom_fallback_used=rendered_dom_fallback_used,
         warnings=tuple(warnings),
         errors=tuple(errors),
     )
     _write_json(manifest_path, result.to_dict())
     return result
+
+
+# --- V72B live-result policy hardening ---
+
+def _ytce_v72b_read_json(path: str | Path, default: Any) -> Any:
+    try:
+        p = Path(path)
+        if not p.exists():
+            return default
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def _ytce_v72b_is_markdown_url(value: Any) -> bool:
+    text = str(value or "").strip()
+    return text.startswith("[") and "](" in text and text.endswith(")")
+
+
+def _ytce_v72b_boundaries_are_http_404_no_items(boundaries: Any) -> bool:
+    if not isinstance(boundaries, list) or not boundaries:
+        return False
+    saw_404 = False
+    for item in boundaries:
+        if not isinstance(item, Mapping):
+            continue
+        status = int(item.get("http_status") or 0)
+        returned = int(item.get("returned_items_count") or 0)
+        if status == 404:
+            saw_404 = True
+        if returned > 0:
+            return False
+    return saw_404
+
+
+def _ytce_v72b_write_manifest_from_result(result: TwitterBrowserCaptureRunResult) -> None:
+    try:
+        manifest_path = Path(result.manifest_path)
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        if hasattr(result, "to_dict"):
+            data = result.to_dict()
+        else:
+            data = asdict(result)
+        manifest_path.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+    except Exception:
+        return
+
+
+def _ytce_v72b_correct_live_result_policy(result: TwitterBrowserCaptureRunResult) -> TwitterBrowserCaptureRunResult:
+    try:
+        boundaries = _ytce_v72b_read_json(result.cursor_boundaries_path, [])
+        media_items = _ytce_v72b_read_json(result.media_inventory_path, [])
+        warnings = tuple(getattr(result, "warnings", ()) or ())
+        replace_kwargs: dict[str, Any] = {}
+
+        if _ytce_v72b_boundaries_are_http_404_no_items(boundaries) and not media_items:
+            replace_kwargs.update(
+                {
+                    "status": "needs_review",
+                    "completion_state": "needs_review_http_404_no_items",
+                    "evidence_completion_claim": "not_completed",
+                    "warnings": warnings + ("twitter_live_capture_http_404_zero_items_not_completed",),
+                }
+            )
+
+        if _ytce_v72b_is_markdown_url(getattr(result, "source_url", "")) or _ytce_v72b_is_markdown_url(getattr(result, "canonical_url", "")):
+            clean = canonicalize_browser_capture_url(getattr(result, "canonical_url", "") or getattr(result, "source_url", ""))
+            replace_kwargs.update(
+                {
+                    "source_url": clean,
+                    "canonical_url": clean,
+                    "warnings": tuple(replace_kwargs.get("warnings", warnings)) + ("twitter_live_capture_markdown_url_unwrapped",),
+                }
+            )
+
+        if not replace_kwargs:
+            return result
+        corrected = replace(result, **replace_kwargs)
+        _ytce_v72b_write_manifest_from_result(corrected)
+        return corrected
+    except Exception:
+        return result
+
+
+def run_twitter_browser_capture(source_url: str, *args: Any, **kwargs: Any) -> TwitterBrowserCaptureRunResult:
+    clean_source_url = canonicalize_browser_capture_url(source_url)
+    if kwargs.get("list_workaround_url"):
+        kwargs["list_workaround_url"] = canonicalize_browser_capture_url(kwargs["list_workaround_url"])
+    result = _run_twitter_browser_capture_impl(source_url=clean_source_url, *args, **kwargs)
+    return _ytce_v72b_correct_live_result_policy(result)
