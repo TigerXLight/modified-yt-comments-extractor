@@ -13,6 +13,8 @@ from twitter_browser_capture_strategy import (
     TwitterBrowserCapturePlan,
     TwitterNetworkPageBoundary,
     build_twitter_browser_capture_plan,
+    build_twitter_browser_session_config,
+    canonicalize_browser_capture_url,
     record_browser_network_page_boundary,
 )
 from twitter_media_backend import run_twitter_media_download_via_shared_backend
@@ -443,15 +445,24 @@ def run_twitter_browser_capture(
     headless: bool = False,
     timeout_ms: int = 60000,
     scroll_steps: int = 3,
+    browser_user_data_dir: str | Path = "",
+    reuse_existing_profile: bool = False,
     download_media: bool = False,
     media_backend_runner: Any | None = None,
 ) -> TwitterBrowserCaptureRunResult:
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
+    clean_source_url = canonicalize_browser_capture_url(source_url)
+    clean_list_workaround_url = canonicalize_browser_capture_url(list_workaround_url) if list_workaround_url else ""
+    session_config = build_twitter_browser_session_config(
+        user_data_dir=browser_user_data_dir,
+        reuse_existing_profile=reuse_existing_profile,
+    )
     plan = build_twitter_browser_capture_plan(
-        source_url,
+        clean_source_url,
         capture_goal=capture_goal,
-        list_workaround_url=list_workaround_url,
+        list_workaround_url=clean_list_workaround_url,
+        session_config=session_config,
     )
     warnings: list[str] = []
     errors: list[str] = []
@@ -521,7 +532,7 @@ def run_twitter_browser_capture(
     result = TwitterBrowserCaptureRunResult(
         schema_version=TWITTER_BROWSER_CAPTURE_RUNNER_SCHEMA_VERSION,
         status=status,
-        source_url=source_url,
+        source_url=clean_source_url,
         canonical_url=plan.canonical_url,
         output_dir=str(output),
         plan=plan,

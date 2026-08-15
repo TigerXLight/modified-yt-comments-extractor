@@ -127,6 +127,25 @@ def test_plan_only_run_without_live_is_not_completed() -> None:
     assert "live_browser_capture_not_requested" in result.warnings
 
 
+def test_runner_unwraps_markdown_source_url_and_records_profile_dir() -> None:
+    def fake_executor(plan):
+        assert plan.canonical_url == "https://x.com/user/status/123"
+        assert plan.browser_session.user_data_dir.endswith("ytce-twitter-test-profile")
+        return BrowserCapturePayload(events=())
+
+    with tempfile.TemporaryDirectory(prefix="ytce_v72_twitter_capture_") as tmp:
+        result = run_twitter_browser_capture(
+            source_url="[https://x.com/user/status/123](https://x.com/user/status/123)",
+            output_dir=Path(tmp) / "out",
+            browser_user_data_dir=Path(tmp) / "ytce-twitter-test-profile",
+            reuse_existing_profile=True,
+            browser_executor=fake_executor,
+        )
+        assert result.source_url == "https://x.com/user/status/123"
+        assert result.canonical_url == "https://x.com/user/status/123"
+
+
+
 def main() -> None:
     test_extract_query_name_from_graphql_url()
     test_api_pages_boundaries_and_media_inventory()
