@@ -24,6 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--live", action="store_true", help="Use Playwright with a pre-logged-in browser profile.")
     parser.add_argument("--seed-capture-dir", default="", help="Build scheduler state from an existing V74 capture without live requests.")
     parser.add_argument("--har-path", default="", help="Build scheduler state from a Firefox/Chrome HAR export without live requests.")
+    parser.add_argument("--resume-from-output-dir", default="", help="Resume from a previous cursor scheduler output directory instead of replaying the original seed capture.")
     parser.add_argument("--browser-user-data-dir", default="")
     parser.add_argument("--reuse-existing-profile", action="store_true")
     parser.add_argument("--profile-tab", default="replies", choices=("default", "tweets", "replies", "tweets_replies", "tweets_and_replies", "media", "likes"))
@@ -49,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--auth-probe-scroll-steps", type=int, default=0, help="Optional tiny scroll steps while harvesting the X web app GraphQL auth header envelope before cursor continuation.")
     parser.add_argument("--auth-probe-scroll-pixels", type=int, default=900)
     parser.add_argument("--auth-probe-wait-ms", type=int, default=1500)
+    parser.add_argument("--ignore-resume-cooldown", action="store_true", help="Resume immediately even if the previous cursor_rate_limit_state.json cooldown has not elapsed.")
     args = parser.parse_args(argv)
 
     result = run_twitter_cursor_scheduler(
@@ -59,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
         reuse_existing_profile=args.reuse_existing_profile,
         seed_capture_dir=args.seed_capture_dir,
         har_path=args.har_path,
+        resume_from_output_dir=args.resume_from_output_dir,
         profile_tab=args.profile_tab,
         headless=args.headless,
         timeout_ms=args.timeout_ms,
@@ -82,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         auth_probe_scroll_steps=args.auth_probe_scroll_steps,
         auth_probe_scroll_pixels=args.auth_probe_scroll_pixels,
         auth_probe_wait_ms=args.auth_probe_wait_ms,
+        ignore_resume_cooldown=args.ignore_resume_cooldown,
     )
     print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
     return 0 if result.status in {"success", "needs_review", "planned"} else 1

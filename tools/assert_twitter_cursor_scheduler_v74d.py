@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 
 from twitter_rate_limit_policy import decide_rate_limit_action, observe_rate_limit
 from twitter_timeline_cursor_scheduler import (
+    _load_resume_seed_from_output,
     _merge_replay_headers,
     _redacted_headers_for_output,
     _request_headers_are_authenticated,
@@ -143,6 +144,18 @@ def main() -> int:
         assert rate_state["schema_version"] == "twitter_rate_limit_state.v74e", rate_state
         assert (Path(tmp) / "cursor_errors.jsonl").exists(), tmp
 
+        # V74G: previous scheduler outputs must be resumable without replaying
+        # the original browser capture.  The helper should recover the next
+        # cursor URL from cursor_request_templates.json.
+        templates = json.loads((Path(tmp) / "cursor_request_templates.json").read_text(encoding="utf-8"))
+        assert templates["next_cursor_url"], templates
+        resumed = _load_resume_seed_from_output(tmp, fallback_source_url="https://x.com/examaddaorg", profile_tab="replies")
+        assert resumed["next_cursor_url"] == templates["next_cursor_url"], resumed
+        assert len(resumed["pages"]) == 2, resumed
+        assert len(resumed["entries"]) == 2, resumed
+        assert len(resumed["seen_ids"]) == 2, resumed
+        assert resumed["cursor_history"][-1] == "CURSOR_TWO", resumed
+
     merged_headers = _merge_replay_headers(
         {"accept": "application/json", "authorization": "Bearer SECRET"},
         {"x-csrf-token": "CT0SECRET", "x-twitter-active-user": "yes"},
@@ -169,7 +182,7 @@ def main() -> int:
     decision2 = decide_rate_limit_action(observation=obs2, normal_delay_ms=1000, safety_floor=1)
     assert decision2.decision == "pause_until_reset", decision2
     assert decision2.reason == "rate_limit_remaining_safety_floor", decision2
-    print("assert_twitter_cursor_scheduler_v74f2 OK")
+    print("assert_twitter_cursor_scheduler_v74g OK")
     return 0
 
 
