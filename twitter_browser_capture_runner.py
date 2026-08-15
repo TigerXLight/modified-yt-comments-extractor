@@ -29,6 +29,8 @@ TWITTER_API_QUERY_NAMES = (
     "TweetResultsByRestIds",
     "UserTweets",
     "UserTweetsAndReplies",
+    "UserRepliesTimeline",
+    "UserTweetsTimeline",
     "UserMedia",
     "ListLatestTweetsTimeline",
     "ListTimeline",
@@ -186,6 +188,18 @@ def is_twitter_network_url(url: str) -> bool:
     return any(part in host for part in ("x.com", "twitter.com", "twimg.com"))
 
 
+def is_twitter_timeline_api_query_name(query_name: str) -> bool:
+    name = str(query_name or "")
+    if name in TWITTER_API_QUERY_NAMES:
+        return True
+    lower = name.lower()
+    if lower.startswith("user") and any(token in lower for token in ("tweet", "repl", "media")) and "timeline" in lower:
+        return True
+    if lower.startswith("list") and "timeline" in lower:
+        return True
+    return lower == "searchtimeline"
+
+
 def _json_loads_maybe(text: str) -> Any | None:
     stripped = str(text or "").strip()
     if not stripped or stripped[0] not in "[{":
@@ -243,7 +257,7 @@ def build_api_pages_from_events(events: Sequence[TwitterCapturedNetworkEvent], *
     query_counts: dict[str, int] = {}
     for event in events:
         query = event.query_name or extract_twitter_api_query_name(event.url)
-        if not query or ("api" not in query.lower() and query not in TWITTER_API_QUERY_NAMES):
+        if not query or ("api" not in query.lower() and not is_twitter_timeline_api_query_name(query)):
             continue
         body = _json_loads_maybe(event.body_text)
         if body is None:

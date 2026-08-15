@@ -15,6 +15,8 @@ TIMELINE_EXPORT_MANIFEST_SCHEMA_VERSION = "twitter_browser_timeline_export_manif
 
 TIMELINE_QUERY_NAMES = (
     "UserTweetsAndReplies",
+    "UserRepliesTimeline",
+    "UserTweetsTimeline",
     "UserTweets",
     "UserMedia",
     "ListLatestTweetsTimeline",
@@ -249,6 +251,18 @@ def _extract_query_name_from_url(url: str) -> str:
     return m.group(1) if m else ""
 
 
+def is_timeline_query_name(query_name: str) -> bool:
+    name = str(query_name or "")
+    if name in TIMELINE_QUERY_NAMES:
+        return True
+    lower = name.lower()
+    if lower.startswith("user") and any(token in lower for token in ("tweet", "repl", "media")) and "timeline" in lower:
+        return True
+    if lower.startswith("list") and "timeline" in lower:
+        return True
+    return lower == "searchtimeline"
+
+
 def _cursor_from_url(url: str) -> str:
     try:
         qs = parse_qs(urlsplit(str(url)).query)
@@ -466,7 +480,7 @@ def _timeline_rows_from_capture(capture_dir: str | Path) -> tuple[list[dict[str,
     converted: list[dict[str, Any]] = []
     for index, event in enumerate(events, start=1):
         query_name = str(event.get("query_name") or _extract_query_name_from_url(str(event.get("url") or "")))
-        if query_name not in TIMELINE_QUERY_NAMES:
+        if not is_timeline_query_name(query_name):
             continue
         converted.append(
             {
@@ -532,7 +546,7 @@ def export_twitter_timeline_from_capture(
     raw_source_url = source_url or str(capture_manifest.get("canonical_url") or capture_manifest.get("source_url") or "")
     canonical_url = _profile_tab_url(raw_source_url, profile_tab) if raw_source_url else ""
     rows, api_pages_path, network_events_path = _timeline_rows_from_capture(capture)
-    rows = [row for row in rows if str(row.get("query_name") or "") in TIMELINE_QUERY_NAMES]
+    rows = [row for row in rows if is_timeline_query_name(str(row.get("query_name") or ""))]
     if max_pages and max_pages > 0:
         rows = rows[:max_pages]
 
