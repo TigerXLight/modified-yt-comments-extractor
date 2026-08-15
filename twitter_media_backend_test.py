@@ -9,6 +9,8 @@ from twitter_media_backend import (
     TWITTER_MEDIA_BACKEND_PROFILE_ID,
     build_twitter_media_backend_plan,
     build_twitter_shared_media_backend_request,
+    is_twitter_direct_media_url,
+    normalize_twitter_media_source_url,
     run_twitter_media_download_via_shared_backend,
     twitter_jdownloader_capability_status,
 )
@@ -123,11 +125,35 @@ def test_run_twitter_media_download_uses_shared_backend_runner_and_claims_comple
     assert result.shared_backend_result.source_adapter_id == "twitter_x"
 
 
+def test_twitter_media_plan_accepts_rendered_dom_direct_pbs_media_url() -> None:
+    with tempfile.TemporaryDirectory(prefix="ytce_v72f_twitter_direct_media_") as tmp:
+        manifest_path = Path(tmp) / "missing_jd_capabilities_manifest.json"
+        media_url = "https://pbs.twimg.com/media/HPIb1teawAEGqVL.png:large"
+        plan = build_twitter_media_backend_plan(
+            source_url=f"[{media_url}]({media_url})",
+            output_dir=Path(tmp) / "downloads",
+            capability_manifest_path=manifest_path,
+            allow_untested_jdownloader=False,
+        )
+        request = build_twitter_shared_media_backend_request(plan)
+
+    assert normalize_twitter_media_source_url(f"<{media_url}>") == media_url
+    assert is_twitter_direct_media_url(plan.canonical_url) is True
+    assert plan.canonical_url == media_url
+    assert plan.source_id == "pbs.twimg.com/media/HPIb1teawAEGqVL.png:large"
+    assert plan.execution_allowed is True
+    assert plan.blocked_reason == ""
+    assert "direct rendered-DOM media URL" in plan.route_note
+    assert request.source_adapter_id == "twitter_x_direct_media"
+    assert request.source_url == media_url
+
+
 def main() -> None:
     test_twitter_capability_status_reads_jd_manifest()
     test_twitter_media_plan_routes_to_shared_backend_when_allowed()
     test_twitter_media_plan_can_gate_untested_jd_support()
     test_run_twitter_media_download_uses_shared_backend_runner_and_claims_completion()
+    test_twitter_media_plan_accepts_rendered_dom_direct_pbs_media_url()
     print("twitter_media_backend_test OK")
 
 

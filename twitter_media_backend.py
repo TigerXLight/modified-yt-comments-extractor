@@ -19,6 +19,8 @@ TWITTER_MEDIA_BACKEND_SCHEMA_VERSION = "twitter_media_backend.v68"
 TWITTER_MEDIA_BACKEND_PROFILE_ID = "twitter_x_media_shared_backend"
 TWITTER_MEDIA_BACKEND_DEFAULT_COMPONENTS = ("video", "audio", "image")
 TWITTER_JDOWNLOADER_CAPABILITY_DOMAINS = ("x.com", "twitter.com")
+TWITTER_DIRECT_MEDIA_HOSTS = ("pbs.twimg.com", "video.twimg.com")
+TWITTER_DIRECT_MEDIA_SCHEMES = ("http", "https")
 
 
 @dataclass(frozen=True)
@@ -89,14 +91,34 @@ def unwrap_twitter_media_input_url(source_url: str) -> str:
     markdown = re.match(r"^\[([^\]]+)\]\((https?://[^)]+)\)$", raw)
     if markdown:
         return markdown.group(2).strip()
-    angle = re.match(r"^<((?:https?://|x\.com/|twitter\.com/)[^>]+)>$", raw, flags=re.I)
+    angle = re.match(r"^<(https?://[^>]+)>$", raw, flags=re.I)
     if angle:
         return angle.group(1).strip()
     return raw
 
 
+def is_twitter_direct_media_url(source_url: str) -> bool:
+    parsed = urlsplit(unwrap_twitter_media_input_url(source_url))
+    return (
+        (parsed.scheme or "").lower() in TWITTER_DIRECT_MEDIA_SCHEMES
+        and (parsed.hostname or "").lower() in TWITTER_DIRECT_MEDIA_HOSTS
+    )
+
+
 def normalize_twitter_media_source_url(source_url: str) -> str:
-    return TWITTER_X_SOURCE_ADAPTER.normalize_url(unwrap_twitter_media_input_url(source_url))
+    unwrapped = unwrap_twitter_media_input_url(source_url)
+    if is_twitter_direct_media_url(unwrapped):
+        return unwrapped
+    return TWITTER_X_SOURCE_ADAPTER.normalize_url(unwrapped)
+
+
+def _extract_twitter_media_source_id(canonical_url: str) -> str:
+    if is_twitter_direct_media_url(canonical_url):
+        parsed = urlsplit(canonical_url)
+        path = parsed.path.strip("/")
+        host = parsed.hostname or parsed.netloc
+        return f"{host}/{path}" if path else str(host or canonical_url)
+    return TWITTER_X_SOURCE_ADAPTER.extract_source_id(canonical_url)
 
 def _load_capability_manifest(path: str | Path = "jd_capabilities_manifest.json") -> Mapping[str, Any]:
     manifest_path = Path(path)
@@ -145,17 +167,24 @@ def build_twitter_media_backend_plan(
     allow_untested_jdownloader: bool = True,
 ) -> TwitterMediaBackendPlan:
     canonical_url = normalize_twitter_media_source_url(source_url)
-    source_id = TWITTER_X_SOURCE_ADAPTER.extract_source_id(canonical_url)
+    direct_media_url = is_twitter_direct_media_url(canonical_url)
+    source_id = _extract_twitter_media_source_id(canonical_url)
     parsed = urlsplit(canonical_url)
     title_part = parsed.path.strip("/").replace("/", "_") or "twitter_x_media"
     resolved_package_name = package_name or f"YTCE - X Twitter - {title_part}"
     capability = twitter_jdownloader_capability_status(capability_manifest_path)
-    execution_allowed = capability.capability_found and (capability.capability_tested or allow_untested_jdownloader)
-    blocked_reason = ""
-    if not capability.capability_found:
-        blocked_reason = "JDownloader capability manifest does not contain x.com/twitter.com."
-    elif not capability.capability_tested and not allow_untested_jdownloader:
-        blocked_reason = "JDownloader x.com/twitter.com capability exists but is not marked tested."
+    if direct_media_url:
+        execution_allowed = True
+        blocked_reason = ""
+        route_note = "YTCE-owned Twitter/X direct rendered-DOM media URL routed to the shared JDownloader API3128 backend."
+    else:
+        execution_allowed = capability.capability_found and (capability.capability_tested or allow_untested_jdownloader)
+        blocked_reason = ""
+        route_note = "YTCE-owned Twitter/X media request routed to the shared JDownloader API3128 backend."
+        if not capability.capability_found:
+            blocked_reason = "JDownloader capability manifest does not contain x.com/twitter.com."
+        elif not capability.capability_tested and not allow_untested_jdownloader:
+            blocked_reason = "JDownloader x.com/twitter.com capability exists but is not marked tested."
 
     return TwitterMediaBackendPlan(
         schema_version=TWITTER_MEDIA_BACKEND_SCHEMA_VERSION,
@@ -171,14 +200,16 @@ def build_twitter_media_backend_plan(
         jdownloader_capability=capability,
         execution_allowed=execution_allowed,
         blocked_reason=blocked_reason,
+        route_note=route_note,
     )
 
 
 def build_twitter_shared_media_backend_request(plan: TwitterMediaBackendPlan) -> SharedMediaBackendRequest:
     if not plan.execution_allowed:
         raise ValueError(plan.blocked_reason or "Twitter/X shared media backend execution is not allowed by this plan.")
+    direct_media_url = is_twitter_direct_media_url(plan.canonical_url)
     return build_shared_jdownloader_media_request(
-        source_adapter_id="twitter_x",
+        source_adapter_id="twitter_x_direct_media" if direct_media_url else "twitter_x",
         source_url=plan.canonical_url,
         output_dir=plan.output_dir,
         package_name=plan.package_name,
