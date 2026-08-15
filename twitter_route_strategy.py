@@ -64,8 +64,19 @@ def _val(v: Any) -> Any:
         return {str(k): _val(x) for k, x in v.items()}
     return v
 
-def canonicalize_twitter_url(url: str) -> str:
-    raw = (url or "").strip()
+def unwrap_twitter_input_url(source_url: str) -> str:
+    raw = str(source_url or "").strip()
+    markdown = re.match(r"^\[([^\]]+)\]\((https?://[^)]+)\)$", raw)
+    if markdown:
+        return markdown.group(2).strip()
+    angle = re.match(r"^<((?:https?://|x\.com/|twitter\.com/)[^>]+)>$", raw, flags=re.I)
+    if angle:
+        return angle.group(1).strip()
+    return raw
+
+
+def canonicalize_twitter_url(source_url: str) -> str:
+    raw = unwrap_twitter_input_url(source_url)
     if not raw:
         return ""
     if not re.match(r"^[a-z]+://", raw, re.I):
@@ -74,6 +85,7 @@ def canonicalize_twitter_url(url: str) -> str:
     host = p.netloc.lower().removeprefix("www.")
     path = re.sub(r"/+", "/", p.path or "/").rstrip("/") or "/"
     return f"https://{host}{path}"
+
 
 def extract_twitter_source_id(canonical_url: str) -> str:
     p = urlsplit(canonical_url)

@@ -82,9 +82,21 @@ def _value_for_dict(value: Any) -> Any:
     return value
 
 
-def normalize_twitter_media_source_url(source_url: str) -> str:
-    return TWITTER_X_SOURCE_ADAPTER.normalize_url(source_url)
+def unwrap_twitter_media_input_url(source_url: str) -> str:
+    import re
 
+    raw = str(source_url or "").strip()
+    markdown = re.match(r"^\[([^\]]+)\]\((https?://[^)]+)\)$", raw)
+    if markdown:
+        return markdown.group(2).strip()
+    angle = re.match(r"^<((?:https?://|x\.com/|twitter\.com/)[^>]+)>$", raw, flags=re.I)
+    if angle:
+        return angle.group(1).strip()
+    return raw
+
+
+def normalize_twitter_media_source_url(source_url: str) -> str:
+    return TWITTER_X_SOURCE_ADAPTER.normalize_url(unwrap_twitter_media_input_url(source_url))
 
 def _load_capability_manifest(path: str | Path = "jd_capabilities_manifest.json") -> Mapping[str, Any]:
     manifest_path = Path(path)
