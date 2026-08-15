@@ -91,3 +91,4 @@ operator_approved_gui_controller_receipts/
 
 third_party/jdownloader/manifests/*.json
 !third_party/jdownloader/manifests/.gitkeep
+twitter_direct_media_jd_capability_evidence.json

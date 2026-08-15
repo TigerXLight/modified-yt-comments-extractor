@@ -11,6 +11,7 @@ from twitter_media_backend import (
     build_twitter_shared_media_backend_request,
     is_twitter_direct_media_url,
     normalize_twitter_media_source_url,
+    twitter_direct_media_capability_evidence_status,
     run_twitter_media_download_via_shared_backend,
     twitter_jdownloader_capability_status,
 )
@@ -148,6 +149,47 @@ def test_twitter_media_plan_accepts_rendered_dom_direct_pbs_media_url() -> None:
     assert request.source_url == media_url
 
 
+def test_twitter_direct_media_evidence_allows_strict_execution() -> None:
+    direct_url = "https://pbs.twimg.com/media/HPIb1teawAEGqVL.png:large"
+    with tempfile.TemporaryDirectory(prefix="ytce_v72h_twitter_direct_media_evidence_") as tmp:
+        root = Path(tmp)
+        manifest_path = root / "jd_capabilities_manifest.json"
+        _write_manifest(manifest_path, tested=False)
+        evidence_path = root / "twitter_direct_media_jd_capability_evidence.json"
+        evidence_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "twitter_direct_media_jd_capability_evidence.v72h",
+                    "tested": True,
+                    "source_url": direct_url,
+                    "observed_host": "x.com",
+                    "status": "success",
+                    "phase": "completed",
+                    "files_count": 1,
+                    "api3128_used": True,
+                    "route_used": "api3128",
+                    "manifest_path": str(root / "jdownloader-internal-download-manifest.json"),
+                }
+            ),
+            encoding="utf-8",
+        )
+        evidence = twitter_direct_media_capability_evidence_status(evidence_path)
+        plan = build_twitter_media_backend_plan(
+            source_url=direct_url,
+            output_dir=root / "downloads",
+            capability_manifest_path=manifest_path,
+            allow_untested_jdownloader=False,
+            direct_media_capability_evidence_path=evidence_path,
+        )
+
+    assert evidence.tested is True
+    assert plan.execution_allowed is True
+    assert plan.blocked_reason == ""
+    assert plan.direct_media_capability_evidence is not None
+    assert plan.direct_media_capability_evidence.tested is True
+
+
+
 def test_twitter_media_plan_blocks_rendered_dom_direct_pbs_media_url_when_strict() -> None:
     with tempfile.TemporaryDirectory(prefix="ytce_v72g_twitter_direct_media_strict_") as tmp:
         manifest_path = Path(tmp) / "jd_capabilities_manifest.json"
@@ -176,6 +218,7 @@ def main() -> None:
     test_twitter_media_plan_can_gate_untested_jd_support()
     test_run_twitter_media_download_uses_shared_backend_runner_and_claims_completion()
     test_twitter_media_plan_accepts_rendered_dom_direct_pbs_media_url()
+    test_twitter_direct_media_evidence_allows_strict_execution()
     test_twitter_media_plan_blocks_rendered_dom_direct_pbs_media_url_when_strict()
     print("twitter_media_backend_test OK")
 

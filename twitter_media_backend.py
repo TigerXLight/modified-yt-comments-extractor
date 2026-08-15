@@ -21,6 +21,7 @@ TWITTER_MEDIA_BACKEND_DEFAULT_COMPONENTS = ("video", "audio", "image")
 TWITTER_JDOWNLOADER_CAPABILITY_DOMAINS = ("x.com", "twitter.com")
 TWITTER_DIRECT_MEDIA_HOSTS = ("pbs.twimg.com", "video.twimg.com")
 TWITTER_DIRECT_MEDIA_SCHEMES = ("http", "https")
+TWITTER_DIRECT_MEDIA_CAPABILITY_EVIDENCE_PATH = ""
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,24 @@ class TwitterJDownloaderCapabilityStatus:
     capability_tested: bool
     matched_domains: tuple[str, ...] = ()
     plugin_names: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class TwitterDirectMediaCapabilityEvidenceStatus:
+    evidence_path: str
+    tested: bool
+    source_url: str = ""
+    observed_host: str = ""
+    status: str = ""
+    phase: str = ""
+    files_count: int = 0
+    api3128_used: bool = False
+    route_used: str = ""
+    manifest_path: str = ""
+    warnings: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return _value_for_dict(self)
@@ -49,6 +68,7 @@ class TwitterMediaBackendPlan:
     allow_untested_jdownloader: bool
     jdownloader_capability: TwitterJDownloaderCapabilityStatus
     execution_allowed: bool
+    direct_media_capability_evidence: TwitterDirectMediaCapabilityEvidenceStatus | None = None
     blocked_reason: str = ""
     route_note: str = "YTCE-owned Twitter/X media request routed to the shared JDownloader API3128 backend."
 
@@ -156,6 +176,66 @@ def twitter_jdownloader_capability_status(
     )
 
 
+def twitter_direct_media_capability_evidence_status(
+    evidence_path: str | Path = "",
+) -> TwitterDirectMediaCapabilityEvidenceStatus:
+    if not str(evidence_path or '').strip():
+        return TwitterDirectMediaCapabilityEvidenceStatus(evidence_path='', tested=False)
+    path = Path(evidence_path)
+    warnings: list[str] = []
+    if not path.is_file():
+        return TwitterDirectMediaCapabilityEvidenceStatus(evidence_path=str(path), tested=False)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return TwitterDirectMediaCapabilityEvidenceStatus(
+            evidence_path=str(path),
+            tested=False,
+            warnings=(f"Could not read direct media capability evidence: {type(exc).__name__}: {exc}",),
+        )
+    if not isinstance(payload, Mapping):
+        return TwitterDirectMediaCapabilityEvidenceStatus(
+            evidence_path=str(path),
+            tested=False,
+            warnings=("Direct media capability evidence was not a JSON object.",),
+        )
+    source_url = str(payload.get("source_url") or "")
+    observed_host = str(payload.get("observed_host") or "")
+    status = str(payload.get("status") or "")
+    phase = str(payload.get("phase") or "")
+    route_used = str(payload.get("route_used") or "")
+    manifest_path = str(payload.get("manifest_path") or "")
+    try:
+        files_count = int(payload.get("files_count") or 0)
+    except Exception:
+        files_count = 0
+    api3128_used = bool(payload.get("api3128_used"))
+    tested = bool(payload.get("tested"))
+    if not is_twitter_direct_media_url(source_url):
+        tested = False
+        if source_url:
+            warnings.append("Direct media capability evidence source_url was not a supported Twitter direct media URL.")
+    if status != "success":
+        tested = False
+    if files_count < 1:
+        tested = False
+    if not api3128_used or route_used.lower() != "api3128":
+        tested = False
+    return TwitterDirectMediaCapabilityEvidenceStatus(
+        evidence_path=str(path),
+        tested=tested,
+        source_url=source_url,
+        observed_host=observed_host,
+        status=status,
+        phase=phase,
+        files_count=files_count,
+        api3128_used=api3128_used,
+        route_used=route_used,
+        manifest_path=manifest_path,
+        warnings=tuple(warnings),
+    )
+
+
 def build_twitter_media_backend_plan(
     *,
     source_url: str,
@@ -165,6 +245,7 @@ def build_twitter_media_backend_plan(
     components: Sequence[str] = TWITTER_MEDIA_BACKEND_DEFAULT_COMPONENTS,
     capability_manifest_path: str | Path = "jd_capabilities_manifest.json",
     allow_untested_jdownloader: bool = True,
+    direct_media_capability_evidence_path: str | Path = "",
 ) -> TwitterMediaBackendPlan:
     canonical_url = normalize_twitter_media_source_url(source_url)
     direct_media_url = is_twitter_direct_media_url(canonical_url)
@@ -173,17 +254,22 @@ def build_twitter_media_backend_plan(
     title_part = parsed.path.strip("/").replace("/", "_") or "twitter_x_media"
     resolved_package_name = package_name or f"YTCE - X Twitter - {title_part}"
     capability = twitter_jdownloader_capability_status(capability_manifest_path)
+    direct_media_evidence = (
+        twitter_direct_media_capability_evidence_status(direct_media_capability_evidence_path)
+        if direct_media_url
+        else None
+    )
     if direct_media_url:
         route_note = "YTCE-owned Twitter/X direct rendered-DOM media URL routed to the shared JDownloader API3128 backend."
         execution_allowed = bool(allow_untested_jdownloader) or (
             capability.capability_found and capability.capability_tested
-        )
+        ) or bool(direct_media_evidence and direct_media_evidence.tested)
         blocked_reason = ""
         if not execution_allowed:
             if not capability.capability_found:
                 blocked_reason = "JDownloader capability manifest does not contain x.com/twitter.com for direct Twitter media URL."
-            elif not capability.capability_tested:
-                blocked_reason = "JDownloader x.com/twitter.com capability exists but is not marked tested for direct Twitter media URL."
+            elif not capability.capability_tested and not bool(direct_media_evidence and direct_media_evidence.tested):
+                blocked_reason = "JDownloader x.com/twitter.com capability exists but is not marked tested and no direct Twitter media JD evidence is recorded."
     else:
         execution_allowed = capability.capability_found and (capability.capability_tested or allow_untested_jdownloader)
         blocked_reason = ""
@@ -205,6 +291,7 @@ def build_twitter_media_backend_plan(
         components=tuple(str(component) for component in components),
         allow_untested_jdownloader=bool(allow_untested_jdownloader),
         jdownloader_capability=capability,
+        direct_media_capability_evidence=direct_media_evidence,
         execution_allowed=execution_allowed,
         blocked_reason=blocked_reason,
         route_note=route_note,
@@ -244,6 +331,7 @@ def run_twitter_media_download_via_shared_backend(
     components: Sequence[str] = TWITTER_MEDIA_BACKEND_DEFAULT_COMPONENTS,
     capability_manifest_path: str | Path = "jd_capabilities_manifest.json",
     allow_untested_jdownloader: bool = True,
+    direct_media_capability_evidence_path: str | Path = "",
     shared_backend_runner: TwitterSharedBackendRunner | None = None,
 ) -> TwitterMediaBackendResult:
     plan = build_twitter_media_backend_plan(
@@ -254,6 +342,7 @@ def run_twitter_media_download_via_shared_backend(
         components=components,
         capability_manifest_path=capability_manifest_path,
         allow_untested_jdownloader=allow_untested_jdownloader,
+        direct_media_capability_evidence_path=direct_media_capability_evidence_path,
     )
     if not plan.execution_allowed:
         return TwitterMediaBackendResult(

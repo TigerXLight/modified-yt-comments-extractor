@@ -23,6 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--package-name", default="")
     parser.add_argument("--max-height", type=int, default=1080)
     parser.add_argument("--capability-manifest", default="jd_capabilities_manifest.json")
+    parser.add_argument("--direct-media-capability-evidence", default="")
     parser.add_argument("--plan-only", action="store_true")
     parser.add_argument("--block-untested-jd", action="store_true")
     parser.add_argument("--plan-json", default="")
@@ -35,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
         max_height=args.max_height,
         capability_manifest_path=args.capability_manifest,
         allow_untested_jdownloader=not args.block_untested_jd,
+        direct_media_capability_evidence_path=args.direct_media_capability_evidence,
     )
     if args.plan_json:
         write_twitter_media_backend_plan(args.plan_json, plan)
@@ -49,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         max_height=args.max_height,
         capability_manifest_path=args.capability_manifest,
         allow_untested_jdownloader=not args.block_untested_jd,
+        direct_media_capability_evidence_path=args.direct_media_capability_evidence,
     )
     print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
     return 0 if result.status == "success" else 1
