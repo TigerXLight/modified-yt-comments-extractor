@@ -708,3 +708,214 @@ def run_twitter_browser_timeline_pagination(
         profile_tab=profile_tab,
         max_pages=max_pages,
     )
+
+# --- V74B response promotion and HAR import ---
+
+NETWORK_RESPONSE_BODIES_FILE = "network_response_bodies.jsonl"
+
+
+def _timeline_row_from_response_record(record: Mapping[str, Any], *, index: int, default_source_url: str = "") -> dict[str, Any] | None:
+    url = str(record.get("url") or record.get("request_url") or record.get("source_url") or "")
+    query_name = str(record.get("query_name") or _extract_query_name_from_url(url) or "")
+    if not is_timeline_query_name(query_name):
+        return None
+    body = record.get("body_json")
+    if body is None:
+        body = _load_json_text(record.get("body_text") or record.get("text") or "")
+    status = int(record.get("response_status") or record.get("status") or 0)
+    return {
+        "query_name": query_name,
+        "source_url": url or default_source_url,
+        "page_number": int(record.get("page_number") or index),
+        "returned_items_count": 0,
+        "cursor_in": str(record.get("cursor_in") or _cursor_from_url(url)),
+        "cursor_out": str(record.get("cursor_out") or ""),
+        "response_status": status,
+        "rate_limited": bool(record.get("rate_limited")) or status == 429,
+        "body_json": body,
+        "body_sha256": str(record.get("body_sha256") or ""),
+        "raw_event_url": url,
+        "promotion_source": str(record.get("promotion_source") or record.get("schema_version") or "network_or_body_record"),
+    }
+
+
+def _timeline_rows_from_records(records: Sequence[Mapping[str, Any]], *, default_source_url: str = "") -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for index, record in enumerate(records, start=1):
+        row = _timeline_row_from_response_record(record, index=index, default_source_url=default_source_url)
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
+def _read_timeline_rows_from_response_bodies(capture: Path, *, default_source_url: str = "") -> tuple[list[dict[str, Any]], str]:
+    path = capture / NETWORK_RESPONSE_BODIES_FILE
+    rows = _timeline_rows_from_records(_read_jsonl(path), default_source_url=default_source_url)
+    return rows, str(path if path.exists() else "")
+
+
+def _timeline_rows_from_capture(capture_dir: str | Path) -> tuple[list[dict[str, Any]], str, str]:
+    """Read timeline rows from api_pages, raw response bodies, or compact network events.
+
+    V74 returned early when api_pages.jsonl existed, even if it only contained
+    unrelated JSON such as hashflags.  V74B first filters to timeline operation
+    names and falls back to the raw browser-session body file and then compact
+    network_events.jsonl.
+    """
+    capture = Path(capture_dir)
+    api_pages_path = capture / "api_pages.jsonl"
+    network_events_path = capture / "network_events.jsonl"
+    response_bodies_path = capture / NETWORK_RESPONSE_BODIES_FILE
+
+    api_rows = _timeline_rows_from_records(_read_jsonl(api_pages_path))
+    if api_rows:
+        return api_rows, str(api_pages_path), str(network_events_path if network_events_path.exists() else "")
+
+    body_rows, body_path = _read_timeline_rows_from_response_bodies(capture)
+    if body_rows:
+        return body_rows, str(response_bodies_path), str(network_events_path if network_events_path.exists() else "")
+
+    event_rows = _timeline_rows_from_records(_read_jsonl(network_events_path))
+    if event_rows:
+        return event_rows, str(api_pages_path if api_pages_path.exists() else ""), str(network_events_path)
+    return [], str(api_pages_path if api_pages_path.exists() else ""), str(network_events_path if network_events_path.exists() else "")
+
+
+def _har_content_text(content: Mapping[str, Any]) -> str:
+    text = str(content.get("text") or "")
+    if content.get("encoding") == "base64" and text:
+        try:
+            import base64
+            return base64.b64decode(text).decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+    return text
+
+
+def timeline_rows_from_har(har_path: str | Path) -> list[dict[str, Any]]:
+    path = Path(har_path)
+    data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    entries = (((data or {}).get("log") or {}).get("entries") or []) if isinstance(data, Mapping) else []
+    rows: list[dict[str, Any]] = []
+    for index, entry in enumerate(entries, start=1):
+        if not isinstance(entry, Mapping):
+            continue
+        request = entry.get("request") if isinstance(entry.get("request"), Mapping) else {}
+        response = entry.get("response") if isinstance(entry.get("response"), Mapping) else {}
+        content = response.get("content") if isinstance(response.get("content"), Mapping) else {}
+        url = str(request.get("url") or entry.get("request_url") or "")
+        query_name = _extract_query_name_from_url(url)
+        if not is_timeline_query_name(query_name):
+            continue
+        body_text = _har_content_text(content)
+        record = {
+            "schema_version": "twitter_har_response_body.v74b",
+            "url": url,
+            "status": int(response.get("status") or 0),
+            "content_type": str(content.get("mimeType") or ""),
+            "query_name": query_name,
+            "body_text": body_text,
+            "body_sha256": "",
+            "promotion_source": "firefox_or_browser_har_import_v74b",
+        }
+        row = _timeline_row_from_response_record(record, index=index)
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
+def write_timeline_capture_from_har(
+    *,
+    har_path: str | Path,
+    capture_dir: str | Path,
+    source_url: str,
+    profile_tab: str = "replies",
+) -> Path:
+    capture = Path(capture_dir)
+    capture.mkdir(parents=True, exist_ok=True)
+    canonical_url = _profile_tab_url(source_url, profile_tab)
+    rows = timeline_rows_from_har(har_path)
+    _write_jsonl(capture / "api_pages.jsonl", rows)
+    _write_jsonl(capture / "network_events.jsonl", [])
+    _write_json(
+        capture / "browser_session_manifest.json",
+        {
+            "schema_version": "twitter_browser_capture_runner.v74b.har_import",
+            "status": "success" if rows else "needs_review",
+            "source_url": source_url,
+            "canonical_url": canonical_url,
+            "completion_state": "firefox_har_timeline_responses_imported" if rows else "firefox_har_no_timeline_responses_found",
+            "har_path": str(har_path),
+            "api_page_count": len(rows),
+            "rxliuli_method": "browser_session_web_interface_har_import",
+            "api_access_required": False,
+            "live_browser_session_required": True,
+        },
+    )
+    return capture
+
+
+def export_twitter_timeline_from_har(
+    *,
+    har_path: str | Path,
+    output_dir: str | Path,
+    source_url: str,
+    profile_tab: str = "replies",
+    max_pages: int = 0,
+) -> TwitterTimelinePaginationResult:
+    output = Path(output_dir)
+    capture = output / "har_import_capture"
+    write_timeline_capture_from_har(
+        har_path=har_path,
+        capture_dir=capture,
+        source_url=source_url,
+        profile_tab=profile_tab,
+    )
+    return export_twitter_timeline_from_capture(
+        capture_dir=capture,
+        output_dir=output,
+        source_url=source_url,
+        profile_tab=profile_tab,
+        max_pages=max_pages,
+    )
+
+
+_v74b_original_run_twitter_browser_timeline_pagination = run_twitter_browser_timeline_pagination
+
+
+def run_twitter_browser_timeline_pagination(
+    *,
+    source_url: str,
+    output_dir: str | Path,
+    capture_dir: str | Path = "",
+    live: bool = False,
+    headless: bool = False,
+    timeout_ms: int = 90000,
+    scroll_steps: int = 8,
+    browser_user_data_dir: str | Path = "",
+    reuse_existing_profile: bool = False,
+    profile_tab: str = "replies",
+    max_pages: int = 0,
+    har_path: str | Path = "",
+) -> TwitterTimelinePaginationResult:
+    if har_path:
+        return export_twitter_timeline_from_har(
+            har_path=har_path,
+            output_dir=output_dir,
+            source_url=source_url,
+            profile_tab=profile_tab,
+            max_pages=max_pages,
+        )
+    return _v74b_original_run_twitter_browser_timeline_pagination(
+        source_url=source_url,
+        output_dir=output_dir,
+        capture_dir=capture_dir,
+        live=live,
+        headless=headless,
+        timeout_ms=timeout_ms,
+        scroll_steps=scroll_steps,
+        browser_user_data_dir=browser_user_data_dir,
+        reuse_existing_profile=reuse_existing_profile,
+        profile_tab=profile_tab,
+        max_pages=max_pages,
+    )

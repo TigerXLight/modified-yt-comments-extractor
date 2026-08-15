@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-url", required=True, help="Profile, list, or timeline URL. For replies use --profile-tab replies.")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--capture-dir", default="", help="Existing browser capture directory to parse instead of launching a live browser.")
+    parser.add_argument("--har-path", default="", help="Import Firefox/Chrome DevTools HAR containing X web GraphQL timeline responses.")
     parser.add_argument("--live", action="store_true", help="Launch Playwright/Chromium and scroll the logged-in browser session.")
     parser.add_argument("--headless", action="store_true", help="Use headless browser. For first login, omit this.")
     parser.add_argument("--timeout-ms", type=int, default=90000)
@@ -36,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         source_url=args.source_url,
         output_dir=args.output_dir,
         capture_dir=args.capture_dir,
+        har_path=args.har_path,
         live=args.live,
         headless=args.headless,
         timeout_ms=args.timeout_ms,

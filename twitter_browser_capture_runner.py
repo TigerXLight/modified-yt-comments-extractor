@@ -482,6 +482,30 @@ def _write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
             fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
 
 
+
+# --- V74B timeline response-body promotion support ---
+
+def _network_response_body_row(event: TwitterCapturedNetworkEvent) -> dict[str, Any]:
+    """Return an untruncated response-body row for post-run timeline promotion.
+
+    network_events.jsonl keeps compact/debug-friendly event records.  Account
+    timeline extraction needs the complete browser-session GraphQL body, so V74B
+    writes this sibling JSONL file while preserving the existing compact event
+    file shape.
+    """
+    return {
+        "schema_version": "twitter_network_response_body.v74b",
+        "url": event.url,
+        "method": event.method,
+        "status": event.status,
+        "resource_type": event.resource_type,
+        "content_type": event.content_type,
+        "query_name": event.query_name or extract_twitter_api_query_name(event.url),
+        "body_text": event.body_text,
+        "body_sha256": event.body_sha256,
+        "captured_at_unix": event.captured_at_unix,
+    }
+
 def _write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
@@ -640,6 +664,7 @@ def _run_twitter_browser_capture_impl(
         warnings.append("twitter_rendered_dom_fallback_used_api_404_zero_items")
 
     network_path = output / "network_events.jsonl"
+    response_bodies_path = output / "network_response_bodies.jsonl"
     api_pages_path = output / "api_pages.jsonl"
     boundaries_path = output / "cursor_boundaries.json"
     media_path = output / "media_inventory.json"
@@ -648,6 +673,7 @@ def _run_twitter_browser_capture_impl(
     screenshot_path = output / "screenshot.png"
 
     _write_jsonl(network_path, (event.to_dict() for event in payload.events))
+    _write_jsonl(response_bodies_path, (_network_response_body_row(event) for event in payload.events if event.body_text))
     _write_jsonl(api_pages_path, (page.to_dict() for page in pages))
     _write_json(boundaries_path, [boundary.to_dict() for boundary in boundaries])
     _write_json(media_path, [item.to_dict() for item in media_items])
