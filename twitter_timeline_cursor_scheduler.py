@@ -10,6 +10,12 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
+from twitter_rate_limit_policy import (
+    build_rate_limit_state,
+    decide_rate_limit_action,
+    observe_rate_limit,
+)
+
 from twitter_browser_timeline_pagination import (
     RXLIULI_BROWSER_SESSION_LIMITATION_NOTE,
     TIMELINE_ENTRY_SCHEMA_VERSION,
@@ -20,15 +26,17 @@ from twitter_browser_timeline_pagination import (
     timeline_rows_from_har,
 )
 
-TWITTER_CURSOR_SCHEDULER_SCHEMA_VERSION = "twitter_timeline_cursor_scheduler.v74d"
-CURSOR_PAGE_SCHEMA_VERSION = "twitter_timeline_cursor_page.v74d"
-CURSOR_STATE_SCHEMA_VERSION = "twitter_timeline_cursor_state.v74d"
-CURSOR_MANIFEST_SCHEMA_VERSION = "twitter_timeline_cursor_manifest.v74d"
+TWITTER_CURSOR_SCHEDULER_SCHEMA_VERSION = "twitter_timeline_cursor_scheduler.v74e"
+CURSOR_PAGE_SCHEMA_VERSION = "twitter_timeline_cursor_page.v74e"
+CURSOR_STATE_SCHEMA_VERSION = "twitter_timeline_cursor_state.v74e"
+CURSOR_MANIFEST_SCHEMA_VERSION = "twitter_timeline_cursor_manifest.v74e"
 CURSOR_OUTPUT_FILES = (
     "cursor_pages.jsonl",
     "cursor_entries.jsonl",
     "cursor_scheduler_state.json",
     "cursor_export_manifest.json",
+    "cursor_rate_limit_state.json",
+    "cursor_errors.jsonl",
 )
 
 SAFE_REPLAY_HEADER_NAMES = {
@@ -58,6 +66,16 @@ class TwitterCursorPage:
     top_cursor: str = ""
     bottom_cursor: str = ""
     rate_limited: bool = False
+    rate_limit_limit: int | None = None
+    rate_limit_remaining: int | None = None
+    rate_limit_reset_epoch: int | None = None
+    retry_after_seconds: int | None = None
+    rate_limit_decision: str = ""
+    rate_limit_reason: str = ""
+    cooldown_until_epoch: int | None = None
+    cooldown_until_utc: str = ""
+    body_error_codes: tuple[str, ...] = ()
+    body_error_messages: tuple[str, ...] = ()
     page_boundary_state: str = ""
     request_url: str = ""
     body_sha256: str = ""
@@ -87,6 +105,14 @@ class TwitterCursorSchedulerState:
     read_only: bool = True
     live_browser_session_required: bool = True
     api_access_required: bool = False
+    latest_rate_limit_decision: str = ""
+    latest_rate_limit_reason: str = ""
+    rate_limit_remaining: int | None = None
+    rate_limit_reset_epoch: int | None = None
+    cooldown_until_epoch: int | None = None
+    cooldown_until_utc: str = ""
+    rate_limit_safety_floor: int = 1
+    soft_page_budget: int = 0
     limitation_notes: tuple[str, ...] = (RXLIULI_BROWSER_SESSION_LIMITATION_NOTE,)
 
     def to_dict(self) -> dict[str, Any]:
@@ -103,6 +129,8 @@ class TwitterCursorSchedulerManifest:
     entries_path: str
     state_path: str
     request_templates_path: str = ""
+    rate_limit_state_path: str = ""
+    errors_path: str = ""
     seed_capture_dir: str = ""
     har_path: str = ""
     rxliuli_method: str = "cursor_driven_browser_session_graphql_scheduler"
@@ -267,6 +295,36 @@ def _record_body(record: Mapping[str, Any]) -> dict[str, Any] | list[Any] | None
     return _load_json_text(record.get("body_text") or record.get("text") or "")
 
 
+def _rate_limit_observation_for_record(record: Mapping[str, Any], body: Any = None) -> Any:
+    if body is None:
+        body = _record_body(record)
+    headers = record.get("headers") if isinstance(record.get("headers"), Mapping) else {}
+    return observe_rate_limit(
+        response_status=int(record.get("response_status") or record.get("status") or 0),
+        headers=headers,
+        body=body,
+    )
+
+
+def _rate_limit_decision_from_record(record: Mapping[str, Any]) -> Mapping[str, Any]:
+    decision = record.get("rate_limit_decision")
+    return decision if isinstance(decision, Mapping) else {}
+
+
+def _record_retryable_error(record: Mapping[str, Any]) -> dict[str, Any]:
+    observation = _rate_limit_observation_for_record(record)
+    decision = _rate_limit_decision_from_record(record)
+    return {
+        "schema_version": "twitter_cursor_error.v74e",
+        "query_name": _record_query_name(record),
+        "request_url": _record_url(record),
+        "response_status": int(record.get("response_status") or record.get("status") or 0),
+        "rate_limit_observation": observation.to_dict(),
+        "rate_limit_decision": dict(decision),
+        "body_sha256": str(record.get("body_sha256") or ""),
+    }
+
+
 def _record_query_name(record: Mapping[str, Any]) -> str:
     return str(record.get("query_name") or _query_name_from_url(str(record.get("url") or record.get("request_url") or "")) or "")
 
@@ -423,7 +481,9 @@ def _page_from_record(
     query_name = _record_query_name(record)
     body = _record_body(record)
     response_status = int(record.get("response_status") or record.get("status") or 0)
-    rate_limited = response_status in {403, 429} or bool(record.get("rate_limited"))
+    observation = _rate_limit_observation_for_record(record, body)
+    decision_map = _rate_limit_decision_from_record(record)
+    rate_limited = response_status == 429 or bool(record.get("rate_limited")) or bool(decision_map.get("rate_limited"))
     cursors = extract_timeline_cursors(body)
     entries = extract_timeline_entries_from_body(
         body,
@@ -460,6 +520,16 @@ def _page_from_record(
         top_cursor=str(cursors.get("top_cursor") or ""),
         bottom_cursor=str(cursors.get("bottom_cursor") or ""),
         rate_limited=rate_limited,
+        rate_limit_limit=observation.rate_limit_limit,
+        rate_limit_remaining=observation.rate_limit_remaining,
+        rate_limit_reset_epoch=observation.rate_limit_reset_epoch,
+        retry_after_seconds=observation.retry_after_seconds,
+        rate_limit_decision=str(decision_map.get("decision") or ""),
+        rate_limit_reason=str(decision_map.get("reason") or ""),
+        cooldown_until_epoch=decision_map.get("cooldown_until_epoch") if isinstance(decision_map.get("cooldown_until_epoch"), int) else None,
+        cooldown_until_utc=str(decision_map.get("cooldown_until_utc") or ""),
+        body_error_codes=observation.body_error_codes,
+        body_error_messages=observation.body_error_messages,
         page_boundary_state=state,
         request_url=url,
         body_sha256=body_sha,
@@ -566,16 +636,31 @@ def _write_scheduler_output(
     errors: Sequence[str],
     seed_capture_dir: str = "",
     har_path: str = "",
+    rate_limit_state: Mapping[str, Any] | None = None,
+    error_rows: Sequence[Mapping[str, Any]] = (),
 ) -> TwitterCursorSchedulerResult:
     pages_path = output / "cursor_pages.jsonl"
     entries_path = output / "cursor_entries.jsonl"
     state_path = output / "cursor_scheduler_state.json"
     manifest_path = output / "cursor_export_manifest.json"
     request_templates_path = output / "cursor_request_templates.json"
+    rate_limit_state_path = output / "cursor_rate_limit_state.json"
+    errors_path = output / "cursor_errors.jsonl"
 
     _write_jsonl(pages_path, (page.to_dict() for page in pages))
     _write_jsonl(entries_path, (entry.to_dict() if hasattr(entry, "to_dict") else entry for entry in entries))
     _write_json(request_templates_path, {"next_cursor_url": next_cursor_url})
+    latest_page = pages[-1] if pages else None
+    computed_rate_limit_state = rate_limit_state or build_rate_limit_state(
+        observation=None,
+        decision=None,
+        safety_floor=1,
+        soft_page_budget=0,
+        pages_since_cooldown=len(pages),
+        transient_error_count=0,
+    ).to_dict()
+    _write_json(rate_limit_state_path, computed_rate_limit_state)
+    _write_jsonl(errors_path, error_rows)
     state = TwitterCursorSchedulerState(
         schema_version=CURSOR_STATE_SCHEMA_VERSION,
         source_url=source_url,
@@ -589,6 +674,14 @@ def _write_scheduler_output(
         next_cursor_url=next_cursor_url,
         stop_reason=stop_reason,
         rate_limited=any(page.rate_limited for page in pages),
+        latest_rate_limit_decision=str((computed_rate_limit_state or {}).get("latest_decision") or (latest_page.rate_limit_decision if latest_page else "")),
+        latest_rate_limit_reason=str((computed_rate_limit_state or {}).get("latest_reason") or (latest_page.rate_limit_reason if latest_page else "")),
+        rate_limit_remaining=(latest_page.rate_limit_remaining if latest_page else None),
+        rate_limit_reset_epoch=(latest_page.rate_limit_reset_epoch if latest_page else None),
+        cooldown_until_epoch=(computed_rate_limit_state or {}).get("cooldown_until_epoch"),
+        cooldown_until_utc=str((computed_rate_limit_state or {}).get("cooldown_until_utc") or ""),
+        rate_limit_safety_floor=int((computed_rate_limit_state or {}).get("safety_floor") or 1),
+        soft_page_budget=int((computed_rate_limit_state or {}).get("soft_page_budget") or 0),
     )
     _write_json(state_path, state)
     manifest = TwitterCursorSchedulerManifest(
@@ -600,9 +693,11 @@ def _write_scheduler_output(
         entries_path=str(entries_path),
         state_path=str(state_path),
         request_templates_path=str(request_templates_path),
+        rate_limit_state_path=str(rate_limit_state_path),
+        errors_path=str(errors_path),
         seed_capture_dir=seed_capture_dir,
         har_path=har_path,
-        files_written=tuple(str(path) for path in (pages_path, entries_path, state_path, manifest_path, request_templates_path)),
+        files_written=tuple(str(path) for path in (pages_path, entries_path, state_path, manifest_path, request_templates_path, rate_limit_state_path, errors_path)),
         warnings=tuple(warnings),
     )
     _write_json(manifest_path, manifest)
@@ -773,6 +868,11 @@ def run_twitter_cursor_scheduler_live(
     max_runtime_minutes: float = 0.0,
     stop_on_rate_limit: bool = True,
     max_no_new_pages: int = 2,
+    rate_limit_safety_floor: int = 1,
+    soft_page_budget: int = 0,
+    max_transient_retries: int = 2,
+    transient_base_delay_ms: int = 15000,
+    sleep_on_rate_limit: bool = False,
 ) -> TwitterCursorSchedulerResult:
     if not browser_user_data_dir:
         raise ValueError("browser_user_data_dir is required for live cursor scheduling; log in manually first and close Chromium before running")
@@ -791,6 +891,11 @@ def run_twitter_cursor_scheduler_live(
     warnings: list[str] = []
     errors: list[str] = []
     request_templates: list[dict[str, Any]] = []
+    error_rows: list[dict[str, Any]] = []
+    latest_rate_limit_observation: Any = None
+    latest_rate_limit_decision: Any = None
+    transient_error_count = 0
+    pages_since_cooldown = 0
     stop_reason = "not_started"
     next_cursor_url = ""
     started = time.monotonic()
@@ -822,20 +927,60 @@ def run_twitter_cursor_scheduler_live(
                     if max_pages and len(pages) >= int(max_pages):
                         stop_reason = "max_pages_reached"
                         break
+                    normal_delay = max(0, int(page_delay_ms)) + (random.randint(0, max(0, int(page_jitter_ms))) if int(page_jitter_ms) > 0 else 0)
+                    latest_rate_limit_observation = _rate_limit_observation_for_record(current_record)
+                    latest_rate_limit_decision = decide_rate_limit_action(
+                        observation=latest_rate_limit_observation,
+                        normal_delay_ms=normal_delay,
+                        pages_since_cooldown=pages_since_cooldown + 1,
+                        safety_floor=rate_limit_safety_floor,
+                        soft_page_budget=soft_page_budget,
+                        transient_error_count=transient_error_count,
+                        max_transient_retries=max_transient_retries,
+                        transient_base_delay_ms=transient_base_delay_ms,
+                    )
+                    current_record = dict(current_record)
+                    current_record["rate_limit_observation"] = latest_rate_limit_observation.to_dict()
+                    current_record["rate_limit_decision"] = latest_rate_limit_decision.to_dict()
+
                     page_obj, page_entries, cursor_out = _page_from_record(
                         current_record,
                         source_url=canonical_url,
                         page_number=len(pages) + 1,
                         seen_ids=seen_ids,
-                        delay_ms_after_page=0,
+                        delay_ms_after_page=latest_rate_limit_decision.delay_ms,
                         replay_mode=str(current_record.get("promotion_source") or "live_cursor_scheduler"),
                     )
                     pages.append(page_obj)
                     entries.extend(page_entries)
+                    pages_since_cooldown += 1
+
+                    if latest_rate_limit_decision.transient_error:
+                        transient_error_count += 1
+                        error_rows.append(_record_retryable_error(current_record))
+                    else:
+                        transient_error_count = 0
+
+                    if latest_rate_limit_decision.should_stop and latest_rate_limit_decision.decision != "continue_after_delay":
+                        warnings.append(f"rate_limit_decision:{latest_rate_limit_decision.decision}")
+                        if latest_rate_limit_decision.rate_limited:
+                            stop_reason = "rate_limited_pause_boundary"
+                        elif latest_rate_limit_decision.auth_or_access_boundary:
+                            stop_reason = "auth_or_access_boundary"
+                        elif latest_rate_limit_decision.soft_page_budget_reached:
+                            stop_reason = "soft_page_budget_pause_boundary"
+                        elif latest_rate_limit_decision.transient_error:
+                            stop_reason = "transient_retry_pause_boundary"
+                        else:
+                            stop_reason = latest_rate_limit_decision.decision
+                        if sleep_on_rate_limit and latest_rate_limit_decision.delay_ms > 0:
+                            page.wait_for_timeout(max(0, min(int(latest_rate_limit_decision.delay_ms), 900000)))
+                        break
+
                     if page_obj.rate_limited:
                         warnings.append(f"rate_limited_status:{page_obj.response_status}")
                         stop_reason = "rate_limited_pause_boundary"
-                        if stop_on_rate_limit and cooldown_ms > 0:
+                        if sleep_on_rate_limit and cooldown_ms > 0:
                             page.wait_for_timeout(max(0, min(int(cooldown_ms), 900000)))
                         break
                     if not cursor_out:
@@ -852,6 +997,8 @@ def run_twitter_cursor_scheduler_live(
                             "cursor_out": cursor_out,
                             "next_cursor_url": next_cursor_url,
                             "request_headers_used": _headers_for_replay(request_headers),
+                            "rate_limit_observation": latest_rate_limit_observation.to_dict(),
+                            "rate_limit_decision": latest_rate_limit_decision.to_dict(),
                         }
                     )
                     if max_records and len(seen_ids) >= int(max_records):
@@ -860,9 +1007,8 @@ def run_twitter_cursor_scheduler_live(
                     if max_pages and len(pages) >= int(max_pages):
                         stop_reason = "max_pages_reached"
                         break
-                    delay = max(0, int(page_delay_ms)) + (random.randint(0, max(0, int(page_jitter_ms))) if int(page_jitter_ms) > 0 else 0)
-                    if delay:
-                        page.wait_for_timeout(delay)
+                    if latest_rate_limit_decision.delay_ms:
+                        page.wait_for_timeout(max(0, int(latest_rate_limit_decision.delay_ms)))
                     if next_cursor_url:
                         current_record = _fetch_cursor_page(page, url=next_cursor_url, request_headers=request_headers)
                     else:
@@ -895,6 +1041,15 @@ def run_twitter_cursor_scheduler_live(
         next_cursor_url=next_cursor_url,
         warnings=warnings,
         errors=errors,
+        rate_limit_state=build_rate_limit_state(
+            observation=latest_rate_limit_observation,
+            decision=latest_rate_limit_decision,
+            safety_floor=rate_limit_safety_floor,
+            soft_page_budget=soft_page_budget,
+            pages_since_cooldown=pages_since_cooldown,
+            transient_error_count=transient_error_count,
+        ).to_dict(),
+        error_rows=error_rows,
     )
     # Preserve the richer request template file written before _write_scheduler_output overwrites the basic template.
     _write_json(templates_path, {"request_templates": request_templates, "next_cursor_url": next_cursor_url})
@@ -925,6 +1080,11 @@ def run_twitter_cursor_scheduler(
     max_runtime_minutes: float = 0.0,
     stop_on_rate_limit: bool = True,
     max_no_new_pages: int = 2,
+    rate_limit_safety_floor: int = 1,
+    soft_page_budget: int = 0,
+    max_transient_retries: int = 2,
+    transient_base_delay_ms: int = 15000,
+    sleep_on_rate_limit: bool = False,
 ) -> TwitterCursorSchedulerResult:
     if har_path:
         return run_twitter_cursor_scheduler_from_har(
@@ -965,6 +1125,11 @@ def run_twitter_cursor_scheduler(
             max_runtime_minutes=max_runtime_minutes,
             stop_on_rate_limit=stop_on_rate_limit,
             max_no_new_pages=max_no_new_pages,
+            rate_limit_safety_floor=rate_limit_safety_floor,
+            soft_page_budget=soft_page_budget,
+            max_transient_retries=max_transient_retries,
+            transient_base_delay_ms=transient_base_delay_ms,
+            sleep_on_rate_limit=sleep_on_rate_limit,
         )
     return run_twitter_cursor_scheduler_from_records(
         records=[],

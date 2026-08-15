@@ -41,6 +41,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-runtime-minutes", type=float, default=0.0)
     parser.add_argument("--disable-stop-on-rate-limit", action="store_true")
     parser.add_argument("--max-no-new-pages", type=int, default=2)
+    parser.add_argument("--rate-limit-safety-floor", type=int, default=1)
+    parser.add_argument("--soft-page-budget", type=int, default=0)
+    parser.add_argument("--max-transient-retries", type=int, default=2)
+    parser.add_argument("--transient-base-delay-ms", type=int, default=15000)
+    parser.add_argument("--sleep-on-rate-limit", action="store_true", help="Sleep up to the capped cooldown in the browser instead of writing a pause/resume state and exiting.")
     args = parser.parse_args(argv)
 
     result = run_twitter_cursor_scheduler(
@@ -66,6 +71,11 @@ def main(argv: list[str] | None = None) -> int:
         max_runtime_minutes=args.max_runtime_minutes,
         stop_on_rate_limit=not args.disable_stop_on_rate_limit,
         max_no_new_pages=args.max_no_new_pages,
+        rate_limit_safety_floor=args.rate_limit_safety_floor,
+        soft_page_budget=args.soft_page_budget,
+        max_transient_retries=args.max_transient_retries,
+        transient_base_delay_ms=args.transient_base_delay_ms,
+        sleep_on_rate_limit=args.sleep_on_rate_limit,
     )
     print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
     return 0 if result.status in {"success", "needs_review", "planned"} else 1

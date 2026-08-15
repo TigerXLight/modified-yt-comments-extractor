@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from twitter_rate_limit_policy import decide_rate_limit_action, observe_rate_limit
 from twitter_timeline_cursor_scheduler import (
     _url_with_cursor,
     run_twitter_cursor_scheduler_from_records,
@@ -122,7 +123,26 @@ def main() -> int:
         assert "UserRepliesTimeline" in pages, pages
         entries = (Path(tmp) / "cursor_entries.jsonl").read_text(encoding="utf-8")
         assert "https://x.com/examaddaorg/status/100" in entries, entries
-    print("assert_twitter_cursor_scheduler_v74d2 OK")
+        rate_state = json.loads((Path(tmp) / "cursor_rate_limit_state.json").read_text(encoding="utf-8"))
+        assert rate_state["schema_version"] == "twitter_rate_limit_state.v74e", rate_state
+        assert (Path(tmp) / "cursor_errors.jsonl").exists(), tmp
+
+    obs = observe_rate_limit(
+        response_status=429,
+        headers={"x-rate-limit-limit": "50", "x-rate-limit-remaining": "0", "x-rate-limit-reset": "2000000000"},
+        body={"errors": [{"code": 88, "message": "Rate limit exceeded"}]},
+    )
+    decision = decide_rate_limit_action(observation=obs, normal_delay_ms=1000, safety_floor=1)
+    assert obs.rate_limit_remaining == 0, obs
+    assert "88" in obs.body_error_codes, obs
+    assert decision.decision == "pause_until_reset", decision
+    assert decision.rate_limited is True, decision
+
+    obs2 = observe_rate_limit(response_status=200, headers={"x-rate-limit-remaining": "1", "x-rate-limit-reset": "2000000000"})
+    decision2 = decide_rate_limit_action(observation=obs2, normal_delay_ms=1000, safety_floor=1)
+    assert decision2.decision == "pause_until_reset", decision2
+    assert decision2.reason == "rate_limit_remaining_safety_floor", decision2
+    print("assert_twitter_cursor_scheduler_v74e OK")
     return 0
 
 
