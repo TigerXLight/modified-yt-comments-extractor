@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import html
 import json
+import random
 import re
 import time
 from dataclasses import replace, asdict, dataclass, is_dataclass
@@ -44,6 +45,19 @@ TWITTER_API_QUERY_NAMES = (
     "ArticleByRestId",
     "SearchTimeline",
 )
+
+ACCOUNT_TIMELINE_QUERY_NAMES = (
+    "UserTweets",
+    "UserTweetsAndReplies",
+    "UserRepliesTimeline",
+    "UserTweetsTimeline",
+    "UserMedia",
+    "ListLatestTweetsTimeline",
+    "ListTimeline",
+    "ListTweets",
+    "SearchTimeline",
+)
+
 
 
 @dataclass(frozen=True)
@@ -511,7 +525,21 @@ def _write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _playwright_browser_capture_executor(plan: TwitterBrowserCapturePlan, *, headless: bool = False, timeout_ms: int = 60000, scroll_steps: int = 3) -> BrowserCapturePayload:
+def _playwright_browser_capture_executor(
+    plan: TwitterBrowserCapturePlan,
+    *,
+    headless: bool = False,
+    timeout_ms: int = 60000,
+    scroll_steps: int = 3,
+    smart_rate_limit: bool = True,
+    scroll_delay_ms: int = 3500,
+    scroll_jitter_ms: int = 1200,
+    scroll_pixels: int = 1700,
+    max_timeline_pages: int = 4,
+    no_progress_scrolls: int = 3,
+    stop_on_rate_limit: bool = True,
+    rate_limit_cooldown_ms: int = 0,
+) -> BrowserCapturePayload:
     from playwright.sync_api import sync_playwright
 
     events: list[TwitterCapturedNetworkEvent] = []
@@ -520,8 +548,11 @@ def _playwright_browser_capture_executor(plan: TwitterBrowserCapturePlan, *, hea
     final_url = ""
     final_dom = ""
     screenshot_b64 = ""
+    timeline_response_count = 0
+    rate_limited_seen = False
 
     def capture_response(response: Any) -> None:
+        nonlocal timeline_response_count, rate_limited_seen
         try:
             url = str(response.url)
             if not is_twitter_network_url(url):
@@ -529,6 +560,9 @@ def _playwright_browser_capture_executor(plan: TwitterBrowserCapturePlan, *, hea
             headers = {str(k).lower(): str(v) for k, v in response.headers.items()}
             content_type = headers.get("content-type", "")
             query_name = extract_twitter_api_query_name(url)
+            status_code = int(response.status or 0)
+            if status_code == 429:
+                rate_limited_seen = True
             body_text = ""
             if query_name or "json" in content_type:
                 try:
@@ -537,11 +571,13 @@ def _playwright_browser_capture_executor(plan: TwitterBrowserCapturePlan, *, hea
                     warnings.append(f"response_body_unavailable:{url}:{exc}")
                 if len(body_text) > MAX_CAPTURED_BODY_CHARS:
                     body_text = body_text[:MAX_CAPTURED_BODY_CHARS]
+            if query_name in ACCOUNT_TIMELINE_QUERY_NAMES and body_text and 0 < status_code < 400:
+                timeline_response_count += 1
             events.append(
                 TwitterCapturedNetworkEvent(
                     url=url,
                     method=str(getattr(response.request, "method", "GET")),
-                    status=int(response.status or 0),
+                    status=status_code,
                     resource_type=str(getattr(response.request, "resource_type", "")),
                     content_type=content_type,
                     query_name=query_name,
@@ -567,9 +603,37 @@ def _playwright_browser_capture_executor(plan: TwitterBrowserCapturePlan, *, hea
             page = context.new_page()
             page.on("response", capture_response)
             page.goto(plan.canonical_url, wait_until="domcontentloaded", timeout=timeout_ms)
-            for _ in range(max(0, int(scroll_steps))):
-                page.mouse.wheel(0, 2200)
-                page.wait_for_timeout(1200)
+            page.wait_for_timeout(max(0, min(int(scroll_delay_ms), 10000)))
+            stalled_scrolls = 0
+            previous_timeline_count = timeline_response_count
+            for step_index in range(max(0, int(scroll_steps))):
+                if stop_on_rate_limit and rate_limited_seen:
+                    warnings.append("smart_rate_limit_stop_before_scroll_429")
+                    break
+                page.mouse.wheel(0, max(400, int(scroll_pixels)))
+                delay_ms = max(250, int(scroll_delay_ms))
+                if smart_rate_limit and int(scroll_jitter_ms) > 0:
+                    delay_ms += random.randint(0, max(0, int(scroll_jitter_ms)))
+                page.wait_for_timeout(delay_ms)
+                if rate_limited_seen:
+                    warnings.append("smart_rate_limit_observed_429_stopping")
+                    if stop_on_rate_limit:
+                        cooldown_ms = max(0, min(int(rate_limit_cooldown_ms), 300000))
+                        if cooldown_ms:
+                            page.wait_for_timeout(cooldown_ms)
+                        break
+                if int(max_timeline_pages) > 0 and timeline_response_count >= int(max_timeline_pages):
+                    warnings.append(f"smart_rate_limit_max_timeline_pages_reached:{timeline_response_count}")
+                    break
+                if smart_rate_limit:
+                    if timeline_response_count <= previous_timeline_count:
+                        stalled_scrolls += 1
+                    else:
+                        stalled_scrolls = 0
+                    previous_timeline_count = timeline_response_count
+                    if int(no_progress_scrolls) > 0 and stalled_scrolls >= int(no_progress_scrolls):
+                        warnings.append(f"smart_rate_limit_no_progress_scroll_boundary:{stalled_scrolls}")
+                        break
             final_url = str(page.url)
             try:
                 final_dom = page.content()
@@ -607,6 +671,14 @@ def _run_twitter_browser_capture_impl(
     headless: bool = False,
     timeout_ms: int = 60000,
     scroll_steps: int = 3,
+    smart_rate_limit: bool = True,
+    scroll_delay_ms: int = 3500,
+    scroll_jitter_ms: int = 1200,
+    scroll_pixels: int = 1700,
+    max_timeline_pages: int = 4,
+    no_progress_scrolls: int = 3,
+    stop_on_rate_limit: bool = True,
+    rate_limit_cooldown_ms: int = 0,
     browser_user_data_dir: str | Path = "",
     reuse_existing_profile: bool = False,
     download_media: bool = False,
@@ -632,7 +704,20 @@ def _run_twitter_browser_capture_impl(
         payload = browser_executor(plan)
     elif live:
         try:
-            payload = _playwright_browser_capture_executor(plan, headless=headless, timeout_ms=timeout_ms, scroll_steps=scroll_steps)
+            payload = _playwright_browser_capture_executor(
+                plan,
+                headless=headless,
+                timeout_ms=timeout_ms,
+                scroll_steps=scroll_steps,
+                smart_rate_limit=smart_rate_limit,
+                scroll_delay_ms=scroll_delay_ms,
+                scroll_jitter_ms=scroll_jitter_ms,
+                scroll_pixels=scroll_pixels,
+                max_timeline_pages=max_timeline_pages,
+                no_progress_scrolls=no_progress_scrolls,
+                stop_on_rate_limit=stop_on_rate_limit,
+                rate_limit_cooldown_ms=rate_limit_cooldown_ms,
+            )
         except ModuleNotFoundError as exc:
             payload = BrowserCapturePayload(events=(), errors=(f"playwright_unavailable:{exc}",))
     else:
