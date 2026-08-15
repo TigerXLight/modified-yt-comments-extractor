@@ -174,9 +174,16 @@ def build_twitter_media_backend_plan(
     resolved_package_name = package_name or f"YTCE - X Twitter - {title_part}"
     capability = twitter_jdownloader_capability_status(capability_manifest_path)
     if direct_media_url:
-        execution_allowed = True
-        blocked_reason = ""
         route_note = "YTCE-owned Twitter/X direct rendered-DOM media URL routed to the shared JDownloader API3128 backend."
+        execution_allowed = bool(allow_untested_jdownloader) or (
+            capability.capability_found and capability.capability_tested
+        )
+        blocked_reason = ""
+        if not execution_allowed:
+            if not capability.capability_found:
+                blocked_reason = "JDownloader capability manifest does not contain x.com/twitter.com for direct Twitter media URL."
+            elif not capability.capability_tested:
+                blocked_reason = "JDownloader x.com/twitter.com capability exists but is not marked tested for direct Twitter media URL."
     else:
         execution_allowed = capability.capability_found and (capability.capability_tested or allow_untested_jdownloader)
         blocked_reason = ""

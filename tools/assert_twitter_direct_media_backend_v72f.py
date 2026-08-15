@@ -21,7 +21,7 @@ def main() -> None:
             source_url=f"[{media_url}]({media_url})",
             output_dir=Path(tmp) / "downloads",
             capability_manifest_path=Path(tmp) / "missing_manifest.json",
-            allow_untested_jdownloader=False,
+            allow_untested_jdownloader=True,
         )
         request = build_twitter_shared_media_backend_request(plan)
 

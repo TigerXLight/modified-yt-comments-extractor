@@ -133,7 +133,7 @@ def test_twitter_media_plan_accepts_rendered_dom_direct_pbs_media_url() -> None:
             source_url=f"[{media_url}]({media_url})",
             output_dir=Path(tmp) / "downloads",
             capability_manifest_path=manifest_path,
-            allow_untested_jdownloader=False,
+            allow_untested_jdownloader=True,
         )
         request = build_twitter_shared_media_backend_request(plan)
 
@@ -148,12 +148,35 @@ def test_twitter_media_plan_accepts_rendered_dom_direct_pbs_media_url() -> None:
     assert request.source_url == media_url
 
 
+def test_twitter_media_plan_blocks_rendered_dom_direct_pbs_media_url_when_strict() -> None:
+    with tempfile.TemporaryDirectory(prefix="ytce_v72g_twitter_direct_media_strict_") as tmp:
+        manifest_path = Path(tmp) / "jd_capabilities_manifest.json"
+        _write_manifest(manifest_path, tested=False)
+        media_url = "https://pbs.twimg.com/media/HPIb1teawAEGqVL.png:large"
+        plan = build_twitter_media_backend_plan(
+            source_url=media_url,
+            output_dir=Path(tmp) / "downloads",
+            capability_manifest_path=manifest_path,
+            allow_untested_jdownloader=False,
+        )
+
+    assert plan.execution_allowed is False
+    assert "not marked tested" in plan.blocked_reason
+    try:
+        build_twitter_shared_media_backend_request(plan)
+    except ValueError as exc:
+        assert "not marked tested" in str(exc)
+    else:
+        raise AssertionError("strict direct media plan unexpectedly built an executable request")
+
+
 def main() -> None:
     test_twitter_capability_status_reads_jd_manifest()
     test_twitter_media_plan_routes_to_shared_backend_when_allowed()
     test_twitter_media_plan_can_gate_untested_jd_support()
     test_run_twitter_media_download_uses_shared_backend_runner_and_claims_completion()
     test_twitter_media_plan_accepts_rendered_dom_direct_pbs_media_url()
+    test_twitter_media_plan_blocks_rendered_dom_direct_pbs_media_url_when_strict()
     print("twitter_media_backend_test OK")
 
 
