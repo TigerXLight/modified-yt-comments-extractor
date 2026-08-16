@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75c"
+PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75d"
 
 PROFILE_MEDIA_DATABASE_SCOPE = (
-    "local profile/media database planning schema plus source/container import planning plus case repository path planning; "
+    "local profile/media database planning schema plus source/container import planning plus case repository path planning plus review/audit queue planning; "
     "no folder scanning, no folder creation, no file copying, no file movement, "
     "no automatic classification, no sensitive-attribute inference, no source fetching, "
     "no archive access, no media download, no browser automation, no credentials, "
@@ -76,6 +76,30 @@ class MovePlanStatus(_StringEnum):
     DRY_RUN_ONLY = "DRY_RUN_ONLY"
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
     NO_CHANGE = "NO_CHANGE"
+
+
+class ReviewItemType(_StringEnum):
+    FOLDER_MOVE = "FOLDER_MOVE"
+    CASE_REPOSITORY_PATH_CHANGE = "CASE_REPOSITORY_PATH_CHANGE"
+    IDENTIFIER_UPDATE = "IDENTIFIER_UPDATE"
+    SOURCE_CLAIM_EVALUATION = "SOURCE_CLAIM_EVALUATION"
+
+
+class ReviewItemStatus(_StringEnum):
+    PENDING_REVIEW = "PENDING_REVIEW"
+    APPROVED_FOR_ACTION = "APPROVED_FOR_ACTION"
+    REJECTED = "REJECTED"
+    DEFERRED = "DEFERRED"
+    NO_CHANGE = "NO_CHANGE"
+    SUPERSEDED = "SUPERSEDED"
+
+
+class AuditEventType(_StringEnum):
+    REVIEW_ITEM_CREATED = "REVIEW_ITEM_CREATED"
+    REVIEW_DECISION_RECORDED = "REVIEW_DECISION_RECORDED"
+    MOVE_PLAN_CREATED = "MOVE_PLAN_CREATED"
+    CLASSIFICATION_PATH_CHANGED = "CLASSIFICATION_PATH_CHANGED"
+    IDENTIFIER_PROFILE_UPDATED = "IDENTIFIER_PROFILE_UPDATED"
 
 
 def utc_now_iso() -> str:
@@ -411,6 +435,77 @@ class FolderMovePlan:
         return _value_for_dict(self)
 
 
+
+@dataclass(frozen=True)
+class ProfileMediaReviewItem:
+    review_id: str
+    item_type: ReviewItemType
+    title: str
+    case_id: str = ""
+    case_title: str = ""
+    current_path: str = ""
+    proposed_path: str = ""
+    reason: str = ""
+    source_basis: str = ""
+    source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE
+    claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN
+    source_chain_gap: bool = False
+    disputed_framing: bool = False
+    sensitive_review_required: bool = False
+    required_actions: tuple[str, ...] = ()
+    status: ReviewItemStatus = ReviewItemStatus.PENDING_REVIEW
+    reviewer_note: str = ""
+    reviewed_by: str = ""
+    user_confirmation_recorded: bool = False
+    folder_creation_performed: bool = False
+    file_move_performed: bool = False
+    created_at_utc: str = field(default_factory=utc_now_iso)
+    reviewed_at_utc: str = ""
+    audit_note: str = "review queue item only; no folder was created, moved, copied, or renamed"
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class ProfileMediaReviewQueue:
+    queue_id: str
+    items: tuple[ProfileMediaReviewItem, ...] = ()
+    created_at_utc: str = field(default_factory=utc_now_iso)
+    updated_at_utc: str = field(default_factory=utc_now_iso)
+    schema_version: str = PROFILE_MEDIA_DATABASE_SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        data = _value_for_dict(self)
+        data["item_count"] = len(self.items)
+        data["pending_count"] = sum(1 for item in self.items if item.status == ReviewItemStatus.PENDING_REVIEW)
+        data["approved_count"] = sum(1 for item in self.items if item.status == ReviewItemStatus.APPROVED_FOR_ACTION)
+        data["rejected_count"] = sum(1 for item in self.items if item.status == ReviewItemStatus.REJECTED)
+        return data
+
+
+@dataclass(frozen=True)
+class ProfileMediaAuditEvent:
+    event_id: str
+    event_type: AuditEventType
+    subject_id: str
+    case_id: str = ""
+    previous_value: str = ""
+    new_value: str = ""
+    reason: str = ""
+    source_basis: str = ""
+    review_id: str = ""
+    performed: bool = False
+    folder_creation_performed: bool = False
+    file_move_performed: bool = False
+    created_at_utc: str = field(default_factory=utc_now_iso)
+    audit_note: str = "audit/planning record only unless performed is explicitly true"
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
 @dataclass(frozen=True)
 class ProfileMediaDatabaseManifest:
     manifest_id: str
@@ -419,6 +514,8 @@ class ProfileMediaDatabaseManifest:
     cases: tuple[CaseRecord, ...] = ()
     global_profiles: tuple[ProfileRecord, ...] = ()
     move_plans: tuple[FolderMovePlan, ...] = ()
+    review_queue: ProfileMediaReviewQueue | None = None
+    audit_events: tuple[ProfileMediaAuditEvent, ...] = ()
     schema_version: str = PROFILE_MEDIA_DATABASE_SCHEMA_VERSION
     scope: str = PROFILE_MEDIA_DATABASE_SCOPE
     created_at_utc: str = field(default_factory=utc_now_iso)
@@ -433,6 +530,8 @@ class ProfileMediaDatabaseManifest:
             "global_profiles_path": self.global_profiles_path,
             "manifest_id": self.manifest_id,
             "move_plans": [_value_for_dict(plan) for plan in self.move_plans],
+            "review_queue": _value_for_dict(self.review_queue) if self.review_queue is not None else None,
+            "audit_events": [_value_for_dict(event) for event in self.audit_events],
             "schema_version": self.schema_version,
             "scope": self.scope,
             "created_at_utc": self.created_at_utc,
@@ -444,6 +543,8 @@ class ProfileMediaDatabaseManifest:
         data["case_count"] = len(self.cases)
         data["global_profile_count"] = len(self.global_profiles)
         data["move_plan_count"] = len(self.move_plans)
+        data["review_queue_count"] = len(self.review_queue.items) if self.review_queue is not None else 0
+        data["audit_event_count"] = len(self.audit_events)
         data["payload_sha256"] = self.payload_sha256
         return data
 
@@ -757,6 +858,8 @@ def manifest_with_hash(manifest: ProfileMediaDatabaseManifest) -> ProfileMediaDa
         cases=manifest.cases,
         global_profiles=manifest.global_profiles,
         move_plans=manifest.move_plans,
+        review_queue=manifest.review_queue,
+        audit_events=manifest.audit_events,
         schema_version=manifest.schema_version,
         scope=manifest.scope,
         created_at_utc=manifest.created_at_utc,
@@ -771,6 +874,8 @@ def build_manifest(
     cases: Iterable[CaseRecord] = (),
     global_profiles: Iterable[ProfileRecord] = (),
     move_plans: Iterable[FolderMovePlan] = (),
+    review_queue: ProfileMediaReviewQueue | None = None,
+    audit_events: Iterable[ProfileMediaAuditEvent] = (),
     manifest_id: str = "",
 ) -> ProfileMediaDatabaseManifest:
     stable_id = manifest_id or stable_profile_id("pmdb", database_root)
@@ -781,6 +886,8 @@ def build_manifest(
         cases=tuple(cases),
         global_profiles=tuple(global_profiles),
         move_plans=tuple(move_plans),
+        review_queue=review_queue,
+        audit_events=tuple(audit_events),
     )
     return manifest_with_hash(manifest)
 
@@ -881,6 +988,169 @@ def plan_folder_move(
         source_basis=source_basis,
         status=status,
         audit_note="dry-run plan only; no folder was moved or renamed",
+    )
+
+
+
+def build_review_item_from_folder_move(
+    move_plan: FolderMovePlan,
+    *,
+    case_id: str = "",
+    case_title: str = "",
+    source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE,
+    claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS,
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN,
+    source_chain_gap: bool = False,
+    disputed_framing: bool = False,
+    sensitive_review_required: bool = False,
+    required_actions: Iterable[str] = (),
+) -> ProfileMediaReviewItem:
+    actions = tuple(required_actions) or ("review_current_path", "review_proposed_path", "confirm_before_any_folder_move")
+    return ProfileMediaReviewItem(
+        review_id=stable_profile_id("review", move_plan.plan_id, case_id, case_title, move_plan.current_path, move_plan.proposed_path),
+        item_type=ReviewItemType.FOLDER_MOVE,
+        title=f"Review folder move: {sanitize_path_part(case_title or Path(move_plan.proposed_path).name)}",
+        case_id=case_id,
+        case_title=case_title,
+        current_path=move_plan.current_path,
+        proposed_path=move_plan.proposed_path,
+        reason=move_plan.reason,
+        source_basis=move_plan.source_basis,
+        source_role=source_role,
+        claim_basis=claim_basis,
+        currentness_status=currentness_status,
+        source_chain_gap=source_chain_gap,
+        disputed_framing=disputed_framing,
+        sensitive_review_required=sensitive_review_required,
+        required_actions=actions,
+        status=ReviewItemStatus.PENDING_REVIEW if move_plan.status != MovePlanStatus.NO_CHANGE else ReviewItemStatus.NO_CHANGE,
+    )
+
+
+def build_review_items_from_case_repository_path_plan(plan: CaseRepositoryPathPlan) -> tuple[ProfileMediaReviewItem, ...]:
+    items: list[ProfileMediaReviewItem] = []
+    sensitive_required = any(repository_bucket_looks_sensitive(part) for part in plan.classification.path_parts())
+    if plan.move_plan is not None:
+        items.append(
+            build_review_item_from_folder_move(
+                plan.move_plan,
+                case_id=stable_profile_id("case", plan.proposed_case_root, plan.classification.case_title),
+                case_title=plan.classification.case_title,
+                source_role=plan.classification.source_role,
+                claim_basis=plan.classification.claim_basis,
+                currentness_status=plan.classification.currentness_status,
+                source_chain_gap=False,
+                disputed_framing=False,
+                sensitive_review_required=sensitive_required,
+                required_actions=(
+                    "review_classification_facets",
+                    "review_source_basis",
+                    "confirm_folder_rename_or_move_separately",
+                ),
+            )
+        )
+    for warning in plan.classification.warnings:
+        items.append(
+            ProfileMediaReviewItem(
+                review_id=stable_profile_id("review_warning", plan.plan_id, warning),
+                item_type=ReviewItemType.CASE_REPOSITORY_PATH_CHANGE,
+                title=f"Review classification warning: {warning}",
+                case_id=stable_profile_id("case", plan.proposed_case_root, plan.classification.case_title),
+                case_title=plan.classification.case_title,
+                proposed_path=plan.proposed_case_root,
+                reason=warning,
+                source_basis=plan.classification.source_basis,
+                source_role=plan.classification.source_role,
+                claim_basis=plan.classification.claim_basis,
+                currentness_status=plan.classification.currentness_status,
+                sensitive_review_required=True,
+                required_actions=("add_source_basis_or_reclassify", "do_not_move_until_reviewed"),
+            )
+        )
+    return tuple(items)
+
+
+def build_review_queue(items: Iterable[ProfileMediaReviewItem], *, queue_id: str = "") -> ProfileMediaReviewQueue:
+    item_tuple = tuple(items)
+    stable_id = queue_id or stable_profile_id("review_queue", *(item.review_id for item in item_tuple))
+    return ProfileMediaReviewQueue(queue_id=stable_id, items=item_tuple)
+
+
+def mark_review_item_decision(
+    item: ProfileMediaReviewItem,
+    *,
+    approved: bool,
+    reviewer_note: str = "",
+    reviewed_by: str = "",
+) -> ProfileMediaReviewItem:
+    return ProfileMediaReviewItem(
+        review_id=item.review_id,
+        item_type=item.item_type,
+        title=item.title,
+        case_id=item.case_id,
+        case_title=item.case_title,
+        current_path=item.current_path,
+        proposed_path=item.proposed_path,
+        reason=item.reason,
+        source_basis=item.source_basis,
+        source_role=item.source_role,
+        claim_basis=item.claim_basis,
+        currentness_status=item.currentness_status,
+        source_chain_gap=item.source_chain_gap,
+        disputed_framing=item.disputed_framing,
+        sensitive_review_required=item.sensitive_review_required,
+        required_actions=item.required_actions,
+        status=ReviewItemStatus.APPROVED_FOR_ACTION if approved else ReviewItemStatus.REJECTED,
+        reviewer_note=reviewer_note,
+        reviewed_by=reviewed_by,
+        user_confirmation_recorded=True,
+        folder_creation_performed=False,
+        file_move_performed=False,
+        created_at_utc=item.created_at_utc,
+        reviewed_at_utc=utc_now_iso(),
+        audit_note="review decision recorded only; no folder was created, moved, copied, or renamed",
+    )
+
+
+def build_audit_event(
+    *,
+    event_type: AuditEventType,
+    subject_id: str,
+    case_id: str = "",
+    previous_value: str = "",
+    new_value: str = "",
+    reason: str = "",
+    source_basis: str = "",
+    review_id: str = "",
+    performed: bool = False,
+) -> ProfileMediaAuditEvent:
+    return ProfileMediaAuditEvent(
+        event_id=stable_profile_id("audit", event_type.value, subject_id, previous_value, new_value, reason, source_basis, review_id, performed),
+        event_type=event_type,
+        subject_id=subject_id,
+        case_id=case_id,
+        previous_value=previous_value,
+        new_value=new_value,
+        reason=reason,
+        source_basis=source_basis,
+        review_id=review_id,
+        performed=performed,
+        folder_creation_performed=False,
+        file_move_performed=False,
+    )
+
+
+def build_audit_event_for_review_decision(item: ProfileMediaReviewItem) -> ProfileMediaAuditEvent:
+    return build_audit_event(
+        event_type=AuditEventType.REVIEW_DECISION_RECORDED,
+        subject_id=item.review_id,
+        case_id=item.case_id,
+        previous_value=item.current_path,
+        new_value=item.proposed_path,
+        reason=item.reason or item.status.value,
+        source_basis=item.source_basis,
+        review_id=item.review_id,
+        performed=False,
     )
 
 

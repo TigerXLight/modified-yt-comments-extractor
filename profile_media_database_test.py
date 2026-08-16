@@ -4,6 +4,12 @@ from profile_media_database import (
     MediaBucket,
     MediaOrigin,
     MovePlanStatus,
+    AuditEventType,
+    ReviewItemStatus,
+    build_audit_event_for_review_decision,
+    build_review_items_from_case_repository_path_plan,
+    build_review_queue,
+    mark_review_item_decision,
     ProfileCollectionLevel,
     ProfileSourceRole,
     build_case_folder_layout,
@@ -113,7 +119,7 @@ Source: Social Media
         global_profiles=(global_profile,),
     )
     manifest_dict = manifest.to_dict()
-    assert manifest_dict["schema_version"] == "profile-media-database-v75c"
+    assert manifest_dict["schema_version"] == "profile-media-database-v75d"
     assert manifest_dict["case_count"] == 1
     assert manifest_dict["global_profile_count"] == 1
     assert manifest.payload_sha256
@@ -263,6 +269,61 @@ Source: Social Media
     assert case_from_path.layout.case_profiles_path.replace("/", "\\").endswith(r"\Profiles")
 
 
+    review_items = build_review_items_from_case_repository_path_plan(case_path_plan)
+    assert len(review_items) == 1
+    review_item = review_items[0]
+    assert review_item.status == ReviewItemStatus.PENDING_REVIEW
+    assert review_item.file_move_performed is False
+    assert review_item.folder_creation_performed is False
+    assert review_item.current_path.replace("/", "\\").endswith(r"\Unclassified\Old Case Folder")
+    assert review_item.proposed_path.replace("/", "\\") == terrorism_path
+    assert "confirm_folder_rename_or_move_separately" in review_item.required_actions
+
+    approved_review_item = mark_review_item_decision(
+        review_item,
+        approved=True,
+        reviewer_note="manual review confirms source-basis path change only",
+        reviewed_by="case creator",
+    )
+    assert approved_review_item.status == ReviewItemStatus.APPROVED_FOR_ACTION
+    assert approved_review_item.user_confirmation_recorded is True
+    assert approved_review_item.file_move_performed is False
+    assert "no folder was created" in approved_review_item.audit_note
+
+    warning_review_items = build_review_items_from_case_repository_path_plan(
+        plan_case_repository_location(
+            database_root=database_root,
+            classification=sensitive_classification_without_basis,
+            current_case_root=r"T:\Database\Rape\Adults\Direct\Old",
+        )
+    )
+    assert any(item.reason == "sensitive_repository_bucket_without_source_basis" for item in warning_review_items)
+    assert any(item.sensitive_review_required for item in warning_review_items)
+
+    review_queue = build_review_queue((approved_review_item,))
+    assert review_queue.to_dict()["item_count"] == 1
+    assert review_queue.to_dict()["approved_count"] == 1
+
+    audit_event = build_audit_event_for_review_decision(approved_review_item)
+    assert audit_event.event_type == AuditEventType.REVIEW_DECISION_RECORDED
+    assert audit_event.performed is False
+    assert audit_event.file_move_performed is False
+
+    manifest_with_review = build_manifest(
+        database_root=database_root,
+        cases=(case_from_path,),
+        global_profiles=(global_profile,),
+        move_plans=(case_path_plan.move_plan,),
+        review_queue=review_queue,
+        audit_events=(audit_event,),
+    )
+    manifest_with_review_dict = manifest_with_review.to_dict()
+    assert manifest_with_review_dict["review_queue_count"] == 1
+    assert manifest_with_review_dict["audit_event_count"] == 1
+    assert manifest_with_review.payload_sha256
+
+
+
 if __name__ == "__main__":
     run_self_test()
-    print("profile_media_database v75c OK")
+    print("profile_media_database v75d OK")
