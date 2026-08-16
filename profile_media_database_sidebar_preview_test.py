@@ -31,11 +31,13 @@ def test_profile_media_sidebar_has_no_preview_only_text_or_filter() -> None:
     assert "CTkEntry" not in _method_source(source, "_create_profile_media_database_mode_toggle_section")
 
 
-def test_profile_media_sidebar_mode_only_toggle_remains_guarded() -> None:
+def test_profile_media_sidebar_mode_only_visual_toggle_remains_guarded() -> None:
     source = _main_source()
     method = _method_source(source, "_create_profile_media_database_mode_toggle_section")
     assert "CTkSwitch" in method
-    assert 'text="On / Off"' in method
+    assert "_profile_media_database_toggle_text" in method
+    assert "#7ac943" in method
+    assert "#e84b6a" in method
     assert "CTkTextbox" not in method
     forbidden = (
         "os.rename",
@@ -59,5 +61,5 @@ def test_profile_media_sidebar_mode_only_toggle_remains_guarded() -> None:
 if __name__ == "__main__":
     test_profile_media_sidebar_preview_panel_is_removed()
     test_profile_media_sidebar_has_no_preview_only_text_or_filter()
-    test_profile_media_sidebar_mode_only_toggle_remains_guarded()
-    print("profile_media_database_sidebar_preview_removed v75l OK")
+    test_profile_media_sidebar_mode_only_visual_toggle_remains_guarded()
+    print("profile_media_database_sidebar_preview_removed v75m OK")

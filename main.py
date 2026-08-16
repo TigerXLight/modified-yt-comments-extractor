@@ -1102,7 +1102,31 @@ class App(ctk.CTk):
                     mode_var.set(coerced == "DATABASE")
                 except Exception:
                     logger.debug("Could not update profile/media Database toggle variable.", exc_info=True)
+        self._refresh_profile_media_database_mode_switch_visual()
         return coerced
+
+    def _profile_media_database_toggle_text(self, mode: object | None = None) -> str:
+        """Return the compact check/X label for the Database mode switch."""
+        return "✓ On" if self._coerce_profile_media_sidebar_mode(mode) == "DATABASE" else "✕ Off"
+
+    def _refresh_profile_media_database_mode_switch_visual(self) -> None:
+        """Refresh the image-like green/red Database toggle without running Database work."""
+        switch = getattr(self, "profile_media_database_mode_switch", None)
+        if switch is None:
+            return
+        mode = self._coerce_profile_media_sidebar_mode()
+        is_database = mode == "DATABASE"
+        try:
+            switch.configure(
+                text=self._profile_media_database_toggle_text(mode),
+                fg_color="#e84b6a",
+                progress_color="#7ac943",
+                button_color="#f2f2f2",
+                button_hover_color="#ffffff",
+                text_color="#7ac943" if is_database else "#e84b6a",
+            )
+        except Exception:
+            logger.debug("Could not refresh profile/media Database toggle visual.", exc_info=True)
 
     def _on_profile_media_database_mode_toggled(self) -> None:
         """Handle the left-sidebar Database On/Off toggle above FILES."""
@@ -1141,16 +1165,18 @@ class App(ctk.CTk):
 
         self.profile_media_database_mode_switch = ctk.CTkSwitch(
             self.profile_media_mode_frame,
-            text="On / Off",
+            text=self._profile_media_database_toggle_text(initial_mode),
             variable=self.profile_media_database_mode_var,
             command=self._on_profile_media_database_mode_toggled,
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS["text_primary"],
-            progress_color=COLORS["accent_secondary"],
-            button_color=COLORS["text_primary"],
-            button_hover_color=COLORS["accent_primary"],
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#e84b6a",
+            fg_color="#e84b6a",
+            progress_color="#7ac943",
+            button_color="#f2f2f2",
+            button_hover_color="#ffffff",
         )
         self.profile_media_database_mode_switch.grid(row=1, column=0, sticky="w", pady=(6, 2))
+        self._refresh_profile_media_database_mode_switch_visual()
 
     def _create_files_section(self) -> None:
         """Create the session-only local files section in the sidebar."""
