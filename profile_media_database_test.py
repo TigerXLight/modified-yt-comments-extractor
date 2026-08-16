@@ -2,17 +2,24 @@ from profile_media_database import (
     ClaimBasis,
     CurrentnessStatus,
     MediaBucket,
+    MediaOrigin,
     MovePlanStatus,
     ProfileCollectionLevel,
     ProfileSourceRole,
     build_case_folder_layout,
+    build_case_local_profile_from_text,
     build_case_record,
     build_global_profiles_path,
+    build_global_profile_from_case_profile,
     build_manifest,
     build_media_source_record,
+    build_media_source_record_from_import_plan,
+    build_source_claim_evaluation,
     build_profile_record,
+    normalize_media_bucket,
     parse_profile_text_blocks,
     plan_folder_move,
+    plan_media_import,
 )
 
 
@@ -102,10 +109,86 @@ Source: Social Media
         global_profiles=(global_profile,),
     )
     manifest_dict = manifest.to_dict()
-    assert manifest_dict["schema_version"] == "profile-media-database-v75a"
+    assert manifest_dict["schema_version"] == "profile-media-database-v75b"
     assert manifest_dict["case_count"] == 1
     assert manifest_dict["global_profile_count"] == 1
     assert manifest.payload_sha256
+
+    evaluation = build_source_claim_evaluation(
+        source_role=ProfileSourceRole.TERTIARY_PROPAGATED_SOURCE,
+        claim_basis=ClaimBasis.AGENCY_OR_OUTSIDE_RETELLING,
+        currentness_status=CurrentnessStatus.HISTORICAL,
+        source_chain_gap=True,
+        disputed_framing=True,
+        notes_on_context_dispute="publisher framing disputed by original uploader",
+        family_or_authority_claim_basis="authority claim basis recorded",
+        identity_claim_basis="source-stated identity only",
+        appearance_claim_basis="appearance claim not used for sensitive inference",
+        collaboration_or_corroboration_notes="repeated reports need defined corroboration",
+    )
+    article_plan = plan_media_import(
+        case_root=case_root,
+        case_id="case_1",
+        source_page="BelfastLive",
+        source_bucket="Articles",
+        source_title="June 2026 - article title",
+        source_claim_evaluation=evaluation,
+    )
+    assert article_plan.media_origin == MediaOrigin.EXTERNAL_MEDIA
+    assert article_plan.proposed_local_address.replace("/", "\\").endswith(r"\Sources\Articles\June 2026 - article title.txt")
+    assert article_plan.folder_creation_performed is False
+    assert article_plan.file_copy_performed is False
+    assert article_plan.file_move_performed is False
+    assert article_plan.source_claim_evaluation.source_chain_gap is True
+
+    social_online_plan = plan_media_import(
+        case_root=case_root,
+        source_page="X post",
+        source_bucket="Social Media/Online",
+        source_filename="x-post.json",
+        default_extension=".json",
+    )
+    assert social_online_plan.proposed_local_address.replace("/", "\\").endswith(r"\Sources\Social Media\Online\x-post.json")
+
+    social_offline_plan = plan_media_import(
+        case_root=case_root,
+        source_page="USB scan",
+        source_bucket="Social Media/Offline",
+        source_filename="usb-scan.pdf",
+        default_extension=".pdf",
+    )
+    assert social_offline_plan.proposed_local_address.replace("/", "\\").endswith(r"\Sources\Social Media\Offline\usb-scan.pdf")
+
+    internal_plan = plan_media_import(
+        case_root=case_root,
+        source_page="creator note",
+        source_bucket=MediaBucket.INTERNAL_MEDIA,
+        source_filename="creator-note.txt",
+    )
+    assert internal_plan.media_origin == MediaOrigin.INTERNAL_MEDIA
+    assert internal_plan.proposed_local_address.replace("/", "\\").endswith(r"\Sources\Internal Media\creator-note.txt")
+
+    planned_source = build_media_source_record_from_import_plan(article_plan)
+    assert planned_source.local_address == article_plan.proposed_local_address
+    assert planned_source.source_claim_evaluation is not None
+    assert planned_source.source_claim_evaluation.disputed_framing is True
+
+    case_local_from_text = build_case_local_profile_from_text(
+        case_id="case_2",
+        text=text,
+        default_source_bucket="Social Media/Online",
+        default_source_role=ProfileSourceRole.SECONDARY_WITNESS_ACCOUNT,
+        default_claim_basis=ClaimBasis.WITNESS_ACCOUNT,
+    )
+    assert case_local_from_text.collection_level == ProfileCollectionLevel.CASE_LOCAL_PROFILES
+    assert case_local_from_text.case_id == "case_2"
+    assert case_local_from_text.text_blocks[0].source_bucket == MediaBucket.SOCIAL_MEDIA_ONLINE.value
+    global_from_case = build_global_profile_from_case_profile(case_local_from_text)
+    assert global_from_case.collection_level == ProfileCollectionLevel.GLOBAL_HEADER_PROFILES
+    assert global_from_case.case_id == ""
+
+    assert normalize_media_bucket("social media offline") == MediaBucket.SOCIAL_MEDIA_OFFLINE
+    assert normalize_media_bucket("Internal Media") == MediaBucket.INTERNAL_MEDIA
 
     move_plan = plan_folder_move(
         current_path=r"T:\Database\Unknown\Case",
@@ -121,4 +204,4 @@ Source: Social Media
 
 if __name__ == "__main__":
     run_self_test()
-    print("profile_media_database v75a OK")
+    print("profile_media_database v75b OK")

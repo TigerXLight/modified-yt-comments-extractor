@@ -10,13 +10,14 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75a"
+PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75b"
 
 PROFILE_MEDIA_DATABASE_SCOPE = (
-    "local profile/media database planning schema only; no folder scanning, no folder "
-    "creation, no file movement, no automatic classification, no sensitive-attribute "
-    "inference, no source fetching, no archive access, no media download, no browser "
-    "automation, no credentials, no GUI wiring"
+    "local profile/media database planning schema plus source/container import planning; "
+    "no folder scanning, no folder creation, no file copying, no file movement, "
+    "no automatic classification, no sensitive-attribute inference, no source fetching, "
+    "no archive access, no media download, no browser automation, no credentials, "
+    "no GUI wiring"
 )
 
 
@@ -64,6 +65,11 @@ class MediaBucket(_StringEnum):
 class ProfileCollectionLevel(_StringEnum):
     GLOBAL_HEADER_PROFILES = "GLOBAL_HEADER_PROFILES"
     CASE_LOCAL_PROFILES = "CASE_LOCAL_PROFILES"
+
+
+class MediaOrigin(_StringEnum):
+    EXTERNAL_MEDIA = "EXTERNAL_MEDIA"
+    INTERNAL_MEDIA = "INTERNAL_MEDIA"
 
 
 class MovePlanStatus(_StringEnum):
@@ -121,6 +127,49 @@ def _split_identifier_text(value: str) -> tuple[str, ...]:
         if len(comma_parts) > 1:
             parts = comma_parts
     return tuple(parts or (text,))
+
+
+@dataclass(frozen=True)
+class SourceClaimEvaluation:
+    source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE
+    claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN
+    disputed_framing: bool = False
+    notes_on_context_dispute: str = ""
+    source_chain_gap: bool = False
+    confidence_or_verification_notes: str = ""
+    family_or_authority_claim_basis: str = ""
+    identity_claim_basis: str = ""
+    appearance_claim_basis: str = ""
+    collaboration_or_corroboration_notes: str = ""
+    sensitive_identifier_source_evidenced_only: bool = True
+    weak_sensitive_inference_prohibited: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class MediaImportPlan:
+    plan_id: str
+    case_id: str
+    case_root: str
+    source_page: str
+    source_bucket: MediaBucket | str
+    media_origin: MediaOrigin
+    proposed_local_address: str
+    required_parent_path: str
+    source_title: str = ""
+    source_filename: str = ""
+    source_claim_evaluation: SourceClaimEvaluation = field(default_factory=SourceClaimEvaluation)
+    warnings: tuple[str, ...] = ()
+    folder_creation_performed: bool = False
+    file_copy_performed: bool = False
+    file_move_performed: bool = False
+    created_at_utc: str = field(default_factory=utc_now_iso)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
 
 
 @dataclass(frozen=True)
@@ -218,6 +267,7 @@ class MediaSourceRecord:
     disputed_framing: bool = False
     notes_on_context_dispute: str = ""
     confidence_or_verification_notes: str = ""
+    source_claim_evaluation: SourceClaimEvaluation | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return _value_for_dict(self)
@@ -371,6 +421,188 @@ def build_global_profiles_path(database_root: str) -> str:
     return str(Path(database_root) / "Profiles")
 
 
+_MEDIA_BUCKET_ALIASES = {
+    "articles": MediaBucket.ARTICLES,
+    "article": MediaBucket.ARTICLES,
+    "sources/articles": MediaBucket.ARTICLES,
+    "social media": MediaBucket.SOCIAL_MEDIA_ONLINE,
+    "social media/online": MediaBucket.SOCIAL_MEDIA_ONLINE,
+    "social media online": MediaBucket.SOCIAL_MEDIA_ONLINE,
+    "online social media": MediaBucket.SOCIAL_MEDIA_ONLINE,
+    "social media/offline": MediaBucket.SOCIAL_MEDIA_OFFLINE,
+    "social media offline": MediaBucket.SOCIAL_MEDIA_OFFLINE,
+    "offline social media": MediaBucket.SOCIAL_MEDIA_OFFLINE,
+    "internal media": MediaBucket.INTERNAL_MEDIA,
+    "sources/internal media": MediaBucket.INTERNAL_MEDIA,
+    "reference extants": MediaBucket.REFERENCE_EXTANTS,
+    "people": MediaBucket.PEOPLE,
+    "case profiles": MediaBucket.CASE_PROFILES,
+    "profiles": MediaBucket.CASE_PROFILES,
+    "global profiles": MediaBucket.GLOBAL_PROFILES,
+}
+
+
+def normalize_media_bucket(value: MediaBucket | str, *, default: MediaBucket = MediaBucket.ARTICLES) -> MediaBucket:
+    if isinstance(value, MediaBucket):
+        return value
+    raw = str(value or "").strip().replace("\\", "/")
+    key = re.sub(r"\s+", " ", raw.lower()).strip(" /")
+    key = key.replace(" / ", "/")
+    return _MEDIA_BUCKET_ALIASES.get(key, default)
+
+
+def case_source_bucket_path(layout: CaseFolderLayout, source_bucket: MediaBucket | str) -> str:
+    bucket = normalize_media_bucket(source_bucket)
+    if bucket == MediaBucket.ARTICLES:
+        return layout.articles_path
+    if bucket == MediaBucket.SOCIAL_MEDIA_ONLINE:
+        return layout.social_media_online_path
+    if bucket == MediaBucket.SOCIAL_MEDIA_OFFLINE:
+        return layout.social_media_offline_path
+    if bucket == MediaBucket.INTERNAL_MEDIA:
+        return layout.internal_media_path
+    if bucket == MediaBucket.REFERENCE_EXTANTS:
+        return layout.reference_extants_path
+    if bucket == MediaBucket.PEOPLE:
+        return layout.people_path
+    if bucket == MediaBucket.CASE_PROFILES:
+        return layout.case_profiles_path
+    return layout.sources_path
+
+
+def media_origin_for_bucket(source_bucket: MediaBucket | str) -> MediaOrigin:
+    return MediaOrigin.INTERNAL_MEDIA if normalize_media_bucket(source_bucket) == MediaBucket.INTERNAL_MEDIA else MediaOrigin.EXTERNAL_MEDIA
+
+
+def _planned_media_filename(*, source_page: str, title: str = "", source_filename: str = "", default_extension: str = ".txt") -> str:
+    chosen = source_filename or title or source_page or "media-source"
+    cleaned = sanitize_path_part(chosen, fallback="media-source")
+    suffix = Path(cleaned).suffix
+    if default_extension and not suffix:
+        cleaned = f"{cleaned}{default_extension if default_extension.startswith('.') else '.' + default_extension}"
+    return cleaned
+
+
+def build_source_claim_evaluation(
+    *,
+    source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE,
+    claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS,
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN,
+    disputed_framing: bool = False,
+    notes_on_context_dispute: str = "",
+    source_chain_gap: bool = False,
+    confidence_or_verification_notes: str = "",
+    family_or_authority_claim_basis: str = "",
+    identity_claim_basis: str = "",
+    appearance_claim_basis: str = "",
+    collaboration_or_corroboration_notes: str = "",
+) -> SourceClaimEvaluation:
+    return SourceClaimEvaluation(
+        source_role=source_role,
+        claim_basis=claim_basis,
+        currentness_status=currentness_status,
+        disputed_framing=disputed_framing,
+        notes_on_context_dispute=notes_on_context_dispute,
+        source_chain_gap=source_chain_gap,
+        confidence_or_verification_notes=confidence_or_verification_notes,
+        family_or_authority_claim_basis=family_or_authority_claim_basis,
+        identity_claim_basis=identity_claim_basis,
+        appearance_claim_basis=appearance_claim_basis,
+        collaboration_or_corroboration_notes=collaboration_or_corroboration_notes,
+    )
+
+
+def plan_media_import(
+    *,
+    case_root: str,
+    source_page: str,
+    source_bucket: MediaBucket | str,
+    case_id: str = "",
+    source_title: str = "",
+    source_filename: str = "",
+    default_extension: str = ".txt",
+    source_claim_evaluation: SourceClaimEvaluation | None = None,
+) -> MediaImportPlan:
+    layout = build_case_folder_layout(case_root)
+    bucket = normalize_media_bucket(source_bucket)
+    parent = Path(case_source_bucket_path(layout, bucket))
+    filename = _planned_media_filename(
+        source_page=source_page,
+        title=source_title,
+        source_filename=source_filename,
+        default_extension=default_extension,
+    )
+    warnings: list[str] = []
+    if not source_page:
+        warnings.append("missing_source_page")
+    if bucket == MediaBucket.CASE_PROFILES:
+        warnings.append("case_profiles_are_extracted_profile_outputs_not_original_media")
+    proposed = str(parent / filename)
+    return MediaImportPlan(
+        plan_id=stable_profile_id("media_import", case_id, case_root, bucket.value, source_page, source_title, filename),
+        case_id=case_id,
+        case_root=str(Path(case_root)),
+        source_page=source_page,
+        source_bucket=bucket,
+        media_origin=media_origin_for_bucket(bucket),
+        proposed_local_address=proposed,
+        required_parent_path=str(parent),
+        source_title=source_title,
+        source_filename=filename,
+        source_claim_evaluation=source_claim_evaluation or SourceClaimEvaluation(),
+        warnings=tuple(warnings),
+    )
+
+
+def build_media_source_record_from_import_plan(plan: MediaImportPlan, *, source_id: str = "") -> MediaSourceRecord:
+    return build_media_source_record(
+        source_page=plan.source_page,
+        source_bucket=plan.source_bucket,
+        local_address=plan.proposed_local_address,
+        title=plan.source_title or plan.source_filename,
+        source_role=plan.source_claim_evaluation.source_role,
+        claim_basis=plan.source_claim_evaluation.claim_basis,
+        currentness_status=plan.source_claim_evaluation.currentness_status,
+        source_claim_evaluation=plan.source_claim_evaluation,
+        source_id=source_id,
+    )
+
+
+def build_case_local_profile_from_text(
+    *,
+    case_id: str,
+    text: str,
+    canonical_name: str = "",
+    default_source_bucket: MediaBucket | str = MediaBucket.ARTICLES,
+    default_source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE,
+    default_claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS,
+    default_currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN,
+) -> ProfileRecord:
+    blocks = parse_profile_text_blocks(
+        text,
+        default_source_bucket=normalize_media_bucket(default_source_bucket).value,
+        default_source_role=default_source_role,
+        default_claim_basis=default_claim_basis,
+        default_currentness_status=default_currentness_status,
+    )
+    name = canonical_name or next((block.name for block in blocks if block.name), "")
+    return build_profile_record(
+        canonical_name=name,
+        text_blocks=blocks,
+        collection_level=ProfileCollectionLevel.CASE_LOCAL_PROFILES,
+        case_id=case_id,
+    )
+
+
+def build_global_profile_from_case_profile(case_profile: ProfileRecord, *, profile_id: str = "") -> ProfileRecord:
+    return build_profile_record(
+        canonical_name=case_profile.canonical_name,
+        text_blocks=case_profile.text_blocks,
+        collection_level=ProfileCollectionLevel.GLOBAL_HEADER_PROFILES,
+        profile_id=profile_id,
+    )
+
+
 def build_profile_record(
     *,
     canonical_name: str,
@@ -404,6 +636,7 @@ def build_media_source_record(
     source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE,
     claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS,
     currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN,
+    source_claim_evaluation: SourceClaimEvaluation | None = None,
     source_id: str = "",
 ) -> MediaSourceRecord:
     stable_id = source_id or stable_profile_id("media", source_page, source_bucket, local_address, title)
@@ -417,6 +650,7 @@ def build_media_source_record(
         source_role=source_role,
         claim_basis=claim_basis,
         currentness_status=currentness_status,
+        source_claim_evaluation=source_claim_evaluation,
     )
 
 
