@@ -627,7 +627,8 @@ class App(ctk.CTk):
         self.youtube_source_row_preferences: dict[str, YouTubeGuiMediaPreferences] = {}
         self.youtube_source_row_available_quality_labels: dict[str, tuple[str, ...]] = {}
         self.youtube_source_row_discovery_status: dict[str, str] = {}
-        self.profile_media_sidebar_mode: str = "FILES"
+        self.profile_media_runtime_state_path: Optional[Path] = None
+        self.profile_media_sidebar_mode: str = self._load_profile_media_sidebar_mode_for_startup()
         self.profile_media_database_mode_var = None
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
@@ -1084,6 +1085,37 @@ class App(ctk.CTk):
         """Release the closed Access & Keys window reference."""
         self.access_keys_window = None
 
+    def _load_profile_media_sidebar_mode_for_startup(self) -> str:
+        """Load the persisted FILES/DATABASE sidebar mode without running Database work."""
+        try:
+            from profile_media_database_runtime import (
+                default_profile_media_runtime_state_path,
+                load_profile_media_runtime_state,
+            )
+
+            self.profile_media_runtime_state_path = default_profile_media_runtime_state_path()
+            return load_profile_media_runtime_state(self.profile_media_runtime_state_path).sidebar_mode
+        except Exception:
+            logger.debug("Could not load profile/media Database runtime mode; defaulting to FILES.", exc_info=True)
+            return "FILES"
+
+    def _save_profile_media_sidebar_mode_for_runtime(self, mode: object) -> None:
+        """Persist the mode-only Database toggle without scanning or moving case folders."""
+        try:
+            from profile_media_database_runtime import (
+                build_profile_media_runtime_state,
+                default_profile_media_runtime_state_path,
+                save_profile_media_runtime_state,
+            )
+
+            state_path = getattr(self, "profile_media_runtime_state_path", None)
+            if state_path is None:
+                state_path = default_profile_media_runtime_state_path()
+                self.profile_media_runtime_state_path = state_path
+            save_profile_media_runtime_state(build_profile_media_runtime_state(mode), state_path)
+        except Exception:
+            logger.debug("Could not save profile/media Database runtime mode.", exc_info=True)
+
     def _coerce_profile_media_sidebar_mode(self, value: object | None = None) -> str:
         """Return the FILES/DATABASE sidebar mode using the V75H view-model enum."""
         from profile_media_database_view_model import coerce_profile_media_view_mode
@@ -1103,6 +1135,7 @@ class App(ctk.CTk):
                 except Exception:
                     logger.debug("Could not update profile/media Database toggle variable.", exc_info=True)
         self._refresh_profile_media_database_mode_switch_visual()
+        self._save_profile_media_sidebar_mode_for_runtime(coerced)
         return coerced
 
     def _profile_media_database_toggle_text(self, mode: object | None = None) -> str:
