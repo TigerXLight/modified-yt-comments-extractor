@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-PROFILE_MEDIA_ARTICLE_TOOLING_REVIEW_SCHEMA_VERSION = "profile-media-article-source-tooling-review-v76k2"
+PROFILE_MEDIA_ARTICLE_TOOLING_REVIEW_SCHEMA_VERSION = "profile-media-article-source-tooling-review-v76l"
 
 
 @dataclass(frozen=True)
@@ -105,7 +105,7 @@ def build_article_source_tooling_review() -> ArticleSourceToolingReview:
         ),
     )
     return ArticleSourceToolingReview(
-        status="extractors_only_benchmark_verdict_logic_excluded",
+        status="article_extraction_adapter_implemented_extractors_optional",
         candidates=candidates,
         excluded_frameworks=excluded,
         recommended_integration_order=("metadata_parser", "trafilatura", "newspaper4k"),
@@ -144,6 +144,8 @@ def render_article_source_tooling_review_text(review: ArticleSourceToolingReview
     lines.append("")
     lines.append("Image/claim affiliation rule:")
     lines.append(review.image_claim_affiliation_rule)
+    lines.append("")
+    lines.append("V76L adapter implementation:\n- profile_media_article_extraction_adapter.py parses supplied HTML/local files using optional metadata_parser/trafilatura/newspaper4k plus stdlib fallback.\n- It performs no web download/crawl and makes no final source-role classification.")
     lines.append("")
     lines.append("Safety:")
     lines.append(f"- Folder scan performed: {review.folder_scan_performed}")

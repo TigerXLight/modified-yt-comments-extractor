@@ -1,0 +1,25 @@
+{
+  "schema_version": "profile-media-article-extraction-v76l-acceptance-matrix",
+  "checks": [
+    {
+      "id": "offline_html_input_only",
+      "expected": "Adapter parses supplied HTML/local file and performs no web download or crawl."
+    },
+    {
+      "id": "reference_extractors_optional",
+      "expected": "metadata_parser, trafilatura, and newspaper4k are attempted only when importable; stdlib fallback keeps the workflow deterministic."
+    },
+    {
+      "id": "source_role_not_final",
+      "expected": "Extraction gathers structural fields only and does not make final Primary/Secondary/Tertiary classification."
+    },
+    {
+      "id": "image_affiliation_marked",
+      "expected": "Image URLs are recorded as URLs only and sent to claim-subject affiliation review."
+    },
+    {
+      "id": "guarded_preview_write",
+      "expected": "Source preview JSON writes only with WRITE_ARTICLE_EXTRACTION_SOURCE_PREVIEW."
+    }
+  ]
+}
