@@ -627,6 +627,9 @@ class App(ctk.CTk):
         self.youtube_source_row_preferences: dict[str, YouTubeGuiMediaPreferences] = {}
         self.youtube_source_row_available_quality_labels: dict[str, tuple[str, ...]] = {}
         self.youtube_source_row_discovery_status: dict[str, str] = {}
+        self.profile_media_sidebar_mode: str = "FILES"
+        self.profile_media_database_mode_var = None
+        self.profile_media_mode_status_label = None
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
@@ -791,6 +794,9 @@ class App(ctk.CTk):
 
         # Export/package entry point
         self._create_export_section()
+
+        # Profile/media Database mode toggle sits directly above FILES.
+        self._create_profile_media_database_mode_toggle_section()
 
         # Session files section
         self._create_files_section()
@@ -1078,6 +1084,95 @@ class App(ctk.CTk):
     def _on_access_keys_window_closed(self) -> None:
         """Release the closed Access & Keys window reference."""
         self.access_keys_window = None
+
+    def _coerce_profile_media_sidebar_mode(self, value: object | None = None) -> str:
+        """Return the FILES/DATABASE sidebar mode using the V75H view-model enum."""
+        from profile_media_database_view_model import coerce_profile_media_view_mode
+
+        raw_value = getattr(self, "profile_media_sidebar_mode", "FILES") if value is None else value
+        return coerce_profile_media_view_mode(raw_value).value
+
+    def _profile_media_database_mode_status_text(self) -> str:
+        """Return the compact status shown below the sidebar Database toggle."""
+        mode = self._coerce_profile_media_sidebar_mode()
+        if mode == "DATABASE":
+            return "Mode: DATABASE — preview only"
+        return "Mode: FILES"
+
+    def _set_profile_media_sidebar_mode(self, mode: object, *, update_widget: bool = True) -> str:
+        """Set the sidebar mode without scanning, creating, moving, or renaming folders."""
+        coerced = self._coerce_profile_media_sidebar_mode(mode)
+        self.profile_media_sidebar_mode = coerced
+        if update_widget:
+            mode_var = getattr(self, "profile_media_database_mode_var", None)
+            if mode_var is not None:
+                try:
+                    mode_var.set(coerced == "DATABASE")
+                except Exception:
+                    logger.debug("Could not update profile/media Database toggle variable.", exc_info=True)
+            status_label = getattr(self, "profile_media_mode_status_label", None)
+            if status_label is not None:
+                try:
+                    status_label.configure(text=self._profile_media_database_mode_status_text())
+                except Exception:
+                    logger.debug("Could not update profile/media Database mode status label.", exc_info=True)
+        return coerced
+
+    def _on_profile_media_database_mode_toggled(self) -> None:
+        """Handle the left-sidebar Database On/Off toggle above FILES."""
+        mode_var = getattr(self, "profile_media_database_mode_var", None)
+        requested_mode = "DATABASE" if (mode_var is not None and bool(mode_var.get())) else "FILES"
+        mode = self._set_profile_media_sidebar_mode(requested_mode, update_widget=True)
+        try:
+            self.log_message(
+                f"Profile/media sidebar mode: {mode}. No folder scan, move, rename, or classification was performed.",
+                "info",
+            )
+        except Exception:
+            logger.debug("Could not log profile/media Database mode toggle.", exc_info=True)
+
+    def _create_profile_media_database_mode_toggle_section(self) -> None:
+        """Create the FILES/DATABASE mode toggle directly above the FILES section."""
+        initial_mode = self._coerce_profile_media_sidebar_mode()
+        self.profile_media_database_mode_var = ctk.BooleanVar(value=initial_mode == "DATABASE")
+
+        self.profile_media_mode_frame = ctk.CTkFrame(
+            self.sidebar_scroll,
+            fg_color="transparent",
+        )
+        self.profile_media_mode_frame.pack(fill="x", padx=20, pady=(0, 10))
+        self.profile_media_mode_frame.grid_columnconfigure(0, weight=1)
+
+        database_label = ctk.CTkLabel(
+            self.profile_media_mode_frame,
+            text="DATABASE",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["text_secondary"],
+            anchor="w",
+        )
+        database_label.grid(row=0, column=0, sticky="w")
+
+        self.profile_media_database_mode_switch = ctk.CTkSwitch(
+            self.profile_media_mode_frame,
+            text="On / Off",
+            variable=self.profile_media_database_mode_var,
+            command=self._on_profile_media_database_mode_toggled,
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_primary"],
+            progress_color=COLORS["accent_secondary"],
+            button_color=COLORS["text_primary"],
+            button_hover_color=COLORS["accent_primary"],
+        )
+        self.profile_media_database_mode_switch.grid(row=1, column=0, sticky="w", pady=(6, 2))
+
+        self.profile_media_mode_status_label = ctk.CTkLabel(
+            self.profile_media_mode_frame,
+            text=self._profile_media_database_mode_status_text(),
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"],
+            anchor="w",
+        )
+        self.profile_media_mode_status_label.grid(row=2, column=0, sticky="ew", pady=(2, 0))
 
     def _create_files_section(self) -> None:
         """Create the session-only local files section in the sidebar."""
