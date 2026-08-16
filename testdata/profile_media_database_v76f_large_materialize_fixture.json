@@ -1,0 +1,2409 @@
+{
+  "case_title": "V76F Large Materialize Fixture Case",
+  "database_root": "",
+  "profiles": [
+    {
+      "canonical_name": "V76F Large Person 001",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 001\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 001\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 001\nSource: V76F Large Source Page 001",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 002",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 002\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 002\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 002\nSource: V76F Large Source Page 002",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 003",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 003\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 003\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 003\nSource: V76F Large Source Page 003",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 004",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 004\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 004\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 004\nSource: V76F Large Source Page 004",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 005",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 005\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 005\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 005\nSource: V76F Large Source Page 005",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 006",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 006\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 006\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 006\nSource: V76F Large Source Page 006",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 007",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 007\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 007\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 007\nSource: V76F Large Source Page 007",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 008",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 008\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 008\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 008\nSource: V76F Large Source Page 008",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 009",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 009\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 009\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 009\nSource: V76F Large Source Page 009",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 010",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 010\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 010\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 010\nSource: V76F Large Source Page 010",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 011",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 011\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 011\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 011\nSource: V76F Large Source Page 011",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 012",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 012\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 012\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 012\nSource: V76F Large Source Page 012",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 013",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 013\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 013\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 013\nSource: V76F Large Source Page 013",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 014",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 014\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 014\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 014\nSource: V76F Large Source Page 014",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 015",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 015\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 015\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 015\nSource: V76F Large Source Page 015",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 016",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 016\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 016\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 016\nSource: V76F Large Source Page 016",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 017",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 017\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 017\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 017\nSource: V76F Large Source Page 017",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 018",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 018\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 018\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 018\nSource: V76F Large Source Page 018",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 019",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 019\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 019\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 019\nSource: V76F Large Source Page 019",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 020",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 020\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 020\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 020\nSource: V76F Large Source Page 020",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 021",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 021\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 021\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 021\nSource: V76F Large Source Page 021",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 022",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 022\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 022\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 022\nSource: V76F Large Source Page 022",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 023",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 023\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 023\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 023\nSource: V76F Large Source Page 023",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 024",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 024\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 024\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 024\nSource: V76F Large Source Page 024",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 025",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 025\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 025\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 025\nSource: V76F Large Source Page 025",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 026",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 026\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 026\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 026\nSource: V76F Large Source Page 026",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 027",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 027\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 027\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 027\nSource: V76F Large Source Page 027",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 028",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 028\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 028\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 028\nSource: V76F Large Source Page 028",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 029",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 029\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 029\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 029\nSource: V76F Large Source Page 029",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 030",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 030\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 030\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 030\nSource: V76F Large Source Page 030",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 031",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 031\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 031\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 031\nSource: V76F Large Source Page 031",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 032",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 032\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 032\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 032\nSource: V76F Large Source Page 032",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 033",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 033\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 033\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 033\nSource: V76F Large Source Page 033",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 034",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 034\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 034\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 034\nSource: V76F Large Source Page 034",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 035",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 035\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 035\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 035\nSource: V76F Large Source Page 035",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 036",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 036\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 036\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 036\nSource: V76F Large Source Page 036",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 037",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 037\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 037\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 037\nSource: V76F Large Source Page 037",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 038",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 038\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 038\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 038\nSource: V76F Large Source Page 038",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 039",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 039\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 039\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 039\nSource: V76F Large Source Page 039",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 040",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 040\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 040\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 040\nSource: V76F Large Source Page 040",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 041",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 041\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 041\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 041\nSource: V76F Large Source Page 041",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 042",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 042\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 042\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 042\nSource: V76F Large Source Page 042",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 043",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 043\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 043\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 043\nSource: V76F Large Source Page 043",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 044",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 044\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 044\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 044\nSource: V76F Large Source Page 044",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 045",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 045\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 045\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 045\nSource: V76F Large Source Page 045",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 046",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 046\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 046\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 046\nSource: V76F Large Source Page 046",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 047",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 047\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 047\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 047\nSource: V76F Large Source Page 047",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 048",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 048\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 048\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 048\nSource: V76F Large Source Page 048",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 049",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 049\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 049\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 049\nSource: V76F Large Source Page 049",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 050",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 050\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 050\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 050\nSource: V76F Large Source Page 050",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 051",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 051\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 051\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 051\nSource: V76F Large Source Page 051",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 052",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 052\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 052\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 052\nSource: V76F Large Source Page 052",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 053",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 053\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 053\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 053\nSource: V76F Large Source Page 053",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 054",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 054\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 054\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 054\nSource: V76F Large Source Page 054",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 055",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 055\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 055\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 055\nSource: V76F Large Source Page 055",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 056",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 056\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 056\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 056\nSource: V76F Large Source Page 056",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 057",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 057\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 057\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 057\nSource: V76F Large Source Page 057",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 058",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 058\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 058\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 058\nSource: V76F Large Source Page 058",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 059",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 059\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 059\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 059\nSource: V76F Large Source Page 059",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 060",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 060\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 060\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 060\nSource: V76F Large Source Page 060",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 061",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 061\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 061\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 061\nSource: V76F Large Source Page 061",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 062",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 062\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 062\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 062\nSource: V76F Large Source Page 062",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 063",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 063\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 063\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 063\nSource: V76F Large Source Page 063",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 064",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 064\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 064\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 064\nSource: V76F Large Source Page 064",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 065",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 065\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 065\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 065\nSource: V76F Large Source Page 065",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 066",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 066\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 066\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 066\nSource: V76F Large Source Page 066",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 067",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 067\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 067\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 067\nSource: V76F Large Source Page 067",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 068",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 068\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 068\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 068\nSource: V76F Large Source Page 068",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 069",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 069\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 069\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 069\nSource: V76F Large Source Page 069",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 070",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 070\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 070\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 070\nSource: V76F Large Source Page 070",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 071",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 071\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 071\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 071\nSource: V76F Large Source Page 071",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 072",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 072\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 072\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 072\nSource: V76F Large Source Page 072",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 073",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 073\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 073\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 073\nSource: V76F Large Source Page 073",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 074",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 074\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 074\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 074\nSource: V76F Large Source Page 074",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 075",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 075\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 075\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 075\nSource: V76F Large Source Page 075",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 076",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 076\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 076\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 076\nSource: V76F Large Source Page 076",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 077",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 077\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 077\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 077\nSource: V76F Large Source Page 077",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 078",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 078\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 078\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 078\nSource: V76F Large Source Page 078",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 079",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 079\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 079\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 079\nSource: V76F Large Source Page 079",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 080",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 080\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 080\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 080\nSource: V76F Large Source Page 080",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 081",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 081\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 081\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 081\nSource: V76F Large Source Page 081",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 082",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 082\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 082\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 082\nSource: V76F Large Source Page 082",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 083",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 083\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 083\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 083\nSource: V76F Large Source Page 083",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 084",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 084\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 084\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 084\nSource: V76F Large Source Page 084",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 085",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 085\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 085\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 085\nSource: V76F Large Source Page 085",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 086",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 086\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 086\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 086\nSource: V76F Large Source Page 086",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 087",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 087\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 087\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 087\nSource: V76F Large Source Page 087",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 088",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 088\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 088\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 088\nSource: V76F Large Source Page 088",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 089",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 089\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 089\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 089\nSource: V76F Large Source Page 089",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 090",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 090\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 090\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 090\nSource: V76F Large Source Page 090",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 091",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 091\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 091\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 091\nSource: V76F Large Source Page 091",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 092",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 092\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 092\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 092\nSource: V76F Large Source Page 092",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 093",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 093\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 093\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 093\nSource: V76F Large Source Page 093",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 094",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 094\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 094\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 094\nSource: V76F Large Source Page 094",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 095",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 095\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 095\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 095\nSource: V76F Large Source Page 095",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 096",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 096\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 096\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 096\nSource: V76F Large Source Page 096",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 097",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 097\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 097\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 097\nSource: V76F Large Source Page 097",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 098",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 098\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 098\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 098\nSource: V76F Large Source Page 098",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 099",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 099\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 099\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 099\nSource: V76F Large Source Page 099",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 100",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 100\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 100\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 100\nSource: V76F Large Source Page 100",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 101",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 101\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 101\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 101\nSource: V76F Large Source Page 101",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 102",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 102\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 102\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 102\nSource: V76F Large Source Page 102",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 103",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 103\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 103\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 103\nSource: V76F Large Source Page 103",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 104",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 104\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 104\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 104\nSource: V76F Large Source Page 104",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 105",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 105\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 105\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 105\nSource: V76F Large Source Page 105",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 106",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 106\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 106\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 106\nSource: V76F Large Source Page 106",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 107",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 107\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 107\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 107\nSource: V76F Large Source Page 107",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 108",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 108\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 108\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 108\nSource: V76F Large Source Page 108",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 109",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 109\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 109\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 109\nSource: V76F Large Source Page 109",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 110",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 110\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 110\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 110\nSource: V76F Large Source Page 110",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 111",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 111\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 111\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 111\nSource: V76F Large Source Page 111",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 112",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 112\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 112\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 112\nSource: V76F Large Source Page 112",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 113",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 113\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 113\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 113\nSource: V76F Large Source Page 113",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 114",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 114\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 114\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 114\nSource: V76F Large Source Page 114",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 115",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 115\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 115\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 115\nSource: V76F Large Source Page 115",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 116",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 116\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 116\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 116\nSource: V76F Large Source Page 116",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 117",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Large Person 117\nDate: HISTORICAL\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 117\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 117\nSource: V76F Large Source Page 117",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Large Person 118",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 118\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 118\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 118\nSource: V76F Large Source Page 118",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE"
+    },
+    {
+      "canonical_name": "V76F Large Person 119",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 119\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 119\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 119\nSource: V76F Large Source Page 119",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "canonical_name": "V76F Large Person 120",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Large Person 120\nDate: CURRENT\nText: Large materialize fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Large Person 120\n  source_evidenced: false\nAddress: Cases/V76F Large Materialize Fixture Case/Profiles/V76F Large Person 120\nSource: V76F Large Source Page 120",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    }
+  ],
+  "schema_version": "profile-media-case-batch-v75v",
+  "sources": [
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 001",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 001"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 002",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 002"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 003",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 003"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 004",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 004"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 005",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 005"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 006",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 006"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 007",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 007"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 008",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 008"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 009",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 009"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 010",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 010"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 011",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 011"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 012",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 012"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 013",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 013"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 014",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 014"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 015",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 015"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 016",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 016"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "Large fixture review note.",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": true,
+      "source_page": "V76F Large Source Page 017",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 017"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 018",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 018"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 019",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 019"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 020",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 020"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 021",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 021"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 022",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 022"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": true,
+      "notes_on_context_dispute": "Large fixture disputed framing note.",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 023",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 023"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 024",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 024"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 025",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 025"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 026",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 026"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 027",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 027"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 028",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 028"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 029",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 029"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 030",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 030"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 031",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 031"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 032",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 032"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 033",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 033"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "Large fixture review note.",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": true,
+      "source_page": "V76F Large Source Page 034",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 034"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 035",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 035"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 036",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 036"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 037",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 037"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 038",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 038"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 039",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 039"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 040",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 040"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 041",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 041"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 042",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 042"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 043",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 043"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 044",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 044"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 045",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 045"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": true,
+      "notes_on_context_dispute": "Large fixture disputed framing note.",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 046",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 046"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 047",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 047"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 048",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 048"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 049",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 049"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 050",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 050"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "Large fixture review note.",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": true,
+      "source_page": "V76F Large Source Page 051",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 051"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 052",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 052"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 053",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 053"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 054",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 054"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 055",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 055"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 056",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 056"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 057",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 057"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 058",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 058"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 059",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 059"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 060",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 060"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 061",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 061"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 062",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 062"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 063",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 063"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 064",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 064"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 065",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 065"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 066",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 066"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 067",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 067"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "Large fixture review note.",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": true,
+      "source_page": "V76F Large Source Page 068",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 068"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": true,
+      "notes_on_context_dispute": "Large fixture disputed framing note.",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 069",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 069"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 070",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 070"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 071",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 071"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 072",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 072"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 073",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 073"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 074",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 074"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 075",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 075"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 076",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 076"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 077",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 077"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 078",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 078"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 079",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 079"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 080",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 080"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 081",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 081"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 082",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 082"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 083",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 083"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 084",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 084"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "Large fixture review note.",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": true,
+      "source_page": "V76F Large Source Page 085",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 085"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 086",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 086"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 087",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 087"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 088",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 088"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 089",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 089"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 090",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 090"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 091",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 091"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": true,
+      "notes_on_context_dispute": "Large fixture disputed framing note.",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 092",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 092"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 093",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 093"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 094",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 094"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 095",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 095"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 096",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 096"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 097",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 097"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 098",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 098"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 099",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 099"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 100",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 100"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 101",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 101"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "Large fixture review note.",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": true,
+      "source_page": "V76F Large Source Page 102",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 102"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 103",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 103"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 104",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 104"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 105",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 105"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 106",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 106"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 107",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 107"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 108",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 108"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 109",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 109"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 110",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 110"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 111",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 111"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 112",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 112"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 113",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 113"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 114",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 114"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": true,
+      "notes_on_context_dispute": "Large fixture disputed framing note.",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 115",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 115"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 116",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 116"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 117",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F large materialize source 117"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 118",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "source_title": "V76F large materialize source 118"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "confidence_or_verification_notes": "Large fixture review note.",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": true,
+      "source_page": "V76F Large Source Page 119",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V76F large materialize source 119"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "V76F Large Source Page 120",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F large materialize source 120"
+    }
+  ]
+}

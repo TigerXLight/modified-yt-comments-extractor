@@ -1,0 +1,44 @@
+{
+  "case_title": "V76F Materialize Fixture Case",
+  "database_root": "",
+  "profiles": [
+    {
+      "canonical_name": "V76F Fixture Person 1",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: V76F Fixture Person 1\nDate: CURRENT\nText: Fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Fixture Person 1\n  source_evidenced: false\nAddress: Cases/V76F Materialize Fixture Case/Profiles/V76F Fixture Person 1\nSource: V76F Fixture Page 1",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "canonical_name": "V76F Fixture Person 2",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "HISTORICAL",
+      "profile_text": "Name: V76F Fixture Person 2\nDate: HISTORICAL\nText: Fixture profile.\nIdentifiers:\n- identifier_type: explicit_fixture\n  value: V76F Fixture Person 2\n  source_evidenced: false\nAddress: Cases/V76F Materialize Fixture Case/Profiles/V76F Fixture Person 2\nSource: V76F Fixture Page 2",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    }
+  ],
+  "schema_version": "profile-media-case-batch-v75v",
+  "sources": [
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "V76F Fixture Page 1",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V76F fixture source 1"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "confidence_or_verification_notes": "Fixture source-chain gap retained for review.",
+      "currentness_status": "HISTORICAL",
+      "source_bucket": "Articles",
+      "source_chain_gap": true,
+      "source_page": "V76F Fixture Page 2",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V76F fixture source 2"
+    }
+  ]
+}

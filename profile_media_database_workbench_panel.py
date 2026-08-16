@@ -195,7 +195,7 @@ def build_profile_media_database_gui_panel_state(
             _action("refresh_database_view", "Refresh view", "available", "Refresh already configured explicit batch JSON view."),
             _action("load_batch_json", "Load batch JSON", "available", "Select explicit batch JSON files for the main Database workbench."),
             _action("plan_existing_folder_import", "Plan existing folder import", "available_dry_run", "Build a dry-run batch preview from an explicit folder-tree list; no folder scan."),
-            _action("materialize_case", "Materialize case", "guarded", "Requires explicit confirmation in backend materialize flow."),
+            _action("materialize_case", "Materialize case", "guarded_v76f", "Requires exact V76F confirmation before folder creation or metadata writes."),
             _action("review_report", "Review report", "available", "Open source-chain gaps, disputed framing, and unknown-role lanes."),
         ),
         notices=(

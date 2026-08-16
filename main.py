@@ -635,6 +635,7 @@ class App(ctk.CTk):
         self.profile_media_database_batch_json_files: tuple[str, ...] = ()
         self.profile_media_database_workbench_payload: dict[str, object] | None = None
         self.profile_media_database_batch_import_result: dict[str, object] | None = None
+        self.profile_media_database_materialize_result: dict[str, object] | None = None
         self.profile_media_database_panel_metric_labels: dict[str, object] = {}
         self.profile_media_database_panel_review_labels: dict[str, object] = {}
         self.profile_media_database_gui_state_path = None
@@ -4020,6 +4021,19 @@ class App(ctk.CTk):
         )
         self.profile_media_database_panel_clear_button.pack(side="right", padx=(0, 8))
 
+        self.profile_media_database_panel_materialize_button = ctk.CTkButton(
+            header,
+            text="Materialize",
+            command=self._materialize_profile_media_database_selected_batches,
+            width=98,
+            height=28,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=7,
+        )
+        self.profile_media_database_panel_materialize_button.pack(side="right", padx=(0, 8))
+
         self.profile_media_database_panel_subtitle_label = ctk.CTkLabel(
             self.profile_media_database_workbench_card,
             text="",
@@ -4260,6 +4274,101 @@ class App(ctk.CTk):
             )
         except Exception:
             pass
+
+
+    def _materialize_profile_media_database_selected_batches(self) -> None:
+        """Guarded materialization for explicit Database batch JSON selection."""
+        batch_json_files = tuple(getattr(self, "profile_media_database_batch_json_files", ()) or ())
+        if not batch_json_files:
+            try:
+                messagebox.showinfo("Database materialize", "Load explicit batch JSON before materializing a case.")
+            except Exception:
+                pass
+            return
+
+        database_root = str(getattr(self, "profile_media_database_root", "") or "").strip()
+        if not database_root:
+            try:
+                selected_root = filedialog.askdirectory(title="Select target Profile/Media Database root")
+            except Exception:
+                selected_root = ""
+            database_root = str(selected_root or "").strip()
+            if not database_root:
+                return
+
+        try:
+            from profile_media_database_materialize_workflow import (
+                PROFILE_MEDIA_DATABASE_MATERIALIZE_CONFIRMATION,
+                apply_database_materialize_plan,
+                build_database_materialize_plan,
+                materialize_workflow_payload,
+                render_database_materialize_plan_text,
+            )
+        except Exception as exc:
+            logger.debug("Could not import profile/media materialize workflow.", exc_info=True)
+            try:
+                messagebox.showerror("Database materialize", f"Materialize workflow is unavailable: {exc}")
+            except Exception:
+                pass
+            return
+
+        try:
+            preview_plan = build_database_materialize_plan(database_root=database_root, batch_json_files=batch_json_files)
+            preview_text = render_database_materialize_plan_text(preview_plan)
+            prompt = (
+                preview_text[:2400]
+                + "\n\nType this exact phrase to create folders and metadata files:\n"
+                + PROFILE_MEDIA_DATABASE_MATERIALIZE_CONFIRMATION
+            )
+            confirmation = simpledialog.askstring("Confirm Database materialize", prompt)
+            if confirmation != PROFILE_MEDIA_DATABASE_MATERIALIZE_CONFIRMATION:
+                self.profile_media_database_materialize_result = materialize_workflow_payload(
+                    apply_database_materialize_plan(
+                        build_database_materialize_plan(
+                            database_root=database_root,
+                            batch_json_files=batch_json_files,
+                            execute=True,
+                            confirmation_phrase=str(confirmation or ""),
+                        )
+                    ),
+                    plan=preview_plan,
+                )
+                try:
+                    messagebox.showwarning("Database materialize", "Materialization blocked because the exact confirmation phrase was not entered.")
+                except Exception:
+                    pass
+                return
+
+            execute_plan = build_database_materialize_plan(
+                database_root=database_root,
+                batch_json_files=batch_json_files,
+                execute=True,
+                confirmation_phrase=confirmation,
+            )
+            result = apply_database_materialize_plan(execute_plan)
+            self.profile_media_database_materialize_result = materialize_workflow_payload(result, plan=execute_plan)
+            self.profile_media_database_root = database_root
+            self._refresh_profile_media_database_workbench_panel()
+            try:
+                self.log_message(
+                    f"Profile/media Database materialize result: {result.status}; "
+                    f"created_directories={len(result.created_directories)}; written_files={len(result.written_files)}. "
+                    "No folder scan, move, rename, media copy, download, automatic classification, or sensitive inference was performed.",
+                    "info" if result.status == "materialized" else "warning",
+                )
+            except Exception:
+                pass
+            if result.status != "materialized":
+                try:
+                    messagebox.showwarning("Database materialize", f"Materialization did not complete: {result.status}")
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.debug("Profile/media Database materialization failed.", exc_info=True)
+            try:
+                messagebox.showerror("Database materialize", f"Materialization failed: {exc}")
+            except Exception:
+                pass
 
 
     def _create_text_editor_section(self) -> None:
