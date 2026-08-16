@@ -630,6 +630,7 @@ class App(ctk.CTk):
         self.profile_media_sidebar_mode: str = "FILES"
         self.profile_media_database_mode_var = None
         self.profile_media_mode_status_label = None
+        self.profile_media_database_preview_textbox = None
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
@@ -1116,6 +1117,7 @@ class App(ctk.CTk):
                     status_label.configure(text=self._profile_media_database_mode_status_text())
                 except Exception:
                     logger.debug("Could not update profile/media Database mode status label.", exc_info=True)
+            self._refresh_profile_media_database_sidebar_preview()
         return coerced
 
     def _on_profile_media_database_mode_toggled(self) -> None:
@@ -1130,6 +1132,47 @@ class App(ctk.CTk):
             )
         except Exception:
             logger.debug("Could not log profile/media Database mode toggle.", exc_info=True)
+
+    def _profile_media_database_sidebar_preview_text(self) -> str:
+        """Return the visible Database-mode hierarchy preview shown under the sidebar toggle."""
+        return (
+            "Database\n"
+            "  Profiles\n"
+            "\n"
+            "Case Folder\n"
+            "  Profiles\n"
+            "  People\n"
+            "  Sources\n"
+            "    Articles\n"
+            "    Social Media\n"
+            "      Offline\n"
+            "      Online\n"
+            "    Internal Media\n"
+            "  Reference Extants\n"
+            "\n"
+            "Preview only: no folder creation, moving, renaming, copying, or classification."
+        )
+
+    def _refresh_profile_media_database_sidebar_preview(self) -> None:
+        """Show the Database hierarchy preview only when Database mode is on."""
+        preview_box = getattr(self, "profile_media_database_preview_textbox", None)
+        if preview_box is None:
+            return
+        mode = self._coerce_profile_media_sidebar_mode()
+        if mode != "DATABASE":
+            try:
+                preview_box.grid_remove()
+            except Exception:
+                logger.debug("Could not hide profile/media Database sidebar preview.", exc_info=True)
+            return
+        try:
+            preview_box.grid(row=3, column=0, sticky="ew", pady=(6, 0))
+            preview_box.configure(state="normal")
+            preview_box.delete("1.0", "end")
+            preview_box.insert("1.0", self._profile_media_database_sidebar_preview_text())
+            preview_box.configure(state="disabled")
+        except Exception:
+            logger.debug("Could not refresh profile/media Database sidebar preview.", exc_info=True)
 
     def _create_profile_media_database_mode_toggle_section(self) -> None:
         """Create the FILES/DATABASE mode toggle directly above the FILES section."""
@@ -1173,6 +1216,19 @@ class App(ctk.CTk):
             anchor="w",
         )
         self.profile_media_mode_status_label.grid(row=2, column=0, sticky="ew", pady=(2, 0))
+
+        self.profile_media_database_preview_textbox = ctk.CTkTextbox(
+            self.profile_media_mode_frame,
+            height=156,
+            fg_color=COLORS["bg_input"],
+            text_color=COLORS["text_muted"],
+            border_color=COLORS["border"],
+            border_width=1,
+            corner_radius=6,
+            font=ctk.CTkFont(size=10),
+            wrap="word",
+        )
+        self._refresh_profile_media_database_sidebar_preview()
 
     def _create_files_section(self) -> None:
         """Create the session-only local files section in the sidebar."""
