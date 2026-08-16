@@ -93,7 +93,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     rows = build_database_tree_rows(manifest)
 
     output: dict[str, object] = {
-        "schema_version": "profile_media_database_cli.v75f",
+        "schema_version": "profile_media_database_cli.v75g",
         "status": "success",
         "case_count": len(manifest.cases),
         "global_profile_count": len(manifest.global_profiles),

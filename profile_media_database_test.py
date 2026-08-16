@@ -134,7 +134,7 @@ Source: Social Media
         global_profiles=(global_profile,),
     )
     manifest_dict = manifest.to_dict()
-    assert manifest_dict["schema_version"] == "profile-media-database-v75f"
+    assert manifest_dict["schema_version"] == "profile-media-database-v75g"
     assert manifest_dict["case_count"] == 1
     assert manifest_dict["global_profile_count"] == 1
     assert manifest.payload_sha256
@@ -399,12 +399,38 @@ Source: Social Media
     assert tree_rows[0].row_type == "database_root"
     assert any(row.row_type == "global_profiles" and row.label == "Profiles" for row in tree_rows)
     assert any(row.row_type == "case" and row.case_title == case_from_path.case_title for row in tree_rows)
-    assert any(row.row_type == "articles" and row.path.replace("/", "\\").endswith(r"\Sources\Articles") for row in tree_rows)
-    assert any(row.row_type == "case_profiles" and row.path.replace("/", "\\").endswith(r"\Profiles") for row in tree_rows)
+    articles_row = next(row for row in tree_rows if row.row_type == "articles")
+    sources_row = next(row for row in tree_rows if row.row_type == "sources")
+    social_media_row = next(row for row in tree_rows if row.row_type == "social_media")
+    offline_row = next(row for row in tree_rows if row.row_type == "social_media_offline")
+    online_row = next(row for row in tree_rows if row.row_type == "social_media_online")
+    internal_row = next(row for row in tree_rows if row.row_type == "internal_media")
+    reference_row = next(row for row in tree_rows if row.row_type == "reference_extants")
+    case_profiles_row = next(row for row in tree_rows if row.row_type == "case_profiles")
+    assert articles_row.path.replace("/", "\\").endswith(r"\Sources\Articles")
+    assert articles_row.level == 3
+    assert articles_row.parent_row_id == sources_row.row_id
+    assert social_media_row.level == 3
+    assert social_media_row.parent_row_id == sources_row.row_id
+    assert offline_row.level == 4
+    assert offline_row.parent_row_id == social_media_row.row_id
+    assert online_row.level == 4
+    assert online_row.parent_row_id == social_media_row.row_id
+    assert internal_row.level == 3
+    assert internal_row.parent_row_id == sources_row.row_id
+    assert reference_row.level == 2
+    assert case_profiles_row.path.replace("/", "\\").endswith(r"\Profiles")
+    media_source_row = next(row for row in tree_rows if row.row_type == "media_source")
+    assert media_source_row.parent_row_id == articles_row.row_id
+    assert media_source_row.level == 4
+    case_profile_row = next(row for row in tree_rows if row.row_type == "case_profile_record")
+    assert case_profile_row.parent_row_id == case_profiles_row.row_id
     tree_text = render_database_tree_text(tree_rows)
     assert "Profiles [global_profiles]" in tree_text
-    assert "Articles [articles]" in tree_text
-    assert "Internal Media [internal_media]" in tree_text
+    assert "    Sources [sources]\n      Articles [articles]" in tree_text
+    assert "      Social Media [social_media]\n        Offline [social_media_offline]\n        Online [social_media_online]" in tree_text
+    assert "      Internal Media [internal_media]" in tree_text
+    assert "    Reference Extants [reference_extants]" in tree_text
 
     with TemporaryDirectory() as temp_root:
         temp_path = Path(temp_root)
@@ -414,7 +440,7 @@ Source: Social Media
         assert manifest_write["status"] == "written"
         assert manifest_write["performed"] is True
         loaded_manifest = read_json_payload(manifest_path)
-        assert loaded_manifest["schema_version"] == "profile-media-database-v75f"
+        assert loaded_manifest["schema_version"] == "profile-media-database-v75g"
         assert loaded_manifest["review_queue_count"] == 1
         tree_write = write_database_tree_text(manifest_with_review, tree_path)
         assert tree_write["status"] == "written"
@@ -430,4 +456,4 @@ Source: Social Media
 
 if __name__ == "__main__":
     run_self_test()
-    print("profile_media_database v75f OK")
+    print("profile_media_database v75g OK")

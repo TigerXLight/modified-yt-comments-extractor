@@ -11,14 +11,14 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75f"
+PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75g"
 
 PROFILE_MEDIA_DATABASE_SCOPE = (
     "local profile/media database planning schema plus source/container import planning plus case repository path planning plus review/audit queue planning; "
     "no folder scanning, no folder creation, no file copying, no file movement, "
     "no automatic classification, no sensitive-attribute inference, no source fetching, "
     "no archive access, no media download, no browser automation, no credentials, "
-    "no GUI wiring; review-gated folder operation execution is available only when explicitly called with execute=True and approved review records; manifest JSON persistence and tree-view rows are read/write helpers, not classifiers"
+    "no GUI wiring; review-gated folder operation execution is available only when explicitly called with execute=True and approved review records; manifest JSON persistence and hierarchy-correct tree-view rows are read/write helpers, not classifiers"
 )
 
 
@@ -577,6 +577,8 @@ class ProfileMediaTreeRow:
     label: str
     path: str
     level: int = 0
+    parent_row_id: str = ""
+    display_order: int = 0
     case_id: str = ""
     case_title: str = ""
     source_bucket: str = ""
@@ -1032,32 +1034,68 @@ def write_manifest_json(
     return write_json_payload(path, manifest.to_dict(), create_parent=create_parent, overwrite=overwrite)
 
 
-def build_database_tree_rows(manifest: ProfileMediaDatabaseManifest) -> tuple[ProfileMediaTreeRow, ...]:
-    """Build a lightweight tree view model for Database mode.
+def _media_source_parent_for_bucket(
+    bucket: MediaBucket,
+    container_row_ids: dict[str, str],
+) -> tuple[str, int]:
+    if bucket == MediaBucket.ARTICLES:
+        return container_row_ids.get("articles", ""), 4
+    if bucket == MediaBucket.SOCIAL_MEDIA_ONLINE:
+        return container_row_ids.get("social_media_online", ""), 5
+    if bucket == MediaBucket.SOCIAL_MEDIA_OFFLINE:
+        return container_row_ids.get("social_media_offline", ""), 5
+    if bucket == MediaBucket.INTERNAL_MEDIA:
+        return container_row_ids.get("internal_media", ""), 4
+    if bucket == MediaBucket.REFERENCE_EXTANTS:
+        return container_row_ids.get("reference_extants", ""), 3
+    if bucket == MediaBucket.PEOPLE:
+        return container_row_ids.get("people", ""), 3
+    if bucket == MediaBucket.CASE_PROFILES:
+        return container_row_ids.get("case_profiles", ""), 3
+    return container_row_ids.get("sources", ""), 3
 
-    The tree is a view over the manifest. It does not scan folders and does not
-    infer classifications or identifiers.
+
+def build_database_tree_rows(manifest: ProfileMediaDatabaseManifest) -> tuple[ProfileMediaTreeRow, ...]:
+    """Build a lightweight hierarchy-correct tree view model for Database mode.
+
+    The tree is a view over the manifest. It does not scan folders, create folders,
+    move folders, rename folders, or infer classifications/identifiers.
     """
 
     rows: list[ProfileMediaTreeRow] = []
+    order = 0
+
+    def next_order() -> int:
+        nonlocal order
+        value = order
+        order += 1
+        return value
+
+    database_row_id = stable_profile_id("tree", manifest.manifest_id, "database")
     rows.append(
         ProfileMediaTreeRow(
-            row_id=stable_profile_id("tree", manifest.manifest_id, "database"),
+            row_id=database_row_id,
             row_type="database_root",
             label=Path(manifest.database_root).name or manifest.database_root,
             path=manifest.database_root,
             level=0,
+            display_order=next_order(),
         )
     )
+
+    global_profiles_row_id = stable_profile_id("tree", manifest.manifest_id, "global_profiles")
     rows.append(
         ProfileMediaTreeRow(
-            row_id=stable_profile_id("tree", manifest.manifest_id, "global_profiles"),
+            row_id=global_profiles_row_id,
             row_type="global_profiles",
             label="Profiles",
             path=manifest.global_profiles_path,
             level=1,
+            parent_row_id=database_row_id,
+            display_order=next_order(),
         )
     )
+
     for profile in manifest.global_profiles:
         rows.append(
             ProfileMediaTreeRow(
@@ -1066,45 +1104,76 @@ def build_database_tree_rows(manifest: ProfileMediaDatabaseManifest) -> tuple[Pr
                 label=profile.canonical_name or profile.profile_id,
                 path=str(Path(manifest.global_profiles_path) / sanitize_path_part(profile.canonical_name or profile.profile_id)),
                 level=2,
+                parent_row_id=global_profiles_row_id,
+                display_order=next_order(),
                 sensitive_identifier_source_evidenced_only=profile.no_automatic_sensitive_inference,
                 weak_sensitive_inference_prohibited=profile.no_automatic_sensitive_inference,
             )
         )
+
     for case in manifest.cases:
+        case_row_id = stable_profile_id("tree_case", case.case_id)
         rows.append(
             ProfileMediaTreeRow(
-                row_id=stable_profile_id("tree_case", case.case_id),
+                row_id=case_row_id,
                 row_type="case",
                 label=case.case_title,
                 path=case.case_root,
                 level=1,
+                parent_row_id=database_row_id,
+                display_order=next_order(),
                 case_id=case.case_id,
                 case_title=case.case_title,
             )
         )
-        case_children = (
-            ("case_profiles", "Profiles", case.layout.case_profiles_path),
-            ("people", "People", case.layout.people_path),
-            ("sources", "Sources", case.layout.sources_path),
-            ("articles", "Articles", case.layout.articles_path),
-            ("social_media", "Social Media", case.layout.social_media_path),
-            ("social_media_offline", "Offline", case.layout.social_media_offline_path),
-            ("social_media_online", "Online", case.layout.social_media_online_path),
-            ("internal_media", "Internal Media", case.layout.internal_media_path),
-            ("reference_extants", "Reference Extants", case.layout.reference_extants_path),
-        )
-        for row_type, label, path in case_children:
+
+        container_row_ids: dict[str, str] = {}
+
+        def add_container(row_type: str, label: str, path: str, level: int, parent_row_id: str) -> str:
+            row_id = stable_profile_id("tree_case_child", case.case_id, row_type, path)
+            container_row_ids[row_type] = row_id
             rows.append(
                 ProfileMediaTreeRow(
-                    row_id=stable_profile_id("tree_case_child", case.case_id, row_type, path),
+                    row_id=row_id,
                     row_type=row_type,
                     label=label,
                     path=path,
-                    level=2,
+                    level=level,
+                    parent_row_id=parent_row_id,
+                    display_order=next_order(),
                     case_id=case.case_id,
                     case_title=case.case_title,
                 )
             )
+            return row_id
+
+        def add_media_sources_for_bucket(bucket: MediaBucket) -> None:
+            for source in case.media_sources:
+                normalized_bucket = normalize_media_bucket(source.source_bucket)
+                if normalized_bucket != bucket:
+                    continue
+                parent_row_id, level = _media_source_parent_for_bucket(normalized_bucket, container_row_ids)
+                rows.append(
+                    ProfileMediaTreeRow(
+                        row_id=stable_profile_id("tree_media_source", case.case_id, source.source_id),
+                        row_type="media_source",
+                        label=source.title or source.source_page or source.source_id,
+                        path=source.local_address,
+                        level=level,
+                        parent_row_id=parent_row_id,
+                        display_order=next_order(),
+                        case_id=case.case_id,
+                        case_title=case.case_title,
+                        source_bucket=normalized_bucket.value,
+                        source_role=source.source_role,
+                        claim_basis=source.claim_basis,
+                        currentness_status=source.currentness_status,
+                        source_chain_gap=source.source_chain_gap,
+                        disputed_framing=source.disputed_framing,
+                    )
+                )
+
+        add_container("case_profiles", "Profiles", case.layout.case_profiles_path, 2, case_row_id)
         for profile in case.profiles:
             rows.append(
                 ProfileMediaTreeRow(
@@ -1113,21 +1182,48 @@ def build_database_tree_rows(manifest: ProfileMediaDatabaseManifest) -> tuple[Pr
                     label=profile.canonical_name or profile.profile_id,
                     path=str(Path(case.layout.case_profiles_path) / sanitize_path_part(profile.canonical_name or profile.profile_id)),
                     level=3,
+                    parent_row_id=container_row_ids["case_profiles"],
+                    display_order=next_order(),
                     case_id=case.case_id,
                     case_title=case.case_title,
                     sensitive_identifier_source_evidenced_only=profile.no_automatic_sensitive_inference,
                     weak_sensitive_inference_prohibited=profile.no_automatic_sensitive_inference,
                 )
             )
+
+        add_container("people", "People", case.layout.people_path, 2, case_row_id)
+        add_media_sources_for_bucket(MediaBucket.PEOPLE)
+
+        sources_row_id = add_container("sources", "Sources", case.layout.sources_path, 2, case_row_id)
+        add_container("articles", "Articles", case.layout.articles_path, 3, sources_row_id)
+        add_media_sources_for_bucket(MediaBucket.ARTICLES)
+        social_media_row_id = add_container("social_media", "Social Media", case.layout.social_media_path, 3, sources_row_id)
+        add_container("social_media_offline", "Offline", case.layout.social_media_offline_path, 4, social_media_row_id)
+        add_media_sources_for_bucket(MediaBucket.SOCIAL_MEDIA_OFFLINE)
+        add_container("social_media_online", "Online", case.layout.social_media_online_path, 4, social_media_row_id)
+        add_media_sources_for_bucket(MediaBucket.SOCIAL_MEDIA_ONLINE)
+        add_container("internal_media", "Internal Media", case.layout.internal_media_path, 3, sources_row_id)
+        add_media_sources_for_bucket(MediaBucket.INTERNAL_MEDIA)
+
+        add_container("reference_extants", "Reference Extants", case.layout.reference_extants_path, 2, case_row_id)
+        add_media_sources_for_bucket(MediaBucket.REFERENCE_EXTANTS)
+
+        emitted_source_ids = {row.row_id for row in rows if row.row_type == "media_source" and row.case_id == case.case_id}
         for source in case.media_sources:
+            row_id = stable_profile_id("tree_media_source", case.case_id, source.source_id)
+            if row_id in emitted_source_ids:
+                continue
             bucket = normalize_media_bucket(source.source_bucket)
+            parent_row_id, level = _media_source_parent_for_bucket(bucket, container_row_ids)
             rows.append(
                 ProfileMediaTreeRow(
-                    row_id=stable_profile_id("tree_media_source", case.case_id, source.source_id),
+                    row_id=row_id,
                     row_type="media_source",
                     label=source.title or source.source_page or source.source_id,
                     path=source.local_address,
-                    level=3,
+                    level=level,
+                    parent_row_id=parent_row_id,
+                    display_order=next_order(),
                     case_id=case.case_id,
                     case_title=case.case_title,
                     source_bucket=bucket.value,
@@ -1139,7 +1235,6 @@ def build_database_tree_rows(manifest: ProfileMediaDatabaseManifest) -> tuple[Pr
                 )
             )
     return tuple(rows)
-
 
 def render_database_tree_text(rows: Iterable[ProfileMediaTreeRow]) -> str:
     lines: list[str] = []
