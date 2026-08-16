@@ -1,0 +1,41 @@
+{
+  "schema_version": "profile-media-gui-smoke-acceptance-v76j",
+  "cases": [
+    {
+      "id": "database_mode_visible",
+      "expected": "main panel appears only when DATABASE mode is on",
+      "safety": "no folder scan"
+    },
+    {
+      "id": "existing_folder_plan",
+      "expected": "explicit pasted tree creates candidate preview",
+      "safety": "no filesystem crawl"
+    },
+    {
+      "id": "materialize_guard",
+      "expected": "materialize requires exact confirmation",
+      "confirmation": "MATERIALIZE_PROFILE_MEDIA_DATABASE_SELECTION"
+    },
+    {
+      "id": "folder_operations_guard",
+      "expected": "rename/move requires reviewed explicit paths",
+      "confirmation": "APPLY_PROFILE_MEDIA_REVIEWED_FOLDER_OPERATIONS"
+    },
+    {
+      "id": "reconciliation_guard",
+      "expected": "reconciled batch preview requires exact confirmation",
+      "confirmation": "WRITE_RECONCILED_PROFILE_MEDIA_BATCH_PREVIEW"
+    },
+    {
+      "id": "review_lanes",
+      "expected": "panel review lane counts reflect nested workbench/review report values"
+    }
+  ],
+  "safety_flags": {
+    "folder_scan_performed": false,
+    "file_copy_performed": false,
+    "media_download_performed": false,
+    "automatic_classification_performed": false,
+    "sensitive_identifier_inference_performed": false
+  }
+}

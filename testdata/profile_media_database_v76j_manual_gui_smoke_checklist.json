@@ -1,0 +1,15 @@
+{
+  "schema_version": "profile-media-manual-gui-smoke-checklist-v76j",
+  "items": [
+    "DATABASE mode toggle visible and mode-only",
+    "Main Profile/Media Database panel appears",
+    "Load batch JSON action is available",
+    "Plan existing folder import action is available",
+    "Materialize case action is guarded by exact V76F phrase",
+    "Review folder operations action is guarded by exact V76G phrase",
+    "Reconcile batch preview action is guarded by exact V76I phrase",
+    "Run workflow check action is available",
+    "Review lanes show source-chain gaps / disputed framing / unknown roles / parser warnings",
+    "Safety flags remain false except intentional guarded operations in their result payloads"
+  ]
+}

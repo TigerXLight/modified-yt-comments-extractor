@@ -33,6 +33,7 @@ def test_database_mode_without_batch_json_is_visible_but_unconfigured() -> None:
     assert payload["batch_json_files"] == ()
     assert any(action["action_id"] == "load_batch_json" for action in payload["actions"])
     assert any(action["action_id"] == "review_folder_operations" for action in payload["actions"])
+    assert any(action["action_id"] == "reconcile_batch_after_folder_operations" for action in payload["actions"])
     assert any(action["action_id"] == "run_end_to_end_workflow_check" for action in payload["actions"])
     assert payload["folder_scan_performed"] is False
     assert payload["folder_creation_performed"] is False
@@ -87,7 +88,7 @@ def main() -> int:
     test_files_mode_panel_is_inert()
     test_database_mode_without_batch_json_is_visible_but_unconfigured()
     test_database_panel_projects_workbench_payload_counts()
-    print("profile_media_database_workbench_panel v76h OK")
+    print("profile_media_database_workbench_panel v76j OK")
     return 0
 
 
