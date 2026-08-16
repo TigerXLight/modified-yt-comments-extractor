@@ -1,0 +1,57 @@
+{
+  "schema_version": "external-reference-coverage-v76n-acceptance-matrix",
+  "audit_head": "5af82d1",
+  "reference_folders": [
+    {
+      "path": "external_reference_sources_20260814_234822",
+      "status": ["REFERENCE_ONLY", "DO_NOT_VENDOR"]
+    },
+    {
+      "path": "external_reference_sources_20260816_article_extraction",
+      "status": ["REFERENCE_ONLY", "DO_NOT_VENDOR", "BLOCKED_BY_DEPENDENCY"]
+    }
+  ],
+  "required_docs": [
+    "EXTERNAL_REFERENCE_SOURCE_COVERAGE_AUDIT_V76N.md",
+    "SCREENSHOT_ARCHIVE_REFERENCE_COVERAGE_V76N.md",
+    "TWITTER_X_REFERENCE_COVERAGE_V76N.md",
+    "ARTICLE_EXTRACTION_REFERENCE_COVERAGE_V76N.md",
+    "PROFILE_MEDIA_SOURCE_WORKFLOW_REFERENCE_GAPS_V76N.md",
+    "PROJECT_REFERENCE_COVERAGE_COMMAND_INDEX_V76N.md"
+  ],
+  "status_tags": [
+    "IMPLEMENTED",
+    "PARTIAL",
+    "CLI_ONLY",
+    "GUI_ONLY",
+    "TESTED",
+    "DOCUMENTED_ONLY",
+    "REFERENCE_ONLY",
+    "SUPERSEDED",
+    "NOT_IMPLEMENTED",
+    "UNSAFE_OUT_OF_SCOPE",
+    "BLOCKED_BY_DEPENDENCY",
+    "NEEDS_MANUAL_REVIEW",
+    "DO_NOT_VENDOR",
+    "DO_NOT_IMPLEMENT_WRITE_ACTION"
+  ],
+  "high_priority_gaps": [
+    "HOME source folder ingestion",
+    "source.txt plus RTF/TXT/HTML and screenshot/media folder reading",
+    "witness connectivity",
+    "first-person review signals",
+    "claim-subject affiliation source evaluation JSON",
+    "Twitter/X GUI capture result integration",
+    "WARC/WACZ replay verification"
+  ],
+  "safety_flags_expected": {
+    "repo_reference_inventory_scan": true,
+    "folder_scan_performed": false,
+    "media_download_performed": false,
+    "web_download_performed": false,
+    "crawling_performed": false,
+    "automatic_classification_performed": false,
+    "sensitive_identifier_inference_performed": false
+  }
+}
+
