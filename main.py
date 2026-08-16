@@ -630,6 +630,13 @@ class App(ctk.CTk):
         self.profile_media_runtime_state_path: Optional[Path] = None
         self.profile_media_sidebar_mode: str = self._load_profile_media_sidebar_mode_for_startup()
         self.profile_media_database_mode_var = None
+        self.profile_media_database_panel_state = None
+        self.profile_media_database_root = ""
+        self.profile_media_database_batch_json_files: tuple[str, ...] = ()
+        self.profile_media_database_workbench_payload: dict[str, object] | None = None
+        self.profile_media_database_batch_import_result: dict[str, object] | None = None
+        self.profile_media_database_panel_metric_labels: dict[str, object] = {}
+        self.profile_media_database_panel_review_labels: dict[str, object] = {}
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
@@ -1136,6 +1143,7 @@ class App(ctk.CTk):
                     logger.debug("Could not update profile/media Database toggle variable.", exc_info=True)
         self._refresh_profile_media_database_mode_switch_visual()
         self._save_profile_media_sidebar_mode_for_runtime(coerced)
+        self._refresh_profile_media_database_workbench_panel()
         return coerced
 
     def _profile_media_database_toggle_text(self, mode: object | None = None) -> str:
@@ -3412,10 +3420,11 @@ class App(ctk.CTk):
         )
         self.main_frame.grid(row=row, column=column, sticky="nsew", padx=20, pady=20)
         self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(4, weight=0)
+        self.main_frame.grid_rowconfigure(5, weight=0)
 
         self._create_url_section()
         self._create_progress_section()
+        self._create_profile_media_database_workbench_panel()
         self._create_text_editor_section()
         self._create_transcript_section()
         self._create_log_section()
@@ -3933,6 +3942,245 @@ class App(ctk.CTk):
         else:
             self._show_text_editor_panel()
 
+    def _create_profile_media_database_workbench_panel(self) -> None:
+        """Create the main Database-mode workbench panel.
+
+        This is main-content UI, not a sidebar mini view.  It renders
+        explicit Database-mode state only and does not scan, move, rename, copy,
+        retrieve media, auto-label, or infer sensitive identifiers.
+        """
+        self.profile_media_database_workbench_card = ctk.CTkFrame(
+            self.main_frame,
+            fg_color=COLORS["bg_card"],
+            corner_radius=12,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        self.profile_media_database_workbench_card.grid(row=2, column=0, sticky="ew", pady=(0, 15))
+        self.profile_media_database_workbench_card.grid_columnconfigure(0, weight=1)
+
+        header = ctk.CTkFrame(self.profile_media_database_workbench_card, fg_color="transparent")
+        header.pack(fill="x", padx=15, pady=(12, 8))
+
+        self.profile_media_database_panel_title_label = ctk.CTkLabel(
+            header,
+            text="🗂 DATABASE Workbench",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS["text_primary"],
+        )
+        self.profile_media_database_panel_title_label.pack(side="left")
+
+        self.profile_media_database_panel_status_label = ctk.CTkLabel(
+            header,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+        )
+        self.profile_media_database_panel_status_label.pack(side="left", padx=(12, 0))
+
+        self.profile_media_database_panel_refresh_button = ctk.CTkButton(
+            header,
+            text="Refresh",
+            command=self._refresh_profile_media_database_workbench_panel,
+            width=82,
+            height=28,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=7,
+        )
+        self.profile_media_database_panel_refresh_button.pack(side="right")
+
+        self.profile_media_database_panel_batch_button = ctk.CTkButton(
+            header,
+            text="Load batch JSON",
+            command=self._select_profile_media_database_batch_json_files,
+            width=124,
+            height=28,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=7,
+        )
+        self.profile_media_database_panel_batch_button.pack(side="right", padx=(0, 8))
+
+        self.profile_media_database_panel_subtitle_label = ctk.CTkLabel(
+            self.profile_media_database_workbench_card,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            anchor="w",
+            justify="left",
+            wraplength=880,
+        )
+        self.profile_media_database_panel_subtitle_label.pack(fill="x", padx=15, pady=(0, 8))
+
+        metrics_frame = ctk.CTkFrame(self.profile_media_database_workbench_card, fg_color="transparent")
+        metrics_frame.pack(fill="x", padx=15, pady=(0, 8))
+        self.profile_media_database_panel_metric_labels = {}
+        for column, key in enumerate(("cases", "sources", "profile_rows", "review_items")):
+            metrics_frame.grid_columnconfigure(column, weight=1)
+            metric_label = ctk.CTkLabel(
+                metrics_frame,
+                text="",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_primary"],
+                fg_color=COLORS["bg_input"],
+                corner_radius=7,
+                padx=8,
+                pady=8,
+            )
+            metric_label.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 6, 0))
+            self.profile_media_database_panel_metric_labels[key] = metric_label
+
+        review_frame = ctk.CTkFrame(self.profile_media_database_workbench_card, fg_color="transparent")
+        review_frame.pack(fill="x", padx=15, pady=(0, 8))
+        self.profile_media_database_panel_review_labels = {}
+        for column, key in enumerate(("source_chain_gaps", "disputed_framing", "unknown_source_roles")):
+            review_frame.grid_columnconfigure(column, weight=1)
+            review_label = ctk.CTkLabel(
+                review_frame,
+                text="",
+                font=ctk.CTkFont(size=11),
+                text_color=COLORS["text_muted"],
+                fg_color=COLORS["bg_input"],
+                corner_radius=7,
+                padx=8,
+                pady=6,
+            )
+            review_label.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 6, 0))
+            self.profile_media_database_panel_review_labels[key] = review_label
+
+        self.profile_media_database_panel_notice_label = ctk.CTkLabel(
+            self.profile_media_database_workbench_card,
+            text="",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"],
+            anchor="w",
+            justify="left",
+            wraplength=880,
+        )
+        self.profile_media_database_panel_notice_label.pack(fill="x", padx=15, pady=(0, 12))
+
+        self._refresh_profile_media_database_workbench_panel()
+
+    def _refresh_profile_media_database_workbench_panel(self) -> None:
+        """Refresh the main Database panel using explicit safe presenter state only."""
+        card = getattr(self, "profile_media_database_workbench_card", None)
+        if card is None:
+            return
+
+        mode = self._coerce_profile_media_sidebar_mode()
+        if mode == "DATABASE":
+            try:
+                card.grid()
+            except Exception:
+                pass
+        else:
+            try:
+                card.grid_remove()
+            except Exception:
+                pass
+
+        try:
+            from profile_media_database_workbench_panel import build_profile_media_database_gui_panel_state
+
+            state = build_profile_media_database_gui_panel_state(
+                mode=mode,
+                database_root=getattr(self, "profile_media_database_root", ""),
+                batch_json_files=getattr(self, "profile_media_database_batch_json_files", ()),
+                workbench_payload=getattr(self, "profile_media_database_workbench_payload", None),
+            )
+            self.profile_media_database_panel_state = state
+        except Exception:
+            logger.debug("Could not build profile/media Database GUI panel state.", exc_info=True)
+            state = None
+
+        if state is None:
+            return
+
+        try:
+            self.profile_media_database_panel_status_label.configure(text=f"{state.mode} / {state.status}")
+            self.profile_media_database_panel_subtitle_label.configure(text=state.subtitle)
+
+            metrics = {metric.key: metric for metric in state.metrics}
+            for key, label_widget in getattr(self, "profile_media_database_panel_metric_labels", {}).items():
+                metric = metrics.get(key)
+                label_widget.configure(text=f"{metric.label}: {metric.value}" if metric else "")
+
+            lanes = {lane.key: lane for lane in state.review_lanes}
+            for key, label_widget in getattr(self, "profile_media_database_panel_review_labels", {}).items():
+                lane = lanes.get(key)
+                label_widget.configure(text=f"{lane.label}: {lane.value}" if lane else "")
+
+            notices = "\n".join(state.notices[:3])
+            self.profile_media_database_panel_notice_label.configure(text=notices)
+        except Exception:
+            logger.debug("Could not refresh profile/media Database GUI panel widgets.", exc_info=True)
+
+    def _build_profile_media_database_workbench_payload_from_batches(self, batch_json_files: tuple[str, ...], database_root: str) -> dict[str, object] | None:
+        """Build workbench payload from explicit batch JSON files selected by the user."""
+        if not batch_json_files:
+            return None
+        from profile_media_database_session import ProfileMediaDatabaseSessionConfig
+        from profile_media_database_workbench import build_workbench_state, workbench_payload
+
+        config = ProfileMediaDatabaseSessionConfig(
+            database_root=database_root,
+            batch_json_files=batch_json_files,
+            mode="DATABASE",
+        )
+        return workbench_payload(build_workbench_state(config), include_text=False)
+
+    def _select_profile_media_database_batch_json_files(self) -> None:
+        """Select explicit batch JSON files for the main Database workbench."""
+        try:
+            selected = filedialog.askopenfilenames(
+                title="Select Profile/Media Database batch JSON",
+                filetypes=(("JSON files", "*.json"), ("All files", "*.*")),
+            )
+        except Exception:
+            logger.debug("Could not open profile/media Database batch JSON selector.", exc_info=True)
+            return
+
+        batch_json_files = tuple(str(item) for item in selected if str(item).strip())
+        if not batch_json_files:
+            return
+
+        try:
+            from profile_media_database_batch_import_assistant import (
+                apply_batch_import_plan,
+                batch_import_result_payload,
+                build_batch_import_plan,
+            )
+
+            plan = build_batch_import_plan(
+                batch_json_files,
+                database_root=getattr(self, "profile_media_database_root", ""),
+            )
+            result = apply_batch_import_plan(plan)
+            self.profile_media_database_batch_import_result = batch_import_result_payload(result)
+            self.profile_media_database_batch_json_files = result.batch_json_files
+            self.profile_media_database_root = result.database_root or getattr(self, "profile_media_database_root", "")
+            self.profile_media_database_workbench_payload = self._build_profile_media_database_workbench_payload_from_batches(
+                self.profile_media_database_batch_json_files,
+                self.profile_media_database_root,
+            )
+            self._set_profile_media_sidebar_mode("DATABASE", update_widget=True)
+            self._refresh_profile_media_database_workbench_panel()
+            self.log_message(
+                f"Profile/media Database loaded {len(self.profile_media_database_batch_json_files)} explicit batch JSON file(s). "
+                "No folder scan or filesystem mutation was performed.",
+                "info",
+            )
+        except Exception as exc:
+            logger.debug("Could not load profile/media Database batch JSON files.", exc_info=True)
+            try:
+                messagebox.showerror("Database batch JSON", f"Could not load selected batch JSON files: {exc}")
+            except Exception:
+                pass
+
+
     def _create_text_editor_section(self) -> None:
         """Create an in-app plain text editor panel."""
         self.text_editor_card = ctk.CTkFrame(
@@ -3942,7 +4190,7 @@ class App(ctk.CTk):
             border_width=1,
             border_color=COLORS["border"],
         )
-        self.text_editor_card.grid(row=2, column=0, sticky="ew", pady=(0, 15))
+        self.text_editor_card.grid(row=3, column=0, sticky="ew", pady=(0, 15))
         self.text_editor_card.grid_columnconfigure(0, weight=1)
 
         header = ctk.CTkFrame(self.text_editor_card, fg_color="transparent")
@@ -4802,7 +5050,7 @@ class App(ctk.CTk):
             border_width=1,
             border_color=COLORS["border"]
         )
-        self.transcript_card.grid(row=3, column=0, sticky="ew", pady=(0, 15))
+        self.transcript_card.grid(row=4, column=0, sticky="ew", pady=(0, 15))
         self.transcript_card.grid_columnconfigure(0, weight=1)
 
         # Header row
@@ -5805,7 +6053,7 @@ class App(ctk.CTk):
             border_width=1,
             border_color=COLORS["border"]
         )
-        self.log_card.grid(row=4, column=0, sticky="ew")
+        self.log_card.grid(row=5, column=0, sticky="ew")
         self.log_card.grid_rowconfigure(1, weight=0)
         self.log_card.grid_columnconfigure(0, weight=1)
 
