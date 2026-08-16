@@ -1133,25 +1133,68 @@ class App(ctk.CTk):
         except Exception:
             logger.debug("Could not log profile/media Database mode toggle.", exc_info=True)
 
-    def _profile_media_database_sidebar_preview_text(self) -> str:
-        """Return the visible Database-mode hierarchy preview shown under the sidebar toggle."""
-        return (
-            "Database\n"
-            "  Profiles\n"
-            "\n"
-            "Case Folder\n"
-            "  Profiles\n"
-            "  People\n"
-            "  Sources\n"
-            "    Articles\n"
-            "    Social Media\n"
-            "      Offline\n"
-            "      Online\n"
-            "    Internal Media\n"
-            "  Reference Extants\n"
-            "\n"
-            "Preview only: no folder creation, moving, renaming, copying, or classification."
+    def _build_profile_media_database_sidebar_preview_manifest(self):
+        """Build the small in-memory manifest used by the sidebar Database preview.
+
+        This is a view-model bridge only. It does not inspect the user's folders,
+        create directories, move folders, rename files, classify media, or infer
+        sensitive identifiers.
+        """
+        from pathlib import Path
+
+        from profile_media_database import (
+            CaseFolderLayout,
+            CaseRecord,
+            ProfileMediaDatabaseManifest,
         )
+
+        database_root = Path("Database")
+        case_root = Path("Case Folder")
+        layout = CaseFolderLayout(
+            case_root=str(case_root),
+            case_profiles_path=str(case_root / "Profiles"),
+            people_path=str(case_root / "People"),
+            sources_path=str(case_root / "Sources"),
+            articles_path=str(case_root / "Sources" / "Articles"),
+            social_media_path=str(case_root / "Sources" / "Social Media"),
+            social_media_offline_path=str(case_root / "Sources" / "Social Media" / "Offline"),
+            social_media_online_path=str(case_root / "Sources" / "Social Media" / "Online"),
+            internal_media_path=str(case_root / "Sources" / "Internal Media"),
+            reference_extants_path=str(case_root / "Reference Extants"),
+        )
+        return ProfileMediaDatabaseManifest(
+            manifest_id="sidebar-preview",
+            database_root=str(database_root),
+            global_profiles_path=str(database_root / "Profiles"),
+            global_profiles=(),
+            cases=(
+                CaseRecord(
+                    case_id="case-folder-preview",
+                    case_title="Case Folder",
+                    case_root=str(case_root),
+                    layout=layout,
+                ),
+            ),
+        )
+
+    def _profile_media_database_sidebar_preview_text(self) -> str:
+        """Return the Database-mode hierarchy preview through the V75H view model."""
+        from profile_media_database_view_model import build_profile_media_database_view_state
+
+        manifest = self._build_profile_media_database_sidebar_preview_manifest()
+        state = build_profile_media_database_view_state(manifest, mode="DATABASE")
+        lines = []
+        for row in state.visible_rows:
+            label = row.label or row.path or row.row_id
+            lines.append(f"{'  ' * max(0, row.level)}{label}")
+        lines.extend(
+            (
+                "",
+                "Preview only: no folder creation, moving, renaming, copying, scanning, or classification.",
+                "Sensitive identifiers remain source-evidenced only; no inference is performed.",
+            )
+        )
+        return "\n".join(lines)
 
     def _refresh_profile_media_database_sidebar_preview(self) -> None:
         """Show the Database hierarchy preview only when Database mode is on."""

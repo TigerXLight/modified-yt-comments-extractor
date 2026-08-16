@@ -19,9 +19,9 @@ def test_profile_media_sidebar_preview_state_field_exists() -> None:
     assert "self.profile_media_database_preview_textbox = None" in source
 
 
-def test_profile_media_sidebar_preview_has_required_hierarchy() -> None:
+def test_profile_media_sidebar_preview_manifest_has_required_hierarchy() -> None:
     source = _main_source()
-    method = _method_source(source, "_profile_media_database_sidebar_preview_text")
+    method = _method_source(source, "_build_profile_media_database_sidebar_preview_manifest")
 
     expected = (
         "Database",
@@ -38,10 +38,23 @@ def test_profile_media_sidebar_preview_has_required_hierarchy() -> None:
     )
     for label in expected:
         assert label in method
+    assert "CaseFolderLayout" in method
+    assert "CaseRecord" in method
+    assert "ProfileMediaDatabaseManifest" in method
     assert method.index("Sources") < method.index("Articles")
     assert method.index("Social Media") < method.index("Offline")
     assert method.index("Social Media") < method.index("Online")
+
+
+def test_profile_media_sidebar_preview_uses_view_model_not_static_tree() -> None:
+    source = _main_source()
+    method = _method_source(source, "_profile_media_database_sidebar_preview_text")
+
+    assert "build_profile_media_database_view_state" in method
+    assert "_build_profile_media_database_sidebar_preview_manifest" in method
+    assert "state.visible_rows" in method
     assert "Preview only" in method
+    assert "Sensitive identifiers remain source-evidenced only" in method
 
 
 def test_profile_media_sidebar_preview_is_only_visible_in_database_mode() -> None:
@@ -77,6 +90,7 @@ def test_profile_media_sidebar_preview_source_is_guarded() -> None:
     source = _main_source()
     combined_source = "\n".join(
         (
+            _method_source(source, "_build_profile_media_database_sidebar_preview_manifest"),
             _method_source(source, "_profile_media_database_sidebar_preview_text"),
             _method_source(source, "_refresh_profile_media_database_sidebar_preview"),
             _method_source(source, "_create_profile_media_database_mode_toggle_section"),
@@ -94,6 +108,7 @@ def test_profile_media_sidebar_preview_source_is_guarded() -> None:
         "glob(",
         "rglob(",
         "os.walk",
+        "scan_folders",
     )
     lowered = combined_source.lower()
     for term in forbidden:
@@ -103,9 +118,10 @@ def test_profile_media_sidebar_preview_source_is_guarded() -> None:
 
 if __name__ == "__main__":
     test_profile_media_sidebar_preview_state_field_exists()
-    test_profile_media_sidebar_preview_has_required_hierarchy()
+    test_profile_media_sidebar_preview_manifest_has_required_hierarchy()
+    test_profile_media_sidebar_preview_uses_view_model_not_static_tree()
     test_profile_media_sidebar_preview_is_only_visible_in_database_mode()
     test_profile_media_sidebar_toggle_creates_preview_textbox()
     test_profile_media_sidebar_mode_updates_preview()
     test_profile_media_sidebar_preview_source_is_guarded()
-    print("profile_media_database_sidebar_preview v75j OK")
+    print("profile_media_database_sidebar_preview v75k OK")
