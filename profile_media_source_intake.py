@@ -34,6 +34,7 @@ from profile_media_database import (
     utc_now_iso,
 )
 from profile_media_case_workspace import build_case_workspace_plan
+from profile_media_source_role_policy import canonical_source_role
 
 PROFILE_MEDIA_SOURCE_INTAKE_SCHEMA_VERSION = "profile-media-source-intake-v75r"
 PROFILE_MEDIA_SOURCE_INTAKE_CONFIRMATION = "CREATE_SOURCE_INTAKE_RECORD"
@@ -131,7 +132,7 @@ def _coerce_enum(enum_type: type, value: Any, default: Any) -> Any:
 
 
 def coerce_source_role(value: Any) -> ProfileSourceRole:
-    return _coerce_enum(ProfileSourceRole, value, ProfileSourceRole.UNKNOWN_SOURCE_ROLE)
+    return _coerce_enum(ProfileSourceRole, canonical_source_role(value), ProfileSourceRole.UNKNOWN_SOURCE_ROLE)
 
 
 def coerce_claim_basis(value: Any) -> ClaimBasis:

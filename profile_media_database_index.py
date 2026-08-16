@@ -24,6 +24,7 @@ from profile_media_case_batch import (
     load_case_batch_json,
 )
 from profile_media_database import parse_profile_text_blocks, stable_profile_id, utc_now_iso
+from profile_media_source_role_policy import normalize_source_role_value
 
 PROFILE_MEDIA_DATABASE_INDEX_SCHEMA_VERSION = "profile-media-database-index-v75w"
 
@@ -199,7 +200,11 @@ def build_database_index_from_payloads(payloads: Iterable[Mapping[str, Any]]) ->
             source_title = _first_text(source.get("source_title")) or "Untitled Source"
             source_page = _first_text(source.get("source_page"))
             source_bucket = _first_text(source.get("source_bucket")) or "Articles"
-            source_role = _first_text(source.get("source_role")) or "UNKNOWN_SOURCE_ROLE"
+            raw_source_role = _first_text(source.get("source_role")) or "UNKNOWN_SOURCE_ROLE"
+            source_role_decision = normalize_source_role_value(raw_source_role)
+            source_role = source_role_decision.normalized_value
+            if source_role_decision.warning:
+                warnings.append(f"batch_{batch_number}:source_{index}:{source_role_decision.warning}")
             claim_basis = _first_text(source.get("claim_basis")) or "UNKNOWN_CLAIM_BASIS"
             currentness_status = _first_text(source.get("currentness_status")) or "UNKNOWN"
             local_address = f"Cases/{case_title}/Sources/{source_bucket}/{source_title}"
@@ -227,7 +232,11 @@ def build_database_index_from_payloads(payloads: Iterable[Mapping[str, Any]]) ->
             fallback_name = _first_text(profile.get("canonical_name"))
             canonical_name, block_count, identifier_count, parser_warnings, local_addresses, source_pages = _profile_name_from_text(profile_text, fallback=fallback_name)
             source_bucket = _first_text(profile.get("source_bucket")) or "Articles"
-            source_role = _first_text(profile.get("source_role")) or "UNKNOWN_SOURCE_ROLE"
+            raw_profile_source_role = _first_text(profile.get("source_role")) or "UNKNOWN_SOURCE_ROLE"
+            profile_source_role_decision = normalize_source_role_value(raw_profile_source_role)
+            source_role = profile_source_role_decision.normalized_value
+            if profile_source_role_decision.warning:
+                warnings.append(f"batch_{batch_number}:profile_{index}:{profile_source_role_decision.warning}")
             claim_basis = _first_text(profile.get("claim_basis")) or "UNKNOWN_CLAIM_BASIS"
             currentness_status = _first_text(profile.get("currentness_status")) or "UNKNOWN"
             row_id = stable_profile_id("profile_index", case_title, canonical_name, source_bucket, str(index))

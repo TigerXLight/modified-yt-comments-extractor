@@ -1,0 +1,12 @@
+Database/Profiles/Global Header Person Alpha
+Database/Profiles/Global Header Person Beta
+Cases/Example Folder Case/Sources/Articles/June 2026 Example Article/source_claim_evaluation.json
+Cases/Example Folder Case/Sources/Social Media/Online/Example social media document/capture.html
+Cases/Example Folder Case/Sources/Social Media/Offline/Archived post bundle/manifest.json
+Cases/Example Folder Case/Sources/Internal Media/Creator original video/internal_media_note.txt
+Cases/Example Folder Case/Profiles/Example Person/profile.txt
+Cases/Example Folder Case/Profiles/Second Example/profile.txt
+Cases/Example Folder Case/Profiles/Third Example/profile.txt
+Cases/Example Folder Case/People/Named person note.txt
+Cases/Example Folder Case/Reference Extants/Readable timeline.txt
+Unrelated Scratch Folder/random.txt
