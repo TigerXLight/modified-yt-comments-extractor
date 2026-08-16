@@ -11,14 +11,14 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75e"
+PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75f"
 
 PROFILE_MEDIA_DATABASE_SCOPE = (
     "local profile/media database planning schema plus source/container import planning plus case repository path planning plus review/audit queue planning; "
     "no folder scanning, no folder creation, no file copying, no file movement, "
     "no automatic classification, no sensitive-attribute inference, no source fetching, "
     "no archive access, no media download, no browser automation, no credentials, "
-    "no GUI wiring; review-gated folder operation execution is available only when explicitly called with execute=True and approved review records"
+    "no GUI wiring; review-gated folder operation execution is available only when explicitly called with execute=True and approved review records; manifest JSON persistence and tree-view rows are read/write helpers, not classifiers"
 )
 
 
@@ -568,6 +568,29 @@ class ProfileMediaFolderOperationResult:
         return _value_for_dict(self)
 
 
+
+
+@dataclass(frozen=True)
+class ProfileMediaTreeRow:
+    row_id: str
+    row_type: str
+    label: str
+    path: str
+    level: int = 0
+    case_id: str = ""
+    case_title: str = ""
+    source_bucket: str = ""
+    source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE
+    claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN
+    source_chain_gap: bool = False
+    disputed_framing: bool = False
+    sensitive_identifier_source_evidenced_only: bool = True
+    weak_sensitive_inference_prohibited: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
 @dataclass(frozen=True)
 class ProfileMediaDatabaseManifest:
     manifest_id: str
@@ -953,6 +976,201 @@ def build_manifest(
     )
     return manifest_with_hash(manifest)
 
+
+
+
+def write_json_payload(path: str | Path, payload: Any, *, create_parent: bool = False, overwrite: bool = True) -> dict[str, Any]:
+    """Write a JSON payload to disk with explicit, narrow permissions.
+
+    This helper may create a manifest/tree text file, but it never moves,
+    renames, copies, classifies, scans, or creates case folders. Parent folder
+    creation is opt-in through create_parent=True.
+    """
+
+    target = Path(path)
+    warnings: list[str] = []
+    if target.exists() and not overwrite:
+        return {
+            "status": "blocked_destination_exists",
+            "path": str(target),
+            "performed": False,
+            "warnings": ("destination_exists_overwrite_false",),
+        }
+    if not target.parent.exists():
+        if create_parent:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            warnings.append("created_parent_folder_for_json_payload")
+        else:
+            return {
+                "status": "blocked_parent_missing",
+                "path": str(target),
+                "performed": False,
+                "warnings": ("parent_folder_missing",),
+            }
+    text = json.dumps(_value_for_dict(payload), ensure_ascii=False, indent=2, sort_keys=True)
+    target.write_text(text + "\n", encoding="utf-8")
+    return {
+        "status": "written",
+        "path": str(target),
+        "performed": True,
+        "bytes": target.stat().st_size,
+        "warnings": tuple(warnings),
+    }
+
+
+def read_json_payload(path: str | Path) -> dict[str, Any]:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def write_manifest_json(
+    manifest: ProfileMediaDatabaseManifest,
+    path: str | Path,
+    *,
+    create_parent: bool = False,
+    overwrite: bool = True,
+) -> dict[str, Any]:
+    return write_json_payload(path, manifest.to_dict(), create_parent=create_parent, overwrite=overwrite)
+
+
+def build_database_tree_rows(manifest: ProfileMediaDatabaseManifest) -> tuple[ProfileMediaTreeRow, ...]:
+    """Build a lightweight tree view model for Database mode.
+
+    The tree is a view over the manifest. It does not scan folders and does not
+    infer classifications or identifiers.
+    """
+
+    rows: list[ProfileMediaTreeRow] = []
+    rows.append(
+        ProfileMediaTreeRow(
+            row_id=stable_profile_id("tree", manifest.manifest_id, "database"),
+            row_type="database_root",
+            label=Path(manifest.database_root).name or manifest.database_root,
+            path=manifest.database_root,
+            level=0,
+        )
+    )
+    rows.append(
+        ProfileMediaTreeRow(
+            row_id=stable_profile_id("tree", manifest.manifest_id, "global_profiles"),
+            row_type="global_profiles",
+            label="Profiles",
+            path=manifest.global_profiles_path,
+            level=1,
+        )
+    )
+    for profile in manifest.global_profiles:
+        rows.append(
+            ProfileMediaTreeRow(
+                row_id=stable_profile_id("tree_profile", profile.profile_id),
+                row_type="profile",
+                label=profile.canonical_name or profile.profile_id,
+                path=str(Path(manifest.global_profiles_path) / sanitize_path_part(profile.canonical_name or profile.profile_id)),
+                level=2,
+                sensitive_identifier_source_evidenced_only=profile.no_automatic_sensitive_inference,
+                weak_sensitive_inference_prohibited=profile.no_automatic_sensitive_inference,
+            )
+        )
+    for case in manifest.cases:
+        rows.append(
+            ProfileMediaTreeRow(
+                row_id=stable_profile_id("tree_case", case.case_id),
+                row_type="case",
+                label=case.case_title,
+                path=case.case_root,
+                level=1,
+                case_id=case.case_id,
+                case_title=case.case_title,
+            )
+        )
+        case_children = (
+            ("case_profiles", "Profiles", case.layout.case_profiles_path),
+            ("people", "People", case.layout.people_path),
+            ("sources", "Sources", case.layout.sources_path),
+            ("articles", "Articles", case.layout.articles_path),
+            ("social_media", "Social Media", case.layout.social_media_path),
+            ("social_media_offline", "Offline", case.layout.social_media_offline_path),
+            ("social_media_online", "Online", case.layout.social_media_online_path),
+            ("internal_media", "Internal Media", case.layout.internal_media_path),
+            ("reference_extants", "Reference Extants", case.layout.reference_extants_path),
+        )
+        for row_type, label, path in case_children:
+            rows.append(
+                ProfileMediaTreeRow(
+                    row_id=stable_profile_id("tree_case_child", case.case_id, row_type, path),
+                    row_type=row_type,
+                    label=label,
+                    path=path,
+                    level=2,
+                    case_id=case.case_id,
+                    case_title=case.case_title,
+                )
+            )
+        for profile in case.profiles:
+            rows.append(
+                ProfileMediaTreeRow(
+                    row_id=stable_profile_id("tree_case_profile", case.case_id, profile.profile_id),
+                    row_type="case_profile_record",
+                    label=profile.canonical_name or profile.profile_id,
+                    path=str(Path(case.layout.case_profiles_path) / sanitize_path_part(profile.canonical_name or profile.profile_id)),
+                    level=3,
+                    case_id=case.case_id,
+                    case_title=case.case_title,
+                    sensitive_identifier_source_evidenced_only=profile.no_automatic_sensitive_inference,
+                    weak_sensitive_inference_prohibited=profile.no_automatic_sensitive_inference,
+                )
+            )
+        for source in case.media_sources:
+            bucket = normalize_media_bucket(source.source_bucket)
+            rows.append(
+                ProfileMediaTreeRow(
+                    row_id=stable_profile_id("tree_media_source", case.case_id, source.source_id),
+                    row_type="media_source",
+                    label=source.title or source.source_page or source.source_id,
+                    path=source.local_address,
+                    level=3,
+                    case_id=case.case_id,
+                    case_title=case.case_title,
+                    source_bucket=bucket.value,
+                    source_role=source.source_role,
+                    claim_basis=source.claim_basis,
+                    currentness_status=source.currentness_status,
+                    source_chain_gap=source.source_chain_gap,
+                    disputed_framing=source.disputed_framing,
+                )
+            )
+    return tuple(rows)
+
+
+def render_database_tree_text(rows: Iterable[ProfileMediaTreeRow]) -> str:
+    lines: list[str] = []
+    for row in rows:
+        indent = "  " * max(0, row.level)
+        label = row.label or row.path or row.row_id
+        suffix = f" [{row.row_type}]"
+        lines.append(f"{indent}{label}{suffix}")
+    return "\n".join(lines)
+
+
+def write_database_tree_text(
+    manifest: ProfileMediaDatabaseManifest,
+    path: str | Path,
+    *,
+    create_parent: bool = False,
+    overwrite: bool = True,
+) -> dict[str, Any]:
+    target = Path(path)
+    warnings: list[str] = []
+    if target.exists() and not overwrite:
+        return {"status": "blocked_destination_exists", "path": str(target), "performed": False, "warnings": ("destination_exists_overwrite_false",)}
+    if not target.parent.exists():
+        if create_parent:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            warnings.append("created_parent_folder_for_tree_text")
+        else:
+            return {"status": "blocked_parent_missing", "path": str(target), "performed": False, "warnings": ("parent_folder_missing",)}
+    rows = build_database_tree_rows(manifest)
+    target.write_text(render_database_tree_text(rows) + "\n", encoding="utf-8")
+    return {"status": "written", "path": str(target), "performed": True, "bytes": target.stat().st_size, "row_count": len(rows), "warnings": tuple(warnings)}
 
 def parse_profile_text_blocks(
     text: str,

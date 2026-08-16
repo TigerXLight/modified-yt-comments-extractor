@@ -40,6 +40,11 @@ from profile_media_database import (
     parse_profile_text_blocks,
     plan_folder_move,
     plan_media_import,
+    build_database_tree_rows,
+    render_database_tree_text,
+    write_database_tree_text,
+    write_manifest_json,
+    read_json_payload,
 )
 
 
@@ -129,7 +134,7 @@ Source: Social Media
         global_profiles=(global_profile,),
     )
     manifest_dict = manifest.to_dict()
-    assert manifest_dict["schema_version"] == "profile-media-database-v75e"
+    assert manifest_dict["schema_version"] == "profile-media-database-v75f"
     assert manifest_dict["case_count"] == 1
     assert manifest_dict["global_profile_count"] == 1
     assert manifest.payload_sha256
@@ -390,7 +395,39 @@ Source: Social Media
     assert manifest_with_review.payload_sha256
 
 
+    tree_rows = build_database_tree_rows(manifest_with_review)
+    assert tree_rows[0].row_type == "database_root"
+    assert any(row.row_type == "global_profiles" and row.label == "Profiles" for row in tree_rows)
+    assert any(row.row_type == "case" and row.case_title == case_from_path.case_title for row in tree_rows)
+    assert any(row.row_type == "articles" and row.path.replace("/", "\\").endswith(r"\Sources\Articles") for row in tree_rows)
+    assert any(row.row_type == "case_profiles" and row.path.replace("/", "\\").endswith(r"\Profiles") for row in tree_rows)
+    tree_text = render_database_tree_text(tree_rows)
+    assert "Profiles [global_profiles]" in tree_text
+    assert "Articles [articles]" in tree_text
+    assert "Internal Media [internal_media]" in tree_text
+
+    with TemporaryDirectory() as temp_root:
+        temp_path = Path(temp_root)
+        manifest_path = temp_path / "database_manifest.json"
+        tree_path = temp_path / "database_tree.txt"
+        manifest_write = write_manifest_json(manifest_with_review, manifest_path)
+        assert manifest_write["status"] == "written"
+        assert manifest_write["performed"] is True
+        loaded_manifest = read_json_payload(manifest_path)
+        assert loaded_manifest["schema_version"] == "profile-media-database-v75f"
+        assert loaded_manifest["review_queue_count"] == 1
+        tree_write = write_database_tree_text(manifest_with_review, tree_path)
+        assert tree_write["status"] == "written"
+        assert tree_write["row_count"] == len(tree_rows)
+        tree_disk_text = tree_path.read_text(encoding="utf-8")
+        assert "Reference Extants [reference_extants]" in tree_disk_text
+        blocked_write = write_manifest_json(manifest_with_review, temp_path / "missing" / "manifest.json")
+        assert blocked_write["status"] == "blocked_parent_missing"
+        parent_created_write = write_manifest_json(manifest_with_review, temp_path / "created" / "manifest.json", create_parent=True)
+        assert parent_created_write["status"] == "written"
+
+
 
 if __name__ == "__main__":
     run_self_test()
-    print("profile_media_database v75e OK")
+    print("profile_media_database v75f OK")
