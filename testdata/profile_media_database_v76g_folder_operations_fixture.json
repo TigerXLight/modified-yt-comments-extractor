@@ -1,0 +1,26 @@
+{
+  "database_root": "Demo Database",
+  "operations": [
+    {
+      "new_name": "Renamed Article Folder",
+      "operation_type": "rename_folder",
+      "reason": "Reviewed title normalization",
+      "review_note": "Explicit test fixture rename.",
+      "source_path": "Cases/Demo Case/Sources/Articles/Old Article Folder"
+    },
+    {
+      "destination_path": "Cases/Demo Case/Sources/Social Media/Offline/Misfiled Offline Bundle",
+      "operation_type": "move_folder",
+      "reason": "Reviewed source bucket correction",
+      "review_note": "Explicit test fixture move.",
+      "source_path": "Cases/Demo Case/Sources/Social Media/Online/Misfiled Offline Bundle"
+    },
+    {
+      "new_name": "Reviewed Person",
+      "operation_type": "rename_folder",
+      "reason": "Profile name corrected after manual review.",
+      "source_path": "Cases/Demo Case/Profiles/Unreviewed Person"
+    }
+  ],
+  "schema_version": "profile-media-folder-operations-v76g"
+}

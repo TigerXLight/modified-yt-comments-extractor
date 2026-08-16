@@ -32,6 +32,7 @@ def test_database_mode_without_batch_json_is_visible_but_unconfigured() -> None:
     assert payload["database_root"] == "Demo Database"
     assert payload["batch_json_files"] == ()
     assert any(action["action_id"] == "load_batch_json" for action in payload["actions"])
+    assert any(action["action_id"] == "review_folder_operations" for action in payload["actions"])
     assert payload["folder_scan_performed"] is False
     assert payload["folder_creation_performed"] is False
     assert payload["folder_move_performed"] is False

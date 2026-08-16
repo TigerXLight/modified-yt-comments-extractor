@@ -1,0 +1,4505 @@
+{
+  "cases": [
+    {
+      "case_id": "acceptance_001",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "19de8c52797b30c9b96f8c7932c3a8c909714949693145ee9e517f2e3005bda0"
+    },
+    {
+      "case_id": "acceptance_002",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3bd41db6a5a97a3b278784f1fc34f440ddf52552273bfd572fb15bd63d9dbec8"
+    },
+    {
+      "case_id": "acceptance_003",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "5c63544442868327a2fa2f06930864c7c2010f3607eaba3f2a6718a5f560b98e"
+    },
+    {
+      "case_id": "acceptance_004",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a9ebf87224451c5efd109b1dc3e7bcd2f60e4a1fcb28cb3f30aad00d3a040835"
+    },
+    {
+      "case_id": "acceptance_005",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "b7bad8bfaa7b3527aaec0fd6ec28ee198c98d29f4ff9fe28cf19b0085667b5a2"
+    },
+    {
+      "case_id": "acceptance_006",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "bc127cc474eb3b7f939a59ae9e3e703573d41d15c98eb1b411d9f962b6b455f0"
+    },
+    {
+      "case_id": "acceptance_007",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "e9db304afa52a64221adc33dc631ded1c22a446ac444dced1320e742dbc410da"
+    },
+    {
+      "case_id": "acceptance_008",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "5877d760ad2b2bc4942e6bb23bd8871e169b77fab8a77e2a074c14b10dad1bcf"
+    },
+    {
+      "case_id": "acceptance_009",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "5ea55becfd99386d5202dde07d50b83b568c6d03f9e5a8107ed0e11906d571d8"
+    },
+    {
+      "case_id": "acceptance_010",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a57fb6ac1f9faf99ae6bc9235ec825178c445a8d4be48e3121d9a3857e79ad58"
+    },
+    {
+      "case_id": "acceptance_011",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "f73318ee8a2359ef8d6648251ed199bf5f29d6c31ae859d89fdc3193a4508468"
+    },
+    {
+      "case_id": "acceptance_012",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "c5c4c98adecd91b03392b3b1b9c9fa4eabe07f6e61deb3417dda8337b349cfcb"
+    },
+    {
+      "case_id": "acceptance_013",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "aca5bd8f2dcc1b134fb88ba3a965e20f1c16312dd5897921ba57c31a3a6d9880"
+    },
+    {
+      "case_id": "acceptance_014",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "8d50945513fbcbdaa7cf592209b32329945b8a60a27118e0d78fe97e91c56b51"
+    },
+    {
+      "case_id": "acceptance_015",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "4f5e4704759da6d43c8dd05c5a3df4276738b9bea0e0f94c493db055ee8a3bd0"
+    },
+    {
+      "case_id": "acceptance_016",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "f093dcd660e1a59a6fc4cb461850429f3e96451b85356eb3784d936f91b2650e"
+    },
+    {
+      "case_id": "acceptance_017",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "adf91b43210d00046d5c14c2a7c94920224bd969e988161cda4673ab804e8a27"
+    },
+    {
+      "case_id": "acceptance_018",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "30b8e53db3949dc6b7373ac1d07f65c87abdf7bdd1b76f7a7af8b2868ed30580"
+    },
+    {
+      "case_id": "acceptance_019",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "1e923e19d82e7cb19d7c722165df89360ad491a2983ff81630c08ae55089285c"
+    },
+    {
+      "case_id": "acceptance_020",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "e66c6fbedcc0210efa94491c7903ccfd96070129f1faffffa3be7c9f3b862953"
+    },
+    {
+      "case_id": "acceptance_021",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "52250d7864fb86ea99e39d4af7f4001d6654c58d4089e333745d41c7db7e1616"
+    },
+    {
+      "case_id": "acceptance_022",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "8283ffa399015d7b98ac69d90822410c0d56b14445d662f47a846b204f4c0aaf"
+    },
+    {
+      "case_id": "acceptance_023",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "b351841e6a29c1d22a1170a990d2fa8b8614eb04ddd2db38e6285bbc402513b4"
+    },
+    {
+      "case_id": "acceptance_024",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "1b031b17e846d7e635046f21ef6fb4e20e17a92feda84d7b98ea929be2689509"
+    },
+    {
+      "case_id": "acceptance_025",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "d487e378ded93b974cd3cc6f7e63150cf8aa064b47dde09aa8dbd5cf5de58e03"
+    },
+    {
+      "case_id": "acceptance_026",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "98038865ddbf97012d8e9c109c4d29ee7e9cbd78057abbd2f15581fce29f33dc"
+    },
+    {
+      "case_id": "acceptance_027",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a2f0f9cb68b3eabc13c0c686d798973c9cbaeb4386d9b886cebea411290b4c0b"
+    },
+    {
+      "case_id": "acceptance_028",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "027e5b28a2d84423c978bde5e58ff5b0e2954faff5294faefd9c9e3327f5dd90"
+    },
+    {
+      "case_id": "acceptance_029",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "35190dab42945550164cddb6eae7f61212739716daa96264f187db395a325d74"
+    },
+    {
+      "case_id": "acceptance_030",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "253d85f9db127d8351aba713c6ae3b5ed3e5cf0c4ff05c6811e27930de42aa13"
+    },
+    {
+      "case_id": "acceptance_031",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "f23fea872cc06a935ccbef80f871960b70d57f406622099bb18f0ebb365cec1e"
+    },
+    {
+      "case_id": "acceptance_032",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "289ea9678fbf70dd001eda8dbf53c87c1a0c8eeb8b58c90bda5f10fe7698b328"
+    },
+    {
+      "case_id": "acceptance_033",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "5b5ba6d9bac615af3f5a076b7bf454b6d4dedf1cfc494be2344bcbbe3323567d"
+    },
+    {
+      "case_id": "acceptance_034",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "61744f8715d1b659c35bfef75243d063ed07fa699cb7bf6ec69893bd949c84e7"
+    },
+    {
+      "case_id": "acceptance_035",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "6799eac2d5e8878de4f64098a6320a4fd6a7d1582fa3aa412c0f0894f5f2ff19"
+    },
+    {
+      "case_id": "acceptance_036",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3f72d9f3a9cb8296d7861f3bea4220b1cd75d7fed8acc31c0d7a1e2ab22399b0"
+    },
+    {
+      "case_id": "acceptance_037",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "7fb380abeb6d5cbe411659c7fe26ab2bb51fa4cfd9f238b5d88b9f86a57abb63"
+    },
+    {
+      "case_id": "acceptance_038",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "8aeaa29b268f35fa9c753c2f47031946d517fd586a5312423e8a7ce6d21c6d13"
+    },
+    {
+      "case_id": "acceptance_039",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "0b6cc666373862a7e65e4f6abd54ace4a7249f7bf0a53a50b2e863833deb664b"
+    },
+    {
+      "case_id": "acceptance_040",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "34fbcd4536fa4ad2bb28300c29ca8af2d8ad78f780d9b57e937b63690fdadafc"
+    },
+    {
+      "case_id": "acceptance_041",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "06736ffa635a60fe77afe0b44609667ed1bda09187ae5c855a2955a86cecccd5"
+    },
+    {
+      "case_id": "acceptance_042",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "bf4dc688c6e76c2baaab32434aade08923128ef3252511e1da5c37b2bd48bed7"
+    },
+    {
+      "case_id": "acceptance_043",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "47d25bc75f963d6483f9a044a9ce586776957a76af771643644341d4307c8eba"
+    },
+    {
+      "case_id": "acceptance_044",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "e735d0e5da1c4babba85bd65ecb2d4cbbdee8c9ce6cedba3a7f92c3420828490"
+    },
+    {
+      "case_id": "acceptance_045",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "363c350f63c560f150fa7a22be11c3e736484052d43d505c20753a8a079b1cdd"
+    },
+    {
+      "case_id": "acceptance_046",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "d7eacf8f96f9225ff5c8e9ab477b0fc2cc7c5edbd8d3c4e76ff77cd9b220927c"
+    },
+    {
+      "case_id": "acceptance_047",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "ec1cadf11b64803d5660b51368914cf24ab7e367b40b68ee087effde09495cbe"
+    },
+    {
+      "case_id": "acceptance_048",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3676d1c27d4c3a50c464adfb4db7d588058800cee6651f593af9393146fb770b"
+    },
+    {
+      "case_id": "acceptance_049",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "ea62d0f03e7724e45b253b77695dae9cf1d1bd1a187fa630c6068bb742e68456"
+    },
+    {
+      "case_id": "acceptance_050",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "c008bf1690aac3252cbb95d75d032195a3c469049c1f42171b91a47c73023027"
+    },
+    {
+      "case_id": "acceptance_051",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "8d8bc0f2d5d5b5e9bb39954ffdbb2bb8b9ef766ccfa5464b9d0aadbcd8580965"
+    },
+    {
+      "case_id": "acceptance_052",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "ba84dbe8103ed76b95ea0b6f3da15c4907adbf83ada9e333e54d2e37a5f81e5f"
+    },
+    {
+      "case_id": "acceptance_053",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "b11990951926fd909bc57fde19d23351966f148404fe3a87f71e83465c9bdd26"
+    },
+    {
+      "case_id": "acceptance_054",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "af361cde19272990e1236277cda1ab66f94640aceb27c2a9326e0abd26703b37"
+    },
+    {
+      "case_id": "acceptance_055",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "752d6a86c4c8801cb96e95d0e9d8c4a13c3c3bfed81d5599f735831c18078f4f"
+    },
+    {
+      "case_id": "acceptance_056",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "cb9af33de2ce727aa1a7d7c011188419e36a7bdd3875df7448d36cea402a8fd1"
+    },
+    {
+      "case_id": "acceptance_057",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "8059ecc26de2ecf44a5bf3f030c48ca98639756391793d8f4046db0796f425d8"
+    },
+    {
+      "case_id": "acceptance_058",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "e2ad2826d5509ebd7037c210bf11fecb9f540967967262b6b2dfea1517bf3834"
+    },
+    {
+      "case_id": "acceptance_059",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "da0e4a01f0c9da5876873462dbc7193aedd0aaf1caad21261a751fc6b068b84a"
+    },
+    {
+      "case_id": "acceptance_060",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "60c2fd65711b12dcb25b2a5a6e740ad61e3cb194288428f9b054bf0f0a871b2e"
+    },
+    {
+      "case_id": "acceptance_061",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "ab5b8d22b45d1166dbc8d4fbf320692cd7f58c7a4d0cea7d5edcde7ff9df5d64"
+    },
+    {
+      "case_id": "acceptance_062",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a61d006f42c4a4e47f8a607cb995ef0cea7cce7ecb1fd9fe90fe1adced5e0554"
+    },
+    {
+      "case_id": "acceptance_063",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "01841bf52b2932635f1cdf2773b8e3d6512baf86450d65f8ee80a6b007a102c5"
+    },
+    {
+      "case_id": "acceptance_064",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "aee4830014ef5323480e81a2b24cc684c6d655db94ce327c7873dfa868c2c1d7"
+    },
+    {
+      "case_id": "acceptance_065",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "081b1b5514d214440c65aef5ebbcb8f531d58dfb8eab732854769e459b18ed38"
+    },
+    {
+      "case_id": "acceptance_066",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "9435a09c73a382b86170c014abd7d834f6fedc7edb3ff6583cf6aa28b8cb789c"
+    },
+    {
+      "case_id": "acceptance_067",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "6faf92ca3ac96b23a2f80efec7046f05a27e6116b61669375b3be15f6f29141e"
+    },
+    {
+      "case_id": "acceptance_068",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "682de48e928f6a2b28472609d1b1ebdb8b90114d85c138688cc58ee07c5810a2"
+    },
+    {
+      "case_id": "acceptance_069",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "be0579cd983cad5579f8b790f3aa6fa9966e31b54f9735fe630e6bafdccdab3c"
+    },
+    {
+      "case_id": "acceptance_070",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "c9e2738922b794056095caf27d527171ba4a1bd51d1c4bffd23465a0151189ac"
+    },
+    {
+      "case_id": "acceptance_071",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "5abe649ae1c69628f12fa9cd3d9d98710aa5418da81a58911657c45c96f3722f"
+    },
+    {
+      "case_id": "acceptance_072",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "6ea60d5f7ac7262d0dd0da6aa9374c9e33a8480843c89b94b6892c87dd38b66a"
+    },
+    {
+      "case_id": "acceptance_073",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "144879f0f21a0a3783be0c7b3f1b584bc4d0206c3787f58fa5abca0255cde20e"
+    },
+    {
+      "case_id": "acceptance_074",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "5e78f47cebb41329cbf38f5505b93686017d8d772ef10dd24270952e2a591c1e"
+    },
+    {
+      "case_id": "acceptance_075",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "69faf0fefbd3f297a8c03bf25107e58371c42156867dac9748fb1d3ac8b9bcc0"
+    },
+    {
+      "case_id": "acceptance_076",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "00f63e890bc39b81f33e384942dbeb66834be6085ff353f1ba5aea6750ddeb9c"
+    },
+    {
+      "case_id": "acceptance_077",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "31bb476c3f71c773d13a38e7be0f2968281eecb1a6985f457896d8151a1f8448"
+    },
+    {
+      "case_id": "acceptance_078",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "9e7f6fac4e54498d9940cfc84182465d12f98404a3e9faaad1413e28585d968d"
+    },
+    {
+      "case_id": "acceptance_079",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "7eeed5b5b6769d8e8ab10858811e8904ffd64b8281f9d067a67408910fb54c78"
+    },
+    {
+      "case_id": "acceptance_080",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "02df32bf48918af5a8ae27636add8e81696994468e8accb274ff8ebc7eef8871"
+    },
+    {
+      "case_id": "acceptance_081",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "455fa44fea3b1e353affbea0c1047c2f73aa8944cbef5a9399ed2a85081d82fc"
+    },
+    {
+      "case_id": "acceptance_082",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "f30363bb1114bdb9466f1b78b46ed7a3b75e7ab3662a5f099f672cd66ecd54ad"
+    },
+    {
+      "case_id": "acceptance_083",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "7dce6e60e13704b3228694bf6287018ef01238cc88ed9d513b201ddba61b6156"
+    },
+    {
+      "case_id": "acceptance_084",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "7de054b1c5d09e8e9881ce66311af8c480da7c12a6f00027ab513d7c25791da1"
+    },
+    {
+      "case_id": "acceptance_085",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "392d41c509ca77d489e6b073ac2ffcedbe4b72e01cfb4f01f7f6afe68df71ace"
+    },
+    {
+      "case_id": "acceptance_086",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "2dd43d4cc5f4d531bb18b5f093d61714d4d878be3604c787f80668fb29b86fa4"
+    },
+    {
+      "case_id": "acceptance_087",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "955b80cb64bdb5ae66cb632ad7cc3944e585f98690a8dbc06bc16a45b4e350cb"
+    },
+    {
+      "case_id": "acceptance_088",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "d32538f8a5843f990650e4107316a18506f71038b44c79b67d46b33a77b48f27"
+    },
+    {
+      "case_id": "acceptance_089",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "9050bd1a7b6442c698eb93b307e603ef03de674626dd72f1c079e91244506214"
+    },
+    {
+      "case_id": "acceptance_090",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "b00b690d24e7bae09c1969e93b0b869e7a7dd58bd6752b15d64d8be48cca9f9e"
+    },
+    {
+      "case_id": "acceptance_091",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "1d7859b912e2a63600601ef5357231cdf10aab6d08a47a4788eff2e9496f7602"
+    },
+    {
+      "case_id": "acceptance_092",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "409c3199dd80d50051af303602a18e635357d2cd7a5545eff1eb6fb0ac42e9f3"
+    },
+    {
+      "case_id": "acceptance_093",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "c584d16e713f78c4035edd5d89ea738af5ac24a5fad9029db86835f1438235a0"
+    },
+    {
+      "case_id": "acceptance_094",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3a4e51ca1021a0d3d05b5ea7a538ea00022d5008381c6e5fbe9e6bbe9d155b2e"
+    },
+    {
+      "case_id": "acceptance_095",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "ab7be2a2d6210ad160419862055a2d3acd7220821146eda5a10b43e1f2447f9c"
+    },
+    {
+      "case_id": "acceptance_096",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "72eb193d77245f60d5b86c14b7d31a7e841b6d1531287a80fb36ead001ebbc72"
+    },
+    {
+      "case_id": "acceptance_097",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "16d8b1c7dbe6a0723d7843f46c45edc9d5ff3afd034aebf44a9a85384005a1df"
+    },
+    {
+      "case_id": "acceptance_098",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "ce5093868a392b23f178772eb6a80df1d912ad344166fa031e21bf25691c37bf"
+    },
+    {
+      "case_id": "acceptance_099",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "1c407c203ba1abdaabbd986c3d400c44e8b049970560e20b752697278a355a06"
+    },
+    {
+      "case_id": "acceptance_100",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "647a759653258bc6a08a43e467d368781d858ab128bd0b0d7e4874c3cfc00753"
+    },
+    {
+      "case_id": "acceptance_101",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "d094edb365d2359029be6e8d164e788e17c62bf715f2ff8a37bd1ceecfb7421e"
+    },
+    {
+      "case_id": "acceptance_102",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3f93cf0b390984da3ddfbe734884b62af220ab05c4a6ee9924eee84d5671cfd8"
+    },
+    {
+      "case_id": "acceptance_103",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "0a9a966c2258490550fdf074d7ddec3ba17510a100734f66c863d8de1a5acfbc"
+    },
+    {
+      "case_id": "acceptance_104",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "e98e14675db91379e39381afe27cf83f9817a3ad57f96d709796ae5ad861481c"
+    },
+    {
+      "case_id": "acceptance_105",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "034db713fa3e72059c5adba274bdb0f0189dcd7f0705362b59d8a155559babf5"
+    },
+    {
+      "case_id": "acceptance_106",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "887d712ba6936660b567b3fd08252a74b9d81e6189cd69e45678020bdc12c077"
+    },
+    {
+      "case_id": "acceptance_107",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "0908ebf4c16361a9436937f6cfed85a28abbe10f5723716f4c6e32a9dd4b0ff7"
+    },
+    {
+      "case_id": "acceptance_108",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "2ac9d6b2603b5ea09ba551d2b72d191f1f3b0cd6b0f03071bac36e4a2b01b536"
+    },
+    {
+      "case_id": "acceptance_109",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "0d71d593909623a9e6ac6b5126378024ee35b8b6b792e4c1a41cb3e84ba5acc9"
+    },
+    {
+      "case_id": "acceptance_110",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "df2fe36981fe74e4e6c323733a92bac6c14c173acb131b06c7fec38e09bb490f"
+    },
+    {
+      "case_id": "acceptance_111",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "43e567298a01b82f5b9f2263e4d8822c07720a7d914e99549c91f6e22292f134"
+    },
+    {
+      "case_id": "acceptance_112",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "5b744b9c7a9a3166cee2675bedcba6f43fd8181d560abae395e9791a720ca5a6"
+    },
+    {
+      "case_id": "acceptance_113",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3bd85d88898d7e16a274a1d619f3a0898ba905e77502759dfb926b3df4c192da"
+    },
+    {
+      "case_id": "acceptance_114",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "5400c352d380a716ad9262d87d78217e47d21ae4917a8860a2bdd6340463a55c"
+    },
+    {
+      "case_id": "acceptance_115",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a532f026404ac2f5a58b86eee988ae0120586b115a85d265afffe3654559c16e"
+    },
+    {
+      "case_id": "acceptance_116",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "1c76bc58ced6c77e7d64b2b12a80b12bc6d603ee02c656bae0e2d39664ea8b87"
+    },
+    {
+      "case_id": "acceptance_117",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "755c95af5c228b7c46286968f9a0b07e2629ada50e541f77900b3bbf5bf08c90"
+    },
+    {
+      "case_id": "acceptance_118",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "c772c60de136f3b5ba6b1f07f16c9434f9b2929040bf92349467461408531a47"
+    },
+    {
+      "case_id": "acceptance_119",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "281c7c845536c76c7b87b2ee9087386fb11cb8b475cdf6936871c0b34c2b4451"
+    },
+    {
+      "case_id": "acceptance_120",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "37c14fff67224aa34957225300e64742ff8bb8b4840eb06a79560b4fef97e63b"
+    },
+    {
+      "case_id": "acceptance_121",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "db8d878e965b2c0ac5ea580de0b812a58d5c33fc1125b6e65337b3aadb99f60b"
+    },
+    {
+      "case_id": "acceptance_122",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "2407e9246c6e9f89d33834b5ab6a5189e46011a2e9f3305a3bcc4415888b2714"
+    },
+    {
+      "case_id": "acceptance_123",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "11a9ee05c98ea535a2b6faef5d3babce046f0d9d01395439cb42100dfccda154"
+    },
+    {
+      "case_id": "acceptance_124",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "46412e2e6734b1e0bcbbd6e28b8cf7af9c86806bf573d789276cdc89ccbecbfc"
+    },
+    {
+      "case_id": "acceptance_125",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "83b9ff2b0ee1c9a369edd8a0853a9f0e2a73079dfc891548ea8ad9496d290a97"
+    },
+    {
+      "case_id": "acceptance_126",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "0d3eb6d50df2c941c0cef1c363f83a322cf5e8b5195e40afd61bd7a81041288b"
+    },
+    {
+      "case_id": "acceptance_127",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "b8d2bda36902d86ac6dacccea5bd0a7d6b228d85a3fd069c8027dadf7c96e42a"
+    },
+    {
+      "case_id": "acceptance_128",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "47fdb2020a67432317fb01476d62b83b0ed2dc30e26fb495670e06c0fd364799"
+    },
+    {
+      "case_id": "acceptance_129",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3796910e73490c711736c92a5cf5d9b05a9f2c44de629df860434ecd9d6b89f3"
+    },
+    {
+      "case_id": "acceptance_130",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "79ab0f5ac7327b6d0e644c48d18f4501940ff711a0f3db61c650a03a1c5fa0f6"
+    },
+    {
+      "case_id": "acceptance_131",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "6b0b828e4ea28aaf2d8a7524931707f591008ff89df462e553c24473e78b36c4"
+    },
+    {
+      "case_id": "acceptance_132",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "8cd5e3e21d49babe9f6bbcbd33c8fedf2f0a8f5ed2a8391d2bb55af9a4168dcb"
+    },
+    {
+      "case_id": "acceptance_133",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "6c008a88c1b41054bf81da950e454af9f45648f7b898faf5770f0c7252301755"
+    },
+    {
+      "case_id": "acceptance_134",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "4a6329ec9d9d4928f2bff1569d3f5f3564cd384eb938d666d40630dc34e3d4f6"
+    },
+    {
+      "case_id": "acceptance_135",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "9e070707142d01f682fa660894b0123cf52a326f4b445c1aa6978ae1b61fe80f"
+    },
+    {
+      "case_id": "acceptance_136",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "c58018856025655e4c844f32d8f1ebf6b63b2b80d2647371ee88b4b839d20c72"
+    },
+    {
+      "case_id": "acceptance_137",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "82da13aed14b330bf8cb600d03500fcfa3fdc6b2f9828fcf238696055a8c45c9"
+    },
+    {
+      "case_id": "acceptance_138",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "edfd7cab43fa2b15934c48ca1fd2d90b50f4017005990ea3b39a1e560b3748f0"
+    },
+    {
+      "case_id": "acceptance_139",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "535899c442ebf713aaa7817d51c9fe88cf6323bc086adf3c1c32a984bb613518"
+    },
+    {
+      "case_id": "acceptance_140",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "5a203d3d3c5fb1d3b85c8415e236d0a8b49f0ee0a8e71c1402c9be3d2a148b0b"
+    },
+    {
+      "case_id": "acceptance_141",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "c28beb8d39cd30ade1d4fd77eab05401e9ee36953ff892db2d8b9120d1400333"
+    },
+    {
+      "case_id": "acceptance_142",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "db55252dd70b704c976f0aa863fc5c49f6a9179eb675238f6fddeaff1188c73a"
+    },
+    {
+      "case_id": "acceptance_143",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a0245cc034fb916c5e80f2e5e8fb180c726bc68bc5e59c5becfa6362a76bc394"
+    },
+    {
+      "case_id": "acceptance_144",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "30a4ad39b97a47324c8a1e88aba120f6f2b27f7fc0ec91ff00cc6e577f07a23c"
+    },
+    {
+      "case_id": "acceptance_145",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "362cc7d8632723e407c33d519451c4a0e3b2132f70f7afe77f94d0bfc4a3cdaf"
+    },
+    {
+      "case_id": "acceptance_146",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "65194d71e839d9fd21bd398dc4ea7444e2426b32860704f37c99739682157ca4"
+    },
+    {
+      "case_id": "acceptance_147",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "4726702cc12dcde574699951d1a16d910ed41eb00123d210ce828876e8dc39df"
+    },
+    {
+      "case_id": "acceptance_148",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "471b290c69bc37d39b0e5cfefb85e66ff886fcbeaed07e05fd413d6e6196ab9c"
+    },
+    {
+      "case_id": "acceptance_149",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "0b4922c6c366c3e30de8a6a8b2beeda478fb4ee36e4f0ce7179cfe12eab00ef2"
+    },
+    {
+      "case_id": "acceptance_150",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "ea2905506b51b4d5d1dfa4a2e870511beee76f954a2524e3d584d96034af1b29"
+    },
+    {
+      "case_id": "acceptance_151",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "427f226ace8af04d4da8aecfff3d761dcb3b60c86cc774a4b440c0163b61dcc3"
+    },
+    {
+      "case_id": "acceptance_152",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "db4f16abf6f99fbd421af62372b0e62b13e819a51fed5531b62c710fcf736e60"
+    },
+    {
+      "case_id": "acceptance_153",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "62b3f79516c757db3c263134d84997ea700d6f15d54b84b783506f7fd2d06be8"
+    },
+    {
+      "case_id": "acceptance_154",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a81e0709bb78e82fb18d74865cf84b80841075f7452a058d3a6c8172ab170672"
+    },
+    {
+      "case_id": "acceptance_155",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "85830270aaa7ce62e7d42fda950a12f5c7e523a583c0fe0bef10ea24f69cd6bf"
+    },
+    {
+      "case_id": "acceptance_156",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "2bbc4801628fba25c836855c88c2d3376b7d38e44ca9d03945cb3b7145ad053c"
+    },
+    {
+      "case_id": "acceptance_157",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "1e65c0d8420819bcc61a4ab11acaeaeae9d9cc2c0bd3737fd6585285018f5c93"
+    },
+    {
+      "case_id": "acceptance_158",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "62ed229d21dd97d9c0c8227fd5114775fe22596b7fb78dbc0e62200a3c15dcc3"
+    },
+    {
+      "case_id": "acceptance_159",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "30d54c42495e69c8711b379e6ac52733f47fd04acc2cf1eec48055bba7ee983d"
+    },
+    {
+      "case_id": "acceptance_160",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "f1ae679e54b87ecf35e3ca26045f2141f95579f804606137c53dd6734f13d267"
+    },
+    {
+      "case_id": "acceptance_161",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "b62781f0de59662cf08e4f5d37cb09f760927a02ce00269eec1e44c64f0978e1"
+    },
+    {
+      "case_id": "acceptance_162",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "0ee5407b7eb6a5741256241777b3d53df033df25c1c0f60a14229642518fc4b2"
+    },
+    {
+      "case_id": "acceptance_163",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "69ae405f5249d40d2a18813072cec6d50587e144838824eecd7f0a1fb6d2d086"
+    },
+    {
+      "case_id": "acceptance_164",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "337f37f6ced8beecf05f46841b0597ceb5ca0244666796b9b64095978d2db90d"
+    },
+    {
+      "case_id": "acceptance_165",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a827d61270276b2ed8e78ebbd82c392a5e09f59d75aded449203e388ca17e9a3"
+    },
+    {
+      "case_id": "acceptance_166",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "7b384aafb7d4e8312fe6285fb6c99695550359f429e29e75fb59dac9bc3b3ad1"
+    },
+    {
+      "case_id": "acceptance_167",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "d60afde38e98b1470ad495d231ddadeabd02deaf2b244926e31363995de9097a"
+    },
+    {
+      "case_id": "acceptance_168",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "169fa4524993cb8dd047adda0ba81db025a2f5f0b15d51f6749dfedea6f1b724"
+    },
+    {
+      "case_id": "acceptance_169",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "86894aaf84f527ea96c1f126429c5f5dfc8c71f43864b67126cc4ef3d04e3f06"
+    },
+    {
+      "case_id": "acceptance_170",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "9dbe10d22ddf642bbb34d7b11d53116cc9e0f0e01a6a8660c17d04459e859eb4"
+    },
+    {
+      "case_id": "acceptance_171",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "963b1bcd9af682672d43c398d1600fcad71a82302512ff25bfd86637c227c8b2"
+    },
+    {
+      "case_id": "acceptance_172",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "bef7c4875bcbd7ba4cf3a8145a710a3f7822ff3db08caa5761a1a67efebc3674"
+    },
+    {
+      "case_id": "acceptance_173",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "baeb40d1856a0bd017340bdf9bc2fb3453f154d97239a4ad197ee277645225d4"
+    },
+    {
+      "case_id": "acceptance_174",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "7b08c9d6d1b401597b58dbe07068c60eded16be0863edb96270509965721506e"
+    },
+    {
+      "case_id": "acceptance_175",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "18423837c0541d3406aa6f721b5f5031328d70e77186ece1eb1b7529062c777f"
+    },
+    {
+      "case_id": "acceptance_176",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "bcf613c44ce9359c0d2e97a86de5b1deff41ca9cf08439fe6e52ba53968f2bd1"
+    },
+    {
+      "case_id": "acceptance_177",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a0b7701b770108031af20e9f3054095de95f715c28164f5469d0bf8fe2e0b5c0"
+    },
+    {
+      "case_id": "acceptance_178",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "86308efeee40c3036036cf31ba5b81593b8e0629378289d07dd832b4a7ab095a"
+    },
+    {
+      "case_id": "acceptance_179",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "692ccd91427a84e2f09587aec9978d631eb9b39cd5f9c41fc0af9a27c9625284"
+    },
+    {
+      "case_id": "acceptance_180",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "1600a533393bc2538f5289124b87fcd93790438f02e7f2aafe94f08365a67b04"
+    },
+    {
+      "case_id": "acceptance_181",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "2038970941fc6c094489c949208ad931dd01e04c46cf32b3f864abf252c081af"
+    },
+    {
+      "case_id": "acceptance_182",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "08a7f8b2b4a199f6c46398888a939321673fe94d58921b404f575678bacd0ca0"
+    },
+    {
+      "case_id": "acceptance_183",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "c87af342a4f4ba6af7be96a6a1f49889c2de3a390787c21f5b632955686e8241"
+    },
+    {
+      "case_id": "acceptance_184",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "85058caee7cdacb14b5262d9a521b211c03698fbb91e334aa4d22fe8c8de40be"
+    },
+    {
+      "case_id": "acceptance_185",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "03943773d339753739969a4f92cdb369a2563674623be619a21d75b4b4ef3b8f"
+    },
+    {
+      "case_id": "acceptance_186",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "15aac1cb73b3fa5aa6e25d50da5e0aa0f7d3a667421d6628930e5e72ad33d1f8"
+    },
+    {
+      "case_id": "acceptance_187",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "839b619490f093e5d7deccba734d65bc616c1d288547645b173500f766afd8d4"
+    },
+    {
+      "case_id": "acceptance_188",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "fd05334aa4903f8d21089b6c02514078c55a76e6da05f905ea8b965316ed3a5c"
+    },
+    {
+      "case_id": "acceptance_189",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "87fb910fc97c23cf298f2c1209c36471a5241cc45cfa4219992f108b4d2a66e4"
+    },
+    {
+      "case_id": "acceptance_190",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "04a7e9ad0c51940c02d7857b33fb8074950ed3d1fc0bb900e708d6effb50898a"
+    },
+    {
+      "case_id": "acceptance_191",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "9d6f75628b039a0b3ab2c7907084229fbed9a5a64c61b52e3b6ae287d50ba3a5"
+    },
+    {
+      "case_id": "acceptance_192",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "84f3c33a2fd2dc0e973c00dd542ee53032277641eb4c73941500396d5e039225"
+    },
+    {
+      "case_id": "acceptance_193",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "2f468b18f23d756204ca37e336dcda67422f22862589e62bf55b64c2500c0d82"
+    },
+    {
+      "case_id": "acceptance_194",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "279c91b798808b81fcaafee10d554e45a449d25446c6b190d4530dad6ce9eb1e"
+    },
+    {
+      "case_id": "acceptance_195",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "bbc98e49bae6b3fa776c8474804b6b5ddd290afab79bcbd6bfd94a1a6353d98e"
+    },
+    {
+      "case_id": "acceptance_196",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "cc13553f579389ef3c905ee7c9271e770283066379209e38a909bb5f366ae437"
+    },
+    {
+      "case_id": "acceptance_197",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "50483f0a1e60dc3a336a9b8af585035c82e7fb527c6133e796ad82631fbaa93c"
+    },
+    {
+      "case_id": "acceptance_198",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "e2267c8dc7f41903853e1e625cb2d71dbba9201ae45e415db74f13faa90d2e87"
+    },
+    {
+      "case_id": "acceptance_199",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "f5b317cadada91584ba5da034a604eed434c3277445c5cf4f19a99abd0be4bdc"
+    },
+    {
+      "case_id": "acceptance_200",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a836fd718bca45bbce765b11e015f1ad4b0c2bf371a71bf193042415950772cf"
+    },
+    {
+      "case_id": "acceptance_201",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "b1f812096109a424b07de5910b743ae9ea2d460101d07a300641573f435e353f"
+    },
+    {
+      "case_id": "acceptance_202",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3dacd1725b56d7701e98520074bbe170160c808f088bf38b8257be798ce7732f"
+    },
+    {
+      "case_id": "acceptance_203",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "f65c11a73e41811bdc6cbf7ef1e05b334ffcd3c856f8163b4aa07f1b2a28f208"
+    },
+    {
+      "case_id": "acceptance_204",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a5d499c1c9fcdfd2bc5b0e02c182e36eb113ca553c6a7becf6eaaedba2c38789"
+    },
+    {
+      "case_id": "acceptance_205",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "744a71f27b0804e7ae5353022900b42c4a25b372f74891df703480f69e2dd17c"
+    },
+    {
+      "case_id": "acceptance_206",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "525f8200e55f509df0fb48871750774f16ea53e4326f731beccfade2ab2a4cb9"
+    },
+    {
+      "case_id": "acceptance_207",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "b5e0a0cdac5db549cd7730438271757d586af79f90f3154e39e0d97015b06d47"
+    },
+    {
+      "case_id": "acceptance_208",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "67b639368abbca310e915a81839d7dd2e41801bfe35be8056388f9847718b73b"
+    },
+    {
+      "case_id": "acceptance_209",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "2125868e661781b14442c4b325b79f17eef5c6b3278f35c268e9b66e9fda2f8d"
+    },
+    {
+      "case_id": "acceptance_210",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "6d474f95ce0eae0be2a559f9c8f8035f2c5bf2c022e586949bb83d084a115b84"
+    },
+    {
+      "case_id": "acceptance_211",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "d81cde4553db12288a5ea0a205d2c8b168c521b60cca8897c31a9119503ceba8"
+    },
+    {
+      "case_id": "acceptance_212",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "1e9732d01664d4ddc581865e838b5c370bf86c031ce024c331856075df670991"
+    },
+    {
+      "case_id": "acceptance_213",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "72d4d8628f27862a671f77b78d58bae8c887b6841c7d00aa0680d3e82eeabf96"
+    },
+    {
+      "case_id": "acceptance_214",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "d14d87f599e434c5caa4dca99b045f817d99793fc70337a144eb3b79c865646e"
+    },
+    {
+      "case_id": "acceptance_215",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "ce1d93ffd14841925a6ef32afe86978cceeee2b38acc3c42a4c026855be37787"
+    },
+    {
+      "case_id": "acceptance_216",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "53794284c3870af9a28759a150757f1d1c89529809f9d8bfaba8ab3554b6abc2"
+    },
+    {
+      "case_id": "acceptance_217",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3dde857cc33aae76380b116bb10c3d5998ca32b27d5ed5706ca67c8b300f0f4c"
+    },
+    {
+      "case_id": "acceptance_218",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "6f300eac97503c56eb7b16a772c3215b5ed89a9b8702befee9c70cd708d86c47"
+    },
+    {
+      "case_id": "acceptance_219",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "55550fc24b3878a882fe802b34dda6676d75bfb5083fab3e979e370217100a55"
+    },
+    {
+      "case_id": "acceptance_220",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "fd766bc466d4d99e97b91c8ae1e0fe68303cdd09ab7abf9a127a29d52cce6f71"
+    },
+    {
+      "case_id": "acceptance_221",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "fc37744402b526aec89cb2b063d23934789ce7a099108a7bec60d5897324aab1"
+    },
+    {
+      "case_id": "acceptance_222",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "dd691b69e4b79bdc45a03abe5c290111e3838ece938e54d96c3779c17efe2054"
+    },
+    {
+      "case_id": "acceptance_223",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "696bff38fff80f09c58088f07a677785f02f52eed3a7c372332c6aa36cea0b2a"
+    },
+    {
+      "case_id": "acceptance_224",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3ac019659dd959f7783187040e1426151c5096fe577be4683ab540acdaa6cd37"
+    },
+    {
+      "case_id": "acceptance_225",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "13baba3729572276900e8be60c90a5da89e563ac2564f94a54c7e38817e171c8"
+    },
+    {
+      "case_id": "acceptance_226",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "1e9cee4ee308ce261b04cf8a26dd3c21530ef2c7cfb858da9adabda5e2bac661"
+    },
+    {
+      "case_id": "acceptance_227",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "c486ffa191e7b4ebb3d556fbcb1ee82ce378210bd978006b3b9ad921bff04bf0"
+    },
+    {
+      "case_id": "acceptance_228",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "d9a4e6b4251ccee31a63f87530d73b7eb1d970338fa7c223bb42cca8b99d8807"
+    },
+    {
+      "case_id": "acceptance_229",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a8aee923b9091ef8ada82b9b1a6a009689fc2e1e238dc49c783a55f67fa793df"
+    },
+    {
+      "case_id": "acceptance_230",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "9d6cfdd352cba966d6a90beb48851d335c129d8840d1ec54ac127ff8043e65c5"
+    },
+    {
+      "case_id": "acceptance_231",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a20260755a809bd42f5569bfb7577ac627b51ed1df8a523ead4db822a6fa0e4c"
+    },
+    {
+      "case_id": "acceptance_232",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "bce46d3d57b1b363922653073996c2b0c220bc42ff010224c91b4e98bf729b68"
+    },
+    {
+      "case_id": "acceptance_233",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "b424dfa3ee7fbf7d89bf4eec3560c7b29946772d13ca8cca8933ac8d73370b98"
+    },
+    {
+      "case_id": "acceptance_234",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "63277753613f7a791a6b4306ae3b3bdf696cfbf03d91389257c9e07db10371f5"
+    },
+    {
+      "case_id": "acceptance_235",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "c66fbfda196c9820a5bb18fb9556c866177aee7eb39be2f85a99ddc061a3ebff"
+    },
+    {
+      "case_id": "acceptance_236",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "66b0c180a86df7b44f5787e40dc409b068eb8cd101bc751615ea0bd7fe1e9f9a"
+    },
+    {
+      "case_id": "acceptance_237",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "016bdc262fde8eb777260083479cddf2434118a54044c2485ad8b88e6baab6be"
+    },
+    {
+      "case_id": "acceptance_238",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "be91dd38a72fdfc52f11305c4ac3c2227b84ed5ce9169e153a5e8df827f61f13"
+    },
+    {
+      "case_id": "acceptance_239",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "803b3e1701d86a9448a6245c933705b216ead65a5b0f941523f2e024a2bcbf27"
+    },
+    {
+      "case_id": "acceptance_240",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "f858b1904a9949ab5da58e46dd62e3a0807b198dab72d5cac48eede83a47331d"
+    },
+    {
+      "case_id": "acceptance_241",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "7c561be663334f82d1a4b2615023f8672671cb44bd67c43c8be40071d2c96b58"
+    },
+    {
+      "case_id": "acceptance_242",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "da4f229c3266b8048f0552a964be7b7cc2af72045ac3773c86e5745cea651b44"
+    },
+    {
+      "case_id": "acceptance_243",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "333a3f4d0015b7f873820d1fec72f740750cea6e4409ea0db40e715ee3a5f456"
+    },
+    {
+      "case_id": "acceptance_244",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "99b926b3ed5f13b94aac4a9965879121b3d191190813982b17cb03dbe0e047b4"
+    },
+    {
+      "case_id": "acceptance_245",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "e8a3dac29eb15b5d037c218da1119c7cfa761bd2db894beaf943b5845a95d4c9"
+    },
+    {
+      "case_id": "acceptance_246",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "a905ba0f65e5505132082ead767b6139af8491b242f7cb9701e7cf42c9441b74"
+    },
+    {
+      "case_id": "acceptance_247",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "83f8d2868f50a43937e40eda462399b929fe90e41b1ffa272ef01e3941f8756d"
+    },
+    {
+      "case_id": "acceptance_248",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "bc51570501e8945e9548b70a053ca38f7319f7e3998e309c06f9d3439a409aa8"
+    },
+    {
+      "case_id": "acceptance_249",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "5b5277414a92a33704e56338fcc4d4a7ed986c15d3e17bf60edc348e8bda4d97"
+    },
+    {
+      "case_id": "acceptance_250",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "8d909d29573ae8fef05aa5a766a0596d5591556b9eee806f6ca821536418bc26"
+    },
+    {
+      "case_id": "acceptance_251",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "929dba6aa10937d3b065fb28a9a94b55575523254b721de95b18d222934d5af8"
+    },
+    {
+      "case_id": "acceptance_252",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "ecdc437a730374ba96c08710c06ba7096ab2b8ad82f492a5a953fd16e0ecaafa"
+    },
+    {
+      "case_id": "acceptance_253",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "12d0d088a2d047258634a11faa1ba79d792b2493731109d0fcc86587a8ecae6e"
+    },
+    {
+      "case_id": "acceptance_254",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "c12ea8c947f372b2a3573f7d67d0ca806e779af0c851bb1bd7aceed86114c118"
+    },
+    {
+      "case_id": "acceptance_255",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "bc45646dd55d5ec10081c1a6e93320dbad5e87a3226f6612d84a7cda9b9ef3a4"
+    },
+    {
+      "case_id": "acceptance_256",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "6b050a95764f4f165f6bb1e72960c14b48e3d356bdf2464363c9c31ac3a806fe"
+    },
+    {
+      "case_id": "acceptance_257",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "aa7133f25012c3d4b45b58541b6b39248066012efa709da2759b40334224abb3"
+    },
+    {
+      "case_id": "acceptance_258",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "8017af3530162ca44c9478b567d85bff05d797d758b4a9bc98bccebe7f2af985"
+    },
+    {
+      "case_id": "acceptance_259",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "eefda88dd9cf991666ddeafd13961cb35ccc5bff56a196836b8290977ad38fe5"
+    },
+    {
+      "case_id": "acceptance_260",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "605aa5a4d85d0ec0eff6b253dd02e435570aff06d9f440b0e96b18d2726c8bec"
+    },
+    {
+      "case_id": "acceptance_261",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "d53951670c00f38bb9a803ba824190762ca36d477ef435243b5fa559f59de6e8"
+    },
+    {
+      "case_id": "acceptance_262",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3c29e46cc0c380be9dedee4620047d25fd1193ef1bbc653cdef10edc637e9e9d"
+    },
+    {
+      "case_id": "acceptance_263",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "b4abc3d41fd9a058273ca30df77c262eb4cf2b504a61dc823fb9829802a1440a"
+    },
+    {
+      "case_id": "acceptance_264",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "0827dbb85b4c2f3ee96f5b621986f9e9e3e6fc201b0d6c6a4554fa974973e164"
+    },
+    {
+      "case_id": "acceptance_265",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "df4b957d0ca647cde455d2052974866707dc4c6fcc24df4563858f11d4cc477d"
+    },
+    {
+      "case_id": "acceptance_266",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "f2d24b7526781991cab8a2ac4be09dcba083b26b6727ba5e9be403b8d1757e06"
+    },
+    {
+      "case_id": "acceptance_267",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "9bb736ece2467acf99cba29d1707bde317d6ff6a96101eb180f8502d7b4db576"
+    },
+    {
+      "case_id": "acceptance_268",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3bf6426b28112d12e5f79271fc1a75bf9ebd9a079081ae5f047d214d6a3692b9"
+    },
+    {
+      "case_id": "acceptance_269",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "05ca3b29b4fec35215f717f610e7bd58d88d3f510fe3c14d93fbe1fabf36ccf5"
+    },
+    {
+      "case_id": "acceptance_270",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "0540820161ddaffc1037f647acf66780fbfccda334c8d12eba13c109a81b5e9e"
+    },
+    {
+      "case_id": "acceptance_271",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "000640401437b00788977532137cf66e77bdb74c47db52c8c0d59c2d7044c649"
+    },
+    {
+      "case_id": "acceptance_272",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "e9cda7d47173aac19c4d22ce4cc5c3ce9030ad58b04a71001137b38338d24938"
+    },
+    {
+      "case_id": "acceptance_273",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "69ec4cc7a8a085713ae082f8b27b1b65973db21bd0c6bd5a09f5b26c280b04bb"
+    },
+    {
+      "case_id": "acceptance_274",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "445dbdfdb106cd6d32cb36c577e9adfb2cfab5bce218fb067f8c2b2e7fdd7f1d"
+    },
+    {
+      "case_id": "acceptance_275",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "1ffd5ab82491a79181306879196855644e1d818d2428a371c1820f98fb683155"
+    },
+    {
+      "case_id": "acceptance_276",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "dd699c097f8688385df3f3945691b9ab16baaabf238d3bb743939c5a68f2bd55"
+    },
+    {
+      "case_id": "acceptance_277",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "2571ef48bdc6746c3697f40cf63b87d64c2539030ebfb4307c779e71bc4d6537"
+    },
+    {
+      "case_id": "acceptance_278",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "f2f76fd1b96bf4bd03f2d2757f2f3ff91db00d44909679af1f706f8e76321e48"
+    },
+    {
+      "case_id": "acceptance_279",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "859d745912c7f7d7a8be4f4f730104e44d9cf3e05980b67e1a1f0ebed15a5735"
+    },
+    {
+      "case_id": "acceptance_280",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "e0385013b094d12ca0127127bc3a8f2cce7d09ced686e57e86a0b05c236ce4cd"
+    },
+    {
+      "case_id": "acceptance_281",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3999de3dc9c5217180e73e43a6011b0a23d1a0d9a002627057f0d82d1f3404e2"
+    },
+    {
+      "case_id": "acceptance_282",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "be332825392f8765b97757b419a9d1af3f51b114dec4e22fbb558df3b76ace44"
+    },
+    {
+      "case_id": "acceptance_283",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "bcedb98422a24eb70312aaca0e48874f6415806457df9bf1fb71238449bd8c40"
+    },
+    {
+      "case_id": "acceptance_284",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "fde62223ff94e5123e2bf23f283264e0536dcc5767b29b100d474f8d5a77c9b9"
+    },
+    {
+      "case_id": "acceptance_285",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "98155e12141eb3b8a3bac284ee97f2407e00c8ab1cb4061f905d17d8e8502c7f"
+    },
+    {
+      "case_id": "acceptance_286",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "b34376bdfcb8d1f9cb610ea767be7f001abca052acdbf9ee470c0b3e6407b420"
+    },
+    {
+      "case_id": "acceptance_287",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "4afdb37635c8069aee061c3e3060fcd0da71cc602051f9080ff6dd3e998a9457"
+    },
+    {
+      "case_id": "acceptance_288",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "cce84090bf9ad542483f104e10d3ce7bd7faccf82b83234effe71f3265153fcb"
+    },
+    {
+      "case_id": "acceptance_289",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "16ee4371ef963c6bd462e4bc9a874f03163c98184459befe8aad7f573c2cbfa9"
+    },
+    {
+      "case_id": "acceptance_290",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "1c5a80d31970bf402dc01d781221869544f891ad56a564d4cd3806adeea4e9e4"
+    },
+    {
+      "case_id": "acceptance_291",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "f05b249ed03203308803bb0da277f76726941797d2a8177ffec6f292509a774d"
+    },
+    {
+      "case_id": "acceptance_292",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "5e4aeed3b04b9d58c560d92ef1e46abe95a9de46af721f9fdb94a5675e40b745"
+    },
+    {
+      "case_id": "acceptance_293",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "6c0e042220ede6de2e7d4a26900213f18c0efeb3e2d5308691f51ca437b77f73"
+    },
+    {
+      "case_id": "acceptance_294",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "28384b56e80611a794e4c3d832a7011459c4d5aef59e5e4cc01bc467754d250e"
+    },
+    {
+      "case_id": "acceptance_295",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "3a5b2208aae4ffd171f9fa0e68119033da649b0aeedfb50d1c7d6a9c67d1864a"
+    },
+    {
+      "case_id": "acceptance_296",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "179a673edffc6f51e3ba948da8d509d40538a79f7d102ea02fee73847e6fa31e"
+    },
+    {
+      "case_id": "acceptance_297",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "9bdb94e78efc0e598168087e20fead9381741987a0776827fe4af91fceb93967"
+    },
+    {
+      "case_id": "acceptance_298",
+      "expected_status": "ready",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "2f87cd8c8ae4ad7d4ff0941d269a4651b0e2fecd7d9dbf68771acb08e1eff7cc"
+    },
+    {
+      "case_id": "acceptance_299",
+      "expected_status": "ready",
+      "operation_type": "move_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "93b3a88184fb31ccc5ea2aa4a7dcd8b82f84c7cee9e443ad4f251fc97b1b230b"
+    },
+    {
+      "case_id": "acceptance_300",
+      "expected_status": "blocked_review_required",
+      "operation_type": "rename_folder",
+      "safety_expectations": {
+        "automatic_classification_performed": false,
+        "file_copy_performed": false,
+        "file_write_performed": false,
+        "folder_creation_performed": false,
+        "folder_scan_performed": false,
+        "media_download_performed": false,
+        "sensitive_identifier_inference_performed": false
+      },
+      "trace": "2b6947e8a683071c14386db8ea18cc9f57027f32e5e90e160f4572df61eed9c5"
+    }
+  ],
+  "schema_version": "profile-media-folder-operations-acceptance-matrix-v76g"
+}
