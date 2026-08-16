@@ -1,0 +1,19 @@
+{
+  "schema_version": "profile-media-folder-operations-v76g",
+  "operations": [
+    {
+      "operation_type": "rename_folder",
+      "source_path": "Cases/V76H End To End Demo/Sources/Articles/Old Article Folder",
+      "new_name": "Renamed Article Folder",
+      "reason": "Reviewed title normalization.",
+      "review_note": "V76H end-to-end fixture."
+    },
+    {
+      "operation_type": "move_folder",
+      "source_path": "Cases/V76H End To End Demo/Sources/Social Media/Online/Misfiled Offline Bundle",
+      "destination_path": "Cases/V76H End To End Demo/Sources/Social Media/Offline/Misfiled Offline Bundle",
+      "reason": "Reviewed source bucket correction.",
+      "review_note": "V76H end-to-end fixture."
+    }
+  ]
+}

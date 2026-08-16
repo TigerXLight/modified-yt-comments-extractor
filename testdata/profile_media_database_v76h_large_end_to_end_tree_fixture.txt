@@ -1,0 +1,254 @@
+Database/Profiles/Global Header Large Alpha
+Database/Profiles/Global Header Large Beta
+Cases/V76H Large Case 01/Sources/Social Media/Online/Large Online Bundle 001/capture.html
+Cases/V76H Large Case 01/Profiles/Large Person 001/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Offline/Large Offline Bundle 002/manifest.json
+Cases/V76H Large Case 01/Profiles/Large Person 002/profile.txt
+Cases/V76H Large Case 01/Sources/Internal Media/Large Internal Item 003/note.txt
+Cases/V76H Large Case 01/Profiles/Large Person 003/profile.txt
+Cases/V76H Large Case 01/Sources/Articles/Large Article 004/source_claim_evaluation.json
+Cases/V76H Large Case 01/Profiles/Large Person 004/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Online/Large Online Bundle 005/capture.html
+Cases/V76H Large Case 01/Profiles/Large Person 005/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Offline/Large Offline Bundle 006/manifest.json
+Cases/V76H Large Case 01/Profiles/Large Person 006/profile.txt
+Cases/V76H Large Case 01/Sources/Internal Media/Large Internal Item 007/note.txt
+Cases/V76H Large Case 01/Profiles/Large Person 007/profile.txt
+Cases/V76H Large Case 01/Sources/Articles/Large Article 008/source_claim_evaluation.json
+Cases/V76H Large Case 01/Profiles/Large Person 008/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Online/Large Online Bundle 009/capture.html
+Cases/V76H Large Case 01/Profiles/Large Person 009/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Offline/Large Offline Bundle 010/manifest.json
+Cases/V76H Large Case 01/Profiles/Large Person 010/profile.txt
+Cases/V76H Large Case 01/Reference Extants/Large Reference 010.txt
+Cases/V76H Large Case 01/Sources/Internal Media/Large Internal Item 011/note.txt
+Cases/V76H Large Case 01/Profiles/Large Person 011/profile.txt
+Cases/V76H Large Case 01/Sources/Articles/Large Article 012/source_claim_evaluation.json
+Cases/V76H Large Case 01/Profiles/Large Person 012/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Online/Large Online Bundle 013/capture.html
+Cases/V76H Large Case 01/Profiles/Large Person 013/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Offline/Large Offline Bundle 014/manifest.json
+Cases/V76H Large Case 01/Profiles/Large Person 014/profile.txt
+Cases/V76H Large Case 01/Sources/Internal Media/Large Internal Item 015/note.txt
+Cases/V76H Large Case 01/Profiles/Large Person 015/profile.txt
+Cases/V76H Large Case 01/Sources/Articles/Large Article 016/source_claim_evaluation.json
+Cases/V76H Large Case 01/Profiles/Large Person 016/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Online/Large Online Bundle 017/capture.html
+Cases/V76H Large Case 01/Profiles/Large Person 017/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Offline/Large Offline Bundle 018/manifest.json
+Cases/V76H Large Case 01/Profiles/Large Person 018/profile.txt
+Cases/V76H Large Case 01/Sources/Internal Media/Large Internal Item 019/note.txt
+Cases/V76H Large Case 01/Profiles/Large Person 019/profile.txt
+Cases/V76H Large Case 01/Sources/Articles/Large Article 020/source_claim_evaluation.json
+Cases/V76H Large Case 01/Profiles/Large Person 020/profile.txt
+Cases/V76H Large Case 01/Reference Extants/Large Reference 020.txt
+Cases/V76H Large Case 01/Sources/Social Media/Online/Large Online Bundle 021/capture.html
+Cases/V76H Large Case 01/Profiles/Large Person 021/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Offline/Large Offline Bundle 022/manifest.json
+Cases/V76H Large Case 01/Profiles/Large Person 022/profile.txt
+Cases/V76H Large Case 01/Sources/Internal Media/Large Internal Item 023/note.txt
+Cases/V76H Large Case 01/Profiles/Large Person 023/profile.txt
+Cases/V76H Large Case 01/Sources/Articles/Large Article 024/source_claim_evaluation.json
+Cases/V76H Large Case 01/Profiles/Large Person 024/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Online/Large Online Bundle 025/capture.html
+Cases/V76H Large Case 01/Profiles/Large Person 025/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Offline/Large Offline Bundle 026/manifest.json
+Cases/V76H Large Case 01/Profiles/Large Person 026/profile.txt
+Cases/V76H Large Case 01/Sources/Internal Media/Large Internal Item 027/note.txt
+Cases/V76H Large Case 01/Profiles/Large Person 027/profile.txt
+Cases/V76H Large Case 01/Sources/Articles/Large Article 028/source_claim_evaluation.json
+Cases/V76H Large Case 01/Profiles/Large Person 028/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Online/Large Online Bundle 029/capture.html
+Cases/V76H Large Case 01/Profiles/Large Person 029/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Offline/Large Offline Bundle 030/manifest.json
+Cases/V76H Large Case 01/Profiles/Large Person 030/profile.txt
+Cases/V76H Large Case 01/Reference Extants/Large Reference 030.txt
+Cases/V76H Large Case 01/Sources/Internal Media/Large Internal Item 031/note.txt
+Cases/V76H Large Case 01/Profiles/Large Person 031/profile.txt
+Cases/V76H Large Case 01/Sources/Articles/Large Article 032/source_claim_evaluation.json
+Cases/V76H Large Case 01/Profiles/Large Person 032/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Online/Large Online Bundle 033/capture.html
+Cases/V76H Large Case 01/Profiles/Large Person 033/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Offline/Large Offline Bundle 034/manifest.json
+Cases/V76H Large Case 01/Profiles/Large Person 034/profile.txt
+Cases/V76H Large Case 01/Sources/Internal Media/Large Internal Item 035/note.txt
+Cases/V76H Large Case 01/Profiles/Large Person 035/profile.txt
+Cases/V76H Large Case 01/Sources/Articles/Large Article 036/source_claim_evaluation.json
+Cases/V76H Large Case 01/Profiles/Large Person 036/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Online/Large Online Bundle 037/capture.html
+Cases/V76H Large Case 01/Profiles/Large Person 037/profile.txt
+Cases/V76H Large Case 01/Sources/Social Media/Offline/Large Offline Bundle 038/manifest.json
+Cases/V76H Large Case 01/Profiles/Large Person 038/profile.txt
+Cases/V76H Large Case 01/Sources/Internal Media/Large Internal Item 039/note.txt
+Cases/V76H Large Case 01/Profiles/Large Person 039/profile.txt
+Cases/V76H Large Case 01/Sources/Articles/Large Article 040/source_claim_evaluation.json
+Cases/V76H Large Case 01/Profiles/Large Person 040/profile.txt
+Cases/V76H Large Case 01/Reference Extants/Large Reference 040.txt
+Cases/V76H Large Case 02/Sources/Social Media/Online/Large Online Bundle 041/capture.html
+Cases/V76H Large Case 02/Profiles/Large Person 041/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Offline/Large Offline Bundle 042/manifest.json
+Cases/V76H Large Case 02/Profiles/Large Person 042/profile.txt
+Cases/V76H Large Case 02/Sources/Internal Media/Large Internal Item 043/note.txt
+Cases/V76H Large Case 02/Profiles/Large Person 043/profile.txt
+Cases/V76H Large Case 02/Sources/Articles/Large Article 044/source_claim_evaluation.json
+Cases/V76H Large Case 02/Profiles/Large Person 044/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Online/Large Online Bundle 045/capture.html
+Cases/V76H Large Case 02/Profiles/Large Person 045/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Offline/Large Offline Bundle 046/manifest.json
+Cases/V76H Large Case 02/Profiles/Large Person 046/profile.txt
+Cases/V76H Large Case 02/Sources/Internal Media/Large Internal Item 047/note.txt
+Cases/V76H Large Case 02/Profiles/Large Person 047/profile.txt
+Cases/V76H Large Case 02/Sources/Articles/Large Article 048/source_claim_evaluation.json
+Cases/V76H Large Case 02/Profiles/Large Person 048/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Online/Large Online Bundle 049/capture.html
+Cases/V76H Large Case 02/Profiles/Large Person 049/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Offline/Large Offline Bundle 050/manifest.json
+Cases/V76H Large Case 02/Profiles/Large Person 050/profile.txt
+Cases/V76H Large Case 02/Reference Extants/Large Reference 050.txt
+Cases/V76H Large Case 02/Sources/Internal Media/Large Internal Item 051/note.txt
+Cases/V76H Large Case 02/Profiles/Large Person 051/profile.txt
+Cases/V76H Large Case 02/Sources/Articles/Large Article 052/source_claim_evaluation.json
+Cases/V76H Large Case 02/Profiles/Large Person 052/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Online/Large Online Bundle 053/capture.html
+Cases/V76H Large Case 02/Profiles/Large Person 053/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Offline/Large Offline Bundle 054/manifest.json
+Cases/V76H Large Case 02/Profiles/Large Person 054/profile.txt
+Cases/V76H Large Case 02/Sources/Internal Media/Large Internal Item 055/note.txt
+Cases/V76H Large Case 02/Profiles/Large Person 055/profile.txt
+Cases/V76H Large Case 02/Sources/Articles/Large Article 056/source_claim_evaluation.json
+Cases/V76H Large Case 02/Profiles/Large Person 056/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Online/Large Online Bundle 057/capture.html
+Cases/V76H Large Case 02/Profiles/Large Person 057/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Offline/Large Offline Bundle 058/manifest.json
+Cases/V76H Large Case 02/Profiles/Large Person 058/profile.txt
+Cases/V76H Large Case 02/Sources/Internal Media/Large Internal Item 059/note.txt
+Cases/V76H Large Case 02/Profiles/Large Person 059/profile.txt
+Cases/V76H Large Case 02/Sources/Articles/Large Article 060/source_claim_evaluation.json
+Cases/V76H Large Case 02/Profiles/Large Person 060/profile.txt
+Cases/V76H Large Case 02/Reference Extants/Large Reference 060.txt
+Cases/V76H Large Case 02/Sources/Social Media/Online/Large Online Bundle 061/capture.html
+Cases/V76H Large Case 02/Profiles/Large Person 061/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Offline/Large Offline Bundle 062/manifest.json
+Cases/V76H Large Case 02/Profiles/Large Person 062/profile.txt
+Cases/V76H Large Case 02/Sources/Internal Media/Large Internal Item 063/note.txt
+Cases/V76H Large Case 02/Profiles/Large Person 063/profile.txt
+Cases/V76H Large Case 02/Sources/Articles/Large Article 064/source_claim_evaluation.json
+Cases/V76H Large Case 02/Profiles/Large Person 064/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Online/Large Online Bundle 065/capture.html
+Cases/V76H Large Case 02/Profiles/Large Person 065/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Offline/Large Offline Bundle 066/manifest.json
+Cases/V76H Large Case 02/Profiles/Large Person 066/profile.txt
+Cases/V76H Large Case 02/Sources/Internal Media/Large Internal Item 067/note.txt
+Cases/V76H Large Case 02/Profiles/Large Person 067/profile.txt
+Cases/V76H Large Case 02/Sources/Articles/Large Article 068/source_claim_evaluation.json
+Cases/V76H Large Case 02/Profiles/Large Person 068/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Online/Large Online Bundle 069/capture.html
+Cases/V76H Large Case 02/Profiles/Large Person 069/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Offline/Large Offline Bundle 070/manifest.json
+Cases/V76H Large Case 02/Profiles/Large Person 070/profile.txt
+Cases/V76H Large Case 02/Reference Extants/Large Reference 070.txt
+Cases/V76H Large Case 02/Sources/Internal Media/Large Internal Item 071/note.txt
+Cases/V76H Large Case 02/Profiles/Large Person 071/profile.txt
+Cases/V76H Large Case 02/Sources/Articles/Large Article 072/source_claim_evaluation.json
+Cases/V76H Large Case 02/Profiles/Large Person 072/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Online/Large Online Bundle 073/capture.html
+Cases/V76H Large Case 02/Profiles/Large Person 073/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Offline/Large Offline Bundle 074/manifest.json
+Cases/V76H Large Case 02/Profiles/Large Person 074/profile.txt
+Cases/V76H Large Case 02/Sources/Internal Media/Large Internal Item 075/note.txt
+Cases/V76H Large Case 02/Profiles/Large Person 075/profile.txt
+Cases/V76H Large Case 02/Sources/Articles/Large Article 076/source_claim_evaluation.json
+Cases/V76H Large Case 02/Profiles/Large Person 076/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Online/Large Online Bundle 077/capture.html
+Cases/V76H Large Case 02/Profiles/Large Person 077/profile.txt
+Cases/V76H Large Case 02/Sources/Social Media/Offline/Large Offline Bundle 078/manifest.json
+Cases/V76H Large Case 02/Profiles/Large Person 078/profile.txt
+Cases/V76H Large Case 02/Sources/Internal Media/Large Internal Item 079/note.txt
+Cases/V76H Large Case 02/Profiles/Large Person 079/profile.txt
+Cases/V76H Large Case 02/Sources/Articles/Large Article 080/source_claim_evaluation.json
+Cases/V76H Large Case 02/Profiles/Large Person 080/profile.txt
+Cases/V76H Large Case 02/Reference Extants/Large Reference 080.txt
+Cases/V76H Large Case 03/Sources/Social Media/Online/Large Online Bundle 081/capture.html
+Cases/V76H Large Case 03/Profiles/Large Person 081/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Offline/Large Offline Bundle 082/manifest.json
+Cases/V76H Large Case 03/Profiles/Large Person 082/profile.txt
+Cases/V76H Large Case 03/Sources/Internal Media/Large Internal Item 083/note.txt
+Cases/V76H Large Case 03/Profiles/Large Person 083/profile.txt
+Cases/V76H Large Case 03/Sources/Articles/Large Article 084/source_claim_evaluation.json
+Cases/V76H Large Case 03/Profiles/Large Person 084/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Online/Large Online Bundle 085/capture.html
+Cases/V76H Large Case 03/Profiles/Large Person 085/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Offline/Large Offline Bundle 086/manifest.json
+Cases/V76H Large Case 03/Profiles/Large Person 086/profile.txt
+Cases/V76H Large Case 03/Sources/Internal Media/Large Internal Item 087/note.txt
+Cases/V76H Large Case 03/Profiles/Large Person 087/profile.txt
+Cases/V76H Large Case 03/Sources/Articles/Large Article 088/source_claim_evaluation.json
+Cases/V76H Large Case 03/Profiles/Large Person 088/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Online/Large Online Bundle 089/capture.html
+Cases/V76H Large Case 03/Profiles/Large Person 089/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Offline/Large Offline Bundle 090/manifest.json
+Cases/V76H Large Case 03/Profiles/Large Person 090/profile.txt
+Cases/V76H Large Case 03/Reference Extants/Large Reference 090.txt
+Cases/V76H Large Case 03/Sources/Internal Media/Large Internal Item 091/note.txt
+Cases/V76H Large Case 03/Profiles/Large Person 091/profile.txt
+Cases/V76H Large Case 03/Sources/Articles/Large Article 092/source_claim_evaluation.json
+Cases/V76H Large Case 03/Profiles/Large Person 092/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Online/Large Online Bundle 093/capture.html
+Cases/V76H Large Case 03/Profiles/Large Person 093/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Offline/Large Offline Bundle 094/manifest.json
+Cases/V76H Large Case 03/Profiles/Large Person 094/profile.txt
+Cases/V76H Large Case 03/Sources/Internal Media/Large Internal Item 095/note.txt
+Cases/V76H Large Case 03/Profiles/Large Person 095/profile.txt
+Cases/V76H Large Case 03/Sources/Articles/Large Article 096/source_claim_evaluation.json
+Cases/V76H Large Case 03/Profiles/Large Person 096/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Online/Large Online Bundle 097/capture.html
+Cases/V76H Large Case 03/Profiles/Large Person 097/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Offline/Large Offline Bundle 098/manifest.json
+Cases/V76H Large Case 03/Profiles/Large Person 098/profile.txt
+Cases/V76H Large Case 03/Sources/Internal Media/Large Internal Item 099/note.txt
+Cases/V76H Large Case 03/Profiles/Large Person 099/profile.txt
+Cases/V76H Large Case 03/Sources/Articles/Large Article 100/source_claim_evaluation.json
+Cases/V76H Large Case 03/Profiles/Large Person 100/profile.txt
+Cases/V76H Large Case 03/Reference Extants/Large Reference 100.txt
+Cases/V76H Large Case 03/Sources/Social Media/Online/Large Online Bundle 101/capture.html
+Cases/V76H Large Case 03/Profiles/Large Person 101/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Offline/Large Offline Bundle 102/manifest.json
+Cases/V76H Large Case 03/Profiles/Large Person 102/profile.txt
+Cases/V76H Large Case 03/Sources/Internal Media/Large Internal Item 103/note.txt
+Cases/V76H Large Case 03/Profiles/Large Person 103/profile.txt
+Cases/V76H Large Case 03/Sources/Articles/Large Article 104/source_claim_evaluation.json
+Cases/V76H Large Case 03/Profiles/Large Person 104/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Online/Large Online Bundle 105/capture.html
+Cases/V76H Large Case 03/Profiles/Large Person 105/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Offline/Large Offline Bundle 106/manifest.json
+Cases/V76H Large Case 03/Profiles/Large Person 106/profile.txt
+Cases/V76H Large Case 03/Sources/Internal Media/Large Internal Item 107/note.txt
+Cases/V76H Large Case 03/Profiles/Large Person 107/profile.txt
+Cases/V76H Large Case 03/Sources/Articles/Large Article 108/source_claim_evaluation.json
+Cases/V76H Large Case 03/Profiles/Large Person 108/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Online/Large Online Bundle 109/capture.html
+Cases/V76H Large Case 03/Profiles/Large Person 109/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Offline/Large Offline Bundle 110/manifest.json
+Cases/V76H Large Case 03/Profiles/Large Person 110/profile.txt
+Cases/V76H Large Case 03/Reference Extants/Large Reference 110.txt
+Cases/V76H Large Case 03/Sources/Internal Media/Large Internal Item 111/note.txt
+Cases/V76H Large Case 03/Profiles/Large Person 111/profile.txt
+Cases/V76H Large Case 03/Sources/Articles/Large Article 112/source_claim_evaluation.json
+Cases/V76H Large Case 03/Profiles/Large Person 112/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Online/Large Online Bundle 113/capture.html
+Cases/V76H Large Case 03/Profiles/Large Person 113/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Offline/Large Offline Bundle 114/manifest.json
+Cases/V76H Large Case 03/Profiles/Large Person 114/profile.txt
+Cases/V76H Large Case 03/Sources/Internal Media/Large Internal Item 115/note.txt
+Cases/V76H Large Case 03/Profiles/Large Person 115/profile.txt
+Cases/V76H Large Case 03/Sources/Articles/Large Article 116/source_claim_evaluation.json
+Cases/V76H Large Case 03/Profiles/Large Person 116/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Online/Large Online Bundle 117/capture.html
+Cases/V76H Large Case 03/Profiles/Large Person 117/profile.txt
+Cases/V76H Large Case 03/Sources/Social Media/Offline/Large Offline Bundle 118/manifest.json
+Cases/V76H Large Case 03/Profiles/Large Person 118/profile.txt
+Cases/V76H Large Case 03/Sources/Internal Media/Large Internal Item 119/note.txt
+Cases/V76H Large Case 03/Profiles/Large Person 119/profile.txt
+Cases/V76H Large Case 03/Sources/Articles/Large Article 120/source_claim_evaluation.json
+Cases/V76H Large Case 03/Profiles/Large Person 120/profile.txt
+Cases/V76H Large Case 03/Reference Extants/Large Reference 120.txt

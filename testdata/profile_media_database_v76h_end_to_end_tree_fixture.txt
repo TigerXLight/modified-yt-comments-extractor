@@ -1,0 +1,10 @@
+Database/Profiles/Global Header Person Alpha
+Database/Profiles/Global Header Person Beta
+Cases/V76H End To End Demo/Sources/Articles/Old Article Folder/source_claim_evaluation.json
+Cases/V76H End To End Demo/Sources/Social Media/Online/Misfiled Offline Bundle/capture.html
+Cases/V76H End To End Demo/Sources/Internal Media/Creator Original Clip/internal_media_note.txt
+Cases/V76H End To End Demo/Profiles/Example Person/profile.txt
+Cases/V76H End To End Demo/Profiles/Second Example/profile.txt
+Cases/V76H End To End Demo/People/Readable person note.txt
+Cases/V76H End To End Demo/Reference Extants/Timeline.txt
+Unrelated Scratch/random.tmp

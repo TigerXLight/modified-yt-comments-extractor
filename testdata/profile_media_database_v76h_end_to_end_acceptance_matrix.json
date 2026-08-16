@@ -1,0 +1,42 @@
+{
+  "schema_version": "profile-media-database-end-to-end-v76h-acceptance-matrix",
+  "checks": [
+    {
+      "key": "dry_run_preview",
+      "expected_status": "workflow_dry_run_preview",
+      "must_not_mutate": [
+        "folder_scan_performed",
+        "folder_creation_performed",
+        "folder_move_performed",
+        "folder_rename_performed",
+        "file_copy_performed",
+        "media_download_performed",
+        "automatic_classification_performed",
+        "sensitive_identifier_inference_performed"
+      ]
+    },
+    {
+      "key": "confirmed_preview_write",
+      "expected_status": "workflow_batch_preview_written",
+      "allowed_write": "standalone_batch_preview_json"
+    },
+    {
+      "key": "confirmed_materialize",
+      "expected_status": "workflow_materialized",
+      "requires_confirmation": "MATERIALIZE_PROFILE_MEDIA_DATABASE_SELECTION"
+    },
+    {
+      "key": "reviewed_folder_operations",
+      "expected_status": "workflow_operations_applied",
+      "requires_confirmation": "APPLY_PROFILE_MEDIA_REVIEWED_FOLDER_OPERATIONS"
+    },
+    {
+      "key": "source_scope",
+      "expected": "explicit folder-tree text only; no filesystem scan"
+    },
+    {
+      "key": "sensitive_identifier_policy",
+      "expected": "source-evidenced/user-confirmed only; no inference"
+    }
+  ]
+}

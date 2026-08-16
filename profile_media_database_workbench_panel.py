@@ -197,6 +197,7 @@ def build_profile_media_database_gui_panel_state(
             _action("plan_existing_folder_import", "Plan existing folder import", "available_dry_run", "Build a dry-run batch preview from an explicit folder-tree list; no folder scan."),
             _action("materialize_case", "Materialize case", "guarded_v76f", "Requires exact V76F confirmation before folder creation or metadata writes."),
             _action("review_folder_operations", "Review folder operations", "guarded_v76g", "Review explicit folder rename/move operations; execution requires V76G confirmation."),
+            _action("run_end_to_end_workflow_check", "Run workflow check", "available_v76h", "Run the explicit end-to-end readiness workflow over selected inputs."),
             _action("review_report", "Review report", "available", "Open source-chain gaps, disputed framing, and unknown-role lanes."),
         ),
         notices=(
