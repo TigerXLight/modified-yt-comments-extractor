@@ -8,6 +8,13 @@ Related social/video references:
 https://x.com/example/status/1234567890
 https://www.youtube.com/watch?v=example12345
 
+Uploader/account: Clash Report
+Speaker: Example speaker
+Original programme: Example Channel News
+Clip holder: Local source folder
+Transcripted statement: I received this clip from a public post.
+Watermark: YouTube
+
 Manual source note:
 This folder is a local saved article/source review fixture. I saved the page after reading a police statement and a court note repeated by the article.
 

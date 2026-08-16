@@ -5,6 +5,7 @@ from profile_media_database_workbench_panel import (
     gui_panel_payload,
     render_profile_media_database_gui_panel_text,
 )
+from profile_media_home_source_folder_ingestion import build_home_source_folder_evaluation_preview
 
 
 def test_files_mode_panel_is_inert() -> None:
@@ -99,10 +100,44 @@ def test_database_panel_projects_workbench_payload_counts() -> None:
     assert lanes["parser_warnings"] == 4
 
 
+def test_database_panel_exposes_home_source_folder_add_import_preview_language() -> None:
+    preview = build_home_source_folder_evaluation_preview(
+        "testdata/profile_media_database_v76o_home_source_folder_fixture",
+        extractor_order=("stdlib_html",),
+    ).to_dict()
+    state = build_profile_media_database_gui_panel_state(
+        mode="DATABASE",
+        database_root="Demo HOME",
+        source_folder_preview=preview,
+    )
+    payload = gui_panel_payload(state)
+    actions = {action["action_id"]: action for action in payload["actions"]}
+    metrics = {metric["key"]: metric["value"] for metric in payload["metrics"]}
+    assert payload["source_folder_preview"]["source_folder"]
+    assert actions["add_import_source_folder_preview"]["label"] == "Add / Import source folder"
+    assert actions["add_import_source_folder_preview"]["status"] == "available_preview"
+    assert metrics["source_folder_segments"] >= 1
+    assert metrics["source_folder_sources"] == 4
+    visible_language = " ".join(
+        [action["label"] + " " + action["description"] for action in payload["actions"]]
+        + list(payload["notices"])
+    )
+    assert "HOME" in visible_language
+    assert "Save" in visible_language or "SAVE" in visible_language
+    assert "materialize" not in visible_language.lower()
+    assert "batch json" not in visible_language.lower()
+    rendered = render_profile_media_database_gui_panel_text(state)
+    assert "Add / Import source folder preview" in rendered
+    assert "Final source role decision: False" in rendered
+    assert payload["media_download_performed"] is False
+    assert payload["automatic_classification_performed"] is False
+
+
 def main() -> int:
     test_files_mode_panel_is_inert()
     test_database_mode_without_batch_json_is_visible_but_unconfigured()
     test_database_panel_projects_workbench_payload_counts()
+    test_database_panel_exposes_home_source_folder_add_import_preview_language()
     print("profile_media_database_workbench_panel v76k2 OK")
     return 0
 

@@ -54,6 +54,7 @@ class ProfileMediaDatabaseGuiPanelState:
     review_lanes: tuple[ProfileMediaDatabaseGuiPanelMetric, ...] = ()
     actions: tuple[ProfileMediaDatabaseGuiPanelAction, ...] = ()
     notices: tuple[str, ...] = ()
+    source_folder_preview: Mapping[str, Any] = field(default_factory=dict)
     schema_version: str = PROFILE_MEDIA_DATABASE_GUI_PANEL_SCHEMA_VERSION
     created_at_utc: str = field(default_factory=utc_now_iso)
     folder_scan_performed: bool = False
@@ -192,12 +193,14 @@ def build_profile_media_database_gui_panel_state(
     database_root: object = "",
     batch_json_files: Iterable[object] | None = None,
     workbench_payload: Mapping[str, Any] | None = None,
+    source_folder_preview: Mapping[str, Any] | None = None,
 ) -> ProfileMediaDatabaseGuiPanelState:
     """Build safe main-panel state from explicit caller-supplied values only."""
 
     coerced_mode = "DATABASE" if str(mode).upper() == "DATABASE" else "FILES"
     batches = _batch_tuple(batch_json_files)
     root = str(database_root or _first_nonempty(workbench_payload, "database_root") or "")
+    preview_payload = dict(source_folder_preview or {})
 
     if coerced_mode != "DATABASE":
         return ProfileMediaDatabaseGuiPanelState(
@@ -238,12 +241,15 @@ def build_profile_media_database_gui_panel_state(
     navigation_targets = _int_from_payload(workbench_payload, "navigation_target_count", "target_count")
     review_items = _int_from_payload(workbench_payload, "review_item_count")
     saved_views = _int_from_payload(workbench_payload, "saved_view_count", "view_count")
+    preview_sources = len(preview_payload.get("source_urls") or ())
+    preview_segments = len(preview_payload.get("source_role_segments") or ())
+    preview_media = len(preview_payload.get("media_references") or ())
     primary_sources = _facet_count(workbench_payload, "source_role", "PRIMARY_SELF_AUTHORED_SCOPE")
     secondary_sources = _facet_count(workbench_payload, "source_role", "SECONDARY_WITNESS_ACCOUNT")
     tertiary_sources = _facet_count(workbench_payload, "source_role", "TERTIARY_PROPAGATED_SOURCE")
     persons = _person_count(workbench_payload, profile_rows)
 
-    configured = bool(batches or workbench_payload)
+    configured = bool(batches or workbench_payload or preview_payload)
     status = "ready_for_import" if not configured else "success"
     subtitle = (
         "HOME mode is on. Add or import source material, then SAVE reviewed structure into HOME."
@@ -266,6 +272,9 @@ def build_profile_media_database_gui_panel_state(
             _metric("navigation_targets", "Navigation targets", navigation_targets),
             _metric("review_items", "Review items", review_items, "high" if review_items else "info"),
             _metric("saved_views", "Saved views", saved_views),
+            _metric("source_folder_sources", "Source folder URLs", preview_sources),
+            _metric("source_folder_segments", "Source role segments", preview_segments, "high" if preview_segments else "info"),
+            _metric("source_folder_media_references", "Media references", preview_media),
         ),
         display_metrics=(
             _metric("primary_sources", "👤 Primary", primary_sources),
@@ -324,6 +333,7 @@ def build_profile_media_database_gui_panel_state(
         ),
         actions=(
             _action("refresh_database_view", "Sync HOME", "available", "Refresh the current HOME view internally after imports or saves."),
+            _action("add_import_source_folder_preview", "Add / Import source folder", "available_preview", "Select one source folder and generate a review preview; no HOME scan, media download, or classification."),
             _action("load_batch_json", "Add / Import", "available", "Add source files, pasted URLs, dragged media, or a saved import package."),
             _action("plan_existing_folder_import", "Plan folder import", "available_dry_run", "Build a dry-run preview from an explicit folder-tree list; no folder scan."),
             _action("save_to_home_repository", "Save to HOME", "guarded_v76f", "Save reviewed folders and metadata under the selected HOME repository only."),
@@ -334,9 +344,11 @@ def build_profile_media_database_gui_panel_state(
         ),
         notices=(
             "HOME is a managed repository. The app saves reviewed folders/indexes; it does not require users to understand JSON.",
+            "Add / Import can generate a selected source-folder preview from source.txt, local article files, and media references.",
             "No media download, automatic classification, or sensitive inference is performed.",
             "The left sidebar shows Primary, Secondary, Tertiary, Persons, and Review summary counts.",
         ),
+        source_folder_preview=preview_payload,
     )
 
 
@@ -355,6 +367,7 @@ def render_profile_media_database_gui_panel_text(state: ProfileMediaDatabaseGuiP
         f"Mode: {state.mode}",
         f"Database root: {state.database_root or '(not configured)'}",
         f"Import files: {len(state.batch_json_files)}",
+        f"Source folder preview: {'yes' if state.source_folder_preview else 'no'}",
         "",
         "Display metrics:",
     ]
@@ -368,6 +381,14 @@ def render_profile_media_database_gui_panel_text(state: ProfileMediaDatabaseGuiP
     lines.append("Review lanes:")
     for lane in state.review_lanes:
         lines.append(f"- {lane.label}: {lane.value} [{lane.severity}]")
+    if state.source_folder_preview:
+        preview = state.source_folder_preview
+        lines.append("")
+        lines.append("Add / Import source folder preview:")
+        lines.append(f"- Source folder: {preview.get('source_folder') or '(not supplied)'}")
+        lines.append(f"- Source URLs: {len(preview.get('source_urls') or [])}")
+        lines.append(f"- Source role segments: {len(preview.get('source_role_segments') or [])}")
+        lines.append(f"- Final source role decision: {preview.get('final_source_role_decision')}")
     lines.append("")
     lines.append("Actions:")
     for action in state.actions:

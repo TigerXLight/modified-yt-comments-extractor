@@ -25,6 +25,8 @@ from profile_media_article_extraction_adapter import (
     extract_article_from_html,
 )
 from profile_media_database import utc_now_iso
+from profile_media_social_video_provenance import build_social_video_provenance_review
+from profile_media_source_segment_analysis import analyze_source_segments, source_segments_to_dicts
 
 PROFILE_MEDIA_HOME_SOURCE_FOLDER_INGESTION_SCHEMA_VERSION = "profile-media-home-source-folder-ingestion-v76o"
 WRITE_HOME_SOURCE_FOLDER_EVALUATION_PREVIEW = "WRITE_HOME_SOURCE_FOLDER_EVALUATION_PREVIEW"
@@ -86,6 +88,8 @@ class HomeSourceFolderEvaluationPreview:
     witness_connectivity_review: Mapping[str, Any] = field(default_factory=dict)
     first_person_author_self_claim_review: Mapping[str, Any] = field(default_factory=dict)
     social_media_video_provenance_review: Mapping[str, Any] = field(default_factory=dict)
+    source_role_segments: tuple[Mapping[str, Any], ...] = ()
+    social_video_provenance: Mapping[str, Any] = field(default_factory=dict)
     source_role_candidate: str = "REVIEW_REQUIRED"
     final_source_role_decision: bool = False
     warnings: tuple[str, ...] = ()
@@ -115,6 +119,8 @@ class HomeSourceFolderEvaluationPreview:
         payload["witness_connectivity_review"] = dict(self.witness_connectivity_review)
         payload["first_person_author_self_claim_review"] = dict(self.first_person_author_self_claim_review)
         payload["social_media_video_provenance_review"] = dict(self.social_media_video_provenance_review)
+        payload["source_role_segments"] = [dict(item) for item in self.source_role_segments]
+        payload["social_video_provenance"] = dict(self.social_video_provenance)
         return payload
 
 
@@ -426,6 +432,13 @@ def build_home_source_folder_evaluation_preview(
     )
     warnings.extend(article_warnings)
     combined_text = "\n".join([source_txt_text, visible_article_text])
+    segment_reviews = analyze_source_segments(combined_text)
+    segment_payloads = tuple(source_segments_to_dicts(segment_reviews))
+    social_video_payload = build_social_video_provenance_review(
+        combined_text,
+        source_urls=source_urls,
+        media_reference_count=len(media_refs),
+    ).to_dict()
     (
         claim_subject_review,
         witness_review,
@@ -442,6 +455,7 @@ def build_home_source_folder_evaluation_preview(
         media_refs=media_refs,
         article_preview=article_preview,
     )
+    review_lanes = _dedupe(tuple(review_lanes) + tuple(social_video_payload.get("review_lanes") or []))
 
     return HomeSourceFolderEvaluationPreview(
         source_folder=str(root),
@@ -462,6 +476,8 @@ def build_home_source_folder_evaluation_preview(
         witness_connectivity_review=witness_review,
         first_person_author_self_claim_review=first_person_review,
         social_media_video_provenance_review=social_video_review,
+        source_role_segments=segment_payloads,
+        social_video_provenance=social_video_payload,
         source_role_candidate=source_role_candidate,
         final_source_role_decision=False,
         warnings=_dedupe(warnings),
@@ -522,6 +538,7 @@ def render_home_source_folder_evaluation_text(preview: HomeSourceFolderEvaluatio
         f"Text files: {len(data.get('text_files') or [])}",
         f"Screenshot references: {len(data.get('screenshot_references') or [])}",
         f"Media references: {len(data.get('media_references') or [])}",
+        f"Source-role segments: {len(data.get('source_role_segments') or [])}",
         f"Article title: {article_preview.get('title') or '(missing)'}",
         f"Article extraction status: {article_preview.get('status') or '(not run)'}",
         f"Source role candidate: {data.get('source_role_candidate')}",
@@ -540,6 +557,24 @@ def render_home_source_folder_evaluation_text(preview: HomeSourceFolderEvaluatio
     ]
     for lane in data.get("review_lanes") or []:
         lines.append(f"- {lane}")
+    lines.extend(["", "Segment/source-role preview:"])
+    for segment in (data.get("source_role_segments") or [])[:8]:
+        if not isinstance(segment, Mapping):
+            continue
+        lines.append(
+            f"- {segment.get('segment_id')}: {segment.get('source_role_candidate')} "
+            f"({segment.get('role_scope')})"
+        )
+    social_video = data.get("social_video_provenance") or {}
+    if isinstance(social_video, Mapping) and social_video:
+        lines.extend([
+            "",
+            "Social/video provenance:",
+            f"- Uploader/account: {social_video.get('uploader_account') or '(review needed)'}",
+            f"- Speaker: {social_video.get('speaker') or '(review needed)'}",
+            f"- Original programme/channel/source: {social_video.get('original_programme_channel_source') or '(review needed)'}",
+            f"- Claim-subject affiliation gap: {social_video.get('claim_subject_affiliation_gap')}",
+        ])
     lines.extend(["", "Warnings:"])
     for warning in data.get("warnings") or []:
         lines.append(f"- {warning}")

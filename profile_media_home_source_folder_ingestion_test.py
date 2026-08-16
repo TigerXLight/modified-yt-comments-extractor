@@ -38,7 +38,7 @@ def test_article_txt_html_rtf_detection_and_preview() -> None:
     assert len(payload["text_files"]) == 1
     assert payload["html_files"] == []
     assert payload["extracted_article_preview"]["status"] == "success"
-    assert "Example local court report" in payload["extracted_article_preview"]["main_text"]
+    assert "14 Jun - 'Shut up you traitorous appeaser. - White" in payload["extracted_article_preview"]["main_text"]
     assert "source_chain_basis_review" in payload["review_lanes"]
     assert "authority_or_court_claim_language_present" in payload["source_basis_candidates"]
 
@@ -77,6 +77,24 @@ def test_review_lanes_keep_source_criticism_non_final() -> None:
     assert payload["claim_subject_affiliation_review"]["status"] == "review_required_affiliation_gap"
     assert payload["social_media_video_provenance_review"]["status"] == "review_required_social_media_video_provenance"
     assert payload["source_role_candidate"] == "TERTIARY_PROPAGATED_SOURCE_REVIEW_REQUIRED"
+    assert len(payload["source_role_segments"]) >= 2
+    first_person_segments = [item for item in payload["source_role_segments"] if item["first_person_author_self_claim_review"]]
+    assert first_person_segments
+    assert first_person_segments[0]["author_scope_only"] is True
+    assert any(item["source_role_candidate"] == "TERTIARY_PROPAGATED_SOURCE_REVIEW_REQUIRED" for item in payload["source_role_segments"])
+
+
+def test_social_video_provenance_is_included_in_preview() -> None:
+    preview = build_home_source_folder_evaluation_preview(FIXTURE, extractor_order=("stdlib_html",))
+    payload = preview.to_dict()
+    provenance = payload["social_video_provenance"]
+    assert provenance["uploader_account"] == "Clash Report"
+    assert provenance["speaker"] == "Example speaker"
+    assert provenance["original_programme_channel_source"] == "Example Channel News"
+    assert provenance["clip_holder"] == "Local source folder"
+    assert provenance["source_url"].startswith("https://x.com/") or provenance["source_url"].startswith("https://www.youtube.com/")
+    assert provenance["archive_url"].startswith("https://web.archive.org/")
+    assert provenance["media_download_performed"] is False
 
 
 def test_confirmation_token_blocks_and_allows_preview_write() -> None:
@@ -109,6 +127,7 @@ def test_text_renderer_and_url_helper_are_deterministic() -> None:
     assert "home_database_scan_performed: False" in text
     assert "media_download_performed: False" in text
     assert "first_person_author_self_claim_review" in text
+    assert "Source-role segments:" in text
 
 
 if __name__ == "__main__":
@@ -117,6 +136,7 @@ if __name__ == "__main__":
     test_rtf_extraction_preserves_readable_text()
     test_media_and_screenshot_references_are_recorded_only()
     test_review_lanes_keep_source_criticism_non_final()
+    test_social_video_provenance_is_included_in_preview()
     test_confirmation_token_blocks_and_allows_preview_write()
     test_text_renderer_and_url_helper_are_deterministic()
     print("profile_media_home_source_folder_ingestion v76o OK")

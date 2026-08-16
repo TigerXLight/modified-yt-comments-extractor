@@ -1,0 +1,41 @@
+{
+  "schema_version": "profile-media-database-v76p-implementation-closeout",
+  "status": "IMPLEMENTED_TESTED_REVIEW_REQUIRED",
+  "source_workflow": [
+    "selected HOME source folder",
+    "source.txt",
+    "article TXT/RTF/HTML",
+    "screenshot/media references",
+    "segment-level source criticism",
+    "source evaluation JSON preview",
+    "guarded HOME/SAVE preview write",
+    "GUI Add / Import preview state"
+  ],
+  "required_fields": [
+    "source_role_segments",
+    "social_video_provenance",
+    "first_person_author_self_claim_review",
+    "author_identity_needed",
+    "author_scope_only",
+    "witness_connectivity_status",
+    "quoted_post_connection_review",
+    "claim_subject_affiliation_gap"
+  ],
+  "write_confirmation_token": "WRITE_HOME_SOURCE_FOLDER_EVALUATION_PREVIEW",
+  "safety_flags_expected": {
+    "web_download_performed": false,
+    "crawling_performed": false,
+    "media_download_performed": false,
+    "automatic_classification_performed": false,
+    "sensitive_identifier_inference_performed": false,
+    "final_source_role_decision": false
+  },
+  "not_in_scope": [
+    "Twitter/X extraction expansion",
+    "third-party vendoring",
+    "whole HOME database scan",
+    "media download",
+    "web crawl",
+    "automatic sensitive identifier classification"
+  ]
+}

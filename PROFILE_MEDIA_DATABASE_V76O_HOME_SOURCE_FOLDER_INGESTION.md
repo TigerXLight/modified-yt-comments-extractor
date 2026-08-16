@@ -42,7 +42,7 @@ No extractor may fetch or crawl a web page in this workflow.
 
 ## Source-Criticism Behavior
 
-V76O records review lanes and candidates. It does not finalize source roles.
+V76O records review lanes and candidates. V76P extends this path with segment-level source-role arrays and social/video provenance fields. It does not finalize source roles.
 
 Implemented review signals:
 
@@ -92,5 +92,5 @@ Without the token, the CLI and writer return `blocked_confirmation_required` and
 - It does not scan a full HOME database.
 - It does not read real media/video/image content beyond recording file references and hashes.
 - It does not perform web fetches, archive checks, or media downloads.
-- Segment-level role review is represented as review lanes, not final classification.
+- Segment-level role review is represented as non-final segment records and review lanes, not final classification.
 - Social-media/video provenance is represented structurally and still requires operator review.
