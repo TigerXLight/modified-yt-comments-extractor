@@ -1,0 +1,580 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from dataclasses import asdict, dataclass, field, is_dataclass
+from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
+from typing import Any, Iterable
+
+
+PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75a"
+
+PROFILE_MEDIA_DATABASE_SCOPE = (
+    "local profile/media database planning schema only; no folder scanning, no folder "
+    "creation, no file movement, no automatic classification, no sensitive-attribute "
+    "inference, no source fetching, no archive access, no media download, no browser "
+    "automation, no credentials, no GUI wiring"
+)
+
+
+class _StringEnum(str, Enum):
+    def __str__(self) -> str:
+        return self.value
+
+
+class ProfileSourceRole(_StringEnum):
+    PRIMARY_SELF_AUTHORED_SCOPE = "PRIMARY_SELF_AUTHORED_SCOPE"
+    SECONDARY_WITNESS_ACCOUNT = "SECONDARY_WITNESS_ACCOUNT"
+    TERTIARY_PROPAGATED_SOURCE = "TERTIARY_PROPAGATED_SOURCE"
+    UNKNOWN_SOURCE_ROLE = "UNKNOWN_SOURCE_ROLE"
+
+
+class ClaimBasis(_StringEnum):
+    SELF_AUTHORED_EXPERIENCE = "SELF_AUTHORED_EXPERIENCE"
+    WITNESS_ACCOUNT = "WITNESS_ACCOUNT"
+    FAMILY_OR_AUTHORITY_CLAIM = "FAMILY_OR_AUTHORITY_CLAIM"
+    AGENCY_OR_OUTSIDE_RETELLING = "AGENCY_OR_OUTSIDE_RETELLING"
+    APPEARANCE_CLAIM = "APPEARANCE_CLAIM"
+    IDENTITY_CLAIM = "IDENTITY_CLAIM"
+    USER_ENTERED_NOTE = "USER_ENTERED_NOTE"
+    UNKNOWN_CLAIM_BASIS = "UNKNOWN_CLAIM_BASIS"
+
+
+class CurrentnessStatus(_StringEnum):
+    CURRENT = "CURRENT"
+    HISTORICAL = "HISTORICAL"
+    UNDATED = "UNDATED"
+    UNKNOWN = "UNKNOWN"
+
+
+class MediaBucket(_StringEnum):
+    ARTICLES = "Articles"
+    SOCIAL_MEDIA_ONLINE = "Social Media/Online"
+    SOCIAL_MEDIA_OFFLINE = "Social Media/Offline"
+    INTERNAL_MEDIA = "Internal Media"
+    REFERENCE_EXTANTS = "Reference Extants"
+    PEOPLE = "People"
+    CASE_PROFILES = "Profiles"
+    GLOBAL_PROFILES = "Profiles"
+
+
+class ProfileCollectionLevel(_StringEnum):
+    GLOBAL_HEADER_PROFILES = "GLOBAL_HEADER_PROFILES"
+    CASE_LOCAL_PROFILES = "CASE_LOCAL_PROFILES"
+
+
+class MovePlanStatus(_StringEnum):
+    DRY_RUN_ONLY = "DRY_RUN_ONLY"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    NO_CHANGE = "NO_CHANGE"
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _value_for_dict(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value.value
+    if is_dataclass(value):
+        return {key: _value_for_dict(item) for key, item in asdict(value).items()}
+    if isinstance(value, tuple):
+        return [_value_for_dict(item) for item in value]
+    if isinstance(value, list):
+        return [_value_for_dict(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _value_for_dict(item) for key, item in value.items()}
+    return value
+
+
+def stable_json_dumps(data: Any) -> str:
+    return json.dumps(_value_for_dict(data), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def stable_profile_id(prefix: str, *parts: object) -> str:
+    payload = "\n".join(str(part or "").strip().replace("\\", "/") for part in parts)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+    safe_prefix = re.sub(r"[^a-z0-9_]+", "_", str(prefix or "profile").lower()).strip("_")
+    return f"{safe_prefix or 'profile'}_{digest}"
+
+
+def sanitize_path_part(value: str, fallback: str = "untitled") -> str:
+    cleaned = re.sub(r"[<>:\"/\\|?*\x00-\x1f]+", " - ", str(value or "")).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return cleaned[:120] or fallback
+
+
+def _split_identifier_text(value: str) -> tuple[str, ...]:
+    text = str(value or "").strip()
+    if not text:
+        return ()
+    parts = []
+    for line in text.splitlines():
+        line = line.strip().strip("-• ")
+        if line:
+            parts.append(line)
+    if len(parts) <= 1:
+        comma_parts = [part.strip() for part in re.split(r";|,", text) if part.strip()]
+        if len(comma_parts) > 1:
+            parts = comma_parts
+    return tuple(parts or (text,))
+
+
+@dataclass(frozen=True)
+class IdentifierClaim:
+    identifier_type: str
+    value: str = ""
+    date: str = ""
+    source_name: str = ""
+    source_page: str = ""
+    local_address: str = ""
+    text: str = ""
+    source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE
+    claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN
+    disputed_framing: bool = False
+    notes_on_context_dispute: str = ""
+    source_chain_gap: bool = False
+    confidence_or_verification_notes: str = ""
+    sensitive_identifier: bool = False
+    source_evidenced_only: bool = True
+    weak_inference_prohibited: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class ProfileTextBlock:
+    name: str = ""
+    date: str = ""
+    text: str = ""
+    identifiers: tuple[str, ...] = ()
+    local_address: str = ""
+    source_page: str = ""
+    source_bucket: str = ""
+    source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE
+    claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN
+    parsed_at_utc: str = field(default_factory=utc_now_iso)
+    parser_warnings: tuple[str, ...] = ()
+
+    def to_identifier_claims(self) -> tuple[IdentifierClaim, ...]:
+        claims: list[IdentifierClaim] = []
+        for identifier in self.identifiers:
+            claims.append(
+                IdentifierClaim(
+                    identifier_type="freeform_identifier",
+                    value=identifier,
+                    date=self.date,
+                    source_name=self.source_page,
+                    source_page=self.source_page,
+                    local_address=self.local_address,
+                    text=self.text,
+                    source_role=self.source_role,
+                    claim_basis=self.claim_basis,
+                    currentness_status=self.currentness_status,
+                    sensitive_identifier=_identifier_looks_sensitive(identifier),
+                )
+            )
+        return tuple(claims)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class ProfileRecord:
+    profile_id: str
+    canonical_name: str
+    collection_level: ProfileCollectionLevel
+    case_id: str = ""
+    text_blocks: tuple[ProfileTextBlock, ...] = ()
+    identifiers: tuple[IdentifierClaim, ...] = ()
+    created_at_utc: str = field(default_factory=utc_now_iso)
+    updated_at_utc: str = field(default_factory=utc_now_iso)
+    sort_policy: str = "newest_to_oldest"
+    no_automatic_sensitive_inference: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class MediaSourceRecord:
+    source_id: str
+    source_page: str
+    source_bucket: MediaBucket | str
+    local_address: str = ""
+    title: str = ""
+    captured_or_recorded_date: str = ""
+    source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE
+    claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN
+    source_chain_gap: bool = False
+    disputed_framing: bool = False
+    notes_on_context_dispute: str = ""
+    confidence_or_verification_notes: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class CaseFolderLayout:
+    case_root: str
+    case_profiles_path: str
+    people_path: str
+    sources_path: str
+    articles_path: str
+    social_media_path: str
+    social_media_offline_path: str
+    social_media_online_path: str
+    internal_media_path: str
+    reference_extants_path: str
+    folder_creation_performed: bool = False
+    file_move_performed: bool = False
+
+    @property
+    def required_paths(self) -> tuple[str, ...]:
+        return (
+            self.case_profiles_path,
+            self.people_path,
+            self.sources_path,
+            self.articles_path,
+            self.social_media_path,
+            self.social_media_offline_path,
+            self.social_media_online_path,
+            self.internal_media_path,
+            self.reference_extants_path,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = _value_for_dict(self)
+        data["required_paths"] = list(self.required_paths)
+        return data
+
+
+@dataclass(frozen=True)
+class CaseRecord:
+    case_id: str
+    case_title: str
+    case_root: str
+    layout: CaseFolderLayout
+    profiles: tuple[ProfileRecord, ...] = ()
+    media_sources: tuple[MediaSourceRecord, ...] = ()
+    created_at_utc: str = field(default_factory=utc_now_iso)
+    updated_at_utc: str = field(default_factory=utc_now_iso)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class FolderMovePlan:
+    plan_id: str
+    current_path: str
+    proposed_path: str
+    reason: str
+    source_basis: str = ""
+    status: MovePlanStatus = MovePlanStatus.REVIEW_REQUIRED
+    user_confirmation_required: bool = True
+    file_move_performed: bool = False
+    folder_creation_performed: bool = False
+    audit_note: str = ""
+    created_at_utc: str = field(default_factory=utc_now_iso)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class ProfileMediaDatabaseManifest:
+    manifest_id: str
+    database_root: str
+    global_profiles_path: str
+    cases: tuple[CaseRecord, ...] = ()
+    global_profiles: tuple[ProfileRecord, ...] = ()
+    move_plans: tuple[FolderMovePlan, ...] = ()
+    schema_version: str = PROFILE_MEDIA_DATABASE_SCHEMA_VERSION
+    scope: str = PROFILE_MEDIA_DATABASE_SCOPE
+    created_at_utc: str = field(default_factory=utc_now_iso)
+    updated_at_utc: str = field(default_factory=utc_now_iso)
+    payload_sha256: str = ""
+
+    def payload_dict(self) -> dict[str, Any]:
+        return {
+            "cases": [_value_for_dict(case) for case in self.cases],
+            "database_root": self.database_root,
+            "global_profiles": [_value_for_dict(profile) for profile in self.global_profiles],
+            "global_profiles_path": self.global_profiles_path,
+            "manifest_id": self.manifest_id,
+            "move_plans": [_value_for_dict(plan) for plan in self.move_plans],
+            "schema_version": self.schema_version,
+            "scope": self.scope,
+            "created_at_utc": self.created_at_utc,
+            "updated_at_utc": self.updated_at_utc,
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        data = self.payload_dict()
+        data["case_count"] = len(self.cases)
+        data["global_profile_count"] = len(self.global_profiles)
+        data["move_plan_count"] = len(self.move_plans)
+        data["payload_sha256"] = self.payload_sha256
+        return data
+
+
+def _identifier_looks_sensitive(identifier: str) -> bool:
+    lowered = identifier.lower()
+    return any(
+        token in lowered
+        for token in (
+            "religion",
+            "religious",
+            "muslim",
+            "christian",
+            "jewish",
+            "hindu",
+            "sikh",
+            "skin colour",
+            "skin color",
+            "ethnicity",
+            "race",
+            "association",
+        )
+    )
+
+
+def build_case_folder_layout(case_root: str) -> CaseFolderLayout:
+    root = Path(case_root)
+    sources = root / "Sources"
+    social = sources / "Social Media"
+    return CaseFolderLayout(
+        case_root=str(root),
+        case_profiles_path=str(root / "Profiles"),
+        people_path=str(root / "People"),
+        sources_path=str(sources),
+        articles_path=str(sources / "Articles"),
+        social_media_path=str(social),
+        social_media_offline_path=str(social / "Offline"),
+        social_media_online_path=str(social / "Online"),
+        internal_media_path=str(sources / "Internal Media"),
+        reference_extants_path=str(root / "Reference Extants"),
+    )
+
+
+def build_global_profiles_path(database_root: str) -> str:
+    return str(Path(database_root) / "Profiles")
+
+
+def build_profile_record(
+    *,
+    canonical_name: str,
+    text_blocks: Iterable[ProfileTextBlock] = (),
+    collection_level: ProfileCollectionLevel = ProfileCollectionLevel.GLOBAL_HEADER_PROFILES,
+    case_id: str = "",
+    profile_id: str = "",
+) -> ProfileRecord:
+    blocks = tuple(text_blocks)
+    identifiers: list[IdentifierClaim] = []
+    for block in blocks:
+        identifiers.extend(block.to_identifier_claims())
+    stable_id = profile_id or stable_profile_id("profile", collection_level.value, case_id, canonical_name)
+    return ProfileRecord(
+        profile_id=stable_id,
+        canonical_name=canonical_name,
+        collection_level=collection_level,
+        case_id=case_id,
+        text_blocks=blocks,
+        identifiers=tuple(identifiers),
+    )
+
+
+def build_media_source_record(
+    *,
+    source_page: str,
+    source_bucket: MediaBucket | str,
+    local_address: str = "",
+    title: str = "",
+    captured_or_recorded_date: str = "",
+    source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE,
+    claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS,
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN,
+    source_id: str = "",
+) -> MediaSourceRecord:
+    stable_id = source_id or stable_profile_id("media", source_page, source_bucket, local_address, title)
+    return MediaSourceRecord(
+        source_id=stable_id,
+        source_page=source_page,
+        source_bucket=source_bucket,
+        local_address=local_address,
+        title=title,
+        captured_or_recorded_date=captured_or_recorded_date,
+        source_role=source_role,
+        claim_basis=claim_basis,
+        currentness_status=currentness_status,
+    )
+
+
+def build_case_record(
+    *,
+    database_root: str,
+    case_title: str,
+    profiles: Iterable[ProfileRecord] = (),
+    media_sources: Iterable[MediaSourceRecord] = (),
+    case_id: str = "",
+    case_root: str = "",
+) -> CaseRecord:
+    stable_case_id = case_id or stable_profile_id("case", case_title)
+    root = case_root or str(Path(database_root) / "Cases" / sanitize_path_part(case_title))
+    return CaseRecord(
+        case_id=stable_case_id,
+        case_title=case_title,
+        case_root=root,
+        layout=build_case_folder_layout(root),
+        profiles=tuple(profiles),
+        media_sources=tuple(media_sources),
+    )
+
+
+def manifest_payload_sha256(manifest: ProfileMediaDatabaseManifest) -> str:
+    return hashlib.sha256(stable_json_dumps(manifest.payload_dict()).encode("utf-8")).hexdigest()
+
+
+def manifest_with_hash(manifest: ProfileMediaDatabaseManifest) -> ProfileMediaDatabaseManifest:
+    return ProfileMediaDatabaseManifest(
+        manifest_id=manifest.manifest_id,
+        database_root=manifest.database_root,
+        global_profiles_path=manifest.global_profiles_path,
+        cases=manifest.cases,
+        global_profiles=manifest.global_profiles,
+        move_plans=manifest.move_plans,
+        schema_version=manifest.schema_version,
+        scope=manifest.scope,
+        created_at_utc=manifest.created_at_utc,
+        updated_at_utc=manifest.updated_at_utc,
+        payload_sha256=manifest_payload_sha256(manifest),
+    )
+
+
+def build_manifest(
+    *,
+    database_root: str,
+    cases: Iterable[CaseRecord] = (),
+    global_profiles: Iterable[ProfileRecord] = (),
+    move_plans: Iterable[FolderMovePlan] = (),
+    manifest_id: str = "",
+) -> ProfileMediaDatabaseManifest:
+    stable_id = manifest_id or stable_profile_id("pmdb", database_root)
+    manifest = ProfileMediaDatabaseManifest(
+        manifest_id=stable_id,
+        database_root=database_root,
+        global_profiles_path=build_global_profiles_path(database_root),
+        cases=tuple(cases),
+        global_profiles=tuple(global_profiles),
+        move_plans=tuple(move_plans),
+    )
+    return manifest_with_hash(manifest)
+
+
+def parse_profile_text_blocks(
+    text: str,
+    *,
+    default_source_bucket: str = "",
+    default_source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE,
+    default_claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS,
+    default_currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN,
+) -> tuple[ProfileTextBlock, ...]:
+    records: list[dict[str, list[str]]] = []
+    current: dict[str, list[str]] = {}
+    current_key = ""
+    key_map = {
+        "name": "name",
+        "date": "date",
+        "text": "text",
+        "identifiers": "identifiers",
+        "address": "local_address",
+        "source": "source_page",
+    }
+
+    def flush() -> None:
+        nonlocal current, current_key
+        if any(v for v in current.values()):
+            records.append(current)
+        current = {}
+        current_key = ""
+
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped or re.fullmatch(r"[-—_]{3,}", stripped):
+            if current:
+                flush()
+            continue
+        match = re.match(r"^(Name|Date|Text|Identifiers|Address|Source)\s*:\s*(.*)$", stripped, re.I)
+        if match:
+            label = match.group(1).lower()
+            value = match.group(2).strip()
+            current_key = key_map[label]
+            current.setdefault(current_key, [])
+            if value:
+                current[current_key].append(value)
+            continue
+        if current_key:
+            current.setdefault(current_key, []).append(stripped)
+    flush()
+
+    blocks: list[ProfileTextBlock] = []
+    for rec in records:
+        name = "\n".join(rec.get("name", ())).strip()
+        date = "\n".join(rec.get("date", ())).strip()
+        block_text = "\n".join(rec.get("text", ())).strip()
+        identifiers_text = "\n".join(rec.get("identifiers", ())).strip()
+        local_address = "\n".join(rec.get("local_address", ())).strip()
+        source_page = "\n".join(rec.get("source_page", ())).strip()
+        warnings: list[str] = []
+        if not source_page:
+            warnings.append("missing_source_page")
+        if not local_address:
+            warnings.append("missing_local_address")
+        if not block_text:
+            warnings.append("missing_text")
+        blocks.append(
+            ProfileTextBlock(
+                name=name,
+                date=date,
+                text=block_text,
+                identifiers=_split_identifier_text(identifiers_text),
+                local_address=local_address,
+                source_page=source_page,
+                source_bucket=default_source_bucket,
+                source_role=default_source_role,
+                claim_basis=default_claim_basis,
+                currentness_status=default_currentness_status,
+                parser_warnings=tuple(warnings),
+            )
+        )
+    return tuple(blocks)
+
+
+def plan_folder_move(
+    *,
+    current_path: str,
+    proposed_path: str,
+    reason: str,
+    source_basis: str = "",
+    status: MovePlanStatus = MovePlanStatus.REVIEW_REQUIRED,
+) -> FolderMovePlan:
+    return FolderMovePlan(
+        plan_id=stable_profile_id("move", current_path, proposed_path, reason, source_basis),
+        current_path=current_path,
+        proposed_path=proposed_path,
+        reason=reason,
+        source_basis=source_basis,
+        status=status,
+        audit_note="dry-run plan only; no folder was moved or renamed",
+    )
