@@ -1,0 +1,15 @@
+Source URL:
+https://example.test/news/local-court-report
+
+Archive URL:
+https://web.archive.org/web/20260816090000/https://example.test/news/local-court-report
+
+Related social/video references:
+https://x.com/example/status/1234567890
+https://www.youtube.com/watch?v=example12345
+
+Manual source note:
+This folder is a local saved article/source review fixture. I saved the page after reading a police statement and a court note repeated by the article.
+
+Affiliation note:
+No explicit claim-subject affiliation is supplied for the screenshot or media placeholders.
