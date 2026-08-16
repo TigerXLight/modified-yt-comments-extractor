@@ -82,6 +82,41 @@ def _int_from_payload(payload: Mapping[str, Any] | None, *keys: str) -> int:
     return 0
 
 
+
+def _int_from_nested_payload(payload: Mapping[str, Any] | None, *paths: str) -> int:
+    """Read an integer from dotted payload paths, returning the first non-zero value.
+
+    V76I uses this for GUI review lanes because the workbench bundle stores
+    review totals inside dashboard/review_report children rather than always at
+    the top level.  The helper is read-only and does not execute any workflow.
+    """
+
+    if not payload:
+        return 0
+    for path in paths:
+        current: Any = payload
+        parts = str(path).split('.')
+        index = 0
+        while index < len(parts):
+            part = parts[index]
+            if isinstance(current, list):
+                wanted = part
+                current = next((item.get('value') for item in current if isinstance(item, Mapping) and item.get('key') == wanted), None)
+                index += 1
+                continue
+            if not isinstance(current, Mapping):
+                current = None
+                break
+            current = current.get(part)
+            index += 1
+        try:
+            value = int(current or 0)
+        except Exception:
+            value = 0
+        if value:
+            return value
+    return 0
+
 def _first_nonempty(payload: Mapping[str, Any] | None, *keys: str) -> str:
     if not payload:
         return ""
@@ -186,10 +221,52 @@ def build_profile_media_database_gui_panel_state(
             _metric("saved_views", "Saved views", saved_views),
         ),
         review_lanes=(
-            _metric("source_chain_gaps", "Source-chain gaps", _int_from_payload(workbench_payload, "source_chain_gap_count"), "high"),
-            _metric("disputed_framing", "Disputed framing", _int_from_payload(workbench_payload, "disputed_framing_count"), "medium"),
-            _metric("unknown_source_roles", "Unknown source roles", _int_from_payload(workbench_payload, "unknown_source_role_count"), "medium"),
-            _metric("parser_warnings", "Parser warnings", _int_from_payload(workbench_payload, "parser_warning_count", "warning_count"), "medium"),
+            _metric(
+                "source_chain_gaps",
+                "Source-chain gaps",
+                _int_from_nested_payload(
+                    workbench_payload,
+                    "source_chain_gap_count",
+                    "dashboard.metrics.source_chain_gaps",
+                    "dashboard.source_chain_gap_count",
+                    "review_report.source_chain_gap_count",
+                ),
+                "high",
+            ),
+            _metric(
+                "disputed_framing",
+                "Disputed framing",
+                _int_from_nested_payload(
+                    workbench_payload,
+                    "disputed_framing_count",
+                    "dashboard.metrics.disputed_framing",
+                    "review_report.disputed_framing_count",
+                ),
+                "medium",
+            ),
+            _metric(
+                "unknown_source_roles",
+                "Unknown source roles",
+                _int_from_nested_payload(
+                    workbench_payload,
+                    "unknown_source_role_count",
+                    "dashboard.metrics.unknown_source_roles",
+                    "review_report.unknown_source_role_count",
+                ),
+                "medium",
+            ),
+            _metric(
+                "parser_warnings",
+                "Parser warnings",
+                _int_from_nested_payload(
+                    workbench_payload,
+                    "parser_warning_count",
+                    "dashboard.metrics.parser_warnings",
+                    "review_report.parser_warning_count",
+                    "warning_count",
+                ),
+                "medium",
+            ),
         ),
         actions=(
             _action("refresh_database_view", "Refresh view", "available", "Refresh already configured explicit batch JSON view."),

@@ -1,0 +1,18 @@
+{
+  "operations": [
+    {
+      "operation_id": "v76i_rename",
+      "operation_type": "rename_folder",
+      "source_path": "Cases/V76I Demo Case/Sources/Articles/Old Article Folder",
+      "destination_path": "Cases/V76I Demo Case/Sources/Articles/Renamed Article Folder",
+      "reason": "Reviewed title normalization."
+    },
+    {
+      "operation_id": "v76i_move",
+      "operation_type": "move_folder",
+      "source_path": "Cases/V76I Demo Case/Sources/Social Media/Online/Misfiled Offline Bundle",
+      "destination_path": "Cases/V76I Demo Case/Sources/Social Media/Offline/Misfiled Offline Bundle",
+      "reason": "Reviewed source bucket correction."
+    }
+  ]
+}

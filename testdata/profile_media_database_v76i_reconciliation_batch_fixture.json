@@ -1,0 +1,42 @@
+{
+  "database_root": "Demo Database",
+  "case_title": "V76I Demo Case",
+  "sources": [
+    {
+      "source_title": "Old Article Folder",
+      "source_bucket": "Articles",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "UNKNOWN",
+      "source_chain_gap": true,
+      "source_page": "Existing folder tree listing"
+    },
+    {
+      "source_title": "Misfiled Offline Bundle",
+      "source_bucket": "Social Media/Online",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "UNKNOWN",
+      "source_chain_gap": true,
+      "source_page": "Existing folder tree listing"
+    },
+    {
+      "source_title": "Creator Original Clip",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "UNKNOWN",
+      "source_chain_gap": true,
+      "source_page": "Existing folder tree listing"
+    }
+  ],
+  "profiles": [
+    {
+      "profile_text": "Name: Example Person\nDate: UNKNOWN\nText: Demo profile.\nAddress: Cases/V76I Demo Case/Profiles/Example Person\nSource: Existing folder tree listing",
+      "source_bucket": "Profiles",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "UNKNOWN"
+    }
+  ]
+}
