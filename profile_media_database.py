@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75b"
+PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75c"
 
 PROFILE_MEDIA_DATABASE_SCOPE = (
-    "local profile/media database planning schema plus source/container import planning; "
+    "local profile/media database planning schema plus source/container import planning plus case repository path planning; "
     "no folder scanning, no folder creation, no file copying, no file movement, "
     "no automatic classification, no sensitive-attribute inference, no source fetching, "
     "no archive access, no media download, no browser automation, no credentials, "
@@ -307,6 +307,76 @@ class CaseFolderLayout:
         data["required_paths"] = list(self.required_paths)
         return data
 
+
+
+
+@dataclass(frozen=True)
+class CaseRepositoryClassification:
+    """Dry-run classification facets used to plan where a case folder should live.
+
+    These values are path-planning metadata only. They do not prove an allegation,
+    do not classify a person automatically, and do not move any folder.
+    """
+
+    domain: str
+    conduct: tuple[str, ...] = ()
+    location_type: str = ""
+    relationship_or_context: str = ""
+    sex_or_gender_pattern: str = ""
+    action_type: str = ""
+    religious_identity_bucket: str = "Non-religious or not identified"
+    date_bucket: str = "Undated"
+    source_name: str = "Unknown Source"
+    case_title: str = "Untitled Case"
+    source_basis: str = ""
+    claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS
+    source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN
+    sensitive_bucket_source_evidenced_only: bool = True
+    weak_sensitive_inference_prohibited: bool = True
+    warnings: tuple[str, ...] = ()
+
+    def path_parts(self) -> tuple[str, ...]:
+        parts: list[str] = [self.domain]
+        parts.extend(part for part in self.conduct if part)
+        for value in (
+            self.location_type,
+            self.relationship_or_context,
+            self.sex_or_gender_pattern,
+            self.action_type,
+            self.religious_identity_bucket,
+            self.date_bucket,
+            self.source_name,
+            self.case_title,
+        ):
+            if value:
+                parts.append(value)
+        return tuple(sanitize_path_part(part) for part in parts if sanitize_path_part(part))
+
+    def to_dict(self) -> dict[str, Any]:
+        data = _value_for_dict(self)
+        data["path_parts"] = list(self.path_parts())
+        return data
+
+
+@dataclass(frozen=True)
+class CaseRepositoryPathPlan:
+    plan_id: str
+    database_root: str
+    classification: CaseRepositoryClassification
+    proposed_case_root: str
+    layout: CaseFolderLayout
+    current_case_root: str = ""
+    move_plan: FolderMovePlan | None = None
+    status: MovePlanStatus = MovePlanStatus.REVIEW_REQUIRED
+    required_review: bool = True
+    created_folders: bool = False
+    moved_or_renamed_folders: bool = False
+    audit_note: str = "dry-run repository path plan only; no folder was created, moved, or renamed"
+    created_at_utc: str = field(default_factory=utc_now_iso)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
 
 @dataclass(frozen=True)
 class CaseRecord:
@@ -811,4 +881,133 @@ def plan_folder_move(
         source_basis=source_basis,
         status=status,
         audit_note="dry-run plan only; no folder was moved or renamed",
+    )
+
+
+_SENSITIVE_REPOSITORY_BUCKET_TOKENS = (
+    "religious identity",
+    "religion",
+    "muslim",
+    "christian",
+    "jewish",
+    "hindu",
+    "sikh",
+    "ethnicity",
+    "skin colour",
+    "skin color",
+)
+
+
+def repository_bucket_looks_sensitive(value: str) -> bool:
+    lowered = str(value or "").lower()
+    return any(token in lowered for token in _SENSITIVE_REPOSITORY_BUCKET_TOKENS)
+
+
+def normalize_classification_parts(*parts: str) -> tuple[str, ...]:
+    return tuple(sanitize_path_part(part) for part in parts if str(part or "").strip())
+
+
+def build_case_repository_classification(
+    *,
+    domain: str,
+    conduct: Iterable[str] = (),
+    location_type: str = "",
+    relationship_or_context: str = "",
+    sex_or_gender_pattern: str = "",
+    action_type: str = "",
+    religious_identity_bucket: str = "Non-religious or not identified",
+    date_bucket: str = "Undated",
+    source_name: str = "Unknown Source",
+    case_title: str = "Untitled Case",
+    source_basis: str = "",
+    claim_basis: ClaimBasis = ClaimBasis.UNKNOWN_CLAIM_BASIS,
+    source_role: ProfileSourceRole = ProfileSourceRole.UNKNOWN_SOURCE_ROLE,
+    currentness_status: CurrentnessStatus = CurrentnessStatus.UNKNOWN,
+) -> CaseRepositoryClassification:
+    warnings: list[str] = []
+    if not domain:
+        warnings.append("missing_domain")
+    if not case_title:
+        warnings.append("missing_case_title")
+    if repository_bucket_looks_sensitive(religious_identity_bucket) and not source_basis:
+        warnings.append("sensitive_repository_bucket_without_source_basis")
+    return CaseRepositoryClassification(
+        domain=domain or "Unclassified",
+        conduct=tuple(str(part).strip() for part in conduct if str(part).strip()),
+        location_type=location_type,
+        relationship_or_context=relationship_or_context,
+        sex_or_gender_pattern=sex_or_gender_pattern,
+        action_type=action_type,
+        religious_identity_bucket=religious_identity_bucket or "Non-religious or not identified",
+        date_bucket=date_bucket or "Undated",
+        source_name=source_name or "Unknown Source",
+        case_title=case_title or "Untitled Case",
+        source_basis=source_basis,
+        claim_basis=claim_basis,
+        source_role=source_role,
+        currentness_status=currentness_status,
+        warnings=tuple(warnings),
+    )
+
+
+def build_case_repository_path(database_root: str, classification: CaseRepositoryClassification) -> str:
+    root = Path(database_root)
+    path = root
+    for part in classification.path_parts():
+        path = path / part
+    return str(path)
+
+
+def plan_case_repository_location(
+    *,
+    database_root: str,
+    classification: CaseRepositoryClassification,
+    current_case_root: str = "",
+    source_basis: str = "",
+) -> CaseRepositoryPathPlan:
+    proposed = build_case_repository_path(database_root, classification)
+    normalized_current = str(Path(current_case_root)) if current_case_root else ""
+    normalized_proposed = str(Path(proposed))
+    move_plan: FolderMovePlan | None = None
+    status = MovePlanStatus.REVIEW_REQUIRED
+    if normalized_current:
+        if normalized_current.replace("/", "\\").lower() == normalized_proposed.replace("/", "\\").lower():
+            status = MovePlanStatus.NO_CHANGE
+        else:
+            move_plan = plan_folder_move(
+                current_path=normalized_current,
+                proposed_path=normalized_proposed,
+                reason="case repository classification path changed",
+                source_basis=source_basis or classification.source_basis,
+                status=MovePlanStatus.REVIEW_REQUIRED,
+            )
+    plan = CaseRepositoryPathPlan(
+        plan_id=stable_profile_id("case_path", database_root, normalized_current, normalized_proposed, classification.source_basis),
+        database_root=str(Path(database_root)),
+        classification=classification,
+        current_case_root=normalized_current,
+        proposed_case_root=normalized_proposed,
+        layout=build_case_folder_layout(normalized_proposed),
+        move_plan=move_plan,
+        status=status,
+        required_review=status != MovePlanStatus.NO_CHANGE,
+    )
+    return plan
+
+
+def build_case_record_from_repository_plan(
+    *,
+    plan: CaseRepositoryPathPlan,
+    profiles: Iterable[ProfileRecord] = (),
+    media_sources: Iterable[MediaSourceRecord] = (),
+    case_id: str = "",
+) -> CaseRecord:
+    stable_case_id = case_id or stable_profile_id("case", plan.proposed_case_root, plan.classification.case_title)
+    return CaseRecord(
+        case_id=stable_case_id,
+        case_title=plan.classification.case_title,
+        case_root=plan.proposed_case_root,
+        layout=plan.layout,
+        profiles=tuple(profiles),
+        media_sources=tuple(media_sources),
     )

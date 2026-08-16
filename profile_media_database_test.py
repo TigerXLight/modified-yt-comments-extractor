@@ -9,10 +9,14 @@ from profile_media_database import (
     build_case_folder_layout,
     build_case_local_profile_from_text,
     build_case_record,
+    build_case_record_from_repository_plan,
+    build_case_repository_classification,
+    build_case_repository_path,
     build_global_profiles_path,
     build_global_profile_from_case_profile,
     build_manifest,
     build_media_source_record,
+    plan_case_repository_location,
     build_media_source_record_from_import_plan,
     build_source_claim_evaluation,
     build_profile_record,
@@ -109,7 +113,7 @@ Source: Social Media
         global_profiles=(global_profile,),
     )
     manifest_dict = manifest.to_dict()
-    assert manifest_dict["schema_version"] == "profile-media-database-v75b"
+    assert manifest_dict["schema_version"] == "profile-media-database-v75c"
     assert manifest_dict["case_count"] == 1
     assert manifest_dict["global_profile_count"] == 1
     assert manifest.payload_sha256
@@ -202,6 +206,63 @@ Source: Social Media
     assert "no folder was moved" in move_plan.audit_note
 
 
+    terrorism_classification = build_case_repository_classification(
+        domain="Terrorism",
+        conduct=("Actions", "Domestic", "Incitment", "Language", "Threat Fear"),
+        religious_identity_bucket="Non-religious or not identified",
+        date_bucket="June 2026",
+        source_name="BelfastLive",
+        case_title="June 2026 - Murderous wife said husband died by falling onto a little knife - White",
+        source_basis="BelfastLive source folder claim evaluation",
+        claim_basis=ClaimBasis.AGENCY_OR_OUTSIDE_RETELLING,
+        source_role=ProfileSourceRole.TERTIARY_PROPAGATED_SOURCE,
+    )
+    terrorism_path = build_case_repository_path(database_root, terrorism_classification).replace("/", "\\")
+    assert terrorism_path.endswith(
+        r"\Terrorism\Actions\Domestic\Incitment\Language\Threat Fear\Non-religious or not identified\June 2026\BelfastLive\June 2026 - Murderous wife said husband died by falling onto a little knife - White"
+    )
+    assert terrorism_classification.sensitive_bucket_source_evidenced_only is True
+    assert terrorism_classification.weak_sensitive_inference_prohibited is True
+
+    case_path_plan = plan_case_repository_location(
+        database_root=database_root,
+        classification=terrorism_classification,
+        current_case_root=r"T:\Database\Unclassified\Old Case Folder",
+    )
+    assert case_path_plan.proposed_case_root.replace("/", "\\") == terrorism_path
+    assert case_path_plan.move_plan is not None
+    assert case_path_plan.move_plan.file_move_performed is False
+    assert case_path_plan.moved_or_renamed_folders is False
+    assert case_path_plan.created_folders is False
+    assert case_path_plan.layout.articles_path.replace("/", "\\").endswith(r"\Sources\Articles")
+
+    same_path_plan = plan_case_repository_location(
+        database_root=database_root,
+        classification=terrorism_classification,
+        current_case_root=case_path_plan.proposed_case_root,
+    )
+    assert same_path_plan.status == MovePlanStatus.NO_CHANGE
+    assert same_path_plan.move_plan is None
+
+    sensitive_classification_without_basis = build_case_repository_classification(
+        domain="Rape",
+        conduct=("Adults", "Direct"),
+        religious_identity_bucket="Religious Identity",
+        date_bucket="June 2026",
+        source_name="Belfast Telegraph",
+        case_title="5th Jun - example case",
+    )
+    assert "sensitive_repository_bucket_without_source_basis" in sensitive_classification_without_basis.warnings
+
+    case_from_path = build_case_record_from_repository_plan(
+        plan=case_path_plan,
+        profiles=(case_profile,),
+        media_sources=(media_source,),
+    )
+    assert case_from_path.case_root == case_path_plan.proposed_case_root
+    assert case_from_path.layout.case_profiles_path.replace("/", "\\").endswith(r"\Profiles")
+
+
 if __name__ == "__main__":
     run_self_test()
-    print("profile_media_database v75b OK")
+    print("profile_media_database v75c OK")
