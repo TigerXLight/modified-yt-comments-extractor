@@ -1106,6 +1106,30 @@ class App(ctk.CTk):
         return coerced
 
     def _profile_media_database_toggle_text(self, mode: object | None = None) -> str:
+        """Return the square check/handle/X text for the Database mode-only toggle."""
+        if self._coerce_profile_media_sidebar_mode(mode) == "DATABASE":
+            return "✓        ◻"
+        return "◻        ✕"
+
+    def _refresh_profile_media_database_mode_switch_visual(self) -> None:
+        """Refresh the square green/red Database toggle without running Database work."""
+        switch = getattr(self, "profile_media_database_mode_switch", None)
+        if switch is None:
+            return
+        mode = self._coerce_profile_media_sidebar_mode()
+        is_database = mode == "DATABASE"
+        try:
+            switch.configure(
+                text=self._profile_media_database_toggle_text(mode),
+                fg_color="#7ac943" if is_database else "#e84b6a",
+                hover_color="#8ed957" if is_database else "#f05d7a",
+                border_color="#4d9b29" if is_database else "#b92d4d",
+                text_color="#ffffff",
+            )
+        except Exception:
+            logger.debug("Could not refresh profile/media Database toggle visual.", exc_info=True)
+
+    def _profile_media_database_toggle_text(self, mode: object | None = None) -> str:
         """Return the compact check/X label for the Database mode switch."""
         return "✓ On" if self._coerce_profile_media_sidebar_mode(mode) == "DATABASE" else "✕ Off"
 
@@ -1130,8 +1154,8 @@ class App(ctk.CTk):
 
     def _on_profile_media_database_mode_toggled(self) -> None:
         """Handle the left-sidebar Database On/Off toggle above FILES."""
-        mode_var = getattr(self, "profile_media_database_mode_var", None)
-        requested_mode = "DATABASE" if (mode_var is not None and bool(mode_var.get())) else "FILES"
+        current_mode = self._coerce_profile_media_sidebar_mode()
+        requested_mode = "FILES" if current_mode == "DATABASE" else "DATABASE"
         mode = self._set_profile_media_sidebar_mode(requested_mode, update_widget=True)
         try:
             state_text = "on" if mode == "DATABASE" else "off"
@@ -1143,7 +1167,7 @@ class App(ctk.CTk):
             logger.debug("Could not log profile/media Database mode toggle.", exc_info=True)
 
     def _create_profile_media_database_mode_toggle_section(self) -> None:
-        """Create the mode-only Database On/Off toggle directly above the FILES section."""
+        """Create the square mode-only Database On/Off toggle directly above the FILES section."""
         initial_mode = self._coerce_profile_media_sidebar_mode()
         self.profile_media_database_mode_var = ctk.BooleanVar(value=initial_mode == "DATABASE")
 
@@ -1163,17 +1187,19 @@ class App(ctk.CTk):
         )
         database_label.grid(row=0, column=0, sticky="w")
 
-        self.profile_media_database_mode_switch = ctk.CTkSwitch(
+        self.profile_media_database_mode_switch = ctk.CTkButton(
             self.profile_media_mode_frame,
             text=self._profile_media_database_toggle_text(initial_mode),
-            variable=self.profile_media_database_mode_var,
             command=self._on_profile_media_database_mode_toggled,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#e84b6a",
-            fg_color="#e84b6a",
-            progress_color="#7ac943",
-            button_color="#f2f2f2",
-            button_hover_color="#ffffff",
+            width=136,
+            height=34,
+            corner_radius=7,
+            border_width=2,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color="#ffffff",
+            fg_color="#7ac943" if initial_mode == "DATABASE" else "#e84b6a",
+            hover_color="#8ed957" if initial_mode == "DATABASE" else "#f05d7a",
+            border_color="#4d9b29" if initial_mode == "DATABASE" else "#b92d4d",
         )
         self.profile_media_database_mode_switch.grid(row=1, column=0, sticky="w", pady=(6, 2))
         self._refresh_profile_media_database_mode_switch_visual()

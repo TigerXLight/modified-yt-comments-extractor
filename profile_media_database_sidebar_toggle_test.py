@@ -42,18 +42,23 @@ def test_profile_media_sidebar_toggle_has_mode_only_state_fields() -> None:
     assert "self.profile_media_database_preview_textbox = None" not in source
 
 
-def test_profile_media_sidebar_toggle_uses_database_visual_on_off_control_only() -> None:
+def test_profile_media_sidebar_toggle_uses_square_button_on_off_control_only() -> None:
     source = _main_source()
     method = _method_source(source, "_create_profile_media_database_mode_toggle_section")
 
     assert 'text="DATABASE"' in method
-    assert "CTkSwitch" in method
+    assert "CTkButton" in method
+    assert "CTkSwitch" not in method
     assert "profile_media_database_mode_var" in method
     assert "_on_profile_media_database_mode_toggled" in method
     assert "_profile_media_database_toggle_text" in method
     assert "_refresh_profile_media_database_mode_switch_visual" in method
-    assert 'fg_color="#e84b6a"' in method
-    assert 'progress_color="#7ac943"' in method
+    assert "width=136" in method
+    assert "height=34" in method
+    assert "corner_radius=7" in method
+    assert "border_width=2" in method
+    assert "#7ac943" in method
+    assert "#e84b6a" in method
     assert "CTkTextbox" not in method
     assert "CTkEntry" not in method
     assert "Filter Database preview" not in method
@@ -107,7 +112,7 @@ def test_profile_media_sidebar_toggle_source_is_guarded() -> None:
 if __name__ == "__main__":
     test_profile_media_sidebar_toggle_is_directly_above_files()
     test_profile_media_sidebar_toggle_has_mode_only_state_fields()
-    test_profile_media_sidebar_toggle_uses_database_visual_on_off_control_only()
+    test_profile_media_sidebar_toggle_uses_square_button_on_off_control_only()
     test_profile_media_sidebar_mode_uses_v75h_view_model_coercion()
     test_profile_media_sidebar_toggle_source_is_guarded()
-    print("profile_media_database_sidebar_toggle v75m OK")
+    print("profile_media_database_sidebar_toggle v75n OK")

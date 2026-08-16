@@ -20,13 +20,13 @@ def test_database_sidebar_section_is_visual_mode_on_off_only() -> None:
 
     assert 'text="DATABASE"' in method
     assert "_profile_media_database_toggle_text" in method
-    assert "CTkSwitch" in method
+    assert "CTkButton" in method
+    assert "CTkSwitch" not in method
     assert "CTkLabel" in method
     assert "#7ac943" in method
     assert "#e84b6a" in method
     assert "CTkTextbox" not in method
     assert "CTkEntry" not in method
-    assert "CTkButton" not in method
     assert "preview" not in method.lower()
     assert "filter" not in method.lower()
     assert "status" not in method.lower()
@@ -46,4 +46,4 @@ def test_database_sidebar_mode_setter_does_not_update_preview_or_status_widgets(
 if __name__ == "__main__":
     test_database_sidebar_section_is_visual_mode_on_off_only()
     test_database_sidebar_mode_setter_does_not_update_preview_or_status_widgets()
-    print("profile_media_database_sidebar_mode_only v75m OK")
+    print("profile_media_database_sidebar_mode_only v75n OK")
