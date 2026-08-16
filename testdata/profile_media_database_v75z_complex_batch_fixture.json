@@ -1,0 +1,313 @@
+{
+  "case_title": "V75Z Complex Demo Case",
+  "database_root": "Demo Database",
+  "profiles": [
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: Demo Person 01\nDate: 2026-06-02\nText: Demo text block for Demo Person 01. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 01\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Articles/V75Z demo source record 01\nSource: Demo Source Page 01",
+      "source_bucket": "Articles",
+      "source_role": "PRIMARY_SELF_AUTHORED_SOURCE"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: Demo Person 02\nDate: 2026-06-03\nText: Demo text block for Demo Person 02. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 02\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Social Media/Online/V75Z demo source record 02\nSource: Demo Source Page 02",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: Demo Person 03\nDate: 2026-06-04\nText: Demo text block for Demo Person 03. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 03\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Social Media/Offline/V75Z demo source record 03\nSource: Demo Source Page 03",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "UNDATED",
+      "profile_text": "Name: Demo Person 04\nDate: 2026-06-05\nText: Demo text block for Demo Person 04. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 04\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Internal Media/V75Z demo source record 04\nSource: Demo Source Page 04",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: Demo Person 05\nDate: 2026-06-06\nText: Demo text block for Demo Person 05. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 05\n  source_evidenced: true\n- identifier_type: context_note\n  value: disputed framing requires review\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Articles/V75Z demo source record 05\nSource: Demo Source Page 05",
+      "source_bucket": "Articles",
+      "source_role": "PRIMARY_SELF_AUTHORED_SOURCE"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: Demo Person 06\nDate: 2026-06-07\nText: Demo text block for Demo Person 06. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 06\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Social Media/Online/V75Z demo source record 06\nSource: Demo Source Page 06",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: Demo Person 07\nDate: 2026-06-08\nText: Demo text block for Demo Person 07. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 07\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Social Media/Offline/V75Z demo source record 07\nSource: Demo Source Page 07",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "UNDATED",
+      "profile_text": "Name: Demo Person 08\nDate: 2026-06-09\nText: Demo text block for Demo Person 08. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 08\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Internal Media/V75Z demo source record 08\nSource: Demo Source Page 08",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: Demo Person 09\nDate: 2026-06-10\nText: Demo text block for Demo Person 09. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 09\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Articles/V75Z demo source record 09\nSource: Demo Source Page 09",
+      "source_bucket": "Articles",
+      "source_role": "PRIMARY_SELF_AUTHORED_SOURCE"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: Demo Person 10\nDate: 2026-06-11\nText: Demo text block for Demo Person 10. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 10\n  source_evidenced: true\n- identifier_type: context_note\n  value: disputed framing requires review\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Social Media/Online/V75Z demo source record 10\nSource: Demo Source Page 10",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: Demo Person 11\nDate: 2026-06-12\nText: Demo text block for Demo Person 11. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 11\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Social Media/Offline/V75Z demo source record 11\nSource: Demo Source Page 11",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "UNDATED",
+      "profile_text": "Name: Demo Person 12\nDate: 2026-06-13\nText: Demo text block for Demo Person 12. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 12\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Internal Media/V75Z demo source record 12\nSource: Demo Source Page 12",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    },
+    {
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: Demo Person 13\nDate: 2026-06-14\nText: Demo text block for Demo Person 13. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 13\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Articles/V75Z demo source record 01\nSource: Demo Source Page 01",
+      "source_bucket": "Articles",
+      "source_role": "PRIMARY_SELF_AUTHORED_SOURCE"
+    },
+    {
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: Demo Person 14\nDate: 2026-06-15\nText: Demo text block for Demo Person 14. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 14\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Social Media/Online/V75Z demo source record 02\nSource: Demo Source Page 02",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE"
+    },
+    {
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "profile_text": "Name: Demo Person 15\nDate: 2026-06-16\nText: Demo text block for Demo Person 15. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 15\n  source_evidenced: true\n- identifier_type: context_note\n  value: disputed framing requires review\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Social Media/Offline/V75Z demo source record 03\nSource: Demo Source Page 03",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE"
+    },
+    {
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "UNDATED",
+      "profile_text": "Name: Demo Person 16\nDate: 2026-06-17\nText: Demo text block for Demo Person 16. It is source-cited fixture text for parser and Database mode tests.\nIdentifiers:\n- identifier_type: demo_relation\n  value: demo relation value 16\n  source_evidenced: true\nAddress: Cases/V75Z Complex Demo Case/Sources/Internal Media/V75Z demo source record 04\nSource: Demo Source Page 04",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE"
+    }
+  ],
+  "schema_version": "profile-media-case-batch-v75v",
+  "sources": [
+    {
+      "appearance_claim_basis": "",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "collaboration_or_corroboration_notes": "",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "family_or_authority_claim_basis": "",
+      "identity_claim_basis": "",
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "Demo Source Page 01",
+      "source_role": "PRIMARY_SELF_AUTHORED_SOURCE",
+      "source_title": "V75Z demo source record 01"
+    },
+    {
+      "appearance_claim_basis": "",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "collaboration_or_corroboration_notes": "",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "family_or_authority_claim_basis": "",
+      "identity_claim_basis": "",
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "Demo Source Page 02",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V75Z demo source record 02"
+    },
+    {
+      "appearance_claim_basis": "",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "collaboration_or_corroboration_notes": "",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "family_or_authority_claim_basis": "",
+      "identity_claim_basis": "",
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "Demo Source Page 03",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V75Z demo source record 03"
+    },
+    {
+      "appearance_claim_basis": "",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "collaboration_or_corroboration_notes": "",
+      "confidence_or_verification_notes": "Demo source-chain gap retained for review.",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "family_or_authority_claim_basis": "",
+      "identity_claim_basis": "",
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": true,
+      "source_page": "Demo Source Page 04",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V75Z demo source record 04"
+    },
+    {
+      "appearance_claim_basis": "",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "collaboration_or_corroboration_notes": "",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": true,
+      "family_or_authority_claim_basis": "",
+      "identity_claim_basis": "",
+      "notes_on_context_dispute": "Demo uploader/context dispute retained for review.",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "Demo Source Page 05",
+      "source_role": "PRIMARY_SELF_AUTHORED_SOURCE",
+      "source_title": "V75Z demo source record 05"
+    },
+    {
+      "appearance_claim_basis": "",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "collaboration_or_corroboration_notes": "",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "family_or_authority_claim_basis": "authority claim basis demo",
+      "identity_claim_basis": "",
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "Demo Source Page 06",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V75Z demo source record 06"
+    },
+    {
+      "appearance_claim_basis": "",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "collaboration_or_corroboration_notes": "",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "family_or_authority_claim_basis": "",
+      "identity_claim_basis": "source-stated identity basis demo",
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "Demo Source Page 07",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V75Z demo source record 07"
+    },
+    {
+      "appearance_claim_basis": "appearance claim basis demo - source stated only",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "collaboration_or_corroboration_notes": "",
+      "confidence_or_verification_notes": "Demo source-chain gap retained for review.",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "family_or_authority_claim_basis": "",
+      "identity_claim_basis": "",
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": true,
+      "source_page": "Demo Source Page 08",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V75Z demo source record 08"
+    },
+    {
+      "appearance_claim_basis": "",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "collaboration_or_corroboration_notes": "corroboration notes demo",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "family_or_authority_claim_basis": "",
+      "identity_claim_basis": "",
+      "notes_on_context_dispute": "",
+      "source_bucket": "Articles",
+      "source_chain_gap": false,
+      "source_page": "Demo Source Page 09",
+      "source_role": "PRIMARY_SELF_AUTHORED_SOURCE",
+      "source_title": "V75Z demo source record 09"
+    },
+    {
+      "appearance_claim_basis": "",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "collaboration_or_corroboration_notes": "",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": true,
+      "family_or_authority_claim_basis": "",
+      "identity_claim_basis": "",
+      "notes_on_context_dispute": "Demo uploader/context dispute retained for review.",
+      "source_bucket": "Social Media/Online",
+      "source_chain_gap": false,
+      "source_page": "Demo Source Page 10",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "source_title": "V75Z demo source record 10"
+    },
+    {
+      "appearance_claim_basis": "",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "collaboration_or_corroboration_notes": "",
+      "confidence_or_verification_notes": "",
+      "currentness_status": "CURRENT",
+      "disputed_framing": false,
+      "family_or_authority_claim_basis": "",
+      "identity_claim_basis": "",
+      "notes_on_context_dispute": "",
+      "source_bucket": "Social Media/Offline",
+      "source_chain_gap": false,
+      "source_page": "Demo Source Page 11",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "source_title": "V75Z demo source record 11"
+    },
+    {
+      "appearance_claim_basis": "",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "collaboration_or_corroboration_notes": "",
+      "confidence_or_verification_notes": "Demo source-chain gap retained for review.",
+      "currentness_status": "HISTORICAL",
+      "disputed_framing": false,
+      "family_or_authority_claim_basis": "authority claim basis demo",
+      "identity_claim_basis": "",
+      "notes_on_context_dispute": "",
+      "source_bucket": "Internal Media",
+      "source_chain_gap": true,
+      "source_page": "Demo Source Page 12",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "source_title": "V75Z demo source record 12"
+    }
+  ]
+}
