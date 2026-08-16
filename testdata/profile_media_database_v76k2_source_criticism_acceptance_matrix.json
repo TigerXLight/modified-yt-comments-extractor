@@ -1,0 +1,12 @@
+{
+  "schema_version": "profile-media-source-criticism-acceptance-v76k2",
+  "accepted_materials": ["video", "audio", "image", "corroborated_text_chain"],
+  "required_review_lanes": ["claim_subject_affiliation_gap", "source_role_review", "missing_evidence_materials"],
+  "excluded_product_frameworks": ["FEVER", "AVeriTeC", "MICE benchmark/verdict logic"],
+  "safety": {
+    "folder_scan_performed": false,
+    "media_download_performed": false,
+    "automatic_classification_performed": false,
+    "sensitive_identifier_inference_performed": false
+  }
+}

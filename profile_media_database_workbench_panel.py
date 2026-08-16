@@ -16,7 +16,7 @@ from typing import Any, Iterable, Mapping
 
 from profile_media_database import utc_now_iso
 
-PROFILE_MEDIA_DATABASE_GUI_PANEL_SCHEMA_VERSION = "profile-media-database-gui-panel-v76c"
+PROFILE_MEDIA_DATABASE_GUI_PANEL_SCHEMA_VERSION = "profile-media-database-home-ui-panel-v76k2"
 
 
 @dataclass(frozen=True)
@@ -50,6 +50,7 @@ class ProfileMediaDatabaseGuiPanelState:
     title: str = "Profile/Media Database"
     subtitle: str = "Switch DATABASE on to view the case/profile/source workbench."
     metrics: tuple[ProfileMediaDatabaseGuiPanelMetric, ...] = ()
+    display_metrics: tuple[ProfileMediaDatabaseGuiPanelMetric, ...] = ()
     review_lanes: tuple[ProfileMediaDatabaseGuiPanelMetric, ...] = ()
     actions: tuple[ProfileMediaDatabaseGuiPanelAction, ...] = ()
     notices: tuple[str, ...] = ()
@@ -150,6 +151,41 @@ def _batch_tuple(batch_json_files: Iterable[object] | None) -> tuple[str, ...]:
     return tuple(str(item) for item in batch_json_files if str(item).strip())
 
 
+def _facet_count(payload: Mapping[str, Any] | None, facet_type: str, value: str) -> int:
+    """Read a count from dashboard facets without inferring anything."""
+    if not payload:
+        return 0
+    dashboard = payload.get("dashboard") if isinstance(payload, Mapping) else None
+    facets = dashboard.get("facets", ()) if isinstance(dashboard, Mapping) else ()
+    for facet in facets or ():
+        if not isinstance(facet, Mapping):
+            continue
+        if str(facet.get("facet_type", "")) != facet_type:
+            continue
+        if str(facet.get("value", "")) != value:
+            continue
+        try:
+            return int(facet.get("count", 0) or 0)
+        except Exception:
+            return 0
+    return 0
+
+
+def _person_count(payload: Mapping[str, Any] | None, fallback: int = 0) -> int:
+    if not payload:
+        return fallback
+    dashboard = payload.get("dashboard") if isinstance(payload, Mapping) else None
+    if isinstance(dashboard, Mapping):
+        for key in ("unique_profile_count", "profile_row_count"):
+            try:
+                value = int(dashboard.get(key, 0) or 0)
+            except Exception:
+                value = 0
+            if value:
+                return value
+    return fallback
+
+
 def build_profile_media_database_gui_panel_state(
     *,
     mode: object = "FILES",
@@ -176,6 +212,13 @@ def build_profile_media_database_gui_panel_state(
                 _metric("profile_rows", "Profile rows", 0),
                 _metric("review_items", "Review items", 0),
             ),
+            display_metrics=(
+                _metric("primary_sources", "👤 Primary", 0),
+                _metric("secondary_sources", "👥 Secondary", 0),
+                _metric("tertiary_sources", "👥+ Tertiary", 0),
+                _metric("persons", "Persons", 0),
+                _metric("review_items", "Review", 0),
+            ),
             review_lanes=(
                 _metric("source_chain_gaps", "Source-chain gaps", 0, "none"),
                 _metric("disputed_framing", "Disputed framing", 0, "none"),
@@ -195,13 +238,17 @@ def build_profile_media_database_gui_panel_state(
     navigation_targets = _int_from_payload(workbench_payload, "navigation_target_count", "target_count")
     review_items = _int_from_payload(workbench_payload, "review_item_count")
     saved_views = _int_from_payload(workbench_payload, "saved_view_count", "view_count")
+    primary_sources = _facet_count(workbench_payload, "source_role", "PRIMARY_SELF_AUTHORED_SCOPE")
+    secondary_sources = _facet_count(workbench_payload, "source_role", "SECONDARY_WITNESS_ACCOUNT")
+    tertiary_sources = _facet_count(workbench_payload, "source_role", "TERTIARY_PROPAGATED_SOURCE")
+    persons = _person_count(workbench_payload, profile_rows)
 
     configured = bool(batches or workbench_payload)
-    status = "ready_no_batch_json" if not configured else "success"
+    status = "ready_for_import" if not configured else "success"
     subtitle = (
-        "Database mode is on. Add explicit batch JSON in the next import step to populate this panel."
+        "HOME mode is on. Add or import source material, then SAVE reviewed structure into HOME."
         if not configured
-        else "Database workbench view is populated from explicit batch JSON only."
+        else "HOME repository view is populated from selected source material and saved index metadata."
     )
 
     return ProfileMediaDatabaseGuiPanelState(
@@ -219,6 +266,13 @@ def build_profile_media_database_gui_panel_state(
             _metric("navigation_targets", "Navigation targets", navigation_targets),
             _metric("review_items", "Review items", review_items, "high" if review_items else "info"),
             _metric("saved_views", "Saved views", saved_views),
+        ),
+        display_metrics=(
+            _metric("primary_sources", "👤 Primary", primary_sources),
+            _metric("secondary_sources", "👥 Secondary", secondary_sources),
+            _metric("tertiary_sources", "👥+ Tertiary", tertiary_sources),
+            _metric("persons", "Persons", persons),
+            _metric("review_items", "Review", review_items, "high" if review_items else "info"),
         ),
         review_lanes=(
             _metric(
@@ -269,19 +323,19 @@ def build_profile_media_database_gui_panel_state(
             ),
         ),
         actions=(
-            _action("refresh_database_view", "Refresh view", "available", "Refresh already configured explicit batch JSON view."),
-            _action("load_batch_json", "Load batch JSON", "available", "Select explicit batch JSON files for the main Database workbench."),
-            _action("plan_existing_folder_import", "Plan existing folder import", "available_dry_run", "Build a dry-run batch preview from an explicit folder-tree list; no folder scan."),
-            _action("materialize_case", "Materialize case", "guarded_v76f", "Requires exact V76F confirmation before folder creation or metadata writes."),
-            _action("review_folder_operations", "Review folder operations", "guarded_v76g", "Review explicit folder rename/move operations; execution requires V76G confirmation."),
-            _action("reconcile_batch_after_folder_operations", "Reconcile batch preview", "guarded_v76i", "Write a standalone reconciled batch-preview JSON after reviewed folder operations."),
-            _action("run_end_to_end_workflow_check", "Run workflow check", "available_v76h", "Run the explicit end-to-end readiness workflow over selected inputs."),
-            _action("review_report", "Review report", "available", "Open source-chain gaps, disputed framing, and unknown-role lanes."),
+            _action("refresh_database_view", "Sync HOME", "available", "Refresh the current HOME view internally after imports or saves."),
+            _action("load_batch_json", "Add / Import", "available", "Add source files, pasted URLs, dragged media, or a saved import package."),
+            _action("plan_existing_folder_import", "Plan folder import", "available_dry_run", "Build a dry-run preview from an explicit folder-tree list; no folder scan."),
+            _action("save_to_home_repository", "Save to HOME", "guarded_v76f", "Save reviewed folders and metadata under the selected HOME repository only."),
+            _action("review_folder_operations", "Review moves", "guarded_v76g", "Review explicit folder rename/move operations; execution requires confirmation."),
+            _action("reconcile_batch_after_folder_operations", "Update saved index", "guarded_v76i", "Write a standalone reconciled index preview after reviewed folder operations."),
+            _action("run_end_to_end_workflow_check", "Check workflow", "available_v76h", "Run the explicit end-to-end readiness workflow over selected inputs."),
+            _action("review_report", "Review items", "available", "Open the aggregated review list."),
         ),
         notices=(
-            "No folder scan is performed by the GUI panel.",
-            "No move, rename, copy, download, classification, or sensitive inference is performed.",
-            "The sidebar remains mode-only; filtering/search lives in the main Database workbench.",
+            "HOME is a managed repository. The app saves reviewed folders/indexes; it does not require users to understand JSON.",
+            "No media download, automatic classification, or sensitive inference is performed.",
+            "The left sidebar shows Primary, Secondary, Tertiary, Persons, and Review summary counts.",
         ),
     )
 
@@ -296,14 +350,18 @@ def render_profile_media_database_gui_panel_text(state: ProfileMediaDatabaseGuiP
     """Render a human-readable summary for the main Database panel."""
 
     lines = [
-        "Profile/Media Database GUI Panel",
+        "Profile/Media HOME Repository Panel",
         f"Status: {state.status}",
         f"Mode: {state.mode}",
         f"Database root: {state.database_root or '(not configured)'}",
-        f"Batch JSON files: {len(state.batch_json_files)}",
+        f"Import files: {len(state.batch_json_files)}",
         "",
-        "Metrics:",
+        "Display metrics:",
     ]
+    for metric in state.display_metrics:
+        lines.append(f"- {metric.label}: {metric.value} [{metric.severity}]")
+    lines.append("")
+    lines.append("Hidden/internal counters:")
     for metric in state.metrics:
         lines.append(f"- {metric.label}: {metric.value} [{metric.severity}]")
     lines.append("")

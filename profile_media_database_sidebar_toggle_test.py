@@ -36,13 +36,13 @@ def test_profile_media_sidebar_toggle_is_directly_above_files() -> None:
 def test_profile_media_sidebar_toggle_has_mode_only_state_fields() -> None:
     source = _main_source()
 
-    assert 'self.profile_media_sidebar_mode: str = "FILES"' in source
+    assert "self.profile_media_sidebar_mode: str = self._load_profile_media_sidebar_mode_for_startup()" in source
     assert "self.profile_media_database_mode_var = None" in source
     assert "self.profile_media_mode_status_label = None" not in source
     assert "self.profile_media_database_preview_textbox = None" not in source
 
 
-def test_profile_media_sidebar_toggle_uses_square_button_on_off_control_only() -> None:
+def test_profile_media_sidebar_toggle_uses_pill_button_on_off_control_only() -> None:
     source = _main_source()
     method = _method_source(source, "_create_profile_media_database_mode_toggle_section")
 
@@ -53,9 +53,9 @@ def test_profile_media_sidebar_toggle_uses_square_button_on_off_control_only() -
     assert "_on_profile_media_database_mode_toggled" in method
     assert "_profile_media_database_toggle_text" in method
     assert "_refresh_profile_media_database_mode_switch_visual" in method
-    assert "width=136" in method
-    assert "height=34" in method
-    assert "corner_radius=7" in method
+    assert "width=150" in method
+    assert "height=36" in method
+    assert "corner_radius=18" in method
     assert "border_width=2" in method
     assert "#7ac943" in method
     assert "#e84b6a" in method
@@ -112,7 +112,7 @@ def test_profile_media_sidebar_toggle_source_is_guarded() -> None:
 if __name__ == "__main__":
     test_profile_media_sidebar_toggle_is_directly_above_files()
     test_profile_media_sidebar_toggle_has_mode_only_state_fields()
-    test_profile_media_sidebar_toggle_uses_square_button_on_off_control_only()
+    test_profile_media_sidebar_toggle_uses_pill_button_on_off_control_only()
     test_profile_media_sidebar_mode_uses_v75h_view_model_coercion()
     test_profile_media_sidebar_toggle_source_is_guarded()
-    print("profile_media_database_sidebar_toggle v75n OK")
+    print("profile_media_database_sidebar_toggle v76k OK")

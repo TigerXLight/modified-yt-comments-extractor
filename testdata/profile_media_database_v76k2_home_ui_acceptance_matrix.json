@@ -1,0 +1,12 @@
+{
+  "schema_version": "profile-media-home-ui-acceptance-v76k2",
+  "visible_sidebar_metrics": ["Primary", "Secondary", "Tertiary", "Persons", "Review"],
+  "common_user_actions": ["DATABASE", "SAVE", "Add / Import", "Unload", "Plan folder import", "Review moves", "Update saved index"],
+  "hidden_backend_terms": ["Materialize", "Load batch JSON", "Clear batch", "Profile rows", "Unknown source roles"],
+  "file_row_policy": {
+    "large_dropdown_per_file": false,
+    "short_filename_with_hover": true,
+    "online_offline_selector_only_when_needed": true,
+    "internal_author_button_supported": true
+  }
+}

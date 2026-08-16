@@ -14,16 +14,16 @@ def _method_source(source: str, method_name: str) -> str:
     return source[start:next_start]
 
 
-def test_database_toggle_uses_square_check_handle_x_labels() -> None:
+def test_database_toggle_uses_clear_pill_on_off_labels() -> None:
     source = _main_source()
     text_method = _method_source(source, "_profile_media_database_toggle_text")
 
-    assert "✓        ◻" in text_method
-    assert "◻        ✕" in text_method
+    assert "✓  ON        ◻" in text_method
+    assert "◻        OFF  ✕" in text_method
     assert "DATABASE" in text_method
 
 
-def test_database_toggle_uses_green_on_and_red_off_button_colours() -> None:
+def test_database_toggle_uses_green_on_and_red_off_pill_colours() -> None:
     source = _main_source()
     refresh_method = _method_source(source, "_refresh_profile_media_database_mode_switch_visual")
     create_method = _method_source(source, "_create_profile_media_database_mode_toggle_section")
@@ -38,6 +38,7 @@ def test_database_toggle_uses_green_on_and_red_off_button_colours() -> None:
     assert "border_color" in combined
     assert "button_color" not in combined
     assert "progress_color" not in combined
+    assert "_animate_profile_media_database_mode_switch_visual" in source
 
 
 def test_database_toggle_click_flips_existing_mode_without_preview_or_file_operations() -> None:
@@ -83,16 +84,16 @@ def test_database_toggle_has_single_runtime_visual_method_pair() -> None:
             _method_source(source, "_create_profile_media_database_mode_toggle_section"),
         )
     )
-    assert "✓ On" not in target_source
-    assert "✕ Off" not in target_source
+    assert "✓  ON" in target_source
+    assert "OFF  ✕" in target_source
     assert "progress_color" not in target_source
     assert "button_color" not in target_source
     assert "button_hover_color" not in target_source
 
 
 if __name__ == "__main__":
-    test_database_toggle_uses_square_check_handle_x_labels()
-    test_database_toggle_uses_green_on_and_red_off_button_colours()
+    test_database_toggle_uses_clear_pill_on_off_labels()
+    test_database_toggle_uses_green_on_and_red_off_pill_colours()
     test_database_toggle_click_flips_existing_mode_without_preview_or_file_operations()
     test_database_toggle_has_single_runtime_visual_method_pair()
-    print("profile_media_database_sidebar_visual_toggle v75o OK")
+    print("profile_media_database_sidebar_visual_toggle v76k OK")

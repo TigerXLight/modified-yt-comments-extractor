@@ -812,6 +812,10 @@ class App(ctk.CTk):
         # Session files section
         self._create_files_section()
 
+        # YouTube filters remain functional for now, but V76K adds a settings entry
+        # so the next UI pass can move these controls out of the left sidebar.
+        self._create_youtube_settings_entry_section()
+
         # Filters section
         self._create_filters_section()
 
@@ -1151,13 +1155,18 @@ class App(ctk.CTk):
         return coerced
 
     def _profile_media_database_toggle_text(self, mode: object | None = None) -> str:
-        """Return the square check/handle/X text for the Database mode-only toggle."""
+        """Return clear pill-switch text for the Database mode-only toggle.
+
+        V76K keeps this as a mode switch, not a Database preview/filter.  The
+        visible language is deliberately common-user wording: green ON and red
+        OFF, with the small square retained as a slider-handle cue.
+        """
         if self._coerce_profile_media_sidebar_mode(mode) == "DATABASE":
-            return "✓        ◻"
-        return "◻        ✕"
+            return "✓  ON        ◻"
+        return "◻        OFF  ✕"
 
     def _refresh_profile_media_database_mode_switch_visual(self) -> None:
-        """Refresh the square green/red Database toggle without running Database work."""
+        """Refresh the pill-style green/red Database toggle without running Database work."""
         switch = getattr(self, "profile_media_database_mode_switch", None)
         if switch is None:
             return
@@ -1174,11 +1183,28 @@ class App(ctk.CTk):
         except Exception:
             logger.debug("Could not refresh profile/media Database toggle visual.", exc_info=True)
 
+    def _animate_profile_media_database_mode_switch_visual(self) -> None:
+        """Run a tiny two-frame visual acknowledgement after the Database toggle flips.
+
+        This does not schedule background work.  It only nudges the switch text
+        once, then restores the normal ON/OFF pill text with ``after``.
+        """
+        switch = getattr(self, "profile_media_database_mode_switch", None)
+        if switch is None:
+            return
+        mode = self._coerce_profile_media_sidebar_mode()
+        try:
+            switch.configure(text="✓  ON   ›   ◻" if mode == "DATABASE" else "◻   ‹   OFF  ✕")
+            self.after(140, self._refresh_profile_media_database_mode_switch_visual)
+        except Exception:
+            self._refresh_profile_media_database_mode_switch_visual()
+
     def _on_profile_media_database_mode_toggled(self) -> None:
         """Handle the left-sidebar Database On/Off toggle above FILES."""
         current_mode = self._coerce_profile_media_sidebar_mode()
         requested_mode = "FILES" if current_mode == "DATABASE" else "DATABASE"
         mode = self._set_profile_media_sidebar_mode(requested_mode, update_widget=True)
+        self._animate_profile_media_database_mode_switch_visual()
         try:
             state_text = "on" if mode == "DATABASE" else "off"
             self.log_message(
@@ -1200,8 +1226,12 @@ class App(ctk.CTk):
         self.profile_media_mode_frame.pack(fill="x", padx=20, pady=(0, 10))
         self.profile_media_mode_frame.grid_columnconfigure(0, weight=1)
 
+        database_header = ctk.CTkFrame(self.profile_media_mode_frame, fg_color="transparent")
+        database_header.grid(row=0, column=0, sticky="ew")
+        database_header.grid_columnconfigure(0, weight=1)
+
         database_label = ctk.CTkLabel(
-            self.profile_media_mode_frame,
+            database_header,
             text="DATABASE",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=COLORS["text_secondary"],
@@ -1209,21 +1239,60 @@ class App(ctk.CTk):
         )
         database_label.grid(row=0, column=0, sticky="w")
 
+        self.profile_media_database_home_save_button = ctk.CTkButton(
+            database_header,
+            text="SAVE",
+            command=self._save_profile_media_database_to_home_repository,
+            width=56,
+            height=24,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+        )
+        self.profile_media_database_home_save_button.grid(row=0, column=1, sticky="e")
+
         self.profile_media_database_mode_switch = ctk.CTkButton(
             self.profile_media_mode_frame,
             text=self._profile_media_database_toggle_text(initial_mode),
             command=self._on_profile_media_database_mode_toggled,
-            width=136,
-            height=34,
-            corner_radius=7,
+            width=150,
+            height=36,
+            corner_radius=18,
             border_width=2,
-            font=ctk.CTkFont(size=16, weight="bold"),
+            font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#ffffff",
             fg_color="#7ac943" if initial_mode == "DATABASE" else "#e84b6a",
             hover_color="#8ed957" if initial_mode == "DATABASE" else "#f05d7a",
             border_color="#4d9b29" if initial_mode == "DATABASE" else "#b92d4d",
         )
         self.profile_media_database_mode_switch.grid(row=1, column=0, sticky="w", pady=(6, 2))
+
+        self.profile_media_database_sidebar_summary_frame = ctk.CTkFrame(
+            self.profile_media_mode_frame,
+            fg_color=COLORS["bg_input"],
+            corner_radius=7,
+        )
+        self.profile_media_database_sidebar_summary_frame.grid(row=2, column=0, sticky="ew", pady=(7, 0))
+        self.profile_media_database_sidebar_summary_frame.grid_columnconfigure((0, 1), weight=1)
+        self.profile_media_database_sidebar_summary_labels = {}
+        summary_items = (
+            ("primary_sources", "👤 Primary"),
+            ("secondary_sources", "👥 Secondary"),
+            ("tertiary_sources", "👥+ Tertiary"),
+            ("persons", "Persons"),
+            ("review_items", "Review"),
+        )
+        for index, (key, label_text) in enumerate(summary_items):
+            summary_label = ctk.CTkLabel(
+                self.profile_media_database_sidebar_summary_frame,
+                text=f"{label_text}: 0",
+                font=ctk.CTkFont(size=10, weight="bold" if key == "persons" else "normal"),
+                text_color=COLORS["text_secondary"],
+                anchor="w",
+            )
+            summary_label.grid(row=index // 2, column=index % 2, sticky="ew", padx=7, pady=(5 if index < 2 else 2, 5))
+            self.profile_media_database_sidebar_summary_labels[key] = summary_label
         self._refresh_profile_media_database_mode_switch_visual()
 
     def _create_files_section(self) -> None:
@@ -3083,6 +3152,34 @@ class App(ctk.CTk):
         setattr(self, button_attr, action_button)
         setattr(self, settings_attr, settings_button)
 
+    def _create_youtube_settings_entry_section(self) -> None:
+        """Create a compact entry for moving YouTube-only filters into settings."""
+        self.youtube_settings_entry_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
+        self.youtube_settings_entry_frame.pack(fill="x", padx=20, pady=(12, 4))
+        self.youtube_settings_entry_button = ctk.CTkButton(
+            self.youtube_settings_entry_frame,
+            text="YouTube settings",
+            command=self._open_youtube_filter_settings_placeholder,
+            height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=7,
+        )
+        self.youtube_settings_entry_button.pack(fill="x")
+
+    def _open_youtube_filter_settings_placeholder(self) -> None:
+        """Explain the V76K/V76L direction for moving YouTube filters out of the sidebar."""
+        try:
+            messagebox.showinfo(
+                "YouTube settings",
+                "YouTube-only filters are still shown below for compatibility. "
+                "The next UI pass can move spam/date/custom filters into this settings window.",
+            )
+        except Exception:
+            pass
+
     def _create_filters_section(self) -> None:
         """Create filters section in sidebar."""
         self._create_section_label(self.sidebar_scroll, "FILTERS")
@@ -3968,7 +4065,7 @@ class App(ctk.CTk):
 
         self.profile_media_database_panel_title_label = ctk.CTkLabel(
             header,
-            text="🗂 DATABASE Workbench",
+            text="▣ HOME Repository",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS["text_primary"],
         )
@@ -3984,55 +4081,56 @@ class App(ctk.CTk):
 
         self.profile_media_database_panel_refresh_button = ctk.CTkButton(
             header,
-            text="Refresh",
+            text="",
             command=self._refresh_profile_media_database_workbench_panel,
-            width=82,
-            height=28,
+            width=1,
+            height=1,
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
             text_color=COLORS["text_primary"],
             corner_radius=7,
         )
-        self.profile_media_database_panel_refresh_button.pack(side="right")
+        # V76K2: no common-user Refresh button; the HOME panel syncs after Add / Import, SAVE, and Unload.
+        self.profile_media_database_panel_refresh_button.pack_forget()
 
         self.profile_media_database_panel_batch_button = ctk.CTkButton(
             header,
-            text="Load batch JSON",
+            text="Add / Import",
             command=self._select_profile_media_database_batch_json_files,
-            width=124,
+            width=104,
             height=28,
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
             text_color=COLORS["text_primary"],
             corner_radius=7,
         )
-        self.profile_media_database_panel_batch_button.pack(side="right", padx=(0, 8))
+        self.profile_media_database_panel_batch_button.pack(side="right", padx=(0, 6))
 
         self.profile_media_database_panel_clear_button = ctk.CTkButton(
             header,
-            text="Clear batch",
+            text="Unload",
             command=self._clear_profile_media_database_batch_json_files,
-            width=98,
+            width=74,
             height=28,
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
             text_color=COLORS["text_primary"],
             corner_radius=7,
         )
-        self.profile_media_database_panel_clear_button.pack(side="right", padx=(0, 8))
+        self.profile_media_database_panel_clear_button.pack(side="right", padx=(0, 6))
 
         self.profile_media_database_panel_materialize_button = ctk.CTkButton(
             header,
-            text="Materialize",
+            text="Save to HOME",
             command=self._materialize_profile_media_database_selected_batches,
-            width=98,
+            width=112,
             height=28,
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
             text_color=COLORS["text_primary"],
             corner_radius=7,
         )
-        self.profile_media_database_panel_materialize_button.pack(side="right", padx=(0, 8))
+        self.profile_media_database_panel_materialize_button.pack(side="right", padx=(0, 6))
 
         self.profile_media_database_panel_subtitle_label = ctk.CTkLabel(
             self.profile_media_database_workbench_card,
@@ -4048,7 +4146,7 @@ class App(ctk.CTk):
         metrics_frame = ctk.CTkFrame(self.profile_media_database_workbench_card, fg_color="transparent")
         metrics_frame.pack(fill="x", padx=15, pady=(0, 8))
         self.profile_media_database_panel_metric_labels = {}
-        for column, key in enumerate(("cases", "sources", "profile_rows", "review_items")):
+        for column, key in enumerate(("primary_sources", "secondary_sources", "tertiary_sources", "persons")):
             metrics_frame.grid_columnconfigure(column, weight=1)
             metric_label = ctk.CTkLabel(
                 metrics_frame,
@@ -4066,7 +4164,7 @@ class App(ctk.CTk):
         review_frame = ctk.CTkFrame(self.profile_media_database_workbench_card, fg_color="transparent")
         review_frame.pack(fill="x", padx=15, pady=(0, 8))
         self.profile_media_database_panel_review_labels = {}
-        for column, key in enumerate(("source_chain_gaps", "disputed_framing", "unknown_source_roles")):
+        for column, key in enumerate(("review_items", "safe_no_download", "safe_no_inference")):
             review_frame.grid_columnconfigure(column, weight=1)
             review_label = ctk.CTkLabel(
                 review_frame,
@@ -4130,26 +4228,42 @@ class App(ctk.CTk):
             return
 
         try:
-            self.profile_media_database_panel_status_label.configure(text=f"{state.mode} / {state.status}")
+            display_status = "HOME / ready" if state.status == "success" else "HOME / add sources" if state.status in ("ready_for_import", "ready_no_home_selection") else f"{state.mode} / {state.status}"
+            self.profile_media_database_panel_status_label.configure(text=display_status)
             self.profile_media_database_panel_subtitle_label.configure(text=state.subtitle)
 
             metrics = {metric.key: metric for metric in state.metrics}
+            display_metrics = {metric.key: metric for metric in getattr(state, "display_metrics", ())}
             for key, label_widget in getattr(self, "profile_media_database_panel_metric_labels", {}).items():
-                metric = metrics.get(key)
+                metric = display_metrics.get(key) or metrics.get(key)
                 label_widget.configure(text=f"{metric.label}: {metric.value}" if metric else "")
 
             lanes = {lane.key: lane for lane in state.review_lanes}
+            review_metric = display_metrics.get("review_items") or metrics.get("review_items")
             for key, label_widget in getattr(self, "profile_media_database_panel_review_labels", {}).items():
-                lane = lanes.get(key)
-                label_widget.configure(text=f"{lane.label}: {lane.value}" if lane else "")
+                if key == "review_items" and review_metric is not None:
+                    label_widget.configure(text=f"{review_metric.label}: {review_metric.value}")
+                elif key == "safe_no_download":
+                    label_widget.configure(text="No media download")
+                elif key == "safe_no_inference":
+                    label_widget.configure(text="No sensitive inference")
+                else:
+                    lane = lanes.get(key)
+                    label_widget.configure(text=f"{lane.label}: {lane.value}" if lane else "")
 
             notices = "\n".join(state.notices[:3])
             self.profile_media_database_panel_notice_label.configure(text=notices)
+
+            display_metrics = {metric.key: metric for metric in getattr(state, "display_metrics", ())}
+            for key, label_widget in getattr(self, "profile_media_database_sidebar_summary_labels", {}).items():
+                metric = display_metrics.get(key)
+                if metric is not None:
+                    label_widget.configure(text=f"{metric.label}: {metric.value}")
         except Exception:
             logger.debug("Could not refresh profile/media Database GUI panel widgets.", exc_info=True)
 
     def _build_profile_media_database_workbench_payload_from_batches(self, batch_json_files: tuple[str, ...], database_root: str) -> dict[str, object] | None:
-        """Build workbench payload from explicit batch JSON files selected by the user."""
+        """Build workbench payload from selected internal import files."""
         if not batch_json_files:
             return None
         from profile_media_database_session import ProfileMediaDatabaseSessionConfig
@@ -4186,14 +4300,14 @@ class App(ctk.CTk):
             logger.debug("Could not load saved profile/media Database GUI state.", exc_info=True)
 
     def _select_profile_media_database_batch_json_files(self) -> None:
-        """Select explicit batch JSON files for the main Database workbench."""
+        """Add/import an internal Profile-Media package; JSON remains an implementation detail."""
         try:
             selected = filedialog.askopenfilenames(
-                title="Select Profile/Media Database batch JSON",
-                filetypes=(("JSON files", "*.json"), ("All files", "*.*")),
+                title="Add / Import Profile-Media source package",
+                filetypes=(("Profile-Media import files", "*.json"), ("All files", "*.*")),
             )
         except Exception:
-            logger.debug("Could not open profile/media Database batch JSON selector.", exc_info=True)
+            logger.debug("Could not open profile/media Database import selector.", exc_info=True)
             return
 
         batch_json_files = tuple(str(item) for item in selected if str(item).strip())
@@ -4229,19 +4343,19 @@ class App(ctk.CTk):
             self._set_profile_media_sidebar_mode("DATABASE", update_widget=True)
             self._refresh_profile_media_database_workbench_panel()
             self.log_message(
-                f"Profile/media Database loaded {len(self.profile_media_database_batch_json_files)} explicit batch JSON file(s). "
+                f"Profile/media HOME loaded {len(self.profile_media_database_batch_json_files)} import package(s). "
                 "No folder scan or filesystem mutation was performed.",
                 "info",
             )
         except Exception as exc:
-            logger.debug("Could not load profile/media Database batch JSON files.", exc_info=True)
+            logger.debug("Could not load profile/media Database import files.", exc_info=True)
             try:
-                messagebox.showerror("Database batch JSON", f"Could not load selected batch JSON files: {exc}")
+                messagebox.showerror("Database import", f"Could not load selected import files: {exc}")
             except Exception:
                 pass
 
     def _clear_profile_media_database_batch_json_files(self) -> None:
-        """Clear the main Database workbench batch selection without deleting batch JSON files."""
+        """Unload the main Database HOME selection without deleting any files."""
         try:
             from profile_media_database_gui_controller import (
                 build_database_gui_clear_selection,
@@ -4269,19 +4383,23 @@ class App(ctk.CTk):
         self._refresh_profile_media_database_workbench_panel()
         try:
             self.log_message(
-                "Profile/media Database batch selection cleared. Batch JSON files were not deleted.",
+                "Profile/media HOME import unloaded. Source files and saved repository folders were not deleted.",
                 "info",
             )
         except Exception:
             pass
 
 
+    def _save_profile_media_database_to_home_repository(self) -> None:
+        """Common-user SAVE action for the managed Profile/Media HOME repository."""
+        return self._materialize_profile_media_database_selected_batches()
+
     def _materialize_profile_media_database_selected_batches(self) -> None:
-        """Guarded materialization for explicit Database batch JSON selection."""
+        """Guarded save/create-folders flow for explicit Database HOME selections."""
         batch_json_files = tuple(getattr(self, "profile_media_database_batch_json_files", ()) or ())
         if not batch_json_files:
             try:
-                messagebox.showinfo("Database materialize", "Load explicit batch JSON before materializing a case.")
+                messagebox.showinfo("Database SAVE", "Add/import source material before saving to the HOME repository.")
             except Exception:
                 pass
             return
@@ -4289,7 +4407,7 @@ class App(ctk.CTk):
         database_root = str(getattr(self, "profile_media_database_root", "") or "").strip()
         if not database_root:
             try:
-                selected_root = filedialog.askdirectory(title="Select target Profile/Media Database root")
+                selected_root = filedialog.askdirectory(title="Select Profile/Media HOME repository")
             except Exception:
                 selected_root = ""
             database_root = str(selected_root or "").strip()
@@ -4305,9 +4423,9 @@ class App(ctk.CTk):
                 render_database_materialize_plan_text,
             )
         except Exception as exc:
-            logger.debug("Could not import profile/media materialize workflow.", exc_info=True)
+            logger.debug("Could not import profile/media HOME save workflow.", exc_info=True)
             try:
-                messagebox.showerror("Database materialize", f"Materialize workflow is unavailable: {exc}")
+                messagebox.showerror("Database SAVE", f"SAVE workflow is unavailable: {exc}")
             except Exception:
                 pass
             return
@@ -4317,10 +4435,10 @@ class App(ctk.CTk):
             preview_text = render_database_materialize_plan_text(preview_plan)
             prompt = (
                 preview_text[:2400]
-                + "\n\nType this exact phrase to create folders and metadata files:\n"
+                + "\n\nType this exact phrase to save reviewed folders and metadata into HOME:\n"
                 + PROFILE_MEDIA_DATABASE_MATERIALIZE_CONFIRMATION
             )
-            confirmation = simpledialog.askstring("Confirm Database materialize", prompt)
+            confirmation = simpledialog.askstring("Confirm Database SAVE", prompt)
             if confirmation != PROFILE_MEDIA_DATABASE_MATERIALIZE_CONFIRMATION:
                 self.profile_media_database_materialize_result = materialize_workflow_payload(
                     apply_database_materialize_plan(
@@ -4334,7 +4452,7 @@ class App(ctk.CTk):
                     plan=preview_plan,
                 )
                 try:
-                    messagebox.showwarning("Database materialize", "Materialization blocked because the exact confirmation phrase was not entered.")
+                    messagebox.showwarning("Database SAVE", "SAVE blocked because the exact confirmation phrase was not entered.")
                 except Exception:
                     pass
                 return
@@ -4351,8 +4469,8 @@ class App(ctk.CTk):
             self._refresh_profile_media_database_workbench_panel()
             try:
                 self.log_message(
-                    f"Profile/media Database materialize result: {result.status}; "
-                    f"created_directories={len(result.created_directories)}; written_files={len(result.written_files)}. "
+                    f"Profile/media HOME SAVE result: {result.status}; "
+                    f"created_folders={len(result.created_directories)}; saved_metadata_files={len(result.written_files)}. "
                     "No folder scan, move, rename, media copy, download, automatic classification, or sensitive inference was performed.",
                     "info" if result.status == "materialized" else "warning",
                 )
@@ -4360,13 +4478,13 @@ class App(ctk.CTk):
                 pass
             if result.status != "materialized":
                 try:
-                    messagebox.showwarning("Database materialize", f"Materialization did not complete: {result.status}")
+                    messagebox.showwarning("Database SAVE", f"SAVE did not complete: {result.status}")
                 except Exception:
                     pass
         except Exception as exc:
-            logger.debug("Profile/media Database materialization failed.", exc_info=True)
+            logger.debug("Profile/media Database SAVE failed.", exc_info=True)
             try:
-                messagebox.showerror("Database materialize", f"Materialization failed: {exc}")
+                messagebox.showerror("Database SAVE", f"SAVE failed: {exc}")
             except Exception:
                 pass
 
@@ -5856,7 +5974,7 @@ class App(ctk.CTk):
 
         self.transcript_qa_refresh_button = ctk.CTkButton(
             transcript_qa_row,
-            text="Refresh",
+            text="Sync",
             command=self._refresh_transcript_qa_panel,
             width=74,
             height=28,
