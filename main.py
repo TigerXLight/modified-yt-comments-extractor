@@ -637,6 +637,8 @@ class App(ctk.CTk):
         self.profile_media_database_batch_import_result: dict[str, object] | None = None
         self.profile_media_database_panel_metric_labels: dict[str, object] = {}
         self.profile_media_database_panel_review_labels: dict[str, object] = {}
+        self.profile_media_database_gui_state_path = None
+        self.profile_media_database_gui_state_payload: dict[str, object] | None = None
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
@@ -652,6 +654,7 @@ class App(ctk.CTk):
         self._initialize_file_drag_drop()
         self._create_header()
         self._create_content_paned_window()
+        self._load_profile_media_database_saved_gui_state_for_startup()
         self._create_sidebar()
         self._create_main_content()
         self._bind_main_pointer_wheel_router()
@@ -4004,6 +4007,19 @@ class App(ctk.CTk):
         )
         self.profile_media_database_panel_batch_button.pack(side="right", padx=(0, 8))
 
+        self.profile_media_database_panel_clear_button = ctk.CTkButton(
+            header,
+            text="Clear batch",
+            command=self._clear_profile_media_database_batch_json_files,
+            width=98,
+            height=28,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=7,
+        )
+        self.profile_media_database_panel_clear_button.pack(side="right", padx=(0, 8))
+
         self.profile_media_database_panel_subtitle_label = ctk.CTkLabel(
             self.profile_media_database_workbench_card,
             text="",
@@ -4132,6 +4148,29 @@ class App(ctk.CTk):
         )
         return workbench_payload(build_workbench_state(config), include_text=False)
 
+    def _load_profile_media_database_saved_gui_state_for_startup(self) -> None:
+        """Load saved explicit Database GUI state without scanning folders."""
+        try:
+            from profile_media_database_gui_controller import (
+                build_database_gui_selection_from_saved_state,
+                database_gui_selection_result_payload,
+            )
+            from profile_media_database_gui_state_store import default_profile_media_database_gui_state_path
+
+            state_path = default_profile_media_database_gui_state_path()
+            self.profile_media_database_gui_state_path = state_path
+            result = build_database_gui_selection_from_saved_state(state_path=state_path)
+            self.profile_media_database_gui_state_payload = database_gui_selection_result_payload(result)
+            if result.batch_json_files:
+                self.profile_media_database_batch_json_files = result.batch_json_files
+                self.profile_media_database_root = result.database_root or getattr(self, "profile_media_database_root", "")
+                self.profile_media_database_workbench_payload = dict(result.workbench_payload) if result.workbench_payload else None
+                self.profile_media_database_batch_import_result = (
+                    result.import_result.to_dict() if result.import_result else None
+                )
+        except Exception:
+            logger.debug("Could not load saved profile/media Database GUI state.", exc_info=True)
+
     def _select_profile_media_database_batch_json_files(self) -> None:
         """Select explicit batch JSON files for the main Database workbench."""
         try:
@@ -4148,24 +4187,31 @@ class App(ctk.CTk):
             return
 
         try:
-            from profile_media_database_batch_import_assistant import (
-                apply_batch_import_plan,
-                batch_import_result_payload,
-                build_batch_import_plan,
+            from profile_media_database_gui_controller import (
+                build_database_gui_selection_from_batch_json,
+                database_gui_selection_result_payload,
+            )
+            from profile_media_database_gui_state_store import (
+                PROFILE_MEDIA_DATABASE_GUI_STATE_SAVE_CONFIRMATION,
+                default_profile_media_database_gui_state_path,
             )
 
-            plan = build_batch_import_plan(
+            state_path = getattr(self, "profile_media_database_gui_state_path", None) or default_profile_media_database_gui_state_path()
+            self.profile_media_database_gui_state_path = state_path
+            result = build_database_gui_selection_from_batch_json(
                 batch_json_files,
                 database_root=getattr(self, "profile_media_database_root", ""),
+                state_path=state_path,
+                persist_state=True,
+                confirmation_phrase=PROFILE_MEDIA_DATABASE_GUI_STATE_SAVE_CONFIRMATION,
             )
-            result = apply_batch_import_plan(plan)
-            self.profile_media_database_batch_import_result = batch_import_result_payload(result)
+            self.profile_media_database_gui_state_payload = database_gui_selection_result_payload(result)
+            self.profile_media_database_batch_import_result = (
+                result.import_result.to_dict() if result.import_result else None
+            )
             self.profile_media_database_batch_json_files = result.batch_json_files
             self.profile_media_database_root = result.database_root or getattr(self, "profile_media_database_root", "")
-            self.profile_media_database_workbench_payload = self._build_profile_media_database_workbench_payload_from_batches(
-                self.profile_media_database_batch_json_files,
-                self.profile_media_database_root,
-            )
+            self.profile_media_database_workbench_payload = dict(result.workbench_payload) if result.workbench_payload else None
             self._set_profile_media_sidebar_mode("DATABASE", update_widget=True)
             self._refresh_profile_media_database_workbench_panel()
             self.log_message(
@@ -4179,6 +4225,41 @@ class App(ctk.CTk):
                 messagebox.showerror("Database batch JSON", f"Could not load selected batch JSON files: {exc}")
             except Exception:
                 pass
+
+    def _clear_profile_media_database_batch_json_files(self) -> None:
+        """Clear the main Database workbench batch selection without deleting batch JSON files."""
+        try:
+            from profile_media_database_gui_controller import (
+                build_database_gui_clear_selection,
+                database_gui_selection_result_payload,
+            )
+            from profile_media_database_gui_state_store import (
+                PROFILE_MEDIA_DATABASE_GUI_STATE_CLEAR_CONFIRMATION,
+                default_profile_media_database_gui_state_path,
+            )
+
+            state_path = getattr(self, "profile_media_database_gui_state_path", None) or default_profile_media_database_gui_state_path()
+            self.profile_media_database_gui_state_path = state_path
+            result = build_database_gui_clear_selection(
+                state_path=state_path,
+                clear_persisted_state=True,
+                confirmation_phrase=PROFILE_MEDIA_DATABASE_GUI_STATE_CLEAR_CONFIRMATION,
+            )
+            self.profile_media_database_gui_state_payload = database_gui_selection_result_payload(result)
+        except Exception:
+            logger.debug("Could not clear profile/media Database GUI state file.", exc_info=True)
+
+        self.profile_media_database_batch_json_files = ()
+        self.profile_media_database_workbench_payload = None
+        self.profile_media_database_batch_import_result = None
+        self._refresh_profile_media_database_workbench_panel()
+        try:
+            self.log_message(
+                "Profile/media Database batch selection cleared. Batch JSON files were not deleted.",
+                "info",
+            )
+        except Exception:
+            pass
 
 
     def _create_text_editor_section(self) -> None:

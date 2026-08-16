@@ -50,7 +50,7 @@ def test_database_panel_refresh_and_batch_selection_are_safe() -> None:
         )
     )
     assert "askopenfilenames" in combined
-    assert "build_batch_import_plan" in combined
+    assert ("build_batch_import_plan" in combined or "build_database_gui_selection_from_batch_json" in combined)
     forbidden = (
         "os.walk",
         ".glob(",

@@ -1,0 +1,236 @@
+{
+  "database_root": "V76D Demo Database",
+  "case_title": "V76D GUI State Demo Case",
+  "sources": [
+    {
+      "source_page": "V76D Demo Source Page 001",
+      "source_title": "V76D demo source record 001",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "source_chain_gap": false,
+      "disputed_framing": false,
+      "confidence_or_verification_notes": "",
+      "notes_on_context_dispute": ""
+    },
+    {
+      "source_page": "V76D Demo Source Page 002",
+      "source_title": "V76D demo source record 002",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "source_chain_gap": false,
+      "disputed_framing": false,
+      "confidence_or_verification_notes": "",
+      "notes_on_context_dispute": ""
+    },
+    {
+      "source_page": "V76D Demo Source Page 003",
+      "source_title": "V76D demo source record 003",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "source_chain_gap": false,
+      "disputed_framing": false,
+      "confidence_or_verification_notes": "",
+      "notes_on_context_dispute": ""
+    },
+    {
+      "source_page": "V76D Demo Source Page 004",
+      "source_title": "V76D demo source record 004",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "source_chain_gap": false,
+      "disputed_framing": false,
+      "confidence_or_verification_notes": "",
+      "notes_on_context_dispute": ""
+    },
+    {
+      "source_page": "V76D Demo Source Page 005",
+      "source_title": "V76D demo source record 005",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "HISTORICAL",
+      "source_chain_gap": false,
+      "disputed_framing": false,
+      "confidence_or_verification_notes": "",
+      "notes_on_context_dispute": ""
+    },
+    {
+      "source_page": "V76D Demo Source Page 006",
+      "source_title": "V76D demo source record 006",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "CURRENT",
+      "source_chain_gap": false,
+      "disputed_framing": false,
+      "confidence_or_verification_notes": "",
+      "notes_on_context_dispute": ""
+    },
+    {
+      "source_page": "V76D Demo Source Page 007",
+      "source_title": "V76D demo source record 007",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "source_chain_gap": true,
+      "disputed_framing": false,
+      "confidence_or_verification_notes": "Retained for source-chain review.",
+      "notes_on_context_dispute": ""
+    },
+    {
+      "source_page": "V76D Demo Source Page 008",
+      "source_title": "V76D demo source record 008",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "source_chain_gap": false,
+      "disputed_framing": false,
+      "confidence_or_verification_notes": "",
+      "notes_on_context_dispute": ""
+    },
+    {
+      "source_page": "V76D Demo Source Page 009",
+      "source_title": "V76D demo source record 009",
+      "source_bucket": "Social Media/Online",
+      "source_role": "SECONDARY_WITNESS_SOURCE",
+      "claim_basis": "WITNESS_ACCOUNT",
+      "currentness_status": "CURRENT",
+      "source_chain_gap": false,
+      "disputed_framing": false,
+      "confidence_or_verification_notes": "",
+      "notes_on_context_dispute": ""
+    },
+    {
+      "source_page": "V76D Demo Source Page 010",
+      "source_title": "V76D demo source record 010",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "PRIMARY_SELF_AUTHORED_SCOPE",
+      "claim_basis": "SELF_AUTHORED_EXPERIENCE",
+      "currentness_status": "HISTORICAL",
+      "source_chain_gap": false,
+      "disputed_framing": false,
+      "confidence_or_verification_notes": "",
+      "notes_on_context_dispute": ""
+    },
+    {
+      "source_page": "V76D Demo Source Page 011",
+      "source_title": "V76D demo source record 011",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT",
+      "source_chain_gap": false,
+      "disputed_framing": true,
+      "confidence_or_verification_notes": "",
+      "notes_on_context_dispute": "Demo disputed framing note."
+    },
+    {
+      "source_page": "V76D Demo Source Page 012",
+      "source_title": "V76D demo source record 012",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT",
+      "source_chain_gap": false,
+      "disputed_framing": false,
+      "confidence_or_verification_notes": "",
+      "notes_on_context_dispute": ""
+    }
+  ],
+  "profiles": [
+    {
+      "profile_text": "Name: V76D Demo Person 001\nDate: 2026-08-02\nText: V76D generated GUI persistence fixture row 001.\nIdentifiers:\n- identifier_type: demo_relation\n  value: fixture row 001\n  source_evidenced: true\nAddress: Cases/V76D Demo Case/Sources/Social Media/Online/V76D demo source record 001\nSource: V76D Demo Source Page 001",
+      "source_bucket": "Social Media/Online",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT"
+    },
+    {
+      "profile_text": "Name: V76D Demo Person 002\nDate: 2026-08-03\nText: V76D generated GUI persistence fixture row 002.\nIdentifiers:\n- identifier_type: demo_relation\n  value: fixture row 002\n  source_evidenced: true\nAddress: Cases/V76D Demo Case/Sources/Social Media/Offline/V76D demo source record 002\nSource: V76D Demo Source Page 002",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT"
+    },
+    {
+      "profile_text": "Name: V76D Demo Person 003\nDate: 2026-08-04\nText: V76D generated GUI persistence fixture row 003.\nIdentifiers:\n- identifier_type: demo_relation\n  value: fixture row 003\n  source_evidenced: true\nAddress: Cases/V76D Demo Case/Sources/Internal Media/V76D demo source record 003\nSource: V76D Demo Source Page 003",
+      "source_bucket": "Internal Media",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT"
+    },
+    {
+      "profile_text": "Name: V76D Demo Person 004\nDate: 2026-08-05\nText: V76D generated GUI persistence fixture row 004.\nIdentifiers:\n- identifier_type: demo_relation\n  value: fixture row 004\n  source_evidenced: true\nAddress: Cases/V76D Demo Case/Sources/Articles/V76D demo source record 004\nSource: V76D Demo Source Page 004",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT"
+    },
+    {
+      "profile_text": "Name: V76D Demo Person 005\nDate: 2026-08-06\nText: V76D generated GUI persistence fixture row 005.\nIdentifiers:\n- identifier_type: demo_relation\n  value: fixture row 005\n  source_evidenced: true\nAddress: Cases/V76D Demo Case/Sources/Social Media/Online/V76D demo source record 005\nSource: V76D Demo Source Page 005",
+      "source_bucket": "Social Media/Online",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT"
+    },
+    {
+      "profile_text": "Name: V76D Demo Person 006\nDate: 2026-08-07\nText: V76D generated GUI persistence fixture row 006.\nIdentifiers:\n- identifier_type: demo_relation\n  value: fixture row 006\n  source_evidenced: true\nAddress: Cases/V76D Demo Case/Sources/Social Media/Offline/V76D demo source record 006\nSource: V76D Demo Source Page 006",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT"
+    },
+    {
+      "profile_text": "Name: V76D Demo Person 007\nDate: 2026-08-08\nText: V76D generated GUI persistence fixture row 007.\nIdentifiers:\n- identifier_type: demo_relation\n  value: fixture row 007\n  source_evidenced: true\nAddress: Cases/V76D Demo Case/Sources/Internal Media/V76D demo source record 007\nSource: V76D Demo Source Page 007",
+      "source_bucket": "Internal Media",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT"
+    },
+    {
+      "profile_text": "Name: V76D Demo Person 008\nDate: 2026-08-09\nText: V76D generated GUI persistence fixture row 008.\nIdentifiers:\n- identifier_type: demo_relation\n  value: fixture row 008\n  source_evidenced: true\nAddress: Cases/V76D Demo Case/Sources/Articles/V76D demo source record 008\nSource: V76D Demo Source Page 008",
+      "source_bucket": "Articles",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT"
+    },
+    {
+      "profile_text": "Name: V76D Demo Person 009\nDate: 2026-08-10\nText: V76D generated GUI persistence fixture row 009.\nIdentifiers:\n- identifier_type: demo_relation\n  value: fixture row 009\n  source_evidenced: true\nAddress: Cases/V76D Demo Case/Sources/Social Media/Online/V76D demo source record 009\nSource: V76D Demo Source Page 009",
+      "source_bucket": "Social Media/Online",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT"
+    },
+    {
+      "profile_text": "Name: V76D Demo Person 010\nDate: 2026-08-11\nText: V76D generated GUI persistence fixture row 010.\nIdentifiers:\n- identifier_type: demo_relation\n  value: fixture row 010\n  source_evidenced: true\nAddress: Cases/V76D Demo Case/Sources/Social Media/Offline/V76D demo source record 010\nSource: V76D Demo Source Page 010",
+      "source_bucket": "Social Media/Offline",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT"
+    },
+    {
+      "profile_text": "Name: V76D Demo Person 011\nDate: 2026-08-12\nText: V76D generated GUI persistence fixture row 011.\nIdentifiers:\n- identifier_type: demo_relation\n  value: fixture row 011\n  source_evidenced: true\nAddress: Cases/V76D Demo Case/Sources/Internal Media/V76D demo source record 011\nSource: V76D Demo Source Page 011",
+      "source_bucket": "Internal Media",
+      "source_role": "TERTIARY_PROPAGATED_SOURCE",
+      "claim_basis": "AGENCY_OR_OUTSIDE_RETELLING",
+      "currentness_status": "CURRENT"
+    },
+    {
+      "profile_text": "Name: V76D Demo Person 012\nDate: 2026-08-13\nText: V76D generated GUI persistence fixture row 012.\nIdentifiers:\n- identifier_type: demo_relation\n  value: fixture row 012\n  source_evidenced: true\nAddress: Cases/V76D Demo Case/Sources/Articles/V76D demo source record 012\nSource: V76D Demo Source Page 012",
+      "source_bucket": "Articles",
+      "source_role": "UNKNOWN_SOURCE_ROLE",
+      "claim_basis": "UNKNOWN_CLAIM_BASIS",
+      "currentness_status": "CURRENT"
+    }
+  ]
+}
