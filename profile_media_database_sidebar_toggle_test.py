@@ -33,15 +33,16 @@ def test_profile_media_sidebar_toggle_is_directly_above_files() -> None:
     assert "Profile/media Database mode toggle sits directly above FILES" in sidebar
 
 
-def test_profile_media_sidebar_toggle_has_required_state_fields() -> None:
+def test_profile_media_sidebar_toggle_has_mode_only_state_fields() -> None:
     source = _main_source()
 
     assert 'self.profile_media_sidebar_mode: str = "FILES"' in source
     assert "self.profile_media_database_mode_var = None" in source
-    assert "self.profile_media_mode_status_label = None" in source
+    assert "self.profile_media_mode_status_label = None" not in source
+    assert "self.profile_media_database_preview_textbox = None" not in source
 
 
-def test_profile_media_sidebar_toggle_uses_database_on_off_control() -> None:
+def test_profile_media_sidebar_toggle_uses_database_on_off_control_only() -> None:
     source = _main_source()
     method = _method_source(source, "_create_profile_media_database_mode_toggle_section")
 
@@ -50,6 +51,12 @@ def test_profile_media_sidebar_toggle_uses_database_on_off_control() -> None:
     assert "CTkSwitch" in method
     assert "profile_media_database_mode_var" in method
     assert "_on_profile_media_database_mode_toggled" in method
+    assert "CTkTextbox" not in method
+    assert "CTkEntry" not in method
+    assert "Filter Database preview" not in method
+    assert "preview only" not in method.lower()
+    assert "profile_media_mode_status_label" not in method
+    assert "profile_media_database_preview_textbox" not in method
     assert "_create_files_section" not in method
     assert "os.rename" not in method
     assert "shutil.move" not in method
@@ -94,8 +101,8 @@ def test_profile_media_sidebar_toggle_source_is_guarded() -> None:
 
 if __name__ == "__main__":
     test_profile_media_sidebar_toggle_is_directly_above_files()
-    test_profile_media_sidebar_toggle_has_required_state_fields()
-    test_profile_media_sidebar_toggle_uses_database_on_off_control()
+    test_profile_media_sidebar_toggle_has_mode_only_state_fields()
+    test_profile_media_sidebar_toggle_uses_database_on_off_control_only()
     test_profile_media_sidebar_mode_uses_v75h_view_model_coercion()
     test_profile_media_sidebar_toggle_source_is_guarded()
-    print("profile_media_database_sidebar_toggle v75i OK")
+    print("profile_media_database_sidebar_toggle v75l OK")

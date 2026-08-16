@@ -629,8 +629,6 @@ class App(ctk.CTk):
         self.youtube_source_row_discovery_status: dict[str, str] = {}
         self.profile_media_sidebar_mode: str = "FILES"
         self.profile_media_database_mode_var = None
-        self.profile_media_mode_status_label = None
-        self.profile_media_database_preview_textbox = None
 
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
@@ -1093,13 +1091,6 @@ class App(ctk.CTk):
         raw_value = getattr(self, "profile_media_sidebar_mode", "FILES") if value is None else value
         return coerce_profile_media_view_mode(raw_value).value
 
-    def _profile_media_database_mode_status_text(self) -> str:
-        """Return the compact status shown below the sidebar Database toggle."""
-        mode = self._coerce_profile_media_sidebar_mode()
-        if mode == "DATABASE":
-            return "Mode: DATABASE — preview only"
-        return "Mode: FILES"
-
     def _set_profile_media_sidebar_mode(self, mode: object, *, update_widget: bool = True) -> str:
         """Set the sidebar mode without scanning, creating, moving, or renaming folders."""
         coerced = self._coerce_profile_media_sidebar_mode(mode)
@@ -1111,13 +1102,6 @@ class App(ctk.CTk):
                     mode_var.set(coerced == "DATABASE")
                 except Exception:
                     logger.debug("Could not update profile/media Database toggle variable.", exc_info=True)
-            status_label = getattr(self, "profile_media_mode_status_label", None)
-            if status_label is not None:
-                try:
-                    status_label.configure(text=self._profile_media_database_mode_status_text())
-                except Exception:
-                    logger.debug("Could not update profile/media Database mode status label.", exc_info=True)
-            self._refresh_profile_media_database_sidebar_preview()
         return coerced
 
     def _on_profile_media_database_mode_toggled(self) -> None:
@@ -1126,99 +1110,16 @@ class App(ctk.CTk):
         requested_mode = "DATABASE" if (mode_var is not None and bool(mode_var.get())) else "FILES"
         mode = self._set_profile_media_sidebar_mode(requested_mode, update_widget=True)
         try:
+            state_text = "on" if mode == "DATABASE" else "off"
             self.log_message(
-                f"Profile/media sidebar mode: {mode}. No folder scan, move, rename, or classification was performed.",
+                f"Profile/media Database mode: {state_text}. No folder scan, move, rename, or classification was performed.",
                 "info",
             )
         except Exception:
             logger.debug("Could not log profile/media Database mode toggle.", exc_info=True)
 
-    def _build_profile_media_database_sidebar_preview_manifest(self):
-        """Build the small in-memory manifest used by the sidebar Database preview.
-
-        This is a view-model bridge only. It does not inspect the user's folders,
-        create directories, move folders, rename files, classify media, or infer
-        sensitive identifiers.
-        """
-        from pathlib import Path
-
-        from profile_media_database import (
-            CaseFolderLayout,
-            CaseRecord,
-            ProfileMediaDatabaseManifest,
-        )
-
-        database_root = Path("Database")
-        case_root = Path("Case Folder")
-        layout = CaseFolderLayout(
-            case_root=str(case_root),
-            case_profiles_path=str(case_root / "Profiles"),
-            people_path=str(case_root / "People"),
-            sources_path=str(case_root / "Sources"),
-            articles_path=str(case_root / "Sources" / "Articles"),
-            social_media_path=str(case_root / "Sources" / "Social Media"),
-            social_media_offline_path=str(case_root / "Sources" / "Social Media" / "Offline"),
-            social_media_online_path=str(case_root / "Sources" / "Social Media" / "Online"),
-            internal_media_path=str(case_root / "Sources" / "Internal Media"),
-            reference_extants_path=str(case_root / "Reference Extants"),
-        )
-        return ProfileMediaDatabaseManifest(
-            manifest_id="sidebar-preview",
-            database_root=str(database_root),
-            global_profiles_path=str(database_root / "Profiles"),
-            global_profiles=(),
-            cases=(
-                CaseRecord(
-                    case_id="case-folder-preview",
-                    case_title="Case Folder",
-                    case_root=str(case_root),
-                    layout=layout,
-                ),
-            ),
-        )
-
-    def _profile_media_database_sidebar_preview_text(self) -> str:
-        """Return the Database-mode hierarchy preview through the V75H view model."""
-        from profile_media_database_view_model import build_profile_media_database_view_state
-
-        manifest = self._build_profile_media_database_sidebar_preview_manifest()
-        state = build_profile_media_database_view_state(manifest, mode="DATABASE")
-        lines = []
-        for row in state.visible_rows:
-            label = row.label or row.path or row.row_id
-            lines.append(f"{'  ' * max(0, row.level)}{label}")
-        lines.extend(
-            (
-                "",
-                "Preview only: no folder creation, moving, renaming, copying, scanning, or classification.",
-                "Sensitive identifiers remain source-evidenced only; no inference is performed.",
-            )
-        )
-        return "\n".join(lines)
-
-    def _refresh_profile_media_database_sidebar_preview(self) -> None:
-        """Show the Database hierarchy preview only when Database mode is on."""
-        preview_box = getattr(self, "profile_media_database_preview_textbox", None)
-        if preview_box is None:
-            return
-        mode = self._coerce_profile_media_sidebar_mode()
-        if mode != "DATABASE":
-            try:
-                preview_box.grid_remove()
-            except Exception:
-                logger.debug("Could not hide profile/media Database sidebar preview.", exc_info=True)
-            return
-        try:
-            preview_box.grid(row=3, column=0, sticky="ew", pady=(6, 0))
-            preview_box.configure(state="normal")
-            preview_box.delete("1.0", "end")
-            preview_box.insert("1.0", self._profile_media_database_sidebar_preview_text())
-            preview_box.configure(state="disabled")
-        except Exception:
-            logger.debug("Could not refresh profile/media Database sidebar preview.", exc_info=True)
-
     def _create_profile_media_database_mode_toggle_section(self) -> None:
-        """Create the FILES/DATABASE mode toggle directly above the FILES section."""
+        """Create the mode-only Database On/Off toggle directly above the FILES section."""
         initial_mode = self._coerce_profile_media_sidebar_mode()
         self.profile_media_database_mode_var = ctk.BooleanVar(value=initial_mode == "DATABASE")
 
@@ -1250,28 +1151,6 @@ class App(ctk.CTk):
             button_hover_color=COLORS["accent_primary"],
         )
         self.profile_media_database_mode_switch.grid(row=1, column=0, sticky="w", pady=(6, 2))
-
-        self.profile_media_mode_status_label = ctk.CTkLabel(
-            self.profile_media_mode_frame,
-            text=self._profile_media_database_mode_status_text(),
-            font=ctk.CTkFont(size=10),
-            text_color=COLORS["text_muted"],
-            anchor="w",
-        )
-        self.profile_media_mode_status_label.grid(row=2, column=0, sticky="ew", pady=(2, 0))
-
-        self.profile_media_database_preview_textbox = ctk.CTkTextbox(
-            self.profile_media_mode_frame,
-            height=156,
-            fg_color=COLORS["bg_input"],
-            text_color=COLORS["text_muted"],
-            border_color=COLORS["border"],
-            border_width=1,
-            corner_radius=6,
-            font=ctk.CTkFont(size=10),
-            wrap="word",
-        )
-        self._refresh_profile_media_database_sidebar_preview()
 
     def _create_files_section(self) -> None:
         """Create the session-only local files section in the sidebar."""
