@@ -71,8 +71,28 @@ def test_database_toggle_click_flips_existing_mode_without_preview_or_file_opera
         assert term.lower() not in lowered
 
 
+def test_database_toggle_has_single_runtime_visual_method_pair() -> None:
+    source = _main_source()
+
+    assert source.count("def _profile_media_database_toggle_text") == 1
+    assert source.count("def _refresh_profile_media_database_mode_switch_visual") == 1
+    target_source = "\n".join(
+        (
+            _method_source(source, "_profile_media_database_toggle_text"),
+            _method_source(source, "_refresh_profile_media_database_mode_switch_visual"),
+            _method_source(source, "_create_profile_media_database_mode_toggle_section"),
+        )
+    )
+    assert "✓ On" not in target_source
+    assert "✕ Off" not in target_source
+    assert "progress_color" not in target_source
+    assert "button_color" not in target_source
+    assert "button_hover_color" not in target_source
+
+
 if __name__ == "__main__":
     test_database_toggle_uses_square_check_handle_x_labels()
     test_database_toggle_uses_green_on_and_red_off_button_colours()
     test_database_toggle_click_flips_existing_mode_without_preview_or_file_operations()
-    print("profile_media_database_sidebar_visual_toggle v75n OK")
+    test_database_toggle_has_single_runtime_visual_method_pair()
+    print("profile_media_database_sidebar_visual_toggle v75o OK")

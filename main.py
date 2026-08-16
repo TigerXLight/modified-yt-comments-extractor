@@ -1129,29 +1129,6 @@ class App(ctk.CTk):
         except Exception:
             logger.debug("Could not refresh profile/media Database toggle visual.", exc_info=True)
 
-    def _profile_media_database_toggle_text(self, mode: object | None = None) -> str:
-        """Return the compact check/X label for the Database mode switch."""
-        return "✓ On" if self._coerce_profile_media_sidebar_mode(mode) == "DATABASE" else "✕ Off"
-
-    def _refresh_profile_media_database_mode_switch_visual(self) -> None:
-        """Refresh the image-like green/red Database toggle without running Database work."""
-        switch = getattr(self, "profile_media_database_mode_switch", None)
-        if switch is None:
-            return
-        mode = self._coerce_profile_media_sidebar_mode()
-        is_database = mode == "DATABASE"
-        try:
-            switch.configure(
-                text=self._profile_media_database_toggle_text(mode),
-                fg_color="#e84b6a",
-                progress_color="#7ac943",
-                button_color="#f2f2f2",
-                button_hover_color="#ffffff",
-                text_color="#7ac943" if is_database else "#e84b6a",
-            )
-        except Exception:
-            logger.debug("Could not refresh profile/media Database toggle visual.", exc_info=True)
-
     def _on_profile_media_database_mode_toggled(self) -> None:
         """Handle the left-sidebar Database On/Off toggle above FILES."""
         current_mode = self._coerce_profile_media_sidebar_mode()
