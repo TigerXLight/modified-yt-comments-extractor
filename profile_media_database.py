@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -10,14 +11,14 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75d"
+PROFILE_MEDIA_DATABASE_SCHEMA_VERSION = "profile-media-database-v75e"
 
 PROFILE_MEDIA_DATABASE_SCOPE = (
     "local profile/media database planning schema plus source/container import planning plus case repository path planning plus review/audit queue planning; "
     "no folder scanning, no folder creation, no file copying, no file movement, "
     "no automatic classification, no sensitive-attribute inference, no source fetching, "
     "no archive access, no media download, no browser automation, no credentials, "
-    "no GUI wiring"
+    "no GUI wiring; review-gated folder operation execution is available only when explicitly called with execute=True and approved review records"
 )
 
 
@@ -100,6 +101,25 @@ class AuditEventType(_StringEnum):
     MOVE_PLAN_CREATED = "MOVE_PLAN_CREATED"
     CLASSIFICATION_PATH_CHANGED = "CLASSIFICATION_PATH_CHANGED"
     IDENTIFIER_PROFILE_UPDATED = "IDENTIFIER_PROFILE_UPDATED"
+    FOLDER_OPERATION_PLANNED = "FOLDER_OPERATION_PLANNED"
+    FOLDER_OPERATION_APPLIED = "FOLDER_OPERATION_APPLIED"
+
+
+class FolderOperationType(_StringEnum):
+    CREATE_PARENT_FOLDER = "CREATE_PARENT_FOLDER"
+    MOVE_OR_RENAME_FOLDER = "MOVE_OR_RENAME_FOLDER"
+
+
+class FolderOperationStatus(_StringEnum):
+    PLANNED_DRY_RUN = "PLANNED_DRY_RUN"
+    BLOCKED_REVIEW_NOT_APPROVED = "BLOCKED_REVIEW_NOT_APPROVED"
+    BLOCKED_SOURCE_MISSING = "BLOCKED_SOURCE_MISSING"
+    BLOCKED_DESTINATION_EXISTS = "BLOCKED_DESTINATION_EXISTS"
+    BLOCKED_PARENT_MISSING = "BLOCKED_PARENT_MISSING"
+    READY_TO_APPLY = "READY_TO_APPLY"
+    APPLIED = "APPLIED"
+    NO_CHANGE = "NO_CHANGE"
+    ERROR = "ERROR"
 
 
 def utc_now_iso() -> str:
@@ -501,6 +521,48 @@ class ProfileMediaAuditEvent:
     file_move_performed: bool = False
     created_at_utc: str = field(default_factory=utc_now_iso)
     audit_note: str = "audit/planning record only unless performed is explicitly true"
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class ProfileMediaFolderOperation:
+    operation_id: str
+    operation_type: FolderOperationType
+    source_path: str = ""
+    destination_path: str = ""
+    required_parent_path: str = ""
+    case_id: str = ""
+    review_id: str = ""
+    reason: str = ""
+    source_basis: str = ""
+    review_status: ReviewItemStatus = ReviewItemStatus.PENDING_REVIEW
+    dry_run_only: bool = True
+    user_confirmation_required: bool = True
+    allowed_to_execute: bool = False
+    warnings: tuple[str, ...] = ()
+    folder_creation_performed: bool = False
+    file_move_performed: bool = False
+    created_at_utc: str = field(default_factory=utc_now_iso)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _value_for_dict(self)
+
+
+@dataclass(frozen=True)
+class ProfileMediaFolderOperationResult:
+    operation_id: str
+    status: FolderOperationStatus
+    source_path: str = ""
+    destination_path: str = ""
+    performed: bool = False
+    dry_run: bool = True
+    created_parent: bool = False
+    moved_or_renamed_folder: bool = False
+    warnings: tuple[str, ...] = ()
+    error: str = ""
+    created_at_utc: str = field(default_factory=utc_now_iso)
 
     def to_dict(self) -> dict[str, Any]:
         return _value_for_dict(self)
@@ -1151,6 +1213,237 @@ def build_audit_event_for_review_decision(item: ProfileMediaReviewItem) -> Profi
         source_basis=item.source_basis,
         review_id=item.review_id,
         performed=False,
+    )
+
+
+def build_folder_operation_from_review_item(
+    item: ProfileMediaReviewItem,
+    *,
+    dry_run_only: bool = True,
+    allow_execute: bool = False,
+) -> ProfileMediaFolderOperation:
+    """Build a review-gated folder operation from an approved review item.
+
+    The operation is inert by default. Even an approved review item only becomes
+    executable when allow_execute=True and dry_run_only=False are both supplied.
+    """
+
+    warnings: list[str] = []
+    if item.item_type != ReviewItemType.FOLDER_MOVE:
+        warnings.append("unsupported_review_item_type_for_folder_move")
+    if item.status != ReviewItemStatus.APPROVED_FOR_ACTION or not item.user_confirmation_recorded:
+        warnings.append("review_not_approved_or_confirmation_missing")
+    if not item.current_path:
+        warnings.append("missing_current_path")
+    if not item.proposed_path:
+        warnings.append("missing_proposed_path")
+
+    allowed = (
+        item.item_type == ReviewItemType.FOLDER_MOVE
+        and item.status == ReviewItemStatus.APPROVED_FOR_ACTION
+        and item.user_confirmation_recorded
+        and bool(item.current_path)
+        and bool(item.proposed_path)
+        and allow_execute
+        and not dry_run_only
+    )
+    return ProfileMediaFolderOperation(
+        operation_id=stable_profile_id("folder_operation", item.review_id, item.current_path, item.proposed_path, dry_run_only, allow_execute),
+        operation_type=FolderOperationType.MOVE_OR_RENAME_FOLDER,
+        source_path=item.current_path,
+        destination_path=item.proposed_path,
+        required_parent_path=str(Path(item.proposed_path).parent) if item.proposed_path else "",
+        case_id=item.case_id,
+        review_id=item.review_id,
+        reason=item.reason,
+        source_basis=item.source_basis,
+        review_status=item.status,
+        dry_run_only=dry_run_only,
+        user_confirmation_required=True,
+        allowed_to_execute=allowed,
+        warnings=tuple(warnings),
+    )
+
+
+def build_folder_operations_from_review_queue(
+    queue: ProfileMediaReviewQueue,
+    *,
+    dry_run_only: bool = True,
+    allow_execute: bool = False,
+) -> tuple[ProfileMediaFolderOperation, ...]:
+    return tuple(
+        build_folder_operation_from_review_item(item, dry_run_only=dry_run_only, allow_execute=allow_execute)
+        for item in queue.items
+        if item.item_type == ReviewItemType.FOLDER_MOVE
+    )
+
+
+def _folder_operation_ready_status(operation: ProfileMediaFolderOperation) -> FolderOperationStatus:
+    if operation.source_path and operation.destination_path:
+        if operation.source_path.replace("/", "\\").lower() == operation.destination_path.replace("/", "\\").lower():
+            return FolderOperationStatus.NO_CHANGE
+    if operation.review_status != ReviewItemStatus.APPROVED_FOR_ACTION or not operation.allowed_to_execute:
+        return FolderOperationStatus.BLOCKED_REVIEW_NOT_APPROVED
+    return FolderOperationStatus.READY_TO_APPLY
+
+
+def validate_folder_operation_preconditions(operation: ProfileMediaFolderOperation) -> ProfileMediaFolderOperationResult:
+    warnings = list(operation.warnings)
+    status = _folder_operation_ready_status(operation)
+    if status == FolderOperationStatus.NO_CHANGE:
+        return ProfileMediaFolderOperationResult(
+            operation_id=operation.operation_id,
+            status=status,
+            source_path=operation.source_path,
+            destination_path=operation.destination_path,
+            warnings=tuple(warnings),
+        )
+    if operation.dry_run_only:
+        warnings.append("dry_run_only_no_filesystem_change_allowed")
+        return ProfileMediaFolderOperationResult(
+            operation_id=operation.operation_id,
+            status=FolderOperationStatus.PLANNED_DRY_RUN,
+            source_path=operation.source_path,
+            destination_path=operation.destination_path,
+            warnings=tuple(warnings),
+        )
+    if status != FolderOperationStatus.READY_TO_APPLY:
+        return ProfileMediaFolderOperationResult(
+            operation_id=operation.operation_id,
+            status=status,
+            source_path=operation.source_path,
+            destination_path=operation.destination_path,
+            warnings=tuple(warnings),
+        )
+    source = Path(operation.source_path)
+    destination = Path(operation.destination_path)
+    if not source.exists():
+        warnings.append("source_path_does_not_exist")
+        return ProfileMediaFolderOperationResult(
+            operation_id=operation.operation_id,
+            status=FolderOperationStatus.BLOCKED_SOURCE_MISSING,
+            source_path=str(source),
+            destination_path=str(destination),
+            warnings=tuple(warnings),
+        )
+    if destination.exists():
+        warnings.append("destination_path_already_exists")
+        return ProfileMediaFolderOperationResult(
+            operation_id=operation.operation_id,
+            status=FolderOperationStatus.BLOCKED_DESTINATION_EXISTS,
+            source_path=str(source),
+            destination_path=str(destination),
+            warnings=tuple(warnings),
+        )
+    if not destination.parent.exists():
+        warnings.append("destination_parent_missing")
+        return ProfileMediaFolderOperationResult(
+            operation_id=operation.operation_id,
+            status=FolderOperationStatus.BLOCKED_PARENT_MISSING,
+            source_path=str(source),
+            destination_path=str(destination),
+            warnings=tuple(warnings),
+        )
+    return ProfileMediaFolderOperationResult(
+        operation_id=operation.operation_id,
+        status=FolderOperationStatus.READY_TO_APPLY,
+        source_path=str(source),
+        destination_path=str(destination),
+        warnings=tuple(warnings),
+    )
+
+
+def apply_folder_operation(
+    operation: ProfileMediaFolderOperation,
+    *,
+    execute: bool = False,
+    create_parent: bool = False,
+) -> ProfileMediaFolderOperationResult:
+    """Apply a reviewed folder move/rename only when explicitly enabled.
+
+    Defaults are deliberately inert. No folder is moved unless execute=True,
+    operation.dry_run_only is False, operation.allowed_to_execute is True, and
+    the review status is APPROVED_FOR_ACTION.
+    """
+
+    if not execute or operation.dry_run_only:
+        result = validate_folder_operation_preconditions(
+            ProfileMediaFolderOperation(
+                operation_id=operation.operation_id,
+                operation_type=operation.operation_type,
+                source_path=operation.source_path,
+                destination_path=operation.destination_path,
+                required_parent_path=operation.required_parent_path,
+                case_id=operation.case_id,
+                review_id=operation.review_id,
+                reason=operation.reason,
+                source_basis=operation.source_basis,
+                review_status=operation.review_status,
+                dry_run_only=True,
+                user_confirmation_required=operation.user_confirmation_required,
+                allowed_to_execute=False,
+                warnings=operation.warnings,
+            )
+        )
+        return ProfileMediaFolderOperationResult(
+            operation_id=result.operation_id,
+            status=FolderOperationStatus.PLANNED_DRY_RUN if result.status != FolderOperationStatus.NO_CHANGE else result.status,
+            source_path=result.source_path,
+            destination_path=result.destination_path,
+            performed=False,
+            dry_run=True,
+            warnings=result.warnings,
+            error=result.error,
+        )
+
+    source = Path(operation.source_path)
+    destination = Path(operation.destination_path)
+    if create_parent and not destination.parent.exists():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+
+    preflight = validate_folder_operation_preconditions(operation)
+    if preflight.status != FolderOperationStatus.READY_TO_APPLY:
+        return preflight
+    try:
+        shutil.move(str(source), str(destination))
+    except Exception as exc:  # pragma: no cover - defensive safety surface
+        return ProfileMediaFolderOperationResult(
+            operation_id=operation.operation_id,
+            status=FolderOperationStatus.ERROR,
+            source_path=str(source),
+            destination_path=str(destination),
+            performed=False,
+            dry_run=False,
+            warnings=preflight.warnings,
+            error=str(exc),
+        )
+    return ProfileMediaFolderOperationResult(
+        operation_id=operation.operation_id,
+        status=FolderOperationStatus.APPLIED,
+        source_path=str(source),
+        destination_path=str(destination),
+        performed=True,
+        dry_run=False,
+        created_parent=False,
+        moved_or_renamed_folder=True,
+        warnings=preflight.warnings,
+    )
+
+
+def build_audit_event_for_folder_operation_result(
+    operation: ProfileMediaFolderOperation,
+    result: ProfileMediaFolderOperationResult,
+) -> ProfileMediaAuditEvent:
+    return build_audit_event(
+        event_type=AuditEventType.FOLDER_OPERATION_APPLIED if result.performed else AuditEventType.FOLDER_OPERATION_PLANNED,
+        subject_id=operation.operation_id,
+        case_id=operation.case_id,
+        previous_value=operation.source_path,
+        new_value=operation.destination_path,
+        reason=operation.reason or result.status.value,
+        source_basis=operation.source_basis,
+        review_id=operation.review_id,
+        performed=result.performed,
     )
 
 

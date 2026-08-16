@@ -1,3 +1,6 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from profile_media_database import (
     ClaimBasis,
     CurrentnessStatus,
@@ -5,8 +8,15 @@ from profile_media_database import (
     MediaOrigin,
     MovePlanStatus,
     AuditEventType,
+    FolderOperationStatus,
     ReviewItemStatus,
+    ReviewItemType,
+    ProfileMediaReviewItem,
+    apply_folder_operation,
+    build_audit_event_for_folder_operation_result,
     build_audit_event_for_review_decision,
+    build_folder_operation_from_review_item,
+    build_folder_operations_from_review_queue,
     build_review_items_from_case_repository_path_plan,
     build_review_queue,
     mark_review_item_decision,
@@ -119,7 +129,7 @@ Source: Social Media
         global_profiles=(global_profile,),
     )
     manifest_dict = manifest.to_dict()
-    assert manifest_dict["schema_version"] == "profile-media-database-v75d"
+    assert manifest_dict["schema_version"] == "profile-media-database-v75e"
     assert manifest_dict["case_count"] == 1
     assert manifest_dict["global_profile_count"] == 1
     assert manifest.payload_sha256
@@ -309,6 +319,63 @@ Source: Social Media
     assert audit_event.performed is False
     assert audit_event.file_move_performed is False
 
+    dry_run_operation = build_folder_operation_from_review_item(approved_review_item)
+    assert dry_run_operation.allowed_to_execute is False
+    dry_run_result = apply_folder_operation(dry_run_operation)
+    assert dry_run_result.status == FolderOperationStatus.PLANNED_DRY_RUN
+    assert dry_run_result.performed is False
+    assert dry_run_result.moved_or_renamed_folder is False
+    assert "dry_run_only_no_filesystem_change_allowed" in dry_run_result.warnings
+
+    blocked_operation = build_folder_operation_from_review_item(review_item, dry_run_only=False, allow_execute=True)
+    blocked_result = apply_folder_operation(blocked_operation, execute=True)
+    assert blocked_result.status == FolderOperationStatus.BLOCKED_REVIEW_NOT_APPROVED
+    assert blocked_result.performed is False
+
+    queued_operations = build_folder_operations_from_review_queue(review_queue)
+    assert len(queued_operations) == 1
+    assert queued_operations[0].review_id == approved_review_item.review_id
+
+    with TemporaryDirectory() as temp_root:
+        temp_path = Path(temp_root)
+        source_case = temp_path / "Unclassified" / "Old Case Folder"
+        source_case.mkdir(parents=True)
+        (source_case / "marker.txt").write_text("case marker", encoding="utf-8")
+        destination_case = temp_path / "Database" / "Terrorism" / "Case Folder"
+        temp_review_item = mark_review_item_decision(
+            ProfileMediaReviewItem(
+                review_id="review_temp_move",
+                item_type=ReviewItemType.FOLDER_MOVE,
+                title="Temp reviewed move",
+                case_id="case_temp",
+                case_title="Case Folder",
+                current_path=str(source_case),
+                proposed_path=str(destination_case),
+                reason="temporary reviewed test move",
+                source_basis="test source basis",
+            ),
+            approved=True,
+            reviewer_note="temporary test only",
+            reviewed_by="test",
+        )
+        executable_operation = build_folder_operation_from_review_item(
+            temp_review_item,
+            dry_run_only=False,
+            allow_execute=True,
+        )
+        missing_parent_result = apply_folder_operation(executable_operation, execute=True)
+        assert missing_parent_result.status == FolderOperationStatus.BLOCKED_PARENT_MISSING
+        applied_result = apply_folder_operation(executable_operation, execute=True, create_parent=True)
+        assert applied_result.status == FolderOperationStatus.APPLIED
+        assert applied_result.performed is True
+        assert applied_result.moved_or_renamed_folder is True
+        assert destination_case.exists()
+        assert not source_case.exists()
+        assert (destination_case / "marker.txt").read_text(encoding="utf-8") == "case marker"
+        operation_audit = build_audit_event_for_folder_operation_result(executable_operation, applied_result)
+        assert operation_audit.event_type == AuditEventType.FOLDER_OPERATION_APPLIED
+        assert operation_audit.performed is True
+
     manifest_with_review = build_manifest(
         database_root=database_root,
         cases=(case_from_path,),
@@ -326,4 +393,4 @@ Source: Social Media
 
 if __name__ == "__main__":
     run_self_test()
-    print("profile_media_database v75d OK")
+    print("profile_media_database v75e OK")
