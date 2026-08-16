@@ -176,18 +176,28 @@ def build_case_workspace_plan(
 
 
 def render_case_workspace_plan_text(plan: ProfileMediaCaseWorkspacePlan) -> str:
-    """Render the planned folder structure in a compact human-readable form."""
+    """Render the planned folder structure without visually flattening parents.
 
-    lines = [f"{Path(plan.database_root).name or plan.database_root} [database_root]"]
+    The physical layout uses `Database/Cases/[Case]`, while the user-facing
+    design talks about a global `Profiles` header plus each case folder.  The
+    renderer keeps the synthetic `Cases` parent visible so the case is never
+    accidentally displayed as though it lived inside global Profiles.
+    """
+
+    database_name = Path(plan.database_root).name or plan.database_root
+    lines = [f"{database_name} [database_root]"]
+    cases_parent_added = False
     for directory in plan.directories:
         path = Path(directory.path)
         if directory.row_type == "database_root":
             continue
-        relative_parts: Sequence[str]
         try:
-            relative_parts = path.relative_to(plan.database_root).parts
+            relative_parts: Sequence[str] = path.relative_to(plan.database_root).parts
         except Exception:
             relative_parts = path.parts
+        if relative_parts and relative_parts[0] == "Cases" and not cases_parent_added:
+            lines.append("  Cases [cases]")
+            cases_parent_added = True
         depth = max(1, len(relative_parts))
         lines.append(f"{'  ' * depth}{directory.label} [{directory.row_type}]")
     return "\n".join(lines)

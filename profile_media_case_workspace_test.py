@@ -80,7 +80,11 @@ def test_workspace_plan_text_keeps_social_media_nested() -> None:
         plan = build_case_workspace_plan(database_root=str(Path(tmp) / "Database"), case_title="Example Case")
         text = render_case_workspace_plan_text(plan)
         assert "Profiles [global_profiles]" in text
-        assert "Example Case [case]" in text
+        assert "Cases [cases]" in text
+        assert "  Profiles [global_profiles]" in text
+        assert "    Example Case [case]" in text
+        assert text.index("Cases [cases]") < text.index("Example Case [case]")
+        assert text.index("Profiles [global_profiles]") < text.index("Cases [cases]")
         assert "Sources [sources]" in text
         assert "Articles [articles]" in text
         assert "Social Media [social_media]" in text
@@ -95,4 +99,4 @@ if __name__ == "__main__":
     test_confirmation_required_for_execute()
     test_execute_creates_exact_case_workspace_shape()
     test_workspace_plan_text_keeps_social_media_nested()
-    print("profile_media_case_workspace v75q OK")
+    print("profile_media_case_workspace v75t OK")
