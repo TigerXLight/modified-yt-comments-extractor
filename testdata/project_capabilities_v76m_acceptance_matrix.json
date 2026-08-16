@@ -1,0 +1,64 @@
+{
+  "schema_version": "project-capabilities-v76m-acceptance-matrix",
+  "audit_head": "2710660",
+  "safety_flags_expected": {
+    "repo_source_inventory_scan": true,
+    "folder_scan_performed": false,
+    "media_download_performed": false,
+    "web_download_performed": false,
+    "automatic_classification_performed": false,
+    "sensitive_identifier_inference_performed": false
+  },
+  "required_docs": [
+    "PROJECT_CURRENT_CAPABILITIES_AND_FUNCTIONS_V76M.md",
+    "PROJECT_FUNCTION_INDEX_V76M.md",
+    "PROJECT_SCREENSHOT_ARCHIVE_CAPABILITIES_V76M.md",
+    "PROFILE_MEDIA_DATABASE_CURRENT_CAPABILITIES_V76M.md",
+    "PROJECT_CAPABILITY_GAPS_AND_NEXT_STEPS_V76M.md"
+  ],
+  "status_tags": [
+    "IMPLEMENTED",
+    "PARTIAL",
+    "CLI_ONLY",
+    "GUI_ONLY",
+    "TESTED",
+    "DOCUMENTED_ONLY",
+    "REFERENCE_ONLY",
+    "SUPERSEDED",
+    "BLOCKED_BY_DEPENDENCY",
+    "NEEDS_MANUAL_REVIEW"
+  ],
+  "capability_areas": [
+    {
+      "area": "YouTube/media/JDownloader",
+      "status": ["IMPLEMENTED", "TESTED", "PARTIAL"],
+      "evidence_files": ["youtube_gui_media_queue.py", "jdownloader_internal_cnl.py", "source_media_execution_bridge.py"]
+    },
+    {
+      "area": "ASR",
+      "status": ["IMPLEMENTED", "TESTED", "PARTIAL"],
+      "evidence_files": ["asr_tools.py", "online_asr_execution_gate.py", "access_online_asr_bridge.py"]
+    },
+    {
+      "area": "Screenshot/archive/MSN",
+      "status": ["IMPLEMENTED", "TESTED", "NEEDS_MANUAL_REVIEW"],
+      "evidence_files": ["source_local_browser_execution.py", "source_replay_static_snapshot.py", "msn_source_adapter.py"]
+    },
+    {
+      "area": "Twitter/X",
+      "status": ["IMPLEMENTED", "TESTED", "PARTIAL"],
+      "evidence_files": ["twitter_browser_capture_runner.py", "twitter_timeline_cursor_scheduler.py", "source_twitter_compact_row.py"]
+    },
+    {
+      "area": "Profile/Media Database HOME",
+      "status": ["IMPLEMENTED", "TESTED", "PARTIAL"],
+      "evidence_files": ["profile_media_home_repository_model.py", "profile_media_database_end_to_end_workflow.py", "profile_media_article_extraction_adapter.py"]
+    },
+    {
+      "area": "External article extraction references",
+      "status": ["REFERENCE_ONLY", "BLOCKED_BY_DEPENDENCY"],
+      "evidence_files": ["external_reference_sources_20260816_article_extraction/"]
+    }
+  ]
+}
+
