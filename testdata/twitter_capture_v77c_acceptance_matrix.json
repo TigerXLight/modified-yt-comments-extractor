@@ -1,0 +1,44 @@
+{
+  "schema_version": "twitter_capture_v77c_acceptance_matrix",
+  "patch": "V77C",
+  "requirements": [
+    {
+      "id": "offline_closeout_only",
+      "status": "TESTED",
+      "expected_false_flags": [
+        "browser_launch_performed",
+        "web_download_performed",
+        "media_download_performed",
+        "official_x_api_used",
+        "write_actions_performed",
+        "credential_automation_performed",
+        "captcha_bypass_performed",
+        "proxy_or_evasion_performed",
+        "automatic_classification_performed",
+        "sensitive_identifier_inference_performed"
+      ]
+    },
+    {
+      "id": "cycle_boundary_summary",
+      "status": "TESTED",
+      "expected": {
+        "cycle_count": 3,
+        "total_unique_status_ids": 80,
+        "cycle_0001_cursor_template_repair_needed": true,
+        "cycle_0002_next_cursor_url_available": true,
+        "cycle_0003_auth_or_access_boundary": true
+      }
+    },
+    {
+      "id": "profile_media_bridge",
+      "status": "TESTED",
+      "expected": {
+        "record_count": 80,
+        "account_context_requires_review": true,
+        "author_row_identity_not_overwritten": true,
+        "final_source_role_decision": false,
+        "media_urls_preserved_without_download": true
+      }
+    }
+  ]
+}
