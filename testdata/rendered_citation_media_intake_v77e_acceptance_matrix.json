@@ -1,0 +1,62 @@
+{
+  "schema_version": "rendered-citation-media-intake-v77e-acceptance-matrix",
+  "requirements": [
+    {
+      "id": "local_file_intake_hashing",
+      "status": "TESTED",
+      "must_include": [
+        "local_file_path",
+        "local_file_name",
+        "local_file_extension",
+        "local_file_mime_type",
+        "local_file_size",
+        "local_file_sha256",
+        "local_file_present",
+        "local_file_role"
+      ]
+    },
+    {
+      "id": "source_unit_bridge",
+      "status": "TESTED",
+      "must_include": [
+        "source_unit_path",
+        "source_unit_attachment.attached_to_source_unit",
+        "source_unit_attachment.attachment_scope",
+        "rendered_citation_metadata"
+      ]
+    },
+    {
+      "id": "blocked_capture_placeholder",
+      "status": "TESTED",
+      "must_include": [
+        "blocked_capture.blocked",
+        "blocked_capture.reason",
+        "human_mediated_access.required",
+        "human_mediated_access.completed_by_user",
+        "human_mediated_access.program_solved_challenge=false"
+      ]
+    },
+    {
+      "id": "write_gate",
+      "status": "TESTED",
+      "confirmation_token": "WRITE_RENDERED_CITATION_MEDIA_INTAKE_V77E"
+    },
+    {
+      "id": "safety_flags_false",
+      "status": "TESTED",
+      "expect_false": [
+        "browser_launch_performed",
+        "web_download_performed",
+        "media_download_performed",
+        "recording_performed",
+        "drm_circumvention_performed",
+        "hidden_protected_stream_extraction_performed",
+        "captcha_solver_used",
+        "credential_automation_performed",
+        "proxy_or_evasion_performed",
+        "forced_rate_limit_bypass_performed",
+        "write_actions_performed"
+      ]
+    }
+  ]
+}
