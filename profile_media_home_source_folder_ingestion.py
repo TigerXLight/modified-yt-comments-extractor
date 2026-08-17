@@ -25,6 +25,7 @@ from profile_media_article_extraction_adapter import (
     extract_article_from_html,
 )
 from profile_media_database import utc_now_iso
+from profile_media_nested_source_units_v77b import discover_nested_source_units
 from profile_media_social_video_provenance import build_social_video_provenance_review
 from profile_media_source_segment_analysis import analyze_source_segments, source_segments_to_dicts
 
@@ -90,6 +91,16 @@ class HomeSourceFolderEvaluationPreview:
     social_media_video_provenance_review: Mapping[str, Any] = field(default_factory=dict)
     source_role_segments: tuple[Mapping[str, Any], ...] = ()
     social_video_provenance: Mapping[str, Any] = field(default_factory=dict)
+    case_root_detected: bool = False
+    source_units: tuple[Mapping[str, Any], ...] = ()
+    primary_article_source_unit: Mapping[str, Any] = field(default_factory=dict)
+    repost_source_units: tuple[Mapping[str, Any], ...] = ()
+    social_video_source_units: tuple[Mapping[str, Any], ...] = ()
+    transcript_references: tuple[Mapping[str, Any], ...] = ()
+    subtitle_or_caption_references: tuple[Mapping[str, Any], ...] = ()
+    video_description_references: tuple[Mapping[str, Any], ...] = ()
+    source_unit_media_references: tuple[Mapping[str, Any], ...] = ()
+    role_axes: Mapping[str, Any] = field(default_factory=dict)
     source_role_candidate: str = "REVIEW_REQUIRED"
     final_source_role_decision: bool = False
     warnings: tuple[str, ...] = ()
@@ -121,6 +132,15 @@ class HomeSourceFolderEvaluationPreview:
         payload["social_media_video_provenance_review"] = dict(self.social_media_video_provenance_review)
         payload["source_role_segments"] = [dict(item) for item in self.source_role_segments]
         payload["social_video_provenance"] = dict(self.social_video_provenance)
+        payload["source_units"] = [dict(item) for item in self.source_units]
+        payload["primary_article_source_unit"] = dict(self.primary_article_source_unit)
+        payload["repost_source_units"] = [dict(item) for item in self.repost_source_units]
+        payload["social_video_source_units"] = [dict(item) for item in self.social_video_source_units]
+        payload["transcript_references"] = [dict(item) for item in self.transcript_references]
+        payload["subtitle_or_caption_references"] = [dict(item) for item in self.subtitle_or_caption_references]
+        payload["video_description_references"] = [dict(item) for item in self.video_description_references]
+        payload["source_unit_media_references"] = [dict(item) for item in self.source_unit_media_references]
+        payload["role_axes"] = dict(self.role_axes)
         return payload
 
 
@@ -191,8 +211,20 @@ def extract_plain_text_from_rtf(rtf_text: object) -> str:
 
     text = str(rtf_text or "")
     text = re.sub(r"\\'([0-9a-fA-F]{2})", _decode_rtf_hex, text)
+    replacements = {
+        r"\lquote": "\u2018",
+        r"\rquote": "\u2019",
+        r"\ldblquote": "\u201c",
+        r"\rdblquote": "\u201d",
+    }
+    for raw, replacement in replacements.items():
+        if raw in {r"\lquote", r"\ldblquote"}:
+            text = re.sub(re.escape(raw) + r" ?", replacement, text)
+        else:
+            text = text.replace(raw, replacement)
     text = re.sub(r"\\par[d]?", "\n", text)
     text = re.sub(r"\\line", "\n", text)
+    text = re.sub(r"\{\\(?:fonttbl|colortbl|stylesheet|info|pict)[\s\S]*?\}", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\\[a-zA-Z]+-?\d* ?", "", text)
     text = text.replace(r"\{", "{").replace(r"\}", "}").replace(r"\\", "\\")
     text = text.replace("{", " ").replace("}", " ")
@@ -379,7 +411,10 @@ def build_home_source_folder_evaluation_preview(
     if not root.exists() or not root.is_dir():
         raise FileNotFoundError(f"source folder does not exist or is not a directory: {root}")
 
-    source_txt = root / "source.txt"
+    nested_discovery = discover_nested_source_units(root)
+    nested_payload = nested_discovery.to_dict()
+
+    source_txt = next((item for item in root.iterdir() if item.is_file() and item.name.lower() == "source.txt"), root / "source.txt")
     source_txt_text = _read_text_file(source_txt) if source_txt.exists() else ""
     source_urls = extract_urls_from_text(source_txt_text)
     archive_urls = tuple(url for url in source_urls if _is_archive_url(url))
@@ -431,6 +466,22 @@ def build_home_source_folder_evaluation_preview(
         extractor_order=extractor_order,
     )
     warnings.extend(article_warnings)
+    if nested_discovery.case_root_detected:
+        warnings.extend(nested_discovery.warnings)
+        primary_unit = dict(nested_discovery.primary_article_source_unit)
+        if primary_unit:
+            article_preview = dict(article_preview)
+            article_preview.update(
+                {
+                    "status": "nested_case_root_primary_article_selected",
+                    "title": primary_unit.get("title") or article_preview.get("title", ""),
+                    "deck": primary_unit.get("deck") or article_preview.get("deck", ""),
+                    "selected_article_file": primary_unit.get("selected_main_article_file") or article_preview.get("selected_article_file", ""),
+                    "selected_source_unit_path": primary_unit.get("source_unit_path", ""),
+                    "selected_source_unit_relative_path": primary_unit.get("relative_path", ""),
+                    "case_root_nested_source_unit_count": len(nested_discovery.source_units),
+                }
+            )
     combined_text = "\n".join([source_txt_text, visible_article_text])
     segment_reviews = analyze_source_segments(combined_text)
     segment_payloads = tuple(source_segments_to_dicts(segment_reviews))
@@ -478,6 +529,16 @@ def build_home_source_folder_evaluation_preview(
         social_media_video_provenance_review=social_video_review,
         source_role_segments=segment_payloads,
         social_video_provenance=social_video_payload,
+        case_root_detected=nested_discovery.case_root_detected,
+        source_units=tuple(nested_payload.get("source_units") or ()),
+        primary_article_source_unit=dict(nested_payload.get("primary_article_source_unit") or {}),
+        repost_source_units=tuple(nested_payload.get("repost_source_units") or ()),
+        social_video_source_units=tuple(nested_payload.get("social_video_source_units") or ()),
+        transcript_references=tuple(nested_payload.get("transcript_references") or ()),
+        subtitle_or_caption_references=tuple(nested_payload.get("subtitle_or_caption_references") or ()),
+        video_description_references=tuple(nested_payload.get("video_description_references") or ()),
+        source_unit_media_references=tuple(nested_payload.get("source_unit_media_references") or ()),
+        role_axes=dict(nested_payload.get("role_axes") or {}),
         source_role_candidate=source_role_candidate,
         final_source_role_decision=False,
         warnings=_dedupe(warnings),
@@ -539,6 +600,8 @@ def render_home_source_folder_evaluation_text(preview: HomeSourceFolderEvaluatio
         f"Screenshot references: {len(data.get('screenshot_references') or [])}",
         f"Media references: {len(data.get('media_references') or [])}",
         f"Source-role segments: {len(data.get('source_role_segments') or [])}",
+        f"case_root_detected: {data.get('case_root_detected')}",
+        f"source_units: {len(data.get('source_units') or [])}",
         f"Article title: {article_preview.get('title') or '(missing)'}",
         f"Article extraction status: {article_preview.get('status') or '(not run)'}",
         f"Source role candidate: {data.get('source_role_candidate')}",
@@ -575,6 +638,33 @@ def render_home_source_folder_evaluation_text(preview: HomeSourceFolderEvaluatio
             f"- Original programme/channel/source: {social_video.get('original_programme_channel_source') or '(review needed)'}",
             f"- Claim-subject affiliation gap: {social_video.get('claim_subject_affiliation_gap')}",
         ])
+    if data.get("case_root_detected"):
+        primary = data.get("primary_article_source_unit") or {}
+        lines.extend(
+            [
+                "",
+                "Nested source-unit summary:",
+                f"- Primary article source unit: {primary.get('relative_path') or '(missing)'}",
+                f"- Primary article title: {primary.get('title') or '(missing)'}",
+                f"- Repost source units: {len(data.get('repost_source_units') or [])}",
+                f"- Social/video source units: {len(data.get('social_video_source_units') or [])}",
+            ]
+        )
+        for unit in data.get("source_units") or []:
+            if not isinstance(unit, Mapping):
+                continue
+            axes = unit.get("role_axes") if isinstance(unit.get("role_axes"), Mapping) else {}
+            lines.append(
+                f"- {unit.get('source_unit_id')}: {unit.get('source_unit_kind')} | "
+                f"{unit.get('relative_path')} | title={unit.get('title') or '(missing)'}"
+            )
+            if unit.get("uploader_account_candidate"):
+                lines.append(f"  uploader/account candidate: {unit.get('uploader_account_candidate')}")
+            if axes:
+                lines.append(f"  media_source_role_candidate: {axes.get('media_source_role_candidate')}")
+                lines.append(f"  personhood_or_witness_verification_role_candidate: {axes.get('personhood_or_witness_verification_role_candidate')}")
+                lines.append(f"  speaker_statement_role_candidate: {axes.get('speaker_statement_role_candidate')}")
+                lines.append(f"  case_claim_role_is_final: {axes.get('case_claim_role_is_final')}")
     lines.extend(["", "Warnings:"])
     for warning in data.get("warnings") or []:
         lines.append(f"- {warning}")
