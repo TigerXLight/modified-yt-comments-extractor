@@ -1,0 +1,52 @@
+{
+  "schema_version": "external-reference-absorption-v77d-acceptance-matrix",
+  "requirements": [
+    {
+      "id": "reference_matrix_is_concrete",
+      "status": "TESTED",
+      "must_include_references": [
+        "GoFullPage 8.6_0.zip",
+        "PageCap 1.2.0_0.zip",
+        "Twitter Exporter 0.8.58_0.zip",
+        "Video Download Helper 10.5.24.2_0.zip",
+        "Video Downloader Professional 10.5.24.2_0.zip",
+        "prinsss__twitter-web-exporter",
+        "annismckenzie__x-article-exporter",
+        "RayanIJ__twitter-stream-proxy",
+        "mrcoles__full-page-screen-capture-chrome-extension",
+        "EverythingSuckz__webshot-api",
+        "sea-deep__link-to-screenshot",
+        "stratofax__pagecap",
+        "myselfshravan__third-eye",
+        "copperline-labs__rendex-mcp"
+      ]
+    },
+    {
+      "id": "safe_absorption_boundary",
+      "status": "TESTED",
+      "must_preserve": [
+        "no_browser_launch",
+        "no_network",
+        "no_media_download",
+        "no_drm_circumvention",
+        "no_captcha_solver",
+        "no_proxy_or_evasion",
+        "no_x_twitter_write_actions"
+      ]
+    },
+    {
+      "id": "human_mediated_access_not_solver",
+      "status": "IMPLEMENTED",
+      "allowed": [
+        "manual visible challenge completed by human user",
+        "challenge/access boundary recorded in manifest"
+      ],
+      "forbidden": [
+        "program solved challenge",
+        "solver service",
+        "anti-detection",
+        "proxy or evasion"
+      ]
+    }
+  ]
+}

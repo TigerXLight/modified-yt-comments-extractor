@@ -1,0 +1,49 @@
+{
+  "schema_version": "rendered-citation-recording-v77d-acceptance-matrix",
+  "requirements": [
+    {
+      "id": "metadata_manifest_fields",
+      "status": "TESTED",
+      "must_include": [
+        "source_url",
+        "page_url",
+        "media_url",
+        "capture_kind",
+        "capture_method",
+        "user_declared_purpose",
+        "media_position_start",
+        "media_position_end",
+        "local_file_path",
+        "local_file_size",
+        "local_file_sha256",
+        "source_unit_path",
+        "capture_blocked",
+        "blocked_reason",
+        "human_mediated_access",
+        "safety_flags"
+      ]
+    },
+    {
+      "id": "write_gate",
+      "status": "TESTED",
+      "confirmation_token": "WRITE_RENDERED_CITATION_RECORDING_METADATA_V77D"
+    },
+    {
+      "id": "safety_flags_false",
+      "status": "TESTED",
+      "expect_false": [
+        "drm_circumvention_performed",
+        "captcha_solver_used",
+        "credential_automation_performed",
+        "proxy_or_evasion_performed",
+        "forced_rate_limit_bypass_performed",
+        "hidden_protected_stream_extraction_performed",
+        "web_download_performed",
+        "media_download_performed",
+        "browser_launch_performed",
+        "recording_performed",
+        "x_twitter_write_actions_performed"
+      ]
+    }
+  ]
+}
