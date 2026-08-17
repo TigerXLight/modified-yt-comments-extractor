@@ -1,0 +1,66 @@
+{
+  "schema_version": "twitter_capture_v77a_acceptance_matrix",
+  "requirements": [
+    {
+      "id": "offline_tests_only",
+      "status": "TESTED",
+      "expect": {
+        "browser_launch_performed": false,
+        "web_download_performed": false,
+        "media_download_performed": false
+      }
+    },
+    {
+      "id": "full_page_preservation_plan",
+      "status": "IMPLEMENTED",
+      "expect": [
+        "viewport_step_planning",
+        "overlap_edge_handling",
+        "completion_boundary",
+        "stable_filenames",
+        "hash_size_metadata"
+      ]
+    },
+    {
+      "id": "cursor_continuation_proof",
+      "status": "IMPLEMENTED",
+      "expect": [
+        "cursor_state_loaded",
+        "next_cycle_action",
+        "cooldown_respected",
+        "soft_page_budget_pause"
+      ]
+    },
+    {
+      "id": "profile_media_bridge",
+      "status": "IMPLEMENTED",
+      "expect": [
+        "source_url",
+        "canonical_url",
+        "platform",
+        "account_handle",
+        "post_id",
+        "screenshot_references",
+        "media_references",
+        "cursor_state",
+        "claim_subject_affiliation_review",
+        "social_media_video_provenance_review",
+        "final_source_role_decision_false"
+      ]
+    },
+    {
+      "id": "unsafe_actions_absent",
+      "status": "TESTED",
+      "expect_absent": [
+        "posting",
+        "deleting",
+        "liking",
+        "following",
+        "direct_messages",
+        "credential_automation",
+        "captcha_bypass",
+        "proxy_or_evasion"
+      ]
+    }
+  ]
+}

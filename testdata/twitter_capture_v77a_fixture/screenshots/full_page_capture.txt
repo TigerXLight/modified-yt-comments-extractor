@@ -1,0 +1,2 @@
+V77A full-page screenshot placeholder.
+This is a deterministic local test artifact, not a browser capture.
