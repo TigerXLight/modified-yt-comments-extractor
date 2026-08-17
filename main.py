@@ -155,7 +155,9 @@ from source_resource_state import (
     SourceResourceRowState,
     build_discussion_capture_options,
     build_discussion_selection_state,
-    build_resource_download_dry_run,
+    build_selected_media_preservation_preview,
+    filter_resource_dialog_items,
+    MediaResourceFilterState,
     parse_source_url_intake,
     remove_source_resource_row,
     resource_dialog_state_for_row,
@@ -534,7 +536,7 @@ def is_export_allowed(fetch_state: FetchState, exportable_count: int) -> bool:
 class App(ctk.CTk):
     """Main application window."""
 
-    SIDEBAR_WIDTH = 280
+    SIDEBAR_WIDTH = 360
 
     def __init__(self):
         super().__init__()
@@ -627,6 +629,7 @@ class App(ctk.CTk):
         self.youtube_source_row_preferences: dict[str, YouTubeGuiMediaPreferences] = {}
         self.youtube_source_row_available_quality_labels: dict[str, tuple[str, ...]] = {}
         self.youtube_source_row_discovery_status: dict[str, str] = {}
+        self.youtube_source_row_discovery_metadata: dict[str, dict[str, str]] = {}
         self.profile_media_runtime_state_path: Optional[Path] = None
         self.profile_media_sidebar_mode: str = self._load_profile_media_sidebar_mode_for_startup()
         self.profile_media_database_mode_var = None
@@ -715,49 +718,19 @@ class App(ctk.CTk):
         return ctk.CTkImage(light_image=img, dark_image=img, size=(28, 28))
 
     def _create_header(self) -> None:
-        """Create the top header with app name and description."""
+        """Create a zero-height header shell so the workspace uses the top area."""
+        # The visible title/tagline consumed useful vertical space in normal
+        # non-fullscreen use. Keep a shell for layout compatibility, but render
+        # no visible header content. The native window title still carries the
+        # app name.
         self.header_frame = ctk.CTkFrame(
             self,
-            fg_color=COLORS["bg_card"],
+            fg_color=COLORS["bg_dark"],
             corner_radius=0,
-            height=95
+            height=0,
         )
         self.header_frame.grid(row=0, column=0, columnspan=2, sticky="ew")
         self.header_frame.grid_propagate(False)
-
-        # Header content
-        header_content = ctk.CTkFrame(self.header_frame, fg_color="transparent")
-        header_content.pack(fill="both", expand=True, padx=30, pady=15)
-
-        # App title with play button icon
-        self._play_icon = self._create_play_icon()
-        title_label = ctk.CTkLabel(
-            header_content,
-            text=f"  {APP_NAME}",
-            image=self._play_icon,
-            compound="left",
-            font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=COLORS["text_primary"]
-        )
-        title_label.pack(anchor="w")
-
-        # Brand attribution
-        brand_label = ctk.CTkLabel(
-            header_content,
-            text="by Creator Intelligence",
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS["accent"]
-        )
-        brand_label.pack(anchor="w", pady=(1, 0))
-
-        # Tagline
-        subtitle_label = ctk.CTkLabel(
-            header_content,
-            text=f"{APP_DESCRIPTION}",
-            font=ctk.CTkFont(size=13),
-            text_color=COLORS["text_secondary"]
-        )
-        subtitle_label.pack(anchor="w", pady=(2, 0))
 
     # =========================================================================
     # SIDEBAR CREATION
@@ -782,20 +755,21 @@ class App(ctk.CTk):
         else:
             parent.add(
                 self.sidebar,
-                minsize=260,
+                minsize=320,
                 width=initial_sidebar_width,
                 stretch="never",
             )
         self.sidebar.grid_propagate(False)
 
-        # Sidebar scrollable content
-        self.sidebar_scroll = ctk.CTkScrollableFrame(
+        # Fixed sidebar content. Do not use a left-side scrollable wrapper: the
+        # separate scrollbar consumed width and blocked the FILES pane from using
+        # the dragged sidebar space. The main workspace keeps its own scrolling.
+        self.sidebar_scroll = ctk.CTkFrame(
             self.sidebar,
             fg_color="transparent",
-            scrollbar_button_color=COLORS["border"],
-            scrollbar_button_hover_color=COLORS["accent_secondary"]
         )
         self.sidebar_scroll.pack(fill="both", expand=True, padx=0, pady=0)
+        self._create_sidebar_resize_grip()
 
         # Global actions stay pinned in the sidebar above FILES.
         self._create_updates_section(first=True)
@@ -812,18 +786,11 @@ class App(ctk.CTk):
         # Session files section
         self._create_files_section()
 
-        # YouTube filters remain functional for now, but V76K adds a settings entry
-        # so the next UI pass can move these controls out of the left sidebar.
-        self._create_youtube_settings_entry_section()
+        # YouTube filters stay functional, but visible controls live in each
+        # YouTube source row settings dialog, not in the main sidebar.
+        self._create_hidden_youtube_filter_settings_state()
 
-        # Filters section
-        self._create_filters_section()
-
-        # Date Range section
-        self._create_date_section()
-
-        # Custom Filters section
-        self._create_custom_filters_section()
+        # Custom filters now live inside the combined YouTube settings window.
 
         # Version at bottom
         self._create_sidebar_footer()
@@ -846,12 +813,65 @@ class App(ctk.CTk):
             add="+",
         )
 
+    def _create_sidebar_resize_grip(self) -> None:
+        try:
+            self.sidebar_resize_grip = tk.Frame(
+                self.sidebar,
+                width=18,
+                cursor="sb_h_double_arrow",
+                bg=COLORS["bg_card"],
+                bd=0,
+                highlightthickness=0,
+            )
+            self.sidebar_resize_grip.place(relx=1.0, x=-18, y=0, relheight=1.0, width=18)
+            self.sidebar_resize_grip.bind("<ButtonPress-1>", self._on_sidebar_resize_grip_press, add="+")
+            self.sidebar_resize_grip.bind("<B1-Motion>", self._on_sidebar_resize_grip_drag, add="+")
+            self.sidebar_resize_grip.bind("<ButtonRelease-1>", self._on_sidebar_resize_grip_release, add="+")
+        except Exception:
+            logger.debug("Could not create sidebar resize grip.", exc_info=True)
+
+    def _on_sidebar_resize_grip_press(self, event: object) -> None:
+        try:
+            self._sidebar_resize_drag_start_x = int(event.x_root)
+            self._sidebar_resize_drag_start_width = int(getattr(self, "sidebar_width", self.SIDEBAR_WIDTH))
+        except Exception:
+            self._sidebar_resize_drag_start_x = 0
+            self._sidebar_resize_drag_start_width = int(getattr(self, "sidebar_width", self.SIDEBAR_WIDTH))
+
+    def _on_sidebar_resize_grip_drag(self, event: object) -> None:
+        try:
+            start_x = int(getattr(self, "_sidebar_resize_drag_start_x", event.x_root))
+            start_width = int(getattr(self, "_sidebar_resize_drag_start_width", self.SIDEBAR_WIDTH))
+            delta = int(event.x_root) - start_x
+            width = max(320, min(1280, start_width + delta))
+            self.sidebar_width = width
+            try:
+                self.content_paned_window.paneconfigure(self.sidebar, width=width)
+            except Exception:
+                pass
+            try:
+                self.content_paned_window.sash_place(0, width, 0)
+            except Exception:
+                pass
+            try:
+                self.sidebar.configure(width=width)
+            except Exception:
+                pass
+            self._refresh_session_files_list()
+        except Exception:
+            logger.debug("Could not drag sidebar resize grip.", exc_info=True)
+
+    def _on_sidebar_resize_grip_release(self, event: object | None = None) -> None:
+        self._on_sidebar_paned_sash_release(event)
+
     def _on_sidebar_paned_sash_release(self, _event=None) -> None:
         try:
             width = int(self.sidebar.winfo_width())
         except Exception:
             width = int(getattr(self, "sidebar_width", self.SIDEBAR_WIDTH))
-        self.sidebar_width = max(260, min(560, width))
+        # Let FILES use the available fullscreen width, while the right pane
+        # keeps a minimum usable workspace from the PanedWindow child minsize.
+        self.sidebar_width = max(320, min(1280, width))
         self._persist_sidebar_width_preference(self.sidebar_width)
 
     def _get_sidebar_width_preference(self) -> int:
@@ -865,13 +885,13 @@ class App(ctk.CTk):
             width = int(width)
         except Exception:
             width = self.SIDEBAR_WIDTH
-        return max(260, min(520, width))
+        return max(320, min(1280, width))
 
     def _persist_sidebar_width_preference(self, width: int) -> None:
         try:
             settings = self.settings_manager.load_preferences_only()
             settings.api_key = ""
-            settings.sidebar_width = max(260, min(520, int(width)))
+            settings.sidebar_width = max(320, min(1280, int(width)))
             self.settings_manager.save(settings)
             self.sidebar_width = settings.sidebar_width
         except Exception:
@@ -881,7 +901,7 @@ class App(ctk.CTk):
         """Create a section label with divider."""
         if not first:
             divider = ctk.CTkFrame(parent, fg_color=COLORS["border"], height=1)
-            divider.pack(fill="x", padx=20, pady=(15, 10))
+            divider.pack(fill="x", padx=16, pady=(8, 6))
 
         label = ctk.CTkLabel(
             parent,
@@ -1008,11 +1028,14 @@ class App(ctk.CTk):
     def _create_access_keys_section(self, first: bool = False) -> None:
         """Create the Access & Keys entry point without duplicating API-key fields."""
         keys_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
-        keys_frame.pack(fill="x", padx=20, pady=(15 if first else 0, 6))
+        keys_frame.configure(width=286, height=30)
+        keys_frame.pack(anchor="w", padx=14, pady=(8 if first else 0, 4))
+        keys_frame.pack_propagate(False)
         self.access_keys_button = ctk.CTkButton(
             keys_frame,
             text="KEYS/ACCOUNTS",
-            height=34,
+            width=286,
+            height=30,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
@@ -1020,7 +1043,7 @@ class App(ctk.CTk):
             corner_radius=6,
             command=self.open_access_keys_window,
         )
-        self.access_keys_button.pack(fill="x")
+        self.access_keys_button.pack(anchor="w")
 
     def _create_updates_section(self, first: bool = False) -> None:
         """Create the Updates sidebar entry point."""
@@ -1028,37 +1051,43 @@ class App(ctk.CTk):
             separator = ctk.CTkFrame(self.sidebar_scroll, height=1, fg_color=COLORS["border"])
             separator.pack(fill="x", padx=20, pady=(15, 8))
         updates_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
-        updates_frame.pack(fill="x", padx=20, pady=(15 if first else 0, 6))
+        updates_frame.configure(width=286, height=30)
+        updates_frame.pack(anchor="w", padx=14, pady=(8 if first else 0, 4))
+        updates_frame.pack_propagate(False)
         self.update_button = ctk.CTkButton(
             updates_frame,
             text="UPDATES",
             command=self.check_for_updates_clicked,
-            height=34,
+            width=286,
+            height=30,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
             text_color=COLORS["text_primary"],
             corner_radius=6,
         )
-        self.update_button.pack(fill="x")
+        self.update_button.pack(anchor="w")
 
     def _create_export_section(self) -> None:
         """Create the consolidated export/package sidebar entry point."""
         export_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
-        export_frame.pack(fill="x", padx=20, pady=(0, 10))
+        export_frame.configure(width=286, height=30)
+        export_frame.pack(anchor="w", padx=14, pady=(0, 6))
+        export_frame.pack_propagate(False)
 
         self.evidence_button = ctk.CTkButton(
             export_frame,
             text="EXPORT",
             command=self.open_files_export_dialog,
-            height=34,
+            width=286,
+            height=30,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
             corner_radius=6,
             state="disabled",
         )
-        self.evidence_button.pack(fill="x")
+        self.evidence_button.pack(anchor="w")
         self.sidebar_evidence_button = self.evidence_button
         self.sidebar_open_last_package_button = _NoOpSidebarControl()
         self.sidebar_screenshot_button = _NoOpSidebarControl()
@@ -1138,7 +1167,7 @@ class App(ctk.CTk):
         raw_value = getattr(self, "profile_media_sidebar_mode", "FILES") if value is None else value
         return coerce_profile_media_view_mode(raw_value).value
 
-    def _set_profile_media_sidebar_mode(self, mode: object, *, update_widget: bool = True) -> str:
+    def _set_profile_media_sidebar_mode(self, mode: object, *, update_widget: bool = True, refresh_visual: bool = True) -> str:
         """Set the sidebar mode without scanning, creating, moving, or renaming folders."""
         coerced = self._coerce_profile_media_sidebar_mode(mode)
         self.profile_media_sidebar_mode = coerced
@@ -1149,62 +1178,159 @@ class App(ctk.CTk):
                     mode_var.set(coerced == "DATABASE")
                 except Exception:
                     logger.debug("Could not update profile/media Database toggle variable.", exc_info=True)
-        self._refresh_profile_media_database_mode_switch_visual()
+        if refresh_visual:
+            self._refresh_profile_media_database_mode_switch_visual()
         self._save_profile_media_sidebar_mode_for_runtime(coerced)
         self._refresh_profile_media_database_workbench_panel()
         return coerced
 
     def _profile_media_database_toggle_text(self, mode: object | None = None) -> str:
-        """Return clear pill-switch text for the Database mode-only toggle.
-
-        V76K keeps this as a mode switch, not a Database preview/filter.  The
-        visible language is deliberately common-user wording: green ON and red
-        OFF, with the small square retained as a slider-handle cue.
-        """
+        """Fallback text for non-canvas tests and environments."""
         if self._coerce_profile_media_sidebar_mode(mode) == "DATABASE":
-            return "✓  ON        ◻"
-        return "◻        OFF  ✕"
+            return "ON"
+        return "OFF"
+
+    def _draw_profile_media_database_toggle_canvas(
+        self,
+        canvas: object,
+        *,
+        mode: object | None = None,
+        knob_progress: float | None = None,
+    ) -> None:
+        """Draw the requested red/green animated pill switch on a plain Canvas."""
+        try:
+            canvas.delete("all")
+        except Exception:
+            return
+        resolved_mode = self._coerce_profile_media_sidebar_mode(mode)
+        is_database = resolved_mode == "DATABASE"
+        width = 108
+        height = 20
+        pad = 2
+        knob = 14
+        radius = (height - pad * 2) / 2
+        track = "#72c943" if is_database else "#e84b6a"
+        border = "#4d9b29" if is_database else "#b92d4d"
+        knob_fill = "#eef2ef"
+        progress = 1.0 if is_database else 0.0
+        if knob_progress is not None:
+            progress = max(0.0, min(1.0, float(knob_progress)))
+        left_center = pad + knob / 2
+        right_center = width - pad - knob / 2
+        center_y = height / 2
+        knob_center = left_center + (right_center - left_center) * progress
+        x1, y1, x2, y2 = pad, pad, width - pad, height - pad
+        # Rounded track from rectangles + end ovals keeps this dependency-free.
+        canvas.create_rectangle(x1 + radius, y1, x2 - radius, y2, fill=track, outline=border, width=2)
+        canvas.create_oval(x1, y1, x1 + radius * 2, y2, fill=track, outline=border, width=2)
+        canvas.create_oval(x2 - radius * 2, y1, x2, y2, fill=track, outline=border, width=2)
+        # Keep glyphs/text fully outside the knob travel zone: ON text lives
+        # on the left while the ON knob is on the right; OFF text lives on the
+        # right while the OFF knob is on the left.
+        if is_database:
+            canvas.create_text(15, center_y, text="✓", fill="#ffffff", font=("Segoe UI", 8, "bold"))
+            canvas.create_text(42, center_y, text="ON", fill="#ffffff", font=("Segoe UI", 8, "bold"))
+        else:
+            canvas.create_text(60, center_y, text="OFF", fill="#ffffff", font=("Segoe UI", 8, "bold"))
+            canvas.create_text(90, center_y, text="✕", fill="#ffffff", font=("Segoe UI", 8, "bold"))
+        canvas.create_oval(
+            knob_center - knob / 2,
+            center_y - knob / 2,
+            knob_center + knob / 2,
+            center_y + knob / 2,
+            fill=knob_fill,
+            outline="#cfd6cf",
+            width=2,
+        )
 
     def _refresh_profile_media_database_mode_switch_visual(self) -> None:
-        """Refresh the pill-style green/red Database toggle without running Database work."""
+        """Refresh the red/green animated Database pill and sidebar counters."""
         switch = getattr(self, "profile_media_database_mode_switch", None)
-        if switch is None:
-            return
         mode = self._coerce_profile_media_sidebar_mode()
         is_database = mode == "DATABASE"
-        try:
-            switch.configure(
-                text=self._profile_media_database_toggle_text(mode),
-                fg_color="#7ac943" if is_database else "#e84b6a",
-                hover_color="#8ed957" if is_database else "#f05d7a",
-                border_color="#4d9b29" if is_database else "#b92d4d",
-                text_color="#ffffff",
-            )
-        except Exception:
-            logger.debug("Could not refresh profile/media Database toggle visual.", exc_info=True)
+        if switch is not None:
+            if isinstance(switch, tk.Canvas):
+                self._draw_profile_media_database_toggle_canvas(switch, mode=mode)
+            else:
+                try:
+                    switch.configure(
+                        text=self._profile_media_database_toggle_text(mode),
+                        fg_color="#7ac943" if is_database else "#e84b6a",
+                        hover_color="#8ed957" if is_database else "#f05d7a",
+                        border_color="#4d9b29" if is_database else "#b92d4d",
+                        text_color="#ffffff",
+                    )
+                except Exception:
+                    logger.debug("Could not refresh profile/media Database toggle visual.", exc_info=True)
+        self._refresh_profile_media_home_sidebar_buttons()
+        summary_frame = getattr(self, "profile_media_database_sidebar_summary_frame", None)
+        if summary_frame is not None:
+            try:
+                if is_database:
+                    summary_frame.grid(row=2, column=0, sticky="w", pady=(5, 0))
+                else:
+                    summary_frame.grid_remove()
+            except Exception:
+                logger.debug("Could not refresh Database role counter visibility.", exc_info=True)
 
-    def _animate_profile_media_database_mode_switch_visual(self) -> None:
-        """Run a tiny two-frame visual acknowledgement after the Database toggle flips.
-
-        This does not schedule background work.  It only nudges the switch text
-        once, then restores the normal ON/OFF pill text with ``after``.
-        """
+    def _animate_profile_media_database_mode_switch_visual(
+        self,
+        *,
+        from_mode: object | None = None,
+        to_mode: object | None = None,
+    ) -> None:
+        """Animate the Database toggle knob without the final-state jump."""
         switch = getattr(self, "profile_media_database_mode_switch", None)
-        if switch is None:
-            return
-        mode = self._coerce_profile_media_sidebar_mode()
-        try:
-            switch.configure(text="✓  ON   ›   ◻" if mode == "DATABASE" else "◻   ‹   OFF  ✕")
-            self.after(140, self._refresh_profile_media_database_mode_switch_visual)
-        except Exception:
+        if not isinstance(switch, tk.Canvas):
             self._refresh_profile_media_database_mode_switch_visual()
+            return
+        start_mode = self._coerce_profile_media_sidebar_mode(from_mode)
+        end_mode = self._coerce_profile_media_sidebar_mode(to_mode)
+        start_progress = 1.0 if start_mode == "DATABASE" else 0.0
+        end_progress = 1.0 if end_mode == "DATABASE" else 0.0
+        if start_progress == end_progress:
+            self._refresh_profile_media_database_mode_switch_visual()
+            return
+
+        frame_count = 18
+
+        def eased_step(index: int) -> float:
+            t = max(0.0, min(1.0, index / frame_count))
+            # Smoothstep avoids the visible snap/jump at the start and end.
+            eased = t * t * (3.0 - 2.0 * t)
+            return start_progress + (end_progress - start_progress) * eased
+
+        def draw_step(index: int = 1) -> None:
+            if index > frame_count:
+                self._refresh_profile_media_database_mode_switch_visual()
+                return
+            self._draw_profile_media_database_toggle_canvas(
+                switch,
+                mode=end_mode,
+                knob_progress=eased_step(index),
+            )
+            try:
+                self.after(10, lambda: draw_step(index + 1))
+            except Exception:
+                self._refresh_profile_media_database_mode_switch_visual()
+
+        draw_step()
 
     def _on_profile_media_database_mode_toggled(self) -> None:
         """Handle the left-sidebar Database On/Off toggle above FILES."""
         current_mode = self._coerce_profile_media_sidebar_mode()
         requested_mode = "FILES" if current_mode == "DATABASE" else "DATABASE"
-        mode = self._set_profile_media_sidebar_mode(requested_mode, update_widget=True)
-        self._animate_profile_media_database_mode_switch_visual()
+        mode = self._set_profile_media_sidebar_mode(requested_mode, update_widget=True, refresh_visual=False)
+        summary_frame = getattr(self, "profile_media_database_sidebar_summary_frame", None)
+        if summary_frame is not None:
+            try:
+                if mode == "DATABASE":
+                    summary_frame.grid(row=2, column=0, sticky="w", pady=(5, 0))
+                else:
+                    summary_frame.grid_remove()
+            except Exception:
+                logger.debug("Could not update Database summary visibility before animation.", exc_info=True)
+        self._animate_profile_media_database_mode_switch_visual(from_mode=current_mode, to_mode=mode)
         try:
             state_text = "on" if mode == "DATABASE" else "off"
             self.log_message(
@@ -1213,6 +1339,64 @@ class App(ctk.CTk):
             )
         except Exception:
             logger.debug("Could not log profile/media Database mode toggle.", exc_info=True)
+
+    def _profile_media_home_loaded(self) -> bool:
+        """Return whether a HOME/import selection is currently loaded."""
+        return bool(
+            getattr(self, "profile_media_database_root", "")
+            or getattr(self, "profile_media_database_batch_json_files", ())
+            or getattr(self, "profile_media_database_workbench_payload", None)
+        )
+
+    def _refresh_profile_media_home_sidebar_buttons(self) -> None:
+        """Keep sidebar HOME buttons honest: show Load until a HOME selection exists."""
+        loaded = self._profile_media_home_loaded()
+        unload_button = getattr(self, "profile_media_database_home_unload_button", None)
+        if unload_button is not None:
+            try:
+                unload_button.configure(text="Unload" if loaded else "Load")
+            except Exception:
+                logger.debug("Could not refresh HOME Load/Unload button text.", exc_info=True)
+
+    def _profile_media_database_home_load_or_unload_clicked(self) -> None:
+        """Load HOME/import state when empty; unload only after something is loaded."""
+        if self._profile_media_home_loaded():
+            self._unload_profile_media_database_home_selection()
+        else:
+            self._import_profile_media_database_home_selection()
+
+    def _load_profile_media_role_icons(self) -> dict[str, object]:
+        """Load local Profile/Media role icons without external fonts or web assets."""
+        cached = getattr(self, "profile_media_role_icon_images", None)
+        if isinstance(cached, dict):
+            return cached
+        self.profile_media_role_icon_images = {}
+        asset_base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "profile_media", "source_roles")
+        filenames = {
+            "primary_sources": "icons8-writer-male-32.png",
+            "secondary_sources": "icons8-user-account-32.png",
+            "tertiary_sources": "icons8-people-32.png",
+            "persons": "icons8-contacts-32.png",
+        }
+        for key, filename in filenames.items():
+            path = os.path.join(asset_base, filename)
+            if not os.path.exists(path):
+                continue
+            try:
+                image = Image.open(path).convert("RGBA")
+                self.profile_media_role_icon_images[key] = ctk.CTkImage(
+                    light_image=image,
+                    dark_image=image,
+                    size=(16, 16),
+                )
+            except Exception:
+                logger.debug("Could not load Profile/Media role icon %s.", filename, exc_info=True)
+        return self.profile_media_role_icon_images
+
+    def _profile_media_sidebar_metric_text(self, key: str, label: str, value: object = 0) -> str:
+        if key == "review_items":
+            return f"Review: {value}"
+        return f"{label}: {value}"
 
     def _create_profile_media_database_mode_toggle_section(self) -> None:
         """Create the square mode-only Database On/Off toggle directly above the FILES section."""
@@ -1223,12 +1407,15 @@ class App(ctk.CTk):
             self.sidebar_scroll,
             fg_color="transparent",
         )
-        self.profile_media_mode_frame.pack(fill="x", padx=20, pady=(0, 10))
-        self.profile_media_mode_frame.grid_columnconfigure(0, weight=1)
+        self.profile_media_mode_frame.configure(width=286)
+        self.profile_media_mode_frame.pack(anchor="w", padx=14, pady=(0, 6))
+        self.profile_media_mode_frame.grid_columnconfigure(0, weight=0, minsize=286)
 
         database_header = ctk.CTkFrame(self.profile_media_mode_frame, fg_color="transparent")
-        database_header.grid(row=0, column=0, sticky="ew")
-        database_header.grid_columnconfigure(0, weight=1)
+        database_header.configure(width=286, height=24)
+        database_header.grid(row=0, column=0, sticky="w")
+        database_header.grid_propagate(False)
+        database_header.grid_columnconfigure(0, weight=1, minsize=108)
 
         database_label = ctk.CTkLabel(
             database_header,
@@ -1241,71 +1428,114 @@ class App(ctk.CTk):
 
         self.profile_media_database_home_save_button = ctk.CTkButton(
             database_header,
-            text="SAVE",
+            text="Save",
             command=self._save_profile_media_database_to_home_repository,
-            width=56,
-            height=24,
+            width=42,
+            height=22,
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
             text_color=COLORS["text_primary"],
             corner_radius=6,
         )
-        self.profile_media_database_home_save_button.grid(row=0, column=1, sticky="e")
+        self.profile_media_database_home_save_button.grid(row=0, column=1, sticky="e", padx=(4, 0))
 
-        self.profile_media_database_mode_switch = ctk.CTkButton(
-            self.profile_media_mode_frame,
-            text=self._profile_media_database_toggle_text(initial_mode),
-            command=self._on_profile_media_database_mode_toggled,
-            width=150,
-            height=36,
-            corner_radius=18,
-            border_width=2,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#ffffff",
-            fg_color="#7ac943" if initial_mode == "DATABASE" else "#e84b6a",
-            hover_color="#8ed957" if initial_mode == "DATABASE" else "#f05d7a",
-            border_color="#4d9b29" if initial_mode == "DATABASE" else "#b92d4d",
+        self.profile_media_database_home_unload_button = ctk.CTkButton(
+            database_header,
+            text="Load",
+            command=self._profile_media_database_home_load_or_unload_clicked,
+            width=48,
+            height=22,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
         )
-        self.profile_media_database_mode_switch.grid(row=1, column=0, sticky="w", pady=(6, 2))
+        self.profile_media_database_home_unload_button.grid(row=0, column=2, sticky="e", padx=(4, 0))
+
+        self.profile_media_database_home_import_button = ctk.CTkButton(
+            database_header,
+            text="Import",
+            command=self._import_profile_media_database_home_selection,
+            width=50,
+            height=22,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+        )
+        self.profile_media_database_home_import_button.grid(row=0, column=3, sticky="e", padx=(4, 0))
+
+        self.profile_media_database_toggle_frame = ctk.CTkFrame(
+            self.profile_media_mode_frame,
+            fg_color="transparent",
+            width=110,
+            height=22,
+        )
+        self.profile_media_database_toggle_frame.grid(row=1, column=0, sticky="w", pady=(4, 2))
+        self.profile_media_database_toggle_frame.grid_propagate(False)
+        self.profile_media_database_mode_switch = tk.Canvas(
+            self.profile_media_database_toggle_frame,
+            width=108,
+            height=20,
+            highlightthickness=0,
+            bd=0,
+            bg=COLORS["bg_card"],
+            cursor="hand2",
+        )
+        self.profile_media_database_mode_switch.grid(row=0, column=0, sticky="w")
+        self.profile_media_database_mode_switch.bind(
+            "<Button-1>",
+            lambda _event: self._on_profile_media_database_mode_toggled(),
+            add="+",
+        )
 
         self.profile_media_database_sidebar_summary_frame = ctk.CTkFrame(
             self.profile_media_mode_frame,
             fg_color=COLORS["bg_input"],
             corner_radius=7,
         )
-        self.profile_media_database_sidebar_summary_frame.grid(row=2, column=0, sticky="ew", pady=(7, 0))
-        self.profile_media_database_sidebar_summary_frame.grid_columnconfigure((0, 1), weight=1)
+        self.profile_media_database_sidebar_summary_frame.configure(width=286, height=96)
+        self.profile_media_database_sidebar_summary_frame.grid(row=2, column=0, sticky="w", pady=(5, 0))
+        self.profile_media_database_sidebar_summary_frame.grid_propagate(False)
+        # Keep the two metric columns fixed near the left; they should not
+        # drift apart when the sidebar sash is dragged wider.
+        self.profile_media_database_sidebar_summary_frame.grid_columnconfigure((0, 1), weight=0)
         self.profile_media_database_sidebar_summary_labels = {}
+        role_icons = self._load_profile_media_role_icons()
         summary_items = (
-            ("primary_sources", "👤 Primary"),
-            ("secondary_sources", "👥 Secondary"),
-            ("tertiary_sources", "👥+ Tertiary"),
+            ("primary_sources", "Primary"),
+            ("secondary_sources", "Secondary"),
+            ("tertiary_sources", "Tertiary"),
             ("persons", "Persons"),
             ("review_items", "Review"),
         )
         for index, (key, label_text) in enumerate(summary_items):
+            label_kwargs = {}
+            if key in role_icons:
+                label_kwargs.update({"image": role_icons[key], "compound": "left"})
             summary_label = ctk.CTkLabel(
                 self.profile_media_database_sidebar_summary_frame,
-                text=f"{label_text}: 0",
+                text=self._profile_media_sidebar_metric_text(key, label_text, 0),
                 font=ctk.CTkFont(size=10, weight="bold" if key == "persons" else "normal"),
-                text_color=COLORS["text_secondary"],
+                text_color="#ff7a8a" if key == "review_items" else COLORS["text_secondary"],
                 anchor="w",
+                **label_kwargs,
             )
-            summary_label.grid(row=index // 2, column=index % 2, sticky="ew", padx=7, pady=(5 if index < 2 else 2, 5))
+            summary_label.grid(row=index // 2, column=index % 2, sticky="w", padx=(6, 18 if index % 2 == 0 else 6), pady=(4 if index < 2 else 2, 4))
             self.profile_media_database_sidebar_summary_labels[key] = summary_label
         self._refresh_profile_media_database_mode_switch_visual()
 
     def _create_files_section(self) -> None:
         """Create the session-only local files section in the sidebar."""
         divider = ctk.CTkFrame(self.sidebar_scroll, fg_color=COLORS["border"], height=1)
-        divider.pack(fill="x", padx=20, pady=(15, 10))
+        divider.pack(fill="x", padx=16, pady=(8, 6))
 
         self.files_header_frame = ctk.CTkFrame(
             self.sidebar_scroll,
             fg_color="transparent",
         )
-        self.files_header_frame.pack(fill="x", padx=20, pady=(0, 10))
-        self.files_header_frame.grid_columnconfigure(0, weight=1)
+        self.files_header_frame.pack(fill="x", padx=14, pady=(0, 6))
+        self.files_header_frame.grid_columnconfigure(0, weight=1, minsize=54)
 
         files_label = ctk.CTkLabel(
             self.files_header_frame,
@@ -1314,6 +1544,19 @@ class App(ctk.CTk):
             text_color=COLORS["text_secondary"],
         )
         files_label.grid(row=0, column=0, sticky="w")
+
+        self.files_clear_all_button = ctk.CTkButton(
+            self.files_header_frame,
+            text="Clear all",
+            width=68,
+            height=24,
+            command=self._clear_all_session_files_clicked,
+            fg_color=COLORS["bg_input"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+        )
+        self.files_clear_all_button.grid(row=0, column=1, sticky="e", padx=(0, 3))
 
         self.files_add_button_tooltip_text = "Add files"
         self.files_add_button = ctk.CTkButton(
@@ -1330,7 +1573,7 @@ class App(ctk.CTk):
         self.files_expand_all_button = ctk.CTkButton(
             self.files_header_frame,
             text="Expand all",
-            width=70,
+            width=64,
             height=24,
             command=lambda: self._set_all_session_folders_collapsed(False),
             fg_color=COLORS["bg_input"],
@@ -1338,12 +1581,12 @@ class App(ctk.CTk):
             text_color=COLORS["text_primary"],
             corner_radius=6,
         )
-        self.files_expand_all_button.grid(row=0, column=1, sticky="e", padx=(0, 4))
+        self.files_expand_all_button.grid(row=0, column=2, sticky="e", padx=(0, 3))
 
         self.files_collapse_all_button = ctk.CTkButton(
             self.files_header_frame,
             text="Collapse all",
-            width=76,
+            width=70,
             height=24,
             command=lambda: self._set_all_session_folders_collapsed(True),
             fg_color=COLORS["bg_input"],
@@ -1351,16 +1594,16 @@ class App(ctk.CTk):
             text_color=COLORS["text_primary"],
             corner_radius=6,
         )
-        self.files_collapse_all_button.grid(row=0, column=2, sticky="e", padx=(0, 4))
+        self.files_collapse_all_button.grid(row=0, column=3, sticky="e", padx=(0, 3))
 
-        self.files_add_button.grid(row=0, column=3, sticky="e")
+        self.files_add_button.grid(row=0, column=4, sticky="e")
 
         self.files_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
-        self.files_frame.pack(fill="x", padx=20)
+        self.files_frame.pack(fill="x", padx=8)
 
         self.files_list_frame = ctk.CTkScrollableFrame(
             self.files_frame,
-            height=110,
+            height=330,
             fg_color=COLORS["bg_input"],
             corner_radius=6,
         )
@@ -1907,6 +2150,24 @@ class App(ctk.CTk):
             for folder_name in names
         }
 
+    def _clear_all_session_files_clicked(self) -> None:
+        """Detach all FILES entries from this session without deleting source files."""
+        self._ensure_session_files_state()
+        count = len(getattr(self, "session_files", []) or [])
+        if not count and not getattr(self, "session_file_folder_names", []):
+            return
+        self.session_files = []
+        self.session_file_folders = {}
+        self.session_file_folder_names = []
+        self.session_file_folder_collapsed = {}
+        self.session_file_folder_editing = ""
+        self.selected_session_file_path = ""
+        self.active_media_file_path = ""
+        self.active_transcript_file_path = ""
+        self._set_linked_transcript_media(None)
+        self._refresh_session_files_list()
+        self.log_message(f"Cleared {count} FILES entr{'y' if count == 1 else 'ies'} from the session. Local files were not deleted.", "muted")
+
     def _set_all_session_folders_collapsed(self, collapsed: bool) -> None:
         self._normalise_session_file_folder_state()
         self.session_file_folder_collapsed = {
@@ -2037,6 +2298,10 @@ class App(ctk.CTk):
         text = f"{self._session_file_icon_for_kind(entry.file_kind)}  {entry.display_name}"
         return f"Drop here → {text}" if drag_hover else text
 
+    def _session_file_entry_needs_review(self, entry: SessionFileEntry) -> bool:
+        marker_text = f"{entry.display_name} {entry.path}".lower()
+        return any(marker in marker_text for marker in ("needs_review", "needs-review", "review_required", "review-required", "manual_review", "manual-review"))
+
     def _session_file_label_colors(self, entry: SessionFileEntry, *, drag_hover: bool = False) -> tuple[str, str]:
         selected = entry.normalized_path == self.selected_session_file_path
         active_media = (
@@ -2049,6 +2314,8 @@ class App(ctk.CTk):
             return "#4b2d73", "#f4ecff"
         if selected:
             return COLORS["accent_secondary"], COLORS["text_primary"]
+        if self._session_file_entry_needs_review(entry):
+            return "#4f171f", "#ffb3c0"
         return "transparent", COLORS["text_primary"]
 
     def _set_session_file_label_visual(self, normalized_path: str, *, drag_hover: bool = False) -> None:
@@ -2416,10 +2683,12 @@ class App(ctk.CTk):
                 row_frame,
                 text=self._session_file_label_text(entry, drag_hover=drag_hover),
                 anchor="w",
-                height=26,
+                height=34,
                 fg_color=row_color,
                 text_color=text_color,
                 corner_radius=6,
+                justify="left",
+                wraplength=max(340, min(600, int(getattr(self, "sidebar_width", self.SIDEBAR_WIDTH)) - 92)),
             )
             label.grid(row=0, column=0, sticky="ew")
             self._bind_session_file_drag_handlers(label, entry.normalized_path)
@@ -3155,11 +3424,11 @@ class App(ctk.CTk):
     def _create_youtube_settings_entry_section(self) -> None:
         """Create a compact entry for moving YouTube-only filters into settings."""
         self.youtube_settings_entry_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
-        self.youtube_settings_entry_frame.pack(fill="x", padx=20, pady=(12, 4))
+        self.youtube_settings_entry_frame.pack(fill="x", padx=20, pady=(12, 8))
         self.youtube_settings_entry_button = ctk.CTkButton(
             self.youtube_settings_entry_frame,
             text="YouTube settings",
-            command=self._open_youtube_filter_settings_placeholder,
+            command=self._open_youtube_filter_settings_window,
             height=30,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=COLORS["accent_secondary"],
@@ -3169,29 +3438,191 @@ class App(ctk.CTk):
         )
         self.youtube_settings_entry_button.pack(fill="x")
 
-    def _open_youtube_filter_settings_placeholder(self) -> None:
-        """Explain the V76K/V76L direction for moving YouTube filters out of the sidebar."""
-        try:
-            messagebox.showinfo(
-                "YouTube settings",
-                "YouTube-only filters are still shown below for compatibility. "
-                "The next UI pass can move spam/date/custom filters into this settings window.",
-            )
-        except Exception:
-            pass
+    def _create_hidden_youtube_filter_settings_state(self) -> None:
+        """Create hidden controls so preferences load before the settings window opens."""
+        self.youtube_filter_hidden_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
+        self._create_filters_section(self.youtube_filter_hidden_frame, show_label=False)
+        self._create_date_section(self.youtube_filter_hidden_frame, show_label=False)
 
-    def _create_filters_section(self) -> None:
+    def _open_youtube_filter_settings_window(self, row_id: str | None = None) -> None:
+        """Open the combined YouTube settings window for media, comment/date filters, and custom filters."""
+        row = self._source_row_by_id(row_id) if row_id else None
+        prefs = self._youtube_preferences_for_row(row.row_id) if row is not None else None
+        window = ctk.CTkToplevel(self)
+        window.title("YouTube settings")
+        window.geometry("560x700")
+        window.transient(self)
+        window.grab_set()
+
+        header_text = "YouTube settings"
+        if row is not None:
+            header_text = f"YouTube settings\n{row.title}\n{row.domain}"
+        header = ctk.CTkLabel(
+            window,
+            text=header_text,
+            font=ctk.CTkFont(size=16 if row is None else 14, weight="bold"),
+            text_color=COLORS["text_primary"],
+            justify="left",
+        )
+        header.pack(anchor="w", padx=18, pady=(16, 4))
+        subheader = ctk.CTkLabel(
+            window,
+            text="Media options, comment filters, date range, and custom filters for YouTube sources.",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            justify="left",
+        )
+        subheader.pack(anchor="w", padx=18, pady=(0, 10))
+
+        body = ctk.CTkScrollableFrame(window, fg_color=COLORS["bg_input"])
+        body.pack(fill="both", expand=True, padx=18, pady=(0, 12))
+
+        if row is not None and prefs is not None:
+            ctk.CTkLabel(
+                body,
+                text="YOUTUBE MEDIA",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_secondary"],
+            ).pack(anchor="w", padx=8, pady=(10, 6))
+            video_var = ctk.BooleanVar(value=prefs.video_enabled)
+            audio_var = ctk.BooleanVar(value=prefs.separate_audio_enabled)
+            thumbnail_var = ctk.BooleanVar(value=prefs.thumbnail_enabled)
+            subtitles_var = ctk.BooleanVar(value=prefs.subtitles_enabled)
+            auto_subs_var = ctk.BooleanVar(value=prefs.auto_subtitles_enabled)
+            show_dropdown_var = ctk.BooleanVar(value=prefs.show_quality_dropdown)
+            quality_enabled_vars: dict[str, Any] = {}
+            quality_labels = tuple(label for label, _height in YOUTUBE_GUI_QUALITY_PRESETS)
+            default_label = prefs.default_quality_label if prefs.default_quality_label in set(quality_labels) else "1080"
+            default_var = ctk.StringVar(value=default_label)
+
+            def apply_preferences() -> YouTubeGuiMediaPreferences:
+                enabled_labels = tuple(
+                    label
+                    for label, _height in YOUTUBE_GUI_QUALITY_PRESETS
+                    if quality_enabled_vars.get(label) is not None
+                    and bool(quality_enabled_vars[label].get())
+                )
+                if not enabled_labels:
+                    enabled_labels = (default_var.get() or "1080",)
+                default_choice = default_var.get() or enabled_labels[0]
+                saved_default = default_choice if default_choice in enabled_labels else enabled_labels[0]
+                saved = YouTubeGuiMediaPreferences(
+                    video_enabled=bool(video_var.get()),
+                    separate_audio_enabled=bool(audio_var.get()),
+                    thumbnail_enabled=bool(thumbnail_var.get()),
+                    subtitles_enabled=bool(subtitles_var.get()),
+                    auto_subtitles_enabled=bool(auto_subs_var.get()),
+                    show_quality_dropdown=bool(show_dropdown_var.get()),
+                    enabled_quality_labels=enabled_labels,
+                    default_quality_label=saved_default,
+                )
+                self.youtube_source_row_preferences[row.row_id] = saved
+                self._youtube_quality_var_for_row(row.row_id).set(saved.default_quality_label)
+                self._refresh_source_resource_rows()
+                if hasattr(self, "url_status"):
+                    self.url_status.configure(
+                        text="YouTube settings applied.",
+                        text_color=COLORS["text_secondary"],
+                    )
+                return saved
+
+            for text_value, var in (
+                ("Muxed video + best audio (mp4)", video_var),
+                ("Separate audio file (m4a)", audio_var),
+                ("Thumbnail / image", thumbnail_var),
+                ("Manual subtitle files", subtitles_var),
+                ("Auto / ASR subtitle files", auto_subs_var),
+                ("Show quality dropdown on YouTube source row", show_dropdown_var),
+            ):
+                ctk.CTkCheckBox(
+                    body,
+                    text=text_value,
+                    variable=var,
+                    command=apply_preferences,
+                    font=ctk.CTkFont(size=12),
+                    text_color=COLORS["text_primary"],
+                ).pack(anchor="w", padx=8, pady=5)
+
+            ctk.CTkLabel(
+                body,
+                text="Enabled quality options",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_primary"],
+            ).pack(anchor="w", padx=8, pady=(12, 4))
+            enabled = set(prefs.enabled_quality_labels)
+            for label, _height in YOUTUBE_GUI_QUALITY_PRESETS:
+                var = ctk.BooleanVar(value=label in enabled)
+                quality_enabled_vars[label] = var
+                ctk.CTkCheckBox(
+                    body,
+                    text=label,
+                    variable=var,
+                    command=apply_preferences,
+                    font=ctk.CTkFont(size=12),
+                    text_color=COLORS["text_primary"],
+                ).pack(anchor="w", padx=24, pady=3)
+
+            ctk.CTkLabel(
+                body,
+                text="Default quality",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_primary"],
+            ).pack(anchor="w", padx=8, pady=(12, 4))
+            ctk.CTkOptionMenu(
+                body,
+                variable=default_var,
+                values=list(quality_labels),
+                command=lambda _choice: apply_preferences(),
+                width=140,
+                fg_color=COLORS["bg_card"],
+                button_color=COLORS["accent_secondary"],
+                button_hover_color=COLORS["border"],
+                text_color=COLORS["text_primary"],
+                dropdown_fg_color=COLORS["bg_card"],
+                dropdown_hover_color=COLORS["accent_secondary"],
+                dropdown_text_color=COLORS["text_primary"],
+            ).pack(anchor="w", padx=8, pady=(0, 8))
+        else:
+            ctk.CTkLabel(
+                body,
+                text="YOUTUBE MEDIA\nOpen the cog on a YouTube source row to edit row-specific media and quality options.",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_secondary"],
+                justify="left",
+            ).pack(anchor="w", padx=8, pady=(10, 12))
+
+        self._create_filters_section(body, show_label=True)
+        self._create_date_section(body, show_label=True)
+        self._create_custom_filters_section(body, show_label=True)
+        self._update_filter_counts()
+
+        button_row = ctk.CTkFrame(window, fg_color="transparent")
+        button_row.pack(fill="x", padx=18, pady=(0, 16))
+        ctk.CTkButton(
+            button_row,
+            text="Close",
+            command=window.destroy,
+            width=92,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+        ).pack(side="right")
+
+    def _create_filters_section(self, parent: object | None = None, *, show_label: bool = True) -> None:
         """Create filters section in sidebar."""
-        self._create_section_label(self.sidebar_scroll, "FILTERS")
+        parent = parent or self.sidebar_scroll
+        if show_label:
+            self._create_section_label(parent, "YOUTUBE FILTERS")
 
-        filters_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
-        filters_frame.pack(fill="x", padx=20)
+        filters_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        filters_frame.pack(fill="x", padx=20 if show_label else 0)
 
         # Spam filter toggle
         spam_row = ctk.CTkFrame(filters_frame, fg_color="transparent")
         spam_row.pack(fill="x", pady=(0, 8))
 
-        self.spam_filter_var = ctk.BooleanVar(value=False)
+        if not hasattr(self, "spam_filter_var"):
+            self.spam_filter_var = ctk.BooleanVar(value=False)
         self.spam_filter_checkbox = ctk.CTkSwitch(
             spam_row,
             text="Separate flagged spam",
@@ -3228,7 +3659,8 @@ class App(ctk.CTk):
         )
         self.spam_threshold_value_label.pack(side="right")
 
-        self.spam_threshold_var = ctk.DoubleVar(value=0.5)
+        if not hasattr(self, "spam_threshold_var"):
+            self.spam_threshold_var = ctk.DoubleVar(value=0.5)
         self.spam_threshold_slider = ctk.CTkSlider(
             threshold_frame,
             from_=0.2,
@@ -3245,7 +3677,8 @@ class App(ctk.CTk):
         self.spam_threshold_slider.pack(fill="x", pady=(4, 0))
 
         # Exclude creator toggle
-        self.exclude_creator_var = ctk.BooleanVar(value=False)
+        if not hasattr(self, "exclude_creator_var"):
+            self.exclude_creator_var = ctk.BooleanVar(value=False)
         self.exclude_creator_checkbox = ctk.CTkSwitch(
             filters_frame,
             text="Exclude Creator",
@@ -3270,6 +3703,12 @@ class App(ctk.CTk):
         )
         min_likes_label.pack(side="left")
 
+        previous_min_likes = ""
+        if hasattr(self, "min_likes_entry"):
+            try:
+                previous_min_likes = self.min_likes_entry.get()
+            except Exception:
+                previous_min_likes = ""
         self.min_likes_entry = ctk.CTkEntry(
             min_likes_frame,
             width=70,
@@ -3282,7 +3721,7 @@ class App(ctk.CTk):
             justify="center"
         )
         self.min_likes_entry.pack(side="right")
-        self.min_likes_entry.insert(0, "0")
+        self.min_likes_entry.insert(0, previous_min_likes or "0")
 
         # Max comments
         max_comments_frame = ctk.CTkFrame(filters_frame, fg_color="transparent")
@@ -3296,6 +3735,12 @@ class App(ctk.CTk):
         )
         max_comments_label.pack(side="left")
 
+        previous_max_comments = ""
+        if hasattr(self, "max_comments_entry"):
+            try:
+                previous_max_comments = self.max_comments_entry.get()
+            except Exception:
+                previous_max_comments = ""
         self.max_comments_entry = ctk.CTkEntry(
             max_comments_frame,
             width=70,
@@ -3308,6 +3753,8 @@ class App(ctk.CTk):
             justify="center"
         )
         self.max_comments_entry.pack(side="right")
+        if previous_max_comments:
+            self.max_comments_entry.insert(0, previous_max_comments)
 
         max_comments_hint = ctk.CTkLabel(
             filters_frame,
@@ -3329,7 +3776,8 @@ class App(ctk.CTk):
         )
         sort_label.pack(side="left")
 
-        self.sort_var = ctk.StringVar(value="Date (Newest)")
+        if not hasattr(self, "sort_var"):
+            self.sort_var = ctk.StringVar(value="Date (Newest)")
         self.sort_dropdown = ctk.CTkOptionMenu(
             sort_frame,
             values=["Likes", "Date (Newest)", "Date (Oldest)"],
@@ -3346,12 +3794,14 @@ class App(ctk.CTk):
         )
         self.sort_dropdown.pack(side="right")
 
-    def _create_date_section(self) -> None:
+    def _create_date_section(self, parent: object | None = None, *, show_label: bool = True) -> None:
         """Create date range section in sidebar."""
-        self._create_section_label(self.sidebar_scroll, "DATE RANGE")
+        parent = parent or self.sidebar_scroll
+        if show_label:
+            self._create_section_label(parent, "DATE RANGE")
 
-        date_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
-        date_frame.pack(fill="x", padx=20)
+        date_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        date_frame.pack(fill="x", padx=20 if show_label else 0)
 
         # From date
         from_frame = ctk.CTkFrame(date_frame, fg_color="transparent")
@@ -3367,6 +3817,12 @@ class App(ctk.CTk):
         )
         from_label.pack(side="left")
 
+        previous_from_date = ""
+        if hasattr(self, "from_date_entry"):
+            try:
+                previous_from_date = self.from_date_entry.get()
+            except Exception:
+                previous_from_date = ""
         self.from_date_entry = ctk.CTkEntry(
             from_frame,
             placeholder_text="YYYY-MM-DD",
@@ -3377,6 +3833,8 @@ class App(ctk.CTk):
             corner_radius=6
         )
         self.from_date_entry.pack(side="right", fill="x", expand=True)
+        if previous_from_date:
+            self.from_date_entry.insert(0, previous_from_date)
 
         # To date
         to_frame = ctk.CTkFrame(date_frame, fg_color="transparent")
@@ -3392,6 +3850,12 @@ class App(ctk.CTk):
         )
         to_label.pack(side="left")
 
+        previous_to_date = ""
+        if hasattr(self, "to_date_entry"):
+            try:
+                previous_to_date = self.to_date_entry.get()
+            except Exception:
+                previous_to_date = ""
         self.to_date_entry = ctk.CTkEntry(
             to_frame,
             placeholder_text="YYYY-MM-DD",
@@ -3402,6 +3866,8 @@ class App(ctk.CTk):
             corner_radius=6
         )
         self.to_date_entry.pack(side="right", fill="x", expand=True)
+        if previous_to_date:
+            self.to_date_entry.insert(0, previous_to_date)
 
         # Hint
         hint_label = ctk.CTkLabel(
@@ -3412,12 +3878,14 @@ class App(ctk.CTk):
         )
         hint_label.pack(anchor="w", pady=(6, 0))
 
-    def _create_custom_filters_section(self) -> None:
-        """Create custom filters (blacklist/whitelist) section in sidebar."""
-        self._create_section_label(self.sidebar_scroll, "CUSTOM FILTERS")
+    def _create_custom_filters_section(self, parent: object | None = None, *, show_label: bool = True) -> None:
+        """Create custom blacklist/whitelist controls inside YouTube settings."""
+        parent = parent or self.sidebar_scroll
+        if show_label:
+            self._create_section_label(parent, "CUSTOM FILTERS")
 
-        custom_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
-        custom_frame.pack(fill="x", padx=20)
+        custom_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        custom_frame.pack(fill="x", padx=20 if show_label else 0)
 
         # Blacklist button
         self.blacklist_button = ctk.CTkButton(
@@ -3507,7 +3975,7 @@ class App(ctk.CTk):
             self.main_workspace.grid_rowconfigure(0, weight=1)
             parent.add(
                 self.main_workspace,
-                minsize=520,
+                minsize=420,
                 stretch="always",
             )
             main_parent = self.main_workspace
@@ -3519,13 +3987,14 @@ class App(ctk.CTk):
             scrollbar_button_color=COLORS["border"],
             scrollbar_button_hover_color=COLORS["accent_secondary"]
         )
-        self.main_frame.grid(row=row, column=column, sticky="nsew", padx=20, pady=20)
+        self.main_frame.grid(row=row, column=column, sticky="nsew", padx=6, pady=0)
         self.main_frame.grid_columnconfigure(0, weight=1)
         self.main_frame.grid_rowconfigure(5, weight=0)
 
         self._create_url_section()
         self._create_progress_section()
-        self._create_profile_media_database_workbench_panel()
+        # The bulky central HOME Repository block is intentionally not rendered.
+        # HOME controls and counters live in the compact left DATABASE / HOME area.
         self._create_text_editor_section()
         self._create_transcript_section()
         self._create_log_section()
@@ -3539,12 +4008,12 @@ class App(ctk.CTk):
             border_width=1,
             border_color=COLORS["border"]
         )
-        url_card.grid(row=0, column=0, sticky="ew", pady=(0, 15))
+        url_card.grid(row=0, column=0, sticky="ew", pady=(0, 5))
         url_card.grid_columnconfigure(0, weight=1)
 
         # URL input area
         url_frame = ctk.CTkFrame(url_card, fg_color="transparent")
-        url_frame.pack(fill="x", padx=20, pady=(20, 6))
+        url_frame.pack(fill="x", padx=10, pady=(5, 1))
 
         url_label = ctk.CTkLabel(
             url_frame,
@@ -3552,11 +4021,11 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS["text_primary"]
         )
-        url_label.pack(anchor="w", pady=(0, 10))
+        url_label.pack(anchor="e", pady=(0, 3))
 
         self.url_entry = ctk.CTkTextbox(
             url_frame,
-            height=112,
+            height=46,
             font=ctk.CTkFont(size=13),
             fg_color=COLORS["bg_input"],
             border_color=COLORS["border"],
@@ -3592,9 +4061,10 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_muted"],
             wraplength=820,
-            justify="left",
+            justify="right",
+            anchor="e",
         )
-        self.source_hint_label.pack(fill="x", anchor="w", pady=(6, 0))
+        self.source_hint_label.pack(fill="x", anchor="e", pady=(2, 0))
 
         # URL status
         self.url_status = ctk.CTkLabel(
@@ -3612,12 +4082,12 @@ class App(ctk.CTk):
             border_width=1,
             border_color=COLORS["border"],
         )
-        self.source_rows_frame.pack(fill="x", padx=20, pady=(4, 12))
+        self.source_rows_frame.pack(fill="x", padx=10, pady=(3, 4))
         self._refresh_source_resource_rows()
 
         # Filter words section
         filter_words_frame = ctk.CTkFrame(url_card, fg_color="transparent")
-        filter_words_frame.pack(fill="x", padx=20, pady=(0, 10))
+        filter_words_frame.pack(fill="x", padx=12, pady=(0, 6))
 
         filter_words_header = ctk.CTkFrame(filter_words_frame, fg_color="transparent")
         filter_words_header.pack(fill="x")
@@ -3626,78 +4096,95 @@ class App(ctk.CTk):
             filter_words_header,
             text="🔍 Only fetch comments with these words",
             font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=COLORS["text_primary"]
+            text_color=COLORS["text_primary"],
+            anchor="e",
+            justify="right",
         )
-        filter_words_label.pack(side="left")
+        filter_words_label.pack(fill="x", anchor="e")
 
         filter_words_hint = ctk.CTkLabel(
             filter_words_header,
             text="Comma-separated, matches any word",
             font=ctk.CTkFont(size=11),
-            text_color=COLORS["text_muted"]
+            text_color=COLORS["text_muted"],
+            anchor="e",
+            justify="right",
         )
-        filter_words_hint.pack(side="right")
+        filter_words_hint.pack(fill="x", anchor="e", pady=(1, 0))
 
         self.filter_words_entry = ctk.CTkEntry(
             filter_words_frame,
             height=36,
             placeholder_text="e.g., python, tutorial, beginner",
+            justify="right",
             font=ctk.CTkFont(size=13),
             fg_color=COLORS["bg_input"],
             border_color=COLORS["border"],
             corner_radius=6
         )
-        self.filter_words_entry.pack(fill="x", pady=(8, 0))
+        self.filter_words_entry.pack(fill="x", pady=(5, 0))
 
-        # Action buttons area
+        # Action buttons area. Go stays on the left. The source dropdown,
+        # source-mode checkboxes, Screenshot child rows, and TXT/CSV/Excel
+        # exports form one compact right-side stack. This puts the tickboxes
+        # directly above the export buttons instead of leaving them stranded in
+        # the middle of the card when the FILES pane is widened.
         action_area = ctk.CTkFrame(url_card, fg_color="transparent")
-        action_area.pack(fill="x", padx=20, pady=(0, 20))
+        action_area.pack(fill="x", padx=10, pady=(0, 6))
 
-        # The discussion selector sits above Go. The action columns remain
-        # visible by placing exports on their own responsive row.
         action_frame = ctk.CTkFrame(action_area, fg_color="transparent")
         action_frame.pack(fill="x")
-        for column in range(4):
-            action_frame.grid_columnconfigure(column, weight=0)
-        action_frame.grid_columnconfigure(4, weight=1)
+        action_frame.grid_columnconfigure(0, weight=0)
+        action_frame.grid_columnconfigure(1, weight=1)
+        action_frame.grid_columnconfigure(2, weight=0)
+
+        left_action_frame = ctk.CTkFrame(action_frame, fg_color="transparent")
+        left_action_frame.grid(row=1, column=1, sticky="e", padx=(0, 8), pady=(0, 0))
+
+        right_action_panel = ctk.CTkFrame(action_frame, fg_color="transparent")
+        right_action_panel.grid(row=0, column=2, rowspan=4, sticky="e")
+        right_action_panel.grid_columnconfigure(0, weight=1)
 
         self.discussion_source_var = ctk.StringVar(value="")
         self.discussion_source_menu = ctk.CTkOptionMenu(
-            action_frame,
+            right_action_panel,
             variable=self.discussion_source_var,
             values=[""],
             command=self._on_discussion_source_selected,
-            width=288,
+            width=318,
             height=30,
             fg_color=COLORS["bg_input"],
             button_color=COLORS["accent_secondary"],
             button_hover_color=COLORS["border"],
             text_color=COLORS["text_primary"],
         )
-        self.discussion_source_menu.grid(
-            row=0, column=0, columnspan=4, sticky="ew", pady=(0, 4)
-        )
+        self.discussion_source_menu.grid(row=0, column=0, sticky="e", pady=(0, 5))
 
         self.fetch_button = ctk.CTkButton(
-            action_frame,
+            left_action_frame,
             text="▶ Go",
             command=self.start_fetching,
             width=100,
-            height=40,
+            height=34,
             font=ctk.CTkFont(size=14, weight="bold"),
             fg_color=COLORS["accent"],
             hover_color=COLORS["accent_hover"],
             text_color="#000000",
             corner_radius=8,
         )
-        self.fetch_button.grid(row=2, column=0, sticky="nw", pady=(6, 0))
+        self.fetch_button.grid(row=0, column=0, sticky="w")
 
-        webpage_column = ctk.CTkFrame(action_frame, fg_color="transparent")
-        webpage_column.grid(row=2, column=1, sticky="nw", padx=(14, 0), pady=(6, 0))
-        comments_column = ctk.CTkFrame(action_frame, fg_color="transparent")
-        comments_column.grid(row=2, column=2, sticky="nw", padx=(14, 0), pady=(6, 0))
-        livechat_column = ctk.CTkFrame(action_frame, fg_color="transparent")
-        livechat_column.grid(row=2, column=3, sticky="nw", padx=(10, 0), pady=(6, 0))
+        checkbox_frame = ctk.CTkFrame(right_action_panel, fg_color="transparent")
+        checkbox_frame.grid(row=1, column=0, sticky="e", pady=(0, 5))
+        for column in range(3):
+            checkbox_frame.grid_columnconfigure(column, weight=0, minsize=94)
+
+        webpage_column = ctk.CTkFrame(checkbox_frame, fg_color="transparent")
+        webpage_column.grid(row=0, column=0, sticky="nw", padx=(0, 10))
+        comments_column = ctk.CTkFrame(checkbox_frame, fg_color="transparent")
+        comments_column.grid(row=0, column=1, sticky="nw", padx=(0, 10))
+        livechat_column = ctk.CTkFrame(checkbox_frame, fg_color="transparent")
+        livechat_column.grid(row=0, column=2, sticky="nw")
         self.extract_webpage_var = ctk.BooleanVar(value=False)
         self.extract_comments_var = ctk.BooleanVar(value=False)
         self.extract_live_chat_var = ctk.BooleanVar(value=False)
@@ -3791,7 +4278,7 @@ class App(ctk.CTk):
         self.livechat_screenshot_checkbox.pack(anchor="w", pady=(4, 0))
 
         self.cancel_button = ctk.CTkButton(
-            action_frame,
+            left_action_frame,
             text="⏹ Cancel",
             command=self.cancel_fetching,
             width=100,
@@ -3802,16 +4289,14 @@ class App(ctk.CTk):
             corner_radius=8,
         )
 
-        export_frame = ctk.CTkFrame(action_frame, fg_color="transparent")
-        export_frame.grid(
-            row=3, column=0, columnspan=5, sticky="e", pady=(10, 0)
-        )
+        export_frame = ctk.CTkFrame(right_action_panel, fg_color="transparent")
+        export_frame.grid(row=2, column=0, sticky="e", pady=(0, 0))
         self.export_excel_button = ctk.CTkButton(
             export_frame,
             text="📊 Excel",
             command=self.export_excel,
             width=90,
-            height=40,
+            height=34,
             font=ctk.CTkFont(size=13, weight="bold"),
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
@@ -3824,7 +4309,7 @@ class App(ctk.CTk):
             text="📥 CSV",
             command=self.export_csv,
             width=90,
-            height=40,
+            height=34,
             font=ctk.CTkFont(size=13, weight="bold"),
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
@@ -3837,7 +4322,7 @@ class App(ctk.CTk):
             text="📝 TXT",
             command=self.export_txt,
             width=90,
-            height=40,
+            height=34,
             font=ctk.CTkFont(size=13, weight="bold"),
             fg_color=COLORS["accent_secondary"],
             hover_color=COLORS["border"],
@@ -3967,9 +4452,12 @@ class App(ctk.CTk):
 
         self.editor_toggle_row = ctk.CTkFrame(self.progress_section, fg_color="transparent")
         self.editor_toggle_row.pack(fill="x", pady=(8, 0))
+        self.editor_toggle_row.grid_columnconfigure(0, weight=1)
+        self.editor_toggle_button_frame = ctk.CTkFrame(self.editor_toggle_row, fg_color="transparent")
+        self.editor_toggle_button_frame.grid(row=0, column=1, sticky="e")
 
         self.show_transcript_panel_button = ctk.CTkButton(
-            self.editor_toggle_row,
+            self.editor_toggle_button_frame,
             text="Transcript",
             command=self._toggle_transcript_panel,
             width=105,
@@ -3982,7 +4470,7 @@ class App(ctk.CTk):
         self.show_transcript_panel_button.pack(side="left")
 
         self.show_text_editor_panel_button = ctk.CTkButton(
-            self.editor_toggle_row,
+            self.editor_toggle_button_frame,
             text="Text Editor",
             command=self._toggle_text_editor_panel,
             width=115,
@@ -4065,7 +4553,7 @@ class App(ctk.CTk):
 
         self.profile_media_database_panel_title_label = ctk.CTkLabel(
             header,
-            text="▣ HOME Repository",
+            text="HOME",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS["text_primary"],
         )
@@ -4195,20 +4683,18 @@ class App(ctk.CTk):
     def _refresh_profile_media_database_workbench_panel(self) -> None:
         """Refresh the main Database panel using explicit safe presenter state only."""
         card = getattr(self, "profile_media_database_workbench_card", None)
-        if card is None:
-            return
-
         mode = self._coerce_profile_media_sidebar_mode()
-        if mode == "DATABASE":
-            try:
-                card.grid()
-            except Exception:
-                pass
-        else:
-            try:
-                card.grid_remove()
-            except Exception:
-                pass
+        if card is not None:
+            if mode == "DATABASE":
+                try:
+                    card.grid()
+                except Exception:
+                    pass
+            else:
+                try:
+                    card.grid_remove()
+                except Exception:
+                    pass
 
         try:
             from profile_media_database_workbench_panel import build_profile_media_database_gui_panel_state
@@ -4229,36 +4715,37 @@ class App(ctk.CTk):
 
         try:
             display_status = "HOME / ready" if state.status == "success" else "HOME / add sources" if state.status in ("ready_for_import", "ready_no_home_selection") else f"{state.mode} / {state.status}"
-            self.profile_media_database_panel_status_label.configure(text=display_status)
-            self.profile_media_database_panel_subtitle_label.configure(text=state.subtitle)
-
             metrics = {metric.key: metric for metric in state.metrics}
             display_metrics = {metric.key: metric for metric in getattr(state, "display_metrics", ())}
-            for key, label_widget in getattr(self, "profile_media_database_panel_metric_labels", {}).items():
-                metric = display_metrics.get(key) or metrics.get(key)
-                label_widget.configure(text=f"{metric.label}: {metric.value}" if metric else "")
 
-            lanes = {lane.key: lane for lane in state.review_lanes}
-            review_metric = display_metrics.get("review_items") or metrics.get("review_items")
-            for key, label_widget in getattr(self, "profile_media_database_panel_review_labels", {}).items():
-                if key == "review_items" and review_metric is not None:
-                    label_widget.configure(text=f"{review_metric.label}: {review_metric.value}")
-                elif key == "safe_no_download":
-                    label_widget.configure(text="No media download")
-                elif key == "safe_no_inference":
-                    label_widget.configure(text="No sensitive inference")
-                else:
-                    lane = lanes.get(key)
-                    label_widget.configure(text=f"{lane.label}: {lane.value}" if lane else "")
+            if card is not None:
+                self.profile_media_database_panel_status_label.configure(text=display_status)
+                self.profile_media_database_panel_subtitle_label.configure(text=state.subtitle)
+                for key, label_widget in getattr(self, "profile_media_database_panel_metric_labels", {}).items():
+                    metric = display_metrics.get(key) or metrics.get(key)
+                    label_widget.configure(text=f"{metric.label}: {metric.value}" if metric else "")
 
-            notices = "\n".join(state.notices[:3])
-            self.profile_media_database_panel_notice_label.configure(text=notices)
+                lanes = {lane.key: lane for lane in state.review_lanes}
+                review_metric = display_metrics.get("review_items") or metrics.get("review_items")
+                for key, label_widget in getattr(self, "profile_media_database_panel_review_labels", {}).items():
+                    if key == "review_items" and review_metric is not None:
+                        label_widget.configure(text=f"{review_metric.label}: {review_metric.value}")
+                    elif key == "safe_no_download":
+                        label_widget.configure(text="No media download")
+                    elif key == "safe_no_inference":
+                        label_widget.configure(text="No sensitive inference")
+                    else:
+                        lane = lanes.get(key)
+                        label_widget.configure(text=f"{lane.label}: {lane.value}" if lane else "")
 
-            display_metrics = {metric.key: metric for metric in getattr(state, "display_metrics", ())}
+                notices = "\n".join(state.notices[:3])
+                self.profile_media_database_panel_notice_label.configure(text=notices)
+
             for key, label_widget in getattr(self, "profile_media_database_sidebar_summary_labels", {}).items():
-                metric = display_metrics.get(key)
+                metric = display_metrics.get(key) or metrics.get(key)
                 if metric is not None:
-                    label_widget.configure(text=f"{metric.label}: {metric.value}")
+                    label_widget.configure(text=self._profile_media_sidebar_metric_text(key, metric.label, metric.value))
+            self._refresh_profile_media_home_sidebar_buttons()
         except Exception:
             logger.debug("Could not refresh profile/media Database GUI panel widgets.", exc_info=True)
 
@@ -4394,6 +4881,14 @@ class App(ctk.CTk):
         """Common-user SAVE action for the managed Profile/Media HOME repository."""
         return self._materialize_profile_media_database_selected_batches()
 
+    def _unload_profile_media_database_home_selection(self) -> None:
+        """Common-user Unload action for the current Profile/Media HOME selection."""
+        return self._clear_profile_media_database_batch_json_files()
+
+    def _import_profile_media_database_home_selection(self) -> None:
+        """Common-user Import action for adding Profile/Media source material."""
+        return self._select_profile_media_database_batch_json_files()
+
     def _materialize_profile_media_database_selected_batches(self) -> None:
         """Guarded save/create-folders flow for explicit Database HOME selections."""
         batch_json_files = tuple(getattr(self, "profile_media_database_batch_json_files", ()) or ())
@@ -4511,7 +5006,7 @@ class App(ctk.CTk):
             text_color=COLORS["text_primary"],
             cursor="hand2",
         )
-        self.text_editor_title_label.pack(side="left")
+        self.text_editor_title_label.pack(side="right")
         self.text_editor_title_label.bind("<Button-1>", lambda _event: self._toggle_text_editor_panel(), add="+")
 
         self.text_editor_status_label = ctk.CTkLabel(
@@ -4520,10 +5015,10 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_muted"],
         )
-        self.text_editor_status_label.pack(side="left", padx=(12, 0))
+        self.text_editor_status_label.pack(side="right", padx=(0, 12))
 
         action_row = ctk.CTkFrame(self.text_editor_card, fg_color="transparent")
-        action_row.pack(fill="x", padx=15, pady=(0, 8))
+        action_row.pack(anchor="e", padx=15, pady=(0, 8))
 
         self.text_editor_save_button = ctk.CTkButton(
             action_row,
@@ -5372,7 +5867,7 @@ class App(ctk.CTk):
             text_color=COLORS["text_primary"],
             cursor="hand2",
         )
-        self.transcript_title_label.pack(side="left")
+        self.transcript_title_label.pack(side="right")
         self.transcript_title_label.bind("<Button-1>", lambda _event: self._toggle_transcript_panel(), add="+")
 
         self.transcript_stats_label = ctk.CTkLabel(
@@ -5381,11 +5876,16 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_muted"]
         )
-        self.transcript_stats_label.pack(side="left", padx=(12, 0))
+        self.transcript_stats_label.pack(side="right", padx=(0, 12))
+
+        # Keep the existing transcript controls grouped as a compact block, but
+        # place that whole block on the right side where there is unused space.
+        self.transcript_controls_panel = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
+        self.transcript_controls_panel.pack(anchor="e", padx=15, pady=(0, 8))
 
         # Button row
-        button_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
-        button_row.pack(fill="x", padx=15, pady=(0, 8))
+        button_row = ctk.CTkFrame(self.transcript_controls_panel, fg_color="transparent")
+        button_row.pack(anchor="e", padx=15, pady=(0, 8))
 
         self.transcript_import_button = ctk.CTkButton(
             button_row,
@@ -5416,8 +5916,8 @@ class App(ctk.CTk):
         )
         self.transcript_youtube_button.pack(side="left", padx=(8, 0))
 
-        asr_button_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
-        asr_button_row.pack(fill="x", padx=15, pady=(0, 8))
+        asr_button_row = ctk.CTkFrame(self.transcript_controls_panel, fg_color="transparent")
+        asr_button_row.pack(anchor="e", padx=15, pady=(0, 8))
 
         self.transcript_asr_button_wrap = ctk.CTkFrame(
             asr_button_row,
@@ -5680,8 +6180,8 @@ class App(ctk.CTk):
         self.transcript_media_clear_button.pack(side="left", padx=(4, 0))
 
         # Transcript editor tools row
-        transcript_edit_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
-        transcript_edit_row.pack(fill="x", padx=15, pady=(0, 8))
+        transcript_edit_row = ctk.CTkFrame(self.transcript_controls_panel, fg_color="transparent")
+        transcript_edit_row.pack(anchor="e", padx=15, pady=(0, 8))
 
         self.transcript_rename_button = ctk.CTkButton(
             transcript_edit_row,
@@ -5725,8 +6225,8 @@ class App(ctk.CTk):
         )
         self.transcript_edit_segment_button.pack(side="left", padx=(8, 0))
 
-        transcript_merge_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
-        transcript_merge_row.pack(fill="x", padx=15, pady=(0, 8))
+        transcript_merge_row = ctk.CTkFrame(self.transcript_controls_panel, fg_color="transparent")
+        transcript_merge_row.pack(anchor="e", padx=15, pady=(0, 8))
 
         self.transcript_merge_up_button = ctk.CTkButton(
             transcript_merge_row,
@@ -5772,8 +6272,8 @@ class App(ctk.CTk):
         self.transcript_clear_button.pack(side="left", padx=(8, 0))
 
         # Transcript export row
-        transcript_export_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
-        transcript_export_row.pack(fill="x", padx=15, pady=(2, 8))
+        transcript_export_row = ctk.CTkFrame(self.transcript_controls_panel, fg_color="transparent")
+        transcript_export_row.pack(anchor="e", padx=15, pady=(2, 8))
 
         export_label = ctk.CTkLabel(
             transcript_export_row,
@@ -5840,8 +6340,8 @@ class App(ctk.CTk):
         self.transcript_export_csv_button.pack(side="left", padx=(8, 0))
 
         # Display options row
-        transcript_options_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
-        transcript_options_row.pack(fill="x", padx=15, pady=(0, 8))
+        transcript_options_row = ctk.CTkFrame(self.transcript_controls_panel, fg_color="transparent")
+        transcript_options_row.pack(anchor="e", padx=15, pady=(0, 8))
 
         options_label = ctk.CTkLabel(
             transcript_options_row,
@@ -5886,8 +6386,8 @@ class App(ctk.CTk):
         self.transcript_search_current_index = -1
         self.transcript_search_var = ctk.StringVar(value="")
 
-        transcript_search_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
-        transcript_search_row.pack(fill="x", padx=15, pady=(0, 8))
+        transcript_search_row = ctk.CTkFrame(self.transcript_controls_panel, fg_color="transparent")
+        transcript_search_row.pack(anchor="e", padx=15, pady=(0, 8))
 
         search_label = ctk.CTkLabel(
             transcript_search_row,
@@ -5953,7 +6453,7 @@ class App(ctk.CTk):
         )
 
         transcript_qa_row = ctk.CTkFrame(self.transcript_card, fg_color="transparent")
-        transcript_qa_row.pack(fill="x", padx=15, pady=(0, 8))
+        transcript_qa_row.pack(anchor="e", padx=15, pady=(0, 8))
 
         transcript_qa_label = ctk.CTkLabel(
             transcript_qa_row,
@@ -5984,7 +6484,7 @@ class App(ctk.CTk):
             corner_radius=8,
             state="disabled"
         )
-        self.transcript_qa_refresh_button.pack(side="right")
+        self.transcript_qa_refresh_button.pack(side="left", padx=(10, 0))
 
         self.transcript_qa_issue_frame = ctk.CTkFrame(
             self.transcript_card,
@@ -6419,7 +6919,7 @@ class App(ctk.CTk):
         # Log content
         self.log_frame = ctk.CTkScrollableFrame(
             self.log_card,
-            height=90,
+            height=74,
             fg_color=COLORS["bg_input"],
             corner_radius=8
         )
@@ -6566,7 +7066,9 @@ class App(ctk.CTk):
         if whitelist_count > 0:
             parts.append(f"{whitelist_count} whitelisted")
 
-        self.pattern_count_label.configure(text=" • ".join(parts) if parts else "")
+        label = getattr(self, "pattern_count_label", None)
+        if label is not None:
+            label.configure(text=" • ".join(parts) if parts else "")
 
     # =========================================================================
     # EVENT HANDLERS
@@ -7260,16 +7762,16 @@ class App(ctk.CTk):
                 text_color=COLORS["text_secondary"],
             )
 
-    def _youtube_oembed_title_probe(self, source_url: str) -> str:
-        """Fetch a lightweight YouTube title without needing the YouTube Data API.
+    def _youtube_oembed_metadata_probe(self, source_url: str) -> dict[str, str]:
+        """Fetch lightweight YouTube oEmbed metadata for display fields.
 
-        This is only a display-title fallback for the source row.  Full media
-        discovery still uses yt-dlp, and comments/livechat still use the normal
-        YouTube runtime.
+        oEmbed normally provides title and author_name/channel. It does not
+        provide upload date or views, so those fields remain tied to yt-dlp or
+        another explicit metadata source.
         """
         normalized_url = str(source_url or "").strip()
         if not normalized_url:
-            return ""
+            return {}
         endpoint = (
             "https://www.youtube.com/oembed?format=json&url="
             + urllib.parse.quote(normalized_url, safe="")
@@ -7281,7 +7783,22 @@ class App(ctk.CTk):
         with urllib.request.urlopen(request, timeout=8) as response:
             payload = response.read().decode("utf-8", errors="replace")
         data = json.loads(payload or "{}")
-        return str(data.get("title") or "").strip()
+        return {
+            "title": str(data.get("title") or "").strip(),
+            "channel": str(data.get("author_name") or "").strip(),
+            "webpage_url": normalized_url,
+            "video_id": self._youtube_video_id_from_url(normalized_url),
+            "metadata_source": "youtube_oembed",
+        }
+
+    def _youtube_oembed_title_probe(self, source_url: str) -> str:
+        """Fetch a lightweight YouTube title without needing the YouTube Data API.
+
+        This remains a display-title fallback. Full media discovery still uses
+        yt-dlp when available, and comments/livechat still use the normal
+        YouTube runtime.
+        """
+        return str(self._youtube_oembed_metadata_probe(source_url).get("title") or "").strip()
 
     def _youtube_watch_html_quality_probe(self, source_url: str) -> tuple[str, ...]:
         """Best-effort quality discovery from YouTube's watch page.
@@ -7331,15 +7848,30 @@ class App(ctk.CTk):
                 labels.append(label)
         return tuple(labels)
 
-    def _apply_youtube_source_row_discovery(self, row_id: str, title: str, quality_labels: Sequence[str], status: str = "ready") -> None:
+    def _apply_youtube_source_row_discovery(
+        self,
+        row_id: str,
+        title: str,
+        quality_labels: Sequence[str],
+        status: str = "ready",
+        metadata: dict[str, object] | None = None,
+    ) -> None:
         labels = tuple(label for label in quality_labels if label in {name for name, _height in YOUTUBE_GUI_QUALITY_PRESETS})
         if labels:
             self.youtube_source_row_available_quality_labels[row_id] = labels
         self.youtube_source_row_discovery_status[row_id] = status
+        if metadata:
+            clean_metadata = {
+                str(key): str(value)
+                for key, value in metadata.items()
+                if value not in (None, "")
+            }
+            if clean_metadata:
+                self.__dict__.setdefault("youtube_source_row_discovery_metadata", {})[row_id] = clean_metadata
         updated_rows: list[SourceResourceRowState] = []
         for row in self.__dict__.get("source_resource_rows", ()):
             if row.row_id == row_id and title:
-                updated_rows.append(replace(row, title=title, display_label=f"{title} - YouTube"))
+                updated_rows.append(replace(row, title=title, display_title=title, display_label=f"{title} - YouTube"))
             else:
                 updated_rows.append(row)
         self.source_resource_rows = updated_rows
@@ -7367,19 +7899,29 @@ class App(ctk.CTk):
                             self._youtube_preferences_for_row(row.row_id)
                         ),
                     )
+                    metadata = {
+                        "title": discovery.title,
+                        "channel": discovery.channel or discovery.uploader,
+                        "upload_date": discovery.upload_date,
+                        "view_count": discovery.view_count,
+                        "webpage_url": discovery.webpage_url,
+                        "source_url": discovery.source_url,
+                    }
                     self.after(
                         0,
-                        lambda row_id=row.row_id, title=title, qualities=qualities: self._apply_youtube_source_row_discovery(
+                        lambda row_id=row.row_id, title=title, qualities=qualities, metadata=metadata: self._apply_youtube_source_row_discovery(
                             row_id,
                             title,
                             qualities,
                             "ready",
+                            metadata,
                         ),
                     )
                     continue
                 except Exception as ytdlp_error:
                     try:
-                        title = self._youtube_oembed_title_probe(row.canonical_url)
+                        oembed_metadata = self._youtube_oembed_metadata_probe(row.canonical_url)
+                        title = oembed_metadata.get("title") or ""
                     except Exception as oembed_error:
                         self.after(
                             0,
@@ -7402,11 +7944,12 @@ class App(ctk.CTk):
                         qualities = (current,) if current else ()
                     self.after(
                         0,
-                        lambda row_id=row.row_id, title=title, qualities=qualities: self._apply_youtube_source_row_discovery(
+                        lambda row_id=row.row_id, title=title, qualities=qualities, metadata=oembed_metadata: self._apply_youtube_source_row_discovery(
                             row_id,
                             title,
                             qualities,
                             "title_only",
+                            metadata,
                         ),
                     )
 
@@ -7599,7 +8142,7 @@ class App(ctk.CTk):
         else:
             self.fetch_button.pack_forget()
         if hasattr(self.cancel_button, "grid"):
-            self.cancel_button.grid(row=2, column=0, sticky="w", pady=(6, 0))
+            self.cancel_button.grid(row=0, column=0, sticky="w")
         else:
             self.cancel_button.pack(side="left")
         self.export_button.configure(state="disabled")
@@ -7674,140 +8217,8 @@ class App(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _open_youtube_source_settings(self, row_id: str) -> None:
-        row = self._source_row_by_id(row_id)
-        if row is None:
-            return
-        prefs = self._youtube_preferences_for_row(row_id)
-        window = ctk.CTkToplevel(self)
-        window.title("YouTube media settings")
-        window.geometry("560x500")
-        window.transient(self)
-        window.grab_set()
-
-        header = ctk.CTkLabel(
-            window,
-            text=f"YouTube media settings\n{row.title}\n{row.domain}",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=COLORS["text_primary"],
-            justify="left",
-        )
-        header.pack(anchor="w", padx=16, pady=(14, 8))
-
-        body = ctk.CTkScrollableFrame(window, fg_color=COLORS["bg_input"])
-        body.pack(fill="both", expand=True, padx=16, pady=(0, 8))
-
-        video_var = ctk.BooleanVar(value=prefs.video_enabled)
-        audio_var = ctk.BooleanVar(value=prefs.separate_audio_enabled)
-        thumbnail_var = ctk.BooleanVar(value=prefs.thumbnail_enabled)
-        subtitles_var = ctk.BooleanVar(value=prefs.subtitles_enabled)
-        auto_subs_var = ctk.BooleanVar(value=prefs.auto_subtitles_enabled)
-        show_dropdown_var = ctk.BooleanVar(value=prefs.show_quality_dropdown)
-        quality_enabled_vars: dict[str, Any] = {}
-        quality_labels = tuple(label for label, _height in YOUTUBE_GUI_QUALITY_PRESETS)
-
-        default_label = (
-            prefs.default_quality_label
-            if prefs.default_quality_label in set(quality_labels)
-            else "1080"
-        )
-        default_var = ctk.StringVar(value=default_label)
-
-        def apply_preferences() -> YouTubeGuiMediaPreferences:
-            enabled_labels = tuple(
-                label
-                for label, _height in YOUTUBE_GUI_QUALITY_PRESETS
-                if quality_enabled_vars.get(label) is not None
-                and bool(quality_enabled_vars[label].get())
-            )
-            if not enabled_labels:
-                enabled_labels = (default_var.get() or "1080",)
-            default_choice = default_var.get() or enabled_labels[0]
-            saved_default = default_choice if default_choice in enabled_labels else enabled_labels[0]
-            saved = YouTubeGuiMediaPreferences(
-                video_enabled=bool(video_var.get()),
-                separate_audio_enabled=bool(audio_var.get()),
-                thumbnail_enabled=bool(thumbnail_var.get()),
-                subtitles_enabled=bool(subtitles_var.get()),
-                auto_subtitles_enabled=bool(auto_subs_var.get()),
-                show_quality_dropdown=bool(show_dropdown_var.get()),
-                enabled_quality_labels=enabled_labels,
-                default_quality_label=saved_default,
-            )
-            self.youtube_source_row_preferences[row_id] = saved
-            self._youtube_quality_var_for_row(row_id).set(saved.default_quality_label)
-            self._refresh_source_resource_rows()
-            if hasattr(self, "url_status"):
-                self.url_status.configure(
-                    text="YouTube media settings applied.",
-                    text_color=COLORS["text_secondary"],
-                )
-            return saved
-
-        for text_value, var in (
-            ("Muxed video + best audio (mp4)", video_var),
-            ("Separate audio file (m4a)", audio_var),
-            ("Thumbnail / image", thumbnail_var),
-            ("Manual subtitle files", subtitles_var),
-            ("Auto / ASR subtitle files", auto_subs_var),
-            ("Show quality dropdown on YouTube source row", show_dropdown_var),
-        ):
-            ctk.CTkCheckBox(
-                body,
-                text=text_value,
-                variable=var,
-                command=apply_preferences,
-                font=ctk.CTkFont(size=12),
-                text_color=COLORS["text_primary"],
-            ).pack(anchor="w", padx=8, pady=5)
-
-        ctk.CTkLabel(
-            body,
-            text="Enabled quality options",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=COLORS["text_primary"],
-        ).pack(anchor="w", padx=8, pady=(12, 4))
-        enabled = set(prefs.enabled_quality_labels)
-        for label, _height in YOUTUBE_GUI_QUALITY_PRESETS:
-            var = ctk.BooleanVar(value=label in enabled)
-            quality_enabled_vars[label] = var
-            ctk.CTkCheckBox(
-                body,
-                text=label,
-                variable=var,
-                command=apply_preferences,
-                font=ctk.CTkFont(size=12),
-                text_color=COLORS["text_primary"],
-            ).pack(anchor="w", padx=24, pady=3)
-
-        ctk.CTkLabel(
-            body,
-            text="Default quality",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=COLORS["text_primary"],
-        ).pack(anchor="w", padx=8, pady=(12, 4))
-        ctk.CTkOptionMenu(
-            body,
-            variable=default_var,
-            values=list(quality_labels),
-            command=lambda _choice: apply_preferences(),
-            width=140,
-            fg_color=COLORS["bg_card"],
-            button_color=COLORS["accent_secondary"],
-            button_hover_color=COLORS["border"],
-            text_color=COLORS["text_primary"],
-            dropdown_fg_color=COLORS["bg_card"],
-            dropdown_hover_color=COLORS["accent_secondary"],
-            dropdown_text_color=COLORS["text_primary"],
-        ).pack(anchor="w", padx=8, pady=(0, 8))
-
-        footer = ctk.CTkFrame(window, fg_color="transparent")
-        footer.pack(fill="x", padx=16, pady=(8, 14))
-        ctk.CTkLabel(
-            footer,
-            text="Settings apply immediately. Go adds enabled YouTube media to FILES automatically.",
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 8))
+        """Open the combined YouTube settings window focused on this source row."""
+        self._open_youtube_filter_settings_window(row_id=row_id)
 
     @staticmethod
     def _archive_service_button_text(service_id: str) -> str:
@@ -7832,10 +8243,10 @@ class App(ctk.CTk):
                 text="No source rows yet. Press Enter in Source URLs to add local source rows.",
                 font=ctk.CTkFont(size=11),
                 text_color=COLORS["text_muted"],
-                justify="left",
-                anchor="w",
+                justify="right",
+                anchor="e",
             )
-            empty.pack(fill="x", anchor="w", padx=10, pady=8)
+            empty.pack(fill="x", anchor="e", padx=10, pady=8)
             return
 
         for row_index, row in enumerate(rows):
@@ -8347,14 +8758,263 @@ class App(ctk.CTk):
         self._refresh_discussion_source_controls()
         self.log_message("Removed local source row. Network actions performed: none.", "muted")
 
+    def _copy_text_to_clipboard(self, value: str, log_message: str = "Copied to clipboard.") -> None:
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(str(value or ""))
+            self.log_message(log_message, "success")
+        except Exception:
+            logger.debug("Could not copy text to clipboard.", exc_info=True)
+
+    def _youtube_video_id_from_url(self, url: str) -> str:
+        """Extract a YouTube video id for local metadata matching only."""
+        try:
+            parts = urllib.parse.urlsplit(str(url or "").strip())
+            host = parts.netloc.lower()
+            path_parts = [part for part in parts.path.split("/") if part]
+            query = dict(urllib.parse.parse_qsl(parts.query, keep_blank_values=True))
+            if "youtu.be" in host and path_parts:
+                return path_parts[0]
+            if "youtube.com" in host:
+                if query.get("v"):
+                    return str(query.get("v") or "")
+                for marker in ("shorts", "live", "embed"):
+                    if marker in path_parts:
+                        index = path_parts.index(marker)
+                        if index + 1 < len(path_parts):
+                            return path_parts[index + 1]
+        except Exception:
+            logger.debug("Could not parse YouTube video id.", exc_info=True)
+        return ""
+
+    def _format_source_detail_number(self, value: object) -> str:
+        """Format integer-like metadata values for source details."""
+        try:
+            if value in (None, ""):
+                return ""
+            return f"{int(value):,}"
+        except (TypeError, ValueError):
+            return str(value or "").strip()
+
+    def _format_youtube_source_detail_date(self, value: object) -> str:
+        """Format yt-dlp YYYYMMDD dates without inventing missing dates."""
+        text = str(value or "").strip()
+        if re.fullmatch(r"\d{8}", text):
+            return f"{text[0:4]}-{text[4:6]}-{text[6:8]}"
+        return text
+
+    def _youtube_source_detail_metadata(self, row: SourceResourceRowState) -> dict[str, str]:
+        """Return cached YouTube metadata for the row, if discovery has loaded it."""
+        cache = getattr(self, "youtube_source_row_discovery_metadata", {}) or {}
+        metadata = cache.get(row.row_id, {}) if isinstance(cache, dict) else {}
+        if isinstance(metadata, dict) and metadata:
+            return {str(key): str(value) for key, value in metadata.items() if value not in (None, "")}
+
+        info = getattr(self, "last_youtube_video_info", None) or {}
+        if not isinstance(info, dict):
+            return {}
+        row_video_id = self._youtube_video_id_from_url(row.canonical_url)
+        info_url = str(info.get("url") or "")
+        info_video_id = str(info.get("video_id") or "") or self._youtube_video_id_from_url(info_url)
+        if row_video_id and info_video_id and row_video_id == info_video_id:
+            return {
+                "title": str(info.get("title") or ""),
+                "channel": str(info.get("channel_title") or info.get("channel") or ""),
+                "upload_date": str(info.get("published_at") or info.get("upload_date") or ""),
+                "view_count": str(info.get("view_count_text") or info.get("view_count") or ""),
+                "webpage_url": info_url,
+            }
+        return {}
+
+    def _source_row_details_fields(self, row: SourceResourceRowState) -> tuple[tuple[str, str], ...]:
+        """Return copyable source-detail fields without requiring a blocking messagebox."""
+        metadata = self._youtube_source_detail_metadata(row) if self._source_row_is_youtube(row) else {}
+        title = (
+            metadata.get("title")
+            or row.title
+            or row.display_title
+            or row.display_label
+        )
+        fields: list[tuple[str, str]] = [("Title", title)]
+        if self._source_row_is_youtube(row):
+            channel = metadata.get("channel") or metadata.get("uploader") or ""
+            published = self._format_youtube_source_detail_date(
+                metadata.get("upload_date") or metadata.get("published_at") or ""
+            )
+            views = self._format_source_detail_number(
+                metadata.get("view_count") or metadata.get("views") or ""
+            )
+            fields.extend([
+                ("Channel", channel or "Not loaded"),
+                ("Date", published or "Not loaded"),
+                ("Views", views or "Not loaded"),
+            ])
+        else:
+            fields.append(("Source", row.domain or row.adapter_display_name))
+        fields.append(("URL", row.canonical_url))
+        if row.warnings:
+            fields.append(("Notes", "\n".join(f"- {warning}" for warning in row.warnings)))
+        return tuple(fields)
+
+    def _source_row_details_text(self, row: SourceResourceRowState) -> str:
+        """Format source details for display/copy without a blocking messagebox."""
+        return "\n".join(f"{label}: {value}" for label, value in self._source_row_details_fields(row))
+
+    def _load_source_row_details_metadata_async(
+        self,
+        row_id: str,
+        details_box: ctk.CTkTextbox,
+        status_label: ctk.CTkLabel,
+    ) -> None:
+        """Load YouTube row metadata for Source details without freezing or beeping."""
+        row = self._source_row_by_id(row_id)
+        if row is None or not self._source_row_is_youtube(row):
+            return
+        if self._youtube_source_detail_metadata(row):
+            return
+        try:
+            status_label.configure(text="Loading metadata…")
+        except Exception:
+            pass
+
+        def worker() -> None:
+            try:
+                discovery = discover_youtube_media_with_ytdlp(row.canonical_url)
+                metadata = {
+                    "title": discovery.title,
+                    "channel": discovery.channel or discovery.uploader,
+                    "upload_date": discovery.upload_date,
+                    "view_count": discovery.view_count,
+                    "webpage_url": discovery.webpage_url,
+                    "video_id": self._youtube_video_id_from_url(discovery.webpage_url or row.canonical_url),
+                }
+                title = youtube_title_from_discovery(discovery, row.title)
+                qualities = youtube_available_quality_labels_from_discovery(
+                    discovery,
+                    fallback=normalized_youtube_quality_labels(
+                        self._youtube_preferences_for_row(row.row_id)
+                    ),
+                )
+            except Exception as error:
+                error_text = str(error)
+                try:
+                    metadata = self._youtube_oembed_metadata_probe(row.canonical_url)
+                    title = metadata.get("title") or row.title
+                    qualities = tuple(self._youtube_quality_values_for_row(row.row_id)) or tuple(
+                        normalized_youtube_quality_labels(self._youtube_preferences_for_row(row.row_id))
+                    )
+                    status = "title_only"
+                except Exception:
+                    def failed() -> None:
+                        try:
+                            status_label.configure(text=f"Metadata not loaded: {error_text}")
+                        except Exception:
+                            pass
+                    try:
+                        self.after(0, failed)
+                    except Exception:
+                        pass
+                    return
+            else:
+                status = "ready"
+
+            def apply() -> None:
+                try:
+                    self._apply_youtube_source_row_discovery(
+                        row.row_id,
+                        title,
+                        qualities,
+                        status=status,
+                        metadata=metadata,
+                    )
+                    updated = self._source_row_by_id(row.row_id) or row
+                    details_text = self._source_row_details_text(updated)
+                    details_box.configure(state="normal")
+                    details_box.delete("1.0", "end")
+                    details_box.insert("1.0", details_text)
+                    details_box.configure(state="disabled")
+                    details_box._source_details_text = details_text
+                    status_label.configure(
+                        text="Metadata loaded" if status == "ready" else "Basic metadata loaded; date/views need yt-dlp"
+                    )
+                except Exception:
+                    logger.debug("Could not update Source details metadata window.", exc_info=True)
+            try:
+                self.after(0, apply)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _show_source_row_details(self, row_id: str) -> None:
         row = self._source_row_by_id(row_id)
         if row is None:
             return
-        details = [row.title, f"URL: {row.canonical_url}"]
-        if row.warnings:
-            details.extend(["", "Notes:", *[f"- {warning}" for warning in row.warnings]])
-        messagebox.showinfo("Source details", "\n".join(details))
+        window = ctk.CTkToplevel(self)
+        window.title("Source details")
+        window.geometry("560x330")
+        window.transient(self)
+        window.configure(fg_color=COLORS["bg_dark"])
+        window.grid_columnconfigure(0, weight=1)
+        window.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            window,
+            text="Source details",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=COLORS["text_primary"],
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=18, pady=(16, 8))
+
+        details_text = self._source_row_details_text(row)
+        details_box = ctk.CTkTextbox(
+            window,
+            height=168,
+            fg_color=COLORS["bg_input"],
+            text_color=COLORS["text_primary"],
+            border_color=COLORS["border"],
+            border_width=1,
+            corner_radius=8,
+            wrap="word",
+        )
+        details_box.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 6))
+        details_box.insert("1.0", details_text)
+        details_box.configure(state="disabled")
+        details_box._source_details_text = details_text
+
+        status_label = ctk.CTkLabel(
+            window,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+        )
+        status_label.grid(row=2, column=0, sticky="w", padx=18, pady=(0, 8))
+
+        def copy_details() -> None:
+            try:
+                self.clipboard_clear()
+                self.clipboard_append(getattr(details_box, "_source_details_text", details_text))
+                self.log_message("Source details copied to clipboard.", "success")
+            except Exception:
+                logger.debug("Could not copy source details.", exc_info=True)
+
+        button_row = ctk.CTkFrame(window, fg_color="transparent")
+        button_row.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 14))
+        button_row.grid_columnconfigure(3, weight=1)
+        ctk.CTkButton(button_row, text="Copy URL", width=90, command=lambda: self._copy_text_to_clipboard(row.canonical_url, "Source URL copied.")).grid(row=0, column=0, sticky="w")
+        ctk.CTkButton(button_row, text="Copy details", width=110, command=copy_details).grid(row=0, column=1, sticky="w", padx=(8, 0))
+        if self._source_row_is_youtube(row):
+            ctk.CTkButton(
+                button_row,
+                text="Load metadata",
+                width=120,
+                command=lambda: self._load_source_row_details_metadata_async(row.row_id, details_box, status_label),
+            ).grid(row=0, column=2, sticky="w", padx=(8, 0))
+        ctk.CTkButton(button_row, text="Close", width=90, command=window.destroy).grid(row=0, column=4, sticky="e")
+
+        if self._source_row_is_youtube(row) and not self._youtube_source_detail_metadata(row):
+            self._load_source_row_details_metadata_async(row.row_id, details_box, status_label)
+
 
     def _local_web_archive_status_lines(self, archive_status: Any) -> tuple[str, ...]:
         state = build_local_web_archive_action_state(
@@ -8452,34 +9112,167 @@ class App(ctk.CTk):
             justify="left",
         )
         header.pack(anchor="w", padx=16, pady=(14, 8))
-        list_frame = ctk.CTkScrollableFrame(window, fg_color=COLORS["bg_input"])
-        list_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         selected_ids: set[str] = set(state.selected_resource_ids)
         vars_by_id: dict[str, Any] = {}
-        if not state.resources:
-            empty = ctk.CTkLabel(
-                list_frame,
-                text="No selectable media resources are available for this source.",
-                text_color=COLORS["text_muted"],
+
+        filter_frame = ctk.CTkFrame(window, fg_color=COLORS["bg_input"], corner_radius=7)
+        filter_frame.pack(fill="x", padx=16, pady=(0, 8))
+        filter_frame.grid_columnconfigure((0, 1), weight=1)
+        url_filter_var = ctk.StringVar(value="")
+        text_filter_var = ctk.StringVar(value="")
+        min_width_var = ctk.StringVar(value="")
+        min_height_var = ctk.StringVar(value="")
+        url_filter_entry = ctk.CTkEntry(
+            filter_frame,
+            textvariable=url_filter_var,
+            placeholder_text="URL filter",
+            height=30,
+            font=ctk.CTkFont(size=11),
+        )
+        url_filter_entry.grid(row=0, column=0, sticky="ew", padx=(8, 4), pady=(8, 4))
+        text_filter_entry = ctk.CTkEntry(
+            filter_frame,
+            textvariable=text_filter_var,
+            placeholder_text="Type/name filter",
+            height=30,
+            font=ctk.CTkFont(size=11),
+        )
+        text_filter_entry.grid(row=0, column=1, sticky="ew", padx=(4, 8), pady=(8, 4))
+        min_width_entry = ctk.CTkEntry(
+            filter_frame,
+            textvariable=min_width_var,
+            placeholder_text="Min width",
+            height=28,
+            font=ctk.CTkFont(size=11),
+        )
+        min_width_entry.grid(row=1, column=0, sticky="ew", padx=(8, 4), pady=(0, 6))
+        min_height_entry = ctk.CTkEntry(
+            filter_frame,
+            textvariable=min_height_var,
+            placeholder_text="Min height",
+            height=28,
+            font=ctk.CTkFont(size=11),
+        )
+        min_height_entry.grid(row=1, column=1, sticky="ew", padx=(4, 8), pady=(0, 6))
+        only_links_var = ctk.BooleanVar(value=False)
+        save_subfolder_var = ctk.BooleanVar(value=True)
+        rename_files_var = ctk.BooleanVar(value=False)
+        option_row = ctk.CTkFrame(filter_frame, fg_color="transparent")
+        option_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
+        ctk.CTkCheckBox(
+            option_row,
+            text="Only images from links" if resource_kind == RESOURCE_KIND_IMAGE else "Only media from links",
+            variable=only_links_var,
+            command=lambda: (render_resource_list(), refresh_count()),
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_primary"],
+            width=20,
+        ).pack(side="left", padx=(0, 10))
+        ctk.CTkCheckBox(
+            option_row,
+            text="Save to subfolder",
+            variable=save_subfolder_var,
+            command=lambda: (render_resource_list(), refresh_count()),
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_primary"],
+            width=20,
+        ).pack(side="left", padx=(0, 10))
+        ctk.CTkCheckBox(
+            option_row,
+            text="Rename files",
+            variable=rename_files_var,
+            command=lambda: (render_resource_list(), refresh_count()),
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_primary"],
+            width=20,
+        ).pack(side="left")
+
+        list_frame = ctk.CTkScrollableFrame(window, fg_color=COLORS["bg_input"])
+        list_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+        active_state = state
+
+        def parse_positive_int(value: str) -> int:
+            try:
+                return max(0, int(str(value or "").strip()))
+            except ValueError:
+                return 0
+
+        def current_filters() -> MediaResourceFilterState:
+            return MediaResourceFilterState(
+                url_filter=url_filter_entry.get(),
+                text_filter=text_filter_entry.get(),
+                min_width=parse_positive_int(min_width_entry.get()),
+                min_height=parse_positive_int(min_height_entry.get()),
+                only_linked_resources=bool(only_links_var.get()),
+                save_to_subfolder=bool(save_subfolder_var.get()),
+                rename_files=bool(rename_files_var.get()),
             )
-            empty.pack(anchor="w", padx=8, pady=8)
-        for item in state.resources:
-            item_var = ctk.BooleanVar(value=item.resource_id in selected_ids)
-            vars_by_id[item.resource_id] = item_var
-            row_text = f"{item.display_name} ({item.extension or item.media_type})"
-            if item.width and item.height:
-                row_text = f"{row_text} - {item.width}x{item.height}"
-            if item.duration_seconds:
-                row_text = f"{row_text} - {item.duration_seconds:g}s"
-            checkbox = ctk.CTkCheckBox(
-                list_frame,
-                text=row_text,
-                variable=item_var,
-                state="normal" if item.selectable else "disabled",
-                font=ctk.CTkFont(size=12),
-                text_color=COLORS["text_primary"],
-            )
-            checkbox.pack(anchor="w", padx=8, pady=5)
+
+        def render_resource_list() -> None:
+            nonlocal active_state
+            active_state = filter_resource_dialog_items(state, current_filters())
+            for child in list_frame.winfo_children():
+                child.destroy()
+            vars_by_id.clear()
+            if not active_state.resources:
+                empty = ctk.CTkLabel(
+                    list_frame,
+                    text="No selectable media resources match this source/filter.",
+                    text_color=COLORS["text_muted"],
+                )
+                empty.pack(anchor="w", padx=8, pady=8)
+                return
+            for item in active_state.resources:
+                item_var = ctk.BooleanVar(value=item.resource_id in selected_ids)
+                vars_by_id[item.resource_id] = item_var
+
+                def on_item_toggle(resource_id: str = item.resource_id, var: Any = item_var) -> None:
+                    if var.get():
+                        selected_ids.add(resource_id)
+                    else:
+                        selected_ids.discard(resource_id)
+                    refresh_count()
+
+                needs_review = bool(item.warning or "review" in str(item.status or "").lower())
+                item_card = ctk.CTkFrame(
+                    list_frame,
+                    fg_color="#3b151c" if needs_review else COLORS["bg_card"],
+                    border_width=1 if needs_review else 0,
+                    border_color="#ff5d73" if needs_review else COLORS["border"],
+                    corner_radius=7,
+                )
+                item_card.pack(fill="x", padx=8, pady=5)
+                item_card.grid_columnconfigure(1, weight=1)
+                row_text = f"{item.display_name or item.resource_id} ({item.extension or item.media_type or 'resource'})"
+                if item.width and item.height:
+                    row_text = f"{row_text} - {item.width}x{item.height}"
+                if item.duration_seconds:
+                    row_text = f"{row_text} - {item.duration_seconds:g}s"
+                checkbox = ctk.CTkCheckBox(
+                    item_card,
+                    text="",
+                    variable=item_var,
+                    command=on_item_toggle,
+                    state="normal" if item.selectable else "disabled",
+                    width=22,
+                )
+                checkbox.grid(row=0, column=0, rowspan=2, sticky="nw", padx=(8, 6), pady=8)
+                ctk.CTkLabel(
+                    item_card,
+                    text=row_text,
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text_color=COLORS["text_primary"],
+                    anchor="w",
+                ).grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(7, 0))
+                detail_text = item.reference_url or item.canonical_url or item.provenance
+                ctk.CTkLabel(
+                    item_card,
+                    text=detail_text,
+                    font=ctk.CTkFont(size=10),
+                    text_color=COLORS["text_muted"],
+                    anchor="w",
+                    wraplength=520,
+                ).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(0, 7))
         status_label = ctk.CTkLabel(
             window,
             text="0 selected",
@@ -8490,7 +9283,7 @@ class App(ctk.CTk):
 
         def current_state() -> Any:
             selected = tuple(
-                resource_id for resource_id, var in vars_by_id.items() if var.get()
+                item.resource_id for item in state.resources if item.resource_id in selected_ids
             )
             return state.__class__(
                 source_row_id=state.source_row_id,
@@ -8504,29 +9297,33 @@ class App(ctk.CTk):
             status_label.configure(text=f"{current_state().selection_count} selected")
 
         def select_all() -> None:
-            selected_state = select_all_resources(state)
-            for resource_id, var in vars_by_id.items():
-                var.set(resource_id in selected_state.selected_resource_ids)
+            selected_state = select_all_resources(active_state)
+            selected_ids.update(selected_state.selected_resource_ids)
+            render_resource_list()
             refresh_count()
 
         def clear_all() -> None:
-            cleared_state = clear_resource_selection(state)
-            for resource_id, var in vars_by_id.items():
-                var.set(resource_id in cleared_state.selected_resource_ids)
+            clear_resource_selection(active_state)
+            for item in active_state.resources:
+                selected_ids.discard(item.resource_id)
+            render_resource_list()
             refresh_count()
 
         def download_selected_resources() -> None:
             selected_state = current_state()
             self.source_resource_selections[row.row_id] = selected_state.selected_resource_ids
             if not selected_state.selected_resource_ids:
-                messagebox.showinfo("Media download", "No media resources were selected.")
+                messagebox.showinfo("Media preservation", "No media resources were selected.")
                 return
 
             if row.adapter_id != "msn":
-                dry_run = build_resource_download_dry_run(selected_state)
-                messagebox.showinfo("Media download not yet connected", dry_run.message)
+                preview = build_selected_media_preservation_preview(row, selected_state)
+                messagebox.showinfo("Media preservation preview", preview.message)
                 self.log_message(
-                    f"Media selection retained for {row.adapter_id}; direct GUI download backend not connected for this source.",
+                    (
+                        f"Media preservation preview retained for {row.adapter_id}; "
+                        f"records={preview.selected_count}; network/download/recording actions performed: none."
+                    ),
                     "muted",
                 )
                 return
@@ -8594,12 +9391,30 @@ class App(ctk.CTk):
                 "success" if result.resources_downloaded else "muted",
             )
 
+        def on_filter_changed(*_args: object) -> None:
+            render_resource_list()
+            refresh_count()
+
+        for filter_var in (url_filter_var, text_filter_var, min_width_var, min_height_var):
+            filter_var.trace_add("write", on_filter_changed)
+
+        media_action_hint = ctk.CTkLabel(
+            window,
+            text="Preserve selected keeps a manifest/preview for non-MSN rows; guarded MSN download still requires explicit host confirmation.",
+            text_color=COLORS["text_muted"],
+            font=ctk.CTkFont(size=10),
+            wraplength=590,
+            justify="left",
+        )
+        media_action_hint.pack(anchor="w", padx=16, pady=(0, 4))
+
         button_row = ctk.CTkFrame(window, fg_color="transparent")
         button_row.pack(fill="x", padx=16, pady=(8, 14))
         ctk.CTkButton(button_row, text="All", width=80, command=select_all).pack(side="left")
         ctk.CTkButton(button_row, text="Clear all", width=90, command=clear_all).pack(side="left", padx=(8, 0))
         ctk.CTkButton(button_row, text="Cancel", width=90, command=window.destroy).pack(side="right")
-        ctk.CTkButton(button_row, text="Download", width=105, command=download_selected_resources).pack(side="right", padx=(0, 8))
+        ctk.CTkButton(button_row, text="Preserve selected", width=136, command=download_selected_resources).pack(side="right", padx=(0, 8))
+        render_resource_list()
         refresh_count()
 
     def _on_discussion_source_selected(self, selected_label: str) -> None:
@@ -9503,7 +10318,7 @@ class App(ctk.CTk):
         else:
             self.fetch_button.pack_forget()
         if hasattr(self.cancel_button, "grid"):
-            self.cancel_button.grid(row=2, column=0, sticky="w", pady=(6, 0))
+            self.cancel_button.grid(row=0, column=0, sticky="w")
         else:
             self.cancel_button.pack(side="left")
         self.export_button.configure(state="disabled")
@@ -9689,7 +10504,7 @@ class App(ctk.CTk):
         else:
             self.cancel_button.pack_forget()
         if hasattr(self.fetch_button, "grid"):
-            self.fetch_button.grid(row=2, column=0, sticky="w", pady=(6, 0))
+            self.fetch_button.grid(row=0, column=0, sticky="w")
         else:
             self.fetch_button.pack(side="left")
 

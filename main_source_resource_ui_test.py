@@ -341,10 +341,12 @@ def test_sidebar_spacing_is_compact_between_updates_keys_and_export() -> None:
 
     assert 'text="KEYS/ACCOUNTS"' in keys_source
     assert "_create_section_separator" not in keys_source
-    assert 'pady=(15 if first else 0, 6)' in keys_source
+    assert 'pady=(8 if first else 0, 4)' in keys_source
+    assert 'width=286' in keys_source
     assert 'text="EXPORT"' in export_source
     assert "_create_section_separator" not in export_source
-    assert 'pady=(0, 10)' in export_source
+    assert 'pady=(0, 6)' in export_source
+    assert 'width=286' in export_source
 
 
 def test_sidebar_order_places_updates_above_keys_export_files() -> None:
@@ -353,9 +355,192 @@ def test_sidebar_order_places_updates_above_keys_export_files() -> None:
     assert source.index("_create_updates_section") < source.index("_create_access_keys_section")
     assert source.index("_create_access_keys_section") < source.index("_create_export_section")
     assert source.index("_create_export_section") < source.index("_create_files_section")
+    assert "_create_hidden_youtube_filter_settings_state" in source
+    assert "_create_filters_section()" not in source
+    assert "_create_date_section()" not in source
+    assert "_create_custom_filters_section()" not in source
     updates_source = inspect.getsource(App._create_updates_section)
     assert 'text="UPDATES"' in updates_source
     assert "check_for_updates_clicked" in updates_source
+
+
+def test_youtube_filters_live_in_combined_youtube_settings_window() -> None:
+    entry_source = inspect.getsource(App._create_youtube_settings_entry_section)
+    window_source = inspect.getsource(App._open_youtube_filter_settings_window)
+    row_settings_source = inspect.getsource(App._open_youtube_source_settings)
+    filter_source = inspect.getsource(App._create_filters_section)
+    date_source = inspect.getsource(App._create_date_section)
+    custom_source = inspect.getsource(App._create_custom_filters_section)
+
+    assert "_open_youtube_filter_settings_window" in entry_source
+    assert "YouTube-only filters are still shown below" not in inspect.getsource(App)
+    assert "Media options, comment filters, date range, and custom filters" in window_source
+    assert "YOUTUBE MEDIA" in window_source
+    assert "_create_filters_section(body" in window_source
+    assert "_create_date_section(body" in window_source
+    assert "_create_custom_filters_section(body" in window_source
+    assert "row_id=row_id" in row_settings_source
+    assert "parent: object | None = None" in filter_source
+    assert "parent: object | None = None" in custom_source
+    assert "previous_min_likes" in filter_source
+    assert "previous_max_comments" in filter_source
+    assert "previous_from_date" in date_source
+    assert "previous_to_date" in date_source
+
+
+def test_database_sidebar_has_compact_home_controls_and_hides_counts_when_off() -> None:
+    create_source = inspect.getsource(App._create_profile_media_database_mode_toggle_section)
+    refresh_source = inspect.getsource(App._refresh_profile_media_database_mode_switch_visual)
+
+    toggle_draw_source = inspect.getsource(App._draw_profile_media_database_toggle_canvas)
+    main_content_source = inspect.getsource(App._create_main_content)
+
+    assert 'text="DATABASE"' in create_source
+    assert 'text="Save"' in create_source
+    assert ('text="Load"' in create_source) or ('text="Unload"' in create_source)
+    assert 'text="Import"' in create_source
+    assert "_profile_media_database_home_load_or_unload_clicked" in create_source
+    assert "_import_profile_media_database_home_selection" in create_source
+    assert "grid_remove" in refresh_source
+    assert "profile_media_database_sidebar_summary_frame" in refresh_source
+    assert "tk.Canvas" in create_source
+    assert "create_oval" in toggle_draw_source
+    assert "#72c943" in toggle_draw_source
+    assert "#e84b6a" in toggle_draw_source
+    assert "width = 108" in toggle_draw_source
+    assert "glyphs/text fully outside the knob travel zone" in toggle_draw_source
+    assert "pack_propagate(False)" not in create_source
+    assert "_load_profile_media_role_icons" in create_source
+    assert "_create_profile_media_database_workbench_panel()" not in main_content_source
+
+
+def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
+    source = inspect.getsource(App._open_source_resource_window)
+
+    assert "URL filter" in source
+    assert "Type/name filter" in source
+    assert "Min width" in source
+    assert "Min height" in source
+    assert "Only images from links" in source
+    assert "Save to subfolder" in source
+    assert "Rename files" in source
+    assert "Apply filters" not in source
+    assert "Review / Preserve" not in source
+    assert "Preserve selected" in source
+    assert "trace_add" in source
+    assert "filter_resource_dialog_items" in source
+    assert "MediaResourceFilterState" in source
+    assert "build_selected_media_preservation_preview" in source
+    assert "network/download/recording actions performed: none" in source
+
+
+def test_files_sidebar_resizer_and_review_highlight_are_more_usable() -> None:
+    paned_source = inspect.getsource(App._create_content_paned_window)
+    sidebar_source = inspect.getsource(App._create_sidebar)
+    width_source = inspect.getsource(App._on_sidebar_paned_sash_release)
+    files_source = inspect.getsource(App._create_files_section)
+    color_source = inspect.getsource(App._session_file_label_colors)
+    review_source = inspect.getsource(App._session_file_entry_needs_review)
+
+    assert "sashwidth=6" in paned_source
+    assert "showhandle=False" in paned_source
+    assert "_create_sidebar_resize_grip" in inspect.getsource(App)
+    assert "minsize=320" in sidebar_source
+    assert "max(320, min(1280" in width_source
+    assert "FILES" in files_source
+    assert "Clear all" in files_source
+    assert "wraplength=max" in inspect.getsource(App._refresh_session_files_list)
+    assert "needs_review" in review_source
+    assert "#4f171f" in color_source
+
+
+def test_sidebar_top_buttons_do_not_expand_with_sash() -> None:
+    sidebar_source = inspect.getsource(App._create_sidebar)
+    updates_source = inspect.getsource(App._create_updates_section)
+    keys_source = inspect.getsource(App._create_access_keys_section)
+    export_source = inspect.getsource(App._create_export_section)
+
+    assert "CTkScrollableFrame" not in sidebar_source
+    assert "Fixed sidebar content" in sidebar_source
+
+    assert 'updates_frame.pack(anchor="w"' in updates_source
+    assert 'self.update_button.pack(anchor="w")' in updates_source
+    assert 'keys_frame.pack(anchor="w"' in keys_source
+    assert 'self.access_keys_button.pack(anchor="w")' in keys_source
+    assert 'export_frame.pack(anchor="w"' in export_source
+    assert 'self.evidence_button.pack(anchor="w")' in export_source
+    for source in (updates_source, keys_source, export_source):
+        assert "configure(width=286, height=30)" in source
+        assert "width=286" in source
+
+
+
+def test_database_toggle_animation_avoids_final_state_jump() -> None:
+    toggle_source = inspect.getsource(App._on_profile_media_database_mode_toggled)
+    set_source = inspect.getsource(App._set_profile_media_sidebar_mode)
+    animation_source = inspect.getsource(App._animate_profile_media_database_mode_switch_visual)
+
+    assert "refresh_visual=False" in toggle_source
+    assert "from_mode=current_mode, to_mode=mode" in toggle_source
+    assert "summary_frame.grid" in toggle_source
+    assert "summary_frame.grid_remove" in toggle_source
+    assert "refresh_visual: bool = True" in set_source
+    assert "Smoothstep" in animation_source
+    assert "mode=end_mode" in animation_source
+
+
+def test_source_details_uses_youtube_metadata_placeholders_not_domain() -> None:
+    source = inspect.getsource(App._source_row_details_fields)
+    helper = inspect.getsource(App._youtube_video_id_from_url)
+    metadata = inspect.getsource(App._youtube_source_detail_metadata)
+    discovery = inspect.getsource(App._apply_youtube_source_row_discovery)
+    details_window = inspect.getsource(App._show_source_row_details)
+    details_loader = inspect.getsource(App._load_source_row_details_metadata_async)
+
+    assert "_youtube_source_detail_metadata" in source
+    assert '("Channel", channel or "Not loaded")' in source
+    assert "youtube_source_row_discovery_metadata" in metadata
+    assert "row_video_id == info_video_id" in metadata
+    assert "metadata:" in discovery
+    assert "Load metadata" in details_window
+    assert "discover_youtube_media_with_ytdlp" in details_loader
+    assert "_youtube_oembed_metadata_probe" in details_loader
+    assert "Basic metadata loaded; date/views need yt-dlp" in details_loader
+    assert "youtu.be" in helper
+    assert "shorts" in helper
+    assert "embed" in helper
+
+
+
+def test_transcript_controls_use_right_side_space() -> None:
+    source = inspect.getsource(App._create_transcript_section)
+    toggle_source = inspect.getsource(App._create_progress_section)
+
+    assert "transcript_controls_panel" in source
+    assert "ctk.CTkFrame(self.transcript_controls_panel" in source
+    assert source.count('pack(anchor="e"') >= 7
+    assert "editor_toggle_button_frame" in toggle_source
+    assert 'sticky="e"' in toggle_source
+    assert 'fill="x", expand=True' not in source
+
+
+
+def test_discussion_actions_are_right_panel_aligned() -> None:
+    source = inspect.getsource(App._create_url_section)
+
+    assert "right_action_panel" in source
+    assert "checkbox_frame" in source
+    assert 'self.discussion_source_menu.grid(row=0, column=0, sticky="e"' in source
+    assert 'export_frame.grid(row=2, column=0, sticky="e"' in source
+    assert 'self.fetch_button.grid(row=0, column=0, sticky="w"' in source
+
+
+def test_sidebar_sash_is_not_visible_scrollbar() -> None:
+    source = inspect.getsource(App._create_content_paned_window)
+
+    assert "sashwidth=6" in source
+    assert "showhandle=False" in source
+    assert "_create_sidebar_resize_grip" in inspect.getsource(App)
 
 
 def test_evidence_database_review_has_no_visible_main_hook() -> None:
@@ -880,11 +1065,23 @@ def test_url_helper_wrap_and_textbox_height_are_responsive() -> None:
     source = inspect.getsource(App._create_url_section)
     helper = inspect.getsource(App._on_url_card_configure)
 
-    assert "height=112" in source
+    assert "height=46" in source
     assert "self.source_hint_label" in source
     assert "wraplength=width" in helper
-    assert 'row=3, column=0, columnspan=5' in source
+    assert 'url_label.pack(anchor="e"' in source
+    assert 'filter_words_label.pack(fill="x", anchor="e")' in source
+    assert 'filter_words_hint.pack(fill="x", anchor="e"' in source
+    assert 'right_action_panel.grid(row=0, column=2, rowspan=4, sticky="e")' in source
+    assert 'self.discussion_source_menu.grid(row=0, column=0, sticky="e"' in source
 
+
+def test_visible_header_is_removed_to_recover_vertical_space() -> None:
+    source = inspect.getsource(App._create_header)
+
+    assert "height=0" in source
+    assert "no visible header content" in source
+    assert "APP_DESCRIPTION" not in source
+    assert "by Creator Intelligence" not in source
 
 def run_self_test() -> None:
     test_enter_source_url_intake_adds_rows_and_retains_invalid_text()
@@ -897,6 +1094,14 @@ def run_self_test() -> None:
     test_remove_source_row_updates_selection_and_scoped_state()
     test_sidebar_spacing_is_compact_between_updates_keys_and_export()
     test_sidebar_order_places_updates_above_keys_export_files()
+    test_youtube_filters_live_in_combined_youtube_settings_window()
+    test_database_sidebar_has_compact_home_controls_and_hides_counts_when_off()
+    test_media_resource_window_has_v77f_preservation_scaffolding()
+    test_files_sidebar_resizer_and_review_highlight_are_more_usable()
+    test_sidebar_top_buttons_do_not_expand_with_sash()
+    test_database_toggle_animation_avoids_final_state_jump()
+    test_source_details_uses_youtube_metadata_placeholders_not_domain()
+    test_transcript_controls_use_right_side_space()
     test_transcript_toolbar_get_label_preserves_youtube_callback()
     test_online_asr_is_key_gated_and_uses_matching_local_button_control()
     test_start_fetching_msn_scaffold_returns_before_credential_resolution()
@@ -907,6 +1112,7 @@ def run_self_test() -> None:
     test_main_blank_wheel_router_targets_main_without_stealing_text_scroll()
     test_transcript_controls_are_split_across_rows_for_narrow_widths()
     test_url_helper_wrap_and_textbox_height_are_responsive()
+    test_visible_header_is_removed_to_recover_vertical_space()
 
 
 if __name__ == "__main__":

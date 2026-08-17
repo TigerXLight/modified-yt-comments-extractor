@@ -26,6 +26,8 @@ ARCHIVE_STATUS_APPROVAL_REQUIRED = "approval_required"
 RESOURCE_KIND_IMAGE = "image"
 RESOURCE_KIND_VIDEO_AUDIO = "video_audio"
 
+MEDIA_INTAKE_SCHEMA_VERSION = "rendered-citation-media-intake-v77e"
+
 DISCUSSION_MODE_COMMENTS = "comments"
 DISCUSSION_MODE_LIVECHAT = "livechat"
 
@@ -95,6 +97,7 @@ class SourceResourceItem:
     bitrate_or_quality: str = ""
     animated: bool = False
     thumbnail_reference: str = ""
+    from_link: bool = False
     status: str = "fixture"
     selectable: bool = True
     warning: str = ""
@@ -200,6 +203,30 @@ class ResourceDownloadDryRun:
     network_actions_performed: str = "none"
     downloads_performed: str = "none"
     files_written: str = "none"
+
+
+@dataclass(frozen=True)
+class MediaResourceFilterState:
+    url_filter: str = ""
+    text_filter: str = ""
+    min_width: int = 0
+    min_height: int = 0
+    only_linked_resources: bool = False
+    save_to_subfolder: bool = True
+    rename_files: bool = False
+
+
+@dataclass(frozen=True)
+class SelectedMediaPreservationPreview:
+    source_row_id: str
+    resource_kind: str
+    selected_count: int = 0
+    records: tuple[dict[str, Any], ...] = ()
+    message: str = ""
+    network_actions_performed: str = "none"
+    downloads_performed: str = "none"
+    files_written: str = "none"
+    safety_flags: dict[str, bool] | None = None
 
 
 @dataclass(frozen=True)
@@ -674,6 +701,155 @@ def clear_resource_selection(
     state: ResourceSelectionDialogState,
 ) -> ResourceSelectionDialogState:
     return replace(state, selected_resource_ids=())
+
+
+def filter_resource_dialog_items(
+    state: ResourceSelectionDialogState,
+    filters: MediaResourceFilterState,
+) -> ResourceSelectionDialogState:
+    """Return a local-only filtered view of selectable source media resources."""
+    url_filter = (filters.url_filter or "").strip().lower()
+    text_filter = (filters.text_filter or "").strip().lower()
+    min_width = max(0, int(filters.min_width or 0))
+    min_height = max(0, int(filters.min_height or 0))
+
+    def matches(item: SourceResourceItem) -> bool:
+        url_text = " ".join(
+            value
+            for value in (item.reference_url, item.canonical_url, item.thumbnail_reference)
+            if value
+        ).lower()
+        descriptive_text = " ".join(
+            value
+            for value in (
+                item.display_name,
+                item.media_type,
+                item.mime_type,
+                item.extension,
+                item.bitrate_or_quality,
+                item.status,
+                item.warning,
+                item.provenance,
+            )
+            if value
+        ).lower()
+        if url_filter and url_filter not in url_text:
+            return False
+        if text_filter and text_filter not in descriptive_text and text_filter not in url_text:
+            return False
+        if min_width and (not item.width or item.width < min_width):
+            return False
+        if min_height and (not item.height or item.height < min_height):
+            return False
+        if filters.only_linked_resources and not item.from_link:
+            return False
+        return True
+
+    resources = tuple(item for item in state.resources if matches(item))
+    resource_ids = {item.resource_id for item in resources}
+    return replace(
+        state,
+        resources=resources,
+        selected_resource_ids=tuple(
+            resource_id
+            for resource_id in state.selected_resource_ids
+            if resource_id in resource_ids
+        ),
+        committed_resource_ids=tuple(
+            resource_id
+            for resource_id in state.committed_resource_ids
+            if resource_id in resource_ids
+        ),
+    )
+
+
+def _source_resource_safety_flags() -> dict[str, bool]:
+    return {
+        "browser_launch_performed": False,
+        "web_download_performed": False,
+        "media_download_performed": False,
+        "recording_performed": False,
+        "drm_circumvention_performed": False,
+        "hidden_protected_stream_extraction_performed": False,
+        "captcha_solver_used": False,
+        "credential_automation_performed": False,
+        "proxy_or_evasion_performed": False,
+        "forced_rate_limit_bypass_performed": False,
+        "write_actions_performed": False,
+    }
+
+
+def build_selected_media_preservation_preview(
+    row: SourceResourceRowState,
+    state: ResourceSelectionDialogState,
+) -> SelectedMediaPreservationPreview:
+    """Build V77E-compatible preservation records without downloading media."""
+    selected_ids = set(state.selected_resource_ids)
+    selected_items = tuple(item for item in state.resources if item.resource_id in selected_ids)
+    records: list[dict[str, Any]] = []
+    for item in selected_items:
+        media_url = item.reference_url or item.canonical_url
+        records.append(
+            {
+                "schema_version": MEDIA_INTAKE_SCHEMA_VERSION,
+                "source_url": row.raw_url,
+                "page_url": row.canonical_url or row.raw_url,
+                "media_url": media_url,
+                "source_unit_path": "",
+                "user_declared_purpose": "source_preservation",
+                "capture_kind": "source_reference_only",
+                "capture_method": "source_reference_only",
+                "media_position_start": "",
+                "media_position_end": "",
+                "local_file_path": "",
+                "local_file_name": "",
+                "local_file_extension": item.extension,
+                "local_file_size": 0,
+                "local_file_sha256": "",
+                "local_file_present": False,
+                "local_file_role": "source_reference_only",
+                "source_resource": state_to_dict(item),
+                "source_unit_attachment": {
+                    "attached_to_source_unit": False,
+                    "source_unit_path": "",
+                    "attachment_scope": "review_required",
+                },
+                "rendered_citation_metadata": {
+                    "source_url": row.raw_url,
+                    "page_url": row.canonical_url or row.raw_url,
+                    "media_url": media_url,
+                    "capture_kind": "source_reference_only",
+                    "capture_method": "source_reference_only",
+                    "user_declared_purpose": "source_preservation",
+                },
+                "human_mediated_access": {
+                    "required": False,
+                    "completed_by_user": False,
+                    "program_solved_challenge": False,
+                    "solver_service_used": False,
+                    "anti_detection_used": False,
+                },
+                "blocked_capture": {
+                    "blocked": False,
+                    "reason": "",
+                },
+                "safety_flags": _source_resource_safety_flags(),
+            }
+        )
+    count = len(records)
+    return SelectedMediaPreservationPreview(
+        source_row_id=row.row_id,
+        resource_kind=state.resource_kind,
+        selected_count=count,
+        records=tuple(records),
+        message=(
+            "Selected media preservation records are ready for review. "
+            "No browser, network, download, or recording action was performed."
+            if count
+            else "No media resources were selected for preservation."
+        ),
+        safety_flags=_source_resource_safety_flags(),
+    )
 
 
 def cancel_resource_selection(

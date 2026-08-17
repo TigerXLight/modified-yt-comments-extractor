@@ -9,7 +9,11 @@ from source_resource_state import (
     DISCUSSION_MODE_COMMENTS,
     RESOURCE_KIND_IMAGE,
     RESOURCE_KIND_VIDEO_AUDIO,
+    SourceResourceItem,
+    SourceResourceRowState,
+    MediaResourceFilterState,
     archive_status_presentation,
+    build_selected_media_preservation_preview,
     build_discussion_capture_options,
     build_discussion_selection_state,
     build_resource_download_dry_run,
@@ -18,6 +22,7 @@ from source_resource_state import (
     canonicalize_msn_url,
     clear_resource_selection,
     extract_source_url_tokens,
+    filter_resource_dialog_items,
     parse_source_url_intake,
     remove_source_resource_row,
     resource_dialog_state_for_row,
@@ -231,6 +236,78 @@ def test_video_audio_resource_dialog_has_no_fake_fixture_media() -> None:
     assert state.resources == ()
 
 
+def test_media_resource_filters_and_preservation_preview_are_local_only() -> None:
+    row = SourceResourceRowState(
+        row_id="row-1",
+        raw_url="https://example.com/article",
+        canonical_url="https://example.com/article",
+        adapter_id="generic",
+        adapter_display_name="Generic",
+        source_id="article",
+        title="Article",
+        domain="example.com",
+        display_label="Article",
+        image_resources=(
+            SourceResourceItem(
+                resource_id="img-1",
+                source_row_id="row-1",
+                resource_kind=RESOURCE_KIND_IMAGE,
+                reference_url="https://example.com/media/photo.jpg",
+                display_name="Main photo",
+                media_type="image",
+                extension="jpg",
+                width=1200,
+                height=800,
+                from_link=True,
+                provenance="page link candidate",
+            ),
+            SourceResourceItem(
+                resource_id="img-2",
+                source_row_id="row-1",
+                resource_kind=RESOURCE_KIND_IMAGE,
+                reference_url="https://cdn.example.com/icon.png",
+                display_name="Icon",
+                media_type="image",
+                extension="png",
+                width=120,
+                height=120,
+                from_link=False,
+                provenance="decorative candidate",
+            ),
+        ),
+    )
+    state = resource_dialog_state_for_row(row, RESOURCE_KIND_IMAGE)
+    filtered = filter_resource_dialog_items(
+        state,
+        MediaResourceFilterState(
+            url_filter="photo",
+            min_width=600,
+            min_height=400,
+            only_linked_resources=True,
+        ),
+    )
+    selected = filtered.__class__(
+        source_row_id=filtered.source_row_id,
+        resource_kind=filtered.resource_kind,
+        resources=filtered.resources,
+        selected_resource_ids=("img-1",),
+        committed_resource_ids=(),
+    )
+    preview = build_selected_media_preservation_preview(row, selected)
+
+    assert [item.resource_id for item in filtered.resources] == ["img-1"]
+    assert preview.selected_count == 1
+    assert preview.records[0]["schema_version"] == "rendered-citation-media-intake-v77e"
+    assert preview.records[0]["media_url"] == "https://example.com/media/photo.jpg"
+    assert preview.records[0]["local_file_present"] is False
+    assert preview.records[0]["local_file_role"] == "source_reference_only"
+    assert preview.network_actions_performed == "none"
+    assert preview.downloads_performed == "none"
+    assert preview.files_written == "none"
+    assert preview.records[0]["safety_flags"]["web_download_performed"] is False
+    assert preview.records[0]["safety_flags"]["media_download_performed"] is False
+
+
 def test_action_plan_and_json_are_deterministic_and_local_only() -> None:
     row = build_source_resource_row(MSN_URL)
     discussion = build_discussion_capture_options(
@@ -276,6 +353,7 @@ def run_self_test() -> None:
     test_source_removal_updates_selection_and_allows_readd()
     test_resource_dialog_selection_all_clear_cancel_and_dry_run()
     test_video_audio_resource_dialog_has_no_fake_fixture_media()
+    test_media_resource_filters_and_preservation_preview_are_local_only()
     test_action_plan_and_json_are_deterministic_and_local_only()
 
 
