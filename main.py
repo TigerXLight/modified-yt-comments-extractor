@@ -168,6 +168,10 @@ from source_media_gui_bridge import (
     MEDIA_GUI_DOWNLOAD_STATUS_READY,
     run_source_media_gui_download,
 )
+from webpage_image_downloader_backend import (
+    discover_webpage_images_for_row,
+    download_selected_webpage_images,
+)
 from source_twitter_compact_row import (
     TWITTER_COMPACT_MODES,
     TWITTER_SCREENSHOT_MODES,
@@ -9215,10 +9219,17 @@ class App(ctk.CTk):
                 child.destroy()
             vars_by_id.clear()
             if not active_state.resources:
+                empty_text = (
+                    "No selectable image resources are loaded yet. Click Discover images to scan the source page."
+                    if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}
+                    else "No selectable media resources match this source/filter."
+                )
                 empty = ctk.CTkLabel(
                     list_frame,
-                    text="No selectable media resources match this source/filter.",
+                    text=empty_text,
                     text_color=COLORS["text_muted"],
+                    wraplength=560,
+                    justify="left",
                 )
                 empty.pack(anchor="w", padx=8, pady=8)
                 return
@@ -9309,11 +9320,88 @@ class App(ctk.CTk):
             render_resource_list()
             refresh_count()
 
+        def discover_page_images() -> None:
+            nonlocal row, state, active_state
+            if resource_kind != RESOURCE_KIND_IMAGE:
+                return
+            if row.adapter_id in {"youtube", "twitter_x"}:
+                messagebox.showinfo(
+                    "Image discovery",
+                    "This source type uses its own media workflow.",
+                )
+                return
+            try:
+                discovery = discover_webpage_images_for_row(row)
+            except Exception as exc:
+                messagebox.showwarning("Image discovery failed", str(exc))
+                self.log_message(f"Webpage image discovery failed: {exc}", "warning")
+                return
+            if not discovery.resources:
+                warning_text = "; ".join(discovery.warnings) if discovery.warnings else "No image candidates were found."
+                messagebox.showinfo("Image discovery", warning_text)
+                self.log_message(f"Webpage image discovery found no selectable images for {row.domain}.", "warning")
+                return
+            row = replace(row, image_resources=discovery.resources)
+            for index, existing_row in enumerate(self.source_resource_rows):
+                if existing_row.row_id == row.row_id:
+                    self.source_resource_rows[index] = row
+                    break
+            state = resource_dialog_state_for_row(
+                row,
+                resource_kind,
+                committed_resource_ids=tuple(selected_ids),
+            )
+            selected_ids.intersection_update(item.resource_id for item in state.resources)
+            render_resource_list()
+            refresh_count()
+            try:
+                self._refresh_source_resource_rows()
+            except Exception:
+                logger.debug("Could not refresh source rows after image discovery.", exc_info=True)
+            self.log_message(
+                (
+                    f"Discovered {len(discovery.resources)} webpage image candidate(s) "
+                    f"from {row.domain}; downloads performed: none."
+                ),
+                "success",
+            )
+
         def download_selected_resources() -> None:
             selected_state = current_state()
             self.source_resource_selections[row.row_id] = selected_state.selected_resource_ids
             if not selected_state.selected_resource_ids:
                 messagebox.showinfo("Media preservation", "No media resources were selected.")
+                return
+
+            if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}:
+                output_dir = filedialog.askdirectory(
+                    parent=window,
+                    title="Choose folder for selected webpage image downloads",
+                )
+                if not output_dir:
+                    self.log_message("Webpage image download cancelled before output folder selection.", "muted")
+                    return
+                result = download_selected_webpage_images(
+                    row=row,
+                    state=selected_state,
+                    output_dir=output_dir,
+                    filters=current_filters(),
+                )
+                if result.downloaded_files:
+                    self._intake_session_files(
+                        result.downloaded_files,
+                        select_first=False,
+                        source_label="downloaded webpage image",
+                    )
+                messagebox.showinfo("Webpage image download", result.message)
+                self.log_message(
+                    (
+                        f"Webpage image download: selected={result.resources_selected}; "
+                        f"downloaded={result.resources_downloaded}; failed={result.resources_failed}; "
+                        f"manifest={result.manifest_json or 'not written'}"
+                    ),
+                    "success" if result.resources_downloaded else "warning",
+                )
                 return
 
             if row.adapter_id != "msn":
@@ -9400,7 +9488,11 @@ class App(ctk.CTk):
 
         media_action_hint = ctk.CTkLabel(
             window,
-            text="Preserve selected keeps a manifest/preview for non-MSN rows; guarded MSN download still requires explicit host confirmation.",
+            text=(
+                "Discover images scans the source page HTML. Preserve selected downloads only explicitly selected accessible image URLs for non-YouTube/non-X rows; guarded MSN rendered-HTML review remains available."
+                if resource_kind == RESOURCE_KIND_IMAGE
+                else "Preserve selected keeps a manifest/preview unless a guarded source-specific media download flow is available."
+            ),
             text_color=COLORS["text_muted"],
             font=ctk.CTkFont(size=10),
             wraplength=590,
@@ -9410,6 +9502,13 @@ class App(ctk.CTk):
 
         button_row = ctk.CTkFrame(window, fg_color="transparent")
         button_row.pack(fill="x", padx=16, pady=(8, 14))
+        if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}:
+            ctk.CTkButton(
+                button_row,
+                text="Discover images",
+                width=128,
+                command=discover_page_images,
+            ).pack(side="left", padx=(0, 8))
         ctk.CTkButton(button_row, text="All", width=80, command=select_all).pack(side="left")
         ctk.CTkButton(button_row, text="Clear all", width=90, command=clear_all).pack(side="left", padx=(8, 0))
         ctk.CTkButton(button_row, text="Cancel", width=90, command=window.destroy).pack(side="right")

@@ -1118,3 +1118,19 @@ def run_self_test() -> None:
 if __name__ == "__main__":
     run_self_test()
     print("main_source_resource_ui_test.py: OK")
+
+
+def test_webpage_image_downloader_backend_is_wired_for_selected_images() -> None:
+    source = inspect.getsource(App._open_source_resource_window)
+    main_source = Path("main.py").read_text(encoding="utf-8")
+
+    assert "from webpage_image_downloader_backend import" in main_source
+    assert "discover_webpage_images_for_row" in main_source
+    assert "download_selected_webpage_images" in main_source
+    assert "def discover_page_images() -> None:" in source
+    assert "Click Discover images to scan the source page" in source
+    assert "Webpage image download: selected=" in source
+    assert "Choose folder for selected webpage image downloads" in source
+    assert 'text="Discover images"' in source
+    assert 'row.adapter_id not in {"youtube", "twitter_x"}' in source
+    assert "network/download/recording actions performed: none" in source
