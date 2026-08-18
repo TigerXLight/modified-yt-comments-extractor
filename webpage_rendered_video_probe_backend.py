@@ -26,6 +26,10 @@ VIDEO_DISCOVERY_METHOD_RENDERED_BROWSER = "rendered_browser_dom_network_media_pr
 RENDERED_VIDEO_PROBE_SCRIPT = r"""
 (() => {
   const records = [];
+  const pageThumbnailUrl = (() => {
+    const meta = document.querySelector('meta[property="og:image"],meta[property="og:image:url"],meta[name="twitter:image"],meta[name="twitter:image:src"]');
+    return meta ? (meta.getAttribute('content') || '') : '';
+  })();
   const push = (tag, attr, url, extra = {}) => {
     if (!url || typeof url !== 'string') return;
     records.push({
@@ -34,7 +38,7 @@ RENDERED_VIDEO_PROBE_SCRIPT = r"""
       url,
       mime_type: extra.mime_type || extra.type || '',
       title: extra.title || '',
-      thumbnail_url: extra.thumbnail_url || '',
+      thumbnail_url: extra.thumbnail_url || pageThumbnailUrl || '',
       width: Number(extra.width || 0) || 0,
       height: Number(extra.height || 0) || 0,
       detection_reason: extra.detection_reason || `${tag}[${attr}]`,
@@ -62,13 +66,16 @@ RENDERED_VIDEO_PROBE_SCRIPT = r"""
 
   document.querySelectorAll('source,track,a,link,iframe,embed').forEach((el) => {
     const tag = el.tagName.toLowerCase();
+    const parentMedia = el.closest ? el.closest('video,audio') : null;
+    const parentPoster = parentMedia ? (parentMedia.getAttribute('poster') || '') : '';
     ['src', 'href', 'data-src', 'data-url'].forEach((attr) => {
       const value = el.getAttribute(attr);
       push(tag, attr, value || '', {
         mime_type: el.getAttribute('type') || '',
-        title: el.getAttribute('title') || el.getAttribute('aria-label') || el.textContent || '',
-        width: el.getAttribute('width') || el.clientWidth || 0,
-        height: el.getAttribute('height') || el.clientHeight || 0,
+        title: el.getAttribute('title') || el.getAttribute('aria-label') || el.textContent || document.title || '',
+        thumbnail_url: parentPoster || pageThumbnailUrl || '',
+        width: el.getAttribute('width') || el.clientWidth || (parentMedia ? (parentMedia.videoWidth || parentMedia.clientWidth || parentMedia.getAttribute('width') || 0) : 0),
+        height: el.getAttribute('height') || el.clientHeight || (parentMedia ? (parentMedia.videoHeight || parentMedia.clientHeight || parentMedia.getAttribute('height') || 0) : 0),
       });
     });
   });
@@ -96,6 +103,7 @@ RENDERED_VIDEO_PROBE_SCRIPT = r"""
   return {
     location_href: location.href,
     document_title: document.title || '',
+    page_thumbnail_url: pageThumbnailUrl || '',
     records,
   };
 })()
@@ -160,11 +168,14 @@ def discover_rendered_webpage_video_candidates_from_probe_payload(
 
     canonical_url = str(payload_data.get("location_href") or source_url or "")
     title_fallback = str(payload_data.get("document_title") or "")
-    page_thumbnail_url = ""
+    page_thumbnail_url = urljoin(
+        canonical_url or source_url,
+        _clean_url(payload_data.get("page_thumbnail_url") or ""),
+    )
     for meta_record in _iter_payload_records(payload_data):
         meta_tag = str(meta_record.get("tag") or "").lower()
         meta_reason = str(meta_record.get("detection_reason") or "").lower()
-        if meta_tag == "meta" and any(token in meta_reason for token in ("og:image", "twitter:image")):
+        if not page_thumbnail_url and meta_tag == "meta" and any(token in meta_reason for token in ("og:image", "twitter:image")):
             page_thumbnail_url = urljoin(canonical_url or source_url, _clean_url(_record_url(meta_record)))
             break
     decision = dict(capability_decision or build_jdownloader_capability_decision(source_url).to_dict())

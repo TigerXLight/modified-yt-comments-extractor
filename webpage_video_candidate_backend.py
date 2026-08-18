@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import html
 import re
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -319,7 +319,12 @@ def discover_webpage_video_candidates_from_html(
     except Exception as exc:
         warnings.append(f"Static HTML video scan parse warning: {type(exc).__name__}: {exc}")
     decision = dict(capability_decision or build_jdownloader_capability_decision(source_url).to_dict())
-    candidates = tuple(parser.candidates)
+    candidates = tuple(
+        replace(candidate, thumbnail_url=parser._page_thumbnail_url)
+        if parser._page_thumbnail_url and not candidate.thumbnail_url
+        else candidate
+        for candidate in parser.candidates
+    )
     return WebpageVideoDiscoveryResult(
         source_url=str(source_url or ""),
         canonical_url=str(source_url or ""),

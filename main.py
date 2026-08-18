@@ -179,6 +179,11 @@ from webpage_image_downloader_backend import (
     start_internal_browser_image_discovery_service,
 )
 from webpage_video_resource_bridge import discover_webpage_videos_for_row
+from webpage_video_preview_backend import (
+    can_generate_video_frame_preview,
+    extract_video_frame_preview_pil,
+    video_frame_preview_cache_key,
+)
 from source_twitter_compact_row import (
     TWITTER_COMPACT_MODES,
     TWITTER_SCREENSHOT_MODES,
@@ -9475,7 +9480,12 @@ class App(ctk.CTk):
             "webpage_image_preview_pil_cache_by_url",
             {},
         )
+        webpage_video_frame_preview_pil_cache_by_url: dict[str, Any] = self.__dict__.setdefault(
+            "webpage_video_frame_preview_pil_cache_by_url",
+            {},
+        )
         webpage_image_preview_cache_limit = 256
+        webpage_video_frame_preview_cache_limit = 96
         image_discovery_thread_active = False
         image_discovery_result_after_id: Any = None
         image_discovery_results: list[tuple[str, Any, str, bool]] = []
@@ -9641,9 +9651,25 @@ class App(ctk.CTk):
             if resource_kind == RESOURCE_KIND_VIDEO_AUDIO:
                 # Video/audio tiles must not try to treat MP4/HLS/DASH URLs as
                 # still-image previews.  Only explicit thumbnails/posters are
-                # safe to probe as images.
+                # safe to probe as images.  Direct video files without a poster
+                # are handled separately through the ffmpeg first-frame preview
+                # cache below.
                 return str(item.thumbnail_reference or "")
             return str(item.thumbnail_reference or item.reference_url or item.canonical_url or "")
+
+        def _video_frame_preview_url_for_item(item: Any) -> str:
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                return ""
+            media_url = str(getattr(item, "reference_url", "") or getattr(item, "canonical_url", "") or "").strip()
+            if not media_url:
+                return ""
+            if can_generate_video_frame_preview(
+                media_url,
+                extension=str(getattr(item, "extension", "") or ""),
+                mime_type=str(getattr(item, "mime_type", "") or ""),
+            ):
+                return media_url
+            return ""
 
         def _media_placeholder_text_for_item(item: Any) -> str:
             if resource_kind == RESOURCE_KIND_IMAGE:
@@ -9711,12 +9737,16 @@ class App(ctk.CTk):
 
         def _apply_cached_thumbnail_preview(item: Any) -> bool:
             preview_url = _preview_url_for_item(item)
-            if not preview_url:
-                return False
-            cached_preview = webpage_image_preview_pil_cache_by_url.get(preview_url)
-            if cached_preview is None:
-                return False
-            return _cache_ctk_thumbnail_for_item(item, cached_preview)
+            if preview_url:
+                cached_preview = webpage_image_preview_pil_cache_by_url.get(preview_url)
+                if cached_preview is not None:
+                    return _cache_ctk_thumbnail_for_item(item, cached_preview)
+            video_frame_url = _video_frame_preview_url_for_item(item)
+            if video_frame_url:
+                cached_frame = webpage_video_frame_preview_pil_cache_by_url.get(video_frame_preview_cache_key(video_frame_url))
+                if cached_frame is not None:
+                    return _cache_ctk_thumbnail_for_item(item, cached_frame)
+            return False
 
         def _image_candidate_should_probe_preview(item: Any) -> bool:
             if resource_kind not in {RESOURCE_KIND_IMAGE, RESOURCE_KIND_VIDEO_AUDIO}:
@@ -9726,14 +9756,15 @@ class App(ctk.CTk):
             if thumbnail_preview_status_by_id.get(item.resource_id) in {"pending", "success", "hidden", "failed"}:
                 return False
             preview_url = _preview_url_for_item(item)
-            if not preview_url:
+            video_frame_url = _video_frame_preview_url_for_item(item)
+            if not preview_url and not video_frame_url:
                 thumbnail_preview_status_by_id[item.resource_id] = "hidden"
                 thumbnail_hidden_resource_ids.add(item.resource_id)
                 return False
-            thumbnail_preview_url_by_id[item.resource_id] = preview_url
+            thumbnail_preview_url_by_id[item.resource_id] = preview_url or video_frame_url
             if _apply_cached_thumbnail_preview(item):
                 return False
-            if _image_candidate_is_obvious_non_preview(item):
+            if preview_url and _image_candidate_is_obvious_non_preview(item):
                 thumbnail_preview_status_by_id[item.resource_id] = "hidden"
                 thumbnail_hidden_resource_ids.add(item.resource_id)
                 return False
@@ -9865,7 +9896,10 @@ class App(ctk.CTk):
             candidates = [item for item in resources if _image_candidate_should_probe_preview(item)]
             if not candidates:
                 return
-            candidates = candidates[:64]
+            # Image thumbnails are cheap HTTP image fetches.  Direct video
+            # frame previews can require ffmpeg startup and a ranged media read,
+            # so keep the first-frame pass intentionally small.
+            candidates = candidates[: (16 if resource_kind == RESOURCE_KIND_VIDEO_AUDIO else 64)]
             for candidate in candidates:
                 thumbnail_preview_status_by_id[candidate.resource_id] = "pending"
             thumbnail_probe_thread_active = True
@@ -9874,29 +9908,58 @@ class App(ctk.CTk):
             def _probe_one_thumbnail(item: Any) -> tuple[str, str, Any]:
                 resource_id = item.resource_id
                 preview_url = _preview_url_for_item(item)
-                if not preview_url:
-                    return "failed", resource_id, None
-                try:
-                    request = urllib.request.Request(
-                        preview_url,
-                        headers={
-                            "User-Agent": "Mozilla/5.0 YTCE media preview",
-                            "Accept": "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8",
-                        },
-                    )
-                    with urllib.request.urlopen(request, timeout=0.7) as response:
-                        data = response.read(384 * 1024)
-                    preview_image = Image.open(BytesIO(data))
-                    if getattr(preview_image, "is_animated", False):
-                        preview_image.seek(0)
-                    preview_image = preview_image.convert("RGBA")
-                    original_preview_width, original_preview_height = preview_image.size
-                    if min(original_preview_width, original_preview_height) < 24:
-                        raise ValueError("tiny preview")
-                    preview_image.thumbnail((168, 128), Image.LANCZOS)
-                    return "success", resource_id, preview_image.copy()
-                except Exception:
-                    return "failed", resource_id, None
+                if preview_url:
+                    try:
+                        request = urllib.request.Request(
+                            preview_url,
+                            headers={
+                                "User-Agent": "Mozilla/5.0 YTCE media preview",
+                                "Accept": "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8",
+                            },
+                        )
+                        with urllib.request.urlopen(request, timeout=0.7) as response:
+                            data = response.read(384 * 1024)
+                        preview_image = Image.open(BytesIO(data))
+                        if getattr(preview_image, "is_animated", False):
+                            preview_image.seek(0)
+                        preview_image = preview_image.convert("RGBA")
+                        original_preview_width, original_preview_height = preview_image.size
+                        if min(original_preview_width, original_preview_height) < 24:
+                            raise ValueError("tiny preview")
+                        preview_image.thumbnail((168, 128), Image.LANCZOS)
+                        webpage_image_preview_pil_cache_by_url[preview_url] = preview_image.copy()
+                        while len(webpage_image_preview_pil_cache_by_url) > webpage_image_preview_cache_limit:
+                            try:
+                                webpage_image_preview_pil_cache_by_url.pop(next(iter(webpage_image_preview_pil_cache_by_url)))
+                            except Exception:
+                                break
+                        return "success", resource_id, preview_image.copy()
+                    except Exception:
+                        pass
+
+                video_frame_url = _video_frame_preview_url_for_item(item)
+                if video_frame_url:
+                    try:
+                        cache_key = video_frame_preview_cache_key(video_frame_url)
+                        cached_frame = webpage_video_frame_preview_pil_cache_by_url.get(cache_key)
+                        if cached_frame is not None:
+                            return "success", resource_id, cached_frame.copy()
+                        frame_image = extract_video_frame_preview_pil(
+                            video_frame_url,
+                            timeout=2.5,
+                            seek_seconds=1.0,
+                            referer=str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or ""),
+                        )
+                        webpage_video_frame_preview_pil_cache_by_url[cache_key] = frame_image.copy()
+                        while len(webpage_video_frame_preview_pil_cache_by_url) > webpage_video_frame_preview_cache_limit:
+                            try:
+                                webpage_video_frame_preview_pil_cache_by_url.pop(next(iter(webpage_video_frame_preview_pil_cache_by_url)))
+                            except Exception:
+                                break
+                        return "success", resource_id, frame_image.copy()
+                    except Exception:
+                        return "failed", resource_id, None
+                return "failed", resource_id, None
 
             def _worker(items: list[Any]) -> None:
                 try:

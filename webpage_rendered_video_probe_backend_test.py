@@ -107,6 +107,8 @@ def test_probe_script_contains_dom_and_resource_hooks() -> None:
     assert "querySelectorAll('video,audio')" in RENDERED_VIDEO_PROBE_SCRIPT
     assert "currentSrc" in RENDERED_VIDEO_PROBE_SCRIPT
     assert "performance.getEntriesByType('resource')" in RENDERED_VIDEO_PROBE_SCRIPT
+    assert "pageThumbnailUrl" in RENDERED_VIDEO_PROBE_SCRIPT
+    assert "parentPoster" in RENDERED_VIDEO_PROBE_SCRIPT
     assert "twitter:player:stream" in RENDERED_VIDEO_PROBE_SCRIPT
 
 
@@ -129,10 +131,33 @@ def test_probe_payload_rejects_social_share_links() -> None:
     assert result.candidate_count == 1
     assert result.candidates[0].url == "https://x.com/i/videos/12345"
 
+
+def test_payload_page_thumbnail_fills_network_candidates() -> None:
+    payload = {
+        "location_href": "https://metro.example/story",
+        "document_title": "Metro style story",
+        "page_thumbnail_url": "/article-thumb.jpg",
+        "network_urls": [
+            {
+                "url": "https://videos.example.com/core.mp4",
+                "content_type": "video/mp4",
+                "detection_reason": "browser network response",
+            }
+        ],
+    }
+    result = discover_rendered_webpage_video_candidates_from_probe_payload(
+        "https://metro.example/story",
+        payload,
+        capability_decision=_decision(),
+    )
+    assert result.candidate_count == 1
+    assert result.candidates[0].thumbnail_url == "https://metro.example/article-thumb.jpg"
+
 def main() -> None:
     test_probe_payload_discovers_dom_performance_and_network_media()
     test_probe_payload_deduplicates_and_reports_json_warning()
     test_probe_payload_rejects_social_share_links()
+    test_payload_page_thumbnail_fills_network_candidates()
     test_probe_script_contains_dom_and_resource_hooks()
     print("webpage_rendered_video_probe_backend_test OK")
 

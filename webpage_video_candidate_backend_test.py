@@ -87,11 +87,28 @@ def test_rejects_social_share_links_that_are_not_video_players() -> None:
     assert result.candidate_count == 1
     assert result.candidates[0].url == "https://x.com/i/videos/12345"
 
+
+def test_late_page_thumbnail_is_applied_to_existing_candidates() -> None:
+    html = """
+    <html><head></head><body>
+      <video src="https://cdn.example.com/late-thumb.mp4"></video>
+      <meta property="og:image" content="/late-thumb.jpg">
+    </body></html>
+    """
+    result = discover_webpage_video_candidates_from_html(
+        "https://news.example/story",
+        html,
+        capability_decision=_decision(),
+    )
+    assert result.candidate_count == 1
+    assert result.candidates[0].thumbnail_url == "https://news.example/late-thumb.jpg"
+
 def main() -> None:
     test_classifies_video_file_and_stream_urls()
     test_discovers_static_video_sources_and_meta()
     test_deduplicates_repeated_urls()
     test_rejects_social_share_links_that_are_not_video_players()
+    test_late_page_thumbnail_is_applied_to_existing_candidates()
     print("webpage_video_candidate_backend_test OK")
 
 
