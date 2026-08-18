@@ -447,6 +447,7 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "_start_webpage_image_source_row_prefetch" in app_source
     assert "_apply_prefetched_webpage_image_discovery" in app_source
     assert "Prefetched" in app_source
+    assert "self._start_internal_browser_image_discovery_service()" in app_source
     assert "trace_add" in source
     assert "filter_resource_dialog_items" in source
     assert "MediaResourceFilterState" in source
@@ -474,6 +475,14 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert "Using cached webpage image candidate list" in source
     assert "_prewarm_rendered_discovery_if_js_heavy" in source
     assert "prewarm_rendered_browser_discovery_worker" in inspect.getsource(App)
+    assert "start_internal_browser_image_discovery_service" in inspect.getsource(App)
+    assert "close_rendered_browser_discovery_worker" in inspect.getsource(App)
+    assert "start_internal_browser_image_discovery_service" in inspect.getsource(App)
+    assert "_start_internal_browser_image_discovery_service" in inspect.getsource(App)
+    assert "YTCEInternalBrowserImageDiscoveryService" in inspect.getsource(App)
+    assert 'self.__dict__.get("internal_browser_image_discovery_service_started", False)' in inspect.getsource(App)
+    assert 'if "tk" not in self.__dict__:' in inspect.getsource(App)
+    assert "Source-row prefetch is a real GUI/background-network path" in inspect.getsource(App)
     assert "Refresh images forces a rescan" in source
     assert "candidate lists and previews are cached" in source
     assert "candidate lists and previews are cached/prefetched" in source

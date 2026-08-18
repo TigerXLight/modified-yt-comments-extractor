@@ -172,9 +172,11 @@ from source_media_gui_bridge import (
     run_source_media_gui_download,
 )
 from webpage_image_downloader_backend import (
+    close_rendered_browser_discovery_worker,
     discover_webpage_images_for_row,
     download_selected_webpage_images,
     prewarm_rendered_browser_discovery_worker,
+    start_internal_browser_image_discovery_service,
 )
 from source_twitter_compact_row import (
     TWITTER_COMPACT_MODES,
@@ -634,6 +636,7 @@ class App(ctk.CTk):
         self.source_resource_selections: dict[str, tuple[str, ...]] = {}
         self.webpage_image_session_output_root: Optional[Path] = None
         self.webpage_image_session_download_cache: dict[tuple[str, str], str] = {}
+        self.internal_browser_image_discovery_service_started: bool = False
         self.youtube_source_row_quality_vars: dict[str, ctk.StringVar] = {}
         self.youtube_source_row_quality_enabled_vars: dict[str, ctk.BooleanVar] = {}
         self.youtube_source_row_preferences: dict[str, YouTubeGuiMediaPreferences] = {}
@@ -674,6 +677,7 @@ class App(ctk.CTk):
         self._bind_main_pointer_wheel_router()
         self._bind_final_file_drop_targets()
         self._log_file_drag_drop_startup_state()
+        self._start_internal_browser_image_discovery_service()
 
         # Bind keyboard shortcuts
         self.bind("<Control-Return>", lambda e: self.start_fetching())
@@ -7100,6 +7104,37 @@ class App(ctk.CTk):
     # EVENT HANDLERS
     # =========================================================================
 
+    def _start_internal_browser_image_discovery_service(self) -> None:
+        """Start the app-owned browser image discovery service in the background.
+
+        This is YTCE's integrated extension-like path: the app prewarms a
+        Chromium/Edge rendered-discovery worker before the Images dialog opens,
+        then source-row prefetch and the dialog share the same candidate cache.
+        """
+        # Some self-tests call this method on a deliberately uninitialised
+        # Tk/App instance.  getattr() can fall through to tkinter.__getattr__
+        # and recurse when ``self.tk`` is absent, so use the instance dict
+        # directly for this internal guard.  Do not launch Playwright/Node from
+        # those Tk stubs: the daemon prewarm can outlive the test process and
+        # make Playwright's Node driver print EPIPE on interpreter shutdown.
+        if self.__dict__.get("internal_browser_image_discovery_service_started", False):
+            return
+        self.__dict__["internal_browser_image_discovery_service_started"] = True
+        if "tk" not in self.__dict__:
+            return
+
+        def _worker() -> None:
+            try:
+                start_internal_browser_image_discovery_service()
+            except Exception:
+                logger.debug("Internal browser image discovery service could not be started.", exc_info=True)
+
+        threading.Thread(
+            target=_worker,
+            name="YTCEInternalBrowserImageDiscoveryService",
+            daemon=True,
+        ).start()
+
     def _on_closing(self) -> None:
         """Handle window close event - cancel any running operations."""
         if self.fetch_state.is_fetching:
@@ -7107,6 +7142,10 @@ class App(ctk.CTk):
             if self._fetch_thread_ref and self._fetch_thread_ref.is_alive():
                 self._fetch_thread_ref.join(timeout=2.0)
         self._cleanup_webpage_image_session_downloads()
+        try:
+            close_rendered_browser_discovery_worker()
+        except Exception:
+            logger.debug("Could not close internal browser image discovery service cleanly.", exc_info=True)
         self.destroy()
 
     def _youtube_credential_service(self) -> YouTubeCredentialMigrationService:
@@ -8151,9 +8190,17 @@ class App(ctk.CTk):
             logger.debug("Webpage image prefetch failed for %s: %s", cache_key, error)
 
     def _start_webpage_image_source_row_prefetch(self, rows: Sequence[SourceResourceRowState]) -> None:
+        # Source-row prefetch is a real GUI/background-network path.  Some
+        # self-tests call URL intake on App.__new__(App) stubs; those objects
+        # have no Tk interpreter and must not start discovery threads, otherwise
+        # Playwright/Node can outlive the short test process and print EPIPE
+        # during interpreter shutdown.  The real app has self.tk in __dict__.
+        if "tk" not in self.__dict__:
+            return
         candidates = [row for row in rows if self._source_row_should_prefetch_webpage_images(row)]
         if not candidates:
             return
+        self._start_internal_browser_image_discovery_service()
         cache = self.__dict__.setdefault("webpage_image_discovery_cache_by_url", {})
         inflight = self.__dict__.setdefault("webpage_image_discovery_prefetch_inflight", set())
         work: list[SourceResourceRowState] = []

@@ -772,20 +772,27 @@ class _RenderedBrowserDiscoveryWorker:
     def _run(self) -> None:
         playwright = None
         browser = None
+        context = None
         launch_warnings: tuple[str, ...] = ()
         try:
             playwright, browser, launch_warnings = self._open_warm_browser()
+            if browser is not None:
+                try:
+                    context = _create_rendered_discovery_context(browser)
+                except Exception as exc:
+                    launch_warnings = launch_warnings + (f"Rendered browser warm context could not be created: {exc}",)
+                    context = None
             while True:
                 job = self._jobs.get()
                 if job is None:
                     break
                 result_queue = job.get("result_queue")
                 try:
-                    if browser is None:
+                    if browser is None or context is None:
                         result = (str(job.get("source_url") or ""), (), launch_warnings)
                     else:
-                        result = _rendered_browser_candidate_dicts_with_browser(
-                            browser,
+                        result = _rendered_browser_candidate_dicts_with_context(
+                            context,
                             str(job.get("source_url") or ""),
                             timeout_ms=int(job.get("timeout_ms") or 14_000),
                             idle_ms=int(job.get("idle_ms") or 450),
@@ -797,12 +804,24 @@ class _RenderedBrowserDiscoveryWorker:
                 except Exception as exc:
                     relaunch_warning = f"Rendered browser warm session was restarted after an error: {exc}"
                     try:
+                        if context is not None:
+                            context.close()
+                    except Exception:
+                        pass
+                    context = None
+                    try:
                         if browser is not None:
                             browser.close()
                     except Exception:
                         pass
                     browser = None
                     new_playwright, browser, relaunch_warnings = self._open_warm_browser()
+                    if browser is not None:
+                        try:
+                            context = _create_rendered_discovery_context(browser)
+                        except Exception as context_exc:
+                            relaunch_warnings = tuple(relaunch_warnings) + (f"Rendered browser warm context retry failed: {context_exc}",)
+                            context = None
                     if new_playwright is not None:
                         try:
                             if playwright is not None:
@@ -810,12 +829,12 @@ class _RenderedBrowserDiscoveryWorker:
                         except Exception:
                             pass
                         playwright = new_playwright
-                    if browser is None:
+                    if browser is None or context is None:
                         result = (str(job.get("source_url") or ""), (), (relaunch_warning,) + tuple(relaunch_warnings))
                     else:
                         try:
-                            retry_result = _rendered_browser_candidate_dicts_with_browser(
-                                browser,
+                            retry_result = _rendered_browser_candidate_dicts_with_context(
+                                context,
                                 str(job.get("source_url") or ""),
                                 timeout_ms=int(job.get("timeout_ms") or 14_000),
                                 idle_ms=int(job.get("idle_ms") or 450),
@@ -830,6 +849,11 @@ class _RenderedBrowserDiscoveryWorker:
                 except Exception:
                     pass
         finally:
+            try:
+                if context is not None:
+                    context.close()
+            except Exception:
+                pass
             try:
                 if browser is not None:
                     browser.close()
@@ -869,11 +893,41 @@ def prewarm_rendered_browser_discovery_worker() -> None:
     _get_rendered_discovery_worker()
 
 
+def start_internal_browser_image_discovery_service() -> None:
+    """Start YTCE's app-owned rendered image discovery service.
+
+    This is the standalone/integrated browser-worker equivalent of the
+    browser-extension page context: the app owns one warm Chromium/Edge worker
+    during the session, source rows can be pre-scanned in the background, and
+    the Images dialog consumes cached candidate models instead of cold-starting
+    discovery on open.
+    """
+
+    _get_rendered_discovery_worker()
+
+
 atexit.register(close_rendered_browser_discovery_worker)
 
 
-def _rendered_browser_candidate_dicts_with_browser(
-    browser: Any,
+def _create_rendered_discovery_context(browser: Any) -> Any:
+    """Create the app-owned rendered discovery context once per warm worker.
+
+    The previous rendered fallback reused the browser process but still created a
+    fresh context for every scan. The internal browser image discovery service
+    keeps this isolated context warm for the app session, which is closer to the
+    extension model while avoiding the user's browser profile/cookies.
+    """
+
+    return browser.new_context(
+        user_agent=USER_AGENT,
+        viewport={"width": 1366, "height": 1400},
+        locale="en-GB",
+        ignore_https_errors=True,
+    )
+
+
+def _rendered_browser_candidate_dicts_with_context(
+    context: Any,
     source_url: str,
     *,
     timeout_ms: int = 14_000,
@@ -884,14 +938,8 @@ def _rendered_browser_candidate_dicts_with_browser(
     warnings: list[str] = []
     final_url = source_url
     raw_candidates: list[dict[str, Any]] = []
-    context = None
+    page = None
     try:
-        context = browser.new_context(
-            user_agent=USER_AGENT,
-            viewport={"width": 1366, "height": 1400},
-            locale="en-GB",
-            ignore_https_errors=True,
-        )
         page = context.new_page()
         try:
             page.goto(source_url, wait_until="domcontentloaded", timeout=timeout_ms)
@@ -941,11 +989,41 @@ def _rendered_browser_candidate_dicts_with_browser(
                 warnings.append(f"Rendered frame image scan skipped for {frame_url}: {exc}")
     finally:
         try:
+            if page is not None:
+                page.close()
+        except Exception:
+            pass
+    return final_url, tuple(raw_candidates), tuple(warnings)
+
+
+def _rendered_browser_candidate_dicts_with_browser(
+    browser: Any,
+    source_url: str,
+    *,
+    timeout_ms: int = 14_000,
+    idle_ms: int = 450,
+    scroll_steps: int = 4,
+    max_candidates_per_frame: int = 900,
+) -> tuple[str, tuple[dict[str, Any], ...], tuple[str, ...]]:
+    """Compatibility wrapper for tests/callers that pass a browser directly."""
+
+    context = None
+    try:
+        context = _create_rendered_discovery_context(browser)
+        return _rendered_browser_candidate_dicts_with_context(
+            context,
+            source_url,
+            timeout_ms=timeout_ms,
+            idle_ms=idle_ms,
+            scroll_steps=scroll_steps,
+            max_candidates_per_frame=max_candidates_per_frame,
+        )
+    finally:
+        try:
             if context is not None:
                 context.close()
         except Exception:
             pass
-    return final_url, tuple(raw_candidates), tuple(warnings)
 
 
 def _rendered_browser_candidate_dicts(

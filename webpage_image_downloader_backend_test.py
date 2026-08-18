@@ -6,6 +6,7 @@ from webpage_image_downloader_backend import (
     discover_webpage_images_rendered,
     close_rendered_browser_discovery_worker,
     prewarm_rendered_browser_discovery_worker,
+    start_internal_browser_image_discovery_service,
 )
 from source_resource_state import RESOURCE_KIND_IMAGE
 
@@ -42,6 +43,10 @@ def run_self_test() -> None:
     assert callable(discover_webpage_images_for_row)
     assert callable(close_rendered_browser_discovery_worker)
     assert callable(prewarm_rendered_browser_discovery_worker)
+    assert callable(start_internal_browser_image_discovery_service)
+    backend_source = __import__("inspect").getsource(__import__("webpage_image_downloader_backend"))
+    assert "_create_rendered_discovery_context" in backend_source
+    assert "_rendered_browser_candidate_dicts_with_context" in backend_source
     print("webpage_image_downloader_backend_test OK")
 
 
