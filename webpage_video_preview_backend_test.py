@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import inspect
+
 from webpage_video_preview_backend import (
     build_ffmpeg_video_frame_preview_command,
     build_ffmpeg_video_hover_preview_command,
     can_generate_video_frame_preview,
     can_generate_video_hover_preview,
+    extract_video_hover_preview_frames_pil,
     video_frame_preview_cache_key,
     video_hover_preview_cache_key,
 )
@@ -62,6 +65,13 @@ def test_ffmpeg_hover_command_outputs_short_gif_pipe() -> None:
     assert any("Referer: https://example.com/article" in part for part in command)
 
 
+def test_hover_preview_default_window_samples_more_than_a_tiny_static_intro() -> None:
+    signature = inspect.signature(extract_video_hover_preview_frames_pil)
+    assert signature.parameters["seek_seconds"].default == 0.0
+    assert signature.parameters["duration_seconds"].default == 6.0
+    assert signature.parameters["fps"].default == 3
+
+
 def test_cache_key_is_stable_and_separate_from_image_url_cache() -> None:
     first = video_frame_preview_cache_key("https://videos.example.com/clip.mp4")
     second = video_frame_preview_cache_key("https://videos.example.com/clip.mp4")
@@ -79,6 +89,7 @@ def main() -> None:
     test_hover_preview_uses_same_direct_video_safety_gate()
     test_ffmpeg_command_is_single_frame_pipe_and_header_safe()
     test_ffmpeg_hover_command_outputs_short_gif_pipe()
+    test_hover_preview_default_window_samples_more_than_a_tiny_static_intro()
     test_cache_key_is_stable_and_separate_from_image_url_cache()
     print("webpage_video_preview_backend_test OK")
 

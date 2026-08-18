@@ -8285,15 +8285,94 @@ class App(ctk.CTk):
         inflight.discard(cache_key)
         summary = getattr(discovery, "summary", {}) or {}
         if discovery.resources:
+            self._start_webpage_video_hover_preview_prefetch_for_discovery(
+                target_domain or cache_key,
+                cache_key,
+                discovery,
+            )
             self.log_message(
                 (
                     f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
                     f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
                     f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "Video & Audio can open from the cached candidate list."
+                    "Video & Audio can open from the cached candidate list; animated hover previews are prefetched when direct media permits."
                 ),
                 "muted",
             )
+
+    def _start_webpage_video_hover_preview_prefetch_for_discovery(self, label: str, page_url: str, discovery: Any) -> None:
+        # Make Video DownloadHelper-style hover previews ready before the user
+        # opens Video & Audio.  This runs only after a user-added source row has
+        # already produced cached candidates; it is not an app-startup scan.
+        if "tk" not in self.__dict__:
+            return
+        resources = tuple(getattr(discovery, "resources", ()) or ())
+        if not resources:
+            return
+        hover_cache = self.__dict__.setdefault("webpage_video_hover_preview_pil_frames_by_url", {})
+        inflight = self.__dict__.setdefault("webpage_video_hover_preview_prefetch_inflight", set())
+        cache_limit = 48
+        work: list[tuple[str, str]] = []
+        for item in resources:
+            media_url = str(getattr(item, "reference_url", "") or getattr(item, "canonical_url", "") or "").strip()
+            if not media_url:
+                continue
+            if not can_generate_video_hover_preview(
+                media_url,
+                extension=str(getattr(item, "extension", "") or ""),
+                mime_type=str(getattr(item, "mime_type", "") or ""),
+            ):
+                continue
+            cache_key = video_hover_preview_cache_key(media_url)
+            if cache_key in hover_cache or cache_key in inflight:
+                continue
+            inflight.add(cache_key)
+            work.append((cache_key, media_url))
+            if len(work) >= 4:
+                break
+        if not work:
+            return
+
+        def worker(snapshot: tuple[tuple[str, str], ...]) -> None:
+            added = 0
+            for cache_key, media_url in snapshot:
+                try:
+                    frames = extract_video_hover_preview_frames_pil(
+                        media_url,
+                        timeout=5.5,
+                        seek_seconds=0.0,
+                        duration_seconds=6.0,
+                        fps=3,
+                        referer=page_url,
+                    )
+                    if len(frames) >= 2:
+                        hover_cache[cache_key] = tuple(frame.copy() for frame in frames)
+                        added += 1
+                        while len(hover_cache) > cache_limit:
+                            try:
+                                hover_cache.pop(next(iter(hover_cache)))
+                            except Exception:
+                                break
+                except Exception as error:
+                    logger.debug("Could not prefetch animated video hover preview for %s: %s", media_url, error)
+                finally:
+                    try:
+                        inflight.discard(cache_key)
+                    except Exception:
+                        pass
+            if added:
+                try:
+                    self.after(
+                        0,
+                        lambda count=added, target=label: self.log_message(
+                            f"Prefetched {count} animated video hover preview(s) for {target}; hover playback can start from cache.",
+                            "muted",
+                        ),
+                    )
+                except Exception:
+                    pass
+
+        threading.Thread(target=worker, args=(tuple(work),), daemon=True).start()
 
     def _mark_webpage_video_prefetch_finished(self, cache_key: str, error: Exception | None = None) -> None:
         inflight = self.__dict__.setdefault("webpage_video_discovery_prefetch_inflight", set())
@@ -9779,7 +9858,23 @@ class App(ctk.CTk):
             except Exception:
                 return False
 
+        def _apply_cached_video_hover_preview(item: Any) -> bool:
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                return False
+            hover_url = _video_hover_preview_url_for_item(item)
+            if not hover_url:
+                return False
+            cached_hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(video_hover_preview_cache_key(hover_url))
+            if cached_hover_frames is None:
+                return False
+            return _cache_ctk_video_hover_frames_for_item(item.resource_id, cached_hover_frames)
+
         def _apply_cached_thumbnail_preview(item: Any) -> bool:
+            # A poster/thumbnail cache hit must not block animated hover-preview
+            # availability.  V78J only generated hover frames when direct video
+            # frame extraction was needed; Metro-style pages often provide poster
+            # thumbnails, so hover previews never became ready.
+            _apply_cached_video_hover_preview(item)
             preview_url = _preview_url_for_item(item)
             if preview_url:
                 cached_preview = webpage_image_preview_pil_cache_by_url.get(preview_url)
@@ -9789,6 +9884,7 @@ class App(ctk.CTk):
             if video_frame_url:
                 cached_frame = webpage_video_frame_preview_pil_cache_by_url.get(video_frame_preview_cache_key(video_frame_url))
                 if cached_frame is not None:
+                    _apply_cached_video_hover_preview(item)
                     return _cache_ctk_thumbnail_for_item(item, cached_frame)
             return False
 
@@ -9955,6 +10051,35 @@ class App(ctk.CTk):
             thumbnail_probe_thread_active = True
             _ensure_thumbnail_probe_result_pump()
 
+            def _prefetch_video_hover_frames_for_item(item: Any) -> bool:
+                if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                    return False
+                hover_url = _video_hover_preview_url_for_item(item)
+                if not hover_url:
+                    return False
+                hover_cache_key = video_hover_preview_cache_key(hover_url)
+                hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(hover_cache_key)
+                if hover_frames is None:
+                    try:
+                        hover_frames = extract_video_hover_preview_frames_pil(
+                            hover_url,
+                            timeout=5.5,
+                            seek_seconds=0.0,
+                            duration_seconds=6.0,
+                            fps=3,
+                            referer=str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or ""),
+                        )
+                        webpage_video_hover_preview_pil_frames_by_url[hover_cache_key] = tuple(frame.copy() for frame in hover_frames)
+                        while len(webpage_video_hover_preview_pil_frames_by_url) > webpage_video_hover_preview_cache_limit:
+                            try:
+                                webpage_video_hover_preview_pil_frames_by_url.pop(next(iter(webpage_video_hover_preview_pil_frames_by_url)))
+                            except Exception:
+                                break
+                    except Exception:
+                        return False
+                _queue_thumbnail_probe_result("hover_frames", item.resource_id, tuple(frame.copy() for frame in hover_frames))
+                return True
+
             def _probe_one_thumbnail(item: Any) -> tuple[str, str, Any]:
                 resource_id = item.resource_id
                 preview_url = _preview_url_for_item(item)
@@ -9983,6 +10108,7 @@ class App(ctk.CTk):
                                 webpage_image_preview_pil_cache_by_url.pop(next(iter(webpage_image_preview_pil_cache_by_url)))
                             except Exception:
                                 break
+                        _prefetch_video_hover_frames_for_item(item)
                         return "success", resource_id, preview_image.copy()
                     except Exception:
                         pass
@@ -9993,6 +10119,7 @@ class App(ctk.CTk):
                         cache_key = video_frame_preview_cache_key(video_frame_url)
                         cached_frame = webpage_video_frame_preview_pil_cache_by_url.get(cache_key)
                         if cached_frame is not None:
+                            _prefetch_video_hover_frames_for_item(item)
                             return "success", resource_id, cached_frame.copy()
                         frame_image = extract_video_frame_preview_pil(
                             video_frame_url,
@@ -10014,10 +10141,10 @@ class App(ctk.CTk):
                                 if hover_frames is None:
                                     hover_frames = extract_video_hover_preview_frames_pil(
                                         hover_url,
-                                        timeout=3.5,
-                                        seek_seconds=0.35,
-                                        duration_seconds=2.0,
-                                        fps=5,
+                                        timeout=5.5,
+                                        seek_seconds=0.0,
+                                        duration_seconds=6.0,
+                                        fps=3,
                                         referer=str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or ""),
                                     )
                                     webpage_video_hover_preview_pil_frames_by_url[hover_cache_key] = tuple(frame.copy() for frame in hover_frames)

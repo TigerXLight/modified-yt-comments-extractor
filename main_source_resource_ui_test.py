@@ -473,6 +473,10 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "Direct video files without a poster" in source
     assert "extract_video_hover_preview_frames_pil" in source
     assert "video_hover_preview_frames_by_id" in source
+    assert "_apply_cached_video_hover_preview" in source
+    assert "A poster/thumbnail cache hit must not block animated hover-preview" in source
+    assert "_start_webpage_video_hover_preview_prefetch_for_discovery" in inspect.getsource(App)
+    assert "Prefetched {count} animated video hover preview" in inspect.getsource(App)
     assert "serious_review_markers" in source
 
 

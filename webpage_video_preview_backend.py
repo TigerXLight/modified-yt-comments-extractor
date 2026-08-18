@@ -138,8 +138,8 @@ def build_ffmpeg_video_hover_preview_command(
     url: str,
     *,
     seek_seconds: float = 0.35,
-    duration_seconds: float = 2.0,
-    fps: int = 5,
+    duration_seconds: float = 6.0,
+    fps: int = 3,
     user_agent: str = "Mozilla/5.0 YTCE video preview",
     referer: str = "",
 ) -> list[str]:
@@ -224,10 +224,10 @@ def extract_video_frame_preview_pil(
 def extract_video_hover_preview_frames_pil(
     url: str,
     *,
-    timeout: float = 3.5,
-    seek_seconds: float = 0.35,
-    duration_seconds: float = 2.0,
-    fps: int = 5,
+    timeout: float = 5.5,
+    seek_seconds: float = 0.0,
+    duration_seconds: float = 6.0,
+    fps: int = 3,
     referer: str = "",
     max_size: tuple[int, int] = (168, 128),
     max_frames: int = 10,
@@ -235,8 +235,10 @@ def extract_video_hover_preview_frames_pil(
     """Extract a short hover-preview GIF and return small PIL frames.
 
     This gives the Video & Audio dialog a Video DownloadHelper-style moving
-    preview on hover for direct MP4/WebM/etc. candidates.  It is intentionally
-    cached and capped to keep GUI interaction responsive.
+    preview on hover for direct MP4/WebM/etc. candidates.  It samples a
+    wider early window than the first-frame preview because news clips often
+    have static intros.  Callers prefetch and cache these frames so hover
+    playback can start immediately.
     """
     command = build_ffmpeg_video_hover_preview_command(
         url,
