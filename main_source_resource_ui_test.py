@@ -487,6 +487,11 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "poster_url=poster_url" in inspect.getsource(App)
     assert "poster/thumbnail" in app_source
     assert "cache hit cannot suppress animated hover frames again" in app_source
+    assert "V78N fast first-paint" in source
+    assert "video_static_first_followup_pending" in source
+    assert "Quick-scanning static video/audio candidates" in source
+    assert "run_rendered_probe=False" in source
+    assert "followup_full_probe=True" in source
     assert "serious_review_markers" in source
 
 

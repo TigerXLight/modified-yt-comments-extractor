@@ -9733,6 +9733,12 @@ class App(ctk.CTk):
         video_hover_preview_frames_by_id: dict[str, tuple[Any, ...]] = {}
         video_hover_preview_status_by_id: dict[str, str] = {}
         video_hover_probe_thread_active = False
+        # V78N fast first-paint: when Video & Audio opens before the
+        # source-row rendered/browser prefetch has finished, show static HTML
+        # candidates first, then enrich/replace them with the slower rendered
+        # browser probe.  This avoids a blank 12s+ dialog while preserving the
+        # full static+rendered evidence pass.
+        video_static_first_followup_pending = False
         video_hover_animation_after_id_by_resource_id: dict[str, Any] = {}
         video_hover_animation_index_by_resource_id: dict[str, int] = {}
 
@@ -11077,12 +11083,12 @@ class App(ctk.CTk):
             )
 
         def _ensure_video_discovery_result_pump() -> None:
-            nonlocal video_discovery_thread_active, video_discovery_result_after_id
+            nonlocal video_discovery_thread_active, video_discovery_result_after_id, video_static_first_followup_pending
             if video_discovery_result_after_id is not None:
                 return
 
             def _drain_video_discovery_results() -> None:
-                nonlocal video_discovery_thread_active, video_discovery_result_after_id
+                nonlocal video_discovery_thread_active, video_discovery_result_after_id, video_static_first_followup_pending
                 video_discovery_result_after_id = None
                 queued: list[tuple[str, Any, str, bool]] = []
                 try:
@@ -11105,6 +11111,18 @@ class App(ctk.CTk):
                                 refresh_videos_button.configure(state="normal", text="Refresh videos")
                         except Exception:
                             pass
+                        if video_static_first_followup_pending:
+                            video_static_first_followup_pending = False
+                            try:
+                                window.after(90, lambda: discover_page_videos(
+                                    show_messages=False,
+                                    run_rendered_probe=True,
+                                    rendered_probe_timeout_ms=12000,
+                                    force_refresh=True,
+                                    followup_full_probe=False,
+                                ))
+                            except Exception:
+                                logger.debug("Could not schedule rendered video discovery follow-up after static first paint.", exc_info=True)
                 should_continue = video_discovery_thread_active
                 try:
                     with video_discovery_results_lock:
@@ -11122,8 +11140,15 @@ class App(ctk.CTk):
             except Exception:
                 video_discovery_result_after_id = None
 
-        def discover_page_videos(*, show_messages: bool = True) -> None:
-            nonlocal video_discovery_thread_active, refresh_videos_button
+        def discover_page_videos(
+            *,
+            show_messages: bool = True,
+            run_rendered_probe: bool = True,
+            rendered_probe_timeout_ms: int = 12000,
+            force_refresh: bool = False,
+            followup_full_probe: bool = False,
+        ) -> None:
+            nonlocal video_discovery_thread_active, refresh_videos_button, video_static_first_followup_pending
             if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
                 return
             if row.adapter_id in {"youtube", "twitter_x"}:
@@ -11134,9 +11159,11 @@ class App(ctk.CTk):
                 return
             if video_discovery_thread_active:
                 self.log_message("Webpage video/audio discovery is already running for this source row.", "muted")
+                if followup_full_probe:
+                    video_static_first_followup_pending = True
                 return
             cache_key = _webpage_video_discovery_cache_key(row)
-            if not show_messages and cache_key:
+            if not force_refresh and run_rendered_probe and not show_messages and cache_key:
                 cached_discovery = webpage_video_discovery_cache_by_url.get(cache_key)
                 if cached_discovery is not None:
                     self.log_message(f"Using cached webpage video/audio candidate list for {row.domain}; Refresh videos forces a rescan.", "muted")
@@ -11145,13 +11172,16 @@ class App(ctk.CTk):
             video_discovery_thread_active = True
             try:
                 if refresh_videos_button is not None:
-                    refresh_videos_button.configure(state="disabled", text=("Refreshing..." if active_state.resources else "Discovering..."))
+                    refresh_videos_button.configure(
+                        state="disabled",
+                        text=("Refreshing..." if active_state.resources else ("Quick scan..." if not run_rendered_probe else "Discovering...")),
+                    )
                 if not active_state.resources:
                     for child in list_frame.winfo_children():
                         child.destroy()
                     ctk.CTkLabel(
                         list_frame,
-                        text="Discovering video/audio candidates in the background...",
+                        text=("Quick-scanning static video/audio candidates before the slower rendered browser probe..." if not run_rendered_probe else "Discovering video/audio candidates in the background..."),
                         text_color=COLORS["text_muted"],
                         wraplength=640,
                         justify="left",
@@ -11162,14 +11192,15 @@ class App(ctk.CTk):
             _ensure_video_discovery_result_pump()
             row_snapshot = row
             notify_user = bool(show_messages)
+            video_static_first_followup_pending = bool(followup_full_probe)
 
             def _worker() -> None:
                 try:
                     discovery = discover_webpage_videos_for_row(
                         row_snapshot,
                         fetch_static_html=True,
-                        run_rendered_probe=True,
-                        rendered_probe_timeout_ms=12000,
+                        run_rendered_probe=run_rendered_probe,
+                        rendered_probe_timeout_ms=rendered_probe_timeout_ms,
                     )
                 except Exception as exc:
                     _queue_video_discovery_result("failed", error_text=str(exc), show_messages=notify_user)
@@ -11390,7 +11421,13 @@ class App(ctk.CTk):
             else:
                 render_resource_list()
                 refresh_count()
-                window.after(80, lambda: discover_page_videos(show_messages=False))
+                window.after(80, lambda: discover_page_videos(
+                    show_messages=False,
+                    run_rendered_probe=False,
+                    rendered_probe_timeout_ms=0,
+                    force_refresh=True,
+                    followup_full_probe=True,
+                ))
         else:
             render_resource_list()
             refresh_count()
