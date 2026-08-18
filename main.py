@@ -184,6 +184,7 @@ from webpage_video_preview_backend import (
     can_generate_video_hover_preview,
     extract_video_frame_preview_pil,
     extract_video_hover_preview_frames_pil,
+    extract_video_hover_preview_frames_pil_browser,
     video_frame_preview_cache_key,
     video_hover_preview_cache_key,
 )
@@ -8337,14 +8338,24 @@ class App(ctk.CTk):
             added = 0
             for cache_key, media_url in snapshot:
                 try:
-                    frames = extract_video_hover_preview_frames_pil(
-                        media_url,
-                        timeout=5.5,
-                        seek_seconds=0.0,
-                        duration_seconds=6.0,
-                        fps=3,
-                        referer=page_url,
-                    )
+                    try:
+                        frames = extract_video_hover_preview_frames_pil_browser(
+                            media_url,
+                            timeout=6.5,
+                            duration_seconds=6.0,
+                            sample_count=6,
+                            referer=page_url,
+                            poster_url=str(getattr(item, "thumbnail_reference", "") or ""),
+                        )
+                    except Exception:
+                        frames = extract_video_hover_preview_frames_pil(
+                            media_url,
+                            timeout=5.5,
+                            seek_seconds=0.0,
+                            duration_seconds=6.0,
+                            fps=3,
+                            referer=page_url,
+                        )
                     if len(frames) >= 2:
                         hover_cache[cache_key] = tuple(frame.copy() for frame in frames)
                         added += 1
@@ -9717,6 +9728,8 @@ class App(ctk.CTk):
         rendered_tile_resource_ids: tuple[str, ...] = ()
         rendered_tile_refreshers_by_id: dict[str, Any] = {}
         video_hover_preview_frames_by_id: dict[str, tuple[Any, ...]] = {}
+        video_hover_preview_status_by_id: dict[str, str] = {}
+        video_hover_probe_thread_active = False
         video_hover_animation_after_id_by_resource_id: dict[str, Any] = {}
         video_hover_animation_index_by_resource_id: dict[str, int] = {}
 
@@ -9867,7 +9880,45 @@ class App(ctk.CTk):
             cached_hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(video_hover_preview_cache_key(hover_url))
             if cached_hover_frames is None:
                 return False
-            return _cache_ctk_video_hover_frames_for_item(item.resource_id, cached_hover_frames)
+            cached = _cache_ctk_video_hover_frames_for_item(item.resource_id, cached_hover_frames)
+            if cached:
+                video_hover_preview_status_by_id[item.resource_id] = "success"
+            return cached
+
+        def _extract_video_hover_preview_frames_cached(item: Any, hover_url: str) -> tuple[Any, ...]:
+            # V78L follows the browser-hover references: preload/decode through a
+            # real video element before hover, then let Tk cycle cached frames.
+            # ffmpeg remains a fallback, not the main hover path.
+            hover_cache_key = video_hover_preview_cache_key(hover_url)
+            hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(hover_cache_key)
+            if hover_frames is None:
+                page_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "")
+                try:
+                    hover_frames = extract_video_hover_preview_frames_pil_browser(
+                        hover_url,
+                        timeout=6.5,
+                        duration_seconds=6.0,
+                        sample_count=6,
+                        referer=page_url,
+                        poster_url=str(getattr(item, "thumbnail_reference", "") or ""),
+                    )
+                except Exception as browser_error:
+                    logger.debug("Browser-backed video hover preview failed for %s: %s", hover_url, browser_error)
+                    hover_frames = extract_video_hover_preview_frames_pil(
+                        hover_url,
+                        timeout=5.5,
+                        seek_seconds=0.0,
+                        duration_seconds=6.0,
+                        fps=3,
+                        referer=page_url,
+                    )
+                webpage_video_hover_preview_pil_frames_by_url[hover_cache_key] = tuple(frame.copy() for frame in hover_frames)
+                while len(webpage_video_hover_preview_pil_frames_by_url) > webpage_video_hover_preview_cache_limit:
+                    try:
+                        webpage_video_hover_preview_pil_frames_by_url.pop(next(iter(webpage_video_hover_preview_pil_frames_by_url)))
+                    except Exception:
+                        break
+            return tuple(frame.copy() for frame in hover_frames)
 
         def _apply_cached_thumbnail_preview(item: Any) -> bool:
             # A poster/thumbnail cache hit must not block animated hover-preview
@@ -9974,8 +10025,12 @@ class App(ctk.CTk):
             thumbnail_hidden_resource_ids.add(resource_id)
             thumbnail_preview_status_by_id[resource_id] = "failed"
 
+        def _video_hover_probe_failure(resource_id: str) -> None:
+            video_hover_preview_status_by_id[resource_id] = "failed"
+
         def _video_hover_probe_success(resource_id: str, preview_frames: Any) -> None:
-            _cache_ctk_video_hover_frames_for_item(resource_id, preview_frames)
+            if _cache_ctk_video_hover_frames_for_item(resource_id, preview_frames):
+                video_hover_preview_status_by_id[resource_id] = "success"
 
         def _queue_thumbnail_probe_result(kind: str, resource_id: str = "", preview_image: Any = None) -> None:
             try:
@@ -9985,12 +10040,12 @@ class App(ctk.CTk):
                 pass
 
         def _ensure_thumbnail_probe_result_pump() -> None:
-            nonlocal thumbnail_probe_result_after_id
+            nonlocal thumbnail_probe_result_after_id, video_hover_probe_thread_active
             if thumbnail_probe_result_after_id is not None:
                 return
 
             def _drain_thumbnail_probe_results() -> None:
-                nonlocal thumbnail_probe_thread_active, thumbnail_probe_result_after_id
+                nonlocal thumbnail_probe_thread_active, thumbnail_probe_result_after_id, video_hover_probe_thread_active
                 thumbnail_probe_result_after_id = None
                 queued: list[tuple[str, str, Any]] = []
                 try:
@@ -10007,6 +10062,12 @@ class App(ctk.CTk):
                     elif kind == "hover_frames":
                         _video_hover_probe_success(resource_id, preview_image)
                         changed = True
+                    elif kind == "hover_failed":
+                        _video_hover_probe_failure(resource_id)
+                        changed = True
+                    elif kind == "hover_done":
+                        video_hover_probe_thread_active = False
+                        changed = True
                     elif kind == "failed":
                         _thumbnail_probe_failure(resource_id)
                         changed = True
@@ -10015,7 +10076,7 @@ class App(ctk.CTk):
                         changed = True
                 if changed:
                     _schedule_thumbnail_probe_render(650)
-                should_continue = thumbnail_probe_thread_active
+                should_continue = thumbnail_probe_thread_active or video_hover_probe_thread_active
                 try:
                     with thumbnail_probe_results_lock:
                         should_continue = should_continue or bool(thumbnail_probe_results)
@@ -10057,26 +10118,10 @@ class App(ctk.CTk):
                 hover_url = _video_hover_preview_url_for_item(item)
                 if not hover_url:
                     return False
-                hover_cache_key = video_hover_preview_cache_key(hover_url)
-                hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(hover_cache_key)
-                if hover_frames is None:
-                    try:
-                        hover_frames = extract_video_hover_preview_frames_pil(
-                            hover_url,
-                            timeout=5.5,
-                            seek_seconds=0.0,
-                            duration_seconds=6.0,
-                            fps=3,
-                            referer=str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or ""),
-                        )
-                        webpage_video_hover_preview_pil_frames_by_url[hover_cache_key] = tuple(frame.copy() for frame in hover_frames)
-                        while len(webpage_video_hover_preview_pil_frames_by_url) > webpage_video_hover_preview_cache_limit:
-                            try:
-                                webpage_video_hover_preview_pil_frames_by_url.pop(next(iter(webpage_video_hover_preview_pil_frames_by_url)))
-                            except Exception:
-                                break
-                    except Exception:
-                        return False
+                try:
+                    hover_frames = _extract_video_hover_preview_frames_cached(item, hover_url)
+                except Exception:
+                    return False
                 _queue_thumbnail_probe_result("hover_frames", item.resource_id, tuple(frame.copy() for frame in hover_frames))
                 return True
 
@@ -10133,29 +10178,7 @@ class App(ctk.CTk):
                                 webpage_video_frame_preview_pil_cache_by_url.pop(next(iter(webpage_video_frame_preview_pil_cache_by_url)))
                             except Exception:
                                 break
-                        try:
-                            hover_url = _video_hover_preview_url_for_item(item)
-                            if hover_url:
-                                hover_cache_key = video_hover_preview_cache_key(hover_url)
-                                hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(hover_cache_key)
-                                if hover_frames is None:
-                                    hover_frames = extract_video_hover_preview_frames_pil(
-                                        hover_url,
-                                        timeout=5.5,
-                                        seek_seconds=0.0,
-                                        duration_seconds=6.0,
-                                        fps=3,
-                                        referer=str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or ""),
-                                    )
-                                    webpage_video_hover_preview_pil_frames_by_url[hover_cache_key] = tuple(frame.copy() for frame in hover_frames)
-                                    while len(webpage_video_hover_preview_pil_frames_by_url) > webpage_video_hover_preview_cache_limit:
-                                        try:
-                                            webpage_video_hover_preview_pil_frames_by_url.pop(next(iter(webpage_video_hover_preview_pil_frames_by_url)))
-                                        except Exception:
-                                            break
-                                _queue_thumbnail_probe_result("hover_frames", resource_id, tuple(frame.copy() for frame in hover_frames))
-                        except Exception:
-                            pass
+                        _prefetch_video_hover_frames_for_item(item)
                         return "success", resource_id, frame_image.copy()
                     except Exception:
                         return "failed", resource_id, None
@@ -10174,6 +10197,61 @@ class App(ctk.CTk):
                             _queue_thumbnail_probe_result(kind, resource_id, preview_image)
                 finally:
                     _queue_thumbnail_probe_result("done")
+
+            threading.Thread(target=_worker, args=(candidates,), daemon=True).start()
+
+        def _video_hover_candidate_should_probe(item: Any) -> bool:
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                return False
+            if item.resource_id in video_hover_preview_frames_by_id:
+                return False
+            status = video_hover_preview_status_by_id.get(item.resource_id, "")
+            if status in {"pending", "success", "failed"}:
+                return False
+            hover_url = _video_hover_preview_url_for_item(item)
+            if not hover_url:
+                return False
+            if _apply_cached_video_hover_preview(item):
+                return False
+            return True
+
+        def _start_video_hover_preview_probe(resources: tuple[Any, ...]) -> None:
+            nonlocal video_hover_probe_thread_active
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO or row.adapter_id in {"youtube", "twitter_x"}:
+                return
+            if video_hover_probe_thread_active:
+                _ensure_thumbnail_probe_result_pump()
+                return
+            candidates = [item for item in resources if _video_hover_candidate_should_probe(item)]
+            if not candidates:
+                return
+            # Browser-hover references preload direct video elements before hover.
+            # Run this independently from thumbnail probing so a poster/thumbnail
+            # cache hit cannot suppress animated hover frames again.
+            candidates = candidates[:4]
+            for candidate in candidates:
+                video_hover_preview_status_by_id[candidate.resource_id] = "pending"
+            video_hover_probe_thread_active = True
+            _ensure_thumbnail_probe_result_pump()
+
+            def _worker(items: list[Any]) -> None:
+                try:
+                    worker_count = max(1, min(2, len(items)))
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+                        futures = []
+                        for item in items:
+                            hover_url = _video_hover_preview_url_for_item(item)
+                            if hover_url:
+                                futures.append((item.resource_id, executor.submit(_extract_video_hover_preview_frames_cached, item, hover_url)))
+                        for resource_id, future in futures:
+                            try:
+                                preview_frames = future.result()
+                            except Exception:
+                                _queue_thumbnail_probe_result("hover_failed", resource_id)
+                            else:
+                                _queue_thumbnail_probe_result("hover_frames", resource_id, tuple(frame.copy() for frame in preview_frames))
+                finally:
+                    _queue_thumbnail_probe_result("hover_done")
 
             threading.Thread(target=_worker, args=(candidates,), daemon=True).start()
 
@@ -10353,6 +10431,7 @@ class App(ctk.CTk):
                     display_resources, hidden_candidate_count = _cap_image_display_resources(display_resources, hidden_image_render_limit)
             elif resource_kind == RESOURCE_KIND_VIDEO_AUDIO and row.adapter_id not in {"youtube", "twitter_x"}:
                 _start_thumbnail_preview_probe(display_resources)
+                _start_video_hover_preview_probe(display_resources)
             active_state = filtered_state.__class__(
                 source_row_id=filtered_state.source_row_id,
                 resource_kind=filtered_state.resource_kind,
@@ -10523,6 +10602,7 @@ class App(ctk.CTk):
                         return
                     frames = video_hover_preview_frames_by_id.get(resource_id)
                     if not frames or len(frames) < 2:
+                        _start_video_hover_preview_probe((current_item,))
                         return
                     if video_hover_animation_after_id_by_resource_id.get(resource_id) is not None:
                         return

@@ -3,6 +3,8 @@ from __future__ import annotations
 import inspect
 
 from webpage_video_preview_backend import (
+    _browser_hover_preview_sample_times,
+    build_browser_video_hover_preview_document,
     build_ffmpeg_video_frame_preview_command,
     build_ffmpeg_video_hover_preview_command,
     can_generate_video_frame_preview,
@@ -72,6 +74,27 @@ def test_hover_preview_default_window_samples_more_than_a_tiny_static_intro() ->
     assert signature.parameters["fps"].default == 3
 
 
+def test_browser_hover_preview_document_uses_muted_preloaded_video() -> None:
+    html = build_browser_video_hover_preview_document(
+        "https://videos.example.com/clip.mp4?x=1&y=2",
+        poster_url="https://images.example.com/poster.jpg",
+    )
+    assert '<video id="previewVideo"' in html
+    assert 'preload="auto"' in html
+    assert 'muted playsinline' in html
+    assert 'crossorigin="anonymous"' in html
+    assert 'https://videos.example.com/clip.mp4?x=1&amp;y=2' in html
+    assert 'poster="https://images.example.com/poster.jpg"' in html
+
+
+def test_browser_hover_preview_samples_early_window() -> None:
+    sample_times = _browser_hover_preview_sample_times(duration_seconds=6.0, sample_count=6)
+    assert sample_times[0] == 0.0
+    assert len(sample_times) == 6
+    assert sample_times[-1] == 6.0
+    assert all(earlier <= later for earlier, later in zip(sample_times, sample_times[1:]))
+
+
 def test_cache_key_is_stable_and_separate_from_image_url_cache() -> None:
     first = video_frame_preview_cache_key("https://videos.example.com/clip.mp4")
     second = video_frame_preview_cache_key("https://videos.example.com/clip.mp4")
@@ -90,6 +113,8 @@ def main() -> None:
     test_ffmpeg_command_is_single_frame_pipe_and_header_safe()
     test_ffmpeg_hover_command_outputs_short_gif_pipe()
     test_hover_preview_default_window_samples_more_than_a_tiny_static_intro()
+    test_browser_hover_preview_document_uses_muted_preloaded_video()
+    test_browser_hover_preview_samples_early_window()
     test_cache_key_is_stable_and_separate_from_image_url_cache()
     print("webpage_video_preview_backend_test OK")
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import subprocess
 from io import BytesIO
+from html import escape as _html_escape
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -221,6 +222,193 @@ def extract_video_frame_preview_pil(
     return image.copy()
 
 
+
+def _browser_hover_preview_sample_times(
+    *,
+    duration_seconds: float = 6.0,
+    sample_count: int = 6,
+) -> tuple[float, ...]:
+    """Return early sample times for browser-backed hover previews.
+
+    ReactHoverVideoPlayer and yt-hover style previews feel instant because the
+    video element is preloaded before hover and the hover handler only switches
+    state.  Our Tk grid cannot embed that player directly, so V78L samples the
+    same early playback window ahead of hover and caches the frames.
+    """
+    count = max(2, min(12, int(sample_count)))
+    duration = max(0.6, float(duration_seconds))
+    if count == 2:
+        return (0.0, min(duration, 1.0))
+    step = duration / float(count - 1)
+    return tuple(round(min(duration, max(0.0, index * step)), 3) for index in range(count))
+
+
+def build_browser_video_hover_preview_document(
+    url: str,
+    *,
+    poster_url: str = "",
+) -> str:
+    """Build the tiny document used by Playwright to preload a video element.
+
+    This mirrors the browser-hover references more closely than ffmpeg-on-hover:
+    preload a muted video element first, then capture already-decoded frames for
+    the Tk hover animation cache.
+    """
+    escaped_url = _html_escape(str(url or ""), quote=True)
+    escaped_poster = _html_escape(str(poster_url or ""), quote=True)
+    poster_attr = f' poster="{escaped_poster}"' if escaped_poster else ""
+    return f"""<!doctype html>
+<html>
+<head>
+<meta charset=\"utf-8\">
+<style>
+  html, body {{ margin: 0; width: 100%; height: 100%; background: #111; overflow: hidden; }}
+  video {{ width: 100%; height: 100%; object-fit: contain; background: #111; }}
+</style>
+</head>
+<body>
+<video id=\"previewVideo\" src=\"{escaped_url}\"{poster_attr} muted playsinline preload=\"auto\" crossorigin=\"anonymous\"></video>
+<script>
+  const video = document.getElementById('previewVideo');
+  video.muted = true;
+  video.volume = 0;
+</script>
+</body>
+</html>"""
+
+
+def extract_video_hover_preview_frames_pil_browser(
+    url: str,
+    *,
+    timeout: float = 6.5,
+    referer: str = "",
+    poster_url: str = "",
+    max_size: tuple[int, int] = (168, 128),
+    duration_seconds: float = 6.0,
+    sample_count: int = 6,
+    browser_executable_path: str | None = None,
+) -> tuple[Image.Image, ...]:
+    """Extract hover-preview frames using a real browser video element.
+
+    This is the V78L path inspired by ReactHoverVideoPlayer/yt-hover: browser
+    media decoding happens before hover; the Tk tile receives cached frames that
+    can cycle immediately.  Playwright is optional at runtime.  Callers should
+    catch RuntimeError and fall back to ffmpeg when unavailable.
+    """
+    text = str(url or "").strip()
+    if not text:
+        raise RuntimeError("No video URL was supplied for browser hover preview.")
+    try:
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+        from playwright.sync_api import sync_playwright
+    except Exception as error:
+        raise RuntimeError(f"Playwright unavailable for browser video hover preview: {type(error).__name__}: {error}") from error
+
+    timeout_ms = int(max(1200.0, float(timeout) * 1000.0))
+    frames: list[Image.Image] = []
+    sample_times = _browser_hover_preview_sample_times(
+        duration_seconds=duration_seconds,
+        sample_count=sample_count,
+    )
+    try:
+        with sync_playwright() as playwright:
+            launch_kwargs: dict[str, object] = {"headless": True}
+            if browser_executable_path:
+                launch_kwargs["executable_path"] = browser_executable_path
+            browser = playwright.chromium.launch(**launch_kwargs)
+            headers: dict[str, str] = {}
+            if referer:
+                headers["Referer"] = str(referer)
+            context_kwargs: dict[str, object] = {
+                "viewport": {"width": max_size[0] * 2, "height": max_size[1] * 2},
+                "ignore_https_errors": True,
+                "user_agent": "Mozilla/5.0 YTCE browser video hover preview",
+            }
+            if headers:
+                context_kwargs["extra_http_headers"] = headers
+            context = browser.new_context(**context_kwargs)
+            page = context.new_page()
+            page.set_content(build_browser_video_hover_preview_document(text, poster_url=poster_url), wait_until="domcontentloaded")
+            locator = page.locator("#previewVideo")
+            try:
+                locator.evaluate(
+                    """async (video) => {
+                      video.muted = true;
+                      video.volume = 0;
+                      video.preload = 'auto';
+                      video.load();
+                      if (video.readyState >= 2) return true;
+                      await new Promise((resolve, reject) => {
+                        const done = () => { cleanup(); resolve(true); };
+                        const fail = () => { cleanup(); reject(new Error('video load error')); };
+                        const cleanup = () => {
+                          video.removeEventListener('loadeddata', done);
+                          video.removeEventListener('canplay', done);
+                          video.removeEventListener('error', fail);
+                        };
+                        video.addEventListener('loadeddata', done, { once: true });
+                        video.addEventListener('canplay', done, { once: true });
+                        video.addEventListener('error', fail, { once: true });
+                      });
+                      return true;
+                    }""",
+                    timeout=timeout_ms,
+                )
+            except PlaywrightTimeoutError:
+                # Some CDNs do not report canplay quickly, but still paint the
+                # first frame.  Continue to screenshot attempts below.
+                pass
+            for sample_time in sample_times:
+                try:
+                    locator.evaluate(
+                        """async (video, seconds) => {
+                          video.muted = true;
+                          video.volume = 0;
+                          const duration = Number.isFinite(video.duration) ? video.duration : 0;
+                          const target = duration ? Math.min(Math.max(0, seconds), Math.max(0, duration - 0.05)) : Math.max(0, seconds);
+                          if (Math.abs((video.currentTime || 0) - target) > 0.05) {
+                            await new Promise((resolve) => {
+                              let finished = false;
+                              const cleanup = () => video.removeEventListener('seeked', done);
+                              const done = () => { if (!finished) { finished = true; cleanup(); resolve(true); } };
+                              video.addEventListener('seeked', done, { once: true });
+                              try { video.currentTime = target; } catch (_err) { done(); }
+                              setTimeout(done, 450);
+                            });
+                          }
+                          try { await video.play(); } catch (_err) {}
+                          await new Promise((resolve) => setTimeout(resolve, 80));
+                          video.pause();
+                          return true;
+                        }""",
+                        [sample_time],
+                        timeout=timeout_ms,
+                    )
+                except Exception:
+                    pass
+                try:
+                    png_bytes = locator.screenshot(type="png", timeout=max(800, min(timeout_ms, 2500)))
+                    image = Image.open(BytesIO(png_bytes)).convert("RGBA")
+                    image.thumbnail(max_size, Image.LANCZOS)
+                    if min(image.size) >= 24:
+                        frames.append(image.copy())
+                except Exception:
+                    continue
+            try:
+                context.close()
+                browser.close()
+            except Exception:
+                pass
+    except Exception as error:
+        raise RuntimeError(f"Browser video hover preview failed: {type(error).__name__}: {error}") from error
+
+    # Avoid returning a visually static animation if every screenshot is the
+    # exact same frame/poster.
+    unique_digests = {hashlib.sha1(frame.tobytes()).hexdigest() + str(frame.size) for frame in frames}
+    if len(frames) < 2 or len(unique_digests) < 2:
+        raise RuntimeError("Browser video hover preview did not produce multiple distinct frames.")
+    return tuple(frames[: max(2, min(12, int(sample_count)))])
+
 def extract_video_hover_preview_frames_pil(
     url: str,
     *,
@@ -285,7 +473,10 @@ __all__ = [
     "can_generate_video_frame_preview",
     "can_generate_video_hover_preview",
     "extract_video_frame_preview_pil",
+    "build_browser_video_hover_preview_document",
+    "extract_video_hover_preview_frames_pil_browser",
     "extract_video_hover_preview_frames_pil",
+    "_browser_hover_preview_sample_times",
     "video_frame_preview_cache_key",
     "video_hover_preview_cache_key",
 ]
