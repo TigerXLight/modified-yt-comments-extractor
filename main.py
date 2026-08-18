@@ -9480,6 +9480,10 @@ class App(ctk.CTk):
         image_discovery_result_after_id: Any = None
         image_discovery_results: list[tuple[str, Any, str, bool]] = []
         image_discovery_results_lock = threading.Lock()
+        video_discovery_thread_active = False
+        video_discovery_result_after_id: Any = None
+        video_discovery_results: list[tuple[str, Any, str, bool]] = []
+        video_discovery_results_lock = threading.Lock()
         hidden_candidate_count = 0
         thumbnail_preview_loading_count = 0
         default_image_render_limit = 32
@@ -9489,8 +9493,16 @@ class App(ctk.CTk):
             {},
         )
         webpage_image_discovery_cache_limit = 24
+        webpage_video_discovery_cache_by_url: dict[str, Any] = self.__dict__.setdefault(
+            "webpage_video_discovery_cache_by_url",
+            {},
+        )
+        webpage_video_discovery_cache_limit = 24
 
         def _webpage_image_discovery_cache_key(source_row: Any) -> str:
+            return str(getattr(source_row, "canonical_url", "") or getattr(source_row, "raw_url", "") or "").strip()
+
+        def _webpage_video_discovery_cache_key(source_row: Any) -> str:
             return str(getattr(source_row, "canonical_url", "") or getattr(source_row, "raw_url", "") or "").strip()
 
         def _prewarm_rendered_discovery_if_js_heavy() -> None:
@@ -9604,6 +9616,7 @@ class App(ctk.CTk):
         list_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         active_state = state
         refresh_images_button: Any = None
+        refresh_videos_button: Any = None
         rendered_tile_resource_ids: tuple[str, ...] = ()
         rendered_tile_refreshers_by_id: dict[str, Any] = {}
 
@@ -10374,6 +10387,9 @@ class App(ctk.CTk):
                 hidden_text = f" · {hidden_candidate_count} hidden" if hidden_candidate_count else ""
                 loading_text = f" · {thumbnail_preview_loading_count} loading" if thumbnail_preview_loading_count else ""
                 status_label.configure(text=f"{selected_count} selected · {shown_count} shown{hidden_text}{loading_text}")
+            elif resource_kind == RESOURCE_KIND_VIDEO_AUDIO and row.adapter_id not in {"youtube", "twitter_x"}:
+                shown_count = len(getattr(active_state, "resources", ()) or ())
+                status_label.configure(text=f"{selected_count} selected · {shown_count} shown")
             else:
                 status_label.configure(text=f"{selected_count} selected")
 
@@ -10559,6 +10575,162 @@ class App(ctk.CTk):
 
             threading.Thread(target=_worker, daemon=True).start()
 
+        def _queue_video_discovery_result(kind: str, discovery: Any = None, error_text: str = "", show_messages: bool = True) -> None:
+            try:
+                with video_discovery_results_lock:
+                    video_discovery_results.append((kind, discovery, error_text, show_messages))
+            except Exception:
+                pass
+
+        def _apply_webpage_video_discovery_result(discovery: Any, *, show_messages: bool = True) -> None:
+            nonlocal row, state
+            if not getattr(discovery, "resources", ()):  # discovery-only path, no downloads
+                warning_text = "; ".join(getattr(discovery, "warnings", ()) or ()) or "No video/audio candidates were found."
+                if show_messages:
+                    show_image_dialog_notice("Video/audio discovery", warning_text)
+                self.log_message(f"Webpage video/audio discovery found no selectable media for {row.domain}: {warning_text}", "warning")
+                return
+            cache_key = _webpage_video_discovery_cache_key(row)
+            if cache_key:
+                try:
+                    webpage_video_discovery_cache_by_url[cache_key] = discovery
+                    while len(webpage_video_discovery_cache_by_url) > webpage_video_discovery_cache_limit:
+                        webpage_video_discovery_cache_by_url.pop(next(iter(webpage_video_discovery_cache_by_url)))
+                except Exception:
+                    logger.debug("Could not update webpage video discovery cache.", exc_info=True)
+            row = replace(row, video_audio_resources=tuple(discovery.resources))
+            for index, existing_row in enumerate(self.source_resource_rows):
+                if existing_row.row_id == row.row_id:
+                    self.source_resource_rows[index] = row
+                    break
+            state = resource_dialog_state_for_row(
+                row,
+                resource_kind,
+                committed_resource_ids=tuple(selected_ids),
+            )
+            selected_ids.intersection_update(item.resource_id for item in state.resources)
+            render_resource_list()
+            refresh_count()
+            try:
+                self._refresh_source_resource_rows()
+            except Exception:
+                logger.debug("Could not refresh source rows after video discovery.", exc_info=True)
+            summary = getattr(discovery, "summary", {}) or {}
+            self.log_message(
+                (
+                    f"Discovered {len(discovery.resources)} webpage video/audio candidate(s) "
+                    f"from {row.domain}; discovery_method={summary.get('discovery_method', 'merged_static_rendered_webpage_video_discovery')}; "
+                    f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
+                    f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
+                    "candidate list is cached/prefetched for repeated opens; downloads performed: none."
+                ),
+                "success",
+            )
+
+        def _ensure_video_discovery_result_pump() -> None:
+            nonlocal video_discovery_thread_active, video_discovery_result_after_id
+            if video_discovery_result_after_id is not None:
+                return
+
+            def _drain_video_discovery_results() -> None:
+                nonlocal video_discovery_thread_active, video_discovery_result_after_id
+                video_discovery_result_after_id = None
+                queued: list[tuple[str, Any, str, bool]] = []
+                try:
+                    with video_discovery_results_lock:
+                        queued = list(video_discovery_results)
+                        video_discovery_results.clear()
+                except Exception:
+                    queued = []
+                for kind, discovery, error_text, notify_user in queued:
+                    if kind == "success":
+                        _apply_webpage_video_discovery_result(discovery, show_messages=notify_user)
+                    elif kind == "failed":
+                        if notify_user:
+                            show_image_dialog_notice("Video/audio discovery failed", error_text or "Unknown video/audio discovery failure.")
+                        self.log_message(f"Webpage video/audio discovery failed: {error_text}", "warning")
+                    elif kind == "done":
+                        video_discovery_thread_active = False
+                        try:
+                            if refresh_videos_button is not None:
+                                refresh_videos_button.configure(state="normal", text="Refresh videos")
+                        except Exception:
+                            pass
+                should_continue = video_discovery_thread_active
+                try:
+                    with video_discovery_results_lock:
+                        should_continue = should_continue or bool(video_discovery_results)
+                except Exception:
+                    pass
+                if should_continue:
+                    try:
+                        video_discovery_result_after_id = window.after(90, _drain_video_discovery_results)
+                    except Exception:
+                        video_discovery_result_after_id = None
+
+            try:
+                video_discovery_result_after_id = window.after(90, _drain_video_discovery_results)
+            except Exception:
+                video_discovery_result_after_id = None
+
+        def discover_page_videos(*, show_messages: bool = True) -> None:
+            nonlocal video_discovery_thread_active, refresh_videos_button
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                return
+            if row.adapter_id in {"youtube", "twitter_x"}:
+                show_image_dialog_notice(
+                    "Video/audio discovery",
+                    "This source type uses its own media workflow.",
+                )
+                return
+            if video_discovery_thread_active:
+                self.log_message("Webpage video/audio discovery is already running for this source row.", "muted")
+                return
+            cache_key = _webpage_video_discovery_cache_key(row)
+            if not show_messages and cache_key:
+                cached_discovery = webpage_video_discovery_cache_by_url.get(cache_key)
+                if cached_discovery is not None:
+                    self.log_message(f"Using cached webpage video/audio candidate list for {row.domain}; Refresh videos forces a rescan.", "muted")
+                    _apply_webpage_video_discovery_result(cached_discovery, show_messages=False)
+                    return
+            video_discovery_thread_active = True
+            try:
+                if refresh_videos_button is not None:
+                    refresh_videos_button.configure(state="disabled", text=("Refreshing..." if active_state.resources else "Discovering..."))
+                if not active_state.resources:
+                    for child in list_frame.winfo_children():
+                        child.destroy()
+                    ctk.CTkLabel(
+                        list_frame,
+                        text="Discovering video/audio candidates in the background...",
+                        text_color=COLORS["text_muted"],
+                        wraplength=640,
+                        justify="left",
+                    ).grid(row=0, column=0, sticky="w", padx=8, pady=8)
+                refresh_count()
+            except Exception:
+                pass
+            _ensure_video_discovery_result_pump()
+            row_snapshot = row
+            notify_user = bool(show_messages)
+
+            def _worker() -> None:
+                try:
+                    discovery = discover_webpage_videos_for_row(
+                        row_snapshot,
+                        fetch_static_html=True,
+                        run_rendered_probe=True,
+                        rendered_probe_timeout_ms=12000,
+                    )
+                except Exception as exc:
+                    _queue_video_discovery_result("failed", error_text=str(exc), show_messages=notify_user)
+                else:
+                    _queue_video_discovery_result("success", discovery=discovery, show_messages=notify_user)
+                finally:
+                    _queue_video_discovery_result("done", show_messages=notify_user)
+
+            threading.Thread(target=_worker, daemon=True).start()
+
         def download_selected_resources() -> None:
             selected_state = current_state()
             self.source_resource_selections[row.row_id] = selected_state.selected_resource_ids
@@ -10723,7 +10895,7 @@ class App(ctk.CTk):
             text=(
                 "Images are scanned automatically when this window opens. Select image tiles, then Download selected to add them to this session's temporary FILES area. Hover a file name for source details; hover an image square for dimensions; use EXPORT to choose a final output folder."
                 if resource_kind == RESOURCE_KIND_IMAGE
-                else "Review selected keeps a manifest/preview unless a guarded source-specific media download flow is available."
+                else "Video/audio candidates are discovered with static + rendered probes and cached/prefetched for repeated opens. JDownloader/API3128 remains the preferred download route; Review selected still performs no generic download."
             ),
             text_color=COLORS["text_muted"],
             font=ctk.CTkFont(size=10),
@@ -10742,6 +10914,14 @@ class App(ctk.CTk):
                 command=lambda: discover_page_images(show_messages=True),
             )
             refresh_images_button.pack(side="left", padx=(0, 8))
+        if resource_kind == RESOURCE_KIND_VIDEO_AUDIO and row.adapter_id not in {"youtube", "twitter_x"}:
+            refresh_videos_button = ctk.CTkButton(
+                button_row,
+                text="Refresh videos",
+                width=128,
+                command=lambda: discover_page_videos(show_messages=True),
+            )
+            refresh_videos_button.pack(side="left", padx=(0, 8))
         ctk.CTkButton(button_row, text="Select all", width=96, command=select_all).pack(side="left")
         ctk.CTkButton(button_row, text="Clear all", width=90, command=clear_all).pack(side="left", padx=(8, 0))
         ctk.CTkButton(button_row, text="Cancel", width=90, command=window.destroy).pack(side="right")
@@ -10754,6 +10934,14 @@ class App(ctk.CTk):
                 render_resource_list()
                 refresh_count()
                 window.after(80, lambda: discover_page_images(show_messages=False))
+        elif resource_kind == RESOURCE_KIND_VIDEO_AUDIO and row.adapter_id not in {"youtube", "twitter_x"} and not state.resources:
+            cached_video_discovery_on_open = webpage_video_discovery_cache_by_url.get(_webpage_video_discovery_cache_key(row))
+            if cached_video_discovery_on_open is not None:
+                _apply_webpage_video_discovery_result(cached_video_discovery_on_open, show_messages=False)
+            else:
+                render_resource_list()
+                refresh_count()
+                window.after(80, lambda: discover_page_videos(show_messages=False))
         else:
             render_resource_list()
             refresh_count()

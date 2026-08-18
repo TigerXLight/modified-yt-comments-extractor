@@ -430,6 +430,11 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "Download selected" in source
     assert "Review selected" in source
     assert "Refresh images" in source
+    assert "Refresh videos" in source
+    assert "discover_page_videos" in source
+    assert "Using cached webpage video/audio candidate list" in source
+    assert "Discovering video/audio candidates in the background" in source
+    assert "JDownloader/API3128 remains the preferred download route" in source
     assert "thumbnail_images_by_id" in source
     assert "_image_preview_for_item" in source
     assert "Image.open(BytesIO(data))" in source
@@ -489,6 +494,7 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert "Source-row prefetch is a real GUI/background-network path" in inspect.getsource(App)
     assert "Video prefetch may perform static HTML and rendered DOM/network probes" in inspect.getsource(App)
     assert "Refresh images forces a rescan" in source
+    assert "Refresh videos forces a rescan" in source
     assert "candidate lists and previews are cached" in source
     assert "candidate lists and previews are cached/prefetched" in source
     assert "visible rendering is capped and diff-refreshed" in source
@@ -507,6 +513,10 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert "default view shows only candidates that successfully preview" in source
     assert "Discovering image candidates in the background" in source
     assert "image_discovery_thread_active" in source
+    assert "video_discovery_thread_active" in source
+    assert "video_discovery_results_lock" in source
+    assert "webpage_video_discovery_cache_by_url" in source
+    assert "_apply_webpage_video_discovery_result" in source
     assert "visible rendering is capped and diff-refreshed for responsiveness" in source
     assert "discovery_method=" in source
     assert "refresh_images_button.configure(state=\"disabled\"" in source
