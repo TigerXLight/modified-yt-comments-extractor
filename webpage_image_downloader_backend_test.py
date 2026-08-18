@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from webpage_image_downloader_backend import discover_webpage_images
+from webpage_image_downloader_backend import (
+    discover_webpage_images,
+    discover_webpage_images_for_row,
+    discover_webpage_images_rendered,
+    close_rendered_browser_discovery_worker,
+    prewarm_rendered_browser_discovery_worker,
+)
 from source_resource_state import RESOURCE_KIND_IMAGE
 
 
@@ -31,6 +37,11 @@ def run_self_test() -> None:
     assert any(item.width == 640 and item.height == 480 for item in result.resources)
     assert result.downloads_performed == "none"
     assert result.safety_flags["captcha_solver_used"] is False
+    assert result.network_actions_performed == "one page static HTML fetch only"
+    assert callable(discover_webpage_images_rendered)
+    assert callable(discover_webpage_images_for_row)
+    assert callable(close_rendered_browser_discovery_worker)
+    assert callable(prewarm_rendered_browser_discovery_worker)
     print("webpage_image_downloader_backend_test OK")
 
 

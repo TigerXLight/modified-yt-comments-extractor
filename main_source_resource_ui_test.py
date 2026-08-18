@@ -433,9 +433,20 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "thumbnail_images_by_id" in source
     assert "_image_preview_for_item" in source
     assert "Image.open(BytesIO(data))" in source
+    assert "show_hidden_images_var" in source
+    assert "Show hidden" in source
+    assert "_is_default_hidden_webpage_image_candidate" in source
+    assert "thumbnail_hidden_resource_ids" in source
+    assert "hidden_candidate_count" in source
+    assert "No visible image previews match this source/filter" in source
+    assert "hidden/no-preview candidates stay hidden unless Show hidden is enabled" in source
     assert "Select all" in source
     assert "window.after" in source
     assert "show_messages=False" in source
+    app_source = inspect.getsource(App)
+    assert "_start_webpage_image_source_row_prefetch" in app_source
+    assert "_apply_prefetched_webpage_image_discovery" in app_source
+    assert "Prefetched" in app_source
     assert "trace_add" in source
     assert "filter_resource_dialog_items" in source
     assert "MediaResourceFilterState" in source
@@ -450,6 +461,45 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert "Review selected" in source
     assert "preview_box" in source
     assert "thumbnail_images_by_id" in source
+    assert "thumbnail_hidden_resource_ids" in source
+    assert "show_hidden_images_var" in source
+    assert "Show hidden" in source
+    assert "_is_default_hidden_webpage_image_candidate" in source
+    assert "hidden_candidate_count" in source
+    assert "thumbnail_preview_status_by_id" in source
+    assert "thumbnail_probe_thread_active" in source
+    assert "webpage_image_preview_pil_cache_by_url" in source
+    assert "webpage_image_discovery_cache_by_url" in source
+    assert "_webpage_image_discovery_cache_key" in source
+    assert "Using cached webpage image candidate list" in source
+    assert "_prewarm_rendered_discovery_if_js_heavy" in source
+    assert "prewarm_rendered_browser_discovery_worker" in inspect.getsource(App)
+    assert "Refresh images forces a rescan" in source
+    assert "candidate lists and previews are cached" in source
+    assert "candidate lists and previews are cached/prefetched" in source
+    assert "visible rendering is capped and diff-refreshed" in source
+    assert "rendered_tile_refreshers_by_id" in source
+    assert "display_resource_ids == rendered_tile_resource_ids" in source
+    assert "refresh_rendered_tile" in source
+    assert "cached_discovery_on_open" in source
+    assert "_apply_cached_thumbnail_preview" in source
+    assert "_start_thumbnail_preview_probe" in source
+    assert "threading.Thread(target=_worker" in source
+    assert "return thumbnail_images_by_id.get(item.resource_id)" in source
+    assert "timeout=0.7" in source
+    assert "response.read(384 * 1024)" in source
+    assert "_schedule_thumbnail_probe_render(delay_ms: int = 650)" in source
+    assert "Loading previewable image thumbnails" in source
+    assert "default view shows only candidates that successfully preview" in source
+    assert "Discovering image candidates in the background" in source
+    assert "image_discovery_thread_active" in source
+    assert "visible rendering is capped and diff-refreshed for responsiveness" in source
+    assert "discovery_method=" in source
+    assert "refresh_images_button.configure(state=\"disabled\"" in source
+    assert "refresh_images_button.configure(state=\"normal\", text=\"Refresh images\")" in source
+    assert "default_image_render_limit = 32" in source
+    assert "hidden_image_render_limit = 24" in source
+    assert "ThreadPoolExecutor(max_workers=worker_count)" in source
     assert "source_badge" not in source
     assert "bind_image_detail_hover" in source
     assert "image_resource_detail_text" in source
@@ -471,13 +521,16 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert "tile_checkbox_refreshers" in source
     assert "_refresh_all_tile_checkbox_visibility" in source
     assert "tile_checkbox_watchdog" in source
+    assert "pointer_over_image = _pointer_is_over_tile_image_area(image_area)" in source
+    assert "show_badge()" in source
+    assert "hide_badge()" in source
     assert "def _run_tile_checkbox_watchdog" in source
     assert "checkbox_visibility_state" in source
     assert 'state.get("visible")' in source
     assert 'state.get("selected") == selected' in source
     assert 'window.bind("<Motion>", _refresh_all_tile_checkbox_visibility' not in source
     assert 'window.after(25, _run_tile_checkbox_watchdog)' not in source
-    assert 'window.after(80, _run_tile_checkbox_watchdog)' in source
+    assert 'window.after(120, _run_tile_checkbox_watchdog)' in source
     assert "item_card.grid_rowconfigure(0, weight=1" in source
     assert 'preview_box.grid(row=0, column=0, sticky="nsew"' in source
     assert "font=ctk.CTkFont(size=78" in source

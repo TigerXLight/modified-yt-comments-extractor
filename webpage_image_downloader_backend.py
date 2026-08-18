@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import atexit
 import hashlib
 import html
 import json
 import mimetypes
 import os
+import queue
 import re
+import threading
 import time
 from dataclasses import asdict, dataclass, field, is_dataclass
 from html.parser import HTMLParser
@@ -385,6 +388,58 @@ def _fetch_html(url: str, *, timeout: float = 20.0) -> tuple[str, str, int]:
     return raw.decode(content_type, errors="replace"), final_url, len(raw)
 
 
+def _source_resource_items_from_candidates(
+    candidates: Sequence[DiscoveredWebpageImage],
+    *,
+    row_id: str = "",
+    max_images: int = 250,
+    provenance: str = "webpage image discovery",
+    status: str = "discovered",
+) -> tuple[tuple[SourceResourceItem, ...], tuple[str, ...]]:
+    '''Convert discovered browser/static candidates into source resource items.'''
+
+    warnings: list[str] = []
+    seen: set[str] = set()
+    resources: list[SourceResourceItem] = []
+    for candidate in candidates:
+        key = _image_dedupe_key(candidate.url)
+        if key in seen:
+            continue
+        seen.add(key)
+        ext = _extension_from_url(candidate.url) or ".jpg"
+        mime = _mime_from_extension(ext)
+        digest = hashlib.sha1(candidate.url.encode("utf-8", errors="ignore")).hexdigest()[:14]
+        display_name = candidate.display_name or _filename_from_url(candidate.url, f"image_{len(resources)+1:03d}{ext}")
+        resources.append(
+            SourceResourceItem(
+                resource_id=f"{row_id or 'webpage'}:image:{digest}",
+                source_row_id=row_id,
+                resource_kind=RESOURCE_KIND_IMAGE,
+                reference_url=candidate.url,
+                canonical_url=candidate.url,
+                display_name=display_name,
+                media_type=candidate.source_type,
+                mime_type=mime,
+                extension=ext,
+                width=candidate.width,
+                height=candidate.height,
+                duration_seconds=0.0,
+                bitrate_or_quality="",
+                animated=ext == ".gif",
+                thumbnail_reference=candidate.url,
+                from_link=candidate.from_link,
+                status=status,
+                selectable=True,
+                warning="",
+                provenance=provenance,
+            )
+        )
+        if len(resources) >= max_images:
+            warnings.append(f"Image discovery stopped after max_images={max_images}.")
+            break
+    return tuple(resources), tuple(warnings)
+
+
 def discover_webpage_images(
     source_url: str,
     *,
@@ -393,11 +448,11 @@ def discover_webpage_images(
     fetcher: Callable[[str], tuple[str, str, int]] | None = None,
     max_images: int = 250,
 ) -> WebpageImageDiscoveryResult:
-    """Discover image candidates from a normal accessible webpage.
+    '''Discover image candidates from a normal accessible webpage.
 
-    This intentionally does not launch a browser, solve challenges, use proxies, or download image bytes.
-    It fetches only the source page HTML unless ``html_text`` is supplied by a test/caller.
-    """
+    This static path fetches only the source page HTML unless ``html_text`` is supplied
+    by a test/caller. Browser-rendered fallback lives in ``discover_webpage_images_for_row``.
+    '''
 
     if not _is_http_url(source_url):
         return WebpageImageDiscoveryResult(
@@ -430,56 +485,593 @@ def discover_webpage_images(
         warnings.append(f"HTML parser warning: {exc}")
     candidates = list(parser.candidates)
     candidates.extend(_extract_css_urls(final_url or source_url, html_text or ""))
-
-    seen: set[str] = set()
-    resources: list[SourceResourceItem] = []
-    for candidate in candidates:
-        key = _image_dedupe_key(candidate.url)
-        if key in seen:
-            continue
-        seen.add(key)
-        ext = _extension_from_url(candidate.url) or ".jpg"
-        mime = _mime_from_extension(ext)
-        digest = hashlib.sha1(candidate.url.encode("utf-8", errors="ignore")).hexdigest()[:14]
-        display_name = candidate.display_name or _filename_from_url(candidate.url, f"image_{len(resources)+1:03d}{ext}")
-        resources.append(
-            SourceResourceItem(
-                resource_id=f"{row_id or 'webpage'}:image:{digest}",
-                source_row_id=row_id,
-                resource_kind=RESOURCE_KIND_IMAGE,
-                reference_url=candidate.url,
-                canonical_url=candidate.url,
-                display_name=display_name,
-                media_type=candidate.source_type,
-                mime_type=mime,
-                extension=ext,
-                width=candidate.width,
-                height=candidate.height,
-                duration_seconds=0.0,
-                bitrate_or_quality="",
-                animated=ext == ".gif",
-                thumbnail_reference=candidate.url,
-                from_link=candidate.from_link,
-                status="discovered",
-                selectable=True,
-                warning="",
-                provenance="webpage image discovery",
-            )
-        )
-        if len(resources) >= max_images:
-            warnings.append(f"Image discovery stopped after max_images={max_images}.")
-            break
+    resources, resource_warnings = _source_resource_items_from_candidates(
+        candidates,
+        row_id=row_id,
+        max_images=max_images,
+        provenance="static HTML webpage image discovery",
+        status="discovered_static_html",
+    )
+    warnings.extend(resource_warnings)
 
     return WebpageImageDiscoveryResult(
         source_url=source_url,
         final_url=final_url,
-        resources=tuple(resources),
+        resources=resources,
         candidate_count=len(candidates),
         deduplicated_count=len(resources),
         warnings=tuple(warnings),
         fetched_html_bytes=fetched_bytes,
+        network_actions_performed="one page static HTML fetch only",
         safety_flags=_discovery_safety_flags(),
     )
+
+
+_RENDERED_IMAGE_DISCOVERY_SCRIPT = r'''
+async (options) => {
+  const waitForIdleDOM = Number.isFinite(options?.waitForIdleDOM) ? options.waitForIdleDOM : 450;
+  const maxCandidates = Number.isFinite(options?.maxCandidates) ? options.maxCandidates : 900;
+  const out = [];
+  const seen = new Set();
+  const imageUrlRegex = /(?:([^:\/\?#]+):)?(?:\/\/([^\/\?#]*))?([^?#]*\.(?:bmp|gif|ico|jfif|jpe?g|png|svg|tiff?|webp|avif))(?:\?([^#]*))?(?:#(.*))?/i;
+
+  function stripHash(value) {
+    const hashIndex = String(value || '').indexOf('#');
+    return hashIndex >= 0 ? String(value || '').slice(0, hashIndex) : String(value || '');
+  }
+
+  function absoluteUrl(raw) {
+    if (!raw) return '';
+    const text = stripHash(String(raw).trim().replace(/^url\(["']?|["']?\)$/g, ''));
+    if (!text || /^(?:data|blob|javascript|mailto|tel):/i.test(text) || text === '#') return '';
+    try {
+      const parsed = new URL(text, document.baseURI || window.location.href);
+      if (!/^https?:$/i.test(parsed.protocol)) return '';
+      parsed.hash = '';
+      return parsed.href;
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function textForElement(element) {
+    try {
+      return (
+        element.getAttribute?.('alt') ||
+        element.getAttribute?.('title') ||
+        element.getAttribute?.('aria-label') ||
+        element.getAttribute?.('data-title') ||
+        ''
+      ).trim();
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function dimsForElement(element) {
+    let width = 0;
+    let height = 0;
+    try {
+      width = Number(element.naturalWidth || element.videoWidth || element.width || element.getAttribute?.('width') || 0) || 0;
+      height = Number(element.naturalHeight || element.videoHeight || element.height || element.getAttribute?.('height') || 0) || 0;
+      if ((!width || !height) && element.getBoundingClientRect) {
+        const rect = element.getBoundingClientRect();
+        width = width || Math.round(rect.width || 0);
+        height = height || Math.round(rect.height || 0);
+      }
+    } catch (_error) {}
+    return { width: Math.max(0, Math.round(width)), height: Math.max(0, Math.round(height)) };
+  }
+
+  function push(rawUrl, sourceType, element, fromLink = false) {
+    const url = absoluteUrl(rawUrl);
+    if (!url || seen.has(url) || out.length >= maxCandidates) return;
+    seen.add(url);
+    const dims = element ? dimsForElement(element) : { width: 0, height: 0 };
+    out.push({
+      url,
+      sourceType: sourceType || 'rendered',
+      displayName: element ? textForElement(element) : '',
+      width: dims.width,
+      height: dims.height,
+      altText: element?.getAttribute?.('alt') || '',
+      fromLink: !!fromLink,
+      pageUrl: window.location.href,
+    });
+  }
+
+  function splitSrcset(value) {
+    return String(value || '')
+      .split(',')
+      .map((part) => part.trim().split(/\s+/)[0])
+      .filter(Boolean)
+      .map(stripHash);
+  }
+
+  function extractStyleUrls(value) {
+    const urls = [];
+    const regex = /url\(["']?([^"')]+)["']?\)/g;
+    let match;
+    while ((match = regex.exec(String(value || ''))) !== null) urls.push(match[1]);
+    return urls;
+  }
+
+  function collectRoots(rootDocument) {
+    const roots = [rootDocument];
+    for (let index = 0; index < roots.length; index++) {
+      const root = roots[index];
+      try {
+        root.querySelectorAll('*').forEach((element) => {
+          if (element.shadowRoot) roots.push(element.shadowRoot);
+        });
+      } catch (_error) {}
+    }
+    return roots;
+  }
+
+  function collectFromElement(element) {
+    const tag = String(element.tagName || '').toLowerCase();
+    if (tag === 'img') {
+      push(element.currentSrc || element.src, 'rendered:img:currentSrc', element, false);
+      ['src', 'data-src', 'data-original', 'data-lazy-src', 'data-full', 'data-url', 'data-image', 'data-thumb', 'data-thumbnail'].forEach((name) => push(element.getAttribute?.(name), `rendered:img:${name}`, element, false));
+      ['srcset', 'data-srcset'].forEach((name) => splitSrcset(element.getAttribute?.(name)).forEach((url) => push(url, `rendered:img:${name}`, element, false)));
+      return;
+    }
+    if (tag === 'source') {
+      ['srcset', 'data-srcset', 'src'].forEach((name) => splitSrcset(element.getAttribute?.(name)).forEach((url) => push(url, `rendered:picture:${name}`, element, false)));
+      return;
+    }
+    if (tag === 'image' || tag === 'use') {
+      ['href', 'xlink:href'].forEach((name) => push(element.getAttribute?.(name), `rendered:svg:${name}`, element, false));
+      return;
+    }
+    if (tag === 'a') {
+      const href = element.href || element.getAttribute?.('href');
+      if (imageUrlRegex.test(String(href || ''))) push(href, 'rendered:link:href', element, true);
+    }
+    try {
+      const backgroundImage = window.getComputedStyle(element).backgroundImage;
+      if (backgroundImage && backgroundImage !== 'none') {
+        extractStyleUrls(backgroundImage).forEach((url) => push(url, 'rendered:css:background-image', element, false));
+      }
+    } catch (_error) {}
+  }
+
+  if (document.readyState !== 'complete') {
+    await new Promise((resolve) => {
+      window.addEventListener('load', resolve, { once: true });
+      setTimeout(resolve, 1400);
+    });
+  }
+  if (waitForIdleDOM >= 0) {
+    await new Promise((resolve) => {
+      let timer;
+      const finish = () => {
+        try { observer.disconnect(); } catch (_error) {}
+        resolve();
+      };
+      const reset = () => {
+        clearTimeout(timer);
+        timer = setTimeout(finish, waitForIdleDOM);
+      };
+      const observer = new MutationObserver(reset);
+      try { observer.observe(document.documentElement, { childList: true, subtree: true, attributes: false }); } catch (_error) {}
+      reset();
+    });
+  }
+
+  for (const root of collectRoots(document)) {
+    try {
+      root.querySelectorAll('img, picture source, svg image, svg use, a, [style], [class]').forEach(collectFromElement);
+      root.querySelectorAll('meta[property], meta[name], meta[itemprop]').forEach((element) => {
+        const key = String(element.getAttribute('property') || element.getAttribute('name') || element.getAttribute('itemprop') || '').toLowerCase();
+        if (/image|thumbnail/.test(key)) push(element.getAttribute('content'), `rendered:meta:${key}`, element, false);
+      });
+      root.querySelectorAll('link[href]').forEach((element) => {
+        const rel = String(element.getAttribute('rel') || '').toLowerCase();
+        const asValue = String(element.getAttribute('as') || '').toLowerCase();
+        if (rel.includes('image') || asValue === 'image' || rel.includes('preload')) push(element.getAttribute('href'), `rendered:link:${rel || asValue}`, element, false);
+      });
+    } catch (_error) {}
+  }
+
+  try {
+    performance.getEntriesByType('resource').forEach((entry) => {
+      const initiator = String(entry.initiatorType || '').toLowerCase();
+      const name = String(entry.name || '');
+      if (initiator === 'img' || initiator === 'image' || imageUrlRegex.test(name)) {
+        push(name, `rendered:performance:${initiator || 'resource'}`, null, false);
+      }
+    });
+  } catch (_error) {}
+
+  return out;
+}
+'''
+
+
+def _rendered_discovery_safety_flags() -> dict[str, bool]:
+    flags = _discovery_safety_flags()
+    flags["browser_launch_performed"] = True
+    flags["webpage_html_fetch_performed"] = True
+    flags["media_download_performed"] = False
+    flags["write_actions_performed"] = False
+    return flags
+
+
+class _RenderedBrowserDiscoveryWorker:
+    """Own a warm Playwright browser on one daemon thread.
+
+    The browser extension is fast because discovery runs inside an already-loaded
+    browser context. This worker mirrors that architecture for the desktop app:
+    Playwright/Edge is launched once per app session, then each rendered image
+    scan creates only a short-lived isolated context/page. Keeping all Playwright
+    calls on this worker thread also avoids sync-Playwright thread-affinity issues.
+    """
+
+    def __init__(self) -> None:
+        self._jobs: "queue.Queue[Any]" = queue.Queue()
+        self._thread = threading.Thread(target=self._run, name="YTCEWebpageImageRenderedDiscovery", daemon=True)
+        self._thread.start()
+
+    def submit(
+        self,
+        source_url: str,
+        *,
+        timeout_ms: int,
+        idle_ms: int,
+        scroll_steps: int,
+        max_candidates_per_frame: int,
+    ) -> tuple[str, tuple[dict[str, Any], ...], tuple[str, ...]]:
+        result_queue: "queue.Queue[tuple[str, tuple[dict[str, Any], ...], tuple[str, ...]]]" = queue.Queue(maxsize=1)
+        self._jobs.put(
+            {
+                "source_url": source_url,
+                "timeout_ms": timeout_ms,
+                "idle_ms": idle_ms,
+                "scroll_steps": scroll_steps,
+                "max_candidates_per_frame": max_candidates_per_frame,
+                "result_queue": result_queue,
+            }
+        )
+        try:
+            return result_queue.get(timeout=max(8.0, (timeout_ms / 1000.0) + 12.0))
+        except queue.Empty:
+            return source_url, (), ("Rendered browser discovery timed out waiting for the warm browser worker.",)
+
+    def close(self) -> None:
+        try:
+            self._jobs.put_nowait(None)
+        except Exception:
+            pass
+
+    def _open_warm_browser(self) -> tuple[Any, Any, tuple[str, ...]]:
+        try:
+            from playwright.sync_api import sync_playwright  # type: ignore
+        except Exception as exc:
+            return None, None, (f"Rendered browser discovery unavailable: Playwright is not importable ({exc}).",)
+
+        playwright = sync_playwright().start()
+        launch_errors: list[str] = []
+        for launch_kwargs in (
+            {"channel": "msedge", "headless": True},
+            {"channel": "chrome", "headless": True},
+            {"headless": True},
+        ):
+            try:
+                browser = playwright.chromium.launch(**launch_kwargs)
+                return playwright, browser, ()
+            except Exception as exc:
+                launch_errors.append(f"{launch_kwargs}: {exc}")
+        try:
+            playwright.stop()
+        except Exception:
+            pass
+        return None, None, ("Rendered browser discovery could not launch Chromium/Edge: " + " | ".join(launch_errors[-2:]),)
+
+    def _run(self) -> None:
+        playwright = None
+        browser = None
+        launch_warnings: tuple[str, ...] = ()
+        try:
+            playwright, browser, launch_warnings = self._open_warm_browser()
+            while True:
+                job = self._jobs.get()
+                if job is None:
+                    break
+                result_queue = job.get("result_queue")
+                try:
+                    if browser is None:
+                        result = (str(job.get("source_url") or ""), (), launch_warnings)
+                    else:
+                        result = _rendered_browser_candidate_dicts_with_browser(
+                            browser,
+                            str(job.get("source_url") or ""),
+                            timeout_ms=int(job.get("timeout_ms") or 14_000),
+                            idle_ms=int(job.get("idle_ms") or 450),
+                            scroll_steps=int(job.get("scroll_steps") or 4),
+                            max_candidates_per_frame=int(job.get("max_candidates_per_frame") or 900),
+                        )
+                        if launch_warnings:
+                            result = (result[0], result[1], launch_warnings + tuple(result[2]))
+                except Exception as exc:
+                    relaunch_warning = f"Rendered browser warm session was restarted after an error: {exc}"
+                    try:
+                        if browser is not None:
+                            browser.close()
+                    except Exception:
+                        pass
+                    browser = None
+                    new_playwright, browser, relaunch_warnings = self._open_warm_browser()
+                    if new_playwright is not None:
+                        try:
+                            if playwright is not None:
+                                playwright.stop()
+                        except Exception:
+                            pass
+                        playwright = new_playwright
+                    if browser is None:
+                        result = (str(job.get("source_url") or ""), (), (relaunch_warning,) + tuple(relaunch_warnings))
+                    else:
+                        try:
+                            retry_result = _rendered_browser_candidate_dicts_with_browser(
+                                browser,
+                                str(job.get("source_url") or ""),
+                                timeout_ms=int(job.get("timeout_ms") or 14_000),
+                                idle_ms=int(job.get("idle_ms") or 450),
+                                scroll_steps=int(job.get("scroll_steps") or 4),
+                                max_candidates_per_frame=int(job.get("max_candidates_per_frame") or 900),
+                            )
+                            result = (retry_result[0], retry_result[1], (relaunch_warning,) + tuple(retry_result[2]))
+                        except Exception as retry_exc:
+                            result = (str(job.get("source_url") or ""), (), (relaunch_warning, f"Rendered browser retry failed: {retry_exc}"))
+                try:
+                    result_queue.put_nowait(result)
+                except Exception:
+                    pass
+        finally:
+            try:
+                if browser is not None:
+                    browser.close()
+            except Exception:
+                pass
+            try:
+                if playwright is not None:
+                    playwright.stop()
+            except Exception:
+                pass
+
+
+_RENDERED_DISCOVERY_WORKER_LOCK = threading.Lock()
+_RENDERED_DISCOVERY_WORKER: _RenderedBrowserDiscoveryWorker | None = None
+
+
+def _get_rendered_discovery_worker() -> _RenderedBrowserDiscoveryWorker:
+    global _RENDERED_DISCOVERY_WORKER
+    with _RENDERED_DISCOVERY_WORKER_LOCK:
+        if _RENDERED_DISCOVERY_WORKER is None:
+            _RENDERED_DISCOVERY_WORKER = _RenderedBrowserDiscoveryWorker()
+        return _RENDERED_DISCOVERY_WORKER
+
+
+def close_rendered_browser_discovery_worker() -> None:
+    global _RENDERED_DISCOVERY_WORKER
+    with _RENDERED_DISCOVERY_WORKER_LOCK:
+        worker = _RENDERED_DISCOVERY_WORKER
+        _RENDERED_DISCOVERY_WORKER = None
+    if worker is not None:
+        worker.close()
+
+
+def prewarm_rendered_browser_discovery_worker() -> None:
+    """Start the rendered discovery worker/browser before the first JS-heavy scan."""
+
+    _get_rendered_discovery_worker()
+
+
+atexit.register(close_rendered_browser_discovery_worker)
+
+
+def _rendered_browser_candidate_dicts_with_browser(
+    browser: Any,
+    source_url: str,
+    *,
+    timeout_ms: int = 14_000,
+    idle_ms: int = 450,
+    scroll_steps: int = 4,
+    max_candidates_per_frame: int = 900,
+) -> tuple[str, tuple[dict[str, Any], ...], tuple[str, ...]]:
+    warnings: list[str] = []
+    final_url = source_url
+    raw_candidates: list[dict[str, Any]] = []
+    context = None
+    try:
+        context = browser.new_context(
+            user_agent=USER_AGENT,
+            viewport={"width": 1366, "height": 1400},
+            locale="en-GB",
+            ignore_https_errors=True,
+        )
+        page = context.new_page()
+        try:
+            page.goto(source_url, wait_until="domcontentloaded", timeout=timeout_ms)
+        except Exception as exc:
+            warnings.append(f"Rendered browser navigation warning: {exc}")
+        try:
+            page.wait_for_load_state("networkidle", timeout=min(3200, timeout_ms))
+        except Exception:
+            pass
+        # Immediate scan gives extension-like first results; short scroll pass then catches lazy images.
+        for frame in list(page.frames):
+            try:
+                frame_candidates = frame.evaluate(
+                    _RENDERED_IMAGE_DISCOVERY_SCRIPT,
+                    {"waitForIdleDOM": 60, "maxCandidates": max_candidates_per_frame},
+                )
+                if isinstance(frame_candidates, list):
+                    raw_candidates.extend(item for item in frame_candidates if isinstance(item, dict))
+            except Exception:
+                pass
+        for _step in range(max(0, scroll_steps)):
+            try:
+                page.evaluate("window.scrollBy(0, Math.max(window.innerHeight || 900, 900));")
+                page.wait_for_timeout(180)
+            except Exception:
+                break
+        try:
+            page.evaluate("window.scrollTo(0, 0);")
+            page.wait_for_timeout(80)
+        except Exception:
+            pass
+        final_url = page.url or source_url
+        for frame in list(page.frames):
+            try:
+                frame_candidates = frame.evaluate(
+                    _RENDERED_IMAGE_DISCOVERY_SCRIPT,
+                    {"waitForIdleDOM": idle_ms, "maxCandidates": max_candidates_per_frame},
+                )
+                if isinstance(frame_candidates, list):
+                    raw_candidates.extend(item for item in frame_candidates if isinstance(item, dict))
+            except Exception as exc:
+                frame_url = ""
+                try:
+                    frame_url = frame.url
+                except Exception:
+                    frame_url = "frame"
+                warnings.append(f"Rendered frame image scan skipped for {frame_url}: {exc}")
+    finally:
+        try:
+            if context is not None:
+                context.close()
+        except Exception:
+            pass
+    return final_url, tuple(raw_candidates), tuple(warnings)
+
+
+def _rendered_browser_candidate_dicts(
+    source_url: str,
+    *,
+    timeout_ms: int = 14_000,
+    idle_ms: int = 450,
+    scroll_steps: int = 4,
+    max_candidates_per_frame: int = 900,
+) -> tuple[str, tuple[dict[str, Any], ...], tuple[str, ...]]:
+    """Collect image URLs from a warm rendered browser DOM/resource table when available."""
+
+    worker = _get_rendered_discovery_worker()
+    return worker.submit(
+        source_url,
+        timeout_ms=timeout_ms,
+        idle_ms=idle_ms,
+        scroll_steps=scroll_steps,
+        max_candidates_per_frame=max_candidates_per_frame,
+    )
+
+def discover_webpage_images_rendered(
+    source_url: str,
+    *,
+    row_id: str = "",
+    max_images: int = 250,
+    timeout_ms: int = 14_000,
+) -> WebpageImageDiscoveryResult:
+    '''Discover image candidates from a rendered browser DOM/resource view.
+
+    This mirrors the useful Image Downloader behaviour: execute image discovery inside a
+    browser-loaded page so JS/lazy/MSN-style image candidates can be visible. It does not
+    select/download images, solve challenges, use credentials, or bypass access controls.
+    '''
+
+    if not _is_http_url(source_url):
+        return WebpageImageDiscoveryResult(
+            source_url=source_url,
+            warnings=("Source URL is not an http/https webpage URL.",),
+            network_actions_performed="rendered browser discovery skipped",
+            safety_flags=_rendered_discovery_safety_flags(),
+        )
+
+    final_url, raw_candidates, warnings = _rendered_browser_candidate_dicts(
+        source_url,
+        timeout_ms=timeout_ms,
+    )
+    candidates: list[DiscoveredWebpageImage] = []
+    for raw in raw_candidates:
+        normalized = _normalize_candidate_url(final_url or source_url, str(raw.get("url") or ""))
+        if not normalized:
+            continue
+        candidates.append(
+            DiscoveredWebpageImage(
+                url=normalized,
+                source_type=str(raw.get("sourceType") or "rendered:dom"),
+                display_name=str(raw.get("displayName") or "").strip(),
+                width=_safe_int(raw.get("width")),
+                height=_safe_int(raw.get("height")),
+                alt_text=str(raw.get("altText") or "").strip(),
+                from_link=bool(raw.get("fromLink")),
+                page_url=str(raw.get("pageUrl") or final_url or source_url),
+            )
+        )
+    resources, resource_warnings = _source_resource_items_from_candidates(
+        candidates,
+        row_id=row_id,
+        max_images=max_images,
+        provenance="rendered browser webpage image discovery",
+        status="discovered_rendered_browser",
+    )
+    all_warnings = tuple(warnings) + tuple(resource_warnings)
+    return WebpageImageDiscoveryResult(
+        source_url=source_url,
+        final_url=final_url,
+        resources=resources,
+        candidate_count=len(candidates),
+        deduplicated_count=len(resources),
+        warnings=all_warnings,
+        fetched_html_bytes=0,
+        network_actions_performed="headless browser page load plus rendered DOM/resource image scan; no selected image download",
+        safety_flags=_rendered_discovery_safety_flags(),
+    )
+
+
+def _merge_discovery_results(
+    static_result: WebpageImageDiscoveryResult,
+    rendered_result: WebpageImageDiscoveryResult,
+    *,
+    max_images: int = 250,
+) -> WebpageImageDiscoveryResult:
+    seen: set[str] = set()
+    merged_resources: list[SourceResourceItem] = []
+    for item in tuple(rendered_result.resources) + tuple(static_result.resources):
+        key = _image_dedupe_key(item.reference_url or item.canonical_url)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged_resources.append(item)
+        if len(merged_resources) >= max_images:
+            break
+    warnings = tuple(static_result.warnings) + tuple(rendered_result.warnings)
+    if len(merged_resources) >= max_images and len(tuple(rendered_result.resources) + tuple(static_result.resources)) > max_images:
+        warnings += (f"Combined image discovery stopped after max_images={max_images}.",)
+    flags = dict(static_result.safety_flags)
+    flags.update(rendered_result.safety_flags)
+    return WebpageImageDiscoveryResult(
+        source_url=static_result.source_url,
+        final_url=rendered_result.final_url or static_result.final_url,
+        resources=tuple(merged_resources),
+        candidate_count=static_result.candidate_count + rendered_result.candidate_count,
+        deduplicated_count=len(merged_resources),
+        warnings=warnings,
+        fetched_html_bytes=static_result.fetched_html_bytes,
+        network_actions_performed="static HTML fetch plus rendered browser DOM/resource scan; no selected image download",
+        downloads_performed="none",
+        safety_flags=flags,
+    )
+
+
+def _should_try_rendered_image_discovery(row: SourceResourceRowState, result: WebpageImageDiscoveryResult, *, html_text: str = "") -> bool:
+    if html_text:
+        return False
+    url_text = " ".join(str(part or "").lower() for part in (row.raw_url, row.canonical_url, row.domain, result.final_url))
+    js_heavy_markers = ("msn.com", "x.com", "twitter.com", "facebook.com", "instagram.com")
+    return not result.resources or any(marker in url_text for marker in js_heavy_markers)
 
 
 def discover_webpage_images_for_row(
@@ -487,12 +1079,50 @@ def discover_webpage_images_for_row(
     *,
     html_text: str = "",
     max_images: int = 250,
+    rendered_fallback: bool = True,
 ) -> WebpageImageDiscoveryResult:
-    return discover_webpage_images(
+    static_result = discover_webpage_images(
         row.canonical_url or row.raw_url,
         row_id=row.row_id,
         html_text=html_text,
         max_images=max_images,
+    )
+    if not rendered_fallback or not _should_try_rendered_image_discovery(row, static_result, html_text=html_text):
+        return static_result
+    rendered_result = discover_webpage_images_rendered(
+        row.canonical_url or row.raw_url,
+        row_id=row.row_id,
+        max_images=max_images,
+    )
+    if rendered_result.resources:
+        return _merge_discovery_results(static_result, rendered_result, max_images=max_images)
+    if not static_result.resources:
+        return WebpageImageDiscoveryResult(
+            source_url=static_result.source_url,
+            final_url=rendered_result.final_url or static_result.final_url,
+            resources=(),
+            candidate_count=static_result.candidate_count + rendered_result.candidate_count,
+            deduplicated_count=0,
+            warnings=tuple(static_result.warnings) + tuple(rendered_result.warnings or ("Rendered browser image discovery found no candidates.",)),
+            fetched_html_bytes=static_result.fetched_html_bytes,
+            network_actions_performed="static HTML fetch plus attempted rendered browser DOM/resource scan; no selected image download",
+            downloads_performed="none",
+            safety_flags={**static_result.safety_flags, **rendered_result.safety_flags},
+        )
+    warnings = tuple(static_result.warnings) + tuple(rendered_result.warnings)
+    if not warnings:
+        warnings = ("Rendered browser image discovery found no additional candidates; using static HTML candidates.",)
+    return WebpageImageDiscoveryResult(
+        source_url=static_result.source_url,
+        final_url=rendered_result.final_url or static_result.final_url,
+        resources=static_result.resources,
+        candidate_count=static_result.candidate_count + rendered_result.candidate_count,
+        deduplicated_count=static_result.deduplicated_count,
+        warnings=warnings,
+        fetched_html_bytes=static_result.fetched_html_bytes,
+        network_actions_performed="static HTML fetch plus attempted rendered browser DOM/resource scan; no selected image download",
+        downloads_performed="none",
+        safety_flags={**static_result.safety_flags, **rendered_result.safety_flags},
     )
 
 

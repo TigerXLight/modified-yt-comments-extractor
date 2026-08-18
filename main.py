@@ -15,6 +15,7 @@ import sys
 import tempfile
 import array
 import csv
+import concurrent.futures
 import json
 import subprocess
 import random
@@ -173,6 +174,7 @@ from source_media_gui_bridge import (
 from webpage_image_downloader_backend import (
     discover_webpage_images_for_row,
     download_selected_webpage_images,
+    prewarm_rendered_browser_discovery_worker,
 )
 from source_twitter_compact_row import (
     TWITTER_COMPACT_MODES,
@@ -7323,6 +7325,7 @@ class App(ctk.CTk):
             self._refresh_discussion_source_controls()
             self._start_youtube_source_row_metadata_probe(intake.rows)
             self._start_twitter_source_row_metadata_probe(intake.rows)
+            self._start_webpage_image_source_row_prefetch(intake.rows)
             self.log_message(
                 f"Added {len(intake.rows)} source row(s). Metadata probes may run for supported source rows.",
                 "success",
@@ -8098,7 +8101,92 @@ class App(ctk.CTk):
                         ),
                     )
 
+
         threading.Thread(target=worker, args=(tuple(twitter_rows),), daemon=True).start()
+
+    def _webpage_image_prefetch_cache_key(self, row: SourceResourceRowState) -> str:
+        return str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "").strip()
+
+    def _source_row_should_prefetch_webpage_images(self, row: SourceResourceRowState) -> bool:
+        if row.adapter_id in {"youtube", "twitter_x"}:
+            return False
+        url = self._webpage_image_prefetch_cache_key(row)
+        return url.lower().startswith(("http://", "https://"))
+
+    def _apply_prefetched_webpage_image_discovery(self, row_id: str, cache_key: str, discovery: Any) -> None:
+        cache = self.__dict__.setdefault("webpage_image_discovery_cache_by_url", {})
+        cache[cache_key] = discovery
+        while len(cache) > 24:
+            try:
+                cache.pop(next(iter(cache)))
+            except Exception:
+                break
+        updated_rows: list[SourceResourceRowState] = []
+        changed = False
+        target_domain = ""
+        for existing_row in self.__dict__.get("source_resource_rows", ()):
+            if existing_row.row_id == row_id:
+                target_domain = existing_row.domain
+                updated_rows.append(replace(existing_row, image_resources=discovery.resources))
+                changed = True
+            else:
+                updated_rows.append(existing_row)
+        if changed:
+            self.source_resource_rows = updated_rows
+        inflight = self.__dict__.setdefault("webpage_image_discovery_prefetch_inflight", set())
+        inflight.discard(cache_key)
+        if discovery.resources:
+            self.log_message(
+                (
+                    f"Prefetched {len(discovery.resources)} webpage image candidate(s) for {target_domain or cache_key}; "
+                    "Images can open from the cached candidate list."
+                ),
+                "muted",
+            )
+
+    def _mark_webpage_image_prefetch_finished(self, cache_key: str, error: Exception | None = None) -> None:
+        inflight = self.__dict__.setdefault("webpage_image_discovery_prefetch_inflight", set())
+        inflight.discard(cache_key)
+        if error is not None:
+            logger.debug("Webpage image prefetch failed for %s: %s", cache_key, error)
+
+    def _start_webpage_image_source_row_prefetch(self, rows: Sequence[SourceResourceRowState]) -> None:
+        candidates = [row for row in rows if self._source_row_should_prefetch_webpage_images(row)]
+        if not candidates:
+            return
+        cache = self.__dict__.setdefault("webpage_image_discovery_cache_by_url", {})
+        inflight = self.__dict__.setdefault("webpage_image_discovery_prefetch_inflight", set())
+        work: list[SourceResourceRowState] = []
+        for row in candidates:
+            cache_key = self._webpage_image_prefetch_cache_key(row)
+            if not cache_key or cache_key in cache or cache_key in inflight:
+                continue
+            inflight.add(cache_key)
+            work.append(row)
+        if not work:
+            return
+
+        def worker(snapshot: tuple[SourceResourceRowState, ...]) -> None:
+            for row in snapshot:
+                cache_key = self._webpage_image_prefetch_cache_key(row)
+                try:
+                    url_text = " ".join(str(part or "").lower() for part in (row.raw_url, row.canonical_url, row.domain))
+                    if any(marker in url_text for marker in ("msn.com", "x.com", "twitter.com", "facebook.com", "instagram.com")):
+                        prewarm_rendered_browser_discovery_worker()
+                    discovery = discover_webpage_images_for_row(row)
+                except Exception as error:
+                    self.after(0, lambda key=cache_key, err=error: self._mark_webpage_image_prefetch_finished(key, err))
+                    continue
+                self.after(
+                    0,
+                    lambda row_id=row.row_id, key=cache_key, result=discovery: self._apply_prefetched_webpage_image_discovery(
+                        row_id,
+                        key,
+                        result,
+                    ),
+                )
+
+        threading.Thread(target=worker, args=(tuple(work),), daemon=True).start()
 
     def _process_youtube_source_row_media_result(self, result: Any, parent: Any | None = None, *, show_message: bool = True) -> bool:
         """Import a completed YouTube media queue result into FILES on the Tk/UI thread."""
@@ -9225,6 +9313,45 @@ class App(ctk.CTk):
         selected_ids: set[str] = set(state.selected_resource_ids)
         vars_by_id: dict[str, Any] = {}
         thumbnail_images_by_id: dict[str, ctk.CTkImage] = {}
+        thumbnail_hidden_resource_ids: set[str] = set()
+        thumbnail_preview_status_by_id: dict[str, str] = {}
+        thumbnail_probe_thread_active = False
+        thumbnail_probe_render_after_id: Any = None
+        thumbnail_probe_result_after_id: Any = None
+        thumbnail_probe_results: list[tuple[str, str, Any]] = []
+        thumbnail_probe_results_lock = threading.Lock()
+        thumbnail_preview_url_by_id: dict[str, str] = {}
+        webpage_image_preview_pil_cache_by_url: dict[str, Any] = self.__dict__.setdefault(
+            "webpage_image_preview_pil_cache_by_url",
+            {},
+        )
+        webpage_image_preview_cache_limit = 256
+        image_discovery_thread_active = False
+        image_discovery_result_after_id: Any = None
+        image_discovery_results: list[tuple[str, Any, str, bool]] = []
+        image_discovery_results_lock = threading.Lock()
+        hidden_candidate_count = 0
+        thumbnail_preview_loading_count = 0
+        default_image_render_limit = 32
+        hidden_image_render_limit = 24
+        webpage_image_discovery_cache_by_url: dict[str, Any] = self.__dict__.setdefault(
+            "webpage_image_discovery_cache_by_url",
+            {},
+        )
+        webpage_image_discovery_cache_limit = 24
+
+        def _webpage_image_discovery_cache_key(source_row: Any) -> str:
+            return str(getattr(source_row, "canonical_url", "") or getattr(source_row, "raw_url", "") or "").strip()
+
+        def _prewarm_rendered_discovery_if_js_heavy() -> None:
+            if resource_kind != RESOURCE_KIND_IMAGE or row.adapter_id in {"youtube", "twitter_x"}:
+                return
+            url_text = " ".join(str(part or "").lower() for part in (row.raw_url, row.canonical_url, row.domain))
+            if not any(marker in url_text for marker in ("msn.com", "x.com", "twitter.com", "facebook.com", "instagram.com")):
+                return
+            threading.Thread(target=prewarm_rendered_browser_discovery_worker, daemon=True).start()
+
+        _prewarm_rendered_discovery_if_js_heavy()
 
         filter_frame = ctk.CTkFrame(window, fg_color=COLORS["bg_input"], corner_radius=7)
         filter_frame.pack(fill="x", padx=16, pady=(0, 8))
@@ -9282,6 +9409,7 @@ class App(ctk.CTk):
         only_links_var = ctk.BooleanVar(value=False)
         save_subfolder_var = ctk.BooleanVar(value=True)
         rename_files_var = ctk.BooleanVar(value=False)
+        show_hidden_images_var = ctk.BooleanVar(value=False)
         option_row = ctk.CTkFrame(filter_frame, fg_color="transparent")
         option_row.grid(row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
         ctk.CTkCheckBox(
@@ -9310,11 +9438,24 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_primary"],
             width=20,
-        ).pack(side="left")
+        ).pack(side="left", padx=(0, 10))
+        if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}:
+            ctk.CTkCheckBox(
+                option_row,
+                text="Show hidden",
+                variable=show_hidden_images_var,
+                command=lambda: (render_resource_list(), refresh_count()),
+                font=ctk.CTkFont(size=11),
+                text_color=COLORS["text_primary"],
+                width=20,
+            ).pack(side="left")
 
         list_frame = ctk.CTkScrollableFrame(window, fg_color=COLORS["bg_input"])
         list_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         active_state = state
+        refresh_images_button: Any = None
+        rendered_tile_resource_ids: tuple[str, ...] = ()
+        rendered_tile_refreshers_by_id: dict[str, Any] = {}
 
         def parse_positive_int(value: str) -> int:
             try:
@@ -9336,41 +9477,263 @@ class App(ctk.CTk):
         def _preview_url_for_item(item: Any) -> str:
             return str(item.thumbnail_reference or item.reference_url or item.canonical_url or "")
 
-        def _image_preview_for_item(item: Any) -> ctk.CTkImage | None:
-            if resource_kind != RESOURCE_KIND_IMAGE:
-                return None
-            if item.resource_id in thumbnail_images_by_id:
-                return thumbnail_images_by_id[item.resource_id]
-            preview_url = _preview_url_for_item(item)
-            if not preview_url:
-                return None
+        def _image_candidate_is_obvious_non_preview(item: Any) -> bool:
+            extension = str(getattr(item, "extension", "") or "").lower()
+            url = str(getattr(item, "reference_url", "") or getattr(item, "canonical_url", "") or "").lower()
+            name = str(getattr(item, "display_name", "") or "").lower()
+            width = int(getattr(item, "width", 0) or 0)
+            height = int(getattr(item, "height", 0) or 0)
+            if extension in {".svg", ".ico"}:
+                return True
+            if width and height and min(width, height) < 40:
+                return True
+            hidden_markers = (
+                "sprite",
+                "button",
+                "tracking",
+                "pixel",
+                "favicon",
+                "wikimedia-button",
+                "oojs_ui_icon",
+                "oojs-ui-icon",
+                "wikimediaui-",
+            )
+            return any(marker in url or marker in name for marker in hidden_markers)
+
+        def _cache_ctk_thumbnail_for_item(item: Any, preview_image: Any) -> bool:
             try:
-                request = urllib.request.Request(
-                    preview_url,
-                    headers={
-                        "User-Agent": "Mozilla/5.0 YTCE image preview",
-                        "Accept": "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8",
-                    },
-                )
-                with urllib.request.urlopen(request, timeout=2.5) as response:
-                    data = response.read(768 * 1024)
-                preview_image = Image.open(BytesIO(data))
-                if getattr(preview_image, "is_animated", False):
-                    preview_image.seek(0)
-                preview_image = preview_image.convert("RGBA")
-                original_preview_width, original_preview_height = preview_image.size
-                if min(original_preview_width, original_preview_height) < 24:
-                    return None
-                preview_image.thumbnail((168, 128), Image.LANCZOS)
                 ctk_image = ctk.CTkImage(
                     light_image=preview_image.copy(),
                     dark_image=preview_image.copy(),
                     size=(max(1, preview_image.width), max(1, preview_image.height)),
                 )
                 thumbnail_images_by_id[item.resource_id] = ctk_image
-                return ctk_image
+                thumbnail_hidden_resource_ids.discard(item.resource_id)
+                thumbnail_preview_status_by_id[item.resource_id] = "success"
+                return True
             except Exception:
+                thumbnail_hidden_resource_ids.add(item.resource_id)
+                thumbnail_preview_status_by_id[item.resource_id] = "failed"
+                return False
+
+        def _apply_cached_thumbnail_preview(item: Any) -> bool:
+            preview_url = _preview_url_for_item(item)
+            if not preview_url:
+                return False
+            cached_preview = webpage_image_preview_pil_cache_by_url.get(preview_url)
+            if cached_preview is None:
+                return False
+            return _cache_ctk_thumbnail_for_item(item, cached_preview)
+
+        def _image_candidate_should_probe_preview(item: Any) -> bool:
+            if resource_kind != RESOURCE_KIND_IMAGE:
+                return False
+            if item.resource_id in thumbnail_images_by_id:
+                return False
+            if thumbnail_preview_status_by_id.get(item.resource_id) in {"pending", "success", "hidden", "failed"}:
+                return False
+            preview_url = _preview_url_for_item(item)
+            if not preview_url:
+                thumbnail_preview_status_by_id[item.resource_id] = "hidden"
+                thumbnail_hidden_resource_ids.add(item.resource_id)
+                return False
+            thumbnail_preview_url_by_id[item.resource_id] = preview_url
+            if _apply_cached_thumbnail_preview(item):
+                return False
+            if _image_candidate_is_obvious_non_preview(item):
+                thumbnail_preview_status_by_id[item.resource_id] = "hidden"
+                thumbnail_hidden_resource_ids.add(item.resource_id)
+                return False
+            return True
+
+        def _is_default_hidden_webpage_image_candidate(item: Any) -> bool:
+            """Keep the default real-site grid to previewable images only."""
+            if resource_kind != RESOURCE_KIND_IMAGE:
+                return False
+            if item.resource_id in selected_ids:
+                return False
+            if item.resource_id in thumbnail_images_by_id:
+                return False
+            status = thumbnail_preview_status_by_id.get(item.resource_id, "")
+            if status in {"pending", "success"}:
+                return True
+            if status in {"hidden", "failed"} or item.resource_id in thumbnail_hidden_resource_ids:
+                return True
+            return True
+
+        def _schedule_thumbnail_probe_render(delay_ms: int = 650) -> None:
+            nonlocal thumbnail_probe_render_after_id
+            if thumbnail_probe_render_after_id is not None:
+                return
+
+            def _run_render() -> None:
+                nonlocal thumbnail_probe_render_after_id
+                thumbnail_probe_render_after_id = None
+                try:
+                    if window.winfo_exists():
+                        render_resource_list()
+                        refresh_count()
+                except Exception:
+                    logger.debug("Could not refresh image preview grid after thumbnail probe.", exc_info=True)
+
+            try:
+                thumbnail_probe_render_after_id = window.after(delay_ms, _run_render)
+            except Exception:
+                thumbnail_probe_render_after_id = None
+
+        def _thumbnail_probe_success(resource_id: str, preview_image: Any) -> None:
+            try:
+                preview_url = thumbnail_preview_url_by_id.get(resource_id, "")
+                if preview_url:
+                    webpage_image_preview_pil_cache_by_url[preview_url] = preview_image.copy()
+                    while len(webpage_image_preview_pil_cache_by_url) > webpage_image_preview_cache_limit:
+                        try:
+                            webpage_image_preview_pil_cache_by_url.pop(next(iter(webpage_image_preview_pil_cache_by_url)))
+                        except Exception:
+                            break
+                matching_item = next((candidate for candidate in state.resources if candidate.resource_id == resource_id), None)
+                if matching_item is not None and _cache_ctk_thumbnail_for_item(matching_item, preview_image):
+                    return
+                ctk_image = ctk.CTkImage(
+                    light_image=preview_image.copy(),
+                    dark_image=preview_image.copy(),
+                    size=(max(1, preview_image.width), max(1, preview_image.height)),
+                )
+                thumbnail_images_by_id[resource_id] = ctk_image
+                thumbnail_hidden_resource_ids.discard(resource_id)
+                thumbnail_preview_status_by_id[resource_id] = "success"
+            except Exception:
+                thumbnail_hidden_resource_ids.add(resource_id)
+                thumbnail_preview_status_by_id[resource_id] = "failed"
+
+        def _thumbnail_probe_failure(resource_id: str) -> None:
+            thumbnail_hidden_resource_ids.add(resource_id)
+            thumbnail_preview_status_by_id[resource_id] = "failed"
+
+        def _queue_thumbnail_probe_result(kind: str, resource_id: str = "", preview_image: Any = None) -> None:
+            try:
+                with thumbnail_probe_results_lock:
+                    thumbnail_probe_results.append((kind, resource_id, preview_image))
+            except Exception:
+                pass
+
+        def _ensure_thumbnail_probe_result_pump() -> None:
+            nonlocal thumbnail_probe_result_after_id
+            if thumbnail_probe_result_after_id is not None:
+                return
+
+            def _drain_thumbnail_probe_results() -> None:
+                nonlocal thumbnail_probe_thread_active, thumbnail_probe_result_after_id
+                thumbnail_probe_result_after_id = None
+                queued: list[tuple[str, str, Any]] = []
+                try:
+                    with thumbnail_probe_results_lock:
+                        queued = list(thumbnail_probe_results)
+                        thumbnail_probe_results.clear()
+                except Exception:
+                    queued = []
+                changed = False
+                for kind, resource_id, preview_image in queued:
+                    if kind == "success":
+                        _thumbnail_probe_success(resource_id, preview_image)
+                        changed = True
+                    elif kind == "failed":
+                        _thumbnail_probe_failure(resource_id)
+                        changed = True
+                    elif kind == "done":
+                        thumbnail_probe_thread_active = False
+                        changed = True
+                if changed:
+                    _schedule_thumbnail_probe_render(650)
+                should_continue = thumbnail_probe_thread_active
+                try:
+                    with thumbnail_probe_results_lock:
+                        should_continue = should_continue or bool(thumbnail_probe_results)
+                except Exception:
+                    pass
+                if should_continue:
+                    try:
+                        thumbnail_probe_result_after_id = window.after(140, _drain_thumbnail_probe_results)
+                    except Exception:
+                        thumbnail_probe_result_after_id = None
+
+            try:
+                thumbnail_probe_result_after_id = window.after(120, _drain_thumbnail_probe_results)
+            except Exception:
+                thumbnail_probe_result_after_id = None
+
+        def _start_thumbnail_preview_probe(resources: tuple[Any, ...]) -> None:
+            nonlocal thumbnail_probe_thread_active
+            if resource_kind != RESOURCE_KIND_IMAGE or row.adapter_id in {"youtube", "twitter_x"}:
+                return
+            if thumbnail_probe_thread_active:
+                _ensure_thumbnail_probe_result_pump()
+                return
+            candidates = [item for item in resources if _image_candidate_should_probe_preview(item)]
+            if not candidates:
+                return
+            candidates = candidates[:64]
+            for candidate in candidates:
+                thumbnail_preview_status_by_id[candidate.resource_id] = "pending"
+            thumbnail_probe_thread_active = True
+            _ensure_thumbnail_probe_result_pump()
+
+            def _probe_one_thumbnail(item: Any) -> tuple[str, str, Any]:
+                resource_id = item.resource_id
+                preview_url = _preview_url_for_item(item)
+                if not preview_url:
+                    return "failed", resource_id, None
+                try:
+                    request = urllib.request.Request(
+                        preview_url,
+                        headers={
+                            "User-Agent": "Mozilla/5.0 YTCE image preview",
+                            "Accept": "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8",
+                        },
+                    )
+                    with urllib.request.urlopen(request, timeout=0.7) as response:
+                        data = response.read(384 * 1024)
+                    preview_image = Image.open(BytesIO(data))
+                    if getattr(preview_image, "is_animated", False):
+                        preview_image.seek(0)
+                    preview_image = preview_image.convert("RGBA")
+                    original_preview_width, original_preview_height = preview_image.size
+                    if min(original_preview_width, original_preview_height) < 24:
+                        raise ValueError("tiny preview")
+                    preview_image.thumbnail((168, 128), Image.LANCZOS)
+                    return "success", resource_id, preview_image.copy()
+                except Exception:
+                    return "failed", resource_id, None
+
+            def _worker(items: list[Any]) -> None:
+                try:
+                    worker_count = max(1, min(4, len(items)))
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+                        futures = [executor.submit(_probe_one_thumbnail, item) for item in items]
+                        for future in concurrent.futures.as_completed(futures):
+                            try:
+                                kind, resource_id, preview_image = future.result()
+                            except Exception:
+                                continue
+                            _queue_thumbnail_probe_result(kind, resource_id, preview_image)
+                finally:
+                    _queue_thumbnail_probe_result("done")
+
+            threading.Thread(target=_worker, args=(candidates,), daemon=True).start()
+
+        def _image_preview_for_item(item: Any) -> ctk.CTkImage | None:
+            if resource_kind != RESOURCE_KIND_IMAGE:
                 return None
+            return thumbnail_images_by_id.get(item.resource_id)
+
+        def _cap_image_display_resources(resources: tuple[Any, ...], limit: int) -> tuple[tuple[Any, ...], int]:
+            if limit <= 0 or len(resources) <= limit:
+                return resources, 0
+            selected_resources = [item for item in resources if item.resource_id in selected_ids]
+            other_resources = [item for item in resources if item.resource_id not in selected_ids]
+            remaining_slots = max(0, limit - len(selected_resources))
+            capped = tuple((selected_resources + other_resources[:remaining_slots])[:limit])
+            return capped, max(0, len(resources) - len(capped))
 
         image_detail_popup: Any = None
         image_detail_popup_hide_after_id: Any = None
@@ -9511,11 +9874,50 @@ class App(ctk.CTk):
                 pass
 
         def render_resource_list() -> None:
-            nonlocal active_state
-            active_state = filter_resource_dialog_items(state, current_filters())
+            nonlocal active_state, hidden_candidate_count, thumbnail_preview_loading_count, rendered_tile_resource_ids
+            filtered_state = filter_resource_dialog_items(state, current_filters())
+            display_resources = tuple(filtered_state.resources)
+            hidden_candidate_count = 0
+            thumbnail_preview_loading_count = 0
+            if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}:
+                _start_thumbnail_preview_probe(display_resources)
+                if not bool(show_hidden_images_var.get()):
+                    kept_resources: list[Any] = []
+                    hidden_resources: list[Any] = []
+                    for candidate_item in display_resources:
+                        if candidate_item.resource_id in selected_ids or candidate_item.resource_id in thumbnail_images_by_id:
+                            kept_resources.append(candidate_item)
+                        else:
+                            hidden_resources.append(candidate_item)
+                            if thumbnail_preview_status_by_id.get(candidate_item.resource_id) == "pending":
+                                thumbnail_preview_loading_count += 1
+                    display_resources, overflow_hidden_count = _cap_image_display_resources(tuple(kept_resources), default_image_render_limit)
+                    hidden_candidate_count = len(hidden_resources) + overflow_hidden_count
+                else:
+                    display_resources, hidden_candidate_count = _cap_image_display_resources(display_resources, hidden_image_render_limit)
+            active_state = filtered_state.__class__(
+                source_row_id=filtered_state.source_row_id,
+                resource_kind=filtered_state.resource_kind,
+                resources=display_resources,
+                selected_resource_ids=tuple(resource_id for resource_id in filtered_state.selected_resource_ids if resource_id in {item.resource_id for item in display_resources}),
+                committed_resource_ids=filtered_state.committed_resource_ids,
+            )
+            display_resource_ids = tuple(item.resource_id for item in active_state.resources)
+            if display_resource_ids and display_resource_ids == rendered_tile_resource_ids and rendered_tile_refreshers_by_id:
+                for visible_item in active_state.resources:
+                    refresher = rendered_tile_refreshers_by_id.get(visible_item.resource_id)
+                    if refresher is None:
+                        continue
+                    try:
+                        refresher(visible_item)
+                    except Exception:
+                        pass
+                return
             for child in list_frame.winfo_children():
                 child.destroy()
             vars_by_id.clear()
+            rendered_tile_refreshers_by_id.clear()
+            rendered_tile_resource_ids = display_resource_ids
             column_count = 4 if resource_kind == RESOURCE_KIND_IMAGE else 2
             for column_index in range(column_count):
                 list_frame.grid_columnconfigure(column_index, weight=1, uniform="image_cards")
@@ -9525,6 +9927,11 @@ class App(ctk.CTk):
                     if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}
                     else "No selectable media resources match this source/filter."
                 )
+                if hidden_candidate_count and resource_kind == RESOURCE_KIND_IMAGE and not bool(show_hidden_images_var.get()):
+                    if thumbnail_preview_loading_count:
+                        empty_text = f"Loading previewable image thumbnails... {thumbnail_preview_loading_count} candidate(s) still being checked. Enable Show hidden to inspect hidden/no-preview candidates."
+                    else:
+                        empty_text = f"No visible image previews match this source/filter. Enable Show hidden to inspect {hidden_candidate_count} hidden/no-preview candidate(s)."
                 empty = ctk.CTkLabel(
                     list_frame,
                     text=empty_text,
@@ -9533,6 +9940,8 @@ class App(ctk.CTk):
                     justify="left",
                 )
                 empty.grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=8)
+                rendered_tile_resource_ids = ()
+                rendered_tile_refreshers_by_id.clear()
                 return
             tile_checkbox_refreshers: list[Any] = []
             for index, item in enumerate(active_state.resources):
@@ -9671,10 +10080,23 @@ class App(ctk.CTk):
                     cb.place_forget()
                     state["visible"] = False
 
-                def refresh_tile_checkbox_visibility(_event: Any = None, image_area: Any = preview_box, cb: Any = checkbox, var: Any = item_var, state: dict[str, Any] = checkbox_visibility_state) -> None:
+                def refresh_tile_checkbox_visibility(
+                    _event: Any = None,
+                    image_area: Any = preview_box,
+                    cb: Any = checkbox,
+                    var: Any = item_var,
+                    state: dict[str, Any] = checkbox_visibility_state,
+                    show_badge: Any = show_image_size_badge,
+                    hide_badge: Any = hide_image_size_badge,
+                ) -> None:
                     try:
                         selected = _sync_tile_checkbox_style(cb, var, state)
-                        should_show = bool(selected) or _pointer_is_over_tile_image_area(image_area)
+                        pointer_over_image = _pointer_is_over_tile_image_area(image_area)
+                        if pointer_over_image:
+                            show_badge()
+                        else:
+                            hide_badge()
+                        should_show = bool(selected) or pointer_over_image
                         if should_show:
                             _place_tile_checkbox(cb, state)
                         else:
@@ -9702,6 +10124,33 @@ class App(ctk.CTk):
                     checkbox.place_forget()
                     checkbox_visibility_state["visible"] = False
                 tile_checkbox_refreshers.append(refresh_tile_checkbox_visibility)
+
+                def refresh_rendered_tile(
+                    updated_item: Any = item,
+                    card: Any = item_card,
+                    var: Any = item_var,
+                    preview_widget: Any = preview_label,
+                    badge: Any = image_size_badge,
+                    refresh_checkbox: Any = refresh_tile_checkbox_visibility,
+                ) -> None:
+                    try:
+                        selected = updated_item.resource_id in selected_ids
+                        var.set(selected)
+                        needs_review_now = bool(updated_item.warning or "review" in str(updated_item.status or "").lower())
+                        card.configure(
+                            border_width=2 if selected else (1 if needs_review_now else 0),
+                            border_color=COLORS["accent"] if selected else ("#ff5d73" if needs_review_now else COLORS["border"]),
+                        )
+                        new_preview = _image_preview_for_item(updated_item)
+                        if new_preview is not None:
+                            preview_widget.configure(text="", image=new_preview)
+                        if badge is not None:
+                            badge.configure(text=(f"{updated_item.width}x{updated_item.height}" if updated_item.width and updated_item.height else "size unknown"))
+                        refresh_checkbox()
+                    except Exception:
+                        pass
+
+                rendered_tile_refreshers_by_id[item.resource_id] = refresh_rendered_tile
 
                 name_text = f"{item.display_name or item.resource_id} ({item.extension or item.media_type or 'resource'})"
                 if item.duration_seconds:
@@ -9739,12 +10188,12 @@ class App(ctk.CTk):
             def _run_tile_checkbox_watchdog() -> None:
                 try:
                     _refresh_all_tile_checkbox_visibility()
-                    tile_checkbox_watchdog["after_id"] = window.after(80, _run_tile_checkbox_watchdog)
+                    tile_checkbox_watchdog["after_id"] = window.after(120, _run_tile_checkbox_watchdog)
                 except Exception:
                     tile_checkbox_watchdog["after_id"] = None
 
             try:
-                tile_checkbox_watchdog["after_id"] = window.after(80, _run_tile_checkbox_watchdog)
+                tile_checkbox_watchdog["after_id"] = window.after(120, _run_tile_checkbox_watchdog)
             except Exception:
                 _refresh_all_tile_checkbox_visibility()
 
@@ -9769,7 +10218,14 @@ class App(ctk.CTk):
             )
 
         def refresh_count() -> None:
-            status_label.configure(text=f"{current_state().selection_count} selected")
+            selected_count = current_state().selection_count
+            if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}:
+                shown_count = len(getattr(active_state, "resources", ()) or ())
+                hidden_text = f" · {hidden_candidate_count} hidden" if hidden_candidate_count else ""
+                loading_text = f" · {thumbnail_preview_loading_count} loading" if thumbnail_preview_loading_count else ""
+                status_label.configure(text=f"{selected_count} selected · {shown_count} shown{hidden_text}{loading_text}")
+            else:
+                status_label.configure(text=f"{selected_count} selected")
 
         def sync_visible_checkboxes() -> None:
             for item in active_state.resources:
@@ -9794,29 +10250,35 @@ class App(ctk.CTk):
             sync_visible_checkboxes()
             refresh_count()
 
-        def discover_page_images(*, show_messages: bool = True) -> None:
-            nonlocal row, state, active_state
-            if resource_kind != RESOURCE_KIND_IMAGE:
-                return
-            if row.adapter_id in {"youtube", "twitter_x"}:
-                messagebox.showinfo(
-                    "Image discovery",
-                    "This source type uses its own media workflow.",
-                )
-                return
+        def _queue_image_discovery_result(kind: str, discovery: Any = None, error_text: str = "", show_messages: bool = True) -> None:
             try:
-                discovery = discover_webpage_images_for_row(row)
-            except Exception as exc:
-                if show_messages:
-                    messagebox.showwarning("Image discovery failed", str(exc))
-                self.log_message(f"Webpage image discovery failed: {exc}", "warning")
-                return
+                with image_discovery_results_lock:
+                    image_discovery_results.append((kind, discovery, error_text, show_messages))
+            except Exception:
+                pass
+
+        def _apply_webpage_image_discovery_result(discovery: Any, *, show_messages: bool = True) -> None:
+            nonlocal row, state, active_state
             if not discovery.resources:
                 warning_text = "; ".join(discovery.warnings) if discovery.warnings else "No image candidates were found."
                 if show_messages:
-                    messagebox.showinfo("Image discovery", warning_text)
+                    show_image_dialog_notice("Image discovery", warning_text)
                 self.log_message(f"Webpage image discovery found no selectable images for {row.domain}: {warning_text}", "warning")
                 return
+            cache_key = _webpage_image_discovery_cache_key(row)
+            if cache_key:
+                try:
+                    webpage_image_discovery_cache_by_url[cache_key] = discovery
+                    while len(webpage_image_discovery_cache_by_url) > webpage_image_discovery_cache_limit:
+                        webpage_image_discovery_cache_by_url.pop(next(iter(webpage_image_discovery_cache_by_url)))
+                except Exception:
+                    logger.debug("Could not update webpage image discovery cache.", exc_info=True)
+            previous_resource_urls = tuple((item.resource_id, item.reference_url or item.canonical_url) for item in state.resources)
+            incoming_resource_urls = tuple((item.resource_id, item.reference_url or item.canonical_url) for item in discovery.resources)
+            if previous_resource_urls != incoming_resource_urls:
+                thumbnail_images_by_id.clear()
+                thumbnail_hidden_resource_ids.clear()
+                thumbnail_preview_status_by_id.clear()
             row = replace(row, image_resources=discovery.resources)
             for index, existing_row in enumerate(self.source_resource_rows):
                 if existing_row.row_id == row.row_id:
@@ -9837,10 +10299,115 @@ class App(ctk.CTk):
             self.log_message(
                 (
                     f"Discovered {len(discovery.resources)} webpage image candidate(s) "
-                    f"from {row.domain}; downloads performed: none."
+                    f"from {row.domain}; discovery_method={getattr(discovery, 'network_actions_performed', 'unknown')}; "
+                    "preview thumbnails are probed in the background; "
+                    "default view shows only candidates that successfully preview; "
+                    "hidden/no-preview candidates stay hidden unless Show hidden is enabled; "
+                    "candidate lists and previews are cached/prefetched for repeated opens; "
+                    "visible rendering is capped and diff-refreshed for responsiveness; "
+                    "downloads performed: none."
                 ),
                 "success",
             )
+
+        def _ensure_image_discovery_result_pump() -> None:
+            nonlocal image_discovery_thread_active, image_discovery_result_after_id
+            if image_discovery_result_after_id is not None:
+                return
+
+            def _drain_image_discovery_results() -> None:
+                nonlocal image_discovery_thread_active, image_discovery_result_after_id
+                image_discovery_result_after_id = None
+                queued: list[tuple[str, Any, str, bool]] = []
+                try:
+                    with image_discovery_results_lock:
+                        queued = list(image_discovery_results)
+                        image_discovery_results.clear()
+                except Exception:
+                    queued = []
+                for kind, discovery, error_text, notify_user in queued:
+                    if kind == "success":
+                        _apply_webpage_image_discovery_result(discovery, show_messages=notify_user)
+                    elif kind == "failed":
+                        if notify_user:
+                            show_image_dialog_notice("Image discovery failed", error_text or "Unknown image discovery failure.")
+                        self.log_message(f"Webpage image discovery failed: {error_text}", "warning")
+                    elif kind == "done":
+                        image_discovery_thread_active = False
+                        try:
+                            if refresh_images_button is not None:
+                                refresh_images_button.configure(state="normal", text="Refresh images")
+                        except Exception:
+                            pass
+                should_continue = image_discovery_thread_active
+                try:
+                    with image_discovery_results_lock:
+                        should_continue = should_continue or bool(image_discovery_results)
+                except Exception:
+                    pass
+                if should_continue:
+                    try:
+                        image_discovery_result_after_id = window.after(90, _drain_image_discovery_results)
+                    except Exception:
+                        image_discovery_result_after_id = None
+
+            try:
+                image_discovery_result_after_id = window.after(90, _drain_image_discovery_results)
+            except Exception:
+                image_discovery_result_after_id = None
+
+        def discover_page_images(*, show_messages: bool = True) -> None:
+            nonlocal image_discovery_thread_active, refresh_images_button
+            if resource_kind != RESOURCE_KIND_IMAGE:
+                return
+            if row.adapter_id in {"youtube", "twitter_x"}:
+                show_image_dialog_notice(
+                    "Image discovery",
+                    "This source type uses its own media workflow.",
+                )
+                return
+            if image_discovery_thread_active:
+                self.log_message("Webpage image discovery is already running for this source row.", "muted")
+                return
+            cache_key = _webpage_image_discovery_cache_key(row)
+            if not show_messages and cache_key:
+                cached_discovery = webpage_image_discovery_cache_by_url.get(cache_key)
+                if cached_discovery is not None:
+                    self.log_message(f"Using cached webpage image candidate list for {row.domain}; Refresh images forces a rescan.", "muted")
+                    _apply_webpage_image_discovery_result(cached_discovery, show_messages=False)
+                    return
+            image_discovery_thread_active = True
+            try:
+                if refresh_images_button is not None:
+                    refresh_images_button.configure(state="disabled", text=("Refreshing..." if active_state.resources else "Discovering..."))
+                if not active_state.resources:
+                    for child in list_frame.winfo_children():
+                        child.destroy()
+                    ctk.CTkLabel(
+                        list_frame,
+                        text="Discovering image candidates in the background...",
+                        text_color=COLORS["text_muted"],
+                        wraplength=640,
+                        justify="left",
+                    ).grid(row=0, column=0, sticky="w", padx=8, pady=8)
+                refresh_count()
+            except Exception:
+                pass
+            _ensure_image_discovery_result_pump()
+            row_snapshot = row
+            notify_user = bool(show_messages)
+
+            def _worker() -> None:
+                try:
+                    discovery = discover_webpage_images_for_row(row_snapshot)
+                except Exception as exc:
+                    _queue_image_discovery_result("failed", error_text=str(exc), show_messages=notify_user)
+                else:
+                    _queue_image_discovery_result("success", discovery=discovery, show_messages=notify_user)
+                finally:
+                    _queue_image_discovery_result("done", show_messages=notify_user)
+
+            threading.Thread(target=_worker, daemon=True).start()
 
         def download_selected_resources() -> None:
             selected_state = current_state()
@@ -10018,20 +10585,28 @@ class App(ctk.CTk):
         button_row = ctk.CTkFrame(window, fg_color="transparent")
         button_row.pack(side="bottom", fill="x", padx=16, pady=(8, 14))
         if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}:
-            ctk.CTkButton(
+            refresh_images_button = ctk.CTkButton(
                 button_row,
                 text="Refresh images",
                 width=128,
                 command=lambda: discover_page_images(show_messages=True),
-            ).pack(side="left", padx=(0, 8))
+            )
+            refresh_images_button.pack(side="left", padx=(0, 8))
         ctk.CTkButton(button_row, text="Select all", width=96, command=select_all).pack(side="left")
         ctk.CTkButton(button_row, text="Clear all", width=90, command=clear_all).pack(side="left", padx=(8, 0))
         ctk.CTkButton(button_row, text="Cancel", width=90, command=window.destroy).pack(side="right")
         ctk.CTkButton(button_row, text=("Download selected" if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"} else "Review selected"), width=152, command=download_selected_resources).pack(side="right", padx=(0, 8))
-        render_resource_list()
-        refresh_count()
         if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"} and not state.resources:
-            window.after(150, lambda: discover_page_images(show_messages=False))
+            cached_discovery_on_open = webpage_image_discovery_cache_by_url.get(_webpage_image_discovery_cache_key(row))
+            if cached_discovery_on_open is not None:
+                _apply_webpage_image_discovery_result(cached_discovery_on_open, show_messages=False)
+            else:
+                render_resource_list()
+                refresh_count()
+                window.after(80, lambda: discover_page_images(show_messages=False))
+        else:
+            render_resource_list()
+            refresh_count()
 
     def _on_discussion_source_selected(self, selected_label: str) -> None:
         self._store_current_source_screenshot_preferences()
