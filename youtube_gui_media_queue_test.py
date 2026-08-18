@@ -310,6 +310,9 @@ def test_internal_jdownloader_success_manifest_files_are_added_to_files() -> Non
             assert manifest["jdownloader_api3128_used"] is True
             assert manifest["jdownloader_route_label"].startswith("JDownloader API3128")
             assert manifest["jdownloader_yt_dlp_role"] == "fallback_only_after_jdownloader_routes"
+            assert manifest["jdownloader_capability_decision"]["recommended_backend_id"] == JDOWNLOADER_INTERNAL_BACKEND_ID
+            assert manifest["jdownloader_capability_decision"]["api3128_preferred"] is True
+            assert manifest["jdownloader_recommended_backend_id"] == JDOWNLOADER_INTERNAL_BACKEND_ID
     finally:
         queue.detect_jdownloader_internal_capabilities = original_detect
         queue.preferred_youtube_media_backend = original_preferred

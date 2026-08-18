@@ -25,6 +25,7 @@ from jdownloader_internal_paths import (
     YTDLP_FALLBACK_BACKEND_ID,
 )
 from jdownloader_route_summary import summarize_jdownloader_route_metadata
+from jdownloader_capability_router import build_jdownloader_capability_decision
 from source_resource_state import SourceResourceRowState
 from youtube_media_download_backend import (
     YouTubeMediaDiscovery,
@@ -370,6 +371,10 @@ def queue_youtube_gui_source_row_selection(
     height = youtube_quality_height(selected_quality)
     components = selected_youtube_components(prefs)
     backend_id, backend_status, backend_warnings = resolve_youtube_gui_backend(prefs)
+    jdownloader_capability_decision = build_jdownloader_capability_decision(
+        row.canonical_url,
+        capabilities=detect_jdownloader_internal_capabilities(),
+    ).to_dict()
     if not components:
         return YouTubeGuiMediaQueueResult(
             status=YOUTUBE_GUI_MEDIA_QUEUE_STATUS_NOT_SELECTED,
@@ -535,6 +540,10 @@ def queue_youtube_gui_source_row_selection(
         "jdownloader_package_name": job_package_name if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID else "",
         "jdownloader_completed_files": list(internal_jdownloader_completed_files),
         "jdownloader_completed_file_count": len(internal_jdownloader_completed_files),
+        "jdownloader_capability_decision": jdownloader_capability_decision,
+        "jdownloader_capability_status": jdownloader_capability_decision.get("capability_status", ""),
+        "jdownloader_recommended_backend_id": jdownloader_capability_decision.get("recommended_backend_id", ""),
+        "jdownloader_domain_likely_supported": bool(jdownloader_capability_decision.get("domain_likely_supported", False)),
         "jdownloader_route_summary": internal_jdownloader_route_summary,
         "jdownloader_route_used": internal_jdownloader_route_summary.get("route_used", ""),
         "jdownloader_route_label": internal_jdownloader_route_summary.get("route_label", ""),
@@ -573,6 +582,7 @@ def queue_youtube_gui_source_row_selection(
     if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID:
         route_label = str(internal_jdownloader_route_summary.get("route_label", "") or "JDownloader route not yet resolved")
         message += f"Backend: internal JDownloader ({route_label})\n"
+        message += f"JD capability: {jdownloader_capability_decision.get('decision_label', '')}\n"
     if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID:
         message += (
             "Starting internal JDownloader engine...\n"
