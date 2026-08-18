@@ -1,26 +1,12 @@
 from __future__ import annotations
 
-from source_resource_state import RESOURCE_KIND_VIDEO_AUDIO, SourceResourceRowState
+from source_resource_state import RESOURCE_KIND_VIDEO_AUDIO, build_source_resource_row
 from webpage_video_candidate_backend import WebpageVideoCandidate, WebpageVideoDiscoveryResult
 from webpage_video_resource_bridge import webpage_video_resources_from_discovery
 
 
-def _row() -> SourceResourceRowState:
-    return SourceResourceRowState(
-        row_id="row-1",
-        raw_url="https://example.com/article",
-        canonical_url="https://example.com/article",
-        adapter_id="webpage",
-        adapter_display_name="Webpage",
-        source_id="example",
-        title="Example",
-        domain="example.com",
-        display_label="Example - example.com",
-    )
-
-
 def test_webpage_video_candidates_convert_to_source_resources_with_jd_first_provenance() -> None:
-    row = _row()
+    row = build_source_resource_row("https://example.com/article")
     discovery = WebpageVideoDiscoveryResult(
         source_url=row.canonical_url,
         canonical_url=row.canonical_url,
@@ -33,6 +19,7 @@ def test_webpage_video_candidates_convert_to_source_resources_with_jd_first_prov
                 mime_type="application/vnd.apple.mpegurl",
                 extension=".m3u8",
                 title="Main clip",
+                thumbnail_url="https://cdn.example.com/poster.jpg",
                 width=1280,
                 height=720,
                 source_tag="video",
@@ -54,6 +41,7 @@ def test_webpage_video_candidates_convert_to_source_resources_with_jd_first_prov
     assert item.display_name == "Main clip"
     assert item.media_type == "stream"
     assert item.extension == ".m3u8"
+    assert item.thumbnail_reference == "https://cdn.example.com/poster.jpg"
     assert item.width == 1280
     assert item.height == 720
     assert item.selectable is True
@@ -62,7 +50,7 @@ def test_webpage_video_candidates_convert_to_source_resources_with_jd_first_prov
 
 
 def test_embedded_player_resource_is_kept_but_warns_about_jdownloader_crawler() -> None:
-    row = _row()
+    row = build_source_resource_row("https://example.com/post")
     discovery = WebpageVideoDiscoveryResult(
         source_url=row.canonical_url,
         canonical_url=row.canonical_url,

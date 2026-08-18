@@ -109,7 +109,7 @@ def webpage_video_resources_from_discovery(
                 width=int(candidate.width or 0),
                 height=int(candidate.height or 0),
                 bitrate_or_quality=str(candidate.kind or ""),
-                thumbnail_reference="",
+                thumbnail_reference=str(getattr(candidate, "thumbnail_url", "") or ""),
                 from_link=str(candidate.source_tag or "").lower() in {"a", "link"},
                 status="discovered",
                 selectable=bool(candidate.selected_by_default or candidate.kind),

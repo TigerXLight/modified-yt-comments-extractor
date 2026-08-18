@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Iterable, Mapping
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from jdownloader_capability_router import build_jdownloader_capability_decision
 
@@ -62,6 +62,47 @@ _EMBED_HOST_HINTS = (
     "tiktok.com",
 )
 
+_SOCIAL_SHARE_HOST_HINTS = (
+    "twitter.com",
+    "x.com",
+    "facebook.com",
+    "fb.com",
+)
+
+
+def _looks_like_share_or_intent_url(url: str) -> bool:
+    """Reject social sharing links that mention video hosts but are not players."""
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    path = (parsed.path or "").lower()
+    query = parse_qs(parsed.query or "")
+    if not any(hint in host for hint in _SOCIAL_SHARE_HOST_HINTS):
+        return False
+    if "intent" in path or "share" in path or "sharer" in path or "dialog/share" in path:
+        return True
+    if any(key in query for key in ("text", "url", "u", "quote", "via", "hashtags")) and not re.search(r"/(status|video|watch|reel|videos?)/", path):
+        return True
+    return False
+
+
+def _embed_link_is_plausible(tag: str, url: str) -> bool:
+    """Return whether a non-media URL is a real embed/player candidate."""
+    lower_tag = str(tag or "").lower()
+    if lower_tag in {"iframe", "embed", "video", "audio", "source", "meta", "performance", "network_response"}:
+        return True
+    if _looks_like_share_or_intent_url(url):
+        return False
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    path = (parsed.path or "").lower()
+    if any(hint in host for hint in ("player.vimeo.com", "youtube.com", "youtu.be", "dailymotion.com", "tiktok.com")):
+        return True
+    if any(hint in host for hint in ("x.com", "twitter.com")):
+        return bool(re.search(r"/(i/videos|status|video)/", path))
+    if "facebook.com" in host:
+        return bool(re.search(r"/(watch|videos?|reel)/", path))
+    return False
+
 
 @dataclass(frozen=True)
 class WebpageVideoCandidate:
@@ -72,6 +113,7 @@ class WebpageVideoCandidate:
     mime_type: str = ""
     extension: str = ""
     title: str = ""
+    thumbnail_url: str = ""
     width: int = 0
     height: int = 0
     source_tag: str = ""
@@ -150,7 +192,7 @@ def classify_video_candidate_url(url: str, *, mime_type: str = "") -> tuple[str,
 
 
 def _candidate_id(url: str, source_tag: str, source_attr: str) -> str:
-    digest = hashlib.sha1(f"{source_tag}\\0{source_attr}\\0{url}".encode("utf-8", "replace")).hexdigest()
+    digest = hashlib.sha1(f"{source_tag}\0{source_attr}\0{url}".encode("utf-8", "replace")).hexdigest()
     return f"video-{digest[:16]}"
 
 
@@ -170,6 +212,8 @@ class _VideoHtmlParser(HTMLParser):
         self._seen_urls: set[str] = set()
         self._inside_video = 0
         self._current_title = ""
+        self._video_poster_stack: list[str] = []
+        self._page_thumbnail_url = ""
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         lower_tag = tag.lower()
@@ -178,11 +222,15 @@ class _VideoHtmlParser(HTMLParser):
             self._current_title = ""
         if lower_tag == "video":
             self._inside_video += 1
+            poster = _clean_url(attr.get("poster", ""))
+            self._video_poster_stack.append(urljoin(self.base_url, poster) if poster else "")
         if lower_tag in {"video", "audio", "source", "track", "a", "link", "iframe", "embed"}:
             for attr_name in ("src", "href", "data-src", "data-url"):
                 self._add_from_attr(lower_tag, attr, attr_name)
         if lower_tag == "meta":
             property_name = (attr.get("property") or attr.get("name") or "").lower()
+            if property_name in {"og:image", "og:image:url", "twitter:image", "twitter:image:src"} and attr.get("content"):
+                self._page_thumbnail_url = urljoin(self.base_url, _clean_url(attr.get("content", "")))
             if property_name in {
                 "og:video",
                 "og:video:url",
@@ -196,6 +244,8 @@ class _VideoHtmlParser(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag.lower() == "video" and self._inside_video:
             self._inside_video -= 1
+            if self._video_poster_stack:
+                self._video_poster_stack.pop()
 
     def _add_from_attr(self, tag: str, attr: Mapping[str, str], attr_name: str) -> None:
         raw = attr.get(attr_name, "")
@@ -224,11 +274,18 @@ class _VideoHtmlParser(HTMLParser):
         mime = mime_type or attr.get("type", "")
         if not _looks_like_media_url(absolute, mime_type=mime):
             return
+        kind, extension = classify_video_candidate_url(absolute, mime_type=mime)
+        if kind == VIDEO_CANDIDATE_KIND_EMBED and not _embed_link_is_plausible(tag, absolute):
+            return
         if absolute in self._seen_urls:
             return
-        kind, extension = classify_video_candidate_url(absolute, mime_type=mime)
         self._seen_urls.add(absolute)
         title = attr.get("title") or attr.get("aria-label") or attr.get("alt") or ""
+        thumbnail_url = ""
+        if self._video_poster_stack:
+            thumbnail_url = self._video_poster_stack[-1]
+        if not thumbnail_url:
+            thumbnail_url = self._page_thumbnail_url
         self.candidates.append(
             WebpageVideoCandidate(
                 candidate_id=_candidate_id(absolute, tag, attr_name),
@@ -238,6 +295,7 @@ class _VideoHtmlParser(HTMLParser):
                 mime_type=str(mime or ""),
                 extension=extension,
                 title=str(title or ""),
+                thumbnail_url=str(thumbnail_url or ""),
                 width=_safe_int(attr.get("width")),
                 height=_safe_int(attr.get("height")),
                 source_tag=tag,

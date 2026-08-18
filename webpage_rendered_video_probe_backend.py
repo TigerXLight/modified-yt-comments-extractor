@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 
 from jdownloader_capability_router import build_jdownloader_capability_decision
 from webpage_video_candidate_backend import (
+    VIDEO_CANDIDATE_KIND_EMBED,
     VIDEO_CANDIDATE_KIND_FILE,
     VIDEO_CANDIDATE_KIND_STREAM,
     VIDEO_ROUTE_PREFERENCE,
@@ -14,6 +15,7 @@ from webpage_video_candidate_backend import (
     WebpageVideoDiscoveryResult,
     _candidate_id,
     _clean_url,
+    _embed_link_is_plausible,
     _looks_like_media_url,
     _safe_int,
     classify_video_candidate_url,
@@ -32,6 +34,7 @@ RENDERED_VIDEO_PROBE_SCRIPT = r"""
       url,
       mime_type: extra.mime_type || extra.type || '',
       title: extra.title || '',
+      thumbnail_url: extra.thumbnail_url || '',
       width: Number(extra.width || 0) || 0,
       height: Number(extra.height || 0) || 0,
       detection_reason: extra.detection_reason || `${tag}[${attr}]`,
@@ -43,6 +46,7 @@ RENDERED_VIDEO_PROBE_SCRIPT = r"""
     push(el.tagName.toLowerCase(), 'currentSrc', el.currentSrc || '', {
       mime_type: el.type || '',
       title: el.getAttribute('title') || el.getAttribute('aria-label') || document.title || '',
+      thumbnail_url: el.getAttribute('poster') || '',
       width: el.videoWidth || el.clientWidth || el.getAttribute('width') || 0,
       height: el.videoHeight || el.clientHeight || el.getAttribute('height') || 0,
       detection_reason: `${el.tagName.toLowerCase()} currentSrc after render`,
@@ -50,6 +54,7 @@ RENDERED_VIDEO_PROBE_SCRIPT = r"""
     push(el.tagName.toLowerCase(), 'src', el.getAttribute('src') || '', {
       mime_type: el.getAttribute('type') || '',
       title: el.getAttribute('title') || el.getAttribute('aria-label') || document.title || '',
+      thumbnail_url: el.getAttribute('poster') || '',
       width: el.videoWidth || el.clientWidth || el.getAttribute('width') || 0,
       height: el.videoHeight || el.clientHeight || el.getAttribute('height') || 0,
     });
@@ -70,7 +75,7 @@ RENDERED_VIDEO_PROBE_SCRIPT = r"""
 
   document.querySelectorAll('meta').forEach((el) => {
     const propertyName = (el.getAttribute('property') || el.getAttribute('name') || '').toLowerCase();
-    if (['og:video', 'og:video:url', 'og:video:secure_url', 'twitter:player', 'twitter:player:stream'].includes(propertyName)) {
+    if (['og:video', 'og:video:url', 'og:video:secure_url', 'twitter:player', 'twitter:player:stream', 'og:image', 'og:image:url', 'twitter:image', 'twitter:image:src'].includes(propertyName)) {
       push('meta', 'content', el.getAttribute('content') || '', {
         mime_type: el.getAttribute('type') || '',
         title: document.title || '',
@@ -155,6 +160,13 @@ def discover_rendered_webpage_video_candidates_from_probe_payload(
 
     canonical_url = str(payload_data.get("location_href") or source_url or "")
     title_fallback = str(payload_data.get("document_title") or "")
+    page_thumbnail_url = ""
+    for meta_record in _iter_payload_records(payload_data):
+        meta_tag = str(meta_record.get("tag") or "").lower()
+        meta_reason = str(meta_record.get("detection_reason") or "").lower()
+        if meta_tag == "meta" and any(token in meta_reason for token in ("og:image", "twitter:image")):
+            page_thumbnail_url = urljoin(canonical_url or source_url, _clean_url(_record_url(meta_record)))
+            break
     decision = dict(capability_decision or build_jdownloader_capability_decision(source_url).to_dict())
 
     candidates: list[WebpageVideoCandidate] = []
@@ -167,11 +179,13 @@ def discover_rendered_webpage_video_candidates_from_probe_payload(
         mime_type = str(record.get("mime_type") or record.get("content_type") or record.get("type") or "")
         if not _looks_like_media_url(absolute, mime_type=mime_type):
             continue
+        kind, extension = classify_video_candidate_url(absolute, mime_type=mime_type)
+        tag = str(record.get("tag") or "rendered")
+        if kind == VIDEO_CANDIDATE_KIND_EMBED and not _embed_link_is_plausible(tag, absolute):
+            continue
         if absolute in seen_urls:
             continue
-        kind, extension = classify_video_candidate_url(absolute, mime_type=mime_type)
         seen_urls.add(absolute)
-        tag = str(record.get("tag") or "rendered")
         attr = str(record.get("attr") or "url")
         reason = str(record.get("detection_reason") or f"rendered {tag}[{attr}]")
         title = str(record.get("title") or title_fallback or "")[:240]
@@ -184,6 +198,7 @@ def discover_rendered_webpage_video_candidates_from_probe_payload(
                 mime_type=mime_type,
                 extension=extension,
                 title=title,
+                thumbnail_url=urljoin(canonical_url or source_url, _clean_url(record.get("thumbnail_url") or page_thumbnail_url or "")) if (record.get("thumbnail_url") or page_thumbnail_url) else "",
                 width=_safe_int(record.get("width")),
                 height=_safe_int(record.get("height")),
                 source_tag=tag,

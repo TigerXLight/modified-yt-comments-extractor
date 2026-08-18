@@ -9506,7 +9506,7 @@ class App(ctk.CTk):
             return str(getattr(source_row, "canonical_url", "") or getattr(source_row, "raw_url", "") or "").strip()
 
         def _prewarm_rendered_discovery_if_js_heavy() -> None:
-            if resource_kind != RESOURCE_KIND_IMAGE or row.adapter_id in {"youtube", "twitter_x"}:
+            if resource_kind not in {RESOURCE_KIND_IMAGE, RESOURCE_KIND_VIDEO_AUDIO} or row.adapter_id in {"youtube", "twitter_x"}:
                 return
             url_text = " ".join(str(part or "").lower() for part in (row.raw_url, row.canonical_url, row.domain))
             if not any(marker in url_text for marker in ("msn.com", "x.com", "twitter.com", "facebook.com", "instagram.com")):
@@ -9638,7 +9638,37 @@ class App(ctk.CTk):
             )
 
         def _preview_url_for_item(item: Any) -> str:
+            if resource_kind == RESOURCE_KIND_VIDEO_AUDIO:
+                # Video/audio tiles must not try to treat MP4/HLS/DASH URLs as
+                # still-image previews.  Only explicit thumbnails/posters are
+                # safe to probe as images.
+                return str(item.thumbnail_reference or "")
             return str(item.thumbnail_reference or item.reference_url or item.canonical_url or "")
+
+        def _media_placeholder_text_for_item(item: Any) -> str:
+            if resource_kind == RESOURCE_KIND_IMAGE:
+                return "IMG"
+            extension = str(getattr(item, "extension", "") or "").lower()
+            media_type = str(getattr(item, "media_type", "") or "").lower()
+            mime_type = str(getattr(item, "mime_type", "") or "").lower()
+            provenance = str(getattr(item, "provenance", "") or "").lower()
+            video_exts = {".mp4", ".m4v", ".webm", ".mov", ".mkv", ".avi", ".flv", ".ts", ".m2ts", ".3gp", ".m3u8", ".mpd", ".f4m"}
+            audio_exts = {".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".flac"}
+            if extension in audio_exts or media_type == "audio" or mime_type.startswith("audio/"):
+                return "AUD"
+            if extension in video_exts or media_type in {"video", "stream", "video_audio"} or mime_type.startswith("video/"):
+                return "VID"
+            if media_type == "embedded_player" or "embedded" in provenance:
+                return "PLAY"
+            return "MEDIA"
+
+        def _media_placeholder_font_size(item: Any) -> int:
+            text = _media_placeholder_text_for_item(item)
+            if text == "MEDIA":
+                return 52
+            if text == "PLAY":
+                return 58
+            return 78
 
         def _image_candidate_is_obvious_non_preview(item: Any) -> bool:
             extension = str(getattr(item, "extension", "") or "").lower()
@@ -9689,7 +9719,7 @@ class App(ctk.CTk):
             return _cache_ctk_thumbnail_for_item(item, cached_preview)
 
         def _image_candidate_should_probe_preview(item: Any) -> bool:
-            if resource_kind != RESOURCE_KIND_IMAGE:
+            if resource_kind not in {RESOURCE_KIND_IMAGE, RESOURCE_KIND_VIDEO_AUDIO}:
                 return False
             if item.resource_id in thumbnail_images_by_id:
                 return False
@@ -9827,7 +9857,7 @@ class App(ctk.CTk):
 
         def _start_thumbnail_preview_probe(resources: tuple[Any, ...]) -> None:
             nonlocal thumbnail_probe_thread_active
-            if resource_kind != RESOURCE_KIND_IMAGE or row.adapter_id in {"youtube", "twitter_x"}:
+            if resource_kind not in {RESOURCE_KIND_IMAGE, RESOURCE_KIND_VIDEO_AUDIO} or row.adapter_id in {"youtube", "twitter_x"}:
                 return
             if thumbnail_probe_thread_active:
                 _ensure_thumbnail_probe_result_pump()
@@ -9850,7 +9880,7 @@ class App(ctk.CTk):
                     request = urllib.request.Request(
                         preview_url,
                         headers={
-                            "User-Agent": "Mozilla/5.0 YTCE image preview",
+                            "User-Agent": "Mozilla/5.0 YTCE media preview",
                             "Accept": "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8",
                         },
                     )
@@ -9885,7 +9915,7 @@ class App(ctk.CTk):
             threading.Thread(target=_worker, args=(candidates,), daemon=True).start()
 
         def _image_preview_for_item(item: Any) -> ctk.CTkImage | None:
-            if resource_kind != RESOURCE_KIND_IMAGE:
+            if resource_kind not in {RESOURCE_KIND_IMAGE, RESOURCE_KIND_VIDEO_AUDIO}:
                 return None
             return thumbnail_images_by_id.get(item.resource_id)
 
@@ -10058,6 +10088,8 @@ class App(ctk.CTk):
                     hidden_candidate_count = len(hidden_resources) + overflow_hidden_count
                 else:
                     display_resources, hidden_candidate_count = _cap_image_display_resources(display_resources, hidden_image_render_limit)
+            elif resource_kind == RESOURCE_KIND_VIDEO_AUDIO and row.adapter_id not in {"youtube", "twitter_x"}:
+                _start_thumbnail_preview_probe(display_resources)
             active_state = filtered_state.__class__(
                 source_row_id=filtered_state.source_row_id,
                 resource_kind=filtered_state.resource_kind,
@@ -10185,11 +10217,12 @@ class App(ctk.CTk):
                     preview_label.pack(expand=True)
                     preview_label.bind("<Button-1>", lambda _event, rid=item.resource_id, var=item_var: toggle_item(rid, var), add="+")
                 else:
+                    placeholder_text = _media_placeholder_text_for_item(item)
                     preview_label = ctk.CTkLabel(
                         preview_box,
-                        text="IMG",
+                        text=placeholder_text,
                         text_color=COLORS["text_secondary"],
-                        font=ctk.CTkFont(size=78, weight="bold"),
+                        font=ctk.CTkFont(size=_media_placeholder_font_size(item), weight="bold"),
                     )
                     preview_label.pack(expand=True)
                     preview_label.bind("<Button-1>", lambda _event, rid=item.resource_id, var=item_var: toggle_item(rid, var), add="+")
@@ -10307,6 +10340,12 @@ class App(ctk.CTk):
                         new_preview = _image_preview_for_item(updated_item)
                         if new_preview is not None:
                             preview_widget.configure(text="", image=new_preview)
+                        else:
+                            preview_widget.configure(
+                                text=_media_placeholder_text_for_item(updated_item),
+                                image=None,
+                                font=ctk.CTkFont(size=_media_placeholder_font_size(updated_item), weight="bold"),
+                            )
                         if badge is not None:
                             badge.configure(text=(f"{updated_item.width}x{updated_item.height}" if updated_item.width and updated_item.height else "size unknown"))
                         refresh_checkbox()

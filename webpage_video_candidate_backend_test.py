@@ -44,6 +44,7 @@ def test_discovers_static_video_sources_and_meta() -> None:
         capability_decision=_decision(),
     )
     assert result.candidate_count == 4
+    assert any(item.thumbnail_url == "https://news.example/poster.jpg" for item in result.candidates if item.url.endswith("video-720.mp4"))
     urls = {item.url for item in result.candidates}
     assert "https://news.example/share/preview.mp4" in urls
     assert "https://cdn.example.com/video-720.mp4" in urls
@@ -71,10 +72,26 @@ def test_deduplicates_repeated_urls() -> None:
     assert result.candidates[0].selected_by_default is True
 
 
+
+def test_rejects_social_share_links_that_are_not_video_players() -> None:
+    html = """
+    <a href="https://x.com/intent/tweet?text=Share%20this&url=https%3A%2F%2Fnews.example%2Fstory">Share via X</a>
+    <a href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fnews.example%2Fstory">Share via Facebook</a>
+    <iframe src="https://x.com/i/videos/12345"></iframe>
+    """
+    result = discover_webpage_video_candidates_from_html(
+        "https://news.example/story",
+        html,
+        capability_decision=_decision(),
+    )
+    assert result.candidate_count == 1
+    assert result.candidates[0].url == "https://x.com/i/videos/12345"
+
 def main() -> None:
     test_classifies_video_file_and_stream_urls()
     test_discovers_static_video_sources_and_meta()
     test_deduplicates_repeated_urls()
+    test_rejects_social_share_links_that_are_not_video_players()
     print("webpage_video_candidate_backend_test OK")
 
 

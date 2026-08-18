@@ -35,6 +35,7 @@ def test_probe_payload_discovers_dom_performance_and_network_media() -> None:
                 "width": 1920,
                 "height": 1080,
                 "detection_reason": "video currentSrc after render",
+                "thumbnail_url": "/poster.jpg",
             },
             {
                 "tag": "performance",
@@ -72,6 +73,7 @@ def test_probe_payload_discovers_dom_performance_and_network_media() -> None:
     assert result.candidate_count == 5
     urls = {candidate.url for candidate in result.candidates}
     assert "https://example.test/media/clip.mp4" in urls
+    assert any(candidate.thumbnail_url == "https://example.test/poster.jpg" for candidate in result.candidates if candidate.url.endswith("clip.mp4"))
     assert "https://cdn.example.test/master.m3u8" in urls
     assert "https://cdn.example.test/manifest.mpd" in urls
     assert "https://cdn.example.test/duplicate/master.m3u8" in urls
@@ -108,9 +110,29 @@ def test_probe_script_contains_dom_and_resource_hooks() -> None:
     assert "twitter:player:stream" in RENDERED_VIDEO_PROBE_SCRIPT
 
 
+
+def test_probe_payload_rejects_social_share_links() -> None:
+    payload = {
+        "location_href": "https://example.test/article",
+        "document_title": "Article",
+        "records": [
+            {"tag": "a", "attr": "href", "url": "https://x.com/intent/tweet?text=Share&url=https://example.test/article", "title": "Share this article via X"},
+            {"tag": "a", "attr": "href", "url": "https://www.facebook.com/sharer/sharer.php?u=https://example.test/article", "title": "Share this article via Facebook"},
+            {"tag": "iframe", "attr": "src", "url": "https://x.com/i/videos/12345", "title": "Embedded X video"},
+        ],
+    }
+    result = discover_rendered_webpage_video_candidates_from_probe_payload(
+        "https://example.test/article",
+        payload,
+        capability_decision=_decision(),
+    )
+    assert result.candidate_count == 1
+    assert result.candidates[0].url == "https://x.com/i/videos/12345"
+
 def main() -> None:
     test_probe_payload_discovers_dom_performance_and_network_media()
     test_probe_payload_deduplicates_and_reports_json_warning()
+    test_probe_payload_rejects_social_share_links()
     test_probe_script_contains_dom_and_resource_hooks()
     print("webpage_rendered_video_probe_backend_test OK")
 

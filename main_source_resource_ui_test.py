@@ -462,6 +462,12 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "MediaResourceFilterState" in source
     assert "build_selected_media_preservation_preview" in source
     assert "network/download/recording actions performed: none" in source
+    assert "_media_placeholder_text_for_item" in source
+    assert 'return "VID"' in source
+    assert 'return "AUD"' in source
+    assert 'return "PLAY"' in source
+    assert "Video/audio tiles must not try to treat MP4/HLS/DASH URLs" in source
+    assert "thumbnail_reference or \"\"" in source
 
 
 def test_media_resource_window_download_labels_and_gallery() -> None:
@@ -557,7 +563,9 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'window.after(120, _run_tile_checkbox_watchdog)' in source
     assert "item_card.grid_rowconfigure(0, weight=1" in source
     assert 'preview_box.grid(row=0, column=0, sticky="nsew"' in source
-    assert "font=ctk.CTkFont(size=78" in source
+    assert "placeholder_text = _media_placeholder_text_for_item(item)" in source
+    assert "font=ctk.CTkFont(size=_media_placeholder_font_size(item), weight=\"bold\")" in source
+    assert "def _media_placeholder_font_size" in source
     assert 'preview_box.bind("<Motion>", show_image_size_badge' in source
     assert "for hover_widget in (preview_box, preview_label, checkbox):" in source
     assert "for boundary_widget in (item_card, name_label):" in source
