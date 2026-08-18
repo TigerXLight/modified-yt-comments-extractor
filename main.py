@@ -181,8 +181,11 @@ from webpage_image_downloader_backend import (
 from webpage_video_resource_bridge import discover_webpage_videos_for_row
 from webpage_video_preview_backend import (
     can_generate_video_frame_preview,
+    can_generate_video_hover_preview,
     extract_video_frame_preview_pil,
+    extract_video_hover_preview_frames_pil,
     video_frame_preview_cache_key,
+    video_hover_preview_cache_key,
 )
 from source_twitter_compact_row import (
     TWITTER_COMPACT_MODES,
@@ -9484,8 +9487,13 @@ class App(ctk.CTk):
             "webpage_video_frame_preview_pil_cache_by_url",
             {},
         )
+        webpage_video_hover_preview_pil_frames_by_url: dict[str, Any] = self.__dict__.setdefault(
+            "webpage_video_hover_preview_pil_frames_by_url",
+            {},
+        )
         webpage_image_preview_cache_limit = 256
         webpage_video_frame_preview_cache_limit = 96
+        webpage_video_hover_preview_cache_limit = 48
         image_discovery_thread_active = False
         image_discovery_result_after_id: Any = None
         image_discovery_results: list[tuple[str, Any, str, bool]] = []
@@ -9629,6 +9637,9 @@ class App(ctk.CTk):
         refresh_videos_button: Any = None
         rendered_tile_resource_ids: tuple[str, ...] = ()
         rendered_tile_refreshers_by_id: dict[str, Any] = {}
+        video_hover_preview_frames_by_id: dict[str, tuple[Any, ...]] = {}
+        video_hover_animation_after_id_by_resource_id: dict[str, Any] = {}
+        video_hover_animation_index_by_resource_id: dict[str, int] = {}
 
         def parse_positive_int(value: str) -> int:
             try:
@@ -9664,6 +9675,20 @@ class App(ctk.CTk):
             if not media_url:
                 return ""
             if can_generate_video_frame_preview(
+                media_url,
+                extension=str(getattr(item, "extension", "") or ""),
+                mime_type=str(getattr(item, "mime_type", "") or ""),
+            ):
+                return media_url
+            return ""
+
+        def _video_hover_preview_url_for_item(item: Any) -> str:
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                return ""
+            media_url = str(getattr(item, "reference_url", "") or getattr(item, "canonical_url", "") or "").strip()
+            if not media_url:
+                return ""
+            if can_generate_video_hover_preview(
                 media_url,
                 extension=str(getattr(item, "extension", "") or ""),
                 mime_type=str(getattr(item, "mime_type", "") or ""),
@@ -9733,6 +9758,25 @@ class App(ctk.CTk):
             except Exception:
                 thumbnail_hidden_resource_ids.add(item.resource_id)
                 thumbnail_preview_status_by_id[item.resource_id] = "failed"
+                return False
+
+        def _cache_ctk_video_hover_frames_for_item(resource_id: str, preview_frames: Any) -> bool:
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                return False
+            try:
+                ctk_frames = tuple(
+                    ctk.CTkImage(
+                        light_image=frame.copy(),
+                        dark_image=frame.copy(),
+                        size=(max(1, frame.width), max(1, frame.height)),
+                    )
+                    for frame in tuple(preview_frames or ())
+                )
+                if len(ctk_frames) < 2:
+                    return False
+                video_hover_preview_frames_by_id[resource_id] = ctk_frames
+                return True
+            except Exception:
                 return False
 
         def _apply_cached_thumbnail_preview(item: Any) -> bool:
@@ -9834,6 +9878,9 @@ class App(ctk.CTk):
             thumbnail_hidden_resource_ids.add(resource_id)
             thumbnail_preview_status_by_id[resource_id] = "failed"
 
+        def _video_hover_probe_success(resource_id: str, preview_frames: Any) -> None:
+            _cache_ctk_video_hover_frames_for_item(resource_id, preview_frames)
+
         def _queue_thumbnail_probe_result(kind: str, resource_id: str = "", preview_image: Any = None) -> None:
             try:
                 with thumbnail_probe_results_lock:
@@ -9860,6 +9907,9 @@ class App(ctk.CTk):
                 for kind, resource_id, preview_image in queued:
                     if kind == "success":
                         _thumbnail_probe_success(resource_id, preview_image)
+                        changed = True
+                    elif kind == "hover_frames":
+                        _video_hover_probe_success(resource_id, preview_image)
                         changed = True
                     elif kind == "failed":
                         _thumbnail_probe_failure(resource_id)
@@ -9956,6 +10006,29 @@ class App(ctk.CTk):
                                 webpage_video_frame_preview_pil_cache_by_url.pop(next(iter(webpage_video_frame_preview_pil_cache_by_url)))
                             except Exception:
                                 break
+                        try:
+                            hover_url = _video_hover_preview_url_for_item(item)
+                            if hover_url:
+                                hover_cache_key = video_hover_preview_cache_key(hover_url)
+                                hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(hover_cache_key)
+                                if hover_frames is None:
+                                    hover_frames = extract_video_hover_preview_frames_pil(
+                                        hover_url,
+                                        timeout=3.5,
+                                        seek_seconds=0.35,
+                                        duration_seconds=2.0,
+                                        fps=5,
+                                        referer=str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or ""),
+                                    )
+                                    webpage_video_hover_preview_pil_frames_by_url[hover_cache_key] = tuple(frame.copy() for frame in hover_frames)
+                                    while len(webpage_video_hover_preview_pil_frames_by_url) > webpage_video_hover_preview_cache_limit:
+                                        try:
+                                            webpage_video_hover_preview_pil_frames_by_url.pop(next(iter(webpage_video_hover_preview_pil_frames_by_url)))
+                                        except Exception:
+                                            break
+                                _queue_thumbnail_probe_result("hover_frames", resource_id, tuple(frame.copy() for frame in hover_frames))
+                        except Exception:
+                            pass
                         return "success", resource_id, frame_image.copy()
                     except Exception:
                         return "failed", resource_id, None
@@ -10219,7 +10292,16 @@ class App(ctk.CTk):
                     var.set(not bool(var.get()))
                     on_item_toggle(resource_id, var)
 
-                needs_review = bool(item.warning or "review" in str(item.status or "").lower())
+                warning_text = str(getattr(item, "warning", "") or "").lower()
+                status_text = str(getattr(item, "status", "") or "").lower()
+                needs_review = bool(warning_text or "review" in status_text)
+                if resource_kind == RESOURCE_KIND_VIDEO_AUDIO:
+                    # Normal webpage video candidates may carry review/download-route
+                    # metadata because Review selected still does no generic download.
+                    # That should not paint every tile red.  Keep red styling for
+                    # real problems only.
+                    serious_review_markers = ("error", "failed", "blocked", "unsupported", "drm", "permission", "denied", "missing")
+                    needs_review = any(marker in warning_text or marker in status_text for marker in serious_review_markers)
                 selected_now = item.resource_id in selected_ids
                 item_card = ctk.CTkFrame(
                     list_frame,
@@ -10289,11 +10371,59 @@ class App(ctk.CTk):
                     )
                     preview_label.pack(expand=True)
                     preview_label.bind("<Button-1>", lambda _event, rid=item.resource_id, var=item_var: toggle_item(rid, var), add="+")
+                def _stop_video_hover_animation(resource_id: str = item.resource_id, label: Any = preview_label, current_item: Any = item) -> None:
+                    after_id = video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
+                    if after_id is not None:
+                        try:
+                            window.after_cancel(after_id)
+                        except Exception:
+                            pass
+                    try:
+                        still_preview = _image_preview_for_item(current_item)
+                        if still_preview is not None:
+                            label.configure(text="", image=still_preview)
+                    except Exception:
+                        pass
+
+                def _start_video_hover_animation(
+                    _event: Any = None,
+                    resource_id: str = item.resource_id,
+                    label: Any = preview_label,
+                    image_area: Any = preview_box,
+                    current_item: Any = item,
+                ) -> None:
+                    if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                        return
+                    frames = video_hover_preview_frames_by_id.get(resource_id)
+                    if not frames or len(frames) < 2:
+                        return
+                    if video_hover_animation_after_id_by_resource_id.get(resource_id) is not None:
+                        return
+
+                    def _step() -> None:
+                        try:
+                            if not _pointer_inside_widget(image_area):
+                                video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
+                                _stop_video_hover_animation(resource_id, label, current_item)
+                                return
+                            index_value = video_hover_animation_index_by_resource_id.get(resource_id, 0) % len(frames)
+                            video_hover_animation_index_by_resource_id[resource_id] = index_value + 1
+                            label.configure(text="", image=frames[index_value])
+                            video_hover_animation_after_id_by_resource_id[resource_id] = window.after(220, _step)
+                        except Exception:
+                            video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
+
+                    video_hover_animation_after_id_by_resource_id[resource_id] = window.after(1, _step)
+
                 preview_box.bind("<Enter>", show_image_size_badge, add="+")
                 preview_box.bind("<Motion>", show_image_size_badge, add="+")
                 preview_label.bind("<Enter>", show_image_size_badge, add="+")
                 preview_label.bind("<Motion>", show_image_size_badge, add="+")
-                preview_box.bind("<Leave>", hide_image_size_badge, add="+")
+                preview_box.bind("<Enter>", _start_video_hover_animation, add="+")
+                preview_box.bind("<Motion>", _start_video_hover_animation, add="+")
+                preview_label.bind("<Enter>", _start_video_hover_animation, add="+")
+                preview_label.bind("<Motion>", _start_video_hover_animation, add="+")
+                preview_box.bind("<Leave>", lambda _event, stop=_stop_video_hover_animation: (hide_image_size_badge(), stop()), add="+")
 
                 checkbox = ctk.CTkLabel(
                     preview_box,
@@ -10395,7 +10525,12 @@ class App(ctk.CTk):
                     try:
                         selected = updated_item.resource_id in selected_ids
                         var.set(selected)
-                        needs_review_now = bool(updated_item.warning or "review" in str(updated_item.status or "").lower())
+                        warning_now = str(getattr(updated_item, "warning", "") or "").lower()
+                        status_now = str(getattr(updated_item, "status", "") or "").lower()
+                        needs_review_now = bool(warning_now or "review" in status_now)
+                        if resource_kind == RESOURCE_KIND_VIDEO_AUDIO:
+                            serious_review_markers = ("error", "failed", "blocked", "unsupported", "drm", "permission", "denied", "missing")
+                            needs_review_now = any(marker in warning_now or marker in status_now for marker in serious_review_markers)
                         card.configure(
                             border_width=2 if selected else (1 if needs_review_now else 0),
                             border_color=COLORS["accent"] if selected else ("#ff5d73" if needs_review_now else COLORS["border"]),

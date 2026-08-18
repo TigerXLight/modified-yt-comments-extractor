@@ -471,6 +471,9 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "extract_video_frame_preview_pil" in source
     assert "webpage_video_frame_preview_pil_cache_by_url" in source
     assert "Direct video files without a poster" in source
+    assert "extract_video_hover_preview_frames_pil" in source
+    assert "video_hover_preview_frames_by_id" in source
+    assert "serious_review_markers" in source
 
 
 def test_media_resource_window_download_labels_and_gallery() -> None:
