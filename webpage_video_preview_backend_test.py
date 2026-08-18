@@ -70,9 +70,9 @@ def test_ffmpeg_hover_command_outputs_short_gif_pipe() -> None:
 def test_hover_preview_default_window_samples_more_than_a_tiny_static_intro() -> None:
     signature = inspect.signature(extract_video_hover_preview_frames_pil)
     assert signature.parameters["seek_seconds"].default == 0.0
-    assert signature.parameters["duration_seconds"].default == 3.0
-    assert signature.parameters["fps"].default == 8
-    assert signature.parameters["max_frames"].default == 16
+    assert signature.parameters["duration_seconds"].default == 12.0
+    assert signature.parameters["fps"].default == 2
+    assert signature.parameters["max_frames"].default == 24
 
 
 def test_browser_hover_preview_document_uses_muted_preloaded_video() -> None:
@@ -89,10 +89,10 @@ def test_browser_hover_preview_document_uses_muted_preloaded_video() -> None:
 
 
 def test_browser_hover_preview_samples_early_window() -> None:
-    sample_times = _browser_hover_preview_sample_times(duration_seconds=3.0, sample_count=16)
+    sample_times = _browser_hover_preview_sample_times(duration_seconds=30.0, sample_count=32)
     assert sample_times[0] == 0.0
-    assert len(sample_times) == 16
-    assert sample_times[-1] == 3.0
+    assert len(sample_times) == 32
+    assert sample_times[-1] == 30.0
     assert all(earlier <= later for earlier, later in zip(sample_times, sample_times[1:]))
 
 

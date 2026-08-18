@@ -235,7 +235,7 @@ def _browser_hover_preview_sample_times(
     state.  Our Tk grid cannot embed that player directly, so V78L samples the
     same early playback window ahead of hover and caches the frames.
     """
-    count = max(2, min(18, int(sample_count)))
+    count = max(2, min(36, int(sample_count)))
     duration = max(0.6, float(duration_seconds))
     if count == 2:
         return (0.0, min(duration, 1.0))
@@ -284,9 +284,9 @@ def extract_video_hover_preview_frames_pil_browser(
     referer: str = "",
     poster_url: str = "",
     max_size: tuple[int, int] = (168, 128),
-    duration_seconds: float = 3.0,
-    sample_count: int = 16,
-    frame_delay_ms: int = 75,
+    duration_seconds: float = 30.0,
+    sample_count: int = 32,
+    frame_delay_ms: int = 70,
     browser_executable_path: str | None = None,
 ) -> tuple[Image.Image, ...]:
     """Extract hover-preview frames using a real browser video element.
@@ -371,7 +371,7 @@ def extract_video_hover_preview_frames_pil_browser(
                     return False
                 return False
 
-            requested_frames = max(2, min(18, int(sample_count)))
+            requested_frames = max(2, min(36, int(sample_count)))
             delay_ms = max(35, min(220, int(frame_delay_ms)))
 
             # V78M smooth path: let the browser's media decoder play naturally
@@ -400,7 +400,8 @@ def extract_video_hover_preview_frames_pil_browser(
                     }""",
                     timeout=timeout_ms,
                 )
-                for _index in range(requested_frames):
+                burst_frame_count = max(4, min(10, max(2, requested_frames // 3)))
+                for _index in range(burst_frame_count):
                     try:
                         page.wait_for_timeout(delay_ms)
                     except Exception:
@@ -412,6 +413,63 @@ def extract_video_hover_preview_frames_pil_browser(
                     pass
             except Exception:
                 pass
+
+            # V78O: append a longer range-aware scrub strip after the smooth
+            # opening burst.  Video DownloadHelper plays real media, so two
+            # similarly titled Metro clips may only diverge after their first
+            # second.  Our Tk grid still cycles cached frames, but the cache now
+            # samples across the available/requested media range instead of only
+            # the opening 1-3 seconds.
+            try:
+                video_duration_seconds = float(
+                    locator.evaluate(
+                        "video => Number.isFinite(video.duration) ? video.duration : 0",
+                        timeout=900,
+                    )
+                    or 0.0
+                )
+            except Exception:
+                video_duration_seconds = 0.0
+            requested_range_seconds = max(0.8, float(duration_seconds))
+            if video_duration_seconds > 0:
+                requested_range_seconds = min(requested_range_seconds, max(0.8, video_duration_seconds - 0.05))
+            if requested_range_seconds > 2.0 and len(frames) < requested_frames:
+                range_times = _browser_hover_preview_sample_times(
+                    duration_seconds=requested_range_seconds,
+                    sample_count=max(2, requested_frames - len(frames) + 1),
+                )
+                for sample_time in range_times:
+                    if len(frames) >= requested_frames:
+                        break
+                    try:
+                        locator.evaluate(
+                            """async (video, seconds) => {
+                              video.muted = true;
+                              video.volume = 0;
+                              const duration = Number.isFinite(video.duration) ? video.duration : 0;
+                              const upper = duration ? Math.max(0, duration - 0.05) : Math.max(0, seconds);
+                              const target = Math.min(Math.max(0, seconds), upper);
+                              if (Math.abs((video.currentTime || 0) - target) > 0.05) {
+                                await new Promise((resolve) => {
+                                  let finished = false;
+                                  const cleanup = () => video.removeEventListener('seeked', done);
+                                  const done = () => { if (!finished) { finished = true; cleanup(); resolve(true); } };
+                                  video.addEventListener('seeked', done, { once: true });
+                                  try { video.currentTime = target; } catch (_err) { done(); }
+                                  setTimeout(done, 600);
+                                });
+                              }
+                              try { await video.play(); } catch (_err) {}
+                              await new Promise((resolve) => setTimeout(resolve, 55));
+                              try { video.pause(); } catch (_err) {}
+                              return true;
+                            }""",
+                            [sample_time],
+                            timeout=timeout_ms,
+                        )
+                    except Exception:
+                        pass
+                    _capture_current_video_frame()
 
             unique_digests_so_far = {hashlib.sha1(frame.tobytes()).hexdigest() + str(frame.size) for frame in frames}
             if len(frames) < 2 or len(unique_digests_so_far) < 2:
@@ -458,18 +516,18 @@ def extract_video_hover_preview_frames_pil_browser(
     unique_digests = {hashlib.sha1(frame.tobytes()).hexdigest() + str(frame.size) for frame in frames}
     if len(frames) < 2 or len(unique_digests) < 2:
         raise RuntimeError("Browser video hover preview did not produce multiple distinct frames.")
-    return tuple(frames[: max(2, min(18, int(sample_count)))])
+    return tuple(frames[: max(2, min(36, int(sample_count)))])
 
 def extract_video_hover_preview_frames_pil(
     url: str,
     *,
     timeout: float = 5.5,
     seek_seconds: float = 0.0,
-    duration_seconds: float = 3.0,
-    fps: int = 8,
+    duration_seconds: float = 12.0,
+    fps: int = 2,
     referer: str = "",
     max_size: tuple[int, int] = (168, 128),
-    max_frames: int = 16,
+    max_frames: int = 24,
 ) -> tuple[Image.Image, ...]:
     """Extract a short hover-preview GIF and return small PIL frames.
 

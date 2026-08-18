@@ -483,10 +483,12 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "Browser-hover references preload direct video elements before hover" in source
     assert "sample_count=16" in source
     assert "frame_delay_ms=75" in source
-    assert "window.after(85, _step)" in source
+    assert "window.after(70, _step)" in inspect.getsource(App)
     assert "poster_url=poster_url" in inspect.getsource(App)
     assert "poster/thumbnail" in app_source
     assert "cache hit cannot suppress animated hover frames again" in app_source
+    assert "duration_seconds=30.0" in inspect.getsource(App)
+    assert "window.after(70, _step)" in inspect.getsource(App)
     assert "V78N fast first-paint" in source
     assert "video_static_first_followup_pending" in source
     assert "Quick-scanning static video/audio candidates" in source

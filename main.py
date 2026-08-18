@@ -8330,7 +8330,7 @@ class App(ctk.CTk):
             inflight.add(cache_key)
             poster_url = str(getattr(item, "thumbnail_reference", "") or "")
             work.append((cache_key, media_url, poster_url))
-            if len(work) >= 4:
+            if len(work) >= 6:
                 break
         if not work:
             return
@@ -8343,9 +8343,9 @@ class App(ctk.CTk):
                         frames = extract_video_hover_preview_frames_pil_browser(
                             media_url,
                             timeout=7.5,
-                            duration_seconds=3.0,
-                            sample_count=16,
-                            frame_delay_ms=75,
+                            duration_seconds=30.0,
+                            sample_count=32,
+                            frame_delay_ms=70,
                             referer=page_url,
                             poster_url=poster_url,
                         )
@@ -8354,10 +8354,10 @@ class App(ctk.CTk):
                             media_url,
                             timeout=5.5,
                             seek_seconds=0.0,
-                            duration_seconds=3.0,
-                            fps=8,
+                            duration_seconds=12.0,
+                            fps=2,
                             referer=page_url,
-                            max_frames=16,
+                            max_frames=24,
                         )
                     if len(frames) >= 2:
                         hover_cache[cache_key] = tuple(frame.copy() for frame in frames)
@@ -10239,7 +10239,7 @@ class App(ctk.CTk):
             # Browser-hover references preload direct video elements before hover.
             # Run this independently from thumbnail probing so a poster/thumbnail
             # cache hit cannot suppress animated hover frames again.
-            candidates = candidates[:4]
+            candidates = candidates[:6]
             for candidate in candidates:
                 video_hover_preview_status_by_id[candidate.resource_id] = "pending"
             video_hover_probe_thread_active = True
@@ -10627,7 +10627,7 @@ class App(ctk.CTk):
                             index_value = video_hover_animation_index_by_resource_id.get(resource_id, 0) % len(frames)
                             video_hover_animation_index_by_resource_id[resource_id] = index_value + 1
                             label.configure(text="", image=frames[index_value])
-                            video_hover_animation_after_id_by_resource_id[resource_id] = window.after(85, _step)
+                            video_hover_animation_after_id_by_resource_id[resource_id] = window.after(70, _step)
                         except Exception:
                             video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
 
