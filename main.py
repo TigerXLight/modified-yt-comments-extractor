@@ -8313,7 +8313,7 @@ class App(ctk.CTk):
         hover_cache = self.__dict__.setdefault("webpage_video_hover_preview_pil_frames_by_url", {})
         inflight = self.__dict__.setdefault("webpage_video_hover_preview_prefetch_inflight", set())
         cache_limit = 48
-        work: list[tuple[str, str]] = []
+        work: list[tuple[str, str, str]] = []
         for item in resources:
             media_url = str(getattr(item, "reference_url", "") or getattr(item, "canonical_url", "") or "").strip()
             if not media_url:
@@ -8328,33 +8328,36 @@ class App(ctk.CTk):
             if cache_key in hover_cache or cache_key in inflight:
                 continue
             inflight.add(cache_key)
-            work.append((cache_key, media_url))
+            poster_url = str(getattr(item, "thumbnail_reference", "") or "")
+            work.append((cache_key, media_url, poster_url))
             if len(work) >= 4:
                 break
         if not work:
             return
 
-        def worker(snapshot: tuple[tuple[str, str], ...]) -> None:
+        def worker(snapshot: tuple[tuple[str, str, str], ...]) -> None:
             added = 0
-            for cache_key, media_url in snapshot:
+            for cache_key, media_url, poster_url in snapshot:
                 try:
                     try:
                         frames = extract_video_hover_preview_frames_pil_browser(
                             media_url,
-                            timeout=6.5,
-                            duration_seconds=6.0,
-                            sample_count=6,
+                            timeout=7.5,
+                            duration_seconds=3.0,
+                            sample_count=16,
+                            frame_delay_ms=75,
                             referer=page_url,
-                            poster_url=str(getattr(item, "thumbnail_reference", "") or ""),
+                            poster_url=poster_url,
                         )
                     except Exception:
                         frames = extract_video_hover_preview_frames_pil(
                             media_url,
                             timeout=5.5,
                             seek_seconds=0.0,
-                            duration_seconds=6.0,
-                            fps=3,
+                            duration_seconds=3.0,
+                            fps=8,
                             referer=page_url,
+                            max_frames=16,
                         )
                     if len(frames) >= 2:
                         hover_cache[cache_key] = tuple(frame.copy() for frame in frames)
@@ -9896,9 +9899,10 @@ class App(ctk.CTk):
                 try:
                     hover_frames = extract_video_hover_preview_frames_pil_browser(
                         hover_url,
-                        timeout=6.5,
-                        duration_seconds=6.0,
-                        sample_count=6,
+                        timeout=7.5,
+                        duration_seconds=3.0,
+                        sample_count=16,
+                        frame_delay_ms=75,
                         referer=page_url,
                         poster_url=str(getattr(item, "thumbnail_reference", "") or ""),
                     )
@@ -9908,9 +9912,10 @@ class App(ctk.CTk):
                         hover_url,
                         timeout=5.5,
                         seek_seconds=0.0,
-                        duration_seconds=6.0,
-                        fps=3,
+                        duration_seconds=3.0,
+                        fps=8,
                         referer=page_url,
+                        max_frames=16,
                     )
                 webpage_video_hover_preview_pil_frames_by_url[hover_cache_key] = tuple(frame.copy() for frame in hover_frames)
                 while len(webpage_video_hover_preview_pil_frames_by_url) > webpage_video_hover_preview_cache_limit:
@@ -10616,7 +10621,7 @@ class App(ctk.CTk):
                             index_value = video_hover_animation_index_by_resource_id.get(resource_id, 0) % len(frames)
                             video_hover_animation_index_by_resource_id[resource_id] = index_value + 1
                             label.configure(text="", image=frames[index_value])
-                            video_hover_animation_after_id_by_resource_id[resource_id] = window.after(220, _step)
+                            video_hover_animation_after_id_by_resource_id[resource_id] = window.after(85, _step)
                         except Exception:
                             video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
 

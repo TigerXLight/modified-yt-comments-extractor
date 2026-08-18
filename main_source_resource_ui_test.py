@@ -481,7 +481,12 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "Prefetched {count} animated video hover preview" in inspect.getsource(App)
     assert "_start_video_hover_preview_probe(display_resources)" in source
     assert "Browser-hover references preload direct video elements before hover" in source
-    assert "cache hit cannot suppress animated hover frames again" in inspect.getsource(App)
+    assert "sample_count=16" in source
+    assert "frame_delay_ms=75" in source
+    assert "window.after(85, _step)" in source
+    assert "poster_url=poster_url" in inspect.getsource(App)
+    assert "poster/thumbnail" in app_source
+    assert "cache hit cannot suppress animated hover frames again" in app_source
     assert "serious_review_markers" in source
 
 

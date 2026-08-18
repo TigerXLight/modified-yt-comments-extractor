@@ -225,8 +225,8 @@ def extract_video_frame_preview_pil(
 
 def _browser_hover_preview_sample_times(
     *,
-    duration_seconds: float = 6.0,
-    sample_count: int = 6,
+    duration_seconds: float = 3.0,
+    sample_count: int = 16,
 ) -> tuple[float, ...]:
     """Return early sample times for browser-backed hover previews.
 
@@ -235,7 +235,7 @@ def _browser_hover_preview_sample_times(
     state.  Our Tk grid cannot embed that player directly, so V78L samples the
     same early playback window ahead of hover and caches the frames.
     """
-    count = max(2, min(12, int(sample_count)))
+    count = max(2, min(18, int(sample_count)))
     duration = max(0.6, float(duration_seconds))
     if count == 2:
         return (0.0, min(duration, 1.0))
@@ -280,12 +280,13 @@ def build_browser_video_hover_preview_document(
 def extract_video_hover_preview_frames_pil_browser(
     url: str,
     *,
-    timeout: float = 6.5,
+    timeout: float = 7.5,
     referer: str = "",
     poster_url: str = "",
     max_size: tuple[int, int] = (168, 128),
-    duration_seconds: float = 6.0,
-    sample_count: int = 6,
+    duration_seconds: float = 3.0,
+    sample_count: int = 16,
+    frame_delay_ms: int = 75,
     browser_executable_path: str | None = None,
 ) -> tuple[Image.Image, ...]:
     """Extract hover-preview frames using a real browser video element.
@@ -358,42 +359,92 @@ def extract_video_hover_preview_frames_pil_browser(
                 # Some CDNs do not report canplay quickly, but still paint the
                 # first frame.  Continue to screenshot attempts below.
                 pass
-            for sample_time in sample_times:
-                try:
-                    locator.evaluate(
-                        """async (video, seconds) => {
-                          video.muted = true;
-                          video.volume = 0;
-                          const duration = Number.isFinite(video.duration) ? video.duration : 0;
-                          const target = duration ? Math.min(Math.max(0, seconds), Math.max(0, duration - 0.05)) : Math.max(0, seconds);
-                          if (Math.abs((video.currentTime || 0) - target) > 0.05) {
-                            await new Promise((resolve) => {
-                              let finished = false;
-                              const cleanup = () => video.removeEventListener('seeked', done);
-                              const done = () => { if (!finished) { finished = true; cleanup(); resolve(true); } };
-                              video.addEventListener('seeked', done, { once: true });
-                              try { video.currentTime = target; } catch (_err) { done(); }
-                              setTimeout(done, 450);
-                            });
-                          }
-                          try { await video.play(); } catch (_err) {}
-                          await new Promise((resolve) => setTimeout(resolve, 80));
-                          video.pause();
-                          return true;
-                        }""",
-                        [sample_time],
-                        timeout=timeout_ms,
-                    )
-                except Exception:
-                    pass
+            def _capture_current_video_frame() -> bool:
                 try:
                     png_bytes = locator.screenshot(type="png", timeout=max(800, min(timeout_ms, 2500)))
                     image = Image.open(BytesIO(png_bytes)).convert("RGBA")
                     image.thumbnail(max_size, Image.LANCZOS)
                     if min(image.size) >= 24:
                         frames.append(image.copy())
+                        return True
                 except Exception:
-                    continue
+                    return False
+                return False
+
+            requested_frames = max(2, min(18, int(sample_count)))
+            delay_ms = max(35, min(220, int(frame_delay_ms)))
+
+            # V78M smooth path: let the browser's media decoder play naturally
+            # and screenshot a short burst.  This is closer to real hover-video
+            # playback than V78L's sparse seek-to-sample slideshow.
+            try:
+                locator.evaluate(
+                    """async (video) => {
+                      video.muted = true;
+                      video.volume = 0;
+                      const seekToStart = async () => {
+                        if ((video.currentTime || 0) <= 0.08) return true;
+                        await new Promise((resolve) => {
+                          let finished = false;
+                          const cleanup = () => video.removeEventListener('seeked', done);
+                          const done = () => { if (!finished) { finished = true; cleanup(); resolve(true); } };
+                          video.addEventListener('seeked', done, { once: true });
+                          try { video.currentTime = 0; } catch (_err) { done(); }
+                          setTimeout(done, 450);
+                        });
+                        return true;
+                      };
+                      await seekToStart();
+                      try { await video.play(); } catch (_err) {}
+                      return true;
+                    }""",
+                    timeout=timeout_ms,
+                )
+                for _index in range(requested_frames):
+                    try:
+                        page.wait_for_timeout(delay_ms)
+                    except Exception:
+                        pass
+                    _capture_current_video_frame()
+                try:
+                    locator.evaluate("video => { try { video.pause(); } catch (_err) {} return true; }", timeout=900)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+            unique_digests_so_far = {hashlib.sha1(frame.tobytes()).hexdigest() + str(frame.size) for frame in frames}
+            if len(frames) < 2 or len(unique_digests_so_far) < 2:
+                frames.clear()
+                for sample_time in sample_times:
+                    try:
+                        locator.evaluate(
+                            """async (video, seconds) => {
+                              video.muted = true;
+                              video.volume = 0;
+                              const duration = Number.isFinite(video.duration) ? video.duration : 0;
+                              const target = duration ? Math.min(Math.max(0, seconds), Math.max(0, duration - 0.05)) : Math.max(0, seconds);
+                              if (Math.abs((video.currentTime || 0) - target) > 0.05) {
+                                await new Promise((resolve) => {
+                                  let finished = false;
+                                  const cleanup = () => video.removeEventListener('seeked', done);
+                                  const done = () => { if (!finished) { finished = true; cleanup(); resolve(true); } };
+                                  video.addEventListener('seeked', done, { once: true });
+                                  try { video.currentTime = target; } catch (_err) { done(); }
+                                  setTimeout(done, 450);
+                                });
+                              }
+                              try { await video.play(); } catch (_err) {}
+                              await new Promise((resolve) => setTimeout(resolve, 80));
+                              video.pause();
+                              return true;
+                            }""",
+                            [sample_time],
+                            timeout=timeout_ms,
+                        )
+                    except Exception:
+                        pass
+                    _capture_current_video_frame()
             try:
                 context.close()
                 browser.close()
@@ -407,18 +458,18 @@ def extract_video_hover_preview_frames_pil_browser(
     unique_digests = {hashlib.sha1(frame.tobytes()).hexdigest() + str(frame.size) for frame in frames}
     if len(frames) < 2 or len(unique_digests) < 2:
         raise RuntimeError("Browser video hover preview did not produce multiple distinct frames.")
-    return tuple(frames[: max(2, min(12, int(sample_count)))])
+    return tuple(frames[: max(2, min(18, int(sample_count)))])
 
 def extract_video_hover_preview_frames_pil(
     url: str,
     *,
     timeout: float = 5.5,
     seek_seconds: float = 0.0,
-    duration_seconds: float = 6.0,
-    fps: int = 3,
+    duration_seconds: float = 3.0,
+    fps: int = 8,
     referer: str = "",
     max_size: tuple[int, int] = (168, 128),
-    max_frames: int = 10,
+    max_frames: int = 16,
 ) -> tuple[Image.Image, ...]:
     """Extract a short hover-preview GIF and return small PIL frames.
 
