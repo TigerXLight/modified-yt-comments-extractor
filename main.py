@@ -12,6 +12,7 @@ import html
 import os
 import re
 import sys
+import tempfile
 import array
 import csv
 import json
@@ -25,6 +26,7 @@ import urllib.request
 import webbrowser
 from dataclasses import dataclass, replace
 from pathlib import Path
+from io import BytesIO
 from tkinter import filedialog, messagebox, simpledialog
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -628,6 +630,8 @@ class App(ctk.CTk):
         self.source_screenshot_preferences: dict[str, dict[str, bool]] = {}
         self._main_pointer_wheel_bound: bool = False
         self.source_resource_selections: dict[str, tuple[str, ...]] = {}
+        self.webpage_image_session_output_root: Optional[Path] = None
+        self.webpage_image_session_download_cache: dict[tuple[str, str], str] = {}
         self.youtube_source_row_quality_vars: dict[str, ctk.StringVar] = {}
         self.youtube_source_row_quality_enabled_vars: dict[str, ctk.BooleanVar] = {}
         self.youtube_source_row_preferences: dict[str, YouTubeGuiMediaPreferences] = {}
@@ -2165,6 +2169,7 @@ class App(ctk.CTk):
         self.session_file_folder_names = []
         self.session_file_folder_collapsed = {}
         self.session_file_folder_editing = ""
+        self._cleanup_webpage_image_session_downloads(reset_state=True)
         self.selected_session_file_path = ""
         self.active_media_file_path = ""
         self.active_transcript_file_path = ""
@@ -2553,6 +2558,21 @@ class App(ctk.CTk):
             self._set_linked_transcript_media(None)
         if self.active_transcript_file_path == normalized_path:
             self.active_transcript_file_path = ""
+        try:
+            root = getattr(self, "webpage_image_session_output_root", None)
+            if root:
+                root_path = Path(root).resolve()
+                target_path = Path(normalized_path).resolve()
+                if target_path.is_relative_to(root_path):
+                    Path(normalized_path).unlink(missing_ok=True)
+                    cache = getattr(self, "webpage_image_session_download_cache", {}) or {}
+                    self.webpage_image_session_download_cache = {
+                        key: value
+                        for key, value in cache.items()
+                        if self._normalise_session_file_path(value) != normalized_path
+                    }
+        except Exception:
+            logger.debug("Could not clean detached temporary webpage image file.", exc_info=True)
         self._refresh_session_files_list()
 
     def _refresh_session_files_list(self) -> None:
@@ -7084,6 +7104,7 @@ class App(ctk.CTk):
             self.fetch_state.request_cancel()
             if self._fetch_thread_ref and self._fetch_thread_ref.is_alive():
                 self._fetch_thread_ref.join(timeout=2.0)
+        self._cleanup_webpage_image_session_downloads()
         self.destroy()
 
     def _youtube_credential_service(self) -> YouTubeCredentialMigrationService:
@@ -9097,6 +9118,87 @@ class App(ctk.CTk):
         ]
         messagebox.showinfo("Archive status", "\n".join(details))
 
+
+    def _webpage_image_session_download_root(self) -> Path:
+        root = getattr(self, "webpage_image_session_output_root", None)
+        if root is None:
+            root = (
+                Path(tempfile.gettempdir())
+                / "ytce_webpage_image_downloads"
+                / f"session_{os.getpid()}_{id(self):x}"
+            )
+            self.webpage_image_session_output_root = root
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _cleanup_webpage_image_session_downloads(self, *, reset_state: bool = False) -> None:
+        root = getattr(self, "webpage_image_session_output_root", None)
+        if not root:
+            if reset_state:
+                self.webpage_image_session_download_cache = {}
+            return
+        try:
+            root_path = Path(root)
+            temp_root = Path(tempfile.gettempdir()).resolve()
+            # Safety guard: only remove the app-managed temp subtree.
+            if root_path.resolve().is_relative_to(temp_root / "ytce_webpage_image_downloads"):
+                shutil.rmtree(root_path, ignore_errors=True)
+        except Exception:
+            logger.debug("Could not clean temporary webpage image downloads.", exc_info=True)
+        finally:
+            if reset_state:
+                self.webpage_image_session_output_root = None
+                self.webpage_image_session_download_cache = {}
+
+    def _remember_webpage_image_session_downloads(
+        self,
+        *,
+        row: SourceResourceRowState,
+        selected_resource_ids: tuple[str, ...],
+        downloaded_files: tuple[str, ...],
+        manifest_json: str = "",
+    ) -> None:
+        cache = getattr(self, "webpage_image_session_download_cache", None)
+        if cache is None:
+            cache = {}
+            self.webpage_image_session_download_cache = cache
+
+        remembered = False
+        if manifest_json and os.path.isfile(manifest_json):
+            try:
+                payload = json.loads(Path(manifest_json).read_text(encoding="utf-8"))
+                for record in payload.get("records", []) or []:
+                    source_resource = record.get("source_resource", {}) or {}
+                    resource_id = str(source_resource.get("resource_id") or "")
+                    local_path = str(record.get("local_file_path") or "")
+                    if resource_id and local_path and os.path.isfile(local_path):
+                        cache[(row.row_id, resource_id)] = local_path
+                        remembered = True
+            except Exception:
+                logger.debug("Could not read webpage image download manifest for cache.", exc_info=True)
+
+        if not remembered:
+            for resource_id, local_path in zip(selected_resource_ids, downloaded_files):
+                if local_path and os.path.isfile(local_path):
+                    cache[(row.row_id, resource_id)] = local_path
+
+    def _cached_webpage_image_session_paths(
+        self,
+        *,
+        row: SourceResourceRowState,
+        selected_resource_ids: tuple[str, ...],
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        cache = getattr(self, "webpage_image_session_download_cache", {}) or {}
+        cached_paths: list[str] = []
+        missing_ids: list[str] = []
+        for resource_id in selected_resource_ids:
+            cached_path = cache.get((row.row_id, resource_id))
+            if cached_path and os.path.isfile(cached_path):
+                cached_paths.append(cached_path)
+            else:
+                missing_ids.append(resource_id)
+        return tuple(cached_paths), tuple(missing_ids)
+
     def _open_source_resource_window(self, row_id: str, resource_kind: str) -> None:
         row = self._source_row_by_id(row_id)
         if row is None:
@@ -9104,7 +9206,11 @@ class App(ctk.CTk):
         state = resource_dialog_state_for_row(row, resource_kind)
         window = ctk.CTkToplevel(self)
         window.title("Images" if resource_kind == RESOURCE_KIND_IMAGE else "Video & Audio")
-        window.geometry("640x460")
+        window.geometry("880x720")
+        try:
+            window.minsize(820, 640)
+        except Exception:
+            pass
         window.transient(self)
         window.grab_set()
 
@@ -9118,6 +9224,7 @@ class App(ctk.CTk):
         header.pack(anchor="w", padx=16, pady=(14, 8))
         selected_ids: set[str] = set(state.selected_resource_ids)
         vars_by_id: dict[str, Any] = {}
+        thumbnail_images_by_id: dict[str, ctk.CTkImage] = {}
 
         filter_frame = ctk.CTkFrame(window, fg_color=COLORS["bg_input"], corner_radius=7)
         filter_frame.pack(fill="x", padx=16, pady=(0, 8))
@@ -9126,43 +9233,57 @@ class App(ctk.CTk):
         text_filter_var = ctk.StringVar(value="")
         min_width_var = ctk.StringVar(value="")
         min_height_var = ctk.StringVar(value="")
+
+        def add_filter_label(text: str, row_index: int, column_index: int, padx: tuple[int, int]) -> None:
+            ctk.CTkLabel(
+                filter_frame,
+                text=text,
+                text_color=COLORS["text_muted"],
+                font=ctk.CTkFont(size=10, weight="bold"),
+                anchor="w",
+            ).grid(row=row_index, column=column_index, sticky="ew", padx=padx, pady=(6 if row_index == 0 else 2, 0))
+
+        add_filter_label("URL filter", 0, 0, (8, 4))
+        add_filter_label("Type/name filter", 0, 1, (4, 8))
         url_filter_entry = ctk.CTkEntry(
             filter_frame,
             textvariable=url_filter_var,
-            placeholder_text="URL filter",
+            placeholder_text="Filter by URL",
             height=30,
             font=ctk.CTkFont(size=11),
         )
-        url_filter_entry.grid(row=0, column=0, sticky="ew", padx=(8, 4), pady=(8, 4))
+        url_filter_entry.grid(row=1, column=0, sticky="ew", padx=(8, 4), pady=(2, 5))
         text_filter_entry = ctk.CTkEntry(
             filter_frame,
             textvariable=text_filter_var,
-            placeholder_text="Type/name filter",
+            placeholder_text="Filter by type or name",
             height=30,
             font=ctk.CTkFont(size=11),
         )
-        text_filter_entry.grid(row=0, column=1, sticky="ew", padx=(4, 8), pady=(8, 4))
+        text_filter_entry.grid(row=1, column=1, sticky="ew", padx=(4, 8), pady=(2, 5))
+        add_filter_label("Min width", 2, 0, (8, 4))
+        add_filter_label("Min height", 2, 1, (4, 8))
         min_width_entry = ctk.CTkEntry(
             filter_frame,
             textvariable=min_width_var,
-            placeholder_text="Min width",
+            placeholder_text="0 px",
             height=28,
             font=ctk.CTkFont(size=11),
         )
-        min_width_entry.grid(row=1, column=0, sticky="ew", padx=(8, 4), pady=(0, 6))
+        min_width_entry.grid(row=3, column=0, sticky="ew", padx=(8, 4), pady=(2, 6))
         min_height_entry = ctk.CTkEntry(
             filter_frame,
             textvariable=min_height_var,
-            placeholder_text="Min height",
+            placeholder_text="0 px",
             height=28,
             font=ctk.CTkFont(size=11),
         )
-        min_height_entry.grid(row=1, column=1, sticky="ew", padx=(4, 8), pady=(0, 6))
+        min_height_entry.grid(row=3, column=1, sticky="ew", padx=(4, 8), pady=(2, 6))
         only_links_var = ctk.BooleanVar(value=False)
         save_subfolder_var = ctk.BooleanVar(value=True)
         rename_files_var = ctk.BooleanVar(value=False)
         option_row = ctk.CTkFrame(filter_frame, fg_color="transparent")
-        option_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
+        option_row.grid(row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
         ctk.CTkCheckBox(
             option_row,
             text="Only images from links" if resource_kind == RESOURCE_KIND_IMAGE else "Only media from links",
@@ -9212,15 +9333,195 @@ class App(ctk.CTk):
                 rename_files=bool(rename_files_var.get()),
             )
 
+        def _preview_url_for_item(item: Any) -> str:
+            return str(item.thumbnail_reference or item.reference_url or item.canonical_url or "")
+
+        def _image_preview_for_item(item: Any) -> ctk.CTkImage | None:
+            if resource_kind != RESOURCE_KIND_IMAGE:
+                return None
+            if item.resource_id in thumbnail_images_by_id:
+                return thumbnail_images_by_id[item.resource_id]
+            preview_url = _preview_url_for_item(item)
+            if not preview_url:
+                return None
+            try:
+                request = urllib.request.Request(
+                    preview_url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 YTCE image preview",
+                        "Accept": "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8",
+                    },
+                )
+                with urllib.request.urlopen(request, timeout=2.5) as response:
+                    data = response.read(768 * 1024)
+                preview_image = Image.open(BytesIO(data))
+                if getattr(preview_image, "is_animated", False):
+                    preview_image.seek(0)
+                preview_image = preview_image.convert("RGBA")
+                original_preview_width, original_preview_height = preview_image.size
+                if min(original_preview_width, original_preview_height) < 24:
+                    return None
+                preview_image.thumbnail((168, 128), Image.LANCZOS)
+                ctk_image = ctk.CTkImage(
+                    light_image=preview_image.copy(),
+                    dark_image=preview_image.copy(),
+                    size=(max(1, preview_image.width), max(1, preview_image.height)),
+                )
+                thumbnail_images_by_id[item.resource_id] = ctk_image
+                return ctk_image
+            except Exception:
+                return None
+
+        image_detail_popup: Any = None
+        image_detail_popup_hide_after_id: Any = None
+
+        def hide_image_detail_popup() -> None:
+            nonlocal image_detail_popup, image_detail_popup_hide_after_id
+            if image_detail_popup_hide_after_id:
+                try:
+                    window.after_cancel(image_detail_popup_hide_after_id)
+                except Exception:
+                    pass
+            image_detail_popup_hide_after_id = None
+            if image_detail_popup is not None:
+                try:
+                    image_detail_popup.destroy()
+                except Exception:
+                    pass
+            image_detail_popup = None
+
+        def schedule_hide_image_detail_popup(delay_ms: int = 220) -> None:
+            nonlocal image_detail_popup_hide_after_id
+            if image_detail_popup_hide_after_id:
+                try:
+                    window.after_cancel(image_detail_popup_hide_after_id)
+                except Exception:
+                    pass
+            image_detail_popup_hide_after_id = window.after(delay_ms, hide_image_detail_popup)
+
+        def image_resource_detail_text(item: Any) -> str:
+            lines = [str(item.display_name or item.resource_id)]
+            if getattr(item, "media_type", "") or getattr(item, "extension", ""):
+                lines.append(f"Type: {item.media_type or item.extension}")
+            if getattr(item, "width", None) and getattr(item, "height", None):
+                lines.append(f"Size: {item.width}x{item.height}")
+            if getattr(item, "from_link", False):
+                lines.append("Source: linked image")
+            elif getattr(item, "provenance", ""):
+                lines.append(f"Source: {str(item.provenance).replace('_', ' ')}")
+            url = getattr(item, "reference_url", "") or getattr(item, "canonical_url", "")
+            if url:
+                lines.append(str(url))
+            if getattr(item, "warning", ""):
+                lines.append(f"Review: {item.warning}")
+            return "\n".join(line for line in lines if line)
+
+        def show_image_detail_popup(item: Any, event: Any) -> None:
+            nonlocal image_detail_popup, image_detail_popup_hide_after_id
+            if image_detail_popup_hide_after_id:
+                try:
+                    window.after_cancel(image_detail_popup_hide_after_id)
+                except Exception:
+                    pass
+                image_detail_popup_hide_after_id = None
+            if image_detail_popup is not None:
+                try:
+                    image_detail_popup.destroy()
+                except Exception:
+                    pass
+            popup = tk.Frame(
+                list_frame,
+                bg=COLORS["bg_input"],
+                highlightbackground=COLORS["border"],
+                highlightthickness=1,
+                bd=0,
+            )
+            text = image_resource_detail_text(item)
+            tk.Label(
+                popup,
+                text=text,
+                justify="left",
+                anchor="w",
+                bg=COLORS["bg_input"],
+                fg=COLORS["text_primary"],
+                padx=10,
+                pady=7,
+                font=("Segoe UI", 9),
+                wraplength=360,
+            ).pack(fill="both", expand=True)
+            popup.bind("<Enter>", lambda _event: None, add="+")
+            popup.bind("<Leave>", lambda _event: schedule_hide_image_detail_popup(220), add="+")
+            image_detail_popup = popup
+            popup.update_idletasks()
+            width = max(220, min(400, popup.winfo_reqwidth()))
+            height = max(48, popup.winfo_reqheight())
+            try:
+                x = int(getattr(event, "x_root", 0)) - list_frame.winfo_rootx() + 14
+                y = int(getattr(event, "y_root", 0)) - list_frame.winfo_rooty() + 16
+                x = max(4, min(x, max(4, list_frame.winfo_width() - width - 8)))
+                y = max(4, min(y, max(4, list_frame.winfo_height() - height - 8)))
+            except Exception:
+                x, y = 12, 12
+            popup.place(x=x, y=y, width=width)
+            popup.lift()
+
+        def bind_image_detail_hover(widget: Any, item: Any) -> None:
+            try:
+                widget.bind("<Enter>", lambda event, i=item: show_image_detail_popup(i, event), add="+")
+                widget.bind("<Motion>", lambda event, i=item: show_image_detail_popup(i, event), add="+")
+                widget.bind("<Leave>", lambda _event: schedule_hide_image_detail_popup(220), add="+")
+            except Exception:
+                pass
+
+        def _pointer_inside_widget(widget: Any) -> bool:
+            try:
+                pointer_x, pointer_y = widget.winfo_pointerxy()
+                root_x, root_y = widget.winfo_rootx(), widget.winfo_rooty()
+                return root_x <= pointer_x <= root_x + widget.winfo_width() and root_y <= pointer_y <= root_y + widget.winfo_height()
+            except Exception:
+                return False
+
+        def show_image_dialog_notice(title: str, body: str) -> None:
+            notice = ctk.CTkToplevel(window)
+            notice.title(title)
+            notice.geometry("460x180")
+            notice.transient(window)
+            notice.grab_set()
+            frame = ctk.CTkFrame(notice, fg_color=COLORS["bg_card"], corner_radius=10)
+            frame.pack(fill="both", expand=True, padx=12, pady=12)
+            ctk.CTkLabel(
+                frame,
+                text=title,
+                text_color=COLORS["text_primary"],
+                font=ctk.CTkFont(size=14, weight="bold"),
+                anchor="w",
+            ).pack(anchor="w", padx=14, pady=(12, 6))
+            ctk.CTkLabel(
+                frame,
+                text=body,
+                text_color=COLORS["text_secondary"],
+                font=ctk.CTkFont(size=11),
+                justify="left",
+                wraplength=410,
+            ).pack(anchor="w", fill="x", padx=14, pady=(0, 12))
+            ctk.CTkButton(frame, text="OK", width=80, command=notice.destroy).pack(anchor="e", padx=14, pady=(0, 12))
+            try:
+                notice.focus_set()
+            except Exception:
+                pass
+
         def render_resource_list() -> None:
             nonlocal active_state
             active_state = filter_resource_dialog_items(state, current_filters())
             for child in list_frame.winfo_children():
                 child.destroy()
             vars_by_id.clear()
+            column_count = 4 if resource_kind == RESOURCE_KIND_IMAGE else 2
+            for column_index in range(column_count):
+                list_frame.grid_columnconfigure(column_index, weight=1, uniform="image_cards")
             if not active_state.resources:
                 empty_text = (
-                    "No selectable image resources are loaded yet. Click Discover images to scan the source page."
+                    "Images are scanned automatically when this window opens. Use Refresh images to rescan the source page."
                     if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}
                     else "No selectable media resources match this source/filter."
                 )
@@ -9228,12 +9529,13 @@ class App(ctk.CTk):
                     list_frame,
                     text=empty_text,
                     text_color=COLORS["text_muted"],
-                    wraplength=560,
+                    wraplength=640,
                     justify="left",
                 )
-                empty.pack(anchor="w", padx=8, pady=8)
+                empty.grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=8)
                 return
-            for item in active_state.resources:
+            tile_checkbox_refreshers: list[Any] = []
+            for index, item in enumerate(active_state.resources):
                 item_var = ctk.BooleanVar(value=item.resource_id in selected_ids)
                 vars_by_id[item.resource_id] = item_var
 
@@ -9244,46 +9546,208 @@ class App(ctk.CTk):
                         selected_ids.discard(resource_id)
                     refresh_count()
 
+                def toggle_item(resource_id: str = item.resource_id, var: Any = item_var) -> None:
+                    if not item.selectable:
+                        return
+                    var.set(not bool(var.get()))
+                    on_item_toggle(resource_id, var)
+
                 needs_review = bool(item.warning or "review" in str(item.status or "").lower())
+                selected_now = item.resource_id in selected_ids
                 item_card = ctk.CTkFrame(
                     list_frame,
                     fg_color="#3b151c" if needs_review else COLORS["bg_card"],
-                    border_width=1 if needs_review else 0,
-                    border_color="#ff5d73" if needs_review else COLORS["border"],
-                    corner_radius=7,
+                    border_width=2 if selected_now else (1 if needs_review else 0),
+                    border_color=COLORS["accent"] if selected_now else ("#ff5d73" if needs_review else COLORS["border"]),
+                    corner_radius=8,
+                    width=190,
+                    height=194,
                 )
-                item_card.pack(fill="x", padx=8, pady=5)
-                item_card.grid_columnconfigure(1, weight=1)
-                row_text = f"{item.display_name or item.resource_id} ({item.extension or item.media_type or 'resource'})"
-                if item.width and item.height:
-                    row_text = f"{row_text} - {item.width}x{item.height}"
+                item_card.grid(
+                    row=index // column_count,
+                    column=index % column_count,
+                    sticky="nsew",
+                    padx=(6, 3) if index % column_count != column_count - 1 else (3, 6),
+                    pady=6,
+                )
+                item_card.grid_propagate(False)
+                item_card.grid_columnconfigure(0, weight=1)
+                item_card.grid_rowconfigure(0, weight=1, minsize=140)
+                item_card.grid_rowconfigure(1, weight=0, minsize=34)
+                item_card.bind("<Button-1>", lambda _event, rid=item.resource_id, var=item_var: toggle_item(rid, var), add="+")
+
+                preview = _image_preview_for_item(item)
+                preview_box = ctk.CTkFrame(item_card, fg_color=COLORS["bg_input"], corner_radius=6, width=174, height=142)
+                preview_box.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 5))
+                preview_box.grid_propagate(False)
+                preview_box.bind("<Button-1>", lambda _event, rid=item.resource_id, var=item_var: toggle_item(rid, var), add="+")
+                image_size_text = f"{item.width}x{item.height}" if item.width and item.height else "size unknown"
+                image_size_badge = ctk.CTkLabel(
+                    preview_box,
+                    text=image_size_text,
+                    fg_color=COLORS["bg_dark"],
+                    text_color=COLORS["text_primary"],
+                    corner_radius=5,
+                    font=ctk.CTkFont(size=10, weight="bold"),
+                )
+
+                def show_image_size_badge(_event: Any = None, badge: Any = image_size_badge) -> None:
+                    if badge is None:
+                        return
+                    try:
+                        badge.place(relx=0.5, rely=1.0, anchor="s", y=-7)
+                        badge.lift()
+                    except Exception:
+                        pass
+
+                def hide_image_size_badge(_event: Any = None, badge: Any = image_size_badge) -> None:
+                    if badge is None:
+                        return
+                    try:
+                        badge.place_forget()
+                    except Exception:
+                        pass
+
+                if preview is not None:
+                    preview_label = ctk.CTkLabel(preview_box, text="", image=preview)
+                    preview_label.pack(expand=True)
+                    preview_label.bind("<Button-1>", lambda _event, rid=item.resource_id, var=item_var: toggle_item(rid, var), add="+")
+                else:
+                    preview_label = ctk.CTkLabel(
+                        preview_box,
+                        text="IMG",
+                        text_color=COLORS["text_secondary"],
+                        font=ctk.CTkFont(size=78, weight="bold"),
+                    )
+                    preview_label.pack(expand=True)
+                    preview_label.bind("<Button-1>", lambda _event, rid=item.resource_id, var=item_var: toggle_item(rid, var), add="+")
+                preview_box.bind("<Enter>", show_image_size_badge, add="+")
+                preview_box.bind("<Motion>", show_image_size_badge, add="+")
+                preview_label.bind("<Enter>", show_image_size_badge, add="+")
+                preview_label.bind("<Motion>", show_image_size_badge, add="+")
+                preview_box.bind("<Leave>", hide_image_size_badge, add="+")
+
+                checkbox = ctk.CTkLabel(
+                    preview_box,
+                    text="☐",
+                    width=25,
+                    height=25,
+                    corner_radius=6,
+                    fg_color=COLORS["bg_input"],
+                    text_color=COLORS["text_primary"],
+                    font=ctk.CTkFont(size=16, weight="bold"),
+                )
+
+                checkbox_visibility_state: dict[str, Any] = {"visible": False, "selected": None}
+
+                def _sync_tile_checkbox_style(cb: Any = checkbox, var: Any = item_var, state: dict[str, Any] = checkbox_visibility_state) -> bool:
+                    try:
+                        selected = bool(var.get())
+                        if state.get("selected") == selected:
+                            return selected
+                        state["selected"] = selected
+                        cb.configure(
+                            text=("✓" if selected else "☐"),
+                            fg_color=(COLORS["accent"] if selected else COLORS["bg_input"]),
+                            text_color=(COLORS["text_primary"] if selected else "#8a969e"),
+                        )
+                        return selected
+                    except Exception:
+                        return False
+
+                def _pointer_is_over_tile_image_area(image_area: Any = preview_box) -> bool:
+                    return _pointer_inside_widget(image_area)
+
+                def _place_tile_checkbox(cb: Any = checkbox, state: dict[str, Any] = checkbox_visibility_state) -> None:
+                    if state.get("visible"):
+                        return
+                    cb.place(x=6, y=6)
+                    cb.lift()
+                    state["visible"] = True
+
+                def _hide_tile_checkbox(cb: Any = checkbox, state: dict[str, Any] = checkbox_visibility_state) -> None:
+                    if not state.get("visible"):
+                        return
+                    cb.place_forget()
+                    state["visible"] = False
+
+                def refresh_tile_checkbox_visibility(_event: Any = None, image_area: Any = preview_box, cb: Any = checkbox, var: Any = item_var, state: dict[str, Any] = checkbox_visibility_state) -> None:
+                    try:
+                        selected = _sync_tile_checkbox_style(cb, var, state)
+                        should_show = bool(selected) or _pointer_is_over_tile_image_area(image_area)
+                        if should_show:
+                            _place_tile_checkbox(cb, state)
+                        else:
+                            _hide_tile_checkbox(cb, state)
+                    except Exception:
+                        pass
+
+                def toggle_item_from_checkbox(_event: Any = None, resource_id: str = item.resource_id, var: Any = item_var) -> str:
+                    try:
+                        toggle_item(resource_id, var)
+                        refresh_tile_checkbox_visibility()
+                    except Exception:
+                        pass
+                    return "break"
+
+                checkbox.bind("<Button-1>", toggle_item_from_checkbox, add="+")
+                try:
+                    item_var.trace_add("write", lambda *_args, refresh=refresh_tile_checkbox_visibility: refresh())
+                except Exception:
+                    pass
+
+                if bool(item_var.get()):
+                    refresh_tile_checkbox_visibility()
+                else:
+                    checkbox.place_forget()
+                    checkbox_visibility_state["visible"] = False
+                tile_checkbox_refreshers.append(refresh_tile_checkbox_visibility)
+
+                name_text = f"{item.display_name or item.resource_id} ({item.extension or item.media_type or 'resource'})"
                 if item.duration_seconds:
-                    row_text = f"{row_text} - {item.duration_seconds:g}s"
-                checkbox = ctk.CTkCheckBox(
+                    name_text = f"{name_text}  {item.duration_seconds:g}s"
+                if len(name_text) > 30:
+                    name_text = name_text[:27] + "..."
+                name_label = ctk.CTkLabel(
                     item_card,
-                    text="",
-                    variable=item_var,
-                    command=on_item_toggle,
-                    state="normal" if item.selectable else "disabled",
-                    width=22,
-                )
-                checkbox.grid(row=0, column=0, rowspan=2, sticky="nw", padx=(8, 6), pady=8)
-                ctk.CTkLabel(
-                    item_card,
-                    text=row_text,
-                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text=name_text,
+                    font=ctk.CTkFont(size=11, weight="bold"),
                     text_color=COLORS["text_primary"],
                     anchor="w",
-                ).grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(7, 0))
-                detail_text = item.reference_url or item.canonical_url or item.provenance
-                ctk.CTkLabel(
-                    item_card,
-                    text=detail_text,
-                    font=ctk.CTkFont(size=10),
-                    text_color=COLORS["text_muted"],
-                    anchor="w",
-                    wraplength=520,
-                ).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(0, 7))
+                    cursor="hand2",
+                )
+                name_label.grid(row=1, column=0, sticky="w", padx=10, pady=(2, 0))
+                name_label.bind("<Button-1>", lambda _event, rid=item.resource_id, var=item_var: toggle_item(rid, var), add="+")
+                bind_image_detail_hover(name_label, item)
+                for hover_widget in (preview_box, preview_label, checkbox):
+                    hover_widget.bind("<Enter>", refresh_tile_checkbox_visibility, add="+")
+                    hover_widget.bind("<Motion>", refresh_tile_checkbox_visibility, add="+")
+                    hover_widget.bind("<Leave>", refresh_tile_checkbox_visibility, add="+")
+                for boundary_widget in (item_card, name_label):
+                    boundary_widget.bind("<Enter>", refresh_tile_checkbox_visibility, add="+")
+                    boundary_widget.bind("<Leave>", refresh_tile_checkbox_visibility, add="+")
+
+            tile_checkbox_watchdog: dict[str, Any] = {"after_id": None}
+
+            def _refresh_all_tile_checkbox_visibility(_event: Any = None) -> None:
+                for refresh_checkbox in tile_checkbox_refreshers:
+                    try:
+                        refresh_checkbox()
+                    except Exception:
+                        pass
+
+            def _run_tile_checkbox_watchdog() -> None:
+                try:
+                    _refresh_all_tile_checkbox_visibility()
+                    tile_checkbox_watchdog["after_id"] = window.after(80, _run_tile_checkbox_watchdog)
+                except Exception:
+                    tile_checkbox_watchdog["after_id"] = None
+
+            try:
+                tile_checkbox_watchdog["after_id"] = window.after(80, _run_tile_checkbox_watchdog)
+            except Exception:
+                _refresh_all_tile_checkbox_visibility()
+
         status_label = ctk.CTkLabel(
             window,
             text="0 selected",
@@ -9307,20 +9771,30 @@ class App(ctk.CTk):
         def refresh_count() -> None:
             status_label.configure(text=f"{current_state().selection_count} selected")
 
+        def sync_visible_checkboxes() -> None:
+            for item in active_state.resources:
+                var = vars_by_id.get(item.resource_id)
+                if var is None:
+                    continue
+                try:
+                    var.set(item.resource_id in selected_ids)
+                except Exception:
+                    pass
+
         def select_all() -> None:
             selected_state = select_all_resources(active_state)
             selected_ids.update(selected_state.selected_resource_ids)
-            render_resource_list()
+            sync_visible_checkboxes()
             refresh_count()
 
         def clear_all() -> None:
             clear_resource_selection(active_state)
             for item in active_state.resources:
                 selected_ids.discard(item.resource_id)
-            render_resource_list()
+            sync_visible_checkboxes()
             refresh_count()
 
-        def discover_page_images() -> None:
+        def discover_page_images(*, show_messages: bool = True) -> None:
             nonlocal row, state, active_state
             if resource_kind != RESOURCE_KIND_IMAGE:
                 return
@@ -9333,13 +9807,15 @@ class App(ctk.CTk):
             try:
                 discovery = discover_webpage_images_for_row(row)
             except Exception as exc:
-                messagebox.showwarning("Image discovery failed", str(exc))
+                if show_messages:
+                    messagebox.showwarning("Image discovery failed", str(exc))
                 self.log_message(f"Webpage image discovery failed: {exc}", "warning")
                 return
             if not discovery.resources:
                 warning_text = "; ".join(discovery.warnings) if discovery.warnings else "No image candidates were found."
-                messagebox.showinfo("Image discovery", warning_text)
-                self.log_message(f"Webpage image discovery found no selectable images for {row.domain}.", "warning")
+                if show_messages:
+                    messagebox.showinfo("Image discovery", warning_text)
+                self.log_message(f"Webpage image discovery found no selectable images for {row.domain}: {warning_text}", "warning")
                 return
             row = replace(row, image_resources=discovery.resources)
             for index, existing_row in enumerate(self.source_resource_rows):
@@ -9370,46 +9846,85 @@ class App(ctk.CTk):
             selected_state = current_state()
             self.source_resource_selections[row.row_id] = selected_state.selected_resource_ids
             if not selected_state.selected_resource_ids:
-                messagebox.showinfo("Media preservation", "No media resources were selected.")
+                self.log_message("No media resources were selected for download.", "muted")
                 return
 
             if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}:
-                output_dir = filedialog.askdirectory(
-                    parent=window,
-                    title="Choose folder for selected webpage image downloads",
-                )
-                if not output_dir:
-                    self.log_message("Webpage image download cancelled before output folder selection.", "muted")
-                    return
-                result = download_selected_webpage_images(
+                cached_files, missing_resource_ids = self._cached_webpage_image_session_paths(
                     row=row,
-                    state=selected_state,
-                    output_dir=output_dir,
-                    filters=current_filters(),
+                    selected_resource_ids=selected_state.selected_resource_ids,
                 )
-                if result.downloaded_files:
-                    self._intake_session_files(
-                        result.downloaded_files,
+                result = None
+                if missing_resource_ids:
+                    missing_state = selected_state.__class__(
+                        source_row_id=selected_state.source_row_id,
+                        resource_kind=selected_state.resource_kind,
+                        resources=selected_state.resources,
+                        selected_resource_ids=missing_resource_ids,
+                        committed_resource_ids=selected_state.committed_resource_ids,
+                    )
+                    result = download_selected_webpage_images(
+                        row=row,
+                        state=missing_state,
+                        output_dir=self._webpage_image_session_download_root(),
+                        filters=current_filters(),
+                    )
+                    self._remember_webpage_image_session_downloads(
+                        row=row,
+                        selected_resource_ids=missing_resource_ids,
+                        downloaded_files=tuple(result.downloaded_files),
+                        manifest_json=result.manifest_json,
+                    )
+                downloaded_files = tuple(result.downloaded_files) if result is not None else ()
+                files_for_intake = tuple(cached_files) + downloaded_files
+                if files_for_intake:
+                    intake_result = self._intake_session_files(
+                        files_for_intake,
                         select_first=False,
                         source_label="downloaded webpage image",
                     )
-                messagebox.showinfo("Webpage image download", result.message)
+                    try:
+                        self._refresh_session_files_list()
+                        self._refresh_export_entry_state()
+                        self.update_idletasks()
+                    except Exception:
+                        logger.debug("Could not refresh FILES after webpage image download.", exc_info=True)
+                    added_count = len(getattr(intake_result, "added_paths", ()) or ())
+                    duplicate_count = len(getattr(intake_result, "duplicate_paths", ()) or ())
+                    visible_count = len(getattr(self, "session_files", ()) or ())
+                    self.log_message(
+                        (
+                            "Downloaded webpage image FILES refresh: "
+                            f"visible_entries={visible_count}; added={added_count}; duplicates={duplicate_count}; "
+                            f"reused={len(cached_files)}."
+                        ),
+                        "success" if added_count or duplicate_count else "muted",
+                    )
+                newly_downloaded = result.resources_downloaded if result is not None else 0
+                failed_count = result.resources_failed if result is not None else 0
+                manifest_path = result.manifest_json if result is not None else "cached session files"
+                if failed_count or (not newly_downloaded and not cached_files):
+                    show_image_dialog_notice(
+                        "Webpage image download",
+                        result.message if result is not None else "No webpage images were downloaded.",
+                    )
                 self.log_message(
                     (
-                        f"Webpage image download: selected={result.resources_selected}; "
-                        f"downloaded={result.resources_downloaded}; failed={result.resources_failed}; "
-                        f"manifest={result.manifest_json or 'not written'}"
+                        f"Webpage image download: selected={len(selected_state.selected_resource_ids)}; "
+                        f"new_downloads={newly_downloaded}; reused={len(cached_files)}; failed={failed_count}; "
+                        f"session_temp={self._webpage_image_session_download_root()}; "
+                        f"manifest={manifest_path or 'not written'}"
                     ),
-                    "success" if result.resources_downloaded else "warning",
+                    "success" if newly_downloaded or cached_files else "warning",
                 )
                 return
 
             if row.adapter_id != "msn":
                 preview = build_selected_media_preservation_preview(row, selected_state)
-                messagebox.showinfo("Media preservation preview", preview.message)
+                messagebox.showinfo("Media selection preview", preview.message)
                 self.log_message(
                     (
-                        f"Media preservation preview retained for {row.adapter_id}; "
+                        f"Media selection preview retained for {row.adapter_id}; "
                         f"records={preview.selected_count}; network/download/recording actions performed: none."
                     ),
                     "muted",
@@ -9489,32 +10004,34 @@ class App(ctk.CTk):
         media_action_hint = ctk.CTkLabel(
             window,
             text=(
-                "Discover images scans the source page HTML. Preserve selected downloads only explicitly selected accessible image URLs for non-YouTube/non-X rows; guarded MSN rendered-HTML review remains available."
+                "Images are scanned automatically when this window opens. Select image tiles, then Download selected to add them to this session's temporary FILES area. Hover a file name for source details; hover an image square for dimensions; use EXPORT to choose a final output folder."
                 if resource_kind == RESOURCE_KIND_IMAGE
-                else "Preserve selected keeps a manifest/preview unless a guarded source-specific media download flow is available."
+                else "Review selected keeps a manifest/preview unless a guarded source-specific media download flow is available."
             ),
             text_color=COLORS["text_muted"],
             font=ctk.CTkFont(size=10),
             wraplength=590,
             justify="left",
         )
-        media_action_hint.pack(anchor="w", padx=16, pady=(0, 4))
+        media_action_hint.pack(side="bottom", anchor="w", padx=16, pady=(0, 4))
 
         button_row = ctk.CTkFrame(window, fg_color="transparent")
-        button_row.pack(fill="x", padx=16, pady=(8, 14))
+        button_row.pack(side="bottom", fill="x", padx=16, pady=(8, 14))
         if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}:
             ctk.CTkButton(
                 button_row,
-                text="Discover images",
+                text="Refresh images",
                 width=128,
-                command=discover_page_images,
+                command=lambda: discover_page_images(show_messages=True),
             ).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(button_row, text="All", width=80, command=select_all).pack(side="left")
+        ctk.CTkButton(button_row, text="Select all", width=96, command=select_all).pack(side="left")
         ctk.CTkButton(button_row, text="Clear all", width=90, command=clear_all).pack(side="left", padx=(8, 0))
         ctk.CTkButton(button_row, text="Cancel", width=90, command=window.destroy).pack(side="right")
-        ctk.CTkButton(button_row, text="Preserve selected", width=136, command=download_selected_resources).pack(side="right", padx=(0, 8))
+        ctk.CTkButton(button_row, text=("Download selected" if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"} else "Review selected"), width=152, command=download_selected_resources).pack(side="right", padx=(0, 8))
         render_resource_list()
         refresh_count()
+        if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"} and not state.resources:
+            window.after(150, lambda: discover_page_images(show_messages=False))
 
     def _on_discussion_source_selected(self, selected_label: str) -> None:
         self._store_current_source_screenshot_preferences()

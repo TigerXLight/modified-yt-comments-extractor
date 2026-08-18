@@ -143,14 +143,34 @@ def test_source_url_intake_preserves_order_dedupes_and_retains_invalid_text() ->
     text = f"bad words {MSN_URL}, {YOUTUBE_URL} {MSN_URL} https://example.invalid/x"
     result = parse_source_url_intake(text)
 
-    assert [row.adapter_id for row in result.rows] == ["msn", "youtube"]
-    assert result.accepted_raw_urls == (MSN_URL, YOUTUBE_URL)
+    assert [row.adapter_id for row in result.rows] == ["msn", "youtube", "webpage"]
+    assert result.accepted_raw_urls == (MSN_URL, YOUTUBE_URL, "https://example.invalid/x")
     assert result.duplicate_raw_urls == (MSN_URL,)
-    assert "https://example.invalid/x" in result.invalid_tokens
+    assert "https://example.invalid/x" not in result.invalid_tokens
     assert "bad" in result.invalid_tokens
     assert result.remaining_text
     assert "network" in result.scope
 
+
+
+
+def test_generic_webpage_row_accepts_localhost_for_image_discovery() -> None:
+    url = "http://127.0.0.1:8765/article.html"
+    row = build_source_resource_row(url)
+
+    assert row.adapter_id == "webpage"
+    assert row.adapter_display_name == "Webpage"
+    assert row.canonical_url == url
+    assert row.title == "Article.Html"
+    assert row.comments_supported is False
+    assert row.livechat_supported is False
+    assert row.image_resources == ()
+    assert "media discovery is user-triggered" in row.provenance
+
+    result = parse_source_url_intake(url)
+    assert len(result.rows) == 1
+    assert result.rows[0].adapter_id == "webpage"
+    assert result.invalid_tokens == ()
 
 def test_discussion_selection_persists_and_falls_back_after_removal() -> None:
     msn = build_source_resource_row(MSN_URL)

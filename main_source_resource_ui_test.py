@@ -426,12 +426,91 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "Rename files" in source
     assert "Apply filters" not in source
     assert "Review / Preserve" not in source
-    assert "Preserve selected" in source
+    assert "Preserve selected" not in source
+    assert "Download selected" in source
+    assert "Review selected" in source
+    assert "Refresh images" in source
+    assert "thumbnail_images_by_id" in source
+    assert "_image_preview_for_item" in source
+    assert "Image.open(BytesIO(data))" in source
+    assert "Select all" in source
+    assert "window.after" in source
+    assert "show_messages=False" in source
     assert "trace_add" in source
     assert "filter_resource_dialog_items" in source
     assert "MediaResourceFilterState" in source
     assert "build_selected_media_preservation_preview" in source
     assert "network/download/recording actions performed: none" in source
+
+
+def test_media_resource_window_download_labels_and_gallery() -> None:
+    source = inspect.getsource(App._open_source_resource_window)
+
+    assert 'text=("Download selected"' in source
+    assert "Review selected" in source
+    assert "preview_box" in source
+    assert "thumbnail_images_by_id" in source
+    assert "source_badge" not in source
+    assert "bind_image_detail_hover" in source
+    assert "image_resource_detail_text" in source
+    assert "show_image_detail_popup" in source
+    assert "show_image_size_badge" in source
+    assert "hide_image_size_badge" in source
+    assert "bind_image_detail_hover(preview_box" not in source
+    assert "bind_image_detail_hover(preview_label" not in source
+    assert "checkbox.place_forget()" in source
+    assert "checkbox = ctk.CTkLabel(" in source
+    assert "checkbox = ctk.CTkCheckBox(" not in source
+    checkbox_start = source.index("checkbox = ctk.CTkLabel(")
+    checkbox_end = source.index("def toggle_item_from_checkbox", checkbox_start)
+    checkbox_source = source[checkbox_start:checkbox_end]
+    assert "ctk.CTkLabel(\n                    preview_box," in checkbox_source
+    assert 'fg_color="transparent"' not in checkbox_source
+    assert 'fg_color=COLORS["bg_input"]' in checkbox_source
+    assert "cb.place(x=6, y=6)" in source
+    assert "tile_checkbox_refreshers" in source
+    assert "_refresh_all_tile_checkbox_visibility" in source
+    assert "tile_checkbox_watchdog" in source
+    assert "def _run_tile_checkbox_watchdog" in source
+    assert "checkbox_visibility_state" in source
+    assert 'state.get("visible")' in source
+    assert 'state.get("selected") == selected' in source
+    assert 'window.bind("<Motion>", _refresh_all_tile_checkbox_visibility' not in source
+    assert 'window.after(25, _run_tile_checkbox_watchdog)' not in source
+    assert 'window.after(80, _run_tile_checkbox_watchdog)' in source
+    assert "item_card.grid_rowconfigure(0, weight=1" in source
+    assert 'preview_box.grid(row=0, column=0, sticky="nsew"' in source
+    assert "font=ctk.CTkFont(size=78" in source
+    assert 'preview_box.bind("<Motion>", show_image_size_badge' in source
+    assert "for hover_widget in (preview_box, preview_label, checkbox):" in source
+    assert "for boundary_widget in (item_card, name_label):" in source
+    assert 'hover_widget.bind("<Motion>", refresh_tile_checkbox_visibility' in source
+    assert 'boundary_widget.bind("<Motion>", refresh_tile_checkbox_visibility' not in source
+    assert "def _poll_tile_checkbox_boundary" not in source
+    assert "checkbox_pointer_poll" not in source
+    assert "start_tile_checkbox_hover" not in source
+    assert "toggle_item_from_checkbox" in source
+    assert 'item_var.trace_add("write"' in source
+    assert "_pointer_is_over_tile_image_control" not in source
+    assert "item_card.after(35, _poll_tile_checkbox_boundary)" not in source
+    assert 'hover_widget.bind("<Motion>", show_tile_checkbox' not in source
+    assert "for hover_widget in (item_card, preview_box, preview_label, name_label):" not in source
+    assert "def _pointer_is_over_tile_image_area" in source
+    assert "return _pointer_inside_widget(image_area)" in source
+    assert "return _pointer_inside_widget(image_area) or _pointer_inside_widget(cb)" not in source
+    assert "_pointer_inside_widget" in source
+    assert "original_preview_width, original_preview_height" in source
+    assert "Hover a file name for source details; hover an image square for dimensions" in source
+    assert "Select all" in source
+    assert "Downloaded webpage image FILES refresh" in source
+    assert "_webpage_image_session_download_root" in source
+    assert "_cached_webpage_image_session_paths" in source
+    assert "Choose folder for selected webpage image downloads" not in source
+    assert "use EXPORT to choose a final output folder" in source
+    assert "_refresh_session_files_list()" in source
+    assert "_refresh_export_entry_state()" in source
+    assert "update_idletasks()" in source
+
 
 
 def test_files_sidebar_resizer_and_review_highlight_are_more_usable() -> None:
@@ -1097,6 +1176,7 @@ def run_self_test() -> None:
     test_youtube_filters_live_in_combined_youtube_settings_window()
     test_database_sidebar_has_compact_home_controls_and_hides_counts_when_off()
     test_media_resource_window_has_v77f_preservation_scaffolding()
+    test_media_resource_window_download_labels_and_gallery()
     test_files_sidebar_resizer_and_review_highlight_are_more_usable()
     test_sidebar_top_buttons_do_not_expand_with_sash()
     test_database_toggle_animation_avoids_final_state_jump()
@@ -1134,3 +1214,32 @@ def test_webpage_image_downloader_backend_is_wired_for_selected_images() -> None
     assert 'text="Discover images"' in source
     assert 'row.adapter_id not in {"youtube", "twitter_x"}' in source
     assert "network/download/recording actions performed: none" in source
+
+
+
+def test_media_resource_window_session_gallery_ux_finish() -> None:
+    source = inspect.getsource(App._open_source_resource_window)
+
+    assert "show_image_dialog_notice" in source
+    assert "Downloaded {newly_downloaded} new webpage image(s)." not in source
+    assert "Hover a file name for source details" in source
+    assert "hover an image square for dimensions" in source
+    assert "image_resource_detail_text" in source
+    assert "bind_image_detail_hover" in source
+    assert "show_image_size_badge" in source
+    assert "hide_image_size_badge" in source
+    assert "column_count = 4 if resource_kind == RESOURCE_KIND_IMAGE else 2" in source
+    assert "def sync_visible_checkboxes()" in source
+    assert "render_resource_list()\n            refresh_count()" not in inspect.getsource(App._open_source_resource_window).split("def sync_visible_checkboxes()", 1)[1].split("def discover_page_images", 1)[0]
+
+
+def test_webpage_image_session_temp_cleaned_when_files_are_cleared() -> None:
+    clear_source = inspect.getsource(App._clear_all_session_files_clicked)
+    remove_source = inspect.getsource(App._remove_session_file)
+    cleanup_source = inspect.getsource(App._cleanup_webpage_image_session_downloads)
+
+    assert "_cleanup_webpage_image_session_downloads(reset_state=True)" in clear_source
+    assert "reset_state: bool = False" in cleanup_source
+    assert "webpage_image_session_output_root = None" in cleanup_source
+    assert "webpage_image_session_download_cache = {}" in cleanup_source
+    assert "Could not clean detached temporary webpage image file" in remove_source

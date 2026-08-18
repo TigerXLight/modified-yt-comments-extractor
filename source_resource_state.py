@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass, replace
@@ -40,6 +41,36 @@ SOURCE_RESOURCE_SCOPE = (
 _URL_START_RE = re.compile(r"https?://", re.IGNORECASE)
 _TRACKING_QUERY_PREFIXES = ("utm_",)
 _TRACKING_QUERY_KEYS = {"ocid", "cid", "cvid", "pc", "ei", "form", "spm"}
+
+
+@dataclass(frozen=True)
+class _GenericWebpageCapabilities:
+    supports_comments: bool = False
+    supports_livechat: bool = False
+
+
+@dataclass(frozen=True)
+class _GenericWebpageMetadata:
+    display_name: str = "Webpage"
+
+
+class _GenericWebpageAdapter:
+    """Fallback source adapter for ordinary webpages used by image discovery."""
+
+    source_name = "webpage"
+    metadata = _GenericWebpageMetadata()
+    capabilities = _GenericWebpageCapabilities()
+
+    def normalize_url(self, url: str) -> str:
+        return canonicalize_webpage_url(url)
+
+    def extract_source_id(self, canonical_url: str) -> str:
+        digest = hashlib.sha1(canonical_url.encode("utf-8")).hexdigest()[:16]
+        return digest
+
+
+_GENERIC_WEBPAGE_ADAPTER = _GenericWebpageAdapter()
+
 
 
 def _normalize_chat_url_escapes(value: str) -> str:
@@ -273,6 +304,17 @@ def _remove_accepted_tokens(text: str, accepted_tokens: Iterable[str]) -> str:
     return "\n".join(line for line in lines if line).strip()
 
 
+
+
+def canonicalize_webpage_url(url: str) -> str:
+    parsed = urlsplit((url or "").strip())
+    scheme = parsed.scheme.lower()
+    if scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Webpage URL must use http or https and include a host")
+    host = parsed.netloc.lower()
+    path = parsed.path or "/"
+    return urlunsplit((scheme, host, path, parsed.query, ""))
+
 def canonicalize_msn_url(url: str) -> str:
     parsed = urlsplit((url or "").strip())
     if parsed.scheme.lower() not in {"http", "https"}:
@@ -295,9 +337,11 @@ def _canonicalize_for_adapter(url: str) -> tuple[Any, str, str]:
     url = normalize_source_url_token(url)
     adapter = find_source_adapter(url)
     if adapter is None:
-        raise ValueError(f"No supported source adapter for URL: {url}")
+        adapter = _GENERIC_WEBPAGE_ADAPTER
     if adapter.source_name == "msn":
         canonical = canonicalize_msn_url(url)
+    elif adapter.source_name == "webpage":
+        canonical = canonicalize_webpage_url(url)
     else:
         canonical = adapter.normalize_url(url)
     source_id = adapter.extract_source_id(canonical)
@@ -490,6 +534,12 @@ def build_source_resource_row(
         warnings.append(
             "MSN source row no longer injects fake fixture media. Use Images/GIFs or Video/Audio, then run discovery against rendered MSN HTML."
         )
+    elif adapter.source_name == "webpage":
+        display_title = title.strip() or _fallback_title_from_url(canonical)
+        image_items, media_items = (), ()
+        comments_status = "Generic webpage rows support image discovery/download only; discussion comments are not supported."
+        livechat_status = "Generic webpage rows do not support livechat."
+        provenance = "generic webpage adapter; media discovery is user-triggered"
     else:
         comments_status = "Discussion capture is not supported for this adapter."
         livechat_status = "Livechat is not supported for this adapter."
