@@ -178,6 +178,7 @@ from webpage_image_downloader_backend import (
     prewarm_rendered_browser_discovery_worker,
     start_internal_browser_image_discovery_service,
 )
+from webpage_video_resource_bridge import discover_webpage_videos_for_row
 from source_twitter_compact_row import (
     TWITTER_COMPACT_MODES,
     TWITTER_SCREENSHOT_MODES,
@@ -7365,6 +7366,7 @@ class App(ctk.CTk):
             self._start_youtube_source_row_metadata_probe(intake.rows)
             self._start_twitter_source_row_metadata_probe(intake.rows)
             self._start_webpage_image_source_row_prefetch(intake.rows)
+            self._start_webpage_video_source_row_prefetch(intake.rows)
             self.log_message(
                 f"Added {len(intake.rows)} source row(s). Metadata probes may run for supported source rows.",
                 "success",
@@ -8227,6 +8229,107 @@ class App(ctk.CTk):
                 self.after(
                     0,
                     lambda row_id=row.row_id, key=cache_key, result=discovery: self._apply_prefetched_webpage_image_discovery(
+                        row_id,
+                        key,
+                        result,
+                    ),
+                )
+
+        threading.Thread(target=worker, args=(tuple(work),), daemon=True).start()
+
+    def _webpage_video_prefetch_cache_key(self, row: SourceResourceRowState) -> str:
+        return str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "").strip()
+
+    def _source_row_should_prefetch_webpage_videos(self, row: SourceResourceRowState) -> bool:
+        # YouTube and X/Twitter keep source-specific media routes.  Generic
+        # webpage/MSN-style rows can run webpage video discovery in the
+        # background and still prefer JDownloader/API3128 for download routing.
+        if row.adapter_id in {"youtube", "twitter_x"}:
+            return False
+        url = self._webpage_video_prefetch_cache_key(row)
+        return url.lower().startswith(("http://", "https://"))
+
+    def _apply_prefetched_webpage_video_discovery(self, row_id: str, cache_key: str, discovery: Any) -> None:
+        cache = self.__dict__.setdefault("webpage_video_discovery_cache_by_url", {})
+        cache[cache_key] = discovery
+        while len(cache) > 24:
+            try:
+                cache.pop(next(iter(cache)))
+            except Exception:
+                break
+        updated_rows: list[SourceResourceRowState] = []
+        changed = False
+        target_domain = ""
+        for existing_row in self.__dict__.get("source_resource_rows", ()):
+            if existing_row.row_id == row_id:
+                target_domain = existing_row.domain
+                updated_rows.append(replace(existing_row, video_audio_resources=discovery.resources))
+                changed = True
+            else:
+                updated_rows.append(existing_row)
+        if changed:
+            self.source_resource_rows = updated_rows
+            try:
+                self._refresh_source_resource_rows()
+            except Exception:
+                logger.debug("Could not refresh source rows after video prefetch.", exc_info=True)
+        inflight = self.__dict__.setdefault("webpage_video_discovery_prefetch_inflight", set())
+        inflight.discard(cache_key)
+        summary = getattr(discovery, "summary", {}) or {}
+        if discovery.resources:
+            self.log_message(
+                (
+                    f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
+                    f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
+                    f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
+                    "Video & Audio can open from the cached candidate list."
+                ),
+                "muted",
+            )
+
+    def _mark_webpage_video_prefetch_finished(self, cache_key: str, error: Exception | None = None) -> None:
+        inflight = self.__dict__.setdefault("webpage_video_discovery_prefetch_inflight", set())
+        inflight.discard(cache_key)
+        if error is not None:
+            logger.debug("Webpage video prefetch failed for %s: %s", cache_key, error)
+
+    def _start_webpage_video_source_row_prefetch(self, rows: Sequence[SourceResourceRowState]) -> None:
+        # Video prefetch may perform static HTML and rendered DOM/network probes.
+        # It must not run from App.__new__(App) self-test stubs because those
+        # objects do not own a Tk interpreter or browser lifecycle.
+        if "tk" not in self.__dict__:
+            return
+        candidates = [row for row in rows if self._source_row_should_prefetch_webpage_videos(row)]
+        if not candidates:
+            return
+        cache = self.__dict__.setdefault("webpage_video_discovery_cache_by_url", {})
+        inflight = self.__dict__.setdefault("webpage_video_discovery_prefetch_inflight", set())
+        work: list[SourceResourceRowState] = []
+        for row in candidates:
+            cache_key = self._webpage_video_prefetch_cache_key(row)
+            if not cache_key or cache_key in cache or cache_key in inflight:
+                continue
+            inflight.add(cache_key)
+            work.append(row)
+        if not work:
+            return
+
+        def worker(snapshot: tuple[SourceResourceRowState, ...]) -> None:
+            for row in snapshot:
+                cache_key = self._webpage_video_prefetch_cache_key(row)
+                try:
+                    discovery = discover_webpage_videos_for_row(
+                        row,
+                        fetch_static_html=True,
+                        run_rendered_probe=True,
+                        rendered_probe_timeout_ms=12000,
+                    )
+                except Exception as error:
+                    self.after(0, lambda key=cache_key, err=error: self._mark_webpage_video_prefetch_finished(key, err))
+                    continue
+                self.after(
+                    0,
+                    lambda row_id=row.row_id, key=cache_key, result=discovery: self._apply_prefetched_webpage_video_discovery(
                         row_id,
                         key,
                         result,
