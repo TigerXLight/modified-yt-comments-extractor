@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from jdownloader_internal_paths import JDOWNLOADER_INTERNAL_BACKEND_ID
+from jdownloader_route_summary import normalize_jdownloader_route_metadata
 
 
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".m4v", ".dashvideo"}
@@ -61,6 +62,10 @@ class JDownloaderInternalManifest:
     api3128_finished_ms: int = 0
     flashgot_fallback_used: bool = False
     route_used: str = ""
+    route_label: str = ""
+    route_preference: str = ""
+    yt_dlp_used: bool = False
+    yt_dlp_role: str = ""
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
 
@@ -286,7 +291,7 @@ def build_download_manifest(
     warnings: Sequence[str] = (),
     errors: Sequence[str] = (),
 ) -> JDownloaderInternalManifest:
-    route = dict(route_metadata or {})
+    route = normalize_jdownloader_route_metadata(route_metadata)
     return JDownloaderInternalManifest(
         backend_id=JDOWNLOADER_INTERNAL_BACKEND_ID,
         source_url=source_url,
@@ -312,6 +317,10 @@ def build_download_manifest(
         api3128_finished_ms=int(route.get("api3128_finished_ms", 0) or 0),
         flashgot_fallback_used=bool(route.get("flashgot_fallback_used", False)),
         route_used=str(route.get("route_used", "") or ""),
+        route_label=str(route.get("route_label", "") or ""),
+        route_preference=str(route.get("route_preference", "") or ""),
+        yt_dlp_used=bool(route.get("yt_dlp_used", False)),
+        yt_dlp_role=str(route.get("yt_dlp_role", "") or ""),
         warnings=tuple(warnings),
         errors=tuple(errors),
     )

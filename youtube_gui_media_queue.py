@@ -24,6 +24,7 @@ from jdownloader_internal_paths import (
     JDOWNLOADER_INTERNAL_BACKEND_ID,
     YTDLP_FALLBACK_BACKEND_ID,
 )
+from jdownloader_route_summary import summarize_jdownloader_route_metadata
 from source_resource_state import SourceResourceRowState
 from youtube_media_download_backend import (
     YouTubeMediaDiscovery,
@@ -415,6 +416,7 @@ def queue_youtube_gui_source_row_selection(
     backend_failed = False
     internal_jdownloader_execution_manifest: dict[str, Any] = {}
     internal_jdownloader_completed_files: tuple[dict[str, Any], ...] = ()
+    internal_jdownloader_route_summary: dict[str, Any] = summarize_jdownloader_route_metadata({}).to_dict()
     internal_jdownloader_duplicate_warning = ""
 
     if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID:
@@ -449,6 +451,9 @@ def queue_youtube_gui_source_row_selection(
             internal_jdownloader_execution_manifest, manifest_warnings = _load_internal_jdownloader_execution_manifest(execution_manifest_path)
             warnings_list.extend(manifest_warnings)
             internal_jdownloader_completed_files = _completed_internal_jdownloader_file_records(internal_jdownloader_execution_manifest)
+            internal_jdownloader_route_summary = summarize_jdownloader_route_metadata(
+                manifest=internal_jdownloader_execution_manifest
+            ).to_dict()
             missing_finished_count = max(0, int(backend_result.files_count or 0) - len(internal_jdownloader_completed_files))
             if backend_result.status == "success" and missing_finished_count:
                 warnings_list.append(
@@ -530,6 +535,11 @@ def queue_youtube_gui_source_row_selection(
         "jdownloader_package_name": job_package_name if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID else "",
         "jdownloader_completed_files": list(internal_jdownloader_completed_files),
         "jdownloader_completed_file_count": len(internal_jdownloader_completed_files),
+        "jdownloader_route_summary": internal_jdownloader_route_summary,
+        "jdownloader_route_used": internal_jdownloader_route_summary.get("route_used", ""),
+        "jdownloader_route_label": internal_jdownloader_route_summary.get("route_label", ""),
+        "jdownloader_api3128_used": bool(internal_jdownloader_route_summary.get("api3128_used", False)),
+        "jdownloader_yt_dlp_role": internal_jdownloader_route_summary.get("yt_dlp_role", ""),
         "jdownloader_duplicate_state_suspected": bool(internal_jdownloader_duplicate_warning),
         "auto_mux": YOUTUBE_GUI_COMPONENT_VIDEO in components,
         "jdownloader_source": config.source_path if config else "",
@@ -561,7 +571,8 @@ def queue_youtube_gui_source_row_selection(
         f"FILES added: {len(files_to_add)}\n\n"
     )
     if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID:
-        message += "Backend: internal JDownloader\n"
+        route_label = str(internal_jdownloader_route_summary.get("route_label", "") or "JDownloader route not yet resolved")
+        message += f"Backend: internal JDownloader ({route_label})\n"
     if backend_id == JDOWNLOADER_INTERNAL_BACKEND_ID:
         message += (
             "Starting internal JDownloader engine...\n"

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import tempfile
@@ -262,6 +262,15 @@ def test_internal_jdownloader_success_manifest_files_are_added_to_files() -> Non
                                 {"kind": "audio", "path": str(audio_path), "size": audio_path.stat().st_size, "sha256": "a"},
                             ],
                             "engine": {"status": "READY", "warm_job": True},
+                            "route_metadata": {
+                                "api3128_enabled": True,
+                                "api3128_used": True,
+                                "api3128_package_complete_ms": 2297,
+                                "api3128_first_running_ms": 2311,
+                                "api3128_finished_ms": 3312,
+                                "flashgot_fallback_used": False,
+                                "route_used": "api3128",
+                            },
                             "warnings": [],
                             "errors": [],
                         }
@@ -292,10 +301,15 @@ def test_internal_jdownloader_success_manifest_files_are_added_to_files() -> Non
             assert any(path.endswith(".m4a") for path in result.files_to_add)
             assert result.files_to_add[0].endswith(".mp4")
             assert "Internal JDownloader completed files added: 2" in result.message
+            assert "API3128" in result.message
             manifest = json.loads(Path(result.manifest_json_path).read_text(encoding="utf-8"))
             assert manifest["jdownloader_completed_file_count"] == 2
             assert manifest["jdownloader_completed_files"][0]["kind"] == "video"
             assert manifest["jdownloader_duplicate_state_suspected"] is False
+            assert manifest["jdownloader_route_used"] == "api3128"
+            assert manifest["jdownloader_api3128_used"] is True
+            assert manifest["jdownloader_route_label"].startswith("JDownloader API3128")
+            assert manifest["jdownloader_yt_dlp_role"] == "fallback_only_after_jdownloader_routes"
     finally:
         queue.detect_jdownloader_internal_capabilities = original_detect
         queue.preferred_youtube_media_backend = original_preferred

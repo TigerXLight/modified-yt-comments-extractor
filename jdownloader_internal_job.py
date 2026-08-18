@@ -22,6 +22,7 @@ from jdownloader_internal_cnl import (
     submit_cnl_multiroute,
 )
 from jdownloader_internal_paths import JDOWNLOADER_INTERNAL_BACKEND_ID
+from jdownloader_route_summary import normalize_jdownloader_route_metadata
 from jdownloader_internal_process import JDownloaderInternalProcessManager, READY, default_process_manager
 
 
@@ -246,7 +247,7 @@ def submit_youtube_job_via_cnl(request: InternalJDownloaderJobRequest, *, timeou
         response_text=accepted_attempt.response_excerpt if accepted_attempt else "",
         elapsed_ms=int((time.monotonic() - start) * 1000),
         attempts=report.attempts,
-        route_metadata=dict(report.route_metadata or {}),
+        route_metadata=normalize_jdownloader_route_metadata(report.route_metadata or {}),
         warnings=warnings,
         errors=report.errors,
     )
@@ -345,6 +346,12 @@ def run_internal_youtube_job(
         "api3128_finished_ms": 0,
         "flashgot_fallback_used": False,
         "route_used": "",
+        "route_label": "JDownloader route not yet resolved",
+        "route_preference": "jdownloader_internal_api3128_preferred_before_yt_dlp",
+        "preferred_backend_id": JDOWNLOADER_INTERNAL_BACKEND_ID,
+        "fallback_backend_id": "yt_dlp_fallback",
+        "yt_dlp_used": False,
+        "yt_dlp_role": "fallback_only_after_jdownloader_routes",
     }
     files: tuple[Any, ...] = ()
 
@@ -464,6 +471,7 @@ def run_internal_youtube_job(
         errors.extend(submission.errors)
         submission_attempts = _submission_attempt_dicts(submission)
         route_metadata.update(dict(submission.route_metadata or {}))
+        route_metadata = normalize_jdownloader_route_metadata(route_metadata)
         write_phase("cnl_submission", "running" if _submission_accepted(submission.status) else "failed")
 
         if not _submission_accepted(submission.status):

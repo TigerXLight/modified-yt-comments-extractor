@@ -390,6 +390,9 @@ def test_api3128_submission_does_not_emit_legacy_cnl_permission_warning() -> Non
     assert result.accepted_route.startswith("/api3128/")
     assert result.route_metadata["route_used"] == "api3128"
     assert result.route_metadata["api3128_used"] is True
+    assert result.route_metadata.get("route_label", "").startswith("JDownloader API3128")
+    assert result.route_metadata.get("yt_dlp_role") == "fallback_only_after_jdownloader_routes"
+    assert result.route_metadata.get("yt_dlp_used") is False
     assert not any("CNL may require operator permission" in warning for warning in result.warnings)
 
 
@@ -437,6 +440,8 @@ def test_flashgot_fallback_keeps_cnl_permission_warning() -> None:
 
     assert result.accepted_route == "/flashgot"
     assert result.route_metadata["flashgot_fallback_used"] is True
+    assert result.route_metadata.get("route_label", "").startswith("JDownloader FlashGot")
+    assert result.route_metadata.get("yt_dlp_role") == "fallback_only_after_jdownloader_routes"
     assert any("CNL may require operator permission" in warning for warning in result.warnings)
 
 def main() -> None:

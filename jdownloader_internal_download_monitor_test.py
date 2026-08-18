@@ -87,6 +87,38 @@ def test_classifies_files_and_writes_manifest_shape() -> None:
         assert len(data["files"]) == 3
 
 
+def test_manifest_normalizes_api3128_route_identity_and_keeps_ytdlp_as_fallback() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        manifest = build_download_manifest(
+            source_url="https://youtu.be/example",
+            output_dir=root,
+            status="success",
+            phase="completed",
+            engine={"status": "READY", "project_local_runtime": True, "external_appdata_used_as_primary": False},
+            timings={},
+            files=(),
+            route_metadata={
+                "api3128_enabled": True,
+                "api3128_used": True,
+                "api3128_package_complete_ms": 2297,
+                "api3128_first_running_ms": 2311,
+                "api3128_finished_ms": 3312,
+                "flashgot_fallback_used": False,
+                "route_used": "api3128",
+            },
+        )
+        target = write_download_manifest(manifest, root / "jdownloader-internal-download-manifest.json")
+        data = json.loads(target.read_text(encoding="utf-8"))
+        assert data["route_used"] == "api3128"
+        assert data["api3128_used"] is True
+        assert data["flashgot_fallback_used"] is False
+        assert data["route_label"].startswith("JDownloader API3128")
+        assert data["yt_dlp_used"] is False
+        assert data["yt_dlp_role"] == "fallback_only_after_jdownloader_routes"
+        assert data["route_metadata"]["route_preference"] == "jdownloader_internal_api3128_preferred_before_yt_dlp"
+
+
 def test_wait_for_download_completion_success_and_timeout() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -155,6 +187,7 @@ def test_dash_audio_and_video_extensions_are_classified() -> None:
 
 def main() -> None:
     test_classifies_files_and_writes_manifest_shape()
+    test_manifest_normalizes_api3128_route_identity_and_keeps_ytdlp_as_fallback()
     test_wait_for_download_completion_success_and_timeout()
     test_collect_completed_files_skips_temporarily_locked_files()
     test_dash_audio_and_video_extensions_are_classified()
