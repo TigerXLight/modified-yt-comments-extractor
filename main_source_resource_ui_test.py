@@ -493,7 +493,8 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_static_first_followup_pending" in source
     assert "Quick-scanning static video/audio candidates" in source
     assert "run_rendered_probe=False" in source
-    assert "followup_full_probe=True" in source
+    assert "followup_full_probe=not source_prefetch_inflight_on_open" in source
+    assert "followup_full_probe=False" in source
     assert "serious_review_markers" in source
     main_source = Path("main.py").read_text(encoding="utf-8")
     assert "from webpage_video_live_preview_backend import" in main_source
@@ -504,6 +505,20 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "text=\"LIVE ▶\"" in source
     assert "open_browser_video_live_preview(" in source
     assert "if not video_live_preview_mode_enabled" in source
+    assert "from webpage_video_variant_grouping import" in main_source
+    assert "V78Q duplicate rendition grouping" in source
+    assert "video_variant_group_members_by_rep_id" in source
+    assert "_group_video_rendition_display_resources" in source
+    assert "group_video_rendition_items(" in source
+    assert "video_variant_quality_label" in source
+    assert "_video_variant_selected_item_for_rep" in source
+    assert "_cycle_video_variant_for_rep" in source
+    assert "grouped variant(s)" in source
+    assert "duplicate direct-video renditions are grouped" in main_source
+    assert "video_discovery_cache_poll_after_id" in source
+    assert "_video_source_row_prefetch_is_inflight" in source
+    assert "_schedule_video_prefetch_cache_poll" in source
+    assert "dialog paints static candidates immediately and polls the shared" in source
 
 
 def test_media_resource_window_download_labels_and_gallery() -> None:

@@ -192,6 +192,10 @@ from webpage_video_live_preview_backend import (
     can_open_browser_video_live_preview,
     open_browser_video_live_preview,
 )
+from webpage_video_variant_grouping import (
+    group_video_rendition_items,
+    video_variant_quality_label,
+)
 from source_twitter_compact_row import (
     TWITTER_COMPACT_MODES,
     TWITTER_SCREENSHOT_MODES,
@@ -9749,7 +9753,16 @@ class App(ctk.CTk):
         # browser probe.  This avoids a blank 12s+ dialog while preserving the
         # full static+rendered evidence pass.
         video_static_first_followup_pending = False
+        video_discovery_cache_poll_after_id: Any = None
         video_live_preview_mode_enabled = bool(getattr(self, "webpage_video_live_preview_enabled", True))
+        # V78Q duplicate rendition grouping: direct MP4/WebM quality variants
+        # of the same article clip should render as one card.  The grouped card
+        # defaults to the best quality while the quality button can choose a
+        # different selected quality variant for LIVE playback and Review selected.
+        video_variant_group_members_by_rep_id: dict[str, tuple[Any, ...]] = {}
+        video_variant_selected_id_by_rep_id: dict[str, str] = {}
+        video_variant_rep_id_by_resource_id: dict[str, str] = {}
+        video_grouped_variant_hidden_count = 0
         video_hover_animation_after_id_by_resource_id: dict[str, Any] = {}
         video_hover_animation_index_by_resource_id: dict[str, int] = {}
 
@@ -9822,7 +9835,68 @@ class App(ctk.CTk):
                 return media_url
             return ""
 
+        def _video_variant_selected_item_for_rep(item: Any) -> Any:
+            variants = video_variant_group_members_by_rep_id.get(str(getattr(item, "resource_id", "") or ""), ())
+            if not variants:
+                return item
+            selected_id = video_variant_selected_id_by_rep_id.get(
+                str(getattr(item, "resource_id", "") or ""),
+                str(getattr(variants[0], "resource_id", "") or ""),
+            )
+            for variant in variants:
+                if str(getattr(variant, "resource_id", "") or "") == selected_id:
+                    return variant
+            return variants[0]
+
+        def _video_variant_button_text_for_rep(item: Any) -> str:
+            selected_variant = _video_variant_selected_item_for_rep(item)
+            return f"{video_variant_quality_label(selected_variant)} ▾"
+
+        def _group_video_rendition_display_resources(resources: tuple[Any, ...]) -> tuple[Any, ...]:
+            nonlocal video_grouped_variant_hidden_count
+            video_variant_group_members_by_rep_id.clear()
+            video_variant_rep_id_by_resource_id.clear()
+            video_grouped_variant_hidden_count = 0
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO or not video_live_preview_mode_enabled:
+                return resources
+            display_resources, groups_by_rep_id, rep_id_by_variant_id = group_video_rendition_items(
+                resources,
+                media_url_getter=_video_live_preview_url_for_item,
+            )
+            for rep_id, variants in groups_by_rep_id.items():
+                video_variant_group_members_by_rep_id[rep_id] = variants
+                previous_selected = video_variant_selected_id_by_rep_id.get(rep_id)
+                valid_variant_ids = {str(getattr(variant, "resource_id", "") or "") for variant in variants}
+                if previous_selected not in valid_variant_ids:
+                    video_variant_selected_id_by_rep_id[rep_id] = str(getattr(variants[0], "resource_id", "") or "")
+            video_variant_rep_id_by_resource_id.update(rep_id_by_variant_id)
+            video_grouped_variant_hidden_count = max(
+                0,
+                sum(max(0, len(variants) - 1) for variants in groups_by_rep_id.values()),
+            )
+            return display_resources
+
+        def _cycle_video_variant_for_rep(item: Any, button: Any = None) -> None:
+            rep_id = str(getattr(item, "resource_id", "") or "")
+            variants = video_variant_group_members_by_rep_id.get(rep_id, ())
+            if len(variants) < 2:
+                return
+            selected_id = video_variant_selected_id_by_rep_id.get(rep_id, str(getattr(variants[0], "resource_id", "") or ""))
+            variant_ids = [str(getattr(variant, "resource_id", "") or "") for variant in variants]
+            try:
+                next_index = (variant_ids.index(selected_id) + 1) % len(variants)
+            except ValueError:
+                next_index = 0
+            video_variant_selected_id_by_rep_id[rep_id] = variant_ids[next_index]
+            try:
+                if button is not None:
+                    button.configure(text=_video_variant_button_text_for_rep(item))
+            except Exception:
+                pass
+            refresh_count()
+
         def _open_live_video_preview_for_item(item: Any) -> None:
+            item = _video_variant_selected_item_for_rep(item)
             preview_url = _video_live_preview_url_for_item(item)
             if not preview_url:
                 show_image_dialog_notice(
@@ -9831,7 +9905,10 @@ class App(ctk.CTk):
                 )
                 return
             page_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "")
+            quality_label = video_variant_quality_label(item)
             title = str(getattr(item, "display_name", "") or getattr(item, "title", "") or "Video live preview")
+            if quality_label and quality_label != "quality unknown":
+                title = f"{title} [{quality_label}]"
             poster_url = str(getattr(item, "thumbnail_reference", "") or "")
             try:
                 preview_file = open_browser_video_live_preview(
@@ -10470,7 +10547,7 @@ class App(ctk.CTk):
                 pass
 
         def render_resource_list() -> None:
-            nonlocal active_state, hidden_candidate_count, thumbnail_preview_loading_count, rendered_tile_resource_ids
+            nonlocal active_state, hidden_candidate_count, thumbnail_preview_loading_count, rendered_tile_resource_ids, video_grouped_variant_hidden_count
             filtered_state = filter_resource_dialog_items(state, current_filters())
             display_resources = tuple(filtered_state.resources)
             hidden_candidate_count = 0
@@ -10492,6 +10569,7 @@ class App(ctk.CTk):
                 else:
                     display_resources, hidden_candidate_count = _cap_image_display_resources(display_resources, hidden_image_render_limit)
             elif resource_kind == RESOURCE_KIND_VIDEO_AUDIO and row.adapter_id not in {"youtube", "twitter_x"}:
+                display_resources = _group_video_rendition_display_resources(tuple(display_resources))
                 _start_thumbnail_preview_probe(display_resources)
                 if not video_live_preview_mode_enabled:
                     _start_video_hover_preview_probe(display_resources)
@@ -10658,6 +10736,24 @@ class App(ctk.CTk):
                     live_preview_button.lift()
                     preview_box.bind("<Double-Button-1>", lambda _event, current_item=item: _open_live_video_preview_for_item(current_item), add="+")
                     preview_label.bind("<Double-Button-1>", lambda _event, current_item=item: _open_live_video_preview_for_item(current_item), add="+")
+                variant_group = video_variant_group_members_by_rep_id.get(item.resource_id, ())
+                if len(variant_group) > 1:
+                    variant_quality_button = ctk.CTkButton(
+                        preview_box,
+                        text=_video_variant_button_text_for_rep(item),
+                        width=96,
+                        height=22,
+                        corner_radius=6,
+                        fg_color=COLORS["bg_dark"],
+                        hover_color=COLORS["bg_input"],
+                        text_color=COLORS["text_primary"],
+                        font=ctk.CTkFont(size=9, weight="bold"),
+                    )
+                    variant_quality_button.configure(
+                        command=lambda current_item=item, button=variant_quality_button: _cycle_video_variant_for_rep(current_item, button)
+                    )
+                    variant_quality_button.place(relx=0.0, x=7, rely=1.0, y=-7, anchor="sw")
+                    variant_quality_button.lift()
                 def _stop_video_hover_animation(resource_id: str = item.resource_id, label: Any = preview_label, current_item: Any = item) -> None:
                     after_id = video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
                     if after_id is not None:
@@ -10843,6 +10939,9 @@ class App(ctk.CTk):
                 rendered_tile_refreshers_by_id[item.resource_id] = refresh_rendered_tile
 
                 name_text = f"{item.display_name or item.resource_id} ({item.extension or item.media_type or 'resource'})"
+                variant_group = video_variant_group_members_by_rep_id.get(item.resource_id, ())
+                if len(variant_group) > 1:
+                    name_text = f"{name_text} · {len(variant_group)} qualities"
                 if item.duration_seconds:
                     name_text = f"{name_text}  {item.duration_seconds:g}s"
                 if len(name_text) > 30:
@@ -10896,9 +10995,20 @@ class App(ctk.CTk):
         status_label.pack(anchor="w", padx=16)
 
         def current_state() -> Any:
-            selected = tuple(
-                item.resource_id for item in state.resources if item.resource_id in selected_ids
-            )
+            if resource_kind == RESOURCE_KIND_VIDEO_AUDIO and row.adapter_id not in {"youtube", "twitter_x"}:
+                selected = tuple(
+                    resource_id
+                    for resource_id in (
+                        str(getattr(_video_variant_selected_item_for_rep(item), "resource_id", "") or "")
+                        for item in active_state.resources
+                        if item.resource_id in selected_ids
+                    )
+                    if resource_id
+                )
+            else:
+                selected = tuple(
+                    item.resource_id for item in state.resources if item.resource_id in selected_ids
+                )
             return state.__class__(
                 source_row_id=state.source_row_id,
                 resource_kind=state.resource_kind,
@@ -10916,7 +11026,8 @@ class App(ctk.CTk):
                 status_label.configure(text=f"{selected_count} selected · {shown_count} shown{hidden_text}{loading_text}")
             elif resource_kind == RESOURCE_KIND_VIDEO_AUDIO and row.adapter_id not in {"youtube", "twitter_x"}:
                 shown_count = len(getattr(active_state, "resources", ()) or ())
-                status_label.configure(text=f"{selected_count} selected · {shown_count} shown")
+                grouped_text = f" · {video_grouped_variant_hidden_count} grouped variant(s)" if video_grouped_variant_hidden_count else ""
+                status_label.configure(text=f"{selected_count} selected · {shown_count} shown{grouped_text}")
             else:
                 status_label.configure(text=f"{selected_count} selected")
 
@@ -11102,6 +11213,42 @@ class App(ctk.CTk):
 
             threading.Thread(target=_worker, daemon=True).start()
 
+        def _video_source_row_prefetch_is_inflight(cache_key: str) -> bool:
+            if not cache_key:
+                return False
+            try:
+                return cache_key in self.__dict__.setdefault("webpage_video_discovery_prefetch_inflight", set())
+            except Exception:
+                return False
+
+        def _schedule_video_prefetch_cache_poll(cache_key: str, *, attempts: int = 60, delay_ms: int = 250) -> None:
+            # V78Q avoids launching a duplicate rendered/browser probe from the
+            # dialog while the source-row prefetch is already doing the same work.
+            # The dialog paints static candidates immediately and polls the shared
+            # cache for the full 5-candidate result instead.
+            nonlocal video_discovery_cache_poll_after_id
+            if not cache_key or video_discovery_cache_poll_after_id is not None:
+                return
+
+            def _poll(remaining: int) -> None:
+                nonlocal video_discovery_cache_poll_after_id
+                video_discovery_cache_poll_after_id = None
+                cached_discovery = webpage_video_discovery_cache_by_url.get(cache_key)
+                if cached_discovery is not None:
+                    _apply_webpage_video_discovery_result(cached_discovery, show_messages=False)
+                    return
+                if remaining <= 0 or not _video_source_row_prefetch_is_inflight(cache_key):
+                    return
+                try:
+                    video_discovery_cache_poll_after_id = window.after(delay_ms, lambda: _poll(remaining - 1))
+                except Exception:
+                    video_discovery_cache_poll_after_id = None
+
+            try:
+                video_discovery_cache_poll_after_id = window.after(delay_ms, lambda: _poll(attempts))
+            except Exception:
+                video_discovery_cache_poll_after_id = None
+
         def _queue_video_discovery_result(kind: str, discovery: Any = None, error_text: str = "", show_messages: bool = True) -> None:
             try:
                 with video_discovery_results_lock:
@@ -11149,7 +11296,7 @@ class App(ctk.CTk):
                     f"from {row.domain}; discovery_method={summary.get('discovery_method', 'merged_static_rendered_webpage_video_discovery')}; "
                     f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
                     f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "candidate list is cached/prefetched for repeated opens; downloads performed: none."
+                    "candidate list is cached/prefetched for repeated opens; duplicate direct-video renditions are grouped in the dialog; downloads performed: none."
                 ),
                 "success",
             )
@@ -11185,16 +11332,20 @@ class App(ctk.CTk):
                             pass
                         if video_static_first_followup_pending:
                             video_static_first_followup_pending = False
-                            try:
-                                window.after(90, lambda: discover_page_videos(
-                                    show_messages=False,
-                                    run_rendered_probe=True,
-                                    rendered_probe_timeout_ms=12000,
-                                    force_refresh=True,
-                                    followup_full_probe=False,
-                                ))
-                            except Exception:
-                                logger.debug("Could not schedule rendered video discovery follow-up after static first paint.", exc_info=True)
+                            cache_key = _webpage_video_discovery_cache_key(row)
+                            if _video_source_row_prefetch_is_inflight(cache_key):
+                                _schedule_video_prefetch_cache_poll(cache_key)
+                            else:
+                                try:
+                                    window.after(90, lambda: discover_page_videos(
+                                        show_messages=False,
+                                        run_rendered_probe=True,
+                                        rendered_probe_timeout_ms=12000,
+                                        force_refresh=True,
+                                        followup_full_probe=False,
+                                    ))
+                                except Exception:
+                                    logger.debug("Could not schedule rendered video discovery follow-up after static first paint.", exc_info=True)
                 should_continue = video_discovery_thread_active
                 try:
                     with video_discovery_results_lock:
@@ -11493,12 +11644,16 @@ class App(ctk.CTk):
             else:
                 render_resource_list()
                 refresh_count()
+                cache_key_on_open = _webpage_video_discovery_cache_key(row)
+                source_prefetch_inflight_on_open = _video_source_row_prefetch_is_inflight(cache_key_on_open)
+                if source_prefetch_inflight_on_open:
+                    _schedule_video_prefetch_cache_poll(cache_key_on_open)
                 window.after(80, lambda: discover_page_videos(
                     show_messages=False,
                     run_rendered_probe=False,
                     rendered_probe_timeout_ms=0,
                     force_refresh=True,
-                    followup_full_probe=True,
+                    followup_full_probe=not source_prefetch_inflight_on_open,
                 ))
         else:
             render_resource_list()
