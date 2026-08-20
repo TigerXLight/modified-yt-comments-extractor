@@ -481,8 +481,8 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "Prefetched {count} animated video hover preview" in inspect.getsource(App)
     assert "_start_video_hover_preview_probe(display_resources)" in source
     assert "Browser-hover references preload direct video elements before hover" in source
-    assert "sample_count=16" in source
-    assert "frame_delay_ms=75" in source
+    assert "sample_count=32" in source
+    assert "frame_delay_ms=70" in source
     assert "window.after(70, _step)" in inspect.getsource(App)
     assert "poster_url=poster_url" in inspect.getsource(App)
     assert "poster/thumbnail" in app_source
@@ -495,6 +495,15 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "run_rendered_probe=False" in source
     assert "followup_full_probe=True" in source
     assert "serious_review_markers" in source
+    main_source = Path("main.py").read_text(encoding="utf-8")
+    assert "from webpage_video_live_preview_backend import" in main_source
+    assert "webpage_video_live_preview_enabled" in app_source
+    assert "V78P live preview mode replaces automatic animated-GIF/frame" in app_source
+    assert "_video_live_preview_url_for_item" in source
+    assert "_open_live_video_preview_for_item" in source
+    assert "text=\"LIVE ▶\"" in source
+    assert "open_browser_video_live_preview(" in source
+    assert "if not video_live_preview_mode_enabled" in source
 
 
 def test_media_resource_window_download_labels_and_gallery() -> None:

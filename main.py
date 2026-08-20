@@ -188,6 +188,10 @@ from webpage_video_preview_backend import (
     video_frame_preview_cache_key,
     video_hover_preview_cache_key,
 )
+from webpage_video_live_preview_backend import (
+    can_open_browser_video_live_preview,
+    open_browser_video_live_preview,
+)
 from source_twitter_compact_row import (
     TWITTER_COMPACT_MODES,
     TWITTER_SCREENSHOT_MODES,
@@ -8307,6 +8311,12 @@ class App(ctk.CTk):
         # already produced cached candidates; it is not an app-startup scan.
         if "tk" not in self.__dict__:
             return
+        if bool(getattr(self, "webpage_video_live_preview_enabled", True)):
+            # V78P live preview mode replaces automatic animated-GIF/frame
+            # prefetch for direct videos.  The old frame cache remains as a
+            # fallback, but it no longer burns browser/ffmpeg time before the
+            # user asks to preview a specific media candidate.
+            return
         resources = tuple(getattr(discovery, "resources", ()) or ())
         if not resources:
             return
@@ -9739,6 +9749,7 @@ class App(ctk.CTk):
         # browser probe.  This avoids a blank 12s+ dialog while preserving the
         # full static+rendered evidence pass.
         video_static_first_followup_pending = False
+        video_live_preview_mode_enabled = bool(getattr(self, "webpage_video_live_preview_enabled", True))
         video_hover_animation_after_id_by_resource_id: dict[str, Any] = {}
         video_hover_animation_index_by_resource_id: dict[str, int] = {}
 
@@ -9796,6 +9807,46 @@ class App(ctk.CTk):
             ):
                 return media_url
             return ""
+
+        def _video_live_preview_url_for_item(item: Any) -> str:
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO or not video_live_preview_mode_enabled:
+                return ""
+            media_url = str(getattr(item, "reference_url", "") or getattr(item, "canonical_url", "") or "").strip()
+            if not media_url:
+                return ""
+            if can_open_browser_video_live_preview(
+                media_url,
+                extension=str(getattr(item, "extension", "") or ""),
+                mime_type=str(getattr(item, "mime_type", "") or ""),
+            ):
+                return media_url
+            return ""
+
+        def _open_live_video_preview_for_item(item: Any) -> None:
+            preview_url = _video_live_preview_url_for_item(item)
+            if not preview_url:
+                show_image_dialog_notice(
+                    "Live preview unavailable",
+                    "Live browser preview is currently limited to direct MP4/WebM-style video candidates. HLS, DASH, embedded players, and audio-only items still use the existing poster/review route.",
+                )
+                return
+            page_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "")
+            title = str(getattr(item, "display_name", "") or getattr(item, "title", "") or "Video live preview")
+            poster_url = str(getattr(item, "thumbnail_reference", "") or "")
+            try:
+                preview_file = open_browser_video_live_preview(
+                    preview_url,
+                    title=title,
+                    referer=page_url,
+                    poster_url=poster_url,
+                    prefer_playwright=True,
+                )
+                try:
+                    self.log_message(f"Opened live browser video preview for {label}; file={preview_file.name}", "success")
+                except Exception:
+                    pass
+            except Exception as error:
+                show_image_dialog_notice("Live preview failed", f"Could not open live browser preview:\n\n{error}")
 
         def _media_placeholder_text_for_item(item: Any) -> str:
             if resource_kind == RESOURCE_KIND_IMAGE:
@@ -9906,9 +9957,9 @@ class App(ctk.CTk):
                     hover_frames = extract_video_hover_preview_frames_pil_browser(
                         hover_url,
                         timeout=7.5,
-                        duration_seconds=3.0,
-                        sample_count=16,
-                        frame_delay_ms=75,
+                        duration_seconds=30.0,
+                        sample_count=32,
+                        frame_delay_ms=70,
                         referer=page_url,
                         poster_url=str(getattr(item, "thumbnail_reference", "") or ""),
                     )
@@ -9918,10 +9969,10 @@ class App(ctk.CTk):
                         hover_url,
                         timeout=5.5,
                         seek_seconds=0.0,
-                        duration_seconds=3.0,
-                        fps=8,
+                        duration_seconds=12.0,
+                        fps=2,
                         referer=page_url,
-                        max_frames=16,
+                        max_frames=24,
                     )
                 webpage_video_hover_preview_pil_frames_by_url[hover_cache_key] = tuple(frame.copy() for frame in hover_frames)
                 while len(webpage_video_hover_preview_pil_frames_by_url) > webpage_video_hover_preview_cache_limit:
@@ -10442,7 +10493,8 @@ class App(ctk.CTk):
                     display_resources, hidden_candidate_count = _cap_image_display_resources(display_resources, hidden_image_render_limit)
             elif resource_kind == RESOURCE_KIND_VIDEO_AUDIO and row.adapter_id not in {"youtube", "twitter_x"}:
                 _start_thumbnail_preview_probe(display_resources)
-                _start_video_hover_preview_probe(display_resources)
+                if not video_live_preview_mode_enabled:
+                    _start_video_hover_preview_probe(display_resources)
             active_state = filtered_state.__class__(
                 source_row_id=filtered_state.source_row_id,
                 resource_kind=filtered_state.resource_kind,
@@ -10588,6 +10640,24 @@ class App(ctk.CTk):
                     )
                     preview_label.pack(expand=True)
                     preview_label.bind("<Button-1>", lambda _event, rid=item.resource_id, var=item_var: toggle_item(rid, var), add="+")
+                live_preview_url = _video_live_preview_url_for_item(item)
+                if live_preview_url:
+                    live_preview_button = ctk.CTkButton(
+                        preview_box,
+                        text="LIVE ▶",
+                        width=76,
+                        height=24,
+                        corner_radius=6,
+                        fg_color=COLORS["accent"],
+                        hover_color=COLORS["accent_hover"],
+                        text_color=COLORS["text_primary"],
+                        font=ctk.CTkFont(size=10, weight="bold"),
+                        command=lambda current_item=item: _open_live_video_preview_for_item(current_item),
+                    )
+                    live_preview_button.place(relx=1.0, x=-7, y=7, anchor="ne")
+                    live_preview_button.lift()
+                    preview_box.bind("<Double-Button-1>", lambda _event, current_item=item: _open_live_video_preview_for_item(current_item), add="+")
+                    preview_label.bind("<Double-Button-1>", lambda _event, current_item=item: _open_live_video_preview_for_item(current_item), add="+")
                 def _stop_video_hover_animation(resource_id: str = item.resource_id, label: Any = preview_label, current_item: Any = item) -> None:
                     after_id = video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
                     if after_id is not None:
@@ -10610,6 +10680,8 @@ class App(ctk.CTk):
                     current_item: Any = item,
                 ) -> None:
                     if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                        return
+                    if video_live_preview_mode_enabled:
                         return
                     frames = video_hover_preview_frames_by_id.get(resource_id)
                     if not frames or len(frames) < 2:
