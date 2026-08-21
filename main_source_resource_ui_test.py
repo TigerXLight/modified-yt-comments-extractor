@@ -477,7 +477,7 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_hover_preview_status_by_id" in source
     assert "_apply_cached_video_hover_preview" in source
     assert "_start_webpage_video_hover_preview_prefetch_for_discovery" in inspect.getsource(App)
-    assert "live hover paints cached frames immediately, loops without end-frame pause, and defers grid rebuilds until hover ends" in inspect.getsource(App)
+    assert "live hover uses a measured VDH-style ~5.15s 30fps loop with deadline-compensated wrap and defers grid rebuilds until hover ends" in inspect.getsource(App)
     assert "can_stream_video_tile_hover" in source
     app_source = inspect.getsource(App)
     assert "_step" in app_source and "window.after" in app_source and ("_finish_video_hover_leave_if_outside" in app_source or "video_hover" in app_source)
@@ -485,7 +485,9 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "poster_url=poster_url" in inspect.getsource(App)
     assert "poster/thumbnail" in app_source
     assert "duration_seconds=0.65" in inspect.getsource(App)
-    assert "duration_seconds=6.0" in inspect.getsource(App)
+    assert "duration_seconds=5.15" in inspect.getsource(App)
+    assert "fps=30" in inspect.getsource(App)
+    assert "max_frames=155" in inspect.getsource(App)
     app_source = inspect.getsource(App)
     assert "_step" in app_source and "window.after" in app_source and ("_finish_video_hover_leave_if_outside" in app_source or "video_hover" in app_source)
     assert "window.after(20, _wait_for_frames)" in inspect.getsource(App)
@@ -536,13 +538,19 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_hover_stop_after_id_by_resource_id" in source
     assert "_apply_cached_video_hover_preview(item)" in source
     assert "window.after(70, _stop_if_outside)" in source
-    assert "window.after(1 if loop_wrap else 50, _step)" in source
+    assert "V79H: deadline-compensated 30fps cadence" in source
+    assert "frame_interval_seconds = 1.0 / 30.0" in source
+    assert "next_frame_deadline = time.perf_counter()" in source
+    assert "next_index = (index_value + 1) % len(current_frames)" in source
+    assert "missed_frames = int((now - next_frame_deadline) // frame_interval_seconds) + 1" in source
+    assert "window.after(delay_ms, _step)" in source
+    assert "window.after(40, _step)" not in source
+    assert "window.after(1 if loop_wrap else 50, _step)" not in source
     assert "_apply_cached_video_hover_preview(current_item)" in source
     assert "video_hover_active_resource_ids" in source
     assert "video_hover_repaint_deferred" in source
     assert "_schedule_video_hover_deferred_repaint" in source
-    assert "if index_value >= len(current_frames):" in source
-    assert "loop_wrap = next_index >= len(current_frames)" in source
+    assert "loop_wrap = next_index >= len(current_frames)" not in source
     assert "if video_live_preview_mode_enabled:" in source
     assert "V78T: on grouped video cards the bottom size badge" in source
     assert "Selected video quality variant:" in source

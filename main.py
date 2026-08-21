@@ -8311,7 +8311,7 @@ class App(ctk.CTk):
                     f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
                     f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
                     f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "Video & Audio can open from the cached candidate list; live hover paints cached frames immediately, loops without end-frame pause, and defers grid rebuilds until hover ends."
+                    "Video & Audio can open from the cached candidate list; live hover uses a measured VDH-style ~5.15s 30fps loop with deadline-compensated wrap and defers grid rebuilds until hover ends."
                 ),
                 "muted",
             )
@@ -8368,10 +8368,11 @@ class App(ctk.CTk):
                             media_url,
                             timeout=8.5,
                             first_frame_timeout=1.6,
-                            duration_seconds=7.0,
-                            fps=18,
+                            duration_seconds=5.15,
+                            fps=30,
                             referer=page_url,
                             frame_size=(168, 96),
+                            max_frames=155,
                             project_root=Path(__file__).resolve().parent,
                         )
                     except Exception:
@@ -8379,10 +8380,10 @@ class App(ctk.CTk):
                             media_url,
                             timeout=8.0,
                             seek_seconds=0.0,
-                            duration_seconds=7.0,
-                            fps=12,
+                            duration_seconds=5.15,
+                            fps=30,
                             referer=page_url,
-                            max_frames=84,
+                            max_frames=155,
                         )
                     if len(frames) >= 2:
                         hover_cache[cache_key] = tuple(frame.copy() for frame in frames)
@@ -10156,9 +10157,9 @@ class App(ctk.CTk):
             item: Any,
             hover_url: str,
             *,
-            duration_seconds: float = 12.0,
-            fps: int = 18,
-            max_frames: int = 216,
+            duration_seconds: float = 5.15,
+            fps: int = 30,
+            max_frames: int = 155,
             timeout: float = 10.5,
             first_frame_timeout: float = 1.25,
             force_refresh: bool = False,
@@ -10196,7 +10197,7 @@ class App(ctk.CTk):
                             timeout=max(6.0, timeout),
                             seek_seconds=0.0,
                             duration_seconds=duration_seconds,
-                            fps=max(12, min(18, int(fps or 18))),
+                            fps=max(12, min(30, int(fps or 30))),
                             referer=page_url,
                             max_frames=max_frames,
                         )
@@ -10207,7 +10208,7 @@ class App(ctk.CTk):
                             timeout=max(6.0, timeout),
                             duration_seconds=duration_seconds,
                             sample_count=max_frames,
-                            frame_delay_ms=56,
+                            frame_delay_ms=35,
                             referer=page_url,
                             poster_url=str(getattr(item, "thumbnail_reference", "") or ""),
                         )
@@ -10227,23 +10228,23 @@ class App(ctk.CTk):
                 item,
                 hover_url,
                 duration_seconds=0.65,
-                fps=20,
-                max_frames=13,
+                fps=30,
+                max_frames=20,
                 timeout=1.45,
                 first_frame_timeout=0.55,
             )
 
         def _extract_video_hover_preview_long_frames(item: Any, hover_url: str) -> tuple[Any, ...]:
-            # Keep a VDH-like opening segment available for looped hover playback.
-            # V79D keeps this close to the observed popup preview length instead of
-            # generating an over-long 12s clip that takes longer to warm.
+            # V79H: the supplied VDH reference recurs at about 5.15 seconds and
+            # visibly updates at about 30fps. Decode that measured window instead
+            # of carrying forward the earlier approximate 6s/25fps target.
             return _extract_video_hover_preview_frames_cached(
                 item,
                 hover_url,
-                duration_seconds=6.0,
-                fps=20,
-                max_frames=120,
-                timeout=7.5,
+                duration_seconds=5.15,
+                fps=30,
+                max_frames=155,
+                timeout=8.5,
                 first_frame_timeout=0.85,
                 force_refresh=True,
             )
@@ -11203,26 +11204,38 @@ class App(ctk.CTk):
                         # segment wrap do not feel like they are waiting for a
                         # one-shot timer.
                         video_hover_animation_index_by_resource_id[resource_id] = 0
+                        # V79H: deadline-compensated 30fps cadence. A fixed Tk
+                        # after(33/40/50) delay is added *after* callback/rendering
+                        # work, so callback cost stretches the effective clip and
+                        # makes replay look slower than VDH. Keep an absolute next
+                        # deadline and skip overdue frames rather than slowing the
+                        # entire loop. Modulo indexing means there is no terminal
+                        # frame state or special wrap callback.
+                        frame_interval_seconds = 1.0 / 30.0
+                        next_frame_deadline = time.perf_counter()
 
                         def _step() -> None:
+                            nonlocal next_frame_deadline
                             try:
                                 if not _pointer_inside_widget(image_area):
                                     video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
                                     _stop_video_hover_animation(resource_id, label, current_item)
                                     return
                                 current_frames = video_hover_preview_frames_by_id.get(resource_id) or frames
-                                index_value = video_hover_animation_index_by_resource_id.get(resource_id, 0)
-                                if index_value >= len(current_frames):
-                                    index_value = 0
-                                next_index = index_value + 1
-                                loop_wrap = next_index >= len(current_frames)
-                                video_hover_animation_index_by_resource_id[resource_id] = 0 if loop_wrap else next_index
+                                index_value = video_hover_animation_index_by_resource_id.get(resource_id, 0) % len(current_frames)
                                 label.configure(text="", image=current_frames[index_value])
-                                # V79F: wrap to frame 0 on the next event-loop tick
-                                # instead of holding on the final frame for a full
-                                # cadence interval. Normal frames still play at
-                                # the 20fps cadence.
-                                video_hover_animation_after_id_by_resource_id[resource_id] = window.after(1 if loop_wrap else 50, _step)
+                                next_index = (index_value + 1) % len(current_frames)
+
+                                next_frame_deadline += frame_interval_seconds
+                                now = time.perf_counter()
+                                if next_frame_deadline <= now:
+                                    missed_frames = int((now - next_frame_deadline) // frame_interval_seconds) + 1
+                                    next_index = (next_index + missed_frames) % len(current_frames)
+                                    next_frame_deadline += missed_frames * frame_interval_seconds
+                                video_hover_animation_index_by_resource_id[resource_id] = next_index
+                                remaining_seconds = max(0.001, next_frame_deadline - time.perf_counter())
+                                delay_ms = max(1, int(round(remaining_seconds * 1000.0)))
+                                video_hover_animation_after_id_by_resource_id[resource_id] = window.after(delay_ms, _step)
                             except Exception:
                                 video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
                                 video_hover_active_resource_ids.discard(resource_id)
