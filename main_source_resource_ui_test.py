@@ -477,13 +477,15 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_hover_preview_status_by_id" in source
     assert "_apply_cached_video_hover_preview" in source
     assert "_start_webpage_video_hover_preview_prefetch_for_discovery" in inspect.getsource(App)
-    assert "live hover warms only the selected dialog tile or starts on-demand" in inspect.getsource(App)
+    assert "live hover warms a fast seed and loops a longer selected-video segment" in inspect.getsource(App)
     assert "can_stream_video_tile_hover" in source
     assert "window.after(56, _step)" in inspect.getsource(App)
+    assert "window.after(35, _wait_for_frames)" in inspect.getsource(App)
     assert "poster_url=poster_url" in inspect.getsource(App)
     assert "poster/thumbnail" in app_source
-    assert "duration_seconds=7.0" in inspect.getsource(App)
+    assert "duration_seconds=12.0" in inspect.getsource(App)
     assert "window.after(56, _step)" in inspect.getsource(App)
+    assert "window.after(35, _wait_for_frames)" in inspect.getsource(App)
     assert "V78N fast first-paint" in source
     assert "video_static_first_followup_pending" in source
     assert "Quick-scanning static video/audio candidates" in source
@@ -526,12 +528,15 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "V78S: a static-first dialog pass may put the quick 3-candidate" in source
     assert "cached_count > current_count or not prefetch_inflight" in source
     assert "V79B: keep animation state keyed by the visible tile" in source
+    assert "V79C: modulo indexing loops the opening segment" in source
     assert "if video_live_preview_mode_enabled:" in source
     assert "V78T: on grouped video cards the bottom size badge" in source
     assert "Selected video quality variant:" in source
     assert "video_live_hover_after_id_by_resource_id" in source
     assert "V79B: keep animation state keyed by the visible tile" in source
     assert "extract_video_tile_hover_stream_frames_pil" in source
+    assert "_extract_video_hover_preview_seed_frames" in source
+    assert "_extract_video_hover_preview_long_frames" in source
     assert "window.after(850, _open_after_linger)" not in source
     assert "_open_live_video_preview_for_item(hover_item)" not in source
     assert "command=lambda current_item=item: _open_live_video_preview_for_item(current_item)" in source

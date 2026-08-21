@@ -8311,7 +8311,7 @@ class App(ctk.CTk):
                     f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
                     f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
                     f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "Video & Audio can open from the cached candidate list; live hover warms only the selected dialog tile or starts on-demand."
+                    "Video & Audio can open from the cached candidate list; live hover warms a fast seed and loops a longer selected-video segment."
                 ),
                 "muted",
             )
@@ -10145,28 +10145,40 @@ class App(ctk.CTk):
                 video_hover_preview_status_by_id[item.resource_id] = "success"
             return cached
 
-        def _extract_video_hover_preview_frames_cached(item: Any, hover_url: str) -> tuple[Any, ...]:
+        def _extract_video_hover_preview_frames_cached(
+            item: Any,
+            hover_url: str,
+            *,
+            duration_seconds: float = 12.0,
+            fps: int = 18,
+            max_frames: int = 216,
+            timeout: float = 10.5,
+            first_frame_timeout: float = 1.25,
+            force_refresh: bool = False,
+        ) -> tuple[Any, ...]:
             # V79A: generate a real opening-segment tile playback cache from the
             # selected direct MP4/WebM URL.  This uses the bundled/available ffmpeg
             # raw-video stream path first so the hover frames are contiguous video,
             # not sparse browser screenshots or a visible LIVE browser window.
             hover_cache_key = video_tile_hover_stream_cache_key(hover_url)
-            hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(hover_cache_key)
-            if hover_frames is None:
-                legacy_cache_key = video_hover_preview_cache_key(hover_url)
-                hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(legacy_cache_key)
+            hover_frames = None
+            if not force_refresh:
+                hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(hover_cache_key)
+                if hover_frames is None:
+                    legacy_cache_key = video_hover_preview_cache_key(hover_url)
+                    hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(legacy_cache_key)
             if hover_frames is None:
                 page_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "")
                 try:
                     hover_frames = extract_video_tile_hover_stream_frames_pil(
                         hover_url,
-                        timeout=8.5,
-                        first_frame_timeout=1.6,
-                        duration_seconds=7.0,
-                        fps=18,
+                        timeout=timeout,
+                        first_frame_timeout=first_frame_timeout,
+                        duration_seconds=duration_seconds,
+                        fps=fps,
                         referer=page_url,
                         frame_size=(168, 96),
-                        max_frames=126,
+                        max_frames=max_frames,
                         project_root=Path(__file__).resolve().parent,
                     )
                 except Exception as stream_error:
@@ -10174,20 +10186,20 @@ class App(ctk.CTk):
                     try:
                         hover_frames = extract_video_hover_preview_frames_pil(
                             hover_url,
-                            timeout=8.0,
+                            timeout=max(6.0, timeout),
                             seek_seconds=0.0,
-                            duration_seconds=7.0,
-                            fps=12,
+                            duration_seconds=duration_seconds,
+                            fps=max(12, min(18, int(fps or 18))),
                             referer=page_url,
-                            max_frames=84,
+                            max_frames=max_frames,
                         )
                     except Exception as ffmpeg_error:
                         logger.debug("FFmpeg GIF video tile hover fallback failed for %s: %s", hover_url, ffmpeg_error)
                         hover_frames = extract_video_hover_preview_frames_pil_browser(
                             hover_url,
-                            timeout=8.0,
-                            duration_seconds=7.0,
-                            sample_count=84,
+                            timeout=max(6.0, timeout),
+                            duration_seconds=duration_seconds,
+                            sample_count=max_frames,
                             frame_delay_ms=56,
                             referer=page_url,
                             poster_url=str(getattr(item, "thumbnail_reference", "") or ""),
@@ -10199,6 +10211,33 @@ class App(ctk.CTk):
                     except Exception:
                         break
             return tuple(frame.copy() for frame in hover_frames)
+
+        def _extract_video_hover_preview_seed_frames(item: Any, hover_url: str) -> tuple[Any, ...]:
+            # V79C: produce a small opening segment first so hover can start
+            # quickly, then let the worker replace it with the longer loopable
+            # segment when the full warm completes.
+            return _extract_video_hover_preview_frames_cached(
+                item,
+                hover_url,
+                duration_seconds=2.2,
+                fps=18,
+                max_frames=40,
+                timeout=3.2,
+                first_frame_timeout=0.9,
+            )
+
+        def _extract_video_hover_preview_long_frames(item: Any, hover_url: str) -> tuple[Any, ...]:
+            # Keep a longer opening segment available for looped hover playback.
+            return _extract_video_hover_preview_frames_cached(
+                item,
+                hover_url,
+                duration_seconds=12.0,
+                fps=18,
+                max_frames=216,
+                timeout=12.5,
+                first_frame_timeout=1.25,
+                force_refresh=True,
+            )
 
         def _apply_cached_thumbnail_preview(item: Any) -> bool:
             # A poster/thumbnail cache hit must not block animated hover-preview
@@ -10524,12 +10563,33 @@ class App(ctk.CTk):
                         for item in items:
                             hover_url = _video_hover_preview_url_for_item(item)
                             if hover_url:
-                                futures.append((item.resource_id, executor.submit(_extract_video_hover_preview_frames_cached, item, hover_url)))
-                        for resource_id, future in futures:
+                                futures.append((item.resource_id, hover_url, executor.submit(_extract_video_hover_preview_seed_frames, item, hover_url)))
+                        long_jobs: list[tuple[str, str, Any]] = []
+                        for resource_id, hover_url, future in futures:
                             try:
                                 preview_frames = future.result()
                             except Exception:
-                                _queue_thumbnail_probe_result("hover_failed", resource_id)
+                                # If the fast seed fails, still try the longer pass once before marking failed.
+                                try:
+                                    item_for_long = next((candidate for candidate in items if str(getattr(candidate, "resource_id", "") or "") == resource_id), None)
+                                    if item_for_long is not None:
+                                        long_frames = _extract_video_hover_preview_long_frames(item_for_long, hover_url)
+                                        _queue_thumbnail_probe_result("hover_frames", resource_id, tuple(frame.copy() for frame in long_frames))
+                                    else:
+                                        _queue_thumbnail_probe_result("hover_failed", resource_id)
+                                except Exception:
+                                    _queue_thumbnail_probe_result("hover_failed", resource_id)
+                            else:
+                                _queue_thumbnail_probe_result("hover_frames", resource_id, tuple(frame.copy() for frame in preview_frames))
+                                item_for_long = next((candidate for candidate in items if str(getattr(candidate, "resource_id", "") or "") == resource_id), None)
+                                if item_for_long is not None:
+                                    long_jobs.append((resource_id, hover_url, executor.submit(_extract_video_hover_preview_long_frames, item_for_long, hover_url)))
+                        for resource_id, _hover_url, future in long_jobs:
+                            try:
+                                preview_frames = future.result()
+                            except Exception:
+                                # Keep the seed frames; hover can still loop the short segment.
+                                continue
                             else:
                                 _queue_thumbnail_probe_result("hover_frames", resource_id, tuple(frame.copy() for frame in preview_frames))
                 finally:
@@ -10956,7 +11016,7 @@ class App(ctk.CTk):
                     variant_quality_menu.lift()
 
                 if resource_kind == RESOURCE_KIND_VIDEO_AUDIO and video_live_preview_mode_enabled and live_preview_url:
-                    _schedule_selected_video_hover_warm(item, delay_ms=260)
+                    _schedule_selected_video_hover_warm(item, delay_ms=1)
 
                 def _cancel_live_hover_preview(current_item: Any = item) -> None:
                     candidate_ids = {
@@ -11031,6 +11091,7 @@ class App(ctk.CTk):
                                     _stop_video_hover_animation(resource_id, label, current_item)
                                     return
                                 current_frames = video_hover_preview_frames_by_id.get(resource_id) or frames
+                                # V79C: modulo indexing loops the opening segment while the pointer remains over the tile.
                                 index_value = video_hover_animation_index_by_resource_id.get(resource_id, 0) % len(current_frames)
                                 video_hover_animation_index_by_resource_id[resource_id] = index_value + 1
                                 label.configure(text="", image=current_frames[index_value])
@@ -11055,11 +11116,11 @@ class App(ctk.CTk):
                                 return
                             if _start_cached_playback():
                                 return
-                            video_hover_animation_after_id_by_resource_id[resource_id] = window.after(85, _wait_for_frames)
+                            video_hover_animation_after_id_by_resource_id[resource_id] = window.after(35, _wait_for_frames)
                         except Exception:
                             video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
 
-                    video_hover_animation_after_id_by_resource_id[resource_id] = window.after(85, _wait_for_frames)
+                    video_hover_animation_after_id_by_resource_id[resource_id] = window.after(35, _wait_for_frames)
 
                 preview_box.bind("<Enter>", show_image_size_badge, add="+")
                 preview_box.bind("<Motion>", show_image_size_badge, add="+")

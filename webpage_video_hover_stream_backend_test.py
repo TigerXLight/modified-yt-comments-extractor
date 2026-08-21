@@ -23,7 +23,7 @@ def test_tile_hover_command_uses_contiguous_fixed_size_raw_frames() -> None:
         "https://videos.example.test/path/clip.mp4",
         ffmpeg_path="ffmpeg-custom",
         frame_size=(168, 96),
-        duration_seconds=7.0,
+        duration_seconds=12.0,
         fps=18,
         referer="https://example.test/article",
     )
@@ -32,7 +32,7 @@ def test_tile_hover_command_uses_contiguous_fixed_size_raw_frames() -> None:
     assert "-fflags" in command
     assert "nobuffer" in command
     assert "-t" in command
-    assert "7.000" in command
+    assert "12.000" in command
     assert "fps=18" in joined
     assert "scale=168:96:force_original_aspect_ratio=decrease" in joined
     assert "pad=168:96" in joined
@@ -41,6 +41,16 @@ def test_tile_hover_command_uses_contiguous_fixed_size_raw_frames() -> None:
     assert "-pix_fmt" in command
     assert "rgba" in command
     assert "Referer: https://example.test/article" in joined
+
+
+def test_tile_hover_command_caps_to_longer_loop_segment() -> None:
+    command = build_ffmpeg_tile_hover_stream_command(
+        "https://videos.example.test/path/1024x576_MP4_clip.mp4",
+        ffmpeg_path="ffmpeg-test",
+        duration_seconds=99.0,
+        fps=18,
+    )
+    assert "12.000" in command
 
 
 def test_tile_hover_cache_key_is_stable_and_namespaced() -> None:
@@ -65,6 +75,7 @@ def test_resolve_ffmpeg_prefers_bundled_jdownloader_binary(tmp_path: Path, monke
 if __name__ == "__main__":
     test_tile_hover_accepts_direct_video_and_rejects_streams()
     test_tile_hover_command_uses_contiguous_fixed_size_raw_frames()
+    test_tile_hover_command_caps_to_longer_loop_segment()
     test_tile_hover_cache_key_is_stable_and_namespaced()
     test_resolve_ffmpeg_prefers_bundled_jdownloader_binary(Path(__file__).resolve().parent / "_tmp_ffmpeg_probe")
     print("webpage_video_hover_stream_backend_test OK")
