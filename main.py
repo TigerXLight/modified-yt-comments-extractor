@@ -8311,7 +8311,7 @@ class App(ctk.CTk):
                     f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
                     f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
                     f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "Video & Audio can open from the cached candidate list; live hover uses a measured VDH-style ~5.15s 30fps loop with deadline-compensated wrap and defers grid rebuilds until hover ends."
+                    "Video & Audio can open from the cached candidate list; live hover uses a measured VDH-style ~5.15s 30fps loop with deadline-compensated wrap and protects active hover tiles from late discovery repaints."
                 ),
                 "muted",
             )
@@ -9794,6 +9794,11 @@ class App(ctk.CTk):
         # disruptive repaint until the pointer leaves the active preview surface.
         video_hover_active_resource_ids: set[str] = set()
         video_hover_stop_after_id_by_resource_id: dict[str, Any] = {}
+        # V79I: do not rely only on Tk <Enter>/<Leave> bookkeeping to decide
+        # whether a hover tile is protected.  Discovery merges can arrive exactly
+        # as the pointer crosses child widgets, so keep concrete preview-surface
+        # widgets and check the pointer geometry before any repaint/rebuild.
+        video_hover_surface_widgets_by_resource_id: dict[str, tuple[Any, ...]] = {}
         video_hover_repaint_deferred = False
         video_hover_repaint_after_id: Any = None
 
@@ -10757,6 +10762,27 @@ class App(ctk.CTk):
             except Exception:
                 return False
 
+        def _video_hover_surface_has_pointer(resource_id: str = "") -> bool:
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                return False
+            resource_ids = (str(resource_id or ""),) if resource_id else tuple(video_hover_surface_widgets_by_resource_id)
+            for candidate_id in resource_ids:
+                if not candidate_id:
+                    continue
+                for widget in video_hover_surface_widgets_by_resource_id.get(candidate_id, ()):
+                    if _pointer_inside_widget(widget):
+                        return True
+            return False
+
+        def _video_hover_should_protect_repaint(resource_id: str = "") -> bool:
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                return False
+            if resource_id and str(resource_id or "") in video_hover_active_resource_ids:
+                return True
+            if not resource_id and video_hover_active_resource_ids:
+                return True
+            return _video_hover_surface_has_pointer(resource_id)
+
         def show_image_dialog_notice(title: str, body: str) -> None:
             notice = ctk.CTkToplevel(window)
             notice.title(title)
@@ -10796,7 +10822,7 @@ class App(ctk.CTk):
             def _run_deferred_repaint() -> None:
                 nonlocal video_hover_repaint_after_id, video_hover_repaint_deferred
                 video_hover_repaint_after_id = None
-                if video_hover_active_resource_ids:
+                if _video_hover_should_protect_repaint():
                     try:
                         video_hover_repaint_after_id = window.after(120, _run_deferred_repaint)
                     except Exception:
@@ -10873,7 +10899,7 @@ class App(ctk.CTk):
                 return
             if (
                 resource_kind == RESOURCE_KIND_VIDEO_AUDIO
-                and video_hover_active_resource_ids
+                and _video_hover_should_protect_repaint()
                 and rendered_tile_resource_ids
             ):
                 # V79E: a slow full-discovery merge can arrive while the user is
@@ -10883,6 +10909,7 @@ class App(ctk.CTk):
                 video_hover_repaint_deferred = True
                 _schedule_video_hover_deferred_repaint(120)
                 return
+            video_hover_surface_widgets_by_resource_id.clear()
             for child in list_frame.winfo_children():
                 child.destroy()
             vars_by_id.clear()
@@ -11029,6 +11056,9 @@ class App(ctk.CTk):
                     )
                     preview_label.pack(expand=True)
                     preview_label.bind("<Button-1>", lambda _event, rid=item.resource_id, var=item_var: toggle_item(rid, var), add="+")
+                if resource_kind == RESOURCE_KIND_VIDEO_AUDIO:
+                    video_hover_surface_widgets_by_resource_id[str(item.resource_id)] = (preview_box, preview_label)
+
                 live_preview_url = _video_live_preview_url_for_item(item)
                 if live_preview_url:
                     live_preview_button = ctk.CTkButton(
@@ -11376,6 +11406,7 @@ class App(ctk.CTk):
                     card: Any = item_card,
                     var: Any = item_var,
                     preview_widget: Any = preview_label,
+                    image_area: Any = preview_box,
                     badge: Any = image_size_badge,
                     refresh_checkbox: Any = refresh_tile_checkbox_visibility,
                 ) -> None:
@@ -11392,15 +11423,31 @@ class App(ctk.CTk):
                             border_width=2 if selected else (1 if needs_review_now else 0),
                             border_color=COLORS["accent"] if selected else ("#ff5d73" if needs_review_now else COLORS["border"]),
                         )
-                        new_preview = _image_preview_for_item(updated_item)
-                        if new_preview is not None:
-                            preview_widget.configure(text="", image=new_preview)
-                        else:
-                            preview_widget.configure(
-                                text=_media_placeholder_text_for_item(updated_item),
-                                image=None,
-                                font=ctk.CTkFont(size=_media_placeholder_font_size(updated_item), weight="bold"),
+                        resource_id_now = str(getattr(updated_item, "resource_id", "") or "")
+                        hover_owns_preview = (
+                            resource_kind == RESOURCE_KIND_VIDEO_AUDIO
+                            and (
+                                resource_id_now in video_hover_active_resource_ids
+                                or _video_hover_surface_has_pointer(resource_id_now)
+                                or _pointer_inside_widget(image_area)
                             )
+                        )
+                        # V79I: a same-id render refresh is still allowed to update
+                        # card borders/counts, but it must not repaint the preview
+                        # label while hover playback owns that label.  The V79H
+                        # recording still showed a visible jump when late video
+                        # discovery/long-frame results refreshed the tile during
+                        # playback.
+                        if not hover_owns_preview:
+                            new_preview = _image_preview_for_item(updated_item)
+                            if new_preview is not None:
+                                preview_widget.configure(text="", image=new_preview)
+                            else:
+                                preview_widget.configure(
+                                    text=_media_placeholder_text_for_item(updated_item),
+                                    image=None,
+                                    font=ctk.CTkFont(size=_media_placeholder_font_size(updated_item), weight="bold"),
+                                )
                         if badge is not None:
                             badge.configure(text=(f"{updated_item.width}x{updated_item.height}" if updated_item.width and updated_item.height else "size unknown"))
                         refresh_checkbox()

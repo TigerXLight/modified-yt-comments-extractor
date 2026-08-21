@@ -477,7 +477,11 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_hover_preview_status_by_id" in source
     assert "_apply_cached_video_hover_preview" in source
     assert "_start_webpage_video_hover_preview_prefetch_for_discovery" in inspect.getsource(App)
-    assert "live hover uses a measured VDH-style ~5.15s 30fps loop with deadline-compensated wrap and defers grid rebuilds until hover ends" in inspect.getsource(App)
+    assert "live hover uses a measured VDH-style ~5.15s 30fps loop with deadline-compensated wrap and protects active hover tiles from late discovery repaints" in inspect.getsource(App)
+    assert "video_hover_surface_widgets_by_resource_id" in source
+    assert "_video_hover_should_protect_repaint" in source
+    assert "hover_owns_preview" in source
+    assert "same-id render refresh is still allowed to update" in source
     assert "can_stream_video_tile_hover" in source
     app_source = inspect.getsource(App)
     assert "_step" in app_source and "window.after" in app_source and ("_finish_video_hover_leave_if_outside" in app_source or "video_hover" in app_source)
