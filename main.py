@@ -8311,7 +8311,7 @@ class App(ctk.CTk):
                     f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
                     f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
                     f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "Video & Audio can open from the cached candidate list; live hover paints cached frames immediately, loops the selected-video segment, and defers grid rebuilds until hover ends."
+                    "Video & Audio can open from the cached candidate list; live hover paints cached frames immediately, loops without end-frame pause, and defers grid rebuilds until hover ends."
                 ),
                 "muted",
             )
@@ -9792,6 +9792,7 @@ class App(ctk.CTk):
         # must not destroy/rebuild the grid and interrupt the hover.  Defer any
         # disruptive repaint until the pointer leaves the active preview surface.
         video_hover_active_resource_ids: set[str] = set()
+        video_hover_stop_after_id_by_resource_id: dict[str, Any] = {}
         video_hover_repaint_deferred = False
         video_hover_repaint_after_id: Any = None
 
@@ -10612,8 +10613,10 @@ class App(ctk.CTk):
             if not hover_url:
                 return
             if video_tile_hover_stream_cache_key(hover_url) in webpage_video_hover_preview_pil_frames_by_url:
+                _apply_cached_video_hover_preview(item)
                 return
             if video_hover_preview_cache_key(hover_url) in webpage_video_hover_preview_pil_frames_by_url:
+                _apply_cached_video_hover_preview(item)
                 return
             if hover_url in video_hover_warmed_urls:
                 return
@@ -11096,14 +11099,21 @@ class App(ctk.CTk):
                         return
 
                 def _stop_video_hover_animation(resource_id: str = item.resource_id, label: Any = preview_label, current_item: Any = item) -> None:
+                    resource_id = str(resource_id or "")
                     after_id = video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
                     if after_id is not None:
                         try:
                             window.after_cancel(after_id)
                         except Exception:
                             pass
-                    video_hover_active_resource_ids.discard(str(resource_id or ""))
-                    video_hover_animation_index_by_resource_id[str(resource_id or "")] = 0
+                    stop_after_id = video_hover_stop_after_id_by_resource_id.pop(resource_id, None)
+                    if stop_after_id is not None:
+                        try:
+                            window.after_cancel(stop_after_id)
+                        except Exception:
+                            pass
+                    video_hover_active_resource_ids.discard(resource_id)
+                    video_hover_animation_index_by_resource_id[resource_id] = 0
                     try:
                         still_preview = _image_preview_for_item(current_item)
                         if still_preview is not None:
@@ -11112,6 +11122,39 @@ class App(ctk.CTk):
                         pass
                     if video_hover_repaint_deferred and not video_hover_active_resource_ids:
                         _schedule_video_hover_deferred_repaint(1)
+
+                def _schedule_video_hover_stop(
+                    _event: Any = None,
+                    resource_id: str = item.resource_id,
+                    label: Any = preview_label,
+                    image_area: Any = preview_box,
+                    current_item: Any = item,
+                ) -> None:
+                    # V79F: Tk can emit <Leave> while crossing child widgets in
+                    # the preview area. Validate the pointer after a tiny grace
+                    # window so replay does not stop/restart just because the
+                    # cursor crossed the label/frame boundary.
+                    resource_id = str(getattr(current_item, "resource_id", "") or resource_id or "")
+                    existing_after_id = video_hover_stop_after_id_by_resource_id.pop(resource_id, None)
+                    if existing_after_id is not None:
+                        try:
+                            window.after_cancel(existing_after_id)
+                        except Exception:
+                            pass
+
+                    def _stop_if_outside() -> None:
+                        video_hover_stop_after_id_by_resource_id.pop(resource_id, None)
+                        try:
+                            if _pointer_inside_widget(image_area):
+                                return
+                        except Exception:
+                            pass
+                        _stop_video_hover_animation(resource_id, label, current_item)
+
+                    try:
+                        video_hover_stop_after_id_by_resource_id[resource_id] = window.after(70, _stop_if_outside)
+                    except Exception:
+                        _stop_if_outside()
 
                 def _start_video_hover_animation(
                     _event: Any = None,
@@ -11131,6 +11174,22 @@ class App(ctk.CTk):
                     # selected variant id from driving an adjacent/non-hovered
                     # tile's label.
                     resource_id = str(getattr(current_item, "resource_id", "") or resource_id)
+                    pending_stop_after_id = video_hover_stop_after_id_by_resource_id.pop(resource_id, None)
+                    if pending_stop_after_id is not None:
+                        try:
+                            window.after_cancel(pending_stop_after_id)
+                        except Exception:
+                            pass
+                    # V79F: once the user has expressed hover intent, mark this
+                    # visible tile as hover-active even while frames are still
+                    # being generated. A slow full-discovery merge must not
+                    # rebuild the grid and interrupt the pending preview.
+                    video_hover_active_resource_ids.add(resource_id)
+                    # V79F: if a URL-level warm cache already exists after a
+                    # prior hover or deferred repaint, materialize it onto this
+                    # visible tile before checking playback so re-hover starts
+                    # from frame 0 without a wait/poll cycle.
+                    _apply_cached_video_hover_preview(current_item)
 
                     def _start_cached_playback() -> bool:
                         frames = video_hover_preview_frames_by_id.get(resource_id)
@@ -11155,9 +11214,15 @@ class App(ctk.CTk):
                                 index_value = video_hover_animation_index_by_resource_id.get(resource_id, 0)
                                 if index_value >= len(current_frames):
                                     index_value = 0
-                                video_hover_animation_index_by_resource_id[resource_id] = index_value + 1
+                                next_index = index_value + 1
+                                loop_wrap = next_index >= len(current_frames)
+                                video_hover_animation_index_by_resource_id[resource_id] = 0 if loop_wrap else next_index
                                 label.configure(text="", image=current_frames[index_value])
-                                video_hover_animation_after_id_by_resource_id[resource_id] = window.after(50, _step)
+                                # V79F: wrap to frame 0 on the next event-loop tick
+                                # instead of holding on the final frame for a full
+                                # cadence interval. Normal frames still play at
+                                # the 20fps cadence.
+                                video_hover_animation_after_id_by_resource_id[resource_id] = window.after(1 if loop_wrap else 50, _step)
                             except Exception:
                                 video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
                                 video_hover_active_resource_ids.discard(resource_id)
@@ -11199,9 +11264,10 @@ class App(ctk.CTk):
                 preview_label.bind("<Motion>", _start_video_hover_animation, add="+")
                 preview_box.bind(
                     "<Leave>",
-                    lambda _event, stop=_stop_video_hover_animation, cancel=_cancel_live_hover_preview: (hide_image_size_badge(), cancel(), stop()),
+                    lambda event, schedule_stop=_schedule_video_hover_stop, cancel=_cancel_live_hover_preview: (hide_image_size_badge(), cancel(), schedule_stop(event)),
                     add="+",
                 )
+                preview_label.bind("<Leave>", _schedule_video_hover_stop, add="+")
 
                 checkbox = ctk.CTkLabel(
                     preview_box,

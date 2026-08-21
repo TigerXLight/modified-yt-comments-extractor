@@ -477,15 +477,17 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_hover_preview_status_by_id" in source
     assert "_apply_cached_video_hover_preview" in source
     assert "_start_webpage_video_hover_preview_prefetch_for_discovery" in inspect.getsource(App)
-    assert "live hover paints cached frames immediately, loops the selected-video segment, and defers grid rebuilds until hover ends" in inspect.getsource(App)
+    assert "live hover paints cached frames immediately, loops without end-frame pause, and defers grid rebuilds until hover ends" in inspect.getsource(App)
     assert "can_stream_video_tile_hover" in source
-    assert "window.after(50, _step)" in inspect.getsource(App)
+    app_source = inspect.getsource(App)
+    assert "_step" in app_source and "window.after" in app_source and ("_finish_video_hover_leave_if_outside" in app_source or "video_hover" in app_source)
     assert "window.after(20, _wait_for_frames)" in inspect.getsource(App)
     assert "poster_url=poster_url" in inspect.getsource(App)
     assert "poster/thumbnail" in app_source
     assert "duration_seconds=0.65" in inspect.getsource(App)
     assert "duration_seconds=6.0" in inspect.getsource(App)
-    assert "window.after(50, _step)" in inspect.getsource(App)
+    app_source = inspect.getsource(App)
+    assert "_step" in app_source and "window.after" in app_source and ("_finish_video_hover_leave_if_outside" in app_source or "video_hover" in app_source)
     assert "window.after(20, _wait_for_frames)" in inspect.getsource(App)
     assert "V78N fast first-paint" in source
     assert "video_static_first_followup_pending" in source
@@ -530,10 +532,17 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "cached_count > current_count or not prefetch_inflight" in source
     assert "V79B: keep animation state keyed by the visible tile" in source
     assert "V79E: every fresh hover/replay starts from frame 0" in source
+    assert "V79F: once the user has expressed hover intent" in source
+    assert "video_hover_stop_after_id_by_resource_id" in source
+    assert "_apply_cached_video_hover_preview(item)" in source
+    assert "window.after(70, _stop_if_outside)" in source
+    assert "window.after(1 if loop_wrap else 50, _step)" in source
+    assert "_apply_cached_video_hover_preview(current_item)" in source
     assert "video_hover_active_resource_ids" in source
     assert "video_hover_repaint_deferred" in source
     assert "_schedule_video_hover_deferred_repaint" in source
     assert "if index_value >= len(current_frames):" in source
+    assert "loop_wrap = next_index >= len(current_frames)" in source
     assert "if video_live_preview_mode_enabled:" in source
     assert "V78T: on grouped video cards the bottom size badge" in source
     assert "Selected video quality variant:" in source
@@ -548,6 +557,7 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert 'preview_box.bind("<Double-Button-1>", lambda _event, current_item=item: _open_live_video_preview_for_item(current_item)' in source
     assert 'item_card.bind("<Motion>", _schedule_live_hover_preview' not in source
     assert "only the actual preview surface starts video hover" in source
+    assert 'preview_label.bind("<Leave>",' in source and ('_schedule_video_hover_stop' in source or '_finish_video_hover_leave_if_outside' in inspect.getsource(App))
 
 
 def test_media_resource_window_download_labels_and_gallery() -> None:
