@@ -10815,9 +10815,13 @@ class App(ctk.CTk):
                 ) -> None:
                     if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
                         return
-                    # V78R: live-preview mode must not kill automatic hover playback.
-                    # Source-row prefetch remains disabled in live mode for speed, but
-                    # hovering a tile may generate/play cached frames on demand.
+                    # V78S: keep browser/live preview mode stable.  The cached
+                    # frame-cycling hover fallback is intentionally disabled while
+                    # LIVE is available because it plays too fast and can restart
+                    # background browser/ffmpeg work during ordinary pointer motion.
+                    # When live preview mode is disabled, this fallback still works.
+                    if video_live_preview_mode_enabled:
+                        return
                     current_item = _video_variant_selected_item_for_rep(current_item)
                     resource_id = str(getattr(current_item, "resource_id", "") or resource_id)
                     frames = video_hover_preview_frames_by_id.get(resource_id)
@@ -11275,10 +11279,19 @@ class App(ctk.CTk):
                 nonlocal video_discovery_cache_poll_after_id
                 video_discovery_cache_poll_after_id = None
                 cached_discovery = webpage_video_discovery_cache_by_url.get(cache_key)
+                prefetch_inflight = _video_source_row_prefetch_is_inflight(cache_key)
                 if cached_discovery is not None:
-                    _apply_webpage_video_discovery_result(cached_discovery, show_messages=False)
-                    return
-                if remaining <= 0 or not _video_source_row_prefetch_is_inflight(cache_key):
+                    cached_count = len(getattr(cached_discovery, "resources", ()) or ())
+                    current_count = len(getattr(state, "resources", ()) or ())
+                    # V78S: a static-first dialog pass may put the quick 3-candidate
+                    # result in the shared cache while the source-row rendered/browser
+                    # prefetch is still working toward the fuller 5-candidate result.
+                    # Do not stop polling just because that early static cache entry
+                    # exists; wait for a richer cached result or for prefetch to finish.
+                    if cached_count > current_count or not prefetch_inflight:
+                        _apply_webpage_video_discovery_result(cached_discovery, show_messages=False)
+                        return
+                if remaining <= 0 or not prefetch_inflight:
                     return
                 try:
                     video_discovery_cache_poll_after_id = window.after(delay_ms, lambda: _poll(remaining - 1))

@@ -521,7 +521,10 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "dialog paints static candidates immediately and polls the shared" in source
     assert "V78R: rebuild video tiles when a same-id representative gains" in source
     assert "rendered_tile_variant_signature" in source
-    assert "live-preview mode must not kill automatic hover playback" in source
+    assert "V78S: a static-first dialog pass may put the quick 3-candidate" in source
+    assert "cached_count > current_count or not prefetch_inflight" in source
+    assert "V78S: keep browser/live preview mode stable" in source
+    assert "if video_live_preview_mode_enabled:" in source
 
 
 def test_media_resource_window_download_labels_and_gallery() -> None:
