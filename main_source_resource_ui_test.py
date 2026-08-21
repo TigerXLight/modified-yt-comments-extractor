@@ -519,6 +519,9 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "_video_source_row_prefetch_is_inflight" in source
     assert "_schedule_video_prefetch_cache_poll" in source
     assert "dialog paints static candidates immediately and polls the shared" in source
+    assert "V78R: rebuild video tiles when a same-id representative gains" in source
+    assert "rendered_tile_variant_signature" in source
+    assert "live-preview mode must not kill automatic hover playback" in source
 
 
 def test_media_resource_window_download_labels_and_gallery() -> None:

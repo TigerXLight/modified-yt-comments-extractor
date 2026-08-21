@@ -28,7 +28,7 @@ def test_metro_quality_renditions_share_content_key() -> None:
     low = "https://videos.metro.co.uk/video/met/2026/07/16/7351137571375236737/480x270_MP4_7351137571375236737.mp4"
     high = "https://videos.metro.co.uk/video/met/2026/07/16/7351137571375236737/1024x576_MP4_7351137571375236737.mp4"
     assert normalize_video_rendition_content_key(low, title="same title")
-    assert normalize_video_rendition_content_key(low, title="same title") == normalize_video_rendition_content_key(high, title="same title")
+    assert normalize_video_rendition_content_key(low, title="article title") == normalize_video_rendition_content_key(high, title="file MP4 from source")
 
 
 def test_group_video_renditions_prefers_highest_resolution() -> None:

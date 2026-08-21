@@ -9743,6 +9743,7 @@ class App(ctk.CTk):
         refresh_images_button: Any = None
         refresh_videos_button: Any = None
         rendered_tile_resource_ids: tuple[str, ...] = ()
+        rendered_tile_variant_signature: tuple[tuple[str, int, str, str], ...] = ()
         rendered_tile_refreshers_by_id: dict[str, Any] = {}
         video_hover_preview_frames_by_id: dict[str, tuple[Any, ...]] = {}
         video_hover_preview_status_by_id: dict[str, str] = {}
@@ -9875,6 +9876,32 @@ class App(ctk.CTk):
                 sum(max(0, len(variants) - 1) for variants in groups_by_rep_id.values()),
             )
             return display_resources
+
+        def _video_variant_signature_for_resources(resources: tuple[Any, ...]) -> tuple[tuple[str, int, str, str], ...]:
+            """Detect when the visible ids are unchanged but quality variants appeared.
+
+            V78Q could first paint a single direct MP4 candidate, then the shared
+            rendered/source-row prefetch cache could add a second same-content
+            rendition under the same representative id.  If the visible ids did
+            not change, the tile refresh fast-path reused the old card and never
+            rebuilt the quality selector.
+            """
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO or not video_live_preview_mode_enabled:
+                return ()
+            signature: list[tuple[str, int, str, str]] = []
+            for visible_item in resources:
+                rep_id = str(getattr(visible_item, "resource_id", "") or "")
+                variants = video_variant_group_members_by_rep_id.get(rep_id, ())
+                if not variants:
+                    signature.append((rep_id, 1, rep_id, ""))
+                    continue
+                selected_id = video_variant_selected_id_by_rep_id.get(
+                    rep_id,
+                    str(getattr(variants[0], "resource_id", "") or ""),
+                )
+                labels = ",".join(video_variant_quality_label(variant) for variant in variants)
+                signature.append((rep_id, len(variants), selected_id, labels))
+            return tuple(signature)
 
         def _cycle_video_variant_for_rep(item: Any, button: Any = None) -> None:
             rep_id = str(getattr(item, "resource_id", "") or "")
@@ -10547,7 +10574,7 @@ class App(ctk.CTk):
                 pass
 
         def render_resource_list() -> None:
-            nonlocal active_state, hidden_candidate_count, thumbnail_preview_loading_count, rendered_tile_resource_ids, video_grouped_variant_hidden_count
+            nonlocal active_state, hidden_candidate_count, thumbnail_preview_loading_count, rendered_tile_resource_ids, rendered_tile_variant_signature, video_grouped_variant_hidden_count
             filtered_state = filter_resource_dialog_items(state, current_filters())
             display_resources = tuple(filtered_state.resources)
             hidden_candidate_count = 0
@@ -10581,7 +10608,16 @@ class App(ctk.CTk):
                 committed_resource_ids=filtered_state.committed_resource_ids,
             )
             display_resource_ids = tuple(item.resource_id for item in active_state.resources)
-            if display_resource_ids and display_resource_ids == rendered_tile_resource_ids and rendered_tile_refreshers_by_id:
+            display_variant_signature = _video_variant_signature_for_resources(tuple(active_state.resources))
+            # V78R: rebuild video tiles when a same-id representative gains
+            # quality variants.  The image-only refresh path is still safe only
+            # when both the visible ids and variant signature match.
+            if (
+                display_resource_ids
+                and display_resource_ids == rendered_tile_resource_ids
+                and display_variant_signature == rendered_tile_variant_signature
+                and rendered_tile_refreshers_by_id
+            ):
                 for visible_item in active_state.resources:
                     refresher = rendered_tile_refreshers_by_id.get(visible_item.resource_id)
                     if refresher is None:
@@ -10596,6 +10632,7 @@ class App(ctk.CTk):
             vars_by_id.clear()
             rendered_tile_refreshers_by_id.clear()
             rendered_tile_resource_ids = display_resource_ids
+            rendered_tile_variant_signature = display_variant_signature
             column_count = 4 if resource_kind == RESOURCE_KIND_IMAGE else 2
             for column_index in range(column_count):
                 list_frame.grid_columnconfigure(column_index, weight=1, uniform="image_cards")
@@ -10619,6 +10656,7 @@ class App(ctk.CTk):
                 )
                 empty.grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=8)
                 rendered_tile_resource_ids = ()
+                rendered_tile_variant_signature = ()
                 rendered_tile_refreshers_by_id.clear()
                 return
             tile_checkbox_refreshers: list[Any] = []
@@ -10736,16 +10774,16 @@ class App(ctk.CTk):
                     live_preview_button.lift()
                     preview_box.bind("<Double-Button-1>", lambda _event, current_item=item: _open_live_video_preview_for_item(current_item), add="+")
                     preview_label.bind("<Double-Button-1>", lambda _event, current_item=item: _open_live_video_preview_for_item(current_item), add="+")
-                variant_group = video_variant_group_members_by_rep_id.get(item.resource_id, ())
+                variant_group = video_variant_group_members_by_rep_id.get(str(item.resource_id), ())
                 if len(variant_group) > 1:
                     variant_quality_button = ctk.CTkButton(
                         preview_box,
                         text=_video_variant_button_text_for_rep(item),
-                        width=96,
-                        height=22,
+                        width=126,
+                        height=24,
                         corner_radius=6,
-                        fg_color=COLORS["bg_dark"],
-                        hover_color=COLORS["bg_input"],
+                        fg_color=COLORS["bg_input"],
+                        hover_color=COLORS["bg_dark"],
                         text_color=COLORS["text_primary"],
                         font=ctk.CTkFont(size=9, weight="bold"),
                     )
@@ -10777,8 +10815,11 @@ class App(ctk.CTk):
                 ) -> None:
                     if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
                         return
-                    if video_live_preview_mode_enabled:
-                        return
+                    # V78R: live-preview mode must not kill automatic hover playback.
+                    # Source-row prefetch remains disabled in live mode for speed, but
+                    # hovering a tile may generate/play cached frames on demand.
+                    current_item = _video_variant_selected_item_for_rep(current_item)
+                    resource_id = str(getattr(current_item, "resource_id", "") or resource_id)
                     frames = video_hover_preview_frames_by_id.get(resource_id)
                     if not frames or len(frames) < 2:
                         _start_video_hover_preview_probe((current_item,))
@@ -10939,7 +10980,7 @@ class App(ctk.CTk):
                 rendered_tile_refreshers_by_id[item.resource_id] = refresh_rendered_tile
 
                 name_text = f"{item.display_name or item.resource_id} ({item.extension or item.media_type or 'resource'})"
-                variant_group = video_variant_group_members_by_rep_id.get(item.resource_id, ())
+                variant_group = video_variant_group_members_by_rep_id.get(str(item.resource_id), ())
                 if len(variant_group) > 1:
                     name_text = f"{name_text} · {len(variant_group)} qualities"
                 if item.duration_seconds:

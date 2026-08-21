@@ -117,8 +117,13 @@ def normalize_video_rendition_content_key(media_url: str, *, title: str = "") ->
         if part and not _DIMENSION_RE.fullmatch(part) and not _QUALITY_TOKEN_RE.search(f"_{part}_")
     ]
     parent_key = "/".join(parent_parts[-4:])
-    title_key = re.sub(r"[^a-z0-9]+", " ", str(title or "").lower()).strip()[:96]
-    return f"{host}/{parent_key}/{stem}|{title_key}"
+    # V78R: do not include the UI/display title in the key for direct media
+    # rendition grouping. Static candidates, rendered candidates, and browser
+    # network candidates can label the same MP4 asset differently (for example
+    # article title vs. "file MP4 from source").  The URL asset stem/path is
+    # the stable identity; mixing display title into the key prevented the
+    # quality selector from appearing for same-content Metro renditions.
+    return f"{host}/{parent_key}/{stem}"
 
 
 def group_video_rendition_items(
