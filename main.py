@@ -8311,7 +8311,7 @@ class App(ctk.CTk):
                     f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
                     f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
                     f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "Video & Audio can open from the cached candidate list; live hover warms a sub-second seed and loops a VDH-length selected-video segment."
+                    "Video & Audio can open from the cached candidate list; live hover paints cached frames immediately, loops the selected-video segment, and defers grid rebuilds until hover ends."
                 ),
                 "muted",
             )
@@ -9788,6 +9788,12 @@ class App(ctk.CTk):
         video_live_hover_opened_resource_ids: set[str] = set()
         video_hover_warm_after_id_by_url: dict[str, Any] = {}
         video_hover_warmed_urls: set[str] = set()
+        # V79E: while a tile preview is actively playing, later discovery merges
+        # must not destroy/rebuild the grid and interrupt the hover.  Defer any
+        # disruptive repaint until the pointer leaves the active preview surface.
+        video_hover_active_resource_ids: set[str] = set()
+        video_hover_repaint_deferred = False
+        video_hover_repaint_after_id: Any = None
 
         def parse_positive_int(value: str) -> int:
             try:
@@ -10776,8 +10782,39 @@ class App(ctk.CTk):
             except Exception:
                 pass
 
+        def _schedule_video_hover_deferred_repaint(delay_ms: int = 80) -> None:
+            nonlocal video_hover_repaint_after_id, video_hover_repaint_deferred
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                return
+            if video_hover_repaint_after_id is not None:
+                return
+
+            def _run_deferred_repaint() -> None:
+                nonlocal video_hover_repaint_after_id, video_hover_repaint_deferred
+                video_hover_repaint_after_id = None
+                if video_hover_active_resource_ids:
+                    try:
+                        video_hover_repaint_after_id = window.after(120, _run_deferred_repaint)
+                    except Exception:
+                        video_hover_repaint_after_id = None
+                    return
+                if not video_hover_repaint_deferred:
+                    return
+                video_hover_repaint_deferred = False
+                try:
+                    if window.winfo_exists():
+                        render_resource_list()
+                        refresh_count()
+                except Exception:
+                    logger.debug("Could not run deferred video repaint after hover finished.", exc_info=True)
+
+            try:
+                video_hover_repaint_after_id = window.after(max(1, int(delay_ms)), _run_deferred_repaint)
+            except Exception:
+                video_hover_repaint_after_id = None
+
         def render_resource_list() -> None:
-            nonlocal active_state, hidden_candidate_count, thumbnail_preview_loading_count, rendered_tile_resource_ids, rendered_tile_variant_signature, video_grouped_variant_hidden_count, video_first_paint_logged
+            nonlocal active_state, hidden_candidate_count, thumbnail_preview_loading_count, rendered_tile_resource_ids, rendered_tile_variant_signature, video_grouped_variant_hidden_count, video_first_paint_logged, video_hover_repaint_deferred
             filtered_state = filter_resource_dialog_items(state, current_filters())
             display_resources = tuple(filtered_state.resources)
             hidden_candidate_count = 0
@@ -10829,6 +10866,18 @@ class App(ctk.CTk):
                         refresher(visible_item)
                     except Exception:
                         pass
+                return
+            if (
+                resource_kind == RESOURCE_KIND_VIDEO_AUDIO
+                and video_hover_active_resource_ids
+                and rendered_tile_resource_ids
+            ):
+                # V79E: a slow full-discovery merge can arrive while the user is
+                # watching the tile hover preview.  Rebuilding the grid here would
+                # destroy the label that is currently animating, so defer the
+                # disruptive repaint until hover leave.
+                video_hover_repaint_deferred = True
+                _schedule_video_hover_deferred_repaint(120)
                 return
             for child in list_frame.winfo_children():
                 child.destroy()
@@ -11053,12 +11102,16 @@ class App(ctk.CTk):
                             window.after_cancel(after_id)
                         except Exception:
                             pass
+                    video_hover_active_resource_ids.discard(str(resource_id or ""))
+                    video_hover_animation_index_by_resource_id[str(resource_id or "")] = 0
                     try:
                         still_preview = _image_preview_for_item(current_item)
                         if still_preview is not None:
                             label.configure(text="", image=still_preview)
                     except Exception:
                         pass
+                    if video_hover_repaint_deferred and not video_hover_active_resource_ids:
+                        _schedule_video_hover_deferred_repaint(1)
 
                 def _start_video_hover_animation(
                     _event: Any = None,
@@ -11085,6 +11138,12 @@ class App(ctk.CTk):
                             return False
                         if video_hover_animation_after_id_by_resource_id.get(resource_id) is not None:
                             return True
+                        video_hover_active_resource_ids.add(resource_id)
+                        # V79E: every fresh hover/replay starts from frame 0 and
+                        # paints the first frame synchronously, so re-hover and
+                        # segment wrap do not feel like they are waiting for a
+                        # one-shot timer.
+                        video_hover_animation_index_by_resource_id[resource_id] = 0
 
                         def _step() -> None:
                             try:
@@ -11093,15 +11152,17 @@ class App(ctk.CTk):
                                     _stop_video_hover_animation(resource_id, label, current_item)
                                     return
                                 current_frames = video_hover_preview_frames_by_id.get(resource_id) or frames
-                                # V79C: modulo indexing loops the opening segment while the pointer remains over the tile.
-                                index_value = video_hover_animation_index_by_resource_id.get(resource_id, 0) % len(current_frames)
+                                index_value = video_hover_animation_index_by_resource_id.get(resource_id, 0)
+                                if index_value >= len(current_frames):
+                                    index_value = 0
                                 video_hover_animation_index_by_resource_id[resource_id] = index_value + 1
                                 label.configure(text="", image=current_frames[index_value])
                                 video_hover_animation_after_id_by_resource_id[resource_id] = window.after(50, _step)
                             except Exception:
                                 video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
+                                video_hover_active_resource_ids.discard(resource_id)
 
-                        video_hover_animation_after_id_by_resource_id[resource_id] = window.after(1, _step)
+                        _step()
                         return True
 
                     if _start_cached_playback():

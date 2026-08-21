@@ -477,7 +477,7 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_hover_preview_status_by_id" in source
     assert "_apply_cached_video_hover_preview" in source
     assert "_start_webpage_video_hover_preview_prefetch_for_discovery" in inspect.getsource(App)
-    assert "live hover warms a sub-second seed and loops a VDH-length selected-video segment" in inspect.getsource(App)
+    assert "live hover paints cached frames immediately, loops the selected-video segment, and defers grid rebuilds until hover ends" in inspect.getsource(App)
     assert "can_stream_video_tile_hover" in source
     assert "window.after(50, _step)" in inspect.getsource(App)
     assert "window.after(20, _wait_for_frames)" in inspect.getsource(App)
@@ -529,7 +529,11 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "V78S: a static-first dialog pass may put the quick 3-candidate" in source
     assert "cached_count > current_count or not prefetch_inflight" in source
     assert "V79B: keep animation state keyed by the visible tile" in source
-    assert "V79C: modulo indexing loops the opening segment" in source
+    assert "V79E: every fresh hover/replay starts from frame 0" in source
+    assert "video_hover_active_resource_ids" in source
+    assert "video_hover_repaint_deferred" in source
+    assert "_schedule_video_hover_deferred_repaint" in source
+    assert "if index_value >= len(current_frames):" in source
     assert "if video_live_preview_mode_enabled:" in source
     assert "V78T: on grouped video cards the bottom size badge" in source
     assert "Selected video quality variant:" in source
