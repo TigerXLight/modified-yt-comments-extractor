@@ -525,6 +525,11 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "cached_count > current_count or not prefetch_inflight" in source
     assert "V78S: keep browser/live preview mode stable" in source
     assert "if video_live_preview_mode_enabled:" in source
+    assert "V78T: on grouped video cards the bottom size badge" in source
+    assert "Selected video quality variant:" in source
+    assert "video_live_hover_after_id_by_resource_id" in source
+    assert "V78T: stable hover in live mode means delayed real browser" in source
+    assert "window.after(850, _open_after_linger)" in source
 
 
 def test_media_resource_window_download_labels_and_gallery() -> None:

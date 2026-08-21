@@ -9766,6 +9766,12 @@ class App(ctk.CTk):
         video_grouped_variant_hidden_count = 0
         video_hover_animation_after_id_by_resource_id: dict[str, Any] = {}
         video_hover_animation_index_by_resource_id: dict[str, int] = {}
+        # V78T: hover in live-preview mode must not fall back to the old
+        # too-fast screenshot slideshow.  A deliberate hover linger opens the
+        # same real browser/player preview as LIVE, while selector clicks stay
+        # usable because the quality button is no longer covered by the size badge.
+        video_live_hover_after_id_by_resource_id: dict[str, Any] = {}
+        video_live_hover_opened_resource_ids: set[str] = set()
 
         def parse_positive_int(value: str) -> int:
             try:
@@ -9915,9 +9921,25 @@ class App(ctk.CTk):
             except ValueError:
                 next_index = 0
             video_variant_selected_id_by_rep_id[rep_id] = variant_ids[next_index]
+            selected_variant = _video_variant_selected_item_for_rep(item)
             try:
                 if button is not None:
                     button.configure(text=_video_variant_button_text_for_rep(item))
+            except Exception:
+                pass
+            try:
+                self.log_message(
+                    f"Selected video quality variant: {video_variant_quality_label(selected_variant)}; LIVE and Review selected will use this variant.",
+                    "muted",
+                )
+            except Exception:
+                pass
+            try:
+                # V78T: changing quality must visibly update the card, not only
+                # the small selector label. Rebuild so the thumbnail, size badge,
+                # detail hover, and LIVE command all resolve through the selected
+                # variant immediately.
+                render_resource_list()
             except Exception:
                 pass
             refresh_count()
@@ -9946,7 +9968,10 @@ class App(ctk.CTk):
                     prefer_playwright=True,
                 )
                 try:
-                    self.log_message(f"Opened live browser video preview for {label}; file={preview_file.name}", "success")
+                    self.log_message(
+                        f"Opened live browser video preview for {label}; quality={quality_label}; url={preview_url}; file={preview_file.name}",
+                        "success",
+                    )
                 except Exception:
                     pass
             except Exception as error:
@@ -10725,10 +10750,21 @@ class App(ctk.CTk):
                     font=ctk.CTkFont(size=10, weight="bold"),
                 )
 
-                def show_image_size_badge(_event: Any = None, badge: Any = image_size_badge) -> None:
+                def show_image_size_badge(
+                    _event: Any = None,
+                    badge: Any = image_size_badge,
+                    current_item: Any = item,
+                ) -> None:
                     if badge is None:
                         return
                     try:
+                        # V78T: on grouped video cards the bottom size badge sits
+                        # on top of the quality selector and steals the click. The
+                        # selector itself already communicates the chosen quality,
+                        # so suppress the hover badge for those cards.
+                        if resource_kind == RESOURCE_KIND_VIDEO_AUDIO and len(video_variant_group_members_by_rep_id.get(str(getattr(current_item, "resource_id", "") or ""), ())) > 1:
+                            badge.place_forget()
+                            return
                         badge.place(relx=0.5, rely=1.0, anchor="s", y=-7)
                         badge.lift()
                     except Exception:
@@ -10779,7 +10815,7 @@ class App(ctk.CTk):
                     variant_quality_button = ctk.CTkButton(
                         preview_box,
                         text=_video_variant_button_text_for_rep(item),
-                        width=126,
+                        width=136,
                         height=24,
                         corner_radius=6,
                         fg_color=COLORS["bg_input"],
@@ -10792,6 +10828,60 @@ class App(ctk.CTk):
                     )
                     variant_quality_button.place(relx=0.0, x=7, rely=1.0, y=-7, anchor="sw")
                     variant_quality_button.lift()
+
+                def _cancel_live_hover_preview(current_item: Any = item) -> None:
+                    candidate_ids = {
+                        str(getattr(current_item, "resource_id", "") or ""),
+                        str(getattr(_video_variant_selected_item_for_rep(current_item), "resource_id", "") or ""),
+                    }
+                    for resource_id in tuple(candidate_ids):
+                        if not resource_id:
+                            continue
+                        after_id = video_live_hover_after_id_by_resource_id.pop(resource_id, None)
+                        if after_id is not None:
+                            try:
+                                window.after_cancel(after_id)
+                            except Exception:
+                                pass
+
+                def _schedule_live_hover_preview(
+                    _event: Any = None,
+                    current_item: Any = item,
+                    image_area: Any = preview_box,
+                ) -> None:
+                    if resource_kind != RESOURCE_KIND_VIDEO_AUDIO or not video_live_preview_mode_enabled:
+                        return
+                    selected_item = _video_variant_selected_item_for_rep(current_item)
+                    preview_url = _video_live_preview_url_for_item(selected_item)
+                    if not preview_url:
+                        return
+                    selected_resource_id = str(getattr(selected_item, "resource_id", "") or getattr(current_item, "resource_id", "") or "")
+                    if not selected_resource_id:
+                        return
+                    # V78T: stable hover in live mode means delayed real browser
+                    # playback, not the old fast cached-frame slideshow.  Open at
+                    # most once per visible quality variant in this dialog; click
+                    # LIVE for repeat/manual playback.
+                    if selected_resource_id in video_live_hover_opened_resource_ids:
+                        return
+                    if selected_resource_id in video_live_hover_after_id_by_resource_id:
+                        return
+
+                    def _open_after_linger(resource_id: str = selected_resource_id, hover_item: Any = current_item) -> None:
+                        video_live_hover_after_id_by_resource_id.pop(resource_id, None)
+                        try:
+                            if not _pointer_inside_widget(image_area):
+                                return
+                        except Exception:
+                            return
+                        video_live_hover_opened_resource_ids.add(resource_id)
+                        _open_live_video_preview_for_item(hover_item)
+
+                    try:
+                        video_live_hover_after_id_by_resource_id[selected_resource_id] = window.after(850, _open_after_linger)
+                    except Exception:
+                        pass
+
                 def _stop_video_hover_animation(resource_id: str = item.resource_id, label: Any = preview_label, current_item: Any = item) -> None:
                     after_id = video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
                     if after_id is not None:
@@ -10850,11 +10940,17 @@ class App(ctk.CTk):
                 preview_box.bind("<Motion>", show_image_size_badge, add="+")
                 preview_label.bind("<Enter>", show_image_size_badge, add="+")
                 preview_label.bind("<Motion>", show_image_size_badge, add="+")
+                preview_box.bind("<Enter>", _schedule_live_hover_preview, add="+")
+                preview_label.bind("<Enter>", _schedule_live_hover_preview, add="+")
                 preview_box.bind("<Enter>", _start_video_hover_animation, add="+")
                 preview_box.bind("<Motion>", _start_video_hover_animation, add="+")
                 preview_label.bind("<Enter>", _start_video_hover_animation, add="+")
                 preview_label.bind("<Motion>", _start_video_hover_animation, add="+")
-                preview_box.bind("<Leave>", lambda _event, stop=_stop_video_hover_animation: (hide_image_size_badge(), stop()), add="+")
+                preview_box.bind(
+                    "<Leave>",
+                    lambda _event, stop=_stop_video_hover_animation, cancel=_cancel_live_hover_preview: (hide_image_size_badge(), cancel(), stop()),
+                    add="+",
+                )
 
                 checkbox = ctk.CTkLabel(
                     preview_box,
