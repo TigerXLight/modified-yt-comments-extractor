@@ -477,13 +477,13 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_hover_preview_status_by_id" in source
     assert "_apply_cached_video_hover_preview" in source
     assert "_start_webpage_video_hover_preview_prefetch_for_discovery" in inspect.getsource(App)
-    assert "live hover uses delayed browser preview, not automatic cached-frame prefetch" in inspect.getsource(App)
-    assert "if video_live_preview_mode_enabled:\n                    return False" in source
-    assert "window.after(70, _step)" in inspect.getsource(App)
+    assert "live hover warms only the selected dialog tile or starts on-demand" in inspect.getsource(App)
+    assert "can_stream_video_tile_hover" in source
+    assert "window.after(56, _step)" in inspect.getsource(App)
     assert "poster_url=poster_url" in inspect.getsource(App)
     assert "poster/thumbnail" in app_source
-    assert "duration_seconds=30.0" in inspect.getsource(App)
-    assert "window.after(70, _step)" in inspect.getsource(App)
+    assert "duration_seconds=7.0" in inspect.getsource(App)
+    assert "window.after(56, _step)" in inspect.getsource(App)
     assert "V78N fast first-paint" in source
     assert "video_static_first_followup_pending" in source
     assert "Quick-scanning static video/audio candidates" in source
@@ -494,12 +494,12 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     main_source = Path("main.py").read_text(encoding="utf-8")
     assert "from webpage_video_live_preview_backend import" in main_source
     assert "webpage_video_live_preview_enabled" in app_source
-    assert "V78P live preview mode replaces automatic animated-GIF/frame" in app_source
+    assert "V79B: do not run source-row ffmpeg hover warm-up in live mode" in app_source
     assert "_video_live_preview_url_for_item" in source
     assert "_open_live_video_preview_for_item" in source
     assert "text=\"LIVE ▶\"" in source
     assert "open_browser_video_live_preview(" in source
-    assert "if not video_live_preview_mode_enabled" in source
+    assert "video_live_preview_mode_enabled" in source
     assert "from webpage_video_variant_grouping import" in main_source
     assert "V78Q duplicate rendition grouping" in source
     assert "video_variant_group_members_by_rep_id" in source
@@ -509,6 +509,8 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_variant_quality_option_labels" in main_source
     assert "video_variant_url_suffix" in main_source
     assert "_video_variant_selected_item_for_rep" in source
+    assert "item = _video_variant_selected_item_for_rep(item)" in source
+    assert "video_hover_preview_frames_by_id.pop(rep_id, None)" in source
     assert "_select_video_variant_for_rep" in source
     assert "ctk.CTkOptionMenu(" in source
     assert "variant_quality_menu" in source
@@ -523,18 +525,19 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "rendered_tile_variant_signature" in source
     assert "V78S: a static-first dialog pass may put the quick 3-candidate" in source
     assert "cached_count > current_count or not prefetch_inflight" in source
-    assert "V78S: keep browser/live preview mode stable" in source
+    assert "V79B: keep animation state keyed by the visible tile" in source
     assert "if video_live_preview_mode_enabled:" in source
     assert "V78T: on grouped video cards the bottom size badge" in source
     assert "Selected video quality variant:" in source
     assert "video_live_hover_after_id_by_resource_id" in source
-    assert "V78V: hover must never reuse the visible manual LIVE" in source
-    assert "TODO: add an internal/headless on-demand hover frame" in source
+    assert "V79B: keep animation state keyed by the visible tile" in source
+    assert "extract_video_tile_hover_stream_frames_pil" in source
     assert "window.after(850, _open_after_linger)" not in source
     assert "_open_live_video_preview_for_item(hover_item)" not in source
     assert "command=lambda current_item=item: _open_live_video_preview_for_item(current_item)" in source
     assert 'preview_box.bind("<Double-Button-1>", lambda _event, current_item=item: _open_live_video_preview_for_item(current_item)' in source
-    assert 'item_card.bind("<Motion>", _schedule_live_hover_preview' in source
+    assert 'item_card.bind("<Motion>", _schedule_live_hover_preview' not in source
+    assert "only the actual preview surface starts video hover" in source
 
 
 def test_media_resource_window_download_labels_and_gallery() -> None:

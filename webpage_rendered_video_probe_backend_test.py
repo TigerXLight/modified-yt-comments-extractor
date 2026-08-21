@@ -164,3 +164,46 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+def test_bounded_direct_rendered_video_candidates_filters_and_caps() -> None:
+    from webpage_rendered_video_probe_backend import bounded_direct_rendered_video_candidates
+
+    records = []
+    for index in range(18):
+        records.append(
+            {
+                "tag": "performance",
+                "attr": "name",
+                "url": f"https://videos.example.test/path/{index:03d}_1024x576_MP4_clip.mp4",
+                "mime_type": "video/mp4",
+                "detection_reason": "performance resource fetch",
+            }
+        )
+    records.extend(
+        [
+            {
+                "tag": "performance",
+                "attr": "name",
+                "url": "https://videos.example.test/path/master.m3u8",
+                "mime_type": "application/vnd.apple.mpegurl",
+            },
+            {
+                "tag": "iframe",
+                "attr": "src",
+                "url": "https://player.example.test/embed/123",
+            },
+        ]
+    )
+    result = bounded_direct_rendered_video_candidates(
+        "https://example.test/article",
+        {"location_href": "https://example.test/article", "records": records},
+        max_candidates=8,
+        capability_decision=_decision(),
+    )
+    assert result.discovery_method == "fast_bounded_rendered_direct_media_probe"
+    assert result.candidate_count == 8
+    assert all(candidate.kind == VIDEO_CANDIDATE_KIND_FILE for candidate in result.candidates)
+    assert all(candidate.extension == ".mp4" for candidate in result.candidates)
+    assert not any(".m3u8" in candidate.url for candidate in result.candidates)

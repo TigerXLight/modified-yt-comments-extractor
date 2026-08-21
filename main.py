@@ -178,7 +178,7 @@ from webpage_image_downloader_backend import (
     prewarm_rendered_browser_discovery_worker,
     start_internal_browser_image_discovery_service,
 )
-from webpage_video_resource_bridge import discover_webpage_videos_for_row
+from webpage_video_resource_bridge import discover_webpage_videos_for_row, discover_fast_rendered_webpage_videos_for_row
 from webpage_video_preview_backend import (
     can_generate_video_frame_preview,
     can_generate_video_hover_preview,
@@ -187,6 +187,11 @@ from webpage_video_preview_backend import (
     extract_video_hover_preview_frames_pil_browser,
     video_frame_preview_cache_key,
     video_hover_preview_cache_key,
+)
+from webpage_video_hover_stream_backend import (
+    can_stream_video_tile_hover,
+    extract_video_tile_hover_stream_frames_pil,
+    video_tile_hover_stream_cache_key,
 )
 from webpage_video_live_preview_backend import (
     can_open_browser_video_live_preview,
@@ -8306,7 +8311,7 @@ class App(ctk.CTk):
                     f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
                     f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
                     f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "Video & Audio can open from the cached candidate list; live hover uses delayed browser preview, not automatic cached-frame prefetch."
+                    "Video & Audio can open from the cached candidate list; live hover warms only the selected dialog tile or starts on-demand."
                 ),
                 "muted",
             )
@@ -8317,12 +8322,15 @@ class App(ctk.CTk):
         # already produced cached candidates; it is not an app-startup scan.
         if "tk" not in self.__dict__:
             return
-        if bool(getattr(self, "webpage_video_live_preview_enabled", True)):
-            # V78P live preview mode replaces automatic animated-GIF/frame
-            # prefetch for direct videos.  The old frame cache remains as a
-            # fallback, but it no longer burns browser/ffmpeg time before the
-            # user asks to preview a specific media candidate.
+        live_mode = bool(getattr(self, "webpage_video_live_preview_enabled", True))
+        # V79B: do not run source-row ffmpeg hover warm-up in live mode.
+        # It can race an already-open dialog and warm a non-hovered tile, which
+        # made playback appear on the wrong card. The dialog performs selected
+        # tile warm-up after the concrete card is rendered, and hover can start
+        # an on-demand decode for the exact card under the pointer.
+        if live_mode:
             return
+        live_mode_work_limit = 6
         resources = tuple(getattr(discovery, "resources", ()) or ())
         if not resources:
             return
@@ -8346,7 +8354,7 @@ class App(ctk.CTk):
             inflight.add(cache_key)
             poster_url = str(getattr(item, "thumbnail_reference", "") or "")
             work.append((cache_key, media_url, poster_url))
-            if len(work) >= 6:
+            if len(work) >= live_mode_work_limit:
                 break
         if not work:
             return
@@ -8356,24 +8364,25 @@ class App(ctk.CTk):
             for cache_key, media_url, poster_url in snapshot:
                 try:
                     try:
-                        frames = extract_video_hover_preview_frames_pil_browser(
+                        frames = extract_video_tile_hover_stream_frames_pil(
                             media_url,
-                            timeout=7.5,
-                            duration_seconds=30.0,
-                            sample_count=32,
-                            frame_delay_ms=70,
+                            timeout=8.5,
+                            first_frame_timeout=1.6,
+                            duration_seconds=7.0,
+                            fps=18,
                             referer=page_url,
-                            poster_url=poster_url,
+                            frame_size=(168, 96),
+                            project_root=Path(__file__).resolve().parent,
                         )
                     except Exception:
                         frames = extract_video_hover_preview_frames_pil(
                             media_url,
-                            timeout=5.5,
+                            timeout=8.0,
                             seek_seconds=0.0,
-                            duration_seconds=12.0,
-                            fps=2,
+                            duration_seconds=7.0,
+                            fps=12,
                             referer=page_url,
-                            max_frames=24,
+                            max_frames=84,
                         )
                     if len(frames) >= 2:
                         hover_cache[cache_key] = tuple(frame.copy() for frame in frames)
@@ -9756,6 +9765,10 @@ class App(ctk.CTk):
         # browser probe.  This avoids a blank 12s+ dialog while preserving the
         # full static+rendered evidence pass.
         video_static_first_followup_pending = False
+        video_fast_rendered_probe_started = False
+        video_fast_rendered_probe_active = False
+        video_dialog_started_at = time.perf_counter()
+        video_first_paint_logged = False
         video_discovery_cache_poll_after_id: Any = None
         video_live_preview_mode_enabled = bool(getattr(self, "webpage_video_live_preview_enabled", True))
         # V78Q duplicate rendition grouping: direct MP4/WebM quality variants
@@ -9768,12 +9781,13 @@ class App(ctk.CTk):
         video_grouped_variant_hidden_count = 0
         video_hover_animation_after_id_by_resource_id: dict[str, Any] = {}
         video_hover_animation_index_by_resource_id: dict[str, int] = {}
-        # V78T: hover in live-preview mode must not fall back to the old
-        # too-fast screenshot slideshow.  A deliberate hover linger opens the
-        # same real browser/player preview as LIVE, while selector clicks stay
-        # usable because the quality button is no longer covered by the size badge.
+        # V79A: hover in live-preview mode uses an internal tile playback cache
+        # decoded from the selected direct MP4/WebM URL.  It must never reuse the
+        # visible manual LIVE browser/player route.
         video_live_hover_after_id_by_resource_id: dict[str, Any] = {}
         video_live_hover_opened_resource_ids: set[str] = set()
+        video_hover_warm_after_id_by_url: dict[str, Any] = {}
+        video_hover_warmed_urls: set[str] = set()
 
         def parse_positive_int(value: str) -> int:
             try:
@@ -9819,10 +9833,19 @@ class App(ctk.CTk):
         def _video_hover_preview_url_for_item(item: Any) -> str:
             if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
                 return ""
+            # V79B: callers pass the visible representative tile. Resolve the
+            # currently selected quality variant here, but keep cache/display
+            # state keyed by the visible tile id so frames never appear on an
+            # adjacent/non-hovered card.
+            item = _video_variant_selected_item_for_rep(item)
             media_url = str(getattr(item, "reference_url", "") or getattr(item, "canonical_url", "") or "").strip()
             if not media_url:
                 return ""
-            if can_generate_video_hover_preview(
+            if can_stream_video_tile_hover(
+                media_url,
+                extension=str(getattr(item, "extension", "") or ""),
+                mime_type=str(getattr(item, "mime_type", "") or ""),
+            ) or can_generate_video_hover_preview(
                 media_url,
                 extension=str(getattr(item, "extension", "") or ""),
                 mime_type=str(getattr(item, "mime_type", "") or ""),
@@ -9954,12 +9977,30 @@ class App(ctk.CTk):
             except Exception:
                 pass
             try:
+                # V79B: the visible representative tile owns the in-tile hover
+                # surface.  A quality change must invalidate its display frames
+                # so the next warm/hover uses the newly selected URL.
+                video_hover_preview_frames_by_id.pop(rep_id, None)
+                video_hover_preview_status_by_id.pop(rep_id, None)
+                after_id = video_hover_animation_after_id_by_resource_id.pop(rep_id, None)
+                if after_id is not None:
+                    try:
+                        window.after_cancel(after_id)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
                 suffix = video_variant_url_suffix(selected_variant)
                 suffix_text = f"; url suffix={suffix}" if suffix else ""
                 self.log_message(
                     f"Selected video quality variant: {_video_variant_selected_label_for_rep(item)}{suffix_text}; LIVE and Review selected will use this variant.",
                     "muted",
                 )
+            except Exception:
+                pass
+            try:
+                _schedule_selected_video_hover_warm(item, delay_ms=1)
             except Exception:
                 pass
             try:
@@ -10094,7 +10135,9 @@ class App(ctk.CTk):
             hover_url = _video_hover_preview_url_for_item(item)
             if not hover_url:
                 return False
-            cached_hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(video_hover_preview_cache_key(hover_url))
+            cached_hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(video_tile_hover_stream_cache_key(hover_url))
+            if cached_hover_frames is None:
+                cached_hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(video_hover_preview_cache_key(hover_url))
             if cached_hover_frames is None:
                 return False
             cached = _cache_ctk_video_hover_frames_for_item(item.resource_id, cached_hover_frames)
@@ -10103,34 +10146,52 @@ class App(ctk.CTk):
             return cached
 
         def _extract_video_hover_preview_frames_cached(item: Any, hover_url: str) -> tuple[Any, ...]:
-            # V78L follows the browser-hover references: preload/decode through a
-            # real video element before hover, then let Tk cycle cached frames.
-            # ffmpeg remains a fallback, not the main hover path.
-            hover_cache_key = video_hover_preview_cache_key(hover_url)
+            # V79A: generate a real opening-segment tile playback cache from the
+            # selected direct MP4/WebM URL.  This uses the bundled/available ffmpeg
+            # raw-video stream path first so the hover frames are contiguous video,
+            # not sparse browser screenshots or a visible LIVE browser window.
+            hover_cache_key = video_tile_hover_stream_cache_key(hover_url)
             hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(hover_cache_key)
+            if hover_frames is None:
+                legacy_cache_key = video_hover_preview_cache_key(hover_url)
+                hover_frames = webpage_video_hover_preview_pil_frames_by_url.get(legacy_cache_key)
             if hover_frames is None:
                 page_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "")
                 try:
-                    hover_frames = extract_video_hover_preview_frames_pil_browser(
+                    hover_frames = extract_video_tile_hover_stream_frames_pil(
                         hover_url,
-                        timeout=7.5,
-                        duration_seconds=30.0,
-                        sample_count=32,
-                        frame_delay_ms=70,
+                        timeout=8.5,
+                        first_frame_timeout=1.6,
+                        duration_seconds=7.0,
+                        fps=18,
                         referer=page_url,
-                        poster_url=str(getattr(item, "thumbnail_reference", "") or ""),
+                        frame_size=(168, 96),
+                        max_frames=126,
+                        project_root=Path(__file__).resolve().parent,
                     )
-                except Exception as browser_error:
-                    logger.debug("Browser-backed video hover preview failed for %s: %s", hover_url, browser_error)
-                    hover_frames = extract_video_hover_preview_frames_pil(
-                        hover_url,
-                        timeout=5.5,
-                        seek_seconds=0.0,
-                        duration_seconds=12.0,
-                        fps=2,
-                        referer=page_url,
-                        max_frames=24,
-                    )
+                except Exception as stream_error:
+                    logger.debug("FFmpeg stream video tile hover preview failed for %s: %s", hover_url, stream_error)
+                    try:
+                        hover_frames = extract_video_hover_preview_frames_pil(
+                            hover_url,
+                            timeout=8.0,
+                            seek_seconds=0.0,
+                            duration_seconds=7.0,
+                            fps=12,
+                            referer=page_url,
+                            max_frames=84,
+                        )
+                    except Exception as ffmpeg_error:
+                        logger.debug("FFmpeg GIF video tile hover fallback failed for %s: %s", hover_url, ffmpeg_error)
+                        hover_frames = extract_video_hover_preview_frames_pil_browser(
+                            hover_url,
+                            timeout=8.0,
+                            duration_seconds=7.0,
+                            sample_count=84,
+                            frame_delay_ms=56,
+                            referer=page_url,
+                            poster_url=str(getattr(item, "thumbnail_reference", "") or ""),
+                        )
                 webpage_video_hover_preview_pil_frames_by_url[hover_cache_key] = tuple(frame.copy() for frame in hover_frames)
                 while len(webpage_video_hover_preview_pil_frames_by_url) > webpage_video_hover_preview_cache_limit:
                     try:
@@ -10449,7 +10510,7 @@ class App(ctk.CTk):
             # Browser-hover references preload direct video elements before hover.
             # Run this independently from thumbnail probing so a poster/thumbnail
             # cache hit cannot suppress animated hover frames again.
-            candidates = candidates[:6]
+            candidates = candidates[: (1 if video_live_preview_mode_enabled else 6)]
             for candidate in candidates:
                 video_hover_preview_status_by_id[candidate.resource_id] = "pending"
             video_hover_probe_thread_active = True
@@ -10475,6 +10536,31 @@ class App(ctk.CTk):
                     _queue_thumbnail_probe_result("hover_done")
 
             threading.Thread(target=_worker, args=(candidates,), daemon=True).start()
+
+        def _schedule_selected_video_hover_warm(item: Any, delay_ms: int = 220) -> None:
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                return
+            hover_url = _video_hover_preview_url_for_item(item)
+            if not hover_url:
+                return
+            if video_tile_hover_stream_cache_key(hover_url) in webpage_video_hover_preview_pil_frames_by_url:
+                return
+            if video_hover_preview_cache_key(hover_url) in webpage_video_hover_preview_pil_frames_by_url:
+                return
+            if hover_url in video_hover_warmed_urls:
+                return
+            if hover_url in video_hover_warm_after_id_by_url:
+                return
+
+            def _warm_now() -> None:
+                video_hover_warm_after_id_by_url.pop(hover_url, None)
+                video_hover_warmed_urls.add(hover_url)
+                _start_video_hover_preview_probe((item,))
+
+            try:
+                video_hover_warm_after_id_by_url[hover_url] = window.after(max(1, int(delay_ms)), _warm_now)
+            except Exception:
+                _warm_now()
 
         def _image_preview_for_item(item: Any) -> ctk.CTkImage | None:
             if resource_kind not in {RESOURCE_KIND_IMAGE, RESOURCE_KIND_VIDEO_AUDIO}:
@@ -10629,7 +10715,7 @@ class App(ctk.CTk):
                 pass
 
         def render_resource_list() -> None:
-            nonlocal active_state, hidden_candidate_count, thumbnail_preview_loading_count, rendered_tile_resource_ids, rendered_tile_variant_signature, video_grouped_variant_hidden_count
+            nonlocal active_state, hidden_candidate_count, thumbnail_preview_loading_count, rendered_tile_resource_ids, rendered_tile_variant_signature, video_grouped_variant_hidden_count, video_first_paint_logged
             filtered_state = filter_resource_dialog_items(state, current_filters())
             display_resources = tuple(filtered_state.resources)
             hidden_candidate_count = 0
@@ -10714,6 +10800,12 @@ class App(ctk.CTk):
                 rendered_tile_variant_signature = ()
                 rendered_tile_refreshers_by_id.clear()
                 return
+            if resource_kind == RESOURCE_KIND_VIDEO_AUDIO and not video_first_paint_logged:
+                video_first_paint_logged = True
+                try:
+                    self.log_message(f"Video dialog first paint after {int(max(0.0, (time.perf_counter() - video_dialog_started_at) * 1000.0))} ms", "muted")
+                except Exception:
+                    pass
             tile_checkbox_refreshers: list[Any] = []
             for index, item in enumerate(active_state.resources):
                 item_var = ctk.BooleanVar(value=item.resource_id in selected_ids)
@@ -10863,6 +10955,9 @@ class App(ctk.CTk):
                     variant_quality_menu.place(relx=0.0, x=7, rely=1.0, y=-7, anchor="sw")
                     variant_quality_menu.lift()
 
+                if resource_kind == RESOURCE_KIND_VIDEO_AUDIO and video_live_preview_mode_enabled and live_preview_url:
+                    _schedule_selected_video_hover_warm(item, delay_ms=260)
+
                 def _cancel_live_hover_preview(current_item: Any = item) -> None:
                     candidate_ids = {
                         str(getattr(current_item, "resource_id", "") or ""),
@@ -10886,11 +10981,7 @@ class App(ctk.CTk):
                     if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
                         return
                     if video_live_preview_mode_enabled:
-                        # V78V: hover must never reuse the visible manual LIVE
-                        # browser/player route.  Manual LIVE and documented
-                        # double-click remain explicit visible-preview actions.
-                        # TODO: add an internal/headless on-demand hover frame
-                        # surface here when it can render inside the tile.
+                        _start_video_hover_animation(_event, current_item=current_item, image_area=image_area)
                         return
 
                 def _stop_video_hover_animation(resource_id: str = item.resource_id, label: Any = preview_label, current_item: Any = item) -> None:
@@ -10916,45 +11007,68 @@ class App(ctk.CTk):
                 ) -> None:
                     if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
                         return
-                    # V78S: keep browser/live preview mode stable.  The cached
-                    # frame-cycling hover fallback is intentionally disabled while
-                    # LIVE is available because it plays too fast and can restart
-                    # background browser/ffmpeg work during ordinary pointer motion.
-                    # When live preview mode is disabled, this fallback still works.
-                    if video_live_preview_mode_enabled:
-                        return
-                    current_item = _video_variant_selected_item_for_rep(current_item)
+                    # V79A: hover may run in live-preview mode, but it must be
+                    # internal tile playback only.  It never opens the manual LIVE
+                    # browser/player route.
+                    # V79B: keep animation state keyed by the visible tile,
+                    # while _video_hover_preview_url_for_item() resolves the
+                    # selected quality URL for decoding. This prevents a
+                    # selected variant id from driving an adjacent/non-hovered
+                    # tile's label.
                     resource_id = str(getattr(current_item, "resource_id", "") or resource_id)
-                    frames = video_hover_preview_frames_by_id.get(resource_id)
-                    if not frames or len(frames) < 2:
-                        _start_video_hover_preview_probe((current_item,))
+
+                    def _start_cached_playback() -> bool:
+                        frames = video_hover_preview_frames_by_id.get(resource_id)
+                        if not frames or len(frames) < 2:
+                            return False
+                        if video_hover_animation_after_id_by_resource_id.get(resource_id) is not None:
+                            return True
+
+                        def _step() -> None:
+                            try:
+                                if not _pointer_inside_widget(image_area):
+                                    video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
+                                    _stop_video_hover_animation(resource_id, label, current_item)
+                                    return
+                                current_frames = video_hover_preview_frames_by_id.get(resource_id) or frames
+                                index_value = video_hover_animation_index_by_resource_id.get(resource_id, 0) % len(current_frames)
+                                video_hover_animation_index_by_resource_id[resource_id] = index_value + 1
+                                label.configure(text="", image=current_frames[index_value])
+                                video_hover_animation_after_id_by_resource_id[resource_id] = window.after(56, _step)
+                            except Exception:
+                                video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
+
+                        video_hover_animation_after_id_by_resource_id[resource_id] = window.after(1, _step)
+                        return True
+
+                    if _start_cached_playback():
                         return
+                    _start_video_hover_preview_probe((current_item,))
                     if video_hover_animation_after_id_by_resource_id.get(resource_id) is not None:
                         return
 
-                    def _step() -> None:
+                    def _wait_for_frames() -> None:
                         try:
                             if not _pointer_inside_widget(image_area):
                                 video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
                                 _stop_video_hover_animation(resource_id, label, current_item)
                                 return
-                            index_value = video_hover_animation_index_by_resource_id.get(resource_id, 0) % len(frames)
-                            video_hover_animation_index_by_resource_id[resource_id] = index_value + 1
-                            label.configure(text="", image=frames[index_value])
-                            video_hover_animation_after_id_by_resource_id[resource_id] = window.after(70, _step)
+                            if _start_cached_playback():
+                                return
+                            video_hover_animation_after_id_by_resource_id[resource_id] = window.after(85, _wait_for_frames)
                         except Exception:
                             video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
 
-                    video_hover_animation_after_id_by_resource_id[resource_id] = window.after(1, _step)
+                    video_hover_animation_after_id_by_resource_id[resource_id] = window.after(85, _wait_for_frames)
 
                 preview_box.bind("<Enter>", show_image_size_badge, add="+")
                 preview_box.bind("<Motion>", show_image_size_badge, add="+")
                 preview_label.bind("<Enter>", show_image_size_badge, add="+")
                 preview_label.bind("<Motion>", show_image_size_badge, add="+")
-                item_card.bind("<Enter>", _schedule_live_hover_preview, add="+")
-                item_card.bind("<Motion>", _schedule_live_hover_preview, add="+")
-                preview_box.bind("<Enter>", _schedule_live_hover_preview, add="+")
-                preview_label.bind("<Enter>", _schedule_live_hover_preview, add="+")
+                # V79B: only the actual preview surface starts video hover.
+                # Binding the whole card could trigger playback while the mouse
+                # was over neighbouring controls/tiles, which made the preview
+                # appear to belong to the wrong card.
                 preview_box.bind("<Enter>", _start_video_hover_animation, add="+")
                 preview_box.bind("<Motion>", _start_video_hover_animation, add="+")
                 preview_label.bind("<Enter>", _start_video_hover_animation, add="+")
@@ -11419,6 +11533,62 @@ class App(ctk.CTk):
             except Exception:
                 pass
 
+        def _merged_active_and_fast_video_discovery(discovery: Any) -> Any:
+            existing_resources = tuple(getattr(active_state, "resources", ()) or ())
+            new_resources = tuple(getattr(discovery, "resources", ()) or ())
+            if not existing_resources:
+                return discovery
+            by_url: dict[str, Any] = {}
+            merged: list[Any] = []
+            for candidate in (*existing_resources, *new_resources):
+                url_key = str(getattr(candidate, "reference_url", "") or getattr(candidate, "canonical_url", "") or getattr(candidate, "resource_id", "") or "")
+                if not url_key or url_key in by_url:
+                    continue
+                by_url[url_key] = candidate
+                merged.append(candidate)
+            if len(merged) == len(new_resources) and tuple(merged) == new_resources:
+                return discovery
+            try:
+                return replace(discovery, resources=tuple(merged))
+            except Exception:
+                return discovery
+
+        def _start_fast_rendered_video_probe_once() -> None:
+            nonlocal video_fast_rendered_probe_started, video_fast_rendered_probe_active
+            if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                return
+            if video_fast_rendered_probe_started:
+                return
+            if row.adapter_id in {"youtube", "twitter_x"}:
+                return
+            video_fast_rendered_probe_started = True
+            video_fast_rendered_probe_active = True
+
+            def _worker() -> None:
+                started = time.perf_counter()
+                try:
+                    discovery = discover_fast_rendered_webpage_videos_for_row(
+                        row,
+                        timeout_ms=3500,
+                        max_candidates=8,
+                    )
+                    if getattr(discovery, "resources", ()):
+                        elapsed_ms = int(max(0.0, (time.perf_counter() - video_dialog_started_at) * 1000.0))
+                        _queue_video_discovery_result("fast_success", discovery=discovery, error_text=str(elapsed_ms), show_messages=False)
+                    else:
+                        warning_text = "; ".join(getattr(discovery, "warnings", ()) or ())
+                        if warning_text:
+                            logger.debug("Fast rendered media probe found no direct video candidates: %s", warning_text)
+                except Exception as exc:
+                    logger.debug("Fast rendered media probe failed: %s", exc, exc_info=True)
+                finally:
+                    # Keep the pump alive long enough to drain fast_success even
+                    # when the normal discovery worker has already completed.
+                    _queue_video_discovery_result("fast_done", error_text=str(int((time.perf_counter() - started) * 1000.0)), show_messages=False)
+
+            _ensure_video_discovery_result_pump()
+            threading.Thread(target=_worker, daemon=True).start()
+
         def _apply_webpage_video_discovery_result(discovery: Any, *, show_messages: bool = True) -> None:
             nonlocal row, state
             if not getattr(discovery, "resources", ()):  # discovery-only path, no downloads
@@ -11465,12 +11635,12 @@ class App(ctk.CTk):
             )
 
         def _ensure_video_discovery_result_pump() -> None:
-            nonlocal video_discovery_thread_active, video_discovery_result_after_id, video_static_first_followup_pending
+            nonlocal video_discovery_thread_active, video_discovery_result_after_id, video_static_first_followup_pending, video_fast_rendered_probe_active
             if video_discovery_result_after_id is not None:
                 return
 
             def _drain_video_discovery_results() -> None:
-                nonlocal video_discovery_thread_active, video_discovery_result_after_id, video_static_first_followup_pending
+                nonlocal video_discovery_thread_active, video_discovery_result_after_id, video_static_first_followup_pending, video_fast_rendered_probe_active
                 video_discovery_result_after_id = None
                 queued: list[tuple[str, Any, str, bool]] = []
                 try:
@@ -11482,6 +11652,15 @@ class App(ctk.CTk):
                 for kind, discovery, error_text, notify_user in queued:
                     if kind == "success":
                         _apply_webpage_video_discovery_result(discovery, show_messages=notify_user)
+                    elif kind == "fast_success":
+                        fast_discovery = _merged_active_and_fast_video_discovery(discovery)
+                        _apply_webpage_video_discovery_result(fast_discovery, show_messages=False)
+                        self.log_message(
+                            f"Video dialog fast rendered media probe after {error_text or '0'} ms; candidates={len(getattr(fast_discovery, 'resources', ()) or ())}",
+                            "muted",
+                        )
+                    elif kind == "fast_done":
+                        video_fast_rendered_probe_active = False
                     elif kind == "failed":
                         if notify_user:
                             show_image_dialog_notice("Video/audio discovery failed", error_text or "Unknown video/audio discovery failure.")
@@ -11495,6 +11674,7 @@ class App(ctk.CTk):
                             pass
                         if video_static_first_followup_pending:
                             video_static_first_followup_pending = False
+                            _start_fast_rendered_video_probe_once()
                             cache_key = _webpage_video_discovery_cache_key(row)
                             if _video_source_row_prefetch_is_inflight(cache_key):
                                 _schedule_video_prefetch_cache_poll(cache_key)
@@ -11509,7 +11689,7 @@ class App(ctk.CTk):
                                     ))
                                 except Exception:
                                     logger.debug("Could not schedule rendered video discovery follow-up after static first paint.", exc_info=True)
-                should_continue = video_discovery_thread_active
+                should_continue = video_discovery_thread_active or video_fast_rendered_probe_active
                 try:
                     with video_discovery_results_lock:
                         should_continue = should_continue or bool(video_discovery_results)

@@ -14,6 +14,7 @@ from webpage_video_candidate_backend import (
     WebpageVideoDiscoveryResult,
 )
 from webpage_video_discovery_backend import discover_webpage_video_candidates, summarize_merged_webpage_video_discovery
+from webpage_rendered_video_probe_backend import discover_fast_rendered_direct_video_candidates
 
 
 @dataclass(frozen=True)
@@ -189,8 +190,35 @@ def discover_webpage_videos_for_row(
     )
 
 
+def discover_fast_rendered_webpage_videos_for_row(
+    row: SourceResourceRowState,
+    *,
+    timeout_ms: int = 3500,
+    max_candidates: int = 8,
+) -> WebpageVideoSourceDiscovery:
+    """Discover a bounded direct-media subset from a short rendered/network probe."""
+    source_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "").strip()
+    discovery = discover_fast_rendered_direct_video_candidates(
+        source_url,
+        timeout_ms=timeout_ms,
+        max_candidates=max_candidates,
+    )
+    resources = webpage_video_resources_from_discovery(row, discovery)
+    summary = summarize_merged_webpage_video_discovery(discovery)
+    return WebpageVideoSourceDiscovery(
+        row_id=row.row_id,
+        source_url=source_url,
+        canonical_url=discovery.canonical_url or source_url,
+        resources=resources,
+        discovery=discovery,
+        summary=summary,
+        warnings=tuple(discovery.warnings or ()),
+    )
+
+
 __all__ = [
     "WebpageVideoSourceDiscovery",
+    "discover_fast_rendered_webpage_videos_for_row",
     "discover_webpage_videos_for_row",
     "webpage_video_resources_from_discovery",
 ]
