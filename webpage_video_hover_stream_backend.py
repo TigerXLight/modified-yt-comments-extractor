@@ -99,8 +99,8 @@ def build_ffmpeg_tile_hover_stream_command(
     *,
     ffmpeg_path: str = "",
     frame_size: tuple[int, int] = (168, 96),
-    duration_seconds: float = 12.0,
-    fps: int = 18,
+    duration_seconds: float = 6.0,
+    fps: int = 20,
     seek_seconds: float = 0.0,
     user_agent: str = "Mozilla/5.0 YTCE tile video hover",
     referer: str = "",
@@ -109,7 +109,7 @@ def build_ffmpeg_tile_hover_stream_command(
     """Build an ffmpeg raw-video command for real opening-segment tile playback."""
     width = max(96, int(frame_size[0] or 168))
     height = max(54, int(frame_size[1] or 96))
-    fps_value = max(6, min(30, int(fps or 18)))
+    fps_value = max(6, min(30, int(fps or 20)))
     executable = ffmpeg_path or resolve_video_tile_hover_ffmpeg(project_root)
     command = [
         executable,
@@ -148,7 +148,7 @@ def build_ffmpeg_tile_hover_stream_command(
             "-i",
             str(url or ""),
             "-t",
-            f"{max(0.5, min(12.0, float(duration_seconds or 12.0))):.3f}",
+            f"{max(0.5, min(6.0, float(duration_seconds or 6.0))):.3f}",
             "-an",
             "-vf",
             scale_filter,
@@ -180,8 +180,8 @@ def extract_video_tile_hover_stream_frames_pil(
     timeout: float = 8.5,
     first_frame_timeout: float = 1.6,
     frame_size: tuple[int, int] = (168, 96),
-    duration_seconds: float = 12.0,
-    fps: int = 18,
+    duration_seconds: float = 6.0,
+    fps: int = 20,
     seek_seconds: float = 0.0,
     referer: str = "",
     max_frames: int | None = None,
@@ -200,8 +200,8 @@ def extract_video_tile_hover_stream_frames_pil(
         raise RuntimeError("URL is not a direct video suitable for tile hover playback.")
     width = max(96, int(frame_size[0] or 168))
     height = max(54, int(frame_size[1] or 96))
-    fps_value = max(6, min(30, int(fps or 18)))
-    limit = max(2, min(360, int(max_frames or round(max(0.5, float(duration_seconds or 12.0)) * fps_value))))
+    fps_value = max(6, min(30, int(fps or 20)))
+    limit = max(2, min(360, int(max_frames or round(max(0.5, float(duration_seconds or 6.0)) * fps_value))))
     frame_bytes = width * height * 4
     command = build_ffmpeg_tile_hover_stream_command(
         text,

@@ -477,15 +477,16 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_hover_preview_status_by_id" in source
     assert "_apply_cached_video_hover_preview" in source
     assert "_start_webpage_video_hover_preview_prefetch_for_discovery" in inspect.getsource(App)
-    assert "live hover warms a fast seed and loops a longer selected-video segment" in inspect.getsource(App)
+    assert "live hover warms a sub-second seed and loops a VDH-length selected-video segment" in inspect.getsource(App)
     assert "can_stream_video_tile_hover" in source
-    assert "window.after(56, _step)" in inspect.getsource(App)
-    assert "window.after(35, _wait_for_frames)" in inspect.getsource(App)
+    assert "window.after(50, _step)" in inspect.getsource(App)
+    assert "window.after(20, _wait_for_frames)" in inspect.getsource(App)
     assert "poster_url=poster_url" in inspect.getsource(App)
     assert "poster/thumbnail" in app_source
-    assert "duration_seconds=12.0" in inspect.getsource(App)
-    assert "window.after(56, _step)" in inspect.getsource(App)
-    assert "window.after(35, _wait_for_frames)" in inspect.getsource(App)
+    assert "duration_seconds=0.65" in inspect.getsource(App)
+    assert "duration_seconds=6.0" in inspect.getsource(App)
+    assert "window.after(50, _step)" in inspect.getsource(App)
+    assert "window.after(20, _wait_for_frames)" in inspect.getsource(App)
     assert "V78N fast first-paint" in source
     assert "video_static_first_followup_pending" in source
     assert "Quick-scanning static video/audio candidates" in source

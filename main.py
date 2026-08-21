@@ -8311,7 +8311,7 @@ class App(ctk.CTk):
                     f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
                     f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
                     f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "Video & Audio can open from the cached candidate list; live hover warms a fast seed and loops a longer selected-video segment."
+                    "Video & Audio can open from the cached candidate list; live hover warms a sub-second seed and loops a VDH-length selected-video segment."
                 ),
                 "muted",
             )
@@ -10219,23 +10219,25 @@ class App(ctk.CTk):
             return _extract_video_hover_preview_frames_cached(
                 item,
                 hover_url,
-                duration_seconds=2.2,
-                fps=18,
-                max_frames=40,
-                timeout=3.2,
-                first_frame_timeout=0.9,
+                duration_seconds=0.65,
+                fps=20,
+                max_frames=13,
+                timeout=1.45,
+                first_frame_timeout=0.55,
             )
 
         def _extract_video_hover_preview_long_frames(item: Any, hover_url: str) -> tuple[Any, ...]:
-            # Keep a longer opening segment available for looped hover playback.
+            # Keep a VDH-like opening segment available for looped hover playback.
+            # V79D keeps this close to the observed popup preview length instead of
+            # generating an over-long 12s clip that takes longer to warm.
             return _extract_video_hover_preview_frames_cached(
                 item,
                 hover_url,
-                duration_seconds=12.0,
-                fps=18,
-                max_frames=216,
-                timeout=12.5,
-                first_frame_timeout=1.25,
+                duration_seconds=6.0,
+                fps=20,
+                max_frames=120,
+                timeout=7.5,
+                first_frame_timeout=0.85,
                 force_refresh=True,
             )
 
@@ -10403,12 +10405,12 @@ class App(ctk.CTk):
                     pass
                 if should_continue:
                     try:
-                        thumbnail_probe_result_after_id = window.after(140, _drain_thumbnail_probe_results)
+                        thumbnail_probe_result_after_id = window.after(35, _drain_thumbnail_probe_results)
                     except Exception:
                         thumbnail_probe_result_after_id = None
 
             try:
-                thumbnail_probe_result_after_id = window.after(120, _drain_thumbnail_probe_results)
+                thumbnail_probe_result_after_id = window.after(35, _drain_thumbnail_probe_results)
             except Exception:
                 thumbnail_probe_result_after_id = None
 
@@ -11095,7 +11097,7 @@ class App(ctk.CTk):
                                 index_value = video_hover_animation_index_by_resource_id.get(resource_id, 0) % len(current_frames)
                                 video_hover_animation_index_by_resource_id[resource_id] = index_value + 1
                                 label.configure(text="", image=current_frames[index_value])
-                                video_hover_animation_after_id_by_resource_id[resource_id] = window.after(56, _step)
+                                video_hover_animation_after_id_by_resource_id[resource_id] = window.after(50, _step)
                             except Exception:
                                 video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
 
@@ -11116,11 +11118,11 @@ class App(ctk.CTk):
                                 return
                             if _start_cached_playback():
                                 return
-                            video_hover_animation_after_id_by_resource_id[resource_id] = window.after(35, _wait_for_frames)
+                            video_hover_animation_after_id_by_resource_id[resource_id] = window.after(20, _wait_for_frames)
                         except Exception:
                             video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
 
-                    video_hover_animation_after_id_by_resource_id[resource_id] = window.after(35, _wait_for_frames)
+                    video_hover_animation_after_id_by_resource_id[resource_id] = window.after(20, _wait_for_frames)
 
                 preview_box.bind("<Enter>", show_image_size_badge, add="+")
                 preview_box.bind("<Motion>", show_image_size_badge, add="+")
