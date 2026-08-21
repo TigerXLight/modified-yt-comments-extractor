@@ -195,6 +195,8 @@ from webpage_video_live_preview_backend import (
 from webpage_video_variant_grouping import (
     group_video_rendition_items,
     video_variant_quality_label,
+    video_variant_quality_option_labels,
+    video_variant_url_suffix,
 )
 from source_twitter_compact_row import (
     TWITTER_COMPACT_MODES,
@@ -8304,7 +8306,7 @@ class App(ctk.CTk):
                     f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
                     f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
                     f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "Video & Audio can open from the cached candidate list; animated hover previews are prefetched when direct media permits."
+                    "Video & Audio can open from the cached candidate list; live hover uses delayed browser preview, not automatic cached-frame prefetch."
                 ),
                 "muted",
             )
@@ -9856,8 +9858,20 @@ class App(ctk.CTk):
             return variants[0]
 
         def _video_variant_button_text_for_rep(item: Any) -> str:
+            return _video_variant_selected_label_for_rep(item)
+
+        def _video_variant_option_pairs_for_rep(item: Any) -> tuple[tuple[str, Any], ...]:
+            variants = video_variant_group_members_by_rep_id.get(str(getattr(item, "resource_id", "") or ""), ())
+            labels = video_variant_quality_option_labels(variants)
+            return tuple((label, variant) for label, variant in zip(labels, variants))
+
+        def _video_variant_selected_label_for_rep(item: Any) -> str:
             selected_variant = _video_variant_selected_item_for_rep(item)
-            return f"{video_variant_quality_label(selected_variant)} ▾"
+            selected_id = str(getattr(selected_variant, "resource_id", "") or "")
+            for label_text, variant in _video_variant_option_pairs_for_rep(item):
+                if str(getattr(variant, "resource_id", "") or "") == selected_id:
+                    return label_text
+            return video_variant_quality_label(selected_variant)
 
         def _group_video_rendition_display_resources(resources: tuple[Any, ...]) -> tuple[Any, ...]:
             nonlocal video_grouped_variant_hidden_count
@@ -9905,31 +9919,45 @@ class App(ctk.CTk):
                     rep_id,
                     str(getattr(variants[0], "resource_id", "") or ""),
                 )
-                labels = ",".join(video_variant_quality_label(variant) for variant in variants)
+                labels = ",".join(video_variant_quality_option_labels(variants))
                 signature.append((rep_id, len(variants), selected_id, labels))
             return tuple(signature)
 
-        def _cycle_video_variant_for_rep(item: Any, button: Any = None) -> None:
+        def _select_video_variant_for_rep(item: Any, selected_label: str, selector_var: Any = None) -> None:
             rep_id = str(getattr(item, "resource_id", "") or "")
             variants = video_variant_group_members_by_rep_id.get(rep_id, ())
             if len(variants) < 2:
                 return
-            selected_id = video_variant_selected_id_by_rep_id.get(rep_id, str(getattr(variants[0], "resource_id", "") or ""))
-            variant_ids = [str(getattr(variant, "resource_id", "") or "") for variant in variants]
+            option_pairs = _video_variant_option_pairs_for_rep(item)
+            selected_variant = None
+            selected_option_label = str(selected_label or "")
+            for label_text, variant in option_pairs:
+                if label_text == selected_option_label:
+                    selected_variant = variant
+                    break
+            if selected_variant is None:
+                selected_variant = variants[0]
+                selected_option_label = option_pairs[0][0] if option_pairs else video_variant_quality_label(selected_variant)
+            selected_resource_id = str(getattr(selected_variant, "resource_id", "") or "")
+            if not selected_resource_id:
+                return
+            video_variant_selected_id_by_rep_id[rep_id] = selected_resource_id
             try:
-                next_index = (variant_ids.index(selected_id) + 1) % len(variants)
-            except ValueError:
-                next_index = 0
-            video_variant_selected_id_by_rep_id[rep_id] = variant_ids[next_index]
+                if selector_var is not None:
+                    selector_var.set(selected_option_label)
+            except Exception:
+                pass
             selected_variant = _video_variant_selected_item_for_rep(item)
             try:
-                if button is not None:
-                    button.configure(text=_video_variant_button_text_for_rep(item))
+                if selector_var is not None:
+                    selector_var.set(_video_variant_selected_label_for_rep(item))
             except Exception:
                 pass
             try:
+                suffix = video_variant_url_suffix(selected_variant)
+                suffix_text = f"; url suffix={suffix}" if suffix else ""
                 self.log_message(
-                    f"Selected video quality variant: {video_variant_quality_label(selected_variant)}; LIVE and Review selected will use this variant.",
+                    f"Selected video quality variant: {_video_variant_selected_label_for_rep(item)}{suffix_text}; LIVE and Review selected will use this variant.",
                     "muted",
                 )
             except Exception:
@@ -10305,6 +10333,8 @@ class App(ctk.CTk):
 
             def _prefetch_video_hover_frames_for_item(item: Any) -> bool:
                 if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
+                    return False
+                if video_live_preview_mode_enabled:
                     return False
                 hover_url = _video_hover_preview_url_for_item(item)
                 if not hover_url:
@@ -10812,22 +10842,26 @@ class App(ctk.CTk):
                     preview_label.bind("<Double-Button-1>", lambda _event, current_item=item: _open_live_video_preview_for_item(current_item), add="+")
                 variant_group = video_variant_group_members_by_rep_id.get(str(item.resource_id), ())
                 if len(variant_group) > 1:
-                    variant_quality_button = ctk.CTkButton(
+                    variant_option_pairs = _video_variant_option_pairs_for_rep(item)
+                    variant_label_var = ctk.StringVar(value=_video_variant_selected_label_for_rep(item))
+                    variant_quality_menu = ctk.CTkOptionMenu(
                         preview_box,
-                        text=_video_variant_button_text_for_rep(item),
+                        values=[label_text for label_text, _variant in variant_option_pairs],
+                        variable=variant_label_var,
                         width=136,
                         height=24,
                         corner_radius=6,
                         fg_color=COLORS["bg_input"],
-                        hover_color=COLORS["bg_dark"],
+                        button_color=COLORS["accent_secondary"],
+                        button_hover_color=COLORS["accent"],
+                        dropdown_fg_color=COLORS["bg_card"],
+                        dropdown_hover_color=COLORS["accent_secondary"],
                         text_color=COLORS["text_primary"],
                         font=ctk.CTkFont(size=9, weight="bold"),
+                        command=lambda selected_label, current_item=item, label_var=variant_label_var: _select_video_variant_for_rep(current_item, selected_label, label_var),
                     )
-                    variant_quality_button.configure(
-                        command=lambda current_item=item, button=variant_quality_button: _cycle_video_variant_for_rep(current_item, button)
-                    )
-                    variant_quality_button.place(relx=0.0, x=7, rely=1.0, y=-7, anchor="sw")
-                    variant_quality_button.lift()
+                    variant_quality_menu.place(relx=0.0, x=7, rely=1.0, y=-7, anchor="sw")
+                    variant_quality_menu.lift()
 
                 def _cancel_live_hover_preview(current_item: Any = item) -> None:
                     candidate_ids = {
@@ -10849,38 +10883,15 @@ class App(ctk.CTk):
                     current_item: Any = item,
                     image_area: Any = preview_box,
                 ) -> None:
-                    if resource_kind != RESOURCE_KIND_VIDEO_AUDIO or not video_live_preview_mode_enabled:
+                    if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
                         return
-                    selected_item = _video_variant_selected_item_for_rep(current_item)
-                    preview_url = _video_live_preview_url_for_item(selected_item)
-                    if not preview_url:
+                    if video_live_preview_mode_enabled:
+                        # V78V: hover must never reuse the visible manual LIVE
+                        # browser/player route.  Manual LIVE and documented
+                        # double-click remain explicit visible-preview actions.
+                        # TODO: add an internal/headless on-demand hover frame
+                        # surface here when it can render inside the tile.
                         return
-                    selected_resource_id = str(getattr(selected_item, "resource_id", "") or getattr(current_item, "resource_id", "") or "")
-                    if not selected_resource_id:
-                        return
-                    # V78T: stable hover in live mode means delayed real browser
-                    # playback, not the old fast cached-frame slideshow.  Open at
-                    # most once per visible quality variant in this dialog; click
-                    # LIVE for repeat/manual playback.
-                    if selected_resource_id in video_live_hover_opened_resource_ids:
-                        return
-                    if selected_resource_id in video_live_hover_after_id_by_resource_id:
-                        return
-
-                    def _open_after_linger(resource_id: str = selected_resource_id, hover_item: Any = current_item) -> None:
-                        video_live_hover_after_id_by_resource_id.pop(resource_id, None)
-                        try:
-                            if not _pointer_inside_widget(image_area):
-                                return
-                        except Exception:
-                            return
-                        video_live_hover_opened_resource_ids.add(resource_id)
-                        _open_live_video_preview_for_item(hover_item)
-
-                    try:
-                        video_live_hover_after_id_by_resource_id[selected_resource_id] = window.after(850, _open_after_linger)
-                    except Exception:
-                        pass
 
                 def _stop_video_hover_animation(resource_id: str = item.resource_id, label: Any = preview_label, current_item: Any = item) -> None:
                     after_id = video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
@@ -10940,6 +10951,8 @@ class App(ctk.CTk):
                 preview_box.bind("<Motion>", show_image_size_badge, add="+")
                 preview_label.bind("<Enter>", show_image_size_badge, add="+")
                 preview_label.bind("<Motion>", show_image_size_badge, add="+")
+                item_card.bind("<Enter>", _schedule_live_hover_preview, add="+")
+                item_card.bind("<Motion>", _schedule_live_hover_preview, add="+")
                 preview_box.bind("<Enter>", _schedule_live_hover_preview, add="+")
                 preview_label.bind("<Enter>", _schedule_live_hover_preview, add="+")
                 preview_box.bind("<Enter>", _start_video_hover_animation, add="+")

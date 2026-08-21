@@ -49,20 +49,33 @@ def dimensions_from_text(text: str) -> tuple[int, int]:
         return 0, 0
 
 
-def video_variant_dimensions(item: Any) -> tuple[int, int]:
-    """Return dimensions from item metadata, or from URL/display-name tokens."""
-    try:
-        width = int(getattr(item, "width", 0) or 0)
-        height = int(getattr(item, "height", 0) or 0)
-    except Exception:
-        width, height = 0, 0
-    if width > 0 and height > 0:
-        return width, height
+def video_variant_url_dimensions(item: Any) -> tuple[int, int]:
+    """Return rendition dimensions from the direct media URL/display path."""
     media_url = str(getattr(item, "reference_url", "") or getattr(item, "canonical_url", "") or "")
     width, height = dimensions_from_text(media_url)
     if width > 0 and height > 0:
         return width, height
     return dimensions_from_text(_display_name_for_item(item))
+
+
+def video_variant_metadata_dimensions(item: Any) -> tuple[int, int]:
+    """Return dimensions from item metadata when present."""
+    try:
+        width = int(getattr(item, "width", 0) or 0)
+        height = int(getattr(item, "height", 0) or 0)
+    except Exception:
+        return 0, 0
+    if width > 0 and height > 0:
+        return width, height
+    return 0, 0
+
+
+def video_variant_dimensions(item: Any) -> tuple[int, int]:
+    """Return rendition dimensions, preferring URL tokens over poster metadata."""
+    width, height = video_variant_url_dimensions(item)
+    if width > 0 and height > 0:
+        return width, height
+    return video_variant_metadata_dimensions(item)
 
 
 def video_variant_quality_score(item: Any) -> tuple[int, int, int, str]:
@@ -83,6 +96,42 @@ def video_variant_quality_label(item: Any) -> str:
     if width > 0 and height > 0:
         return f"{width}x{height} {ext_label}"
     return f"quality unknown {ext_label}"
+
+
+def video_variant_url_suffix(item: Any, *, max_length: int = 54) -> str:
+    """Return a compact URL-derived suffix for audit/logging."""
+    media_url = str(getattr(item, "reference_url", "") or getattr(item, "canonical_url", "") or "")
+    parsed = urlparse(media_url)
+    suffix = unquote(Path(parsed.path or "").name)
+    if not suffix:
+        suffix = media_url
+    suffix = " ".join(str(suffix or "").split())
+    if len(suffix) > max_length:
+        return f"...{suffix[-max_length:]}"
+    return suffix
+
+
+def video_variant_quality_option_labels(variants: tuple[Any, ...] | list[Any]) -> tuple[str, ...]:
+    """Return distinct dropdown labels for a grouped rendition set."""
+    items = tuple(variants or ())
+    base_labels = [video_variant_quality_label(item) for item in items]
+    label_counts: dict[str, int] = {}
+    for label in base_labels:
+        label_counts[label] = label_counts.get(label, 0) + 1
+    labels: list[str] = []
+    total = len(items)
+    for index, (item, base_label) in enumerate(zip(items, base_labels)):
+        quality_word = ""
+        if total == 2:
+            quality_word = "high" if index == 0 else "low"
+        elif total > 2:
+            quality_word = f"#{index + 1}"
+        label = f"{base_label} / {quality_word}" if quality_word else base_label
+        if label_counts.get(base_label, 0) > 1:
+            suffix = video_variant_url_suffix(item, max_length=26)
+            label = f"{label} · {suffix}" if suffix else f"{label} · variant {index + 1}"
+        labels.append(label)
+    return tuple(labels)
 
 
 def normalize_video_rendition_content_key(media_url: str, *, title: str = "") -> str:
@@ -191,6 +240,10 @@ __all__ = [
     "group_video_rendition_items",
     "normalize_video_rendition_content_key",
     "video_variant_dimensions",
+    "video_variant_metadata_dimensions",
     "video_variant_quality_label",
+    "video_variant_quality_option_labels",
     "video_variant_quality_score",
+    "video_variant_url_dimensions",
+    "video_variant_url_suffix",
 ]

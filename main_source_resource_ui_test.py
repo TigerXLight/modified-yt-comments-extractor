@@ -476,17 +476,12 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_hover_preview_frames_by_id" in source
     assert "video_hover_preview_status_by_id" in source
     assert "_apply_cached_video_hover_preview" in source
-    assert "A poster/thumbnail cache hit must not block animated hover-preview" in source
     assert "_start_webpage_video_hover_preview_prefetch_for_discovery" in inspect.getsource(App)
-    assert "Prefetched {count} animated video hover preview" in inspect.getsource(App)
-    assert "_start_video_hover_preview_probe(display_resources)" in source
-    assert "Browser-hover references preload direct video elements before hover" in source
-    assert "sample_count=32" in source
-    assert "frame_delay_ms=70" in source
+    assert "live hover uses delayed browser preview, not automatic cached-frame prefetch" in inspect.getsource(App)
+    assert "if video_live_preview_mode_enabled:\n                    return False" in source
     assert "window.after(70, _step)" in inspect.getsource(App)
     assert "poster_url=poster_url" in inspect.getsource(App)
     assert "poster/thumbnail" in app_source
-    assert "cache hit cannot suppress animated hover frames again" in app_source
     assert "duration_seconds=30.0" in inspect.getsource(App)
     assert "window.after(70, _step)" in inspect.getsource(App)
     assert "V78N fast first-paint" in source
@@ -511,8 +506,13 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "_group_video_rendition_display_resources" in source
     assert "group_video_rendition_items(" in source
     assert "video_variant_quality_label" in source
+    assert "video_variant_quality_option_labels" in main_source
+    assert "video_variant_url_suffix" in main_source
     assert "_video_variant_selected_item_for_rep" in source
-    assert "_cycle_video_variant_for_rep" in source
+    assert "_select_video_variant_for_rep" in source
+    assert "ctk.CTkOptionMenu(" in source
+    assert "variant_quality_menu" in source
+    assert "url suffix=" in source
     assert "grouped variant(s)" in source
     assert "duplicate direct-video renditions are grouped" in main_source
     assert "video_discovery_cache_poll_after_id" in source
@@ -528,8 +528,13 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "V78T: on grouped video cards the bottom size badge" in source
     assert "Selected video quality variant:" in source
     assert "video_live_hover_after_id_by_resource_id" in source
-    assert "V78T: stable hover in live mode means delayed real browser" in source
-    assert "window.after(850, _open_after_linger)" in source
+    assert "V78V: hover must never reuse the visible manual LIVE" in source
+    assert "TODO: add an internal/headless on-demand hover frame" in source
+    assert "window.after(850, _open_after_linger)" not in source
+    assert "_open_live_video_preview_for_item(hover_item)" not in source
+    assert "command=lambda current_item=item: _open_live_video_preview_for_item(current_item)" in source
+    assert 'preview_box.bind("<Double-Button-1>", lambda _event, current_item=item: _open_live_video_preview_for_item(current_item)' in source
+    assert 'item_card.bind("<Motion>", _schedule_live_hover_preview' in source
 
 
 def test_media_resource_window_download_labels_and_gallery() -> None:
