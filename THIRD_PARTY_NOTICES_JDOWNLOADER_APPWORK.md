@@ -103,3 +103,26 @@ Reference source areas reviewed:
 - YTCE V80P `file_intake_dedupe.py`, which implements the Python/Tk FILES/media intake dedupe model from that architecture.
 
 No Java source text is pasted into this Python integration.  The functionality/structure is implemented natively in YTCE with the JDownloader/AppWork source pattern credited here.
+
+## V80R — Persistent FILES/media intake identity store
+
+V80R extends the YTCE FILES/media dedupe guard with a persistent identity-store layer.
+
+JDownloader/AppWork source pattern reviewed:
+
+- `jd.controlling.downloadcontroller.DownloadWatchDog`
+- `jd.controlling.downloadcontroller.DownloadWatchDogJob`
+- `org.appwork.utils.event.queue.Queue`
+- `org.appwork.utils.event.queue.QueueAction`
+- `org.appwork.utils.event.queue.QueueThread`
+
+YTCE implementation files:
+
+- `file_intake_identity_store.py`
+- `file_intake_identity_store_test.py`
+- browser-grid FILES intake integration in `main.py`
+
+Implementation note: this is a Python/Tk-native JSON identity store for already-known
+FILES/media intake records.  It preserves the reviewed JDownloader/AppWork method of
+operation — explicit identity records, stale-entry filtering, bounded memory, and
+reuse before repeated media work — without embedding Java source text.

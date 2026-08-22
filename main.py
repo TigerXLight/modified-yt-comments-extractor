@@ -190,6 +190,12 @@ from file_intake_dedupe import (
     build_file_intake_dedupe_plan,
     render_file_intake_dedupe_summary,
 )
+from file_intake_identity_store import (
+    load_file_intake_identity_store,
+    make_file_intake_identity_record,
+    merge_file_intake_identity_records,
+    save_file_intake_identity_store,
+)
 from webpage_video_resource_bridge import discover_webpage_videos_for_row, discover_fast_rendered_webpage_videos_for_row
 from webpage_video_preview_backend import (
     can_generate_video_frame_preview,
@@ -9620,6 +9626,57 @@ class App(ctk.CTk):
             self.webpage_image_files_intake_identity_cache = cache
         return cache
 
+    def _webpage_image_files_intake_identity_store_path(self) -> Path:
+        """Return the persistent browser-grid FILES/media intake identity store path."""
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        if base:
+            root = Path(base) / "YTCE"
+        else:
+            root = Path.home() / ".ytce"
+        return root / "file_intake_identity_store" / "browser_grid_webpage_images.json"
+
+    def _webpage_image_persistent_file_intake_records(self) -> tuple[ExistingFileRecord, ...]:
+        """Load cross-session browser-grid FILES/media intake identities."""
+        load_result = load_file_intake_identity_store(
+            self._webpage_image_files_intake_identity_store_path(),
+            require_existing_local_path=True,
+        )
+        stale_count = int(getattr(load_result, "stale_count", 0) or 0)
+        warning_count = len(getattr(load_result, "warnings", ()) or ())
+        if stale_count or warning_count:
+            try:
+                logger.debug(
+                    "Browser-grid FILES/media persistent identity store loaded with stale/warning records: stale=%s warnings=%s",
+                    stale_count,
+                    warning_count,
+                )
+            except Exception:
+                pass
+        return tuple(getattr(load_result, "records", ()) or ())
+
+    def _save_webpage_image_persistent_file_intake_records(
+        self,
+        records: Sequence[ExistingFileRecord],
+    ) -> None:
+        """Merge and save browser-grid FILES/media identities for later app sessions."""
+        if not records:
+            return
+        store_path = self._webpage_image_files_intake_identity_store_path()
+        existing = load_file_intake_identity_store(
+            store_path,
+            require_existing_local_path=False,
+        ).records
+        merged = merge_file_intake_identity_records(existing, records, max_records=2048)
+        save_result = save_file_intake_identity_store(store_path, merged, max_records=2048)
+        if getattr(save_result, "warnings", ()):
+            try:
+                logger.debug(
+                    "Browser-grid FILES/media persistent identity store save warning: %s",
+                    ",".join(getattr(save_result, "warnings", ()) or ()),
+                )
+            except Exception:
+                pass
+
     def _webpage_image_resource_items_by_id(self, state: Any) -> dict[str, Any]:
         resources_by_id: dict[str, Any] = {}
         for item in tuple(getattr(state, "resources", ()) or ()):  # keep first visible candidate for a resource id
@@ -9670,6 +9727,12 @@ class App(ctk.CTk):
                     provenance="browser_grid_webpage_image_identity_cache",
                 )
             )
+
+        # V80R: load persisted browser-grid source/local-path identities so a
+        # reopened app can reuse still-present FILES/media downloads instead of
+        # repeating the same image download.  Stale records whose temp/local file
+        # disappeared are filtered by the identity-store loader.
+        records.extend(self._webpage_image_persistent_file_intake_records())
         return tuple(records)
 
     def _build_webpage_image_file_intake_dedupe_plan(
@@ -9727,6 +9790,7 @@ class App(ctk.CTk):
             return
         resources_by_id = self._webpage_image_resource_items_by_id(state)
         cache = self._webpage_image_files_intake_identity_cache()
+        persistent_records: list[ExistingFileRecord] = []
         for resource_id, local_path in tuple(resource_local_paths.items()):
             if not local_path:
                 continue
@@ -9738,13 +9802,26 @@ class App(ctk.CTk):
                 continue
             item = resources_by_id.get(resource_id)
             source_url = self._source_image_open_url_for_browser_grid(item) if item is not None else ""
+            display_name = str(getattr(item, "display_name", "") or getattr(item, "resource_id", "") or resource_id) if item is not None else str(resource_id)
+            record_id = f"browser-grid:{row.row_id}:{resource_id}"
             cache[(str(row.row_id), str(resource_id))] = {
-                "record_id": f"browser-grid:{row.row_id}:{resource_id}",
-                "display_name": str(getattr(item, "display_name", "") or getattr(item, "resource_id", "") or resource_id) if item is not None else str(resource_id),
+                "record_id": record_id,
+                "display_name": display_name,
                 "source_url": source_url,
                 "local_path": str(local_path),
                 "media_type": "image",
             }
+            persistent_records.append(
+                make_file_intake_identity_record(
+                    record_id=record_id,
+                    display_name=display_name,
+                    source_url=source_url,
+                    local_path=str(local_path),
+                    media_type="image",
+                    provenance="browser_grid_webpage_image_persistent_identity",
+                )
+            )
+        self._save_webpage_image_persistent_file_intake_records(tuple(persistent_records))
         while len(cache) > 512:
             try:
                 cache.pop(next(iter(cache)))
