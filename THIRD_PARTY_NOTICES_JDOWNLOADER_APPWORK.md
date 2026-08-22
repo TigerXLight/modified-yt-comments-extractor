@@ -149,3 +149,12 @@ This repair keeps the V80Z text URL/Open controls and supplied download-icon but
 ## V80AA browser-grid direct download icon behavior and hover polish
 
 V80AA keeps the text `URL` and `Open` controls, uses the user's white download icon for the single-image download control, routes that icon through the same FILES intake endpoint instead of browser navigation, marks the card as `Added before` after a successful per-card intake request, applies the same blue hover outline to Open/download controls as the URL button, and hides the `Added before` badge while hover controls are visible.
+## 2026-08-22 - V81A browser-native Video & Audio grid
+
+- Added a browser-native Video & Audio window using the same lightweight app-window pattern as the Images grid.
+- Added direct media URL copy/open controls, download-icon FILES intake, already-added highlighting, and persistent source identity records for browser-grid video/audio candidates.
+- Preserved the existing VDH-length Tk hover preview implementation as the fallback/provider-specific path rather than copying JDownloader source code.
+
+## 2026-08-22 - V81B browser-native Video & Audio quick-open repair
+
+V81B keeps the browser-native Video & Audio card layout from V81A but restores the fast/static-first open behaviour from the prior Tk video dialog. The browser-native window now opens from cached or quick static video/audio candidates instead of waiting for the slower rendered discovery path, gates repeated clicks while discovery is already pending, and lets the source-row rendered prefetch continue in the background. The existing VDH-length hover-preview and JDownloader/AppWork-attributed queued intake foundations remain unchanged.

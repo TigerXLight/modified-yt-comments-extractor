@@ -654,6 +654,10 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     canvas_window_source = inspect.getsource(App._open_source_image_canvas_grid_window)
     browser_grid_source = inspect.getsource(App._open_source_image_browser_grid_for_resources)
     browser_download_source = inspect.getsource(App._download_webpage_image_resource_ids_to_files)
+    video_open_source = inspect.getsource(App._open_source_video_audio_browser_grid_window)
+    video_browser_source = inspect.getsource(App._open_source_video_audio_browser_grid_for_resources)
+    video_download_source = inspect.getsource(App._download_webpage_video_audio_resource_ids_to_files)
+    video_finish_source = inspect.getsource(App._finish_webpage_video_audio_files_intake)
     full_source = inspect.getsource(App)
 
     assert 'text=("Download selected"' in source
@@ -708,6 +712,33 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert "const DOWNLOAD_ICON_DATA_URI = 'data:image/png;base64," in browser_grid_source
     assert 'downIcon.src=DOWNLOAD_ICON_DATA_URI' in browser_grid_source
     assert "down.title='Download selected image to FILES'" in browser_grid_source
+    assert 'self._open_source_video_audio_browser_grid_window(row_id)' in source
+    assert 'run_rendered_probe=False' in video_open_source
+    assert 'webpage_video_audio_browser_grid_open_pending_by_key' in video_open_source
+    assert 'already opening from the quick/cached candidate scan' in video_open_source
+    assert 'rendered discovery/prefetch continues in the background' in video_open_source
+    assert 'waiting for webpage media discovery; it will open when candidates are ready' not in video_open_source
+    assert 'YTCE-VIDEO-AUDIO-GRID-' in video_browser_source
+    assert 'source_video_audio_browser_grid_servers' in video_browser_source
+    assert 'Native browser video/audio grid' in video_browser_source
+    assert 'renderPreview' in video_browser_source
+    assert 'video.play().catch' in video_browser_source
+    assert "urlCopy.textContent='URL'" in video_browser_source
+    assert "open.textContent='Open'" in video_browser_source
+    assert 'download-action' in video_browser_source
+    assert 'download-icon' in video_browser_source
+    assert "Download selected media to FILES" in video_browser_source
+    assert 'event.preventDefault()' in video_browser_source
+    assert 'event.stopPropagation()' in video_browser_source
+    assert 'markCardAddedBefore' in video_browser_source
+    assert '.actions a:hover, .actions button:hover' in video_browser_source
+    assert '_build_webpage_video_audio_file_intake_dedupe_plan' in full_source
+    assert '_webpage_video_audio_files_intake_identity_store_path' in full_source
+    assert 'browser_grid_webpage_video_audio_persistent_identity' in full_source
+    assert 'Browser-native video/audio FILES refresh' in video_finish_source
+    assert 'Browser-native video/audio download queued' in video_download_source
+    assert '_intake_session_files' in video_finish_source
+    assert 'urllib.request.urlopen' in full_source
     assert "const down = document.createElement('button')" in browser_grid_source
     assert "down.type='button'" in browser_grid_source
     assert 'event.preventDefault()' in browser_grid_source

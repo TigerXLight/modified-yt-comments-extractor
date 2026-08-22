@@ -11140,6 +11140,900 @@ render();
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    def _source_video_audio_open_url_for_browser_grid(self, item: Any) -> str:
+        return str(
+            getattr(item, "reference_url", "")
+            or getattr(item, "canonical_url", "")
+            or getattr(item, "thumbnail_reference", "")
+            or ""
+        ).strip()
+
+    def _source_video_audio_browser_grid_kind_for_item(self, item: Any) -> str:
+        extension = str(getattr(item, "extension", "") or "").lower()
+        media_type = str(getattr(item, "media_type", "") or "").lower()
+        mime_type = str(getattr(item, "mime_type", "") or "").lower()
+        if extension in {".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".flac"} or media_type == "audio" or mime_type.startswith("audio/"):
+            return "audio"
+        return "video"
+
+    def _source_video_audio_browser_grid_cards(
+        self,
+        resources: Sequence[Any],
+        *,
+        file_intake_decisions_by_id: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], ...]:
+        decisions_by_id = file_intake_decisions_by_id or {}
+        resource_tuple = tuple(resources or ())
+        try:
+            display_resources, groups_by_rep_id, _rep_by_variant = group_video_rendition_items(
+                resource_tuple,
+                media_url_getter=lambda item: self._source_video_audio_open_url_for_browser_grid(item),
+            )
+        except Exception:
+            logger.debug("Could not group browser-native video/audio variants.", exc_info=True)
+            display_resources = resource_tuple
+            groups_by_rep_id = {}
+        cards: list[dict[str, Any]] = []
+        for card_index, item in enumerate(tuple(display_resources or ()), start=1):
+            media_url = self._source_video_audio_open_url_for_browser_grid(item)
+            if not media_url:
+                continue
+            resource_id = str(getattr(item, "resource_id", "") or f"media-{card_index}")
+            variants_tuple = tuple(groups_by_rep_id.get(resource_id, ()) or (item,))
+            if not variants_tuple:
+                variants_tuple = (item,)
+            labels = tuple(video_variant_quality_option_labels(variants_tuple))
+            variants: list[dict[str, Any]] = []
+            for variant_index, variant_item in enumerate(variants_tuple, start=1):
+                variant_url = self._source_video_audio_open_url_for_browser_grid(variant_item)
+                if not variant_url:
+                    continue
+                variant_id = str(getattr(variant_item, "resource_id", "") or f"media-{card_index}-{variant_index}")
+                variant_width = int(getattr(variant_item, "width", 0) or 0)
+                variant_height = int(getattr(variant_item, "height", 0) or 0)
+                fallback_label = video_variant_quality_label(variant_item)
+                if variant_width and variant_height and fallback_label == "unknown":
+                    fallback_label = f"{variant_width}×{variant_height}"
+                variants.append(
+                    {
+                        "resource_id": variant_id,
+                        "url": variant_url,
+                        "label": str(labels[variant_index - 1] if variant_index - 1 < len(labels) else fallback_label or "variant"),
+                        "extension": str(getattr(variant_item, "extension", "") or getattr(variant_item, "media_type", "") or "media"),
+                        "mime_type": str(getattr(variant_item, "mime_type", "") or ""),
+                        "media_type": str(getattr(variant_item, "media_type", "") or ""),
+                        "width": variant_width,
+                        "height": variant_height,
+                        "poster_url": str(getattr(variant_item, "thumbnail_reference", "") or ""),
+                        "index": variant_index,
+                    }
+                )
+            decision = decisions_by_id.get(resource_id)
+            if decision is None:
+                for variant_item in variants_tuple:
+                    variant_decision = decisions_by_id.get(str(getattr(variant_item, "resource_id", "") or ""))
+                    if str(getattr(variant_decision, "status", "") or "") == FILE_INTAKE_STATUS_REUSED:
+                        decision = variant_decision
+                        break
+            intake_status = str(getattr(decision, "status", "") or "") if decision is not None else ""
+            intake_label = ""
+            if intake_status == FILE_INTAKE_STATUS_REUSED:
+                intake_label = "Added before"
+            elif intake_status == FILE_INTAKE_STATUS_DUPLICATE:
+                intake_label = "Duplicate"
+            elif intake_status == FILE_INTAKE_STATUS_FAILED:
+                intake_label = "Needs review"
+            width = int(getattr(item, "width", 0) or 0)
+            height = int(getattr(item, "height", 0) or 0)
+            cards.append(
+                {
+                    "index": card_index,
+                    "resource_id": resource_id,
+                    "name": str(getattr(item, "display_name", "") or getattr(item, "title", "") or resource_id or media_url),
+                    "url": media_url,
+                    "poster_url": str(getattr(item, "thumbnail_reference", "") or ""),
+                    "extension": str(getattr(item, "extension", "") or getattr(item, "media_type", "") or "media"),
+                    "mime_type": str(getattr(item, "mime_type", "") or ""),
+                    "media_kind": self._source_video_audio_browser_grid_kind_for_item(item),
+                    "width": width,
+                    "height": height,
+                    "provenance": str(getattr(item, "provenance", "") or ""),
+                    "warning": str(getattr(item, "warning", "") or ""),
+                    "file_intake_status": intake_status,
+                    "file_intake_label": intake_label,
+                    "variants": variants or [],
+                }
+            )
+        return tuple(cards)
+
+    def _webpage_video_audio_session_download_root(self) -> Path:
+        root = getattr(self, "webpage_video_audio_session_output_root", None)
+        if root is None:
+            root = (
+                Path(tempfile.gettempdir())
+                / "ytce_webpage_video_audio_downloads"
+                / f"session_{os.getpid()}_{id(self):x}"
+            )
+            self.webpage_video_audio_session_output_root = root
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _webpage_video_audio_files_intake_identity_cache(self) -> dict[tuple[str, str], dict[str, str]]:
+        cache = self.__dict__.setdefault("webpage_video_audio_files_intake_identity_cache", {})
+        if not isinstance(cache, dict):
+            cache = {}
+            self.webpage_video_audio_files_intake_identity_cache = cache
+        return cache
+
+    def _webpage_video_audio_files_intake_identity_store_path(self) -> Path:
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        root = Path(base) / "YTCE" if base else Path.home() / ".ytce"
+        return root / "file_intake_identity_store" / "browser_grid_webpage_video_audio.json"
+
+    def _webpage_video_audio_persistent_file_intake_records(self) -> tuple[ExistingFileRecord, ...]:
+        load_result = load_file_intake_identity_store(
+            self._webpage_video_audio_files_intake_identity_store_path(),
+            require_existing_local_path=True,
+        )
+        return tuple(getattr(load_result, "records", ()) or ())
+
+    def _save_webpage_video_audio_persistent_file_intake_records(self, records: Sequence[ExistingFileRecord]) -> None:
+        if not records:
+            return
+        store_path = self._webpage_video_audio_files_intake_identity_store_path()
+        existing = load_file_intake_identity_store(store_path, require_existing_local_path=False).records
+        merged = merge_file_intake_identity_records(existing, records, max_records=2048)
+        save_file_intake_identity_store(store_path, merged, max_records=2048)
+
+    def _webpage_video_audio_resource_items_by_id(self, state: Any) -> dict[str, Any]:
+        resources_by_id: dict[str, Any] = {}
+        for item in tuple(getattr(state, "resources", ()) or ()):  # keep first visible candidate for a resource id
+            resource_id = str(getattr(item, "resource_id", "") or "").strip()
+            if resource_id:
+                resources_by_id.setdefault(resource_id, item)
+        return resources_by_id
+
+    def _webpage_video_audio_file_intake_existing_records(self) -> tuple[ExistingFileRecord, ...]:
+        self._ensure_session_files_state()
+        records: list[ExistingFileRecord] = []
+        session_norms: set[str] = set()
+        for entry in tuple(getattr(self, "session_files", ()) or ()):  # visible FILES entries are authoritative
+            normalized_path = str(getattr(entry, "normalized_path", "") or "").strip()
+            local_path = str(getattr(entry, "path", "") or "").strip()
+            if normalized_path:
+                session_norms.add(normalized_path)
+            records.append(
+                ExistingFileRecord(
+                    record_id=f"session:{normalized_path or local_path}",
+                    display_name=str(getattr(entry, "display_name", "") or "").strip(),
+                    local_path=local_path,
+                    media_type=str(getattr(entry, "file_kind", "") or "").strip(),
+                    provenance="session_files",
+                )
+            )
+        for record in self._webpage_video_audio_files_intake_identity_cache().values():
+            local_path = str(record.get("local_path") or "").strip()
+            if local_path:
+                try:
+                    normalized = self._normalise_session_file_path(local_path)
+                except Exception:
+                    normalized = ""
+                if session_norms and normalized and normalized not in session_norms:
+                    continue
+            records.append(
+                ExistingFileRecord(
+                    record_id=str(record.get("record_id") or "browser-grid-video-audio"),
+                    display_name=str(record.get("display_name") or ""),
+                    source_url=str(record.get("source_url") or ""),
+                    local_path=local_path,
+                    media_type=str(record.get("media_type") or "video"),
+                    provenance="browser_grid_webpage_video_audio_identity_cache",
+                )
+            )
+        records.extend(self._webpage_video_audio_persistent_file_intake_records())
+        return tuple(records)
+
+    def _build_webpage_video_audio_file_intake_dedupe_plan(
+        self,
+        *,
+        row: SourceResourceRowState,
+        state: Any,
+        selected_resource_ids: tuple[str, ...],
+    ) -> Any:
+        resources_by_id = self._webpage_video_audio_resource_items_by_id(state)
+        download_cache = getattr(self, "webpage_video_audio_session_download_cache", {}) or {}
+        candidates: list[FileIntakeCandidate] = []
+        for resource_id in selected_resource_ids:
+            item = resources_by_id.get(resource_id)
+            if item is None:
+                continue
+            cached_path = str(download_cache.get((row.row_id, resource_id)) or "").strip()
+            if cached_path and not os.path.isfile(cached_path):
+                cached_path = ""
+            source_url = self._source_video_audio_open_url_for_browser_grid(item)
+            candidates.append(
+                FileIntakeCandidate(
+                    candidate_id=resource_id,
+                    display_name=str(getattr(item, "display_name", "") or getattr(item, "resource_id", "") or source_url),
+                    source_url=source_url,
+                    local_path=cached_path,
+                    media_type=self._source_video_audio_browser_grid_kind_for_item(item),
+                    destination_name=str(getattr(item, "display_name", "") or ""),
+                    provenance="browser_grid_webpage_video_audio",
+                )
+            )
+        return build_file_intake_dedupe_plan(
+            candidates=candidates,
+            existing_records=self._webpage_video_audio_file_intake_existing_records(),
+            enrich_hashes=False,
+        )
+
+    def _webpage_video_audio_file_intake_decisions_for_resources(
+        self,
+        *,
+        row: SourceResourceRowState,
+        resources: Sequence[Any],
+    ) -> dict[str, Any]:
+        resource_tuple = tuple(resources or ())
+        selected_ids = tuple(
+            str(getattr(item, "resource_id", "") or "").strip()
+            for item in resource_tuple
+            if str(getattr(item, "resource_id", "") or "").strip()
+        )
+        if not selected_ids:
+            return {}
+        state_proxy = type("_BrowserGridVideoAudioIntakeState", (), {"resources": resource_tuple})()
+        try:
+            plan = self._build_webpage_video_audio_file_intake_dedupe_plan(
+                row=row,
+                state=state_proxy,
+                selected_resource_ids=selected_ids,
+            )
+        except Exception:
+            logger.debug("Could not precompute browser-native video/audio FILES statuses.", exc_info=True)
+            return {}
+        return {str(decision.candidate_id): decision for decision in tuple(getattr(plan, "decisions", ()) or ())}
+
+    def _remember_webpage_video_audio_files_intake_identity_records(
+        self,
+        *,
+        row: SourceResourceRowState,
+        state: Any,
+        resource_local_paths: dict[str, str],
+        successful_paths: Sequence[str],
+    ) -> None:
+        success_norms: set[str] = set()
+        for path in tuple(successful_paths or ()):  # added or duplicate means FILES knows this local path
+            try:
+                success_norms.add(self._normalise_session_file_path(path))
+            except Exception:
+                continue
+        if not success_norms:
+            return
+        resources_by_id = self._webpage_video_audio_resource_items_by_id(state)
+        cache = self._webpage_video_audio_files_intake_identity_cache()
+        persistent_records: list[ExistingFileRecord] = []
+        for resource_id, local_path in tuple(resource_local_paths.items()):
+            if not local_path:
+                continue
+            try:
+                normalized = self._normalise_session_file_path(local_path)
+            except Exception:
+                normalized = ""
+            if normalized not in success_norms:
+                continue
+            item = resources_by_id.get(resource_id)
+            source_url = self._source_video_audio_open_url_for_browser_grid(item) if item is not None else ""
+            display_name = str(getattr(item, "display_name", "") or getattr(item, "resource_id", "") or resource_id) if item is not None else str(resource_id)
+            media_type = self._source_video_audio_browser_grid_kind_for_item(item) if item is not None else "video"
+            record_id = f"browser-grid-video-audio:{row.row_id}:{resource_id}"
+            cache[(str(row.row_id), str(resource_id))] = {
+                "record_id": record_id,
+                "display_name": display_name,
+                "source_url": source_url,
+                "local_path": str(local_path),
+                "media_type": media_type,
+            }
+            persistent_records.append(
+                make_file_intake_identity_record(
+                    record_id=record_id,
+                    display_name=display_name,
+                    source_url=source_url,
+                    local_path=str(local_path),
+                    media_type=media_type,
+                    provenance="browser_grid_webpage_video_audio_persistent_identity",
+                )
+            )
+        self._save_webpage_video_audio_persistent_file_intake_records(tuple(persistent_records))
+        while len(cache) > 512:
+            try:
+                cache.pop(next(iter(cache)))
+            except Exception:
+                break
+
+    def _download_webpage_video_audio_resource_to_session_file(
+        self,
+        *,
+        row: SourceResourceRowState,
+        item: Any,
+        resource_id: str,
+        output_dir: Path,
+    ) -> str:
+        media_url = self._source_video_audio_open_url_for_browser_grid(item)
+        if not media_url:
+            raise RuntimeError("No direct media URL is available for this candidate.")
+        parsed = urllib.parse.urlsplit(media_url)
+        lower_path = str(parsed.path or "").lower()
+        if lower_path.endswith((".m3u8", ".mpd")):
+            raise RuntimeError("Stream manifests need a later JDownloader/yt-dlp route; this direct FILES intake handles direct media files first.")
+        title = str(getattr(row, "title", "") or getattr(row, "domain", "") or "webpage video audio")
+        folder_name = self._safe_session_folder_name(title)
+        target_dir = output_dir / folder_name / "Video and Audio"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        display_name = str(getattr(item, "display_name", "") or Path(urllib.parse.unquote(parsed.path or "")).name or resource_id or "media")
+        display_name = self._safe_session_folder_name(display_name)
+        extension = str(getattr(item, "extension", "") or "").strip().lower()
+        if extension and not extension.startswith("."):
+            extension = "." + extension
+        if not extension or len(extension) > 8:
+            suffix = Path(urllib.parse.unquote(parsed.path or "")).suffix.lower()
+            extension = suffix if suffix and len(suffix) <= 8 else (".mp3" if self._source_video_audio_browser_grid_kind_for_item(item) == "audio" else ".mp4")
+        if not display_name.lower().endswith(extension.lower()):
+            display_name = f"{display_name}{extension}"
+        target_path = target_dir / display_name
+        if target_path.exists():
+            stem = target_path.stem
+            suffix = target_path.suffix
+            index = 2
+            while (target_dir / f"{stem} {index}{suffix}").exists():
+                index += 1
+            target_path = target_dir / f"{stem} {index}{suffix}"
+        page_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "")
+        request = urllib.request.Request(
+            media_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
+                "Accept": "video/*, audio/*, */*",
+                "Referer": page_url,
+            },
+        )
+        with urllib.request.urlopen(request, timeout=45) as response, open(target_path, "wb") as output_handle:
+            shutil.copyfileobj(response, output_handle, length=1024 * 256)
+        if not target_path.is_file() or target_path.stat().st_size <= 0:
+            try:
+                target_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise RuntimeError("Downloaded media file was empty.")
+        return str(target_path)
+
+    def _download_webpage_video_audio_resource_ids_to_files(self, row_id: str, selected_resource_ids: Sequence[str]) -> None:
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            self.log_message("Browser-native video/audio FILES intake failed: source row no longer exists.", "warning")
+            return
+        selected_ids = tuple(dict.fromkeys(str(resource_id or "") for resource_id in selected_resource_ids if str(resource_id or "")))
+        if not selected_ids:
+            self.log_message("No browser-native video/audio candidates were selected for FILES intake.", "muted")
+            return
+        state = resource_dialog_state_for_row(row, RESOURCE_KIND_VIDEO_AUDIO)
+        resources_by_id = self._webpage_video_audio_resource_items_by_id(state)
+        selected_ids = tuple(resource_id for resource_id in selected_ids if resource_id in resources_by_id)
+        if not selected_ids:
+            self.log_message("Browser-native FILES intake found no matching video/audio candidates in the current row.", "warning")
+            return
+        self.source_resource_selections[row.row_id] = selected_ids
+        intake_plan = self._build_webpage_video_audio_file_intake_dedupe_plan(
+            row=row,
+            state=state,
+            selected_resource_ids=selected_ids,
+        )
+        self.log_message(render_file_intake_dedupe_summary(intake_plan), "muted")
+        added_resource_ids = tuple(
+            decision.candidate_id
+            for decision in intake_plan.decisions
+            if decision.status == FILE_INTAKE_STATUS_ADDED and decision.candidate_id
+        )
+        if not added_resource_ids:
+            self.log_message(
+                (
+                    "Browser-native video/audio FILES intake skipped download: "
+                    f"selected={len(selected_ids)}; reused={intake_plan.reused_count}; "
+                    f"duplicates={intake_plan.duplicate_count}; failed={intake_plan.failed_count}."
+                ),
+                "success" if intake_plan.reused_count or intake_plan.duplicate_count else "warning",
+            )
+            return
+        download_cache = getattr(self, "webpage_video_audio_session_download_cache", {}) or {}
+        resource_local_paths: dict[str, str] = {}
+        for resource_id in added_resource_ids:
+            cached_path = str(download_cache.get((row.row_id, resource_id)) or "").strip()
+            if cached_path and os.path.isfile(cached_path):
+                resource_local_paths[resource_id] = cached_path
+        missing_resource_ids = tuple(resource_id for resource_id in added_resource_ids if resource_id not in resource_local_paths)
+        if not missing_resource_ids:
+            self._finish_webpage_video_audio_files_intake(
+                row=row,
+                state=state,
+                intake_plan=intake_plan,
+                selected_ids=selected_ids,
+                resource_local_paths=resource_local_paths,
+                downloaded_count=0,
+                failed_messages=(),
+            )
+            return
+        self.log_message(f"Browser-native video/audio download queued for {len(missing_resource_ids)} candidate(s).", "muted")
+
+        def _worker() -> None:
+            local_paths = dict(resource_local_paths)
+            failed_messages: list[str] = []
+            downloaded_count = 0
+            output_root = self._webpage_video_audio_session_download_root()
+            for resource_id in missing_resource_ids:
+                item = resources_by_id.get(resource_id)
+                if item is None:
+                    failed_messages.append(f"{resource_id}: missing candidate")
+                    continue
+                try:
+                    local_path = self._download_webpage_video_audio_resource_to_session_file(
+                        row=row,
+                        item=item,
+                        resource_id=resource_id,
+                        output_dir=output_root,
+                    )
+                except Exception as error:
+                    failed_messages.append(f"{resource_id}: {error}")
+                    logger.debug("Browser-native video/audio direct download failed for %s", resource_id, exc_info=True)
+                    continue
+                local_paths[resource_id] = local_path
+                download_cache[(row.row_id, resource_id)] = local_path
+                downloaded_count += 1
+            self.webpage_video_audio_session_download_cache = download_cache
+            self.after(
+                0,
+                lambda paths=local_paths, count=downloaded_count, failures=tuple(failed_messages): self._finish_webpage_video_audio_files_intake(
+                    row=row,
+                    state=state,
+                    intake_plan=intake_plan,
+                    selected_ids=selected_ids,
+                    resource_local_paths=paths,
+                    downloaded_count=count,
+                    failed_messages=failures,
+                ),
+            )
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _finish_webpage_video_audio_files_intake(
+        self,
+        *,
+        row: SourceResourceRowState,
+        state: Any,
+        intake_plan: Any,
+        selected_ids: tuple[str, ...],
+        resource_local_paths: dict[str, str],
+        downloaded_count: int,
+        failed_messages: Sequence[str],
+    ) -> None:
+        files_for_intake = tuple(resource_local_paths[resource_id] for resource_id in selected_ids if resource_local_paths.get(resource_id))
+        if files_for_intake:
+            intake_result = self._intake_session_files(
+                files_for_intake,
+                select_first=False,
+                source_label="browser-native video/audio",
+            )
+            successful_paths = tuple(getattr(intake_result, "added_paths", ()) or ()) + tuple(getattr(intake_result, "duplicate_paths", ()) or ())
+            self._remember_webpage_video_audio_files_intake_identity_records(
+                row=row,
+                state=state,
+                resource_local_paths=resource_local_paths,
+                successful_paths=successful_paths,
+            )
+            try:
+                self._refresh_session_files_list()
+                self._refresh_export_entry_state()
+                self.update_idletasks()
+            except Exception:
+                logger.debug("Could not refresh FILES after browser-native video/audio download.", exc_info=True)
+            added_count = len(getattr(intake_result, "added_paths", ()) or ())
+            duplicate_count = len(getattr(intake_result, "duplicate_paths", ()) or ())
+            visible_count = len(getattr(self, "session_files", ()) or ())
+            self.log_message(
+                (
+                    "Browser-native video/audio FILES refresh: "
+                    f"visible_entries={visible_count}; planned_added={intake_plan.added_count}; "
+                    f"planned_reused={intake_plan.reused_count}; planned_duplicates={intake_plan.duplicate_count}; "
+                    f"added={added_count}; duplicates={duplicate_count}; downloaded={downloaded_count}."
+                ),
+                "success" if added_count or duplicate_count or intake_plan.reused_count else "muted",
+            )
+        if failed_messages:
+            self.log_message("Browser-native video/audio download warnings: " + "; ".join(tuple(failed_messages)[:3]), "warning")
+        self.log_message(
+            (
+                f"Browser-native video/audio download: selected={len(selected_ids)}; "
+                f"new_candidates={intake_plan.added_count}; downloaded={downloaded_count}; "
+                f"reused={intake_plan.reused_count}; duplicates={intake_plan.duplicate_count}; "
+                f"failed={intake_plan.failed_count + len(tuple(failed_messages or ())) }; "
+                f"session_temp={self._webpage_video_audio_session_download_root()}"
+            ),
+            "success" if downloaded_count or intake_plan.reused_count else "warning",
+        )
+
+    def _open_source_video_audio_browser_grid_window(self, row_id: str) -> None:
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            return
+        if row.adapter_id in {"youtube", "twitter_x"}:
+            self._open_source_resource_window(row_id, RESOURCE_KIND_VIDEO_AUDIO)
+            return
+        cache_key = self._webpage_video_prefetch_cache_key(row)
+        cache = self.__dict__.setdefault("webpage_video_discovery_cache_by_url", {})
+
+        def _row_with_video_resources(row_snapshot: SourceResourceRowState, resources: Sequence[Any]) -> SourceResourceRowState:
+            fresh_row = replace(row_snapshot, video_audio_resources=tuple(resources or ()))
+            updated_rows: list[SourceResourceRowState] = []
+            for existing_row in self.__dict__.get("source_resource_rows", ()):
+                updated_rows.append(fresh_row if existing_row.row_id == fresh_row.row_id else existing_row)
+            if updated_rows:
+                self.source_resource_rows = updated_rows
+                try:
+                    self._refresh_source_resource_rows()
+                except Exception:
+                    logger.debug("Could not refresh source rows after video/audio browser discovery.", exc_info=True)
+            return fresh_row
+
+        def _open_cached_or_row_resources() -> bool:
+            cached_discovery = cache.get(cache_key) if cache_key else None
+            if cached_discovery is not None and getattr(cached_discovery, "resources", ()):
+                fresh_row = _row_with_video_resources(row, tuple(cached_discovery.resources))
+                self._open_source_video_audio_browser_grid_for_resources(fresh_row, tuple(cached_discovery.resources))
+                return True
+            state = resource_dialog_state_for_row(row, RESOURCE_KIND_VIDEO_AUDIO)
+            resources = tuple(getattr(state, "resources", ()) or ())
+            if resources:
+                self._open_source_video_audio_browser_grid_for_resources(row, resources)
+                return True
+            return False
+
+        if _open_cached_or_row_resources():
+            return
+
+        pending = self.__dict__.setdefault("webpage_video_audio_browser_grid_open_pending_by_key", set())
+        pending_key = cache_key or row_id
+        if pending_key in pending:
+            self.log_message(
+                "Video & Audio browser window is already opening from the quick/cached candidate scan; repeated clicks will reuse that result.",
+                "muted",
+            )
+            return
+        pending.add(pending_key)
+        opened = {"value": False}
+
+        self.log_message(
+            "Video & Audio browser window running a quick static media scan; rendered discovery/prefetch continues in the background.",
+            "muted",
+        )
+
+        def _prefetch_is_inflight() -> bool:
+            if not cache_key:
+                return False
+            try:
+                return cache_key in self.__dict__.setdefault("webpage_video_discovery_prefetch_inflight", set())
+            except Exception:
+                return False
+
+        def _clear_pending() -> None:
+            try:
+                pending.discard(pending_key)
+            except Exception:
+                pass
+
+        def _open_from_discovery(discovery: Any, *, source_label: str) -> bool:
+            if opened.get("value"):
+                return True
+            resources = tuple(getattr(discovery, "resources", ()) or ())
+            if not resources:
+                return False
+            opened["value"] = True
+            _clear_pending()
+            if cache_key:
+                try:
+                    cache[cache_key] = discovery
+                    while len(cache) > 24:
+                        cache.pop(next(iter(cache)))
+                except Exception:
+                    logger.debug("Could not update webpage video discovery cache for browser-native Video & Audio.", exc_info=True)
+            fresh_row = _row_with_video_resources(row, resources)
+            self.log_message(
+                f"Opening browser-native Video & Audio window from {source_label} candidate list; candidates={len(resources)}.",
+                "muted",
+            )
+            self._open_source_video_audio_browser_grid_for_resources(fresh_row, resources)
+            return True
+
+        def _poll_prefetch_cache(remaining: int = 60) -> None:
+            if opened.get("value"):
+                return
+            cached_discovery = cache.get(cache_key) if cache_key else None
+            if cached_discovery is not None and getattr(cached_discovery, "resources", ()):
+                _open_from_discovery(cached_discovery, source_label="cached rendered/prefetched")
+                return
+            if remaining > 0 and _prefetch_is_inflight():
+                try:
+                    self.after(250, lambda: _poll_prefetch_cache(remaining - 1))
+                except Exception:
+                    _clear_pending()
+                return
+            if not opened.get("value"):
+                _clear_pending()
+                self.log_message(
+                    f"Video & Audio browser window found no selectable media for {row.domain} yet; try again after discovery finishes or refresh the source row.",
+                    "warning",
+                )
+
+        def _run_full_discovery_after_quick_miss(row_snapshot: SourceResourceRowState) -> None:
+            try:
+                discovery = discover_webpage_videos_for_row(
+                    row_snapshot,
+                    fetch_static_html=True,
+                    run_rendered_probe=True,
+                    rendered_probe_timeout_ms=12000,
+                )
+            except Exception as error:
+                self.after(0, lambda err=error: (self.log_message(f"Video & Audio browser rendered discovery failed: {err}", "warning"), _clear_pending()))
+                return
+            self.after(0, lambda result=discovery: (_open_from_discovery(result, source_label="rendered fallback") or _poll_prefetch_cache(remaining=1)))
+
+        def _worker(row_snapshot: SourceResourceRowState) -> None:
+            try:
+                quick_discovery = discover_webpage_videos_for_row(
+                    row_snapshot,
+                    fetch_static_html=True,
+                    run_rendered_probe=False,
+                    rendered_probe_timeout_ms=0,
+                )
+            except Exception as error:
+                self.after(0, lambda err=error: self.log_message(f"Video & Audio browser quick scan failed: {err}", "warning"))
+                if _prefetch_is_inflight():
+                    self.after(0, lambda: _poll_prefetch_cache())
+                else:
+                    threading.Thread(target=_run_full_discovery_after_quick_miss, args=(row_snapshot,), daemon=True).start()
+                return
+
+            def _apply_quick_result() -> None:
+                if _open_from_discovery(quick_discovery, source_label="quick static"):
+                    return
+                if _prefetch_is_inflight():
+                    _poll_prefetch_cache()
+                    return
+                self.log_message(
+                    "Video & Audio quick scan found no direct media candidates; trying the slower rendered discovery fallback.",
+                    "muted",
+                )
+                threading.Thread(target=_run_full_discovery_after_quick_miss, args=(row_snapshot,), daemon=True).start()
+
+            self.after(0, _apply_quick_result)
+
+        threading.Thread(target=_worker, args=(row,), daemon=True).start()
+
+    def _open_source_video_audio_browser_grid_for_resources(self, row: SourceResourceRowState, resources: Sequence[Any]) -> None:
+        intake_decisions_by_id = self._webpage_video_audio_file_intake_decisions_for_resources(row=row, resources=resources)
+        cards = self._source_video_audio_browser_grid_cards(
+            resources,
+            file_intake_decisions_by_id=intake_decisions_by_id,
+        )
+        if not cards:
+            self.log_message("Browser-native Video & Audio found no usable media URLs for this row.", "warning")
+            return
+        token = uuid.uuid4().hex
+        row_id = str(getattr(row, "row_id", "") or "")
+        display_title = f"Video & Audio - {getattr(row, 'domain', '') or 'webpage'}"
+        taskbar_marker = f"YTCE-VIDEO-AUDIO-GRID-{token[:10]}"
+        page_title = f"{display_title} [{taskbar_marker}]"
+        source_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "")
+        cards_json = json.dumps(cards, ensure_ascii=False).replace("</", "<\\/")
+        app = self
+        download_icon_data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAACXBIWXMAAAsTAAALEwEAmpwYAAABkklEQVR4nO2YS07DMBCGzaLcoZQDURZQIRALLlAEp6NcgYcocAQQpCDxWLXsQPrQCCMiK8GJHeIWzbfqwzP+v8hqMzFGURTlXwIMgGfgCdgwiwbwwA8Ts2jgYBYNVCAxKpAaFUiNCjQFsAwcAufAm5PrFuiHCgDrtkce2eMMOJC9Y8OvANf8ThYhMPH0vgK6MVfeFz5WIKvQ/xLohAjIsfFxA6xFCPRtDx/7IQJy5vMcyZGqUe8VKALoASOn/NTUBZg5TXo164MEBGDVKZ+ausQEmId6U7UBsAO82gFm4KsHNu1P5728TioALAEvuWXvwG5ZvXxn13zzmFTArpOZF1fCrS8IL9zNg8BWQTD3fdFn8j7tEcqt3S4JXcYHsNfU/o00qCHhDZ9EoKJEpfDJBDwSlcMnFSiRqBU+uUDu0WJm/7AGbe9vohtEggrANOZuNAYauht154FRGxJ8hT9uYh6QoXpeGIbOxDJUp+YiaCa2El07VKdiHPxUIifRkaEaOCkYM/+Cmd1rGHzlFUVRTFt8AnKNaVaHwn2+AAAAAElFTkSuQmCC"
+
+        class _VideoAudioBrowserGridHandler(http.server.BaseHTTPRequestHandler):
+            server_version = "YTCEVideoAudioGrid/1.0"
+
+            def log_message(self, format: str, *args: Any) -> None:
+                return
+
+            def _send_bytes(self, status: int, body: bytes, content_type: str) -> None:
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self) -> None:
+                parsed = urllib.parse.urlsplit(self.path)
+                if parsed.path not in {"/", "/index.html"}:
+                    self._send_bytes(404, b"Not found", "text/plain; charset=utf-8")
+                    return
+                query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+                if query.get("token") != token:
+                    self._send_bytes(403, b"Forbidden", "text/plain; charset=utf-8")
+                    return
+                self._send_bytes(200, html_doc.encode("utf-8"), "text/html; charset=utf-8")
+
+            def do_POST(self) -> None:
+                parsed = urllib.parse.urlsplit(self.path)
+                if parsed.path != "/download-selected":
+                    self._send_bytes(404, b'{"ok":false,"error":"not found"}', "application/json; charset=utf-8")
+                    return
+                query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+                if query.get("token") != token:
+                    self._send_bytes(403, b'{"ok":false,"error":"forbidden"}', "application/json; charset=utf-8")
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0") or "0")
+                    payload = json.loads(self.rfile.read(min(length, 1024 * 1024)).decode("utf-8"))
+                    ids = tuple(str(value or "") for value in payload.get("ids", []) if str(value or ""))
+                except Exception as error:
+                    self._send_bytes(400, json.dumps({"ok": False, "error": str(error)}).encode("utf-8"), "application/json; charset=utf-8")
+                    return
+                app.after(0, lambda selected_ids=ids: app._download_webpage_video_audio_resource_ids_to_files(row_id, selected_ids))
+                self._send_bytes(200, json.dumps({"ok": True, "queued": len(ids)}).encode("utf-8"), "application/json; charset=utf-8")
+
+        html_doc = f'''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(page_title)}</title>
+<style>
+:root {{ color-scheme: dark; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background:#0f1419; color:#e8eef2; }}
+* {{ box-sizing:border-box; }}
+body {{ margin:0; background:#0f1419; }}
+header {{ position:sticky; top:0; z-index:2; display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; padding:.55rem .7rem; background:#151b22f2; border-bottom:1px solid #29323b; backdrop-filter: blur(8px); }}
+button {{ border:1px solid #40505f; border-radius:999px; background:#1f2933; color:#e8eef2; padding:.35rem .7rem; cursor:pointer; }}
+button:hover {{ background:#2a3642; }}
+button.primary {{ background:#075985; border-color:#38bdf8; }}
+.meta {{ color:#aab7c3; font-size:.82rem; }}
+.grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:.7rem; padding:.7rem; }}
+.card {{ position:relative; min-height:196px; overflow:hidden; border:1px solid #2e3a44; border-radius:14px; background:#101820; box-shadow:0 3px 12px #0006; cursor:pointer; }}
+.card.selected {{ border-color:#38bdf8; outline:2px solid #38bdf8; }}
+.card.intake-reused {{ border-color:#33414d; box-shadow:0 2px 9px #0007; opacity:.82; }}
+.card.intake-duplicate {{ border-color:#f59e0b; outline:2px solid #f59e0b77; }}
+.preview {{ position:absolute; left:0; right:0; top:0; bottom:2.15rem; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#111827,#1f2937); }}
+.preview video, .preview img {{ width:100%; height:100%; object-fit:contain; display:block; background:#05080b; }}
+.audio-mark {{ font-size:2.3rem; color:#93c5fd; }}
+.top-controls {{ position:absolute; left:.35rem; right:.35rem; top:.35rem; display:none; gap:.22rem; align-items:center; z-index:4; pointer-events:none; }}
+.card:hover .top-controls, .card.selected .top-controls {{ display:flex; }}
+.check {{ width:1.18rem; height:1.18rem; border-radius:.30rem; border:1px solid #9aa8b4; background:#ffffffd8; color:#0f1419; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:.74rem; line-height:1; flex:0 0 auto; pointer-events:auto; }}
+.card.selected .check {{ background:#0ea5e9; border-color:#38bdf8; color:#fff; }}
+.url-copy {{ min-width:1.9rem; border:1px solid #3c4c59; border-radius:.34rem; background:#111a22d9; color:#bfdbfe; padding:.12rem .25rem; font-size:.68rem; line-height:.95rem; cursor:pointer; pointer-events:auto; }}
+.url-copy:hover, .actions a:hover, .actions button:hover {{ background:#1e3a8a; border-color:#60a5fa; color:#fff; }}
+.actions {{ margin-left:auto; display:flex; gap:.22rem; pointer-events:auto; }}
+.actions a, .actions button {{ text-decoration:none; background:#111a22d9; border:1px solid #3c4c59; color:#e8eef2; border-radius:.34rem; padding:.18rem .35rem; font-size:.70rem; line-height:.95rem; white-space:nowrap; cursor:pointer; }}
+.actions .download-action {{ width:1.58rem; min-width:1.58rem; height:1.22rem; padding:0; display:inline-flex; align-items:center; justify-content:center; }}
+.download-icon {{ width:18px; height:18px; display:block; object-fit:contain; }}
+.info {{ position:absolute; left:.35rem; right:.35rem; bottom:.35rem; display:flex; gap:.25rem; flex-wrap:wrap; align-items:center; pointer-events:auto; z-index:3; }}
+.pill {{ background:#05080bcc; color:#fff; border-radius:.35rem; padding:.1rem .3rem; font-size:.72rem; pointer-events:none; }}
+.variant-select {{ max-width:8.5rem; pointer-events:auto; background:#05080bcc; color:#fff; border:1px solid #475569; border-radius:.35rem; padding:.06rem .18rem; font-size:.72rem; cursor:pointer; }}
+.top-badges {{ position:absolute; left:.42rem; right:.42rem; top:.42rem; display:flex; justify-content:flex-end; align-items:flex-start; pointer-events:none; z-index:2; }}
+.intake-badge {{ background:#854d0ed9; color:#fef3c7; border:1px solid #facc1588; border-radius:.45rem; padding:.12rem .34rem; font-size:.68rem; font-weight:800; box-shadow:0 2px 8px #0008; }}
+.card:hover .intake-badge, .card.selected .intake-badge {{ opacity:0; visibility:hidden; }}
+.name {{ position:absolute; left:.4rem; right:.4rem; top:1.95rem; z-index:1; color:#dbeafe; font-size:.72rem; text-shadow:0 1px 4px #000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none; }}
+.err {{ color:#fecaca; background:#3b1111d9; border:1px solid #7f1d1d; border-radius:.5rem; padding:.5rem; font-size:.8rem; }}
+#status {{ min-width:18rem; }}
+</style>
+</head>
+<body>
+<header>
+<strong>{html.escape(display_title)}</strong>
+<span class="meta" id="counts">0 selected · {len(cards)} media</span>
+<button id="selectAll">Select all</button>
+<button id="clearAll">Clear all</button>
+<button id="addFiles" class="primary">Add selected to FILES</button>
+<span class="meta" id="status">Native browser video/audio grid · direct media first</span>
+</header>
+<main class="grid" id="grid"></main>
+<script>
+const mediaItems = {cards_json};
+const token = {json.dumps(token)};
+const DOWNLOAD_ICON_DATA_URI = {json.dumps(download_icon_data_uri)};
+const selected = new Set();
+let knownCount = mediaItems.filter(item => item.file_intake_status === 'reused').length;
+const duplicateCount = mediaItems.filter(item => item.file_intake_status === 'duplicate').length;
+const grid = document.getElementById('grid');
+const counts = document.getElementById('counts');
+const statusEl = document.getElementById('status');
+function updateCounts() {{ const extras=[]; if (knownCount) extras.push(`${{knownCount}} already in FILES`); if (duplicateCount) extras.push(`${{duplicateCount}} duplicate`); counts.textContent = `${{selected.size}} selected · ${{mediaItems.length}} media${{extras.length ? ' · ' + extras.join(' · ') : ''}}`; }}
+function setStatus(text) {{ statusEl.textContent = text; }}
+function markCardAddedBefore(item, card, intakeBadge) {{ if (item.file_intake_status !== 'reused') knownCount += 1; item.file_intake_status='reused'; item.file_intake_label='Added before'; card.classList.remove('intake-duplicate'); card.classList.add('intake-reused'); if (intakeBadge) {{ intakeBadge.textContent='Added before'; intakeBadge.style.visibility='visible'; }} updateCounts(); }}
+async function copyTextToClipboard(text) {{ try {{ if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text); else {{ const area=document.createElement('textarea'); area.value=text; area.setAttribute('readonly',''); area.style.position='fixed'; area.style.left='-9999px'; document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove(); }} setStatus('Copied media URL to clipboard.'); }} catch(error) {{ setStatus(`Could not copy media URL: ${{error}}`); }} }}
+function toggle(card, id) {{ selected.has(id) ? selected.delete(id) : selected.add(id); card.classList.toggle('selected', selected.has(id)); updateCounts(); }}
+function renderPreview(item, container) {{ container.textContent=''; const poster = item.poster_url || ''; if (item.media_kind === 'audio') {{ const mark=document.createElement('div'); mark.className='audio-mark'; mark.textContent='♪'; container.append(mark); return; }} const video=document.createElement('video'); video.muted=true; video.loop=true; video.preload='metadata'; video.playsInline=true; if (poster) video.poster=poster; video.src=item.url; video.onmouseenter=() => video.play().catch(() => {{}}); video.onmouseleave=() => {{ try {{ video.pause(); video.currentTime=0; }} catch(_e) {{}} }}; video.onerror=() => {{ if (poster) {{ const img=document.createElement('img'); img.loading='lazy'; img.decoding='async'; img.src=poster; video.replaceWith(img); }} else {{ const e=document.createElement('div'); e.className='err'; e.textContent='Preview unavailable'; video.replaceWith(e); }} }}; container.append(video); }}
+function render() {{ const frag=document.createDocumentFragment(); mediaItems.forEach((item) => {{ const card=document.createElement('div'); card.className=item.file_intake_status ? `card intake-${{item.file_intake_status}}` : 'card'; const preview=document.createElement('div'); preview.className='preview'; renderPreview(item, preview); const name=document.createElement('div'); name.className='name'; name.textContent=item.name || item.url; const topControls=document.createElement('div'); topControls.className='top-controls'; const check=document.createElement('div'); check.className='check'; check.textContent='✓'; check.title=item.url; const urlCopy=document.createElement('button'); urlCopy.type='button'; urlCopy.className='url-copy'; urlCopy.textContent='URL'; urlCopy.title=`Copy media URL: ${{item.url}}`; urlCopy.setAttribute('aria-label','Copy media URL'); urlCopy.onclick=async(event)=>{{ event.stopPropagation(); await copyTextToClipboard(item.url); }}; const topBadges=document.createElement('div'); topBadges.className='top-badges'; const intakeBadge=document.createElement('div'); intakeBadge.className='intake-badge'; intakeBadge.textContent=item.file_intake_label || ''; if (!item.file_intake_label) intakeBadge.style.visibility='hidden'; topBadges.append(intakeBadge); const actions=document.createElement('div'); actions.className='actions'; const open=document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open'; open.title='Open media URL'; open.setAttribute('aria-label','Open media URL'); const down=document.createElement('button'); down.type='button'; down.className='download-action'; down.title='Download selected media to FILES'; down.setAttribute('aria-label','Download media to FILES'); down.onclick=async(event)=>{{ event.preventDefault(); event.stopPropagation(); setStatus(`Adding media #${{item.index}} to FILES...`); try {{ const response=await fetch(`/download-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids:[item.resource_id]}})}}); const payload=await response.json(); if (payload.ok) {{ markCardAddedBefore(item, card, intakeBadge); setStatus(`Queued media #${{item.index}} for FILES intake.`); }} else setStatus(`FILES intake failed: ${{payload.error || 'unknown error'}}`); }} catch(error) {{ setStatus(`FILES intake failed: ${{error}}`); }} }}; const downIcon=document.createElement('img'); downIcon.className='download-icon'; downIcon.alt=''; downIcon.src=DOWNLOAD_ICON_DATA_URI; down.append(downIcon); actions.append(open, down); topControls.append(check, urlCopy, actions); const info=document.createElement('div'); info.className='info'; const ext=document.createElement('span'); ext.className='pill'; ext.textContent=item.extension || item.media_kind || 'media'; info.append(ext); const variants=Array.isArray(item.variants) && item.variants.length ? item.variants : [item]; function applyVariant(variant) {{ const previousId=item.resource_id; const wasSelected=selected.has(previousId); item.resource_id=variant.resource_id || item.resource_id; item.url=variant.url || item.url; item.extension=variant.extension || item.extension || 'media'; item.mime_type=variant.mime_type || item.mime_type || ''; item.media_kind=(item.mime_type || '').startsWith('audio/') ? 'audio' : (variant.media_type || item.media_kind || 'video'); item.width=Number(variant.width || 0); item.height=Number(variant.height || 0); if (wasSelected && previousId !== item.resource_id) {{ selected.delete(previousId); selected.add(item.resource_id); }} renderPreview(item, preview); open.href=item.url; urlCopy.title=`Copy media URL: ${{item.url}}`; check.title=item.url; ext.textContent=item.extension || item.media_kind || 'media'; updateCounts(); }} if (variants.length > 1) {{ const selector=document.createElement('select'); selector.className='variant-select'; selector.title='Select video/audio variant'; variants.forEach((variant)=>{{ const option=document.createElement('option'); option.value=variant.resource_id; option.textContent=variant.label || ((variant.width && variant.height) ? `${{variant.width}}×${{variant.height}}` : 'Unknown quality'); option.title=variant.url || ''; selector.append(option); }}); selector.onchange=()=>{{ const variant=variants.find(candidate=>candidate.resource_id===selector.value) || variants[0]; applyVariant(variant); }}; info.append(selector); }} else if (item.width && item.height) {{ const size=document.createElement('span'); size.className='pill'; size.textContent=`${{item.width}}×${{item.height}}`; info.append(size); }} const order=document.createElement('span'); order.className='pill'; order.textContent=`#${{item.index}}`; info.append(order); card.append(preview, name, topControls, topBadges, info); card.addEventListener('click',(event)=>{{ if (event.target.closest('a') || event.target.closest('button') || event.target.closest('select')) return; toggle(card, item.resource_id); }}); frag.append(card); }}); grid.append(frag); updateCounts(); if (knownCount || duplicateCount) setStatus(`Added before highlighted · ${{knownCount}} already in FILES · ${{duplicateCount}} duplicate`); }}
+document.getElementById('selectAll').onclick=()=>{{ mediaItems.forEach(item=>selected.add(item.resource_id)); document.querySelectorAll('.card').forEach(c=>c.classList.add('selected')); updateCounts(); }};
+document.getElementById('clearAll').onclick=()=>{{ selected.clear(); document.querySelectorAll('.card').forEach(c=>c.classList.remove('selected')); updateCounts(); }};
+document.getElementById('addFiles').onclick=async()=>{{ const ids=[...selected]; if (!ids.length) {{ setStatus('No media selected.'); return; }} setStatus(`Adding ${{ids.length}} selected media candidate(s) to FILES...`); try {{ const response=await fetch(`/download-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids}})}}); const payload=await response.json(); if (payload.ok) {{ setStatus(`Queued ${{payload.queued}} media candidate(s) for FILES intake in the app.`); }} else setStatus(`FILES intake failed: ${{payload.error || 'unknown error'}}`); }} catch(error) {{ setStatus(`FILES intake failed: ${{error}}`); }} }};
+render();
+</script>
+</body>
+</html>
+'''
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _VideoAudioBrowserGridHandler)
+        servers = self.__dict__.setdefault("source_video_audio_browser_grid_servers", [])
+        servers.append(server)
+        while len(servers) > 4:
+            old_server = servers.pop(0)
+            try:
+                old_server.shutdown()
+                old_server.server_close()
+            except Exception:
+                pass
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        port = int(server.server_address[1])
+        url = f"http://127.0.0.1:{port}/?token={urllib.parse.quote(token)}"
+        opened_in_app_window = False
+        taskbar_owner_requested = False
+        chromium_candidates: list[str] = []
+        explicit_browser = os.environ.get("YTCE_IMAGE_GRID_BROWSER", "").strip() or os.environ.get("YTCE_VIDEO_AUDIO_GRID_BROWSER", "").strip()
+        if explicit_browser:
+            chromium_candidates.append(explicit_browser)
+        for executable_name in ("msedge", "msedge.exe", "chrome", "chrome.exe"):
+            found_browser = shutil.which(executable_name)
+            if found_browser:
+                chromium_candidates.append(found_browser)
+        for base_var, relative_path in (
+            ("ProgramFiles", r"Microsoft\Edge\Application\msedge.exe"),
+            ("ProgramFiles(x86)", r"Microsoft\Edge\Application\msedge.exe"),
+            ("LocalAppData", r"Microsoft\Edge\Application\msedge.exe"),
+            ("ProgramFiles", r"Google\Chrome\Application\chrome.exe"),
+            ("ProgramFiles(x86)", r"Google\Chrome\Application\chrome.exe"),
+            ("LocalAppData", r"Google\Chrome\Application\chrome.exe"),
+        ):
+            base_path = os.environ.get(base_var, "").strip()
+            if base_path:
+                chromium_candidates.append(str(Path(base_path) / relative_path))
+        for browser_path in dict.fromkeys(str(candidate) for candidate in chromium_candidates if str(candidate).strip()):
+            try:
+                if not os.path.isfile(browser_path):
+                    continue
+                process = subprocess.Popen(
+                    [
+                        browser_path,
+                        f"--app={url}",
+                        "--new-window",
+                        "--no-first-run",
+                        "--disable-features=Translate",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                opened_in_app_window = True
+                taskbar_owner_requested = True
+                self._own_external_image_grid_window_for_taskbar(
+                    process_id=getattr(process, "pid", None),
+                    title_hint=taskbar_marker,
+                )
+                break
+            except Exception:
+                logger.debug("Could not open video/audio grid in Chromium app-window mode.", exc_info=True)
+        if not opened_in_app_window:
+            webbrowser.open_new(url)
+        self.log_message(
+            (
+                f"Opened browser-native Video & Audio window with {len(cards)} media candidate(s); "
+                f"already in FILES before add={sum(1 for card in cards if str(card.get('file_intake_status') or '') == FILE_INTAKE_STATUS_REUSED)}; "
+                "Add selected to FILES posts back to the app"
+                + (
+                    "; opened as a taskbar-owned Chromium app window."
+                    if taskbar_owner_requested
+                    else "; opened in the default browser."
+                )
+            ),
+            "success",
+        )
+
+
     def _open_source_resource_window(self, row_id: str, resource_kind: str, *, force_tk_image_window: bool = False) -> None:
         row = self._source_row_by_id(row_id)
         if row is None:
@@ -11154,6 +12048,13 @@ render();
             # immediately make the Chromium app window owned by this Tk root so
             # it behaves like an app-owned popup instead of a separate taskbar app.
             self._open_source_image_browser_grid_window(row_id)
+            return
+        if resource_kind == RESOURCE_KIND_VIDEO_AUDIO and row.adapter_id not in {"youtube", "twitter_x"}:
+            # V81A: Video & Audio now uses the same lightweight browser-native
+            # app window pattern as Images.  The old Tk grid stays below as the
+            # fallback path for provider-specific rows, while generic webpages
+            # get fast native video/audio cards and direct FILES intake.
+            self._open_source_video_audio_browser_grid_window(row_id)
             return
         state = resource_dialog_state_for_row(row, resource_kind)
         window = ctk.CTkToplevel(self)
