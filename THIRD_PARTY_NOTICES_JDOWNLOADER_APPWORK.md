@@ -31,3 +31,20 @@ Implementation mapping:
 
 This notice is intentionally explicit because the V80M code is not just general inspiration; it is a
 source-credited Python implementation of the reviewed runtime design and behaviour.
+
+## V80N Profile/Media Database runtime queue bridge
+
+V80N adds `profile_media_database_runtime_queue.py`, a Python/Tk-native queued
+operation bridge for Profile/Media Database file-management work.
+
+Source patterns reviewed from the uploaded JDownloader/AppWork reference set:
+
+- `org.appwork.utils.event.queue.Queue`
+- `org.appwork.utils.event.queue.QueueAction`
+- `org.appwork.utils.event.queue.QueueThread`
+- `jd.controlling.downloadcontroller.DownloadWatchDogJob`
+- `jd.controlling.downloadcontroller.DownloadWatchDog`
+
+The implementation uses the V80M YTCE runtime queue foundation and does not copy
+Java source text directly. It preserves the source-pattern labels and maps the
+same queue/job/watchdog semantics into Python-native code.
