@@ -8311,7 +8311,7 @@ class App(ctk.CTk):
                     f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
                     f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
                     f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "Video & Audio can open from the cached candidate list; live hover uses fast-start trimmed playback, elapsed-clock frame selection, repaint-safe instant wrapping, and a fixed wait-poll-to-playback handoff."
+                    "Video & Audio can open from the cached candidate list; live hover uses fast-start playback, a VDH-length ~5.15s 30fps hover loop, elapsed-clock frame selection, repaint-safe instant wrapping, and a fixed wait-poll-to-playback handoff."
                 ),
                 "muted",
             )
@@ -9882,7 +9882,12 @@ class App(ctk.CTk):
             return 0.25
 
         def _video_hover_loop_duration_seconds() -> float:
-            return 4.60
+            # V79M: keep the V79L playback architecture, but restore the
+            # long-loop length to the measured Video DownloadHelper-style
+            # ~5.15s window.  The loop is still modulo/deadline based, so the
+            # wrap itself remains immediate; only the amount of useful preview
+            # shown before wrapping is increased.
+            return 5.15
 
         def _video_hover_target_fps() -> int:
             return 30
@@ -10309,10 +10314,11 @@ class App(ctk.CTk):
             )
 
         def _extract_video_hover_preview_long_frames(item: Any, hover_url: str) -> tuple[Any, ...]:
-            # V79J: keep the VDH-style 30fps cadence but do not include the
-            # static lead-in in the loopable window.  A 4.60s window starting at
-            # ~0.55s preserves the useful preview action while avoiding the
-            # visible reload-like pause when the loop wraps back to frame zero.
+            # V79M: keep V79L's fast seed, elapsed-clock playback, and fixed
+            # wait-poll handoff, but use the measured Video DownloadHelper-like
+            # ~5.15s long loop.  The window still starts past the static lead-in
+            # so startup is quick, while the user sees a fuller preview before
+            # the instant modulo wrap.
             return _extract_video_hover_preview_frames_cached(
                 item,
                 hover_url,
