@@ -66,3 +66,29 @@ Implementation mapping:
 - AppWork queue job execution → optional `YTCEWorkQueue` integration for watched off-UI-thread media operations.
 
 This is a source-credited Python implementation of the reviewed watchdog/job/control-flow behaviour.
+## V80P FILES/media intake dedupe guard
+
+V80P adds `file_intake_dedupe.py`, a Python/Tk-native FILES/media intake
+review helper that implements JDownloader/AppWork-style operational patterns
+for identity tracking and repeat-work avoidance.
+
+Source pattern reviewed:
+
+- JDownloader/AppWork queue and watchdog architecture, especially the separation
+  between planned work, watched operation state, and actual mutating execution.
+- JDownloader file/download-controller behaviour as an architectural reference
+  for keeping explicit identity records and avoiding repeated work.
+
+YTCE implementation:
+
+- canonical source URL identity
+- normalized local path identity
+- sha256/size identity where available
+- existing-record reuse classification
+- batch-local duplicate classification
+- explicit `added / reused / duplicate / failed` counts
+- no copy, move, delete, download, browser, provider, or filesystem mutation
+  during review
+
+No Java source text is pasted into the Python module. The implementation ports
+the reviewed method-of-operation into YTCE's Python dataclass/test style.
