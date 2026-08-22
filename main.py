@@ -1138,24 +1138,32 @@ class App(ctk.CTk):
         self.sidebar_clear_screenshots_button = _NoOpSidebarControl()
 
     def open_access_keys_window(self) -> AccessKeysWindow:
-        """Open or focus the read-only Access & Keys status window."""
+        """Open or focus the Access & Keys window without keyring work on the UI thread."""
         existing = getattr(self, "access_keys_window", None)
-        credential_store = SystemKeyringCredentialStore()
+
+        def credential_store_factory() -> SystemKeyringCredentialStore:
+            store = getattr(self, "_access_keys_credential_store", None)
+            if store is None:
+                store = SystemKeyringCredentialStore()
+                self._access_keys_credential_store = store
+            return store
+
+        youtube_configured_snapshot = bool(
+            getattr(getattr(self, "api_key_entry", None), "get", lambda: "")().strip()
+        )
 
         def credential_status_provider():
             return build_runtime_credential_statuses(
                 settings_manager=self.settings_manager,
-                youtube_configured=bool(
-                    getattr(getattr(self, "api_key_entry", None), "get", lambda: "")().strip()
-                ),
-                credential_store=credential_store,
+                youtube_configured=youtube_configured_snapshot,
+                credential_store=credential_store_factory(),
             )
 
         self.access_keys_window = open_or_focus_access_keys_window(
             existing,
             lambda: AccessKeysWindow(
                 self,
-                credential_store=credential_store,
+                credential_store_factory=credential_store_factory,
                 credential_status_provider=credential_status_provider,
                 validation_records=self._get_access_keys_validation_records(),
                 on_validation_records_change=self._set_access_keys_validation_records,

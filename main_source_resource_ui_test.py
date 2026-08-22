@@ -349,6 +349,64 @@ def test_sidebar_spacing_is_compact_between_updates_keys_and_export() -> None:
     assert 'width=286' in export_source
 
 
+def test_access_keys_search_filters_are_debounced() -> None:
+    dialog_source = inspect.getsource(main.AccessKeysWindow)
+    main_search_source = inspect.getsource(main.AccessKeysWindow._on_search_changed)
+    add_search_source = inspect.getsource(
+        main.AccessKeysWindow._on_add_provider_search_changed
+    )
+    close_source = inspect.getsource(main.AccessKeysWindow.close)
+
+    assert "_search_after_id" in dialog_source
+    assert "_schedule_search_apply" in main_search_source
+    assert "_schedule_add_provider_search_apply" in add_search_source
+    assert "_apply_scheduled_search" in dialog_source
+    assert "_apply_scheduled_add_provider_search" in dialog_source
+    assert "_search_apply_delay_ms = 1" in dialog_source
+    assert "V80K: make Access & Keys search result feedback near-instant" in dialog_source
+    assert "_search_apply_delay_for_query" in dialog_source
+    assert "_add_provider_search_apply_delay_ms = 1" in dialog_source
+    assert "_add_provider_search_apply_delay_for_query" in dialog_source
+    assert "_apply_search_now_event" in dialog_source
+    assert "_apply_add_provider_search_now_event" in dialog_source
+    assert "_cancel_pending_search_apply" in dialog_source
+    assert "_cancel_pending_add_provider_search_apply" in dialog_source
+    assert "_add_provider_render_batch_size = 10" in dialog_source
+    assert "V80L: show instant feedback in the Add Provider chooser" in dialog_source
+    assert "V80L: make the + button feel instant" in dialog_source
+    assert "V80L: keep the feedback/status instant" in dialog_source
+    assert "_set_add_provider_results_status" in dialog_source
+    assert "_add_provider_shell_refresh_after_id" in dialog_source
+    assert "_cancel_pending_add_provider_shell_refresh" in dialog_source
+    assert "render_details: bool = True" in dialog_source
+    assert "self._apply_view(view, render_details=False)" in dialog_source
+    assert "_render_add_provider_result_batch" in dialog_source
+    assert "_cancel_pending_add_provider_result_render" in dialog_source
+    assert "_add_provider_search_after_id" in close_source
+    assert "_add_provider_shell_refresh_after_id" in close_source
+    assert "_add_provider_render_after_id" in close_source
+
+
+def test_access_keys_window_defers_keyring_work_off_ui_thread() -> None:
+    open_source = inspect.getsource(App.open_access_keys_window)
+    dialog_source = inspect.getsource(main.AccessKeysWindow)
+    refresh_source = inspect.getsource(
+        main.AccessKeysWindow._refresh_runtime_status_for_entry
+    )
+
+    assert "credential_store = SystemKeyringCredentialStore()" not in open_source
+    assert "credential_store_factory" in open_source
+    assert "credential_store_factory=credential_store_factory" in open_source
+    assert "youtube_configured_snapshot" in open_source
+    assert "_resolve_credential_store" in dialog_source
+    assert "_start_runtime_status_worker" in dialog_source
+    assert "statuses = dict(self._credential_status_provider() or {})" in dialog_source
+    assert "threading.Thread(target=worker, daemon=True).start()" in dialog_source
+    assert "self._credential_status_provider()" not in refresh_source
+    assert "Saving credential..." in dialog_source
+    assert "Clearing credential..." in dialog_source
+
+
 def test_sidebar_order_places_updates_above_keys_export_files() -> None:
     source = inspect.getsource(App._create_sidebar)
 

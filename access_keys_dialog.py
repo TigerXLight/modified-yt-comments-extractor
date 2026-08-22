@@ -373,6 +373,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
             Mapping[str, CredentialRuntimeStatus]
         ] = None,
         credential_store: Optional[CredentialStore] = None,
+        credential_store_factory: Optional[Callable[[], Optional[CredentialStore]]] = None,
         credential_status_provider: Optional[
             Callable[[], Mapping[str, CredentialRuntimeStatus]]
         ] = None,
@@ -402,6 +403,10 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._active_add_group_id = ""
         self._list_scroll_reset_after_id: Optional[str] = None
         self._credential_store = credential_store
+        self._credential_store_factory = credential_store_factory
+        self._credential_store_lock = threading.Lock()
+        self._runtime_status_worker_running = False
+        self._runtime_status_worker_generation = 0
         self._credential_status_provider = credential_status_provider
         self._validation_records = normalize_validation_records(validation_records)
         self._on_validation_records_change = on_validation_records_change
@@ -424,6 +429,24 @@ class AccessKeysWindow(ctk.CTkToplevel):
             "",
             (),
         )
+        # V80G: keep Access & Keys search responsive.  Do not rebuild and
+        # re-grid the provider list for every keystroke; schedule the filter
+        # pass after the user pauses briefly, similar to a queued UI update.
+        self._search_after_id: Optional[str] = None
+        self._search_apply_generation = 0
+        self._search_apply_delay_ms = 1
+        # V80J: keep typing instant while applying meaningful search results
+        # almost immediately after a short idle breath.
+        self._add_provider_search_after_id: Optional[str] = None
+        self._add_provider_search_apply_generation = 0
+        self._add_provider_search_apply_delay_ms = 1
+        # V80K: make Access & Keys search result feedback near-instant by
+        # running the filter on the next UI turn, then chunk-rendering the
+        # heavier Add Provider result buttons so the entry keeps responding.
+        self._add_provider_render_after_id: Optional[str] = None
+        self._add_provider_shell_refresh_after_id: Optional[str] = None
+        self._add_provider_render_generation = 0
+        self._add_provider_render_batch_size = 10
 
         if catalog is None:
             bundle = build_default_access_keys_catalog_bundle()
@@ -487,11 +510,79 @@ class AccessKeysWindow(ctk.CTkToplevel):
         initial_view = self.controller.view()
         self._build_my_provider_widgets()
         self._build_detail_widgets()
+        self._search_var.trace_add(
+            "write",
+            self._on_search_changed,
+        )
         self._add_provider_search_var.trace_add(
             "write",
             self._on_add_provider_search_changed,
         )
         self._apply_view(initial_view)
+
+    def _credential_store_is_available(self) -> bool:
+        return self._credential_store is not None or self._credential_store_factory is not None
+
+    def _resolve_credential_store(self) -> Optional[CredentialStore]:
+        if self._credential_store is not None:
+            return self._credential_store
+        factory = self._credential_store_factory
+        if factory is None:
+            return None
+        with self._credential_store_lock:
+            if self._credential_store is not None:
+                return self._credential_store
+            self._credential_store = factory()
+            return self._credential_store
+
+    def _start_runtime_status_worker(self) -> None:
+        if self._credential_status_provider is None or self._runtime_status_worker_running:
+            return
+        self._runtime_status_worker_running = True
+        self._runtime_status_worker_generation += 1
+        generation = self._runtime_status_worker_generation
+
+        def worker() -> None:
+            try:
+                statuses = dict(self._credential_status_provider() or {})
+            except (KeyboardInterrupt, SystemExit, GeneratorExit):
+                raise
+            except Exception:
+                statuses = {}
+            if self._closed:
+                return
+            try:
+                self.after(0, lambda: self._finish_runtime_status_worker(generation, statuses))
+            except Exception:
+                return
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_runtime_status_worker(
+        self,
+        generation: int,
+        statuses: Mapping[str, CredentialRuntimeStatus],
+    ) -> None:
+        if self._closed or generation != self._runtime_status_worker_generation:
+            return
+        self._runtime_status_worker_running = False
+        if not statuses:
+            return
+        self._base_catalog = apply_runtime_credential_statuses(
+            self._base_catalog,
+            statuses,
+        )
+        self._full_catalog = apply_runtime_credential_statuses(
+            self._full_catalog,
+            statuses,
+        )
+        self._apply_validation_records_to_catalogs()
+        selected_id = self._selected_entry_id
+        view = self._replace_my_provider_controller()
+        if selected_id:
+            self.controller.selected_entry_id = selected_id
+            view = self.controller.view()
+        self._apply_view(view)
 
     def _my_provider_bundle(self) -> AccessKeysCatalogBundle:
         return _catalog_subset(
@@ -598,6 +689,9 @@ class AccessKeysWindow(ctk.CTkToplevel):
             fg_color=COLORS["bg_input"],
             border_color=COLORS["border"],
         )
+        # V80H: keep typing instant by applying the live filter only after
+        # a type-ahead pause; Return still applies immediately on demand.
+        self.search_entry.bind("<Return>", self._apply_search_now_event, add="+")
         self.search_entry.grid(
             row=0,
             column=0,
@@ -763,6 +857,10 @@ class AccessKeysWindow(ctk.CTkToplevel):
             fg_color=COLORS["bg_input"],
             border_color=COLORS["border"],
         )
+        # V80H: same type-ahead behaviour for the add-provider chooser.
+        self.add_provider_search_entry.bind(
+            "<Return>", self._apply_add_provider_search_now_event, add="+"
+        )
         self.add_provider_search_entry.grid(
             row=0,
             column=0,
@@ -781,6 +879,25 @@ class AccessKeysWindow(ctk.CTkToplevel):
             sticky="nsew",
             padx=8,
             pady=(0, 8),
+        )
+        # V80L: show instant feedback in the Add Provider chooser before any
+        # heavier result buttons are built.  Browser/JDownloader-style UI work
+        # should expose a shell/status immediately, then fill results in queued
+        # chunks instead of blocking the click or backspace path.
+        self.add_provider_results_status = ctk.CTkLabel(
+            self.add_provider_results,
+            text="",
+            text_color=COLORS["text_secondary"],
+            anchor="w",
+            justify="left",
+            wraplength=250,
+        )
+        self.add_provider_results_status.grid(
+            row=0,
+            column=0,
+            sticky="ew",
+            padx=4,
+            pady=(2, 6),
         )
         self.add_provider_popup.place_forget()
 
@@ -1403,24 +1520,83 @@ class AccessKeysWindow(ctk.CTkToplevel):
             self._finish_list_scroll_reset
         )
 
-    def _apply_filtered_view(self, view: AccessKeysManagerView) -> None:
-        # Reset immediately so a short filtered family does not inherit the
-        # previous long list's lower scroll position. Repeat after idle once
-        # geometry and the canvas scrollregion have caught up.
-        self._reset_list_scroll_to_top()
-        self._apply_view(view)
+    def _apply_filtered_view(
+        self,
+        view: AccessKeysManagerView,
+        *,
+        immediate_scroll_reset: bool = False,
+    ) -> None:
+        # V80L: typing/backspace should update the visible list without forcing
+        # synchronous scroll/detail work.  Family changes still reset
+        # immediately; search resets after idle so the key event remains light.
+        if immediate_scroll_reset:
+            self._reset_list_scroll_to_top()
+        self._apply_view(view, render_details=False)
         self._queue_list_scroll_reset()
 
     def _choose_family(self, value: str) -> None:
         self._hide_family_menu()
         self._family_var.set(value)
         self.family_button.configure(text=f"{value}  ▾")
-        self._apply_filtered_view(self.controller.set_family(value))
+        self._apply_filtered_view(
+            self.controller.set_family(value),
+            immediate_scroll_reset=True,
+        )
 
     def _on_search_changed(self, *_args: object) -> None:
-        self._apply_filtered_view(
-            self.controller.set_search(self._search_var.get())
+        self._schedule_search_apply()
+
+    def _search_apply_delay_for_query(self, query: str) -> int:
+        # V80K: apply My Providers search on the next UI turn.  The list is
+        # small enough to update immediately now that credential/status work
+        # is off-thread, and delaying here is what made search feedback feel
+        # out of sync with typing.
+        return self._search_apply_delay_ms
+
+    def _schedule_search_apply(self) -> None:
+        self._search_apply_generation += 1
+        generation = self._search_apply_generation
+        if self._search_after_id is not None:
+            try:
+                self.after_cancel(self._search_after_id)
+            except Exception:
+                pass
+        delay_ms = self._search_apply_delay_for_query(self._search_var.get())
+        self._search_after_id = self.after(
+            delay_ms,
+            lambda generation=generation: self._apply_scheduled_search(generation),
         )
+
+    def _cancel_pending_search_apply(self) -> None:
+        if self._search_after_id is not None:
+            try:
+                self.after_cancel(self._search_after_id)
+            except Exception:
+                pass
+            self._search_after_id = None
+
+    def _apply_search_now(self) -> None:
+        if self._closed:
+            return
+        self._search_apply_generation += 1
+        self._cancel_pending_search_apply()
+        query = self._search_var.get()
+        if query == self.controller.search_query:
+            return
+        self._apply_filtered_view(self.controller.set_search(query))
+
+    def _apply_search_now_event(self, _event: object) -> str:
+        self._apply_search_now()
+        return "break"
+
+    def _apply_scheduled_search(self, generation: int) -> None:
+        if self._closed or generation != self._search_apply_generation:
+            return
+        self._search_after_id = None
+        query = self._search_var.get()
+        if query == self.controller.search_query:
+            return
+        self._apply_filtered_view(self.controller.set_search(query))
 
     def _hide_add_provider_popup_event(self, _event: object) -> str:
         self._hide_add_provider_popup()
@@ -1500,11 +1676,11 @@ class AccessKeysWindow(ctk.CTkToplevel):
         if self._add_provider_popup_visible:
             self._hide_add_provider_popup()
         self._active_add_group_id = section_id
+        self._cancel_pending_add_provider_search_apply()
+        self._cancel_pending_add_provider_result_render()
         self._add_provider_search_var.set("")
-        self._refresh_add_provider_results()
         button = self._section_add_buttons[section_id]
         self._add_provider_origin_button = button
-        self.update_idletasks()
         header = self._section_header_frames.get(section_id)
         try:
             row = int((header.grid_info() if header is not None else {}).get("row", 0))
@@ -1521,14 +1697,28 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self.add_provider_popup.lift()
         self._add_provider_popup_visible = True
         self._bind_add_provider_popup_events()
+        self._set_add_provider_results_status("Loading providers...")
         try:
             self.add_provider_search_entry.focus_set()
         except Exception:
             pass
 
+        # V80L: make the + button feel instant.  Show the popup shell first,
+        # then let Tk paint/focus it before filtering and chunk-rendering the
+        # provider buttons on the following UI turn.
+        self._add_provider_search_apply_generation += 1
+        generation = self._add_provider_search_apply_generation
+        self._add_provider_shell_refresh_after_id = self.after(
+            1,
+            lambda generation=generation: self._apply_scheduled_add_provider_search(generation),
+        )
+
     def _hide_add_provider_popup(self) -> None:
         if not self._add_provider_popup_visible:
             return
+        self._cancel_pending_add_provider_search_apply()
+        self._cancel_pending_add_provider_shell_refresh()
+        self._cancel_pending_add_provider_result_render()
         self.add_provider_popup.grid_remove()
         self._add_provider_popup_visible = False
         self._active_add_group_id = ""
@@ -1544,7 +1734,85 @@ class AccessKeysWindow(ctk.CTkToplevel):
 
     def _on_add_provider_search_changed(self, *_args: object) -> None:
         if self._add_provider_popup_visible:
-            self._refresh_add_provider_results()
+            self._schedule_add_provider_search_apply()
+
+    def _add_provider_search_apply_delay_for_query(self, query: str) -> int:
+        # V80K: schedule Add Provider search immediately and keep it responsive
+        # by chunk-rendering the matching buttons instead of waiting hundreds
+        # of milliseconds before users see any result change.
+        return self._add_provider_search_apply_delay_ms
+
+    def _cancel_pending_add_provider_shell_refresh(self) -> None:
+        if self._add_provider_shell_refresh_after_id is not None:
+            try:
+                self.after_cancel(self._add_provider_shell_refresh_after_id)
+            except Exception:
+                pass
+            self._add_provider_shell_refresh_after_id = None
+
+    def _schedule_add_provider_search_apply(self) -> None:
+        self._cancel_pending_add_provider_shell_refresh()
+        self._add_provider_search_apply_generation += 1
+        generation = self._add_provider_search_apply_generation
+        if self._add_provider_search_after_id is not None:
+            try:
+                self.after_cancel(self._add_provider_search_after_id)
+            except Exception:
+                pass
+        delay_ms = self._add_provider_search_apply_delay_for_query(
+            self._add_provider_search_var.get()
+        )
+        self._add_provider_search_after_id = self.after(
+            delay_ms,
+            lambda generation=generation: self._apply_scheduled_add_provider_search(generation),
+        )
+
+    def _cancel_pending_add_provider_search_apply(self) -> None:
+        if self._add_provider_search_after_id is not None:
+            try:
+                self.after_cancel(self._add_provider_search_after_id)
+            except Exception:
+                pass
+            self._add_provider_search_after_id = None
+
+    def _apply_add_provider_search_now(self) -> None:
+        if self._closed or not self._add_provider_popup_visible:
+            return
+        self._add_provider_search_apply_generation += 1
+        self._cancel_pending_add_provider_search_apply()
+        self._refresh_add_provider_results()
+
+    def _apply_add_provider_search_now_event(self, _event: object) -> str:
+        self._apply_add_provider_search_now()
+        return "break"
+
+    def _apply_scheduled_add_provider_search(self, generation: int) -> None:
+        if (
+            self._closed
+            or generation != self._add_provider_search_apply_generation
+            or not self._add_provider_popup_visible
+        ):
+            return
+        self._add_provider_search_after_id = None
+        self._refresh_add_provider_results()
+
+    def _cancel_pending_add_provider_result_render(self) -> None:
+        if self._add_provider_render_after_id is not None:
+            try:
+                self.after_cancel(self._add_provider_render_after_id)
+            except Exception:
+                pass
+            self._add_provider_render_after_id = None
+
+    def _set_add_provider_results_status(self, text: str) -> None:
+        label = getattr(self, "add_provider_results_status", None)
+        if label is None:
+            return
+        try:
+            label.configure(text=text)
+            label.grid(row=0, column=0, sticky="ew", padx=4, pady=(2, 6))
+        except Exception:
+            pass
 
     def _refresh_add_provider_results(self) -> None:
         query = " ".join(self._add_provider_search_var.get().split()).casefold()
@@ -1574,13 +1842,48 @@ class AccessKeysWindow(ctk.CTkToplevel):
         if render_key == self._last_add_provider_render_key:
             return
         self._last_add_provider_render_key = render_key
+        self._cancel_pending_add_provider_result_render()
+        self._add_provider_render_generation += 1
+        generation = self._add_provider_render_generation
 
+        result_count = len(result_ids)
+        self._set_add_provider_results_status(
+            "No matching providers."
+            if result_count == 0
+            else f"{result_count} matching provider(s)."
+        )
         for button in self._add_provider_buttons.values():
-            button.destroy()
-        self._add_provider_buttons = {}
+            try:
+                button.grid_remove()
+            except Exception:
+                pass
 
-        row = 0
-        for entry_id in result_ids:
+        if not result_ids:
+            return
+
+        # V80L: keep the feedback/status instant and avoid destroying/recreating
+        # the whole button list on every search/backspace.  Reuse existing
+        # buttons when possible and render a small first batch after the popup
+        # has painted, then continue in queued chunks.
+        self._add_provider_render_after_id = self.after(
+            1,
+            lambda: self._render_add_provider_result_batch(tuple(result_ids), generation, 0),
+        )
+
+    def _render_add_provider_result_batch(
+        self,
+        result_ids: tuple[str, ...],
+        generation: int,
+        start_index: int,
+    ) -> None:
+        if self._closed or generation != self._add_provider_render_generation:
+            return
+        self._add_provider_render_after_id = None
+        entry_lookup = _entry_by_id(self._full_catalog)
+        batch_size = max(1, int(self._add_provider_render_batch_size))
+        end_index = min(len(result_ids), start_index + batch_size)
+        row = start_index + 1
+        for entry_id in result_ids[start_index:end_index]:
             entry = entry_lookup.get(entry_id)
             if entry is None:
                 continue
@@ -1590,25 +1893,47 @@ class AccessKeysWindow(ctk.CTkToplevel):
                 if disabled
                 else entry.display_name
             )
-            button = ctk.CTkButton(
-                self.add_provider_results,
-                text=label,
-                anchor="w",
-                height=30,
-                command=lambda entry_id=entry_id, disabled=disabled: (
-                    None if disabled else self._add_provider(entry_id, select=True)
-                ),
-                fg_color="transparent" if disabled else COLORS["accent_secondary"],
-                hover_color=COLORS["accent_hover"],
-                text_color=(
-                    COLORS["text_secondary"]
-                    if disabled
-                    else COLORS["text_primary"]
+            button = self._add_provider_buttons.get(entry_id)
+            if button is None:
+                button = ctk.CTkButton(
+                    self.add_provider_results,
+                    text=label,
+                    anchor="w",
+                    height=30,
+                    command=lambda entry_id=entry_id, disabled=disabled: (
+                        None if disabled else self._add_provider(entry_id, select=True)
+                    ),
+                    fg_color="transparent" if disabled else COLORS["accent_secondary"],
+                    hover_color=COLORS["accent_hover"],
+                    text_color=(
+                        COLORS["text_secondary"]
+                        if disabled
+                        else COLORS["text_primary"]
+                    ),
+                )
+                self._add_provider_buttons[entry_id] = button
+            else:
+                button.configure(
+                    text=label,
+                    fg_color="transparent" if disabled else COLORS["accent_secondary"],
+                    text_color=(
+                        COLORS["text_secondary"]
+                        if disabled
+                        else COLORS["text_primary"]
+                    ),
+                )
+            button.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
+            row += 1
+
+        if end_index < len(result_ids):
+            self._add_provider_render_after_id = self.after(
+                1,
+                lambda: self._render_add_provider_result_batch(
+                    result_ids,
+                    generation,
+                    end_index,
                 ),
             )
-            button.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
-            self._add_provider_buttons[entry_id] = button
-            row += 1
 
     def _add_provider(self, entry_id: str, *, select: bool = False) -> None:
         entry_id = " ".join(str(entry_id or "").split())
@@ -1640,40 +1965,18 @@ class AccessKeysWindow(ctk.CTkToplevel):
         view = self._replace_my_provider_controller()
         self._apply_view(view)
 
-    def _refresh_runtime_status_for_entry(self, entry_id: str) -> None:
-        if (
-            not entry_id
-            or entry_id in self._runtime_status_checked_entry_ids
-            or self._credential_status_provider is None
-        ):
+    def _refresh_runtime_status_for_entry(
+        self,
+        entry_id: str,
+        *,
+        force: bool = False,
+    ) -> None:
+        if not entry_id or self._credential_status_provider is None:
+            return
+        if not force and entry_id in self._runtime_status_checked_entry_ids:
             return
         self._runtime_status_checked_entry_ids.add(entry_id)
-        statuses = self._credential_status_provider()
-        status = statuses.get(entry_id)
-        if status is None:
-            return
-        self._base_catalog = apply_runtime_credential_statuses(
-            self._base_catalog,
-            {entry_id: status},
-        )
-        self._full_catalog = apply_runtime_credential_statuses(
-            self._full_catalog,
-            {entry_id: status},
-        )
-        self._apply_validation_records_to_catalogs()
-        view = self._replace_my_provider_controller()
-        self.controller.selected_entry_id = entry_id
-        view = self.controller.view()
-        self._entry_views = {
-            entry.entry_id: entry
-            for section in view.sections
-            for entry in section.entries
-        }
-        if entry_id in self._entry_buttons and entry_id in self._entry_views:
-            self._configure_entry_button(
-                entry_id,
-                selected=entry_id == self._selected_entry_id,
-            )
+        self._start_runtime_status_worker()
 
     def _select_entry(self, entry_id: str) -> None:
         if entry_id not in self._visible_entry_ids:
@@ -1698,9 +2001,15 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._configure_entry_button(entry_id, selected=True)
         self._render_details(self._entry_views.get(entry_id))
 
-    def _apply_view(self, view: AccessKeysManagerView) -> None:
+    def _apply_view(
+        self,
+        view: AccessKeysManagerView,
+        *,
+        render_details: bool = True,
+    ) -> None:
         # Build the new layout before hiding stale widgets. This avoids an
         # empty intermediate frame during synchronous search/family changes.
+        previous_selected_entry_id = self._selected_entry_id
         self._render_count += 1
         visible_sections: set[str] = set()
         visible_entries: set[str] = set()
@@ -1769,10 +2078,16 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._visible_entry_ids = visible_entries
         self._selected_entry_id = view.selected_entry_id
         selected = self.controller.selected_entry(view)
+        selected_entry_id = selected.entry_id if selected is not None else ""
         if selected is not None:
             self._refresh_runtime_status_for_entry(selected.entry_id)
             selected = self._entry_views.get(selected.entry_id, selected)
-        self._render_details(selected)
+        # V80L: search/backspace should not re-render the full details pane when
+        # the selected provider has not changed.  The details pane contains many
+        # widgets and credential controls; repeatedly rebuilding it was the
+        # remaining visible delay after keystrokes became instant.
+        if render_details or selected_entry_id != previous_selected_entry_id:
+            self._render_details(selected)
 
     def _configure_entry_button(
         self,
@@ -1887,7 +2202,7 @@ class AccessKeysWindow(ctk.CTkToplevel):
     ) -> None:
         credential_id = (
             cloud_asr_credential_id_for_entry_id(entry.entry_id)
-            if entry is not None and self._credential_store is not None
+            if entry is not None and self._credential_store_is_available()
             else ""
         )
         self._current_credential_entry_id = entry.entry_id if entry else ""
@@ -1965,44 +2280,62 @@ class AccessKeysWindow(ctk.CTkToplevel):
         return messages.get(status, "Credential action finished.")
 
     def _refresh_runtime_statuses_after_credential_action(self) -> None:
-        if self._credential_status_provider is None:
-            return
-        statuses = self._credential_status_provider()
         self._runtime_status_checked_entry_ids.clear()
-        self._base_catalog = apply_runtime_credential_statuses(
-            self._base_catalog,
-            statuses,
-        )
-        self._full_catalog = apply_runtime_credential_statuses(
-            self._full_catalog,
-            statuses,
-        )
-        self._apply_validation_records_to_catalogs()
-        view = self._replace_my_provider_controller()
         if self._selected_entry_id:
-            self.controller.selected_entry_id = self._selected_entry_id
-            view = self.controller.view()
-        self._entry_views = {
-            entry.entry_id: entry
-            for section in view.sections
-            for entry in section.entries
-        }
-        for entry_id in tuple(self._visible_entry_ids):
-            if entry_id in self._entry_buttons and entry_id in self._entry_views:
-                self._configure_entry_button(
-                    entry_id,
-                    selected=entry_id == view.selected_entry_id,
-                )
-        self._selected_entry_id = view.selected_entry_id
-        self._render_details(self.controller.selected_entry(view))
+            self._refresh_runtime_status_for_entry(self._selected_entry_id, force=True)
+
+    def _set_credential_action_busy(self, message: str) -> None:
+        for button_name in (
+            "credential_save_button",
+            "credential_clear_button",
+            "credential_validate_button",
+        ):
+            button = getattr(self, button_name, None)
+            if button is not None:
+                try:
+                    button.configure(state="disabled")
+                except Exception:
+                    pass
+        self.credential_action_status_label.configure(text=message)
+
+    def _finish_credential_action(
+        self,
+        *,
+        action: str,
+        entry_id: str,
+        status: CredentialStoreStatus,
+    ) -> None:
+        if self._closed:
+            return
+        message = self._credential_result_message(status)
+        provider_id = provider_id_for_access_entry_id(entry_id)
+        if action == "save" and status in {
+            CredentialStoreStatus.SAVED,
+            CredentialStoreStatus.UPDATED,
+        }:
+            self._set_validation_record(
+                validation_record_for_saved_key(provider_id)
+            )
+        if action == "clear" and status in {
+            CredentialStoreStatus.CLEARED,
+            CredentialStoreStatus.NOT_FOUND,
+        }:
+            self._set_validation_record(
+                validation_record_for_cleared_key(provider_id)
+            )
+        self._refresh_runtime_statuses_after_credential_action()
+        self.credential_action_status_label.configure(text=message)
+        self._render_credential_controls(
+            self._entry_views.get(self._current_credential_entry_id)
+        )
 
     def _save_selected_credential(self) -> None:
         credential_id = self._current_credential_id
-        store = self._credential_store
         credential = self.credential_entry.get()
+        entry_id = self._current_credential_entry_id
         self.credential_entry.delete(0, "end")
         _set_entry_masked(self.credential_entry)
-        if not credential_id or store is None:
+        if not credential_id or not self._credential_store_is_available():
             self.credential_action_status_label.configure(
                 text="No supported cloud-ASR credential is selected."
             )
@@ -2014,39 +2347,75 @@ class AccessKeysWindow(ctk.CTkToplevel):
                 )
             )
             return
-        result = store.save_credential(credential_id, str(credential).strip())
-        message = self._credential_result_message(result.status)
-        if result.status in {CredentialStoreStatus.SAVED, CredentialStoreStatus.UPDATED}:
-            provider_id = provider_id_for_access_entry_id(
-                self._current_credential_entry_id
-            )
-            self._set_validation_record(
-                validation_record_for_saved_key(provider_id)
-            )
-        self._refresh_runtime_statuses_after_credential_action()
-        self.credential_action_status_label.configure(text=message)
+        self._set_credential_action_busy("Saving credential...")
+
+        def worker() -> None:
+            try:
+                store = self._resolve_credential_store()
+                status = (
+                    store.save_credential(credential_id, str(credential).strip()).status
+                    if store is not None
+                    else CredentialStoreStatus.BACKEND_UNAVAILABLE
+                )
+            except (KeyboardInterrupt, SystemExit, GeneratorExit):
+                raise
+            except Exception:
+                status = CredentialStoreStatus.BACKEND_ERROR
+            if self._closed:
+                return
+            try:
+                self.after(
+                    0,
+                    lambda: self._finish_credential_action(
+                        action="save",
+                        entry_id=entry_id,
+                        status=status,
+                    ),
+                )
+            except Exception:
+                return
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _clear_selected_credential(self) -> None:
         credential_id = self._current_credential_id
-        store = self._credential_store
+        entry_id = self._current_credential_entry_id
         self.credential_entry.delete(0, "end")
         _set_entry_masked(self.credential_entry)
-        if not credential_id or store is None:
+        if not credential_id or not self._credential_store_is_available():
             self.credential_action_status_label.configure(
                 text="No supported cloud-ASR credential is selected."
             )
             return
-        result = store.clear_credential(credential_id)
-        message = self._credential_result_message(result.status)
-        if result.status in {CredentialStoreStatus.CLEARED, CredentialStoreStatus.NOT_FOUND}:
-            provider_id = provider_id_for_access_entry_id(
-                self._current_credential_entry_id
-            )
-            self._set_validation_record(
-                validation_record_for_cleared_key(provider_id)
-            )
-        self._refresh_runtime_statuses_after_credential_action()
-        self.credential_action_status_label.configure(text=message)
+        self._set_credential_action_busy("Clearing credential...")
+
+        def worker() -> None:
+            try:
+                store = self._resolve_credential_store()
+                status = (
+                    store.clear_credential(credential_id).status
+                    if store is not None
+                    else CredentialStoreStatus.BACKEND_UNAVAILABLE
+                )
+            except (KeyboardInterrupt, SystemExit, GeneratorExit):
+                raise
+            except Exception:
+                status = CredentialStoreStatus.BACKEND_ERROR
+            if self._closed:
+                return
+            try:
+                self.after(
+                    0,
+                    lambda: self._finish_credential_action(
+                        action="clear",
+                        entry_id=entry_id,
+                        status=status,
+                    ),
+                )
+            except Exception:
+                return
+
+        threading.Thread(target=worker, daemon=True).start()
 
     @staticmethod
     def _record_from_validation_exception(
@@ -2122,9 +2491,20 @@ class AccessKeysWindow(ctk.CTkToplevel):
         self._hide_family_menu()
         self._hide_add_provider_popup()
         self._unbind_details_mousewheel()
-        if self._list_scroll_reset_after_id is not None:
-            self.after_cancel(self._list_scroll_reset_after_id)
-            self._list_scroll_reset_after_id = None
+        for after_attr in (
+            "_list_scroll_reset_after_id",
+            "_search_after_id",
+            "_add_provider_search_after_id",
+            "_add_provider_shell_refresh_after_id",
+            "_add_provider_render_after_id",
+        ):
+            after_id = getattr(self, after_attr, None)
+            if after_id is not None:
+                try:
+                    self.after_cancel(after_id)
+                except Exception:
+                    pass
+                setattr(self, after_attr, None)
         self._closed = True
         callback = self._on_close_callback
         self._on_close_callback = None
