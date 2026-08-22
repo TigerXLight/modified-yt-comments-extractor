@@ -9808,7 +9808,10 @@ class App(ctk.CTk):
                         "width": variant_width,
                         "height": variant_height,
                         "index": variant_index,
-                        "label": f"{variant_width}×{variant_height}" if variant_width and variant_height else "size unknown",
+                        "label": f"{variant_width}×{variant_height}" if variant_width and variant_height else "dimensions unknown",
+                        "byte_size": self._source_resource_browser_grid_byte_size_bytes(variant_item),
+                        "byte_size_label": self._format_source_browser_grid_byte_size(self._source_resource_browser_grid_byte_size_bytes(variant_item)),
+                        "byte_size_pending": self._source_resource_browser_grid_byte_size_bytes(variant_item) <= 0 and self._browser_grid_url_may_have_remote_byte_size(variant_url),
                         "file_intake_status": variant_status,
                         "file_intake_label": variant_label,
                     }
@@ -9823,6 +9826,9 @@ class App(ctk.CTk):
                     "extension": str(getattr(item, "extension", "") or getattr(item, "media_type", "") or "image"),
                     "width": int(getattr(item, "width", 0) or 0),
                     "height": int(getattr(item, "height", 0) or 0),
+                    "byte_size": self._source_resource_browser_grid_byte_size_bytes(item),
+                    "byte_size_label": self._format_source_browser_grid_byte_size(self._source_resource_browser_grid_byte_size_bytes(item)),
+                    "byte_size_pending": self._source_resource_browser_grid_byte_size_bytes(item) <= 0 and self._browser_grid_url_may_have_remote_byte_size(image_url),
                     "from_link": bool(getattr(item, "from_link", False)),
                     "provenance": str(getattr(item, "provenance", "") or ""),
                     "variant_count": variant_count,
@@ -10742,6 +10748,12 @@ class App(ctk.CTk):
         cards_json = json.dumps(cards, ensure_ascii=False).replace("</", "<\\/")
         app = self
 
+        def _image_byte_size_payload(query: dict[str, str]) -> dict[str, Any]:
+            return app._browser_grid_media_byte_size_payload(
+                resource_id=str(query.get("resource_id", "") or ""),
+                media_url=str(query.get("url", "") or ""),
+            )
+
         class _BrowserGridHandler(http.server.BaseHTTPRequestHandler):
             server_version = "YTCEImageGrid/1.0"
 
@@ -10758,12 +10770,16 @@ class App(ctk.CTk):
 
             def do_GET(self) -> None:
                 parsed = urllib.parse.urlsplit(self.path)
-                if parsed.path not in {"/", "/index.html"}:
-                    self._send_bytes(404, b"Not found", "text/plain; charset=utf-8")
-                    return
                 query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
                 if query.get("token") != token:
                     self._send_bytes(403, b"Forbidden", "text/plain; charset=utf-8")
+                    return
+                if parsed.path == "/byte-size":
+                    payload = _image_byte_size_payload(query)
+                    self._send_bytes(200, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+                    return
+                if parsed.path not in {"/", "/index.html"}:
+                    self._send_bytes(404, b"Not found", "text/plain; charset=utf-8")
                     return
                 self._send_bytes(200, html_doc.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -10882,6 +10898,9 @@ async function copyTextToClipboard(text) {{
   }} catch (error) {{ setStatus(`Could not copy image URL: ${{error}}`); }}
 }}
 function toggle(card, id) {{ selected.has(id) ? selected.delete(id) : selected.add(id); card.classList.toggle('selected', selected.has(id)); updateCounts(); }}
+function formatByteSize(bytes) {{ const value=Number(bytes||0); if (!value) return ''; const units=['B','KiB','MiB','GiB','TiB']; let scaled=value; let index=0; while (scaled>=1024 && index<units.length-1) {{ scaled/=1024; index++; }} return index===0 ? `${{value}} B` : `${{scaled.toFixed(2)}} ${{units[index]}}`; }}
+function byteSizeText(item) {{ const known=Number(item.byte_size||0); if (known>0) return item.byte_size_label || formatByteSize(known); return item.byte_size_pending ? 'File size...' : 'Size unknown'; }}
+async function requestByteSize(item, pill) {{ if (!pill || !item || !item.url || Number(item.byte_size||0)>0) return; try {{ const response=await fetch(`/byte-size?token=${{encodeURIComponent(token)}}&resource_id=${{encodeURIComponent(item.resource_id||'')}}&url=${{encodeURIComponent(item.url)}}`, {{cache:'no-store'}}); const payload=await response.json(); if (!payload.ok || String(payload.resource_id||'') !== String(item.resource_id||'')) return; item.byte_size=Number(payload.byte_size||0); item.byte_size_label=payload.byte_size_label || ''; item.byte_size_pending=false; pill.textContent=byteSizeText(item); pill.classList.remove('byte-size-pending'); }} catch(_error) {{ item.byte_size_pending=false; pill.textContent='Size unknown'; pill.classList.remove('byte-size-pending'); }} }}
 function render() {{
   const frag = document.createDocumentFragment();
   images.forEach((item) => {{
@@ -10920,6 +10939,9 @@ function render() {{
       item.extension = variant.extension || item.extension || 'image';
       item.width = Number(variant.width || 0);
       item.height = Number(variant.height || 0);
+      item.byte_size = Number(variant.byte_size || 0);
+      item.byte_size_label = variant.byte_size_label || item.byte_size_label || '';
+      item.byte_size_pending = Boolean(variant.byte_size_pending);
       item.index = Number(variant.index || item.index);
       if (wasSelected && previousId !== item.resource_id) {{ selected.delete(previousId); selected.add(item.resource_id); }}
       img.src = item.url; open.href = item.url; down.dataset.url = item.url; urlCopy.title = `Copy image URL: ${{item.url}}`; check.title = item.url; ext.textContent = item.extension || 'image';
@@ -10929,10 +10951,11 @@ function render() {{
     }}
     if (variants.length > 1) {{
       const selector = document.createElement('select'); selector.className='variant-select'; selector.title='Select image size variant';
-      variants.forEach((variant) => {{ const option = document.createElement('option'); option.value = variant.resource_id; option.textContent = variant.label || ((variant.width && variant.height) ? `${{variant.width}}×${{variant.height}}` : 'unknown'); option.title = variant.url || ''; selector.append(option); }});
+      variants.forEach((variant) => {{ const option = document.createElement('option'); option.value = variant.resource_id; option.textContent = variant.label || ((variant.width && variant.height) ? `${{variant.width}}×${{variant.height}}` : 'dimensions unknown'); option.title = variant.url || ''; selector.append(option); }});
       selector.onchange = () => {{ const variant = variants.find(candidate => candidate.resource_id === selector.value) || variants[0]; applyVariant(variant); }};
       info.append(selector);
-    }} else if (item.width && item.height) {{ const size = document.createElement('span'); size.className='pill'; size.textContent=`${{item.width}}×${{item.height}}`; info.append(size); }}
+    }} else if (item.width && item.height) {{ const dimensions = document.createElement('span'); dimensions.className='pill dimension-pill'; dimensions.textContent=`${{item.width}}×${{item.height}}`; info.append(dimensions); }}
+    const byteSize = document.createElement('span'); byteSize.className='pill byte-size-pill'; byteSize.textContent=byteSizeText(item); byteSize.classList.toggle('byte-size-pending', Boolean(item.byte_size_pending)); info.append(byteSize); requestByteSize(item, byteSize);
     const order = document.createElement('span'); order.className='pill'; order.textContent=`#${{item.index}}`; info.append(order);
     card.append(img, topControls, topBadges, info);
     card.addEventListener('click', (event) => {{ if (event.target.closest('a') || event.target.closest('button') || event.target.closest('select')) return; toggle(card, item.resource_id); }});
@@ -11205,6 +11228,144 @@ render();
             return "audio"
         return "video"
 
+    def _parse_source_browser_grid_byte_size(self, value: Any) -> int:
+        """Parse already-known byte-size metadata without doing network work."""
+        try:
+            if isinstance(value, (int, float)):
+                return int(value) if int(value) > 0 else 0
+            text = str(value or "").strip().replace(",", "")
+            if not text:
+                return 0
+            if text.isdigit():
+                return int(text)
+            match = re.match(r"^([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?i?b|[kmgt]?b|bytes?)?$", text, re.IGNORECASE)
+            if not match:
+                return 0
+            number = float(match.group(1))
+            unit = (match.group(2) or "b").lower()
+            multiplier = 1
+            if unit in {"kib", "kb"}:
+                multiplier = 1024
+            elif unit in {"mib", "mb"}:
+                multiplier = 1024 ** 2
+            elif unit in {"gib", "gb"}:
+                multiplier = 1024 ** 3
+            elif unit in {"tib", "tb"}:
+                multiplier = 1024 ** 4
+            return int(number * multiplier) if number > 0 else 0
+        except Exception:
+            return 0
+
+    def _source_resource_browser_grid_byte_size_bytes(self, item: Any) -> int:
+        """Return byte-size metadata already carried by a media resource item."""
+        for attr in (
+            "file_size_bytes",
+            "byte_size_bytes",
+            "byte_size",
+            "size_bytes",
+            "content_length_bytes",
+            "content_length",
+            "bytes_total",
+            "bytesTotal",
+            "filesize",
+            "fileSize",
+        ):
+            size_bytes = self._parse_source_browser_grid_byte_size(getattr(item, attr, 0))
+            if size_bytes > 0:
+                return size_bytes
+        provenance = str(getattr(item, "provenance", "") or "")
+        for match in re.finditer(
+            r"(?i)(?:file_size_bytes|byte_size_bytes|byte_size|size_bytes|content_length_bytes|content_length|bytes_total|bytesTotal|filesize|fileSize)\s*=\s*([0-9][0-9,]*(?:\.[0-9]+)?\s*(?:[kmgt]?i?b|[kmgt]?b|bytes?)?)",
+            provenance,
+        ):
+            size_bytes = self._parse_source_browser_grid_byte_size(match.group(1))
+            if size_bytes > 0:
+                return size_bytes
+        return 0
+
+    def _format_source_browser_grid_byte_size(self, size_bytes: int) -> str:
+        try:
+            number = int(size_bytes or 0)
+        except Exception:
+            number = 0
+        if number <= 0:
+            return ""
+        units = ("B", "KiB", "MiB", "GiB", "TiB")
+        value = float(number)
+        unit_index = 0
+        while value >= 1024.0 and unit_index < len(units) - 1:
+            value /= 1024.0
+            unit_index += 1
+        if unit_index == 0:
+            return f"{number} B"
+        return f"{value:.2f} {units[unit_index]}"
+
+    def _browser_grid_url_may_have_remote_byte_size(self, media_url: str) -> bool:
+        try:
+            return urllib.parse.urlsplit(str(media_url or "").strip()).scheme.lower() in {"http", "https"}
+        except Exception:
+            return False
+
+    def _remote_media_byte_size_for_browser_grid_url(self, media_url: str, *, timeout: float = 2.5) -> dict[str, Any]:
+        """Best-effort asynchronous-size helper; callers run it after the browser grid opens."""
+        url = str(media_url or "").strip()
+        cache = self.__dict__.setdefault("webpage_media_byte_size_cache_by_url", {})
+        if not isinstance(cache, dict):
+            cache = {}
+            self.webpage_media_byte_size_cache_by_url = cache
+        if url in cache:
+            cached = cache.get(url)
+            return dict(cached) if isinstance(cached, dict) else {"byte_size": 0, "source": "unknown"}
+
+        result: dict[str, Any] = {"byte_size": 0, "source": "unknown"}
+        try:
+            if not self._browser_grid_url_may_have_remote_byte_size(url):
+                result["source"] = "unsupported-url"
+            else:
+                request = urllib.request.Request(
+                    url,
+                    method="HEAD",
+                    headers={
+                        "User-Agent": "Mozilla/5.0 YTCE media byte-size probe",
+                        "Accept": "*/*",
+                    },
+                )
+                with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec - explicit user-visible media URL
+                    headers = response.headers
+                    content_range = str(headers.get("Content-Range") or "")
+                    range_match = re.search(r"/([0-9]+)\s*$", content_range)
+                    if range_match:
+                        result = {"byte_size": int(range_match.group(1)), "source": "content-range"}
+                    else:
+                        size_bytes = self._parse_source_browser_grid_byte_size(headers.get("Content-Length", ""))
+                        result = {
+                            "byte_size": size_bytes,
+                            "source": "content-length" if size_bytes > 0 else "content-length-missing",
+                        }
+        except Exception as error:
+            result = {"byte_size": 0, "source": f"unavailable:{type(error).__name__}"}
+
+        cache[url] = dict(result)
+        while len(cache) > 512:
+            try:
+                cache.pop(next(iter(cache)))
+            except Exception:
+                break
+        return result
+
+    def _browser_grid_media_byte_size_payload(self, *, resource_id: str, media_url: str) -> dict[str, Any]:
+        probe = self._remote_media_byte_size_for_browser_grid_url(media_url)
+        size_bytes = int(probe.get("byte_size", 0) or 0)
+        return {
+            "ok": True,
+            "resource_id": str(resource_id or ""),
+            "byte_size": size_bytes,
+            "byte_size_label": self._format_source_browser_grid_byte_size(size_bytes),
+            "byte_size_known": size_bytes > 0,
+            "byte_size_pending": False,
+            "source": str(probe.get("source", "") or "unknown"),
+        }
+
     def _source_video_audio_browser_grid_cards(
         self,
         resources: Sequence[Any],
@@ -11285,6 +11446,9 @@ render();
                         "media_type": str(getattr(variant_item, "media_type", "") or ""),
                         "width": variant_width,
                         "height": variant_height,
+                        "byte_size": self._source_resource_browser_grid_byte_size_bytes(variant_item),
+                        "byte_size_label": self._format_source_browser_grid_byte_size(self._source_resource_browser_grid_byte_size_bytes(variant_item)),
+                        "byte_size_pending": self._source_resource_browser_grid_byte_size_bytes(variant_item) <= 0 and self._browser_grid_url_may_have_remote_byte_size(variant_url),
                         "poster_url": str(getattr(variant_item, "thumbnail_reference", "") or ""),
                         "index": variant_index,
                     }
@@ -11318,6 +11482,9 @@ render();
                     "media_kind": self._source_video_audio_browser_grid_kind_for_item(item),
                     "width": width,
                     "height": height,
+                    "byte_size": self._source_resource_browser_grid_byte_size_bytes(item),
+                    "byte_size_label": self._format_source_browser_grid_byte_size(self._source_resource_browser_grid_byte_size_bytes(item)),
+                    "byte_size_pending": self._source_resource_browser_grid_byte_size_bytes(item) <= 0 and self._browser_grid_url_may_have_remote_byte_size(media_url),
                     "provenance": str(getattr(item, "provenance", "") or ""),
                     "warning": str(getattr(item, "warning", "") or ""),
                     "file_intake_status": intake_status,
@@ -12023,6 +12190,13 @@ render();
         initial_resource_count = int(initial_payload.get("resource_count") or len(resources or ()) or len(cards))
         initial_refresh_pending_json = json.dumps(initial_refresh_pending)
         app = self
+
+        def _video_audio_byte_size_payload(query: dict[str, str]) -> dict[str, Any]:
+            return app._browser_grid_media_byte_size_payload(
+                resource_id=str(query.get("resource_id", "") or ""),
+                media_url=str(query.get("url", "") or ""),
+            )
+
         info_icon_data_uri = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAACXBIWXMAAAsTAAALEwEAmpwYAAAFIUlEQVR4nO2bX4gVdRTHR0Mt0zQzSvrDKpWtpYUP2X+1kl4rDeohfFkpyT+omWaI1ENPRT2E0Zb9JQqh0sIki+ivuKtmWRlRpCkRlQ9Wq+tutJ/4tefGt9/eOztz5zf3zm73CwvL3DPfc+bcmXPOPedMFDXQQAN5AhgOXAWsBJ4C3ge+A34GOoCjwGHga+AD4FlgCXANMCIaiADGAPOBrcAxqscfwGvGNTIqOoAL7VvuJDyOAI8Dk6KiAWgCNgJ/VTD+S+AZYCFwPdAMjANOtb/TgSn22WKT/aYCVzfQCpxdlOf7wQrf+G5gmXNOBv7zgHuAfWX4f7dYcULYq0oIYLJdpKLHntmrc9A3E3injCM+rvndANxsEVyxw0X7Guh2jtjr6f4FmJO37n9gt50+68eBFcDQqEYAhgFrLB5obLgjb8VrPM+7fD41V6Xx9lwBHPIewUV5KVvsXfx2F71zUZbOrjOATz0nhL0TgFuMuAQXjE6KilV4feg9DmFiAnAB8JuQfwScnJFzCHCtpcll9v+QjJynAHvEzl8zZwdghBdxvwXGZuScBLTTF+1ZqzzgTOCglyKrrxOAtULmavpLMho4HviBynCfjc+o40ovOyypluh8r8K7O4thxvmIlz6ftj/3fwkPB9Bzv/C5x/esakg2ekVO5jwP7BfOuXJ8nhz/PlCd8IVwtqYlaJZix0X/6VmNMt4uMWqUHB+td0bAirGE7lTxBXheTt4cwqAyd8A8OX5ryDtAePW3w/o0OfWYnHhZQIP8GLDBfvoGjQGiz6VX7Sf0n76BBXLS7lDGpMgCpwXW+ZXwz09ywruZU0j/dUBbmYtvy6PbAyxP/DgDJ0rqc8FvQmiD8qoE+3F4CR2xjVZgtgjviwYJrONcwqw4wdWpo+YAAPCkXNeKOMHnRPDOaJDAmrElvBgnuF0EZ0eDBK5HKde1I07wgAg25WjQHOBt6+x22ERobo76NBAeiBM8LIJB87HoWOU1VxSP5aRzpOjoTFqrD8/BkFkxF1/CbaH1mu5/ESfULXLDcjBis/C/ZxMl18R4VY63h9abxgFHRG5MDkb8KPzNcnyc/Pr8M/S0J80jcFAEJ4Y0wvhd0CthdNLPAug9V7gPxQl+IoIzQxpRZwdoGtwZJ/iSCLaENKLODmhJWgitEsEnQhpRZwesF+774gRvEMHPQxpRZwfsTVThAqOkO9MTeuxcDwcA50jt0dXvqg29JWoJiwaBA3SmuTXJCXfJCbtCGVJHB+gSx4IkJ4z1BiIzBqoDnO3CeTRxcQe8ICduCmFMnRywTTg3pDnxIm8wMmOgOcDLaO5apmQZjbUFGo3VxAHWdN0lfK9UQzLRiwXLsxhVYwcsFa7OqtvtwDohOq6/4IrqADfJ8voaD2Sdsu4UsnVFdoBtner8cU/mxg69KzL7bRdvWlEdYNss27xF63SBL2/k5QBb2X1dzu/Js8laKAfYboG/QntvVEQQ2AG2r6ybINmCXloAN1qjc2GSPh7wmRn5k19XuMWIpO04y/MtntPcbb8yqiX475qq29a8vB/5JpsG9wlOwJvCtTqGY5o3wseGK7dHtQawib7Y4nZ4q+DSNRm3oXKT9/lU184q81KGW4C4OOiFpUw9ayu8F7Q0JddQe6EKrwRvtZmlP1BxM4yHCvFiFb2zt5e9b+eNKngmeOuuleBS3uSoaKA3KruXpt6qdo3e0tqjVsgouqxrfWn0fwC905zptql+ne4VNtBAAw1EgfA3JRqccdS5G+4AAAAASUVORK5CYII='
         download_icon_data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAACXBIWXMAAAsTAAALEwEAmpwYAAABkklEQVR4nO2YS07DMBCGzaLcoZQDURZQIRALLlAEp6NcgYcocAQQpCDxWLXsQPrQCCMiK8GJHeIWzbfqwzP+v8hqMzFGURTlXwIMgGfgCdgwiwbwwA8Ts2jgYBYNVCAxKpAaFUiNCjQFsAwcAufAm5PrFuiHCgDrtkce2eMMOJC9Y8OvANf8ThYhMPH0vgK6MVfeFz5WIKvQ/xLohAjIsfFxA6xFCPRtDx/7IQJy5vMcyZGqUe8VKALoASOn/NTUBZg5TXo164MEBGDVKZ+ausQEmId6U7UBsAO82gFm4KsHNu1P5728TioALAEvuWXvwG5ZvXxn13zzmFTArpOZF1fCrS8IL9zNg8BWQTD3fdFn8j7tEcqt3S4JXcYHsNfU/o00qCHhDZ9EoKJEpfDJBDwSlcMnFSiRqBU+uUDu0WJm/7AGbe9vohtEggrANOZuNAYauht154FRGxJ8hT9uYh6QoXpeGIbOxDJUp+YiaCa2El07VKdiHPxUIifRkaEaOCkYM/+Cmd1rGHzlFUVRTFt8AnKNaVaHwn2+AAAAAElFTkSuQmCC"
 
@@ -12045,6 +12219,10 @@ render();
                 query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
                 if query.get("token") != token:
                     self._send_bytes(403, b"Forbidden", "text/plain; charset=utf-8")
+                    return
+                if parsed.path == "/byte-size":
+                    payload = _video_audio_byte_size_payload(query)
+                    self._send_bytes(200, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
                     return
                 if parsed.path == "/media-items":
                     try:
@@ -12126,7 +12304,7 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 .play-toggle {{ position:absolute; right:.48rem; bottom:2.55rem; z-index:5; min-width:2rem; height:1.55rem; border:1px solid #3c4c59; border-radius:.45rem; background:#111a22d9; color:#e8eef2; display:flex; align-items:center; justify-content:center; font-size:.88rem; font-weight:900; padding:0 .42rem; pointer-events:auto; }}
 .play-toggle:hover {{ background:#1e3a8a; border-color:#60a5fa; color:#fff; }}
 .card.manual-playing .play-toggle {{ background:#075985; border-color:#38bdf8; color:#fff; }}
-.dimension-pending {{ color:#cbd5e1; }}
+.dimension-pending, .byte-size-pending {{ color:#cbd5e1; }}
 .err {{ color:#fecaca; background:#3b1111d9; border:1px solid #7f1d1d; border-radius:.5rem; padding:.5rem; font-size:.8rem; }}
 #status {{ min-width:18rem; }}
 </style>
@@ -12162,16 +12340,24 @@ function updateCounts() {{ const extras=[]; if (knownCount) extras.push(`${{know
 function setStatus(text) {{ statusEl.textContent = text; }}
 function recordStaleRefreshTrace(payload) {{ try {{ const priorCount = Number(window.__YTCE_VIDEO_AUDIO_STALE_REFRESH_COUNT__ || 0); const trace = {{ ignored_count: priorCount + 1, ignored_at: new Date().toISOString(), stale_reason: String(payload.stale_reason || 'stale Video & Audio rendered refresh'), source_refresh_key: String(payload.source_refresh_key || SOURCE_REFRESH_KEY || '') }}; window.__YTCE_VIDEO_AUDIO_STALE_REFRESH_COUNT__ = trace.ignored_count; window.__YTCE_VIDEO_AUDIO_STALE_REFRESH_TRACE__ = trace; if (window.console && console.debug) console.debug('Ignored stale Video & Audio rendered refresh', trace); }} catch(_error) {{}} }}
 function formatDimensions(item) {{ const width = Number(item.width || 0); const height = Number(item.height || 0); return (width && height) ? `${{width}}×${{height}}` : ''; }}
-function variantDisplayLabel(variant) {{ const dims = formatDimensions(variant); const base = String(variant.label || '').trim(); if (dims && (!base || base === 'unknown' || base === 'Unknown quality')) return dims; if (dims && !base.includes(dims)) return `${{base}} · ${{dims}}`; return base || dims || 'Unknown quality'; }}
+function formatByteSize(bytes) {{ const value=Number(bytes||0); if (!value) return ''; const units=['B','KiB','MiB','GiB','TiB']; let scaled=value; let index=0; while (scaled>=1024 && index<units.length-1) {{ scaled/=1024; index++; }} return index===0 ? `${{value}} B` : `${{scaled.toFixed(2)}} ${{units[index]}}`; }}
+function byteSizeText(item) {{ const known=Number(item.byte_size||0); if (known>0) return item.byte_size_label || formatByteSize(known); return item.byte_size_pending ? 'File size...' : 'Size unknown'; }}
+const byteSizeCacheByKey = new Map();
+const byteSizeProbeDoneKeys = new Set();
+function byteSizeKeys(item) {{ const keys=[]; if (item && item.resource_id) keys.push(`id:${{item.resource_id}}`); if (item && item.url) keys.push(`url:${{item.url}}`); return keys; }}
+function cacheMatchingByteSize(resourceId, url, byteSize, byteSizeLabel) {{ const size=Number(byteSize||0); if (!size) return false; const label=byteSizeLabel || formatByteSize(size); const keys=[]; if (resourceId) keys.push(`id:${{resourceId}}`); if (url) keys.push(`url:${{url}}`); keys.forEach((key)=>byteSizeCacheByKey.set(key, {{byte_size:size, byte_size_label:label}})); (mediaItems || []).forEach((parent)=>{{ const candidates=[parent].concat(Array.isArray(parent.variants)?parent.variants:[]); candidates.forEach((candidate)=>{{ if (!candidate) return; if ((resourceId && String(candidate.resource_id||'')===String(resourceId)) || (url && String(candidate.url||'')===String(url))) {{ candidate.byte_size=size; candidate.byte_size_label=label; candidate.byte_size_pending=false; }} }}); }}); return true; }}
+function applyCachedByteSize(item) {{ if (!item) return false; for (const key of byteSizeKeys(item)) {{ const cached=byteSizeCacheByKey.get(key); if (cached && Number(cached.byte_size||0)>0) {{ item.byte_size=Number(cached.byte_size||0); item.byte_size_label=cached.byte_size_label || formatByteSize(item.byte_size); item.byte_size_pending=false; return true; }} }} return Number(item.byte_size||0)>0; }}
+async function requestByteSize(item, pill) {{ if (!pill || !item || !item.url) return; if (applyCachedByteSize(item) || Number(item.byte_size||0)>0) {{ pill.textContent=byteSizeText(item); pill.classList.remove('byte-size-pending'); return; }} const probeResourceId=String(item.resource_id||''); const probeUrl=String(item.url||''); const probeKey=probeResourceId ? `id:${{probeResourceId}}` : `url:${{probeUrl}}`; if (byteSizeProbeDoneKeys.has(probeKey)) return; byteSizeProbeDoneKeys.add(probeKey); try {{ const response=await fetch(`/byte-size?token=${{encodeURIComponent(token)}}&resource_id=${{encodeURIComponent(probeResourceId)}}&url=${{encodeURIComponent(probeUrl)}}`, {{cache:'no-store'}}); const payload=await response.json(); if (!payload.ok) return; const size=Number(payload.byte_size||0); if (size>0) cacheMatchingByteSize(probeResourceId, probeUrl, size, payload.byte_size_label || ''); if (String(item.resource_id||'')===probeResourceId || String(item.url||'')===probeUrl) {{ applyCachedByteSize(item); item.byte_size_pending=false; pill.textContent=byteSizeText(item); pill.classList.remove('byte-size-pending'); }} }} catch(_error) {{ if (String(item.resource_id||'')===probeResourceId || String(item.url||'')===probeUrl) {{ item.byte_size_pending=false; pill.textContent='Size unknown'; pill.classList.remove('byte-size-pending'); }} }} }}
+function variantDisplayLabel(variant) {{ applyCachedByteSize(variant); const dims = formatDimensions(variant); const bytes = byteSizeText(variant); const base = String(variant.label || '').trim(); const label = (dims && (!base || base === 'unknown' || base === 'Unknown quality')) ? dims : ((dims && !base.includes(dims)) ? `${{base}} · ${{dims}}` : (base || dims || 'Unknown quality')); return bytes && bytes !== 'File size...' && bytes !== 'Size unknown' ? `${{label}} · ${{bytes}}` : label; }}
 function basenameFromUrl(url) {{ try {{ const path = new URL(url, window.location.href).pathname.split('/').filter(Boolean).pop() || ''; return decodeURIComponent(path).replace(/[?#].*$/, ''); }} catch(_error) {{ return ''; }} }}
 function mediaDisplayName(item) {{ const raw = String(item.name || '').trim(); const lower = raw.toLowerCase(); const generic = !raw || lower.includes(' from a') || lower.includes(' from source') || /^(file\\s+)?(mp4|webm|video|audio|embed|embedded|unknown)(\\b|_)/i.test(raw); return generic ? (PAGE_MEDIA_TITLE || basenameFromUrl(item.url) || raw || item.url) : raw; }}
-function showMediaInfo(item, displayName) {{ const dims = formatDimensions(item); setStatus(`${{displayName || mediaDisplayName(item)}}${{dims ? ' · ' + dims : ''}}`); }}
+function showMediaInfo(item, displayName) {{ const dims = formatDimensions(item); const bytes = byteSizeText(item); setStatus(`${{displayName || mediaDisplayName(item)}}${{dims ? ' · ' + dims : ''}}${{bytes ? ' · ' + bytes : ''}}`); }}
 function markCardAddedBefore(item, card, intakeBadge) {{ if (item.file_intake_status !== 'reused') knownCount += 1; item.file_intake_status='reused'; item.file_intake_label='Added before'; card.classList.remove('intake-duplicate'); card.classList.add('intake-reused'); if (intakeBadge) {{ intakeBadge.textContent='Added before'; intakeBadge.style.visibility='visible'; }} updateCounts(); }}
 async function copyTextToClipboard(text) {{ try {{ if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text); else {{ const area=document.createElement('textarea'); area.value=text; area.setAttribute('readonly',''); area.style.position='fixed'; area.style.left='-9999px'; document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove(); }} setStatus('Copied media URL to clipboard.'); }} catch(error) {{ setStatus(`Could not copy media URL: ${{error}}`); }} }}
 function toggle(card, id) {{ selected.has(id) ? selected.delete(id) : selected.add(id); card.classList.toggle('selected', selected.has(id)); updateCounts(); }}
 function stopOtherManualPlayback(currentMedia) {{ document.querySelectorAll('video[data-manual-playing="1"], audio[data-manual-playing="1"]').forEach((media)=>{{ if (media === currentMedia) return; try {{ media.dataset.manualPlaying='0'; media.pause(); media.closest('.card')?.classList.remove('manual-playing'); const button=media.closest('.card')?.querySelector('.play-toggle'); if (button) button.textContent='▶'; }} catch(_error) {{}} }}); }}
 function renderPreview(item, container, onMetadata) {{ container.textContent=''; const poster = item.poster_url || ''; if (item.media_kind === 'audio') {{ const mark=document.createElement('div'); mark.className='audio-mark'; mark.textContent='♪'; const audio=document.createElement('audio'); audio.preload='auto'; audio.src=item.url; try {{ audio.load(); }} catch(_loadError) {{}}; audio.onloadedmetadata=()=>onMetadata && onMetadata(audio); audio.onloadeddata=()=>onMetadata && onMetadata(audio); audio.oncanplay=()=>onMetadata && onMetadata(audio); container.append(mark, audio); return; }} const video=document.createElement('video'); video.muted=true; video.loop=true; video.preload='auto'; video.playsInline=true; if (poster) video.poster=poster; video.src=item.url; try {{ video.load(); }} catch(_loadError) {{}}; video.onloadedmetadata=()=>onMetadata && onMetadata(video); video.onloadeddata=()=>onMetadata && onMetadata(video); video.oncanplay=()=>onMetadata && onMetadata(video); const startHoverPreview=()=>{{ if (video.dataset.manualPlaying === '1') return; video.muted=true; video.loop=true; video.play().catch(() => {{}}); }}; const stopHoverPreview=()=>{{ if (video.dataset.manualPlaying === '1') return; try {{ video.pause(); video.currentTime=0; }} catch(_e) {{}} }}; video.onmouseenter=startHoverPreview; video.onpointerenter=startHoverPreview; video.onmouseleave=stopHoverPreview; video.onpointerleave=stopHoverPreview; video.onerror=() => {{ if (poster) {{ const img=document.createElement('img'); img.loading='lazy'; img.decoding='async'; img.src=poster; video.replaceWith(img); }} else {{ const e=document.createElement('div'); e.className='err'; e.textContent='Preview unavailable'; video.replaceWith(e); }} }}; container.append(video); }}
-function render() {{ grid.textContent=''; currentMediaSignature = mediaSignature(mediaItems); const frag=document.createDocumentFragment(); mediaItems.forEach((item) => {{ const card=document.createElement('div'); card.className=item.file_intake_status ? `card intake-${{item.file_intake_status}}` : 'card'; const preview=document.createElement('div'); preview.className='preview'; let sizePill=null; let selector=null; const updateSizeUi=(media)=>{{ const w=Number(media.videoWidth || item.width || 0); const h=Number(media.videoHeight || item.height || 0); if (w && h) {{ item.width=w; item.height=h; if (sizePill) {{ sizePill.textContent=`${{w}}×${{h}}`; sizePill.classList.remove('dimension-pending'); }} if (selector && selector.selectedIndex >= 0) {{ const opt=selector.options[selector.selectedIndex]; if (opt && (!opt.textContent || opt.textContent === 'Unknown quality' || !opt.textContent.includes('×'))) opt.textContent=`${{w}}×${{h}}`; }} }} }}; renderPreview(item, preview, updateSizeUi); let displayName=mediaDisplayName(item); const name=document.createElement('div'); name.className='name'; name.textContent=displayName; name.title=displayName; const topControls=document.createElement('div'); topControls.className='top-controls'; const check=document.createElement('div'); check.className='check'; check.textContent='✓'; check.title=item.url; const urlCopy=document.createElement('button'); urlCopy.type='button'; urlCopy.className='url-copy'; urlCopy.textContent='URL'; urlCopy.title=`Copy media URL: ${{item.url}}`; urlCopy.setAttribute('aria-label','Copy media URL'); urlCopy.onclick=async(event)=>{{ event.stopPropagation(); await copyTextToClipboard(item.url); }}; const infoCopy=document.createElement('button'); infoCopy.type='button'; infoCopy.className='info-copy'; infoCopy.title=displayName; infoCopy.setAttribute('aria-label','Show media title'); infoCopy.onmouseenter=()=>showMediaInfo(item, displayName); infoCopy.onclick=(event)=>{{ event.preventDefault(); event.stopPropagation(); showMediaInfo(item, displayName); }}; const infoIcon=document.createElement('img'); infoIcon.className='info-icon'; infoIcon.alt=''; infoIcon.src=INFO_ICON_DATA_URI; infoCopy.append(infoIcon); const topBadges=document.createElement('div'); topBadges.className='top-badges'; const intakeBadge=document.createElement('div'); intakeBadge.className='intake-badge'; intakeBadge.textContent=item.file_intake_label || ''; if (!item.file_intake_label) intakeBadge.style.visibility='hidden'; topBadges.append(intakeBadge); const actions=document.createElement('div'); actions.className='actions'; const open=document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open'; open.title='Open media URL'; open.setAttribute('aria-label','Open media URL'); const down=document.createElement('button'); down.type='button'; down.className='download-action'; down.title='Download selected media to FILES'; down.setAttribute('aria-label','Download media to FILES'); down.onclick=async(event)=>{{ event.preventDefault(); event.stopPropagation(); setStatus(`Adding media #${{item.index}} to FILES...`); try {{ const response=await fetch(`/download-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids:[item.resource_id]}})}}); const payload=await response.json(); if (payload.ok) {{ markCardAddedBefore(item, card, intakeBadge); setStatus(`Queued media #${{item.index}} for FILES intake.`); }} else setStatus(`FILES intake failed: ${{payload.error || 'unknown error'}}`); }} catch(error) {{ setStatus(`FILES intake failed: ${{error}}`); }} }}; const downIcon=document.createElement('img'); downIcon.className='download-icon'; downIcon.alt=''; downIcon.src=DOWNLOAD_ICON_DATA_URI; down.append(downIcon); actions.append(open, down); topControls.append(check, urlCopy, infoCopy, actions); const play=document.createElement('button'); play.type='button'; play.className='play-toggle'; play.textContent='▶'; play.title='Play or pause media preview audio'; play.setAttribute('aria-label','Play or pause media preview audio'); play.onclick=(event)=>{{ event.preventDefault(); event.stopPropagation(); const media=preview.querySelector('video,audio'); if (!media) {{ setStatus('Preview is not directly playable in the browser.'); return; }} if (media.dataset.manualPlaying === '1') {{ media.dataset.manualPlaying='0'; card.classList.remove('manual-playing'); try {{ media.pause(); }} catch(_error) {{}} play.textContent='▶'; return; }} stopOtherManualPlayback(media); media.dataset.manualPlaying='1'; card.classList.add('manual-playing'); try {{ media.muted=false; media.loop=false; media.volume=1.0; }} catch(_error) {{}} media.play().then(()=>{{ play.textContent='⏸'; setStatus(`Playing media #${{item.index}} preview.`); }}).catch((error)=>{{ media.dataset.manualPlaying='0'; card.classList.remove('manual-playing'); play.textContent='▶'; setStatus(`Could not play preview: ${{error}}`); }}); }}; const info=document.createElement('div'); info.className='info'; const ext=document.createElement('span'); ext.className='pill'; ext.textContent=item.extension || item.media_kind || 'media'; info.append(ext); const variants=Array.isArray(item.variants) && item.variants.length ? item.variants : [item]; function applyVariant(variant) {{ const previousId=item.resource_id; const wasSelected=selected.has(previousId); item.resource_id=variant.resource_id || item.resource_id; item.url=variant.url || item.url; item.extension=variant.extension || item.extension || 'media'; item.mime_type=variant.mime_type || item.mime_type || ''; item.media_kind=(item.mime_type || '').startsWith('audio/') ? 'audio' : (variant.media_type || item.media_kind || 'video'); item.width=Number(variant.width || 0); item.height=Number(variant.height || 0); if (wasSelected && previousId !== item.resource_id) {{ selected.delete(previousId); selected.add(item.resource_id); }} card.classList.remove('manual-playing'); play.textContent='▶'; renderPreview(item, preview, updateSizeUi); open.href=item.url; urlCopy.title=`Copy media URL: ${{item.url}}`; check.title=item.url; displayName=mediaDisplayName(item); name.textContent=displayName; name.title=displayName; infoCopy.title=displayName; ext.textContent=item.extension || item.media_kind || 'media'; if (sizePill) {{ const dims=formatDimensions(item); sizePill.textContent=dims || 'Detecting size'; sizePill.classList.toggle('dimension-pending', !dims); }} updateCounts(); }} if (variants.length > 1) {{ selector=document.createElement('select'); selector.className='variant-select'; selector.title='Select video/audio variant'; variants.forEach((variant)=>{{ const option=document.createElement('option'); option.value=variant.resource_id; option.textContent=variantDisplayLabel(variant); option.title=variant.url || ''; selector.append(option); }}); selector.onchange=()=>{{ const variant=variants.find(candidate=>candidate.resource_id===selector.value) || variants[0]; applyVariant(variant); }}; info.append(selector); }} else {{ sizePill=document.createElement('span'); sizePill.className='pill'; const dims=formatDimensions(item); sizePill.textContent=dims || 'Detecting size'; sizePill.classList.toggle('dimension-pending', !dims); info.append(sizePill); }} const order=document.createElement('span'); order.className='pill'; order.textContent=`#${{item.index}}`; info.append(order); card.append(preview, name, topControls, topBadges, play, info); card.addEventListener('click',(event)=>{{ if (event.target.closest('a') || event.target.closest('button') || event.target.closest('select')) return; toggle(card, item.resource_id); }}); frag.append(card); }}); grid.append(frag); updateCounts(); if (knownCount || duplicateCount) setStatus(`Added before highlighted · ${{knownCount}} already in FILES · ${{duplicateCount}} duplicate`); }}
+function render() {{ grid.textContent=''; currentMediaSignature = mediaSignature(mediaItems); const frag=document.createDocumentFragment(); mediaItems.forEach((item) => {{ const card=document.createElement('div'); card.className=item.file_intake_status ? `card intake-${{item.file_intake_status}}` : 'card'; const preview=document.createElement('div'); preview.className='preview'; let sizePill=null; let byteSizePill=null; let selector=null; const updateSizeUi=(media)=>{{ const w=Number(media.videoWidth || item.width || 0); const h=Number(media.videoHeight || item.height || 0); if (w && h) {{ item.width=w; item.height=h; if (sizePill) {{ sizePill.textContent=`${{w}}×${{h}}`; sizePill.classList.remove('dimension-pending'); }} if (selector && selector.selectedIndex >= 0) {{ const opt=selector.options[selector.selectedIndex]; if (opt && (!opt.textContent || opt.textContent === 'Unknown quality' || !opt.textContent.includes('×'))) opt.textContent=`${{w}}×${{h}}`; }} }} }}; renderPreview(item, preview, updateSizeUi); let displayName=mediaDisplayName(item); const name=document.createElement('div'); name.className='name'; name.textContent=displayName; name.title=displayName; const topControls=document.createElement('div'); topControls.className='top-controls'; const check=document.createElement('div'); check.className='check'; check.textContent='✓'; check.title=item.url; const urlCopy=document.createElement('button'); urlCopy.type='button'; urlCopy.className='url-copy'; urlCopy.textContent='URL'; urlCopy.title=`Copy media URL: ${{item.url}}`; urlCopy.setAttribute('aria-label','Copy media URL'); urlCopy.onclick=async(event)=>{{ event.stopPropagation(); await copyTextToClipboard(item.url); }}; const infoCopy=document.createElement('button'); infoCopy.type='button'; infoCopy.className='info-copy'; infoCopy.title=displayName; infoCopy.setAttribute('aria-label','Show media title'); infoCopy.onmouseenter=()=>showMediaInfo(item, displayName); infoCopy.onclick=(event)=>{{ event.preventDefault(); event.stopPropagation(); showMediaInfo(item, displayName); }}; const infoIcon=document.createElement('img'); infoIcon.className='info-icon'; infoIcon.alt=''; infoIcon.src=INFO_ICON_DATA_URI; infoCopy.append(infoIcon); const topBadges=document.createElement('div'); topBadges.className='top-badges'; const intakeBadge=document.createElement('div'); intakeBadge.className='intake-badge'; intakeBadge.textContent=item.file_intake_label || ''; if (!item.file_intake_label) intakeBadge.style.visibility='hidden'; topBadges.append(intakeBadge); const actions=document.createElement('div'); actions.className='actions'; const open=document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open'; open.title='Open media URL'; open.setAttribute('aria-label','Open media URL'); const down=document.createElement('button'); down.type='button'; down.className='download-action'; down.title='Download selected media to FILES'; down.setAttribute('aria-label','Download media to FILES'); down.onclick=async(event)=>{{ event.preventDefault(); event.stopPropagation(); setStatus(`Adding media #${{item.index}} to FILES...`); try {{ const response=await fetch(`/download-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids:[item.resource_id]}})}}); const payload=await response.json(); if (payload.ok) {{ markCardAddedBefore(item, card, intakeBadge); setStatus(`Queued media #${{item.index}} for FILES intake.`); }} else setStatus(`FILES intake failed: ${{payload.error || 'unknown error'}}`); }} catch(error) {{ setStatus(`FILES intake failed: ${{error}}`); }} }}; const downIcon=document.createElement('img'); downIcon.className='download-icon'; downIcon.alt=''; downIcon.src=DOWNLOAD_ICON_DATA_URI; down.append(downIcon); actions.append(open, down); topControls.append(check, urlCopy, infoCopy, actions); const play=document.createElement('button'); play.type='button'; play.className='play-toggle'; play.textContent='▶'; play.title='Play or pause media preview audio'; play.setAttribute('aria-label','Play or pause media preview audio'); play.onclick=(event)=>{{ event.preventDefault(); event.stopPropagation(); const media=preview.querySelector('video,audio'); if (!media) {{ setStatus('Preview is not directly playable in the browser.'); return; }} if (media.dataset.manualPlaying === '1') {{ media.dataset.manualPlaying='0'; card.classList.remove('manual-playing'); try {{ media.pause(); }} catch(_error) {{}} play.textContent='▶'; return; }} stopOtherManualPlayback(media); media.dataset.manualPlaying='1'; card.classList.add('manual-playing'); try {{ media.muted=false; media.loop=false; media.volume=1.0; }} catch(_error) {{}} media.play().then(()=>{{ play.textContent='⏸'; setStatus(`Playing media #${{item.index}} preview.`); }}).catch((error)=>{{ media.dataset.manualPlaying='0'; card.classList.remove('manual-playing'); play.textContent='▶'; setStatus(`Could not play preview: ${{error}}`); }}); }}; const info=document.createElement('div'); info.className='info'; const ext=document.createElement('span'); ext.className='pill'; ext.textContent=item.extension || item.media_kind || 'media'; info.append(ext); const variants=Array.isArray(item.variants) && item.variants.length ? item.variants : [item]; applyCachedByteSize(item); variants.forEach(applyCachedByteSize); function applyVariant(variant) {{ applyCachedByteSize(variant); const previousId=item.resource_id; const wasSelected=selected.has(previousId); item.resource_id=variant.resource_id || item.resource_id; item.url=variant.url || item.url; item.extension=variant.extension || item.extension || 'media'; item.mime_type=variant.mime_type || item.mime_type || ''; item.media_kind=(item.mime_type || '').startsWith('audio/') ? 'audio' : (variant.media_type || item.media_kind || 'video'); item.width=Number(variant.width || 0); item.height=Number(variant.height || 0); item.byte_size=Number(variant.byte_size || 0); item.byte_size_label=variant.byte_size_label || item.byte_size_label || ''; item.byte_size_pending=Boolean(variant.byte_size_pending); if (wasSelected && previousId !== item.resource_id) {{ selected.delete(previousId); selected.add(item.resource_id); }} card.classList.remove('manual-playing'); play.textContent='▶'; renderPreview(item, preview, updateSizeUi); open.href=item.url; urlCopy.title=`Copy media URL: ${{item.url}}`; check.title=item.url; displayName=mediaDisplayName(item); name.textContent=displayName; name.title=displayName; infoCopy.title=displayName; ext.textContent=item.extension || item.media_kind || 'media'; if (sizePill) {{ const dims=formatDimensions(item); sizePill.textContent=dims || 'Detecting dimensions'; sizePill.classList.toggle('dimension-pending', !dims); }} if (byteSizePill) {{ byteSizePill.textContent=byteSizeText(item); byteSizePill.classList.toggle('byte-size-pending', Boolean(item.byte_size_pending)); requestByteSize(item, byteSizePill); }} updateCounts(); }} if (variants.length > 1) {{ selector=document.createElement('select'); selector.className='variant-select'; selector.title='Select video/audio variant'; variants.forEach((variant)=>{{ const option=document.createElement('option'); option.value=variant.resource_id; option.textContent=variantDisplayLabel(variant); option.title=variant.url || ''; selector.append(option); }}); selector.onchange=()=>{{ const variant=variants.find(candidate=>candidate.resource_id===selector.value) || variants[0]; applyVariant(variant); }}; info.append(selector); }} else {{ sizePill=document.createElement('span'); sizePill.className='pill dimension-pill'; const dims=formatDimensions(item); sizePill.textContent=dims || 'Detecting dimensions'; sizePill.classList.toggle('dimension-pending', !dims); info.append(sizePill); }} byteSizePill=document.createElement('span'); byteSizePill.className='pill byte-size-pill'; byteSizePill.textContent=byteSizeText(item); byteSizePill.classList.toggle('byte-size-pending', Boolean(item.byte_size_pending)); info.append(byteSizePill); requestByteSize(item, byteSizePill); const order=document.createElement('span'); order.className='pill'; order.textContent=`#${{item.index}}`; info.append(order); card.append(preview, name, topControls, topBadges, play, info); card.addEventListener('click',(event)=>{{ if (event.target.closest('a') || event.target.closest('button') || event.target.closest('select')) return; toggle(card, item.resource_id); }}); frag.append(card); }}); grid.append(frag); updateCounts(); if (knownCount || duplicateCount) setStatus(`Added before highlighted · ${{knownCount}} already in FILES · ${{duplicateCount}} duplicate`); }}
 async function refreshMediaItemsFromServer() {{
   try {{
     const response = await fetch(`/media-items?token=${{encodeURIComponent(token)}}`, {{cache:'no-store'}});

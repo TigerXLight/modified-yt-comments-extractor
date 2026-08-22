@@ -87,6 +87,47 @@ def _warning_for_candidate(candidate: WebpageVideoCandidate) -> str:
     return ""
 
 
+def _candidate_byte_size(candidate: WebpageVideoCandidate) -> int:
+    """Return already-known candidate byte size without doing any network probing."""
+    for attr in (
+        "file_size_bytes",
+        "byte_size_bytes",
+        "byte_size",
+        "size_bytes",
+        "content_length_bytes",
+        "content_length",
+        "bytes_total",
+        "bytesTotal",
+        "filesize",
+        "fileSize",
+    ):
+        try:
+            value = getattr(candidate, attr, 0)
+            if isinstance(value, str):
+                value = value.strip().replace(",", "")
+                if not value:
+                    continue
+            number = int(float(value))
+        except Exception:
+            continue
+        if number > 0:
+            return number
+    return 0
+
+
+def _candidate_provenance(discovery: WebpageVideoDiscoveryResult, candidate: WebpageVideoCandidate) -> str:
+    parts = [
+        f"webpage_video_discovery:{discovery.discovery_method}",
+        f"detected_by={candidate.detection_reason or candidate.source_tag or 'unknown'}",
+        f"route_preference={discovery.route_preference}",
+        f"recommended_backend={discovery.recommended_backend_id or 'unknown'}",
+    ]
+    byte_size = _candidate_byte_size(candidate)
+    if byte_size:
+        parts.append(f"file_size_bytes={byte_size}")
+    return "; ".join(parts)
+
+
 def webpage_video_resources_from_discovery(
     row: SourceResourceRowState,
     discovery: WebpageVideoDiscoveryResult,
@@ -115,12 +156,7 @@ def webpage_video_resources_from_discovery(
                 status="discovered",
                 selectable=bool(candidate.selected_by_default or candidate.kind),
                 warning=_warning_for_candidate(candidate),
-                provenance=(
-                    f"webpage_video_discovery:{discovery.discovery_method}; "
-                    f"detected_by={candidate.detection_reason or candidate.source_tag or 'unknown'}; "
-                    f"route_preference={discovery.route_preference}; "
-                    f"recommended_backend={discovery.recommended_backend_id or 'unknown'}"
-                ),
+                provenance=_candidate_provenance(discovery, candidate),
             )
         )
     return tuple(resources)

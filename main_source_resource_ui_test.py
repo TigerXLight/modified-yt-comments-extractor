@@ -758,7 +758,24 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'onpointerenter=startHoverPreview' in video_browser_source
     assert "document.querySelector('.preview:hover')" in video_browser_source
     assert 'formatDimensions' in video_browser_source
+    assert 'formatByteSize' in video_browser_source
+    assert 'byteSizeText' in video_browser_source
+    assert 'requestByteSize' in video_browser_source
+    assert '/byte-size' in video_browser_source
+    assert 'byte_size' in video_browser_source
+    assert 'File size...' in video_browser_source
+    assert 'Size unknown' in video_browser_source
+    assert 'Detecting dimensions' in video_browser_source
+    assert '_source_resource_browser_grid_byte_size_bytes' in full_source
+    assert '_remote_media_byte_size_for_browser_grid_url' in full_source
+    assert 'file_size_bytes=' in Path("webpage_video_resource_bridge.py").read_text(encoding="utf-8")
+    assert '_candidate_byte_size' in Path("webpage_video_resource_bridge.py").read_text(encoding="utf-8")
     assert 'variantDisplayLabel' in video_browser_source
+    assert 'byteSizeCacheByKey' in video_browser_source
+    assert 'byteSizeProbeDoneKeys' in video_browser_source
+    assert 'cacheMatchingByteSize' in video_browser_source
+    assert 'applyCachedByteSize(variant)' in video_browser_source
+    assert 'currentMediaSignature = mediaSignature(mediaItems); }} catch(_error)' not in video_browser_source
     assert 'onloadedmetadata' in video_browser_source
     assert 'videoWidth' in video_browser_source
     assert 'play-toggle' in video_browser_source
@@ -789,7 +806,7 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'markCardAddedBefore' in video_browser_source
     assert '.actions a:hover, .actions button:hover' in video_browser_source
     assert '.card.intake-reused .preview' in video_browser_source
-    assert 'Detecting size' in video_browser_source
+    assert 'Detecting size' not in video_browser_source
     assert '_build_webpage_video_audio_file_intake_dedupe_plan' in full_source
     assert '_webpage_video_audio_files_intake_identity_store_path' in full_source
     assert 'browser_grid_webpage_video_audio_persistent_identity' in full_source

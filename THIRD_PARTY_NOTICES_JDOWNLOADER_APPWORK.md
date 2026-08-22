@@ -222,3 +222,14 @@ V81G changes the source-add success message from the older generic metadata-prob
 
 - Keeps V81M's stale rendered-refresh guard behaviour unchanged while recording a small diagnostic trace when an older Video & Audio browser window/source refresh is ignored.
 - Adds browser-side test/devtools visibility for ignored stale refresh payloads without changing quick-open, rendered refresh handling, hover playback, or the top-left controls.
+
+## YTCE V81O media byte-size display
+
+- Adds a separate browser-grid byte-size label for Images and Video & Audio without blocking window opening or hover playback.
+- Keeps dimension probing separate by changing the old pending wording from `Detecting size` to `Detecting dimensions`.
+- Uses already-known candidate metadata first, then allows the browser grid to request a local asynchronous HEAD-based byte-size probe after the window has opened.
+- Keeps JDownloader/LinkGrabber routing, quick-open behaviour, rendered refresh handling, and card controls unchanged.
+
+V81O repair 2: Browser-grid byte-size probes are signature-safe label-only updates; they do not advance media render signatures after local video dimension metadata changes, preventing Video & Audio card rebuild loops during variant/dimension selection.
+
+V81O repair 3: Video & Audio byte-size results are cached by resource id and URL, reused across MP4 dimension/variant changes, and excluded from media render signatures so size labels do not rebuild video cards or disappear after switching variants.
