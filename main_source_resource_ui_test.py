@@ -750,7 +750,13 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'INFO_ICON_DATA_URI' in video_browser_source
     assert 'info_icon_data_uri = INFO_ICON_DATA_URI' not in video_browser_source
     assert 'info-copy' in video_browser_source
-    assert 'filter:brightness(0) invert(1)' in video_browser_source
+    assert '.url-copy {{ min-width:1.85rem' in video_browser_source
+    assert '.info-copy {{ width:1.20rem' in video_browser_source
+    assert 'infoIcon.src=INFO_ICON_DATA_URI' in video_browser_source
+    assert 'filter:none' in video_browser_source
+    assert 'info-copy::before' not in video_browser_source
+    assert 'display:none !important' not in video_browser_source
+    assert 'opacity:.74' not in video_browser_source
     assert 'infoCopy.onmouseenter' in video_browser_source
     assert 'mediaDisplayName' in video_browser_source
     assert 'PAGE_MEDIA_TITLE' in video_browser_source

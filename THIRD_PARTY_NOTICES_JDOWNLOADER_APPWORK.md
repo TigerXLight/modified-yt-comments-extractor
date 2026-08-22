@@ -196,3 +196,7 @@ V81G moves generic webpage video/audio discovery closer to JDownloader's LinkGra
 ## V81G source-add self-test wording repair
 
 V81G changes the source-add success message from the older generic metadata-probe wording to mention metadata/media LinkGrabber prechecks.  The self-test now accepts both the older wording and the new V81G wording so the behaviour change is covered without failing on stale log text.
+- V81H keeps the browser-native Video & Audio info control visible by removing whole-card reused opacity and boosting the white info icon contrast.
+- V81I renders the browser-native Video & Audio info control as a deterministic pure-white CSS icon so reused-card dimming and raster filters cannot dull it.
+- V81J restores the browser-native Video & Audio information control to the stable raster icon layout while preserving boosted contrast and non-dimmed controls.
+- V81K restores the browser-native Video & Audio top-left control layout by separating the URL text button from the smaller raster information icon button.

@@ -12020,8 +12020,8 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 .grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:.7rem; padding:.7rem; }}
 .card {{ position:relative; min-height:196px; overflow:hidden; border:1px solid #2e3a44; border-radius:14px; background:#101820; box-shadow:0 3px 12px #0006; cursor:pointer; }}
 .card.selected {{ border-color:#38bdf8; outline:2px solid #38bdf8; }}
-.card.intake-reused {{ border-color:#33414d; box-shadow:0 2px 9px #0007; opacity:.74; }}
-.card.intake-reused .preview {{ opacity:.52; filter:grayscale(.32) contrast(.88); }}
+.card.intake-reused {{ border-color:#33414d; box-shadow:0 2px 9px #0007; background:#0d141b; }}
+.card.intake-reused .preview {{ opacity:.50; filter:grayscale(.34) contrast(.86); }}
 .card.intake-duplicate {{ border-color:#f59e0b; outline:2px solid #f59e0b77; }}
 .preview {{ position:absolute; left:0; right:0; top:0; bottom:2.25rem; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#111827,#1f2937); }}
 .preview video, .preview img {{ width:100%; height:100%; object-fit:contain; display:block; background:#05080b; }}
@@ -12030,9 +12030,10 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 .card:hover .top-controls, .card.selected .top-controls {{ display:flex; }}
 .check {{ width:1.18rem; height:1.18rem; border-radius:.30rem; border:1px solid #9aa8b4; background:#ffffffd8; color:#0f1419; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:.74rem; line-height:1; flex:0 0 auto; pointer-events:auto; }}
 .card.selected .check {{ background:#0ea5e9; border-color:#38bdf8; color:#fff; }}
-.url-copy, .info-copy {{ min-width:1.9rem; border:1px solid #3c4c59; border-radius:.34rem; background:#111a22d9; color:#bfdbfe; padding:.12rem .25rem; font-size:.68rem; line-height:.95rem; cursor:pointer; pointer-events:auto; }}
-.info-copy {{ width:1.18rem; min-width:1.18rem; height:1.18rem; padding:0; display:inline-flex; align-items:center; justify-content:center; }}
-.info-icon {{ width:16px; height:16px; display:block; object-fit:contain; filter:brightness(0) invert(1); opacity:1; }}
+.url-copy {{ min-width:1.85rem; height:1.18rem; border:1px solid #3c4c59; border-radius:.34rem; background:#111a22d9; color:#bfdbfe; padding:.12rem .24rem; font-size:.68rem; line-height:.95rem; cursor:pointer; pointer-events:auto; flex:0 0 auto; }}
+.info-copy {{ width:1.20rem; min-width:1.20rem; height:1.18rem; padding:0; display:inline-flex; align-items:center; justify-content:center; background:#111a22d9; border:1px solid #3c4c59; border-radius:.34rem; color:#e8eef2; cursor:pointer; pointer-events:auto; flex:0 0 auto; }}
+.info-icon {{ width:16px; height:16px; display:block; object-fit:contain; opacity:1; filter:none; }}
+.info-copy:hover .info-icon {{ opacity:1; filter:none; }}
 .url-copy:hover, .info-copy:hover, .actions a:hover, .actions button:hover {{ background:#1e3a8a; border-color:#60a5fa; color:#fff; }}
 .actions {{ margin-left:auto; display:flex; gap:.22rem; pointer-events:auto; }}
 .actions a, .actions button {{ text-decoration:none; background:#111a22d9; border:1px solid #3c4c59; color:#e8eef2; border-radius:.34rem; padding:.18rem .35rem; font-size:.70rem; line-height:.95rem; white-space:nowrap; cursor:pointer; }}
