@@ -200,3 +200,14 @@ V81G changes the source-add success message from the older generic metadata-prob
 - V81I renders the browser-native Video & Audio info control as a deterministic pure-white CSS icon so reused-card dimming and raster filters cannot dull it.
 - V81J restores the browser-native Video & Audio information control to the stable raster icon layout while preserving boosted contrast and non-dimmed controls.
 - V81K restores the browser-native Video & Audio top-left control layout by separating the URL text button from the smaller raster information icon button.
+
+- V81L adds browser-native Video & Audio readiness status text for quick/static candidate display and rendered-variant refresh completion.
+### YTCE V81L test repair — Video & Audio readiness status assertion
+
+- Repairs a stale self-test assertion left from the earlier Video & Audio browser-grid marker wording.
+- The runtime status behaviour remains unchanged; the test now checks the active `YTCEVideoAudioGrid/1.0` browser-grid handler marker.
+### YTCE V81L repair 2 — Video & Audio readiness status variable scope
+
+- Moves the V81L initial readiness status variables from the Images browser-grid setup into the Video & Audio browser-grid setup.
+- Keeps the runtime Video & Audio status wording unchanged: quick media ready while rendered variants load, then rendered variants loaded after refresh.
+- Leaves hover/playback, LinkGrabber precheck, and the top-left Video & Audio controls untouched.

@@ -731,9 +731,14 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'waiting for webpage media discovery; it will open when candidates are ready' not in video_open_source
     assert 'YTCE-VIDEO-AUDIO-GRID-' in video_browser_source
     assert 'source_video_audio_browser_grid_servers' in video_browser_source
-    assert 'Native browser video/audio grid' in video_browser_source
+    assert 'YTCEVideoAudioGrid/1.0' in video_browser_source
     assert 'renderPreview' in video_browser_source
     assert '/media-items' in video_browser_source
+    assert 'Quick media ready · rendered variants loading...' in video_browser_source
+    assert 'Rendered variants loaded' in video_browser_source
+    assert 'refresh_inflight' in video_browser_source
+    assert 'renderedRefreshPending' in video_browser_source
+    assert 'currentResourceCount' in video_browser_source
     assert 'refreshMediaItemsFromServer' in video_browser_source
     assert 'mediaSignature' in video_browser_source
     assert "grid.textContent=''" in video_browser_source

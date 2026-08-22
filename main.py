@@ -11911,6 +11911,12 @@ render();
         media_page_title = str(getattr(row, "title", "") or getattr(row, "domain", "") or "webpage media")
         cache_key = self._webpage_video_prefetch_cache_key(row)
 
+        def _video_audio_rendered_refresh_inflight() -> bool:
+            try:
+                return bool(cache_key and cache_key in self.__dict__.setdefault("webpage_video_discovery_prefetch_inflight", set()))
+            except Exception:
+                return False
+
         def _latest_video_audio_cards_payload() -> dict[str, Any]:
             latest_row = self._source_row_by_id(row_id) or row
             latest_resources: tuple[Any, ...] = ()
@@ -11938,6 +11944,7 @@ render();
                 "items": latest_cards,
                 "media_count": len(latest_cards),
                 "resource_count": len(latest_resources),
+                "refresh_inflight": _video_audio_rendered_refresh_inflight(),
             }
 
         initial_payload = _latest_video_audio_cards_payload()
@@ -11946,6 +11953,14 @@ render();
             self.log_message("Browser-native Video & Audio found no usable media URLs for this row.", "warning")
             return
         cards_json = json.dumps(cards, ensure_ascii=False).replace("</", "<\\/")
+        initial_refresh_pending = bool(initial_payload.get("refresh_inflight"))
+        initial_status_text = (
+            "Quick media ready · rendered variants loading..."
+            if initial_refresh_pending
+            else "Media ready."
+        )
+        initial_resource_count = int(initial_payload.get("resource_count") or len(resources or ()) or len(cards))
+        initial_refresh_pending_json = json.dumps(initial_refresh_pending)
         app = self
         info_icon_data_uri = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAACXBIWXMAAAsTAAALEwEAmpwYAAAFIUlEQVR4nO2bX4gVdRTHR0Mt0zQzSvrDKpWtpYUP2X+1kl4rDeohfFkpyT+omWaI1ENPRT2E0Zb9JQqh0sIki+ivuKtmWRlRpCkRlQ9Wq+tutJ/4tefGt9/eOztz5zf3zm73CwvL3DPfc+bcmXPOPedMFDXQQAN5AhgOXAWsBJ4C3ge+A34GOoCjwGHga+AD4FlgCXANMCIaiADGAPOBrcAxqscfwGvGNTIqOoAL7VvuJDyOAI8Dk6KiAWgCNgJ/VTD+S+AZYCFwPdAMjANOtb/TgSn22WKT/aYCVzfQCpxdlOf7wQrf+G5gmXNOBv7zgHuAfWX4f7dYcULYq0oIYLJdpKLHntmrc9A3E3injCM+rvndANxsEVyxw0X7Guh2jtjr6f4FmJO37n9gt50+68eBFcDQqEYAhgFrLB5obLgjb8VrPM+7fD41V6Xx9lwBHPIewUV5KVvsXfx2F71zUZbOrjOATz0nhL0TgFuMuAQXjE6KilV4feg9DmFiAnAB8JuQfwScnJFzCHCtpcll9v+QjJynAHvEzl8zZwdghBdxvwXGZuScBLTTF+1ZqzzgTOCglyKrrxOAtULmavpLMho4HviBynCfjc+o40ovOyypluh8r8K7O4thxvmIlz6ftj/3fwkPB9Bzv/C5x/esakg2ekVO5jwP7BfOuXJ8nhz/PlCd8IVwtqYlaJZix0X/6VmNMt4uMWqUHB+td0bAirGE7lTxBXheTt4cwqAyd8A8OX5ryDtAePW3w/o0OfWYnHhZQIP8GLDBfvoGjQGiz6VX7Sf0n76BBXLS7lDGpMgCpwXW+ZXwz09ywruZU0j/dUBbmYtvy6PbAyxP/DgDJ0rqc8FvQmiD8qoE+3F4CR2xjVZgtgjviwYJrONcwqw4wdWpo+YAAPCkXNeKOMHnRPDOaJDAmrElvBgnuF0EZ0eDBK5HKde1I07wgAg25WjQHOBt6+x22ERobo76NBAeiBM8LIJB87HoWOU1VxSP5aRzpOjoTFqrD8/BkFkxF1/CbaH1mu5/ESfULXLDcjBis/C/ZxMl18R4VY63h9abxgFHRG5MDkb8KPzNcnyc/Pr8M/S0J80jcFAEJ4Y0wvhd0CthdNLPAug9V7gPxQl+IoIzQxpRZwdoGtwZJ/iSCLaENKLODmhJWgitEsEnQhpRZwesF+774gRvEMHPQxpRZwfsTVThAqOkO9MTeuxcDwcA50jt0dXvqg29JWoJiwaBA3SmuTXJCXfJCbtCGVJHB+gSx4IkJ4z1BiIzBqoDnO3CeTRxcQe8ICduCmFMnRywTTg3pDnxIm8wMmOgOcDLaO5apmQZjbUFGo3VxAHWdN0lfK9UQzLRiwXLsxhVYwcsFa7OqtvtwDohOq6/4IrqADfJ8voaD2Sdsu4UsnVFdoBtner8cU/mxg69KzL7bRdvWlEdYNss27xF63SBL2/k5QBb2X1dzu/Js8laKAfYboG/QntvVEQQ2AG2r6ybINmCXloAN1qjc2GSPh7wmRn5k19XuMWIpO04y/MtntPcbb8yqiX475qq29a8vB/5JpsG9wlOwJvCtTqGY5o3wseGK7dHtQawib7Y4nZ4q+DSNRm3oXKT9/lU184q81KGW4C4OOiFpUw9ayu8F7Q0JddQe6EKrwRvtZmlP1BxM4yHCvFiFb2zt5e9b+eNKngmeOuuleBS3uSoaKA3KruXpt6qdo3e0tqjVsgouqxrfWn0fwC905zptql+ne4VNtBAAw1EgfA3JRqccdS5G+4AAAAASUVORK5CYII='
         download_icon_data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAACXBIWXMAAAsTAAALEwEAmpwYAAABkklEQVR4nO2YS07DMBCGzaLcoZQDURZQIRALLlAEp6NcgYcocAQQpCDxWLXsQPrQCCMiK8GJHeIWzbfqwzP+v8hqMzFGURTlXwIMgGfgCdgwiwbwwA8Ts2jgYBYNVCAxKpAaFUiNCjQFsAwcAufAm5PrFuiHCgDrtkce2eMMOJC9Y8OvANf8ThYhMPH0vgK6MVfeFz5WIKvQ/xLohAjIsfFxA6xFCPRtDx/7IQJy5vMcyZGqUe8VKALoASOn/NTUBZg5TXo164MEBGDVKZ+ausQEmId6U7UBsAO82gFm4KsHNu1P5728TioALAEvuWXvwG5ZvXxn13zzmFTArpOZF1fCrS8IL9zNg8BWQTD3fdFn8j7tEcqt3S4JXcYHsNfU/o00qCHhDZ9EoKJEpfDJBDwSlcMnFSiRqBU+uUDu0WJm/7AGbe9vohtEggrANOZuNAYauht154FRGxJ8hT9uYh6QoXpeGIbOxDJUp+YiaCa2El07VKdiHPxUIifRkaEaOCkYM/+Cmd1rGHzlFUVRTFt8AnKNaVaHwn2+AAAAAElFTkSuQmCC"
@@ -12062,11 +12077,13 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 <button id="selectAll">Select all</button>
 <button id="clearAll">Clear all</button>
 <button id="addFiles" class="primary">Add selected to FILES</button>
-<span class="meta" id="status">Native browser video/audio grid · direct media first</span>
+<span class="meta" id="status">{html.escape(initial_status_text)}</span>
 </header>
 <main class="grid" id="grid"></main>
 <script>
 let mediaItems = {cards_json};
+let currentResourceCount = {initial_resource_count};
+let renderedRefreshPending = {initial_refresh_pending_json};
 const token = {json.dumps(token)};
 const DOWNLOAD_ICON_DATA_URI = {json.dumps(download_icon_data_uri)};
 const INFO_ICON_DATA_URI = {json.dumps(info_icon_data_uri)};
@@ -12098,9 +12115,18 @@ async function refreshMediaItemsFromServer() {{
     const payload = await response.json();
     if (!payload.ok || !Array.isArray(payload.items)) return;
     const nextItems = payload.items;
+    const nextResourceCount = Number(payload.resource_count || nextItems.length || 0);
+    const refreshInFlight = Boolean(payload.refresh_inflight);
     const nextSignature = mediaSignature(nextItems);
-    if (nextSignature === currentMediaSignature) return;
+    if (nextSignature === currentMediaSignature) {{
+      if (renderedRefreshPending && !refreshInFlight) {{
+        renderedRefreshPending = false;
+        setStatus('Rendered variants loaded.');
+      }}
+      return;
+    }}
     const oldCount = mediaItems.length;
+    const oldResourceCount = currentResourceCount;
     if (document.querySelector('.card.manual-playing') || document.querySelector('.preview:hover')) {{
       setTimeout(refreshMediaItemsFromServer, 500);
       return;
@@ -12110,10 +12136,14 @@ async function refreshMediaItemsFromServer() {{
     selected.clear();
     oldSelected.forEach(id => {{ if (nextIds.has(id)) selected.add(id); }});
     mediaItems = nextItems;
+    currentResourceCount = nextResourceCount || nextItems.length;
+    renderedRefreshPending = refreshInFlight;
     knownCount = mediaItems.filter(item => item.file_intake_status === 'reused').length;
     duplicateCount = mediaItems.filter(item => item.file_intake_status === 'duplicate').length;
     render();
-    if (mediaItems.length > oldCount) setStatus(`Updated media list from rendered discovery · ${{mediaItems.length}} media.`);
+    if (refreshInFlight) setStatus(`Updated quick media · rendered variants still loading...`);
+    else if (mediaItems.length > oldCount || currentResourceCount > oldResourceCount) setStatus(`Rendered variants loaded · ${{mediaItems.length}} media.`);
+    else setStatus('Rendered variants loaded.');
   }} catch(_error) {{}}
 }}
 setTimeout(refreshMediaItemsFromServer, 750);
