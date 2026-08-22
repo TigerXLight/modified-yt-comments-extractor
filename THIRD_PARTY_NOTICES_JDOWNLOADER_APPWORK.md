@@ -48,3 +48,21 @@ Source patterns reviewed from the uploaded JDownloader/AppWork reference set:
 The implementation uses the V80M YTCE runtime queue foundation and does not copy
 Java source text directly. It preserves the source-pattern labels and maps the
 same queue/job/watchdog semantics into Python-native code.
+
+## V80O: Media operation watchdog
+
+V80O adds `media_operation_watchdog.py`, a Python/Tk media/probe/download watchdog based on
+JDownloader/AppWork runtime patterns reviewed from:
+
+- `jd.controlling.downloadcontroller.DownloadWatchDog`
+- `jd.controlling.downloadcontroller.DownloadWatchDogJob`
+- `org.appwork.utils.event.queue.Queue`
+- `org.appwork.utils.event.queue.QueueAction`
+- `org.appwork.utils.event.queue.QueueThread`
+
+Implementation mapping:
+
+- JDownloader `DownloadWatchDog` / watchdog job lifecycle → `MediaOperationWatchdog` operation registry, heartbeats, stall detection, timeout detection, and isolated cancel callbacks.
+- AppWork queue job execution → optional `YTCEWorkQueue` integration for watched off-UI-thread media operations.
+
+This is a source-credited Python implementation of the reviewed watchdog/job/control-flow behaviour.
