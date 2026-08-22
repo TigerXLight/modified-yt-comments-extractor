@@ -8311,7 +8311,7 @@ class App(ctk.CTk):
                     f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
                     f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
                     f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "Video & Audio can open from the cached candidate list; live hover uses fast-start trimmed playback, elapsed-clock frame selection, and repaint-safe instant wrapping."
+                    "Video & Audio can open from the cached candidate list; live hover uses fast-start trimmed playback, elapsed-clock frame selection, repaint-safe instant wrapping, and a fixed wait-poll-to-playback handoff."
                 ),
                 "muted",
             )
@@ -11350,8 +11350,15 @@ class App(ctk.CTk):
 
                     def _wait_for_frames() -> None:
                         try:
+                            # V79L: this callback was scheduled using the same
+                            # dictionary that _start_cached_playback() uses to
+                            # detect an active animation.  Clear the wait-poll
+                            # token before trying to start playback; otherwise
+                            # the first successful poll mistakes its own pending
+                            # callback id for a running frame loop and returns
+                            # without painting any video frame.
+                            video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
                             if not _pointer_inside_widget(image_area):
-                                video_hover_animation_after_id_by_resource_id.pop(resource_id, None)
                                 _stop_video_hover_animation(resource_id, label, current_item)
                                 return
                             if _start_cached_playback():

@@ -477,7 +477,7 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_hover_preview_status_by_id" in source
     assert "_apply_cached_video_hover_preview" in source
     assert "_start_webpage_video_hover_preview_prefetch_for_discovery" in inspect.getsource(App)
-    assert "live hover uses fast-start trimmed playback, elapsed-clock frame selection, and repaint-safe instant wrapping" in inspect.getsource(App)
+    assert "live hover uses fast-start trimmed playback, elapsed-clock frame selection, repaint-safe instant wrapping, and a fixed wait-poll-to-playback handoff" in inspect.getsource(App)
     assert "video_hover_surface_widgets_by_resource_id" in source
     assert "_video_hover_should_protect_repaint" in source
     assert "hover_owns_preview" in source
@@ -486,6 +486,9 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     app_source = inspect.getsource(App)
     assert "_step" in app_source and "window.after" in app_source and ("_finish_video_hover_leave_if_outside" in app_source or "video_hover" in app_source)
     assert "window.after(8, _wait_for_frames)" in inspect.getsource(App)
+    assert "V79L: this callback was scheduled using the same" in source
+    assert "token before trying to start playback" in source
+    assert "without painting any video frame" in source
     assert "poster_url=poster_url" in inspect.getsource(App)
     assert "poster/thumbnail" in app_source
     assert "duration_seconds=_video_hover_seed_duration_seconds()" in inspect.getsource(App)
