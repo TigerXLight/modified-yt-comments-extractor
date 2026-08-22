@@ -11937,10 +11937,31 @@ render();
             latest_refresh_key = str(latest_cache_key or latest_source_url or row_id)
             return latest_refresh_key == source_refresh_key
 
-        def _stale_video_audio_cards_payload() -> dict[str, Any]:
+        def _record_stale_video_audio_refresh(reason: str) -> None:
+            try:
+                stale_trace_by_row_id = self.__dict__.setdefault(
+                    "source_video_audio_browser_grid_stale_refresh_trace_by_row_id",
+                    {},
+                )
+                previous_trace = stale_trace_by_row_id.get(row_id)
+                previous_count = int(previous_trace.get("ignored_count", 0) or 0) if isinstance(previous_trace, dict) else 0
+                stale_trace_by_row_id[row_id] = {
+                    "ignored_count": previous_count + 1,
+                    "token": token,
+                    "source_refresh_key": source_refresh_key,
+                    "reason": reason,
+                }
+                logger.debug("Ignored stale Video & Audio rendered refresh for row %s: %s", row_id, reason)
+            except Exception:
+                logger.debug("Could not record stale Video & Audio rendered refresh trace.", exc_info=True)
+
+        def _stale_video_audio_cards_payload(reason: str = "stale Video & Audio rendered refresh") -> dict[str, Any]:
+            _record_stale_video_audio_refresh(reason)
             return {
                 "ok": True,
                 "stale": True,
+                "stale_reason": reason,
+                "source_refresh_key": source_refresh_key,
                 "items": [],
                 "media_count": 0,
                 "resource_count": 0,
@@ -11955,8 +11976,10 @@ render();
 
         def _latest_video_audio_cards_payload() -> dict[str, Any]:
             latest_row = self._source_row_by_id(row_id)
-            if not _video_audio_window_is_current() or not _video_audio_row_still_matches_window(latest_row):
-                return _stale_video_audio_cards_payload()
+            if not _video_audio_window_is_current():
+                return _stale_video_audio_cards_payload("inactive Video & Audio browser window")
+            if not _video_audio_row_still_matches_window(latest_row):
+                return _stale_video_audio_cards_payload("source changed before rendered Video & Audio refresh completed")
             latest_resources: tuple[Any, ...] = ()
             try:
                 cached_discovery = self.__dict__.setdefault("webpage_video_discovery_cache_by_url", {}).get(cache_key) if cache_key else None
@@ -12123,6 +12146,7 @@ let mediaItems = {cards_json};
 let currentResourceCount = {initial_resource_count};
 let renderedRefreshPending = {initial_refresh_pending_json};
 const token = {json.dumps(token)};
+const SOURCE_REFRESH_KEY = {json.dumps(source_refresh_key)};
 const DOWNLOAD_ICON_DATA_URI = {json.dumps(download_icon_data_uri)};
 const INFO_ICON_DATA_URI = {json.dumps(info_icon_data_uri)};
 const PAGE_MEDIA_TITLE = {json.dumps(media_page_title)};
@@ -12136,6 +12160,7 @@ const counts = document.getElementById('counts');
 const statusEl = document.getElementById('status');
 function updateCounts() {{ const extras=[]; if (knownCount) extras.push(`${{knownCount}} already in FILES`); if (duplicateCount) extras.push(`${{duplicateCount}} duplicate`); counts.textContent = `${{selected.size}} selected · ${{mediaItems.length}} media${{extras.length ? ' · ' + extras.join(' · ') : ''}}`; }}
 function setStatus(text) {{ statusEl.textContent = text; }}
+function recordStaleRefreshTrace(payload) {{ try {{ const priorCount = Number(window.__YTCE_VIDEO_AUDIO_STALE_REFRESH_COUNT__ || 0); const trace = {{ ignored_count: priorCount + 1, ignored_at: new Date().toISOString(), stale_reason: String(payload.stale_reason || 'stale Video & Audio rendered refresh'), source_refresh_key: String(payload.source_refresh_key || SOURCE_REFRESH_KEY || '') }}; window.__YTCE_VIDEO_AUDIO_STALE_REFRESH_COUNT__ = trace.ignored_count; window.__YTCE_VIDEO_AUDIO_STALE_REFRESH_TRACE__ = trace; if (window.console && console.debug) console.debug('Ignored stale Video & Audio rendered refresh', trace); }} catch(_error) {{}} }}
 function formatDimensions(item) {{ const width = Number(item.width || 0); const height = Number(item.height || 0); return (width && height) ? `${{width}}×${{height}}` : ''; }}
 function variantDisplayLabel(variant) {{ const dims = formatDimensions(variant); const base = String(variant.label || '').trim(); if (dims && (!base || base === 'unknown' || base === 'Unknown quality')) return dims; if (dims && !base.includes(dims)) return `${{base}} · ${{dims}}`; return base || dims || 'Unknown quality'; }}
 function basenameFromUrl(url) {{ try {{ const path = new URL(url, window.location.href).pathname.split('/').filter(Boolean).pop() || ''; return decodeURIComponent(path).replace(/[?#].*$/, ''); }} catch(_error) {{ return ''; }} }}
@@ -12151,7 +12176,7 @@ async function refreshMediaItemsFromServer() {{
   try {{
     const response = await fetch(`/media-items?token=${{encodeURIComponent(token)}}`, {{cache:'no-store'}});
     const payload = await response.json();
-    if (payload.stale) return;
+    if (payload.stale) {{ recordStaleRefreshTrace(payload); return; }}
     if (!payload.ok || !Array.isArray(payload.items)) return;
     const nextItems = payload.items;
     const nextResourceCount = Number(payload.resource_count || nextItems.length || 0);

@@ -217,3 +217,8 @@ V81G changes the source-add success message from the older generic metadata-prob
 - Adds a per-row active browser-window token and source/cache-key signature for the browser-native Video & Audio grid.
 - The `/media-items` refresh endpoint now marks older or source-mismatched windows as stale so the browser ignores late rendered refreshes instead of replacing a newer active window/source state.
 - Keeps V81L readiness status wording, instant quick-open, hover playback, LinkGrabber precheck, and top-left controls unchanged.
+
+## YTCE V81N Video & Audio stale rendered-refresh trace visibility
+
+- Keeps V81M's stale rendered-refresh guard behaviour unchanged while recording a small diagnostic trace when an older Video & Audio browser window/source refresh is ignored.
+- Adds browser-side test/devtools visibility for ignored stale refresh payloads without changing quick-open, rendered refresh handling, hover playback, or the top-left controls.

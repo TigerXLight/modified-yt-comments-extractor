@@ -740,6 +740,12 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert '_video_audio_window_is_current' in video_browser_source
     assert '_video_audio_row_still_matches_window' in video_browser_source
     assert 'payload.stale' in video_browser_source
+    assert 'source_video_audio_browser_grid_stale_refresh_trace_by_row_id' in video_browser_source
+    assert '_record_stale_video_audio_refresh' in video_browser_source
+    assert 'stale_reason' in video_browser_source
+    assert 'recordStaleRefreshTrace' in video_browser_source
+    assert '__YTCE_VIDEO_AUDIO_STALE_REFRESH_TRACE__' in video_browser_source
+    assert "console.debug('Ignored stale Video & Audio rendered refresh'" in video_browser_source
     assert 'refresh_inflight' in video_browser_source
     assert 'renderedRefreshPending' in video_browser_source
     assert 'currentResourceCount' in video_browser_source
