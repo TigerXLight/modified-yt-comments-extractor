@@ -32,67 +32,6 @@ Implementation mapping:
 This notice is intentionally explicit because the V80M code is not just general inspiration; it is a
 source-credited Python implementation of the reviewed runtime design and behaviour.
 
-## V80N Profile/Media Database runtime queue bridge
-
-V80N adds `profile_media_database_runtime_queue.py`, a Python/Tk-native queued
-operation bridge for Profile/Media Database file-management work.
-
-Source patterns reviewed from the uploaded JDownloader/AppWork reference set:
-
-- `org.appwork.utils.event.queue.Queue`
-- `org.appwork.utils.event.queue.QueueAction`
-- `org.appwork.utils.event.queue.QueueThread`
-- `jd.controlling.downloadcontroller.DownloadWatchDogJob`
-- `jd.controlling.downloadcontroller.DownloadWatchDog`
-
-The implementation uses the V80M YTCE runtime queue foundation and does not copy
-Java source text directly. It preserves the source-pattern labels and maps the
-same queue/job/watchdog semantics into Python-native code.
-
-## V80O: Media operation watchdog
-
-V80O adds `media_operation_watchdog.py`, a Python/Tk media/probe/download watchdog based on
-JDownloader/AppWork runtime patterns reviewed from:
-
-- `jd.controlling.downloadcontroller.DownloadWatchDog`
-- `jd.controlling.downloadcontroller.DownloadWatchDogJob`
-- `org.appwork.utils.event.queue.Queue`
-- `org.appwork.utils.event.queue.QueueAction`
-- `org.appwork.utils.event.queue.QueueThread`
-
-Implementation mapping:
-
-- JDownloader `DownloadWatchDog` / watchdog job lifecycle → `MediaOperationWatchdog` operation registry, heartbeats, stall detection, timeout detection, and isolated cancel callbacks.
-- AppWork queue job execution → optional `YTCEWorkQueue` integration for watched off-UI-thread media operations.
-
-This is a source-credited Python implementation of the reviewed watchdog/job/control-flow behaviour.
-## V80P FILES/media intake dedupe guard
-
-V80P adds `file_intake_dedupe.py`, a Python/Tk-native FILES/media intake
-review helper that implements JDownloader/AppWork-style operational patterns
-for identity tracking and repeat-work avoidance.
-
-Source pattern reviewed:
-
-- JDownloader/AppWork queue and watchdog architecture, especially the separation
-  between planned work, watched operation state, and actual mutating execution.
-- JDownloader file/download-controller behaviour as an architectural reference
-  for keeping explicit identity records and avoiding repeated work.
-
-YTCE implementation:
-
-- canonical source URL identity
-- normalized local path identity
-- sha256/size identity where available
-- existing-record reuse classification
-- batch-local duplicate classification
-- explicit `added / reused / duplicate / failed` counts
-- no copy, move, delete, download, browser, provider, or filesystem mutation
-  during review
-
-No Java source text is pasted into the Python module. The implementation ports
-the reviewed method-of-operation into YTCE's Python dataclass/test style.
-
 ## V80Q browser-grid FILES dedupe integration
 
 YTCE V80Q wires the side-effect-free FILES/media intake dedupe guard into the browser-native image grid "Add selected to FILES" path.  The implementation keeps JDownloader/AppWork-style identity tracking and repeat-work avoidance labels in project terminology: source URL identity, local path identity, batch duplicate review, existing record reuse, and explicit added/reused/duplicate/failed operator counts.
@@ -126,3 +65,55 @@ Implementation note: this is a Python/Tk-native JSON identity store for already-
 FILES/media intake records.  It preserves the reviewed JDownloader/AppWork method of
 operation — explicit identity records, stale-entry filtering, bounded memory, and
 reuse before repeated media work — without embedding Java source text.
+
+
+## V80S — Browser-grid known FILES/media preflight labels
+
+V80S surfaces the existing FILES/media intake identity review before the operator clicks
+"Add selected to FILES" in the browser-native image grid.
+
+JDownloader/AppWork source pattern reviewed:
+
+- `jd.controlling.downloadcontroller.DownloadWatchDog`
+- `org.appwork.utils.event.queue.Queue`
+- `org.appwork.utils.event.queue.QueueAction`
+- `org.appwork.utils.event.queue.QueueThread`
+
+YTCE implementation files:
+
+- browser-grid FILES/media card status integration in `main.py`
+- source-level UI contract checks in `main_source_resource_ui_test.py`
+
+Implementation note: this is Python/Tk/browser-native UI feedback for the already-ported
+identity/dedupe workflow.  It preserves the reviewed method of operation — preflight identity
+review, explicit reused/duplicate/failed labels, and no media mutation during review — without
+embedding Java source text.
+
+## V80T — Browser-grid already-added FILES/media wording and highlight
+
+V80T refines the V80S browser-native image-grid preflight labels so reused FILES/media
+records are shown as already added to FILES before the operator clicks "Add selected to FILES".
+
+JDownloader/AppWork source pattern reviewed:
+
+- `jd.controlling.downloadcontroller.DownloadWatchDog`
+- `org.appwork.utils.event.queue.Queue`
+- `org.appwork.utils.event.queue.QueueAction`
+- `org.appwork.utils.event.queue.QueueThread`
+
+YTCE implementation files:
+
+- browser-grid FILES/media card status wording and highlight in `main.py`
+- source-level UI contract checks in `main_source_resource_ui_test.py`
+
+Implementation note: this keeps the V80S/V80R preflight identity review and only changes the
+operator-facing browser-grid wording/highlight. No Java source text is embedded.
+
+## V80U browser grid same-image variant grouping and lighter already-added labels
+
+V80U continues the JDownloader/AppWork-inspired identity and duplicate-avoidance work by collapsing browser-grid image candidates that appear to be the same image at different webpage/CDN sizes. The Python implementation keeps a single default representative card, prefers already-added variants when present, otherwise prefers the highest-dimension candidate, and marks previously-added cards with a lighter ghosted state rather than a heavy blocking badge.
+
+
+## V80U visual polish
+
+The browser-grid already-added state now uses a lighter ghosted card and compact badge while retaining the JDownloader/AppWork-inspired identity/reuse flow documented above.

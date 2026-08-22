@@ -186,6 +186,9 @@ from webpage_image_downloader_backend import (
 from file_intake_dedupe import (
     ExistingFileRecord,
     FILE_INTAKE_STATUS_ADDED,
+    FILE_INTAKE_STATUS_DUPLICATE,
+    FILE_INTAKE_STATUS_FAILED,
+    FILE_INTAKE_STATUS_REUSED,
     FileIntakeCandidate,
     build_file_intake_dedupe_plan,
     render_file_intake_dedupe_summary,
@@ -9598,16 +9601,136 @@ class App(ctk.CTk):
             or ""
         ).strip()
 
-    def _source_image_browser_grid_cards(self, resources: Sequence[Any]) -> tuple[dict[str, Any], ...]:
-        cards: list[dict[str, Any]] = []
-        for index, item in enumerate(tuple(resources or ()), start=1):
+    def _source_image_browser_grid_variant_key(self, item: Any, image_url: str) -> str:
+        """Return a conservative same-image key for different-size webpage image variants."""
+        candidate_urls = (
+            str(getattr(item, "canonical_url", "") or ""),
+            str(getattr(item, "reference_url", "") or ""),
+            str(getattr(item, "thumbnail_reference", "") or ""),
+            str(image_url or ""),
+        )
+        for candidate_url in candidate_urls:
+            raw = candidate_url.strip()
+            if not raw:
+                continue
+            try:
+                parsed = urllib.parse.urlsplit(raw)
+            except Exception:
+                continue
+            if not parsed.netloc or not parsed.path:
+                continue
+            path = urllib.parse.unquote(parsed.path).lower()
+            original_path = path
+            path = re.sub(r"(?i)([-_])(?:\d{2,5}x\d{2,5}|\d{2,5}w|w\d{2,5}|h\d{2,5})(?=\.[a-z0-9]{2,5}(?:$|[?#])|[-_.])", r"\1", path)
+            path = re.sub(r"(?i)/(?:resize|resized|fit|crop|width|height|w|h)/(?:\d{2,5}|\d{2,5}x\d{2,5})(?=/)", "/", path)
+            path = re.sub(r"(?i)/(?:\d{2,5}x\d{2,5}|w\d{2,5}|h\d{2,5})(?=/)", "/", path)
+            path = re.sub(r"(?i)([-_])(?:thumb|thumbnail|small|medium|large|xlarge|scaled)(?=\.[a-z0-9]{2,5}$)", r"\1", path)
+            query_pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+            kept_query: list[tuple[str, str]] = []
+            stripped_any = path != original_path
+            for key, value in query_pairs:
+                lower_key = key.lower()
+                if lower_key in {"w", "h", "width", "height", "resize", "fit", "crop", "quality", "q", "auto", "format"}:
+                    stripped_any = True
+                    continue
+                kept_query.append((lower_key, value.lower()))
+            if not stripped_any and len(query_pairs) > 0 and not kept_query:
+                stripped_any = True
+            query = urllib.parse.urlencode(sorted(kept_query))
+            return f"{parsed.netloc.lower()}{path}?{query}" if query else f"{parsed.netloc.lower()}{path}"
+        return ""
+
+    def _source_image_browser_grid_variant_score(self, item: Any) -> tuple[int, int, int, int]:
+        width = int(getattr(item, "width", 0) or 0)
+        height = int(getattr(item, "height", 0) or 0)
+        area = width * height
+        max_dimension = max(width, height)
+        has_dimensions = 1 if width > 0 and height > 0 else 0
+        from_link = 0 if bool(getattr(item, "from_link", False)) else 1
+        return (has_dimensions, area, max_dimension, from_link)
+
+    def _source_image_browser_grid_grouped_resource_entries(
+        self,
+        resources: Sequence[Any],
+        *,
+        file_intake_decisions_by_id: dict[str, Any],
+    ) -> tuple[tuple[int, Any, tuple[int, ...], tuple[str, ...]], ...]:
+        """Collapse same-image size variants while keeping the best default candidate."""
+        grouped: dict[str, list[tuple[int, Any]]] = {}
+        order: list[str] = []
+        for original_index, item in enumerate(tuple(resources or ()), start=1):
             image_url = self._source_image_open_url_for_browser_grid(item)
             if not image_url:
                 continue
+            resource_id = str(getattr(item, "resource_id", "") or f"image-{original_index}")
+            variant_key = self._source_image_browser_grid_variant_key(item, image_url)
+            key = variant_key or f"resource:{resource_id or original_index}"
+            if key not in grouped:
+                grouped[key] = []
+                order.append(key)
+            grouped[key].append((original_index, item))
+
+        entries: list[tuple[int, Any, tuple[int, ...], tuple[str, ...]]] = []
+        for key in order:
+            group = grouped[key]
+            variant_indexes = tuple(original_index for original_index, _item in group)
+            variant_ids = tuple(
+                str(getattr(item, "resource_id", "") or f"image-{original_index}")
+                for original_index, item in group
+            )
+            reused_group = tuple(
+                pair for pair in group
+                if str(getattr(file_intake_decisions_by_id.get(str(getattr(pair[1], "resource_id", "") or f"image-{pair[0]}")), "status", "") or "") == FILE_INTAKE_STATUS_REUSED
+            )
+            representative_pool = reused_group or tuple(group)
+            representative_index, representative_item = max(
+                representative_pool,
+                key=lambda pair: (self._source_image_browser_grid_variant_score(pair[1]), -pair[0]),
+            )
+            entries.append((min(variant_indexes), representative_item, variant_indexes, variant_ids))
+        return tuple(entries)
+
+    def _source_image_browser_grid_cards(
+        self,
+        resources: Sequence[Any],
+        *,
+        file_intake_decisions_by_id: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], ...]:
+        decisions_by_id = file_intake_decisions_by_id or {}
+        cards: list[dict[str, Any]] = []
+        grouped_entries = self._source_image_browser_grid_grouped_resource_entries(
+            resources,
+            file_intake_decisions_by_id=decisions_by_id,
+        )
+        for card_index, (display_index, item, variant_indexes, variant_ids) in enumerate(grouped_entries, start=1):
+            image_url = self._source_image_open_url_for_browser_grid(item)
+            if not image_url:
+                continue
+            resource_id = str(getattr(item, "resource_id", "") or f"image-{display_index}")
+            decision = decisions_by_id.get(resource_id)
+            if decision is None:
+                for variant_id in variant_ids:
+                    variant_decision = decisions_by_id.get(variant_id)
+                    if str(getattr(variant_decision, "status", "") or "") == FILE_INTAKE_STATUS_REUSED:
+                        decision = variant_decision
+                        break
+            intake_status = str(getattr(decision, "status", "") or "") if decision is not None else ""
+            intake_reason = str(getattr(decision, "reason", "") or "") if decision is not None else ""
+            intake_existing_record_id = str(getattr(decision, "existing_record_id", "") or "") if decision is not None else ""
+            intake_duplicate_of_candidate_id = str(getattr(decision, "duplicate_of_candidate_id", "") or "") if decision is not None else ""
+            intake_label = ""
+            if intake_status == FILE_INTAKE_STATUS_REUSED:
+                intake_label = "Added before"
+            elif intake_status == FILE_INTAKE_STATUS_DUPLICATE:
+                intake_label = "Duplicate"
+            elif intake_status == FILE_INTAKE_STATUS_FAILED:
+                intake_label = "Needs review"
+            variant_count = len(tuple(variant_ids))
             cards.append(
                 {
-                    "index": index,
-                    "resource_id": str(getattr(item, "resource_id", "") or f"image-{index}"),
+                    "index": display_index,
+                    "card_index": card_index,
+                    "resource_id": resource_id,
                     "url": image_url,
                     "name": str(getattr(item, "display_name", "") or getattr(item, "resource_id", "") or image_url),
                     "extension": str(getattr(item, "extension", "") or getattr(item, "media_type", "") or "image"),
@@ -9615,9 +9738,45 @@ class App(ctk.CTk):
                     "height": int(getattr(item, "height", 0) or 0),
                     "from_link": bool(getattr(item, "from_link", False)),
                     "provenance": str(getattr(item, "provenance", "") or ""),
+                    "variant_count": variant_count,
+                    "variant_indexes": variant_indexes,
+                    "variant_resource_ids": variant_ids,
+                    "file_intake_status": intake_status,
+                    "file_intake_label": intake_label,
+                    "file_intake_reason": intake_reason,
+                    "file_intake_existing_record_id": intake_existing_record_id,
+                    "file_intake_duplicate_of_candidate_id": intake_duplicate_of_candidate_id,
                 }
             )
         return tuple(cards)
+
+
+    def _webpage_image_file_intake_decisions_for_resources(
+        self,
+        *,
+        row: SourceResourceRowState,
+        resources: Sequence[Any],
+    ) -> dict[str, Any]:
+        """Return precomputed browser-grid FILES/media status for visible cards."""
+        resource_tuple = tuple(resources or ())
+        selected_ids = tuple(
+            str(getattr(item, "resource_id", "") or "").strip()
+            for item in resource_tuple
+            if str(getattr(item, "resource_id", "") or "").strip()
+        )
+        if not selected_ids:
+            return {}
+        state_proxy = type("_BrowserGridIntakeState", (), {"resources": resource_tuple})()
+        try:
+            plan = self._build_webpage_image_file_intake_dedupe_plan(
+                row=row,
+                state=state_proxy,
+                selected_resource_ids=selected_ids,
+            )
+        except Exception:
+            logger.debug("Could not precompute browser-grid FILES/media intake statuses.", exc_info=True)
+            return {}
+        return {str(decision.candidate_id): decision for decision in tuple(getattr(plan, "decisions", ()) or ())}
 
     def _webpage_image_files_intake_identity_cache(self) -> dict[tuple[str, str], dict[str, str]]:
         cache = self.__dict__.setdefault("webpage_image_files_intake_identity_cache", {})
@@ -10475,7 +10634,11 @@ class App(ctk.CTk):
         threading.Thread(target=_worker, args=(row,), daemon=True).start()
 
     def _open_source_image_browser_grid_for_resources(self, row: SourceResourceRowState, resources: Sequence[Any]) -> None:
-        cards = self._source_image_browser_grid_cards(resources)
+        intake_decisions_by_id = self._webpage_image_file_intake_decisions_for_resources(row=row, resources=resources)
+        cards = self._source_image_browser_grid_cards(
+            resources,
+            file_intake_decisions_by_id=intake_decisions_by_id,
+        )
         if not cards:
             self.log_message("Browser-native image grid found no usable image URLs for this row.", "warning")
             return
@@ -10553,7 +10716,11 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 .grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(168px, 1fr)); gap:.55rem; padding:.6rem; }}
 .card {{ position:relative; min-height:186px; display:flex; align-items:center; justify-content:center; overflow:hidden; border:1px solid #2e3a44; border-radius:14px; background:conic-gradient(#1d2730 90deg,#26333d 90deg 180deg,#1d2730 180deg 270deg,#26333d 270deg); background-size:12px 12px; box-shadow:0 3px 12px #0006; cursor:pointer; }}
 .card.selected {{ border-color:#38bdf8; outline:2px solid #38bdf8; }}
+.card.intake-reused {{ border-color:#33414d; box-shadow:0 2px 9px #0007; opacity:.78; }}
+.card.intake-duplicate {{ border-color:#f59e0b; outline:2px solid #f59e0b77; }}
+.card.intake-failed {{ border-color:#f87171; }}
 .card img {{ max-width:100%; max-height:250px; object-fit:contain; display:block; filter:drop-shadow(0 2px 5px #0008); }}
+.card.intake-reused img {{ opacity:.58; filter:grayscale(.15) drop-shadow(0 2px 5px #0007); }}
 .check {{ position:absolute; left:.35rem; top:.35rem; width:1.55rem; height:1.55rem; border-radius:.35rem; border:1px solid #9aa8b4; background:#ffffffd8; color:#0f1419; display:none; align-items:center; justify-content:center; font-weight:900; }}
 .card:hover .check, .card.selected .check {{ display:flex; }}
 .card.selected .check {{ background:#0ea5e9; border-color:#38bdf8; color:#fff; }}
@@ -10562,6 +10729,10 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 .actions a {{ text-decoration:none; background:#111a22d9; border:1px solid #3c4c59; color:#e8eef2; border-radius:.4rem; padding:.22rem .4rem; font-size:.75rem; }}
 .info {{ position:absolute; left:.35rem; right:.35rem; bottom:.35rem; display:flex; gap:.25rem; flex-wrap:wrap; pointer-events:none; }}
 .pill {{ background:#05080bcc; color:#fff; border-radius:.35rem; padding:.1rem .3rem; font-size:.72rem; }}
+.intake-pill {{ background:#14532dcc; color:#dcfce7; border:1px solid #22c55e88; font-weight:700; }}
+.intake-badge {{ position:absolute; right:.42rem; top:.42rem; background:#854d0ed9; color:#fef3c7; border:1px solid #facc1588; border-radius:.45rem; padding:.12rem .34rem; font-size:.68rem; font-weight:800; letter-spacing:.01em; pointer-events:none; box-shadow:0 2px 8px #0008; }}
+.card.intake-duplicate .intake-badge {{ background:#7c2d12d9; color:#ffedd5; border-color:#fb923c99; }}
+.card.intake-failed .intake-badge {{ background:#7f1d1dd9; color:#fee2e2; border-color:#f8717199; }}
 .url {{ display:none; position:absolute; left:.35rem; right:.35rem; bottom:.35rem; background:#05080be6; color:#dbeafe; border:1px solid #33485b; border-radius:.35rem; padding:.2rem .35rem; font-size:.7rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
 .card:hover .url {{ display:block; }}
 .card:hover .info {{ display:none; }}
@@ -10584,18 +10755,25 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 const images = {cards_json};
 const token = {json.dumps(token)};
 const selected = new Set();
+const knownCount = images.filter(item => item.file_intake_status === 'reused').length;
+const duplicateCount = images.filter(item => item.file_intake_status === 'duplicate').length;
 const grid = document.getElementById('grid');
 const counts = document.getElementById('counts');
 const statusEl = document.getElementById('status');
-function updateCounts() {{ counts.textContent = `${{selected.size}} selected · ${{images.length}} images`; }}
+function updateCounts() {{
+  const extras = [];
+  if (knownCount) extras.push(`${{knownCount}} already in FILES`);
+  if (duplicateCount) extras.push(`${{duplicateCount}} duplicate`);
+  counts.textContent = `${{selected.size}} selected · ${{images.length}} images${{extras.length ? ' · ' + extras.join(' · ') : ''}}`;
+}}
 function setStatus(text) {{ statusEl.textContent = text; }}
 function toggle(card, id) {{ selected.has(id) ? selected.delete(id) : selected.add(id); card.classList.toggle('selected', selected.has(id)); updateCounts(); }}
 function render() {{
   const frag = document.createDocumentFragment();
   images.forEach((item) => {{
     const card = document.createElement('div');
-    card.className = 'card';
-    card.title = item.url;
+    card.className = item.file_intake_status ? `card intake-${{item.file_intake_status}}` : 'card';
+    card.title = item.file_intake_label ? `${{item.file_intake_label}} · ${{item.url}}` : item.url;
     const img = document.createElement('img');
     img.loading = 'lazy';
     img.decoding = 'async';
@@ -10603,6 +10781,8 @@ function render() {{
     img.src = item.url;
     img.onerror = () => {{ const e = document.createElement('div'); e.className='err'; e.textContent='Error loading image'; img.replaceWith(e); }};
     const check = document.createElement('div'); check.className='check'; check.textContent='✓';
+    const intakeBadge = document.createElement('div'); intakeBadge.className='intake-badge'; intakeBadge.textContent=item.file_intake_label || '';
+    if (!item.file_intake_label) intakeBadge.style.display='none';
     const actions = document.createElement('div'); actions.className='actions';
     const open = document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open';
     const down = document.createElement('a'); down.href=item.url; down.download=''; down.textContent='Download';
@@ -10610,13 +10790,15 @@ function render() {{
     const info = document.createElement('div'); info.className='info';
     const ext = document.createElement('span'); ext.className='pill'; ext.textContent=item.extension || 'image'; info.append(ext);
     if (item.width && item.height) {{ const size = document.createElement('span'); size.className='pill'; size.textContent=`${{item.width}}×${{item.height}}`; info.append(size); }}
+    if (item.variant_count && item.variant_count > 1) {{ const variants = document.createElement('span'); variants.className='pill variant-pill'; variants.textContent=`${{item.variant_count}} variants`; info.append(variants); }}
     const order = document.createElement('span'); order.className='pill'; order.textContent=`#${{item.index}}`; info.append(order);
     const url = document.createElement('div'); url.className='url'; url.textContent=item.url;
-    card.append(img, check, actions, info, url);
+    card.append(img, check, intakeBadge, actions, info, url);
     card.addEventListener('click', (event) => {{ if (event.target.closest('a')) return; toggle(card, item.resource_id); }});
     frag.append(card);
   }});
   grid.append(frag); updateCounts();
+  if (knownCount || duplicateCount) {{ setStatus(`Added before highlighted · ${{knownCount}} already in FILES · ${{duplicateCount}} duplicate · order preserved`); }}
 }}
 document.getElementById('selectAll').onclick = () => {{ images.forEach(item => selected.add(item.resource_id)); document.querySelectorAll('.card').forEach(c => c.classList.add('selected')); updateCounts(); }};
 document.getElementById('clearAll').onclick = () => {{ selected.clear(); document.querySelectorAll('.card').forEach(c => c.classList.remove('selected')); updateCounts(); }};
@@ -10707,6 +10889,7 @@ render();
         self.log_message(
             (
                 f"Opened browser-native image window with {len(cards)} image candidate(s); "
+                f"already in FILES before add={sum(1 for card in cards if str(card.get('file_intake_status') or '') == FILE_INTAKE_STATUS_REUSED)}; "
                 "Add selected to FILES posts back to the app"
                 + (
                     "; opened as a taskbar-owned Chromium app window."
@@ -13517,6 +13700,7 @@ button:hover {{ background:#2a3642; }}
 .card {{ position:relative; min-height:192px; display:flex; align-items:center; justify-content:center; overflow:hidden; border:1px solid #2e3a44; border-radius:14px; background:conic-gradient(#1d2730 90deg,#26333d 90deg 180deg,#1d2730 180deg 270deg,#26333d 270deg); background-size:12px 12px; box-shadow:0 3px 12px #0006; cursor:pointer; }}
 .card.selected {{ border-color:#38bdf8; outline:2px solid #38bdf8; }}
 .card img {{ max-width:100%; max-height:260px; object-fit:contain; display:block; filter:drop-shadow(0 2px 5px #0008); }}
+.card.intake-reused img {{ opacity:.58; filter:grayscale(.15) drop-shadow(0 2px 5px #0007); }}
 .check {{ position:absolute; left:.35rem; top:.35rem; width:1.55rem; height:1.55rem; border-radius:.35rem; border:1px solid #9aa8b4; background:#ffffffd8; color:#0f1419; display:none; align-items:center; justify-content:center; font-weight:900; }}
 .card:hover .check, .card.selected .check {{ display:flex; }}
 .card.selected .check {{ background:#0ea5e9; border-color:#38bdf8; color:#fff; }}
@@ -13525,6 +13709,10 @@ button:hover {{ background:#2a3642; }}
 .actions a {{ text-decoration:none; background:#111a22d9; border:1px solid #3c4c59; color:#e8eef2; border-radius:.4rem; padding:.22rem .4rem; font-size:.75rem; }}
 .info {{ position:absolute; left:.35rem; right:.35rem; bottom:.35rem; display:flex; gap:.25rem; flex-wrap:wrap; pointer-events:none; }}
 .pill {{ background:#05080bcc; color:#fff; border-radius:.35rem; padding:.1rem .3rem; font-size:.72rem; }}
+.intake-pill {{ background:#14532dcc; color:#dcfce7; border:1px solid #22c55e88; font-weight:700; }}
+.intake-badge {{ position:absolute; right:.42rem; top:.42rem; background:#854d0ed9; color:#fef3c7; border:1px solid #facc1588; border-radius:.45rem; padding:.12rem .34rem; font-size:.68rem; font-weight:800; letter-spacing:.01em; pointer-events:none; box-shadow:0 2px 8px #0008; }}
+.card.intake-duplicate .intake-badge {{ background:#7c2d12d9; color:#ffedd5; border-color:#fb923c99; }}
+.card.intake-failed .intake-badge {{ background:#7f1d1dd9; color:#fee2e2; border-color:#f8717199; }}
 .url {{ display:none; position:absolute; left:.35rem; right:.35rem; bottom:.35rem; background:#05080be6; color:#dbeafe; border:1px solid #33485b; border-radius:.35rem; padding:.2rem .35rem; font-size:.7rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
 .card:hover .url {{ display:block; }}
 .card:hover .info {{ display:none; }}
@@ -13538,12 +13726,14 @@ button:hover {{ background:#2a3642; }}
 <button id="selectAll">Select all</button>
 <button id="clearAll">Clear all</button>
 <button id="downloadSelected">Download selected</button>
-<span class="meta">Native browser image loading · order preserved from YTCE candidate list</span>
+<span class="meta" id="status">Native browser image loading · order preserved from YTCE candidate list</span>
 </header>
 <main class="grid" id="grid"></main>
 <script>
 const images = {cards_json};
 const selected = new Set();
+const knownCount = images.filter(item => item.file_intake_status === 'reused').length;
+const duplicateCount = images.filter(item => item.file_intake_status === 'duplicate').length;
 const grid = document.getElementById('grid');
 const counts = document.getElementById('counts');
 function updateCounts() {{ counts.textContent = `${{selected.size}} selected · ${{images.length}} images`; }}
@@ -13552,8 +13742,8 @@ function render() {{
   const frag = document.createDocumentFragment();
   images.forEach((item) => {{
     const card = document.createElement('div');
-    card.className = 'card';
-    card.title = item.url;
+    card.className = item.file_intake_status ? `card intake-${{item.file_intake_status}}` : 'card';
+    card.title = item.file_intake_label ? `${{item.file_intake_label}} · ${{item.url}}` : item.url;
     const img = document.createElement('img');
     img.loading = 'lazy';
     img.decoding = 'async';
@@ -13561,6 +13751,8 @@ function render() {{
     img.src = item.url;
     img.onerror = () => {{ const e = document.createElement('div'); e.className='err'; e.textContent='Error loading image'; img.replaceWith(e); }};
     const check = document.createElement('div'); check.className='check'; check.textContent='✓';
+    const intakeBadge = document.createElement('div'); intakeBadge.className='intake-badge'; intakeBadge.textContent=item.file_intake_label || '';
+    if (!item.file_intake_label) intakeBadge.style.display='none';
     const actions = document.createElement('div'); actions.className='actions';
     const open = document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open';
     const down = document.createElement('a'); down.href=item.url; down.download=''; down.textContent='Download';
@@ -13568,13 +13760,15 @@ function render() {{
     const info = document.createElement('div'); info.className='info';
     const ext = document.createElement('span'); ext.className='pill'; ext.textContent=item.extension || 'image'; info.append(ext);
     if (item.width && item.height) {{ const size = document.createElement('span'); size.className='pill'; size.textContent=`${{item.width}}×${{item.height}}`; info.append(size); }}
+    if (item.variant_count && item.variant_count > 1) {{ const variants = document.createElement('span'); variants.className='pill variant-pill'; variants.textContent=`${{item.variant_count}} variants`; info.append(variants); }}
     const order = document.createElement('span'); order.className='pill'; order.textContent=`#${{item.index}}`; info.append(order);
     const url = document.createElement('div'); url.className='url'; url.textContent=item.url;
-    card.append(img, check, actions, info, url);
+    card.append(img, check, intakeBadge, actions, info, url);
     card.addEventListener('click', (event) => {{ if (event.target.closest('a')) return; toggle(card, item.url); }});
     frag.append(card);
   }});
   grid.append(frag); updateCounts();
+  if (knownCount || duplicateCount) {{ setStatus(`Added before highlighted · ${{knownCount}} already in FILES · ${{duplicateCount}} duplicate · order preserved`); }}
 }}
 document.getElementById('selectAll').onclick = () => {{ images.forEach(item => selected.add(item.url)); document.querySelectorAll('.card').forEach(c => c.classList.add('selected')); updateCounts(); }};
 document.getElementById('clearAll').onclick = () => {{ selected.clear(); document.querySelectorAll('.card').forEach(c => c.classList.remove('selected')); updateCounts(); }};

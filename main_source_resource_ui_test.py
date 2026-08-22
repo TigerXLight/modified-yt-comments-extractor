@@ -689,6 +689,17 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'save_file_intake_identity_store' in full_source
     assert '_webpage_image_files_intake_identity_store_path' in full_source
     assert 'browser_grid_webpage_image_persistent_identity' in full_source
+    assert '_webpage_image_file_intake_decisions_for_resources' in full_source
+    assert 'file_intake_status' in browser_grid_source
+    assert 'Added before highlighted' in browser_grid_source
+    assert 'Added before' in full_source
+    assert 'already in FILES' in browser_grid_source
+    assert 'already in FILES before add' in browser_grid_source
+    assert 'intake-badge' in browser_grid_source
+    assert 'variant_count' in full_source
+    assert 'variant_resource_ids' in full_source
+    assert 'variants' in browser_grid_source
+    assert 'card.intake-reused img' in full_source
     assert 'planned_added' in browser_download_source
     assert '.svg' in inspect.getsource(main) and '.ico' in inspect.getsource(main)
     assert "Review selected" in source
