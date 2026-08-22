@@ -477,7 +477,7 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_hover_preview_status_by_id" in source
     assert "_apply_cached_video_hover_preview" in source
     assert "_start_webpage_video_hover_preview_prefetch_for_discovery" in inspect.getsource(App)
-    assert "live hover uses a measured VDH-style ~5.15s 30fps loop with deadline-compensated wrap and protects active hover tiles from late discovery repaints" in inspect.getsource(App)
+    assert "live hover uses fast-start trimmed playback, elapsed-clock frame selection, and repaint-safe instant wrapping" in inspect.getsource(App)
     assert "video_hover_surface_widgets_by_resource_id" in source
     assert "_video_hover_should_protect_repaint" in source
     assert "hover_owns_preview" in source
@@ -485,16 +485,16 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "can_stream_video_tile_hover" in source
     app_source = inspect.getsource(App)
     assert "_step" in app_source and "window.after" in app_source and ("_finish_video_hover_leave_if_outside" in app_source or "video_hover" in app_source)
-    assert "window.after(20, _wait_for_frames)" in inspect.getsource(App)
+    assert "window.after(8, _wait_for_frames)" in inspect.getsource(App)
     assert "poster_url=poster_url" in inspect.getsource(App)
     assert "poster/thumbnail" in app_source
-    assert "duration_seconds=0.65" in inspect.getsource(App)
-    assert "duration_seconds=5.15" in inspect.getsource(App)
-    assert "fps=30" in inspect.getsource(App)
-    assert "max_frames=155" in inspect.getsource(App)
+    assert "duration_seconds=_video_hover_seed_duration_seconds()" in inspect.getsource(App)
+    assert "duration_seconds=_video_hover_loop_duration_seconds()" in inspect.getsource(App)
+    assert "fps=_video_hover_target_fps()" in inspect.getsource(App)
+    assert "max_frames=138" in inspect.getsource(App)
     app_source = inspect.getsource(App)
     assert "_step" in app_source and "window.after" in app_source and ("_finish_video_hover_leave_if_outside" in app_source or "video_hover" in app_source)
-    assert "window.after(20, _wait_for_frames)" in inspect.getsource(App)
+    assert "window.after(8, _wait_for_frames)" in inspect.getsource(App)
     assert "V78N fast first-paint" in source
     assert "video_static_first_followup_pending" in source
     assert "Quick-scanning static video/audio candidates" in source
@@ -537,21 +537,33 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "V78S: a static-first dialog pass may put the quick 3-candidate" in source
     assert "cached_count > current_count or not prefetch_inflight" in source
     assert "V79B: keep animation state keyed by the visible tile" in source
-    assert "V79E: every fresh hover/replay starts from frame 0" in source
+    # V79K: V79J intentionally no longer promises a fresh frame-0 replay.
+    # The frame is selected from the elapsed hover clock so seed-to-long-loop
+    # replacement and loop wrap stay visually continuous instead of restarting.
+    assert "V79J: fresh hover starts its clock immediately" in source
+    assert "video_hover_animation_started_at_by_resource_id" in source
+    assert "elapsed_frame = int(elapsed_seconds / frame_interval_seconds)" in source
+    assert "index_value = elapsed_frame % frame_count" in source
+    assert "video_hover_animation_index_by_resource_id[resource_id] = 0" in source
     assert "V79F: once the user has expressed hover intent" in source
     assert "video_hover_stop_after_id_by_resource_id" in source
     assert "_apply_cached_video_hover_preview(item)" in source
     assert "window.after(70, _stop_if_outside)" in source
-    assert "V79H: deadline-compensated 30fps cadence" in source
-    assert "frame_interval_seconds = 1.0 / 30.0" in source
-    assert "next_frame_deadline = time.perf_counter()" in source
-    assert "next_index = (index_value + 1) % len(current_frames)" in source
-    assert "missed_frames = int((now - next_frame_deadline) // frame_interval_seconds) + 1" in source
+    assert "V79J: fresh hover starts its clock immediately" in source
+    assert "frame_interval_seconds = 1.0 / float(_video_hover_target_fps())" in source
+    assert "next_frame_deadline = started_at" in source
+    assert "index_value = elapsed_frame % frame_count" in source
+    assert "while next_frame_deadline <= now:" in source
     assert "window.after(delay_ms, _step)" in source
     assert "window.after(40, _step)" not in source
     assert "window.after(1 if loop_wrap else 50, _step)" not in source
     assert "_apply_cached_video_hover_preview(current_item)" in source
     assert "video_hover_active_resource_ids" in source
+    assert "video_hover_animation_started_at_by_resource_id" in source
+    assert "_video_hover_fast_seek_seconds" in source
+    assert "seek_seconds=_video_hover_fast_seek_seconds()" in source
+    assert "_video_hover_cache_key_for_url" in source
+    assert "elapsed_frame = int(elapsed_seconds / frame_interval_seconds)" in source
     assert "video_hover_repaint_deferred" in source
     assert "_schedule_video_hover_deferred_repaint" in source
     assert "loop_wrap = next_index >= len(current_frames)" not in source
