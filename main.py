@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import html
+import http.server
 import os
 import re
 import sys
@@ -17,12 +18,14 @@ import array
 import csv
 import concurrent.futures
 import json
+import socketserver
 import subprocess
 import random
 import shutil
 import threading
 import time
 import urllib.parse
+import uuid
 import urllib.request
 import webbrowser
 from dataclasses import dataclass, replace
@@ -33,7 +36,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import customtkinter as ctk
 import tkinter as tk
-from PIL import Image, ImageTk, ImageDraw
+from PIL import Image, ImageTk, ImageDraw, ImageFile
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 from core.constants import (
     APP_NAME,
@@ -231,7 +236,7 @@ SESSION_FILE_KIND_OTHER = "other"
 TRANSCRIPT_FILE_EXTENSIONS = {".srt", ".vtt", ".txt"}
 AUDIO_FILE_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 VIDEO_FILE_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
-IMAGE_FILE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
+IMAGE_FILE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".svg", ".ico"}
 
 
 @dataclass(frozen=True)
@@ -8952,7 +8957,7 @@ class App(ctk.CTk):
                     fg_color=COLORS["accent_secondary"],
                     hover_color=COLORS["border"],
                 )
-                images_button.tooltip_text = "Images and GIFs"
+                images_button.tooltip_text = "Images and GIFs - browser-native window"
                 images_button.grid(row=0, column=next_action_column, padx=(0, 6), sticky="n")
                 next_action_column += 1
 
@@ -9564,9 +9569,988 @@ class App(ctk.CTk):
                 missing_ids.append(resource_id)
         return tuple(cached_paths), tuple(missing_ids)
 
-    def _open_source_resource_window(self, row_id: str, resource_kind: str) -> None:
+    def _source_image_open_url_for_browser_grid(self, item: Any) -> str:
+        return str(
+            getattr(item, "reference_url", "")
+            or getattr(item, "canonical_url", "")
+            or getattr(item, "thumbnail_reference", "")
+            or ""
+        ).strip()
+
+    def _source_image_browser_grid_cards(self, resources: Sequence[Any]) -> tuple[dict[str, Any], ...]:
+        cards: list[dict[str, Any]] = []
+        for index, item in enumerate(tuple(resources or ()), start=1):
+            image_url = self._source_image_open_url_for_browser_grid(item)
+            if not image_url:
+                continue
+            cards.append(
+                {
+                    "index": index,
+                    "resource_id": str(getattr(item, "resource_id", "") or f"image-{index}"),
+                    "url": image_url,
+                    "name": str(getattr(item, "display_name", "") or getattr(item, "resource_id", "") or image_url),
+                    "extension": str(getattr(item, "extension", "") or getattr(item, "media_type", "") or "image"),
+                    "width": int(getattr(item, "width", 0) or 0),
+                    "height": int(getattr(item, "height", 0) or 0),
+                    "from_link": bool(getattr(item, "from_link", False)),
+                    "provenance": str(getattr(item, "provenance", "") or ""),
+                }
+            )
+        return tuple(cards)
+
+    def _download_webpage_image_resource_ids_to_files(self, row_id: str, selected_resource_ids: Sequence[str]) -> None:
         row = self._source_row_by_id(row_id)
         if row is None:
+            self.log_message("Webpage image FILES intake failed: source row no longer exists.", "warning")
+            return
+        selected_ids = tuple(dict.fromkeys(str(resource_id or "") for resource_id in selected_resource_ids if str(resource_id or "")))
+        if not selected_ids:
+            self.log_message("No browser-grid images were selected for FILES intake.", "muted")
+            return
+        state = resource_dialog_state_for_row(row, RESOURCE_KIND_IMAGE)
+        available_ids = {str(getattr(item, "resource_id", "") or "") for item in getattr(state, "resources", ()) or ()}
+        selected_ids = tuple(resource_id for resource_id in selected_ids if resource_id in available_ids)
+        if not selected_ids:
+            self.log_message("Browser-grid FILES intake found no matching image candidates in the current row.", "warning")
+            return
+        self.source_resource_selections[row.row_id] = selected_ids
+        selected_state = state.__class__(
+            source_row_id=state.source_row_id,
+            resource_kind=state.resource_kind,
+            resources=state.resources,
+            selected_resource_ids=selected_ids,
+            committed_resource_ids=state.committed_resource_ids,
+        )
+        cached_files, missing_resource_ids = self._cached_webpage_image_session_paths(
+            row=row,
+            selected_resource_ids=selected_state.selected_resource_ids,
+        )
+        result = None
+        if missing_resource_ids:
+            missing_state = state.__class__(
+                source_row_id=state.source_row_id,
+                resource_kind=state.resource_kind,
+                resources=state.resources,
+                selected_resource_ids=missing_resource_ids,
+                committed_resource_ids=state.committed_resource_ids,
+            )
+            result = download_selected_webpage_images(
+                row=row,
+                state=missing_state,
+                output_dir=self._webpage_image_session_download_root(),
+                filters=MediaResourceFilterState(
+                    url_filter="",
+                    text_filter="",
+                    min_width=0,
+                    min_height=0,
+                    only_linked_resources=False,
+                    save_to_subfolder=True,
+                    rename_files=True,
+                ),
+            )
+            self._remember_webpage_image_session_downloads(
+                row=row,
+                selected_resource_ids=missing_resource_ids,
+                downloaded_files=tuple(result.downloaded_files),
+                manifest_json=result.manifest_json,
+            )
+        downloaded_files = tuple(result.downloaded_files) if result is not None else ()
+        files_for_intake = tuple(cached_files) + downloaded_files
+        if files_for_intake:
+            intake_result = self._intake_session_files(
+                files_for_intake,
+                select_first=False,
+                source_label="browser-grid webpage image",
+            )
+            try:
+                self._refresh_session_files_list()
+                self._refresh_export_entry_state()
+                self.update_idletasks()
+            except Exception:
+                logger.debug("Could not refresh FILES after browser-grid webpage image download.", exc_info=True)
+            added_count = len(getattr(intake_result, "added_paths", ()) or ())
+            duplicate_count = len(getattr(intake_result, "duplicate_paths", ()) or ())
+            visible_count = len(getattr(self, "session_files", ()) or ())
+            self.log_message(
+                (
+                    "Browser-grid webpage image FILES refresh: "
+                    f"visible_entries={visible_count}; added={added_count}; duplicates={duplicate_count}; "
+                    f"reused={len(cached_files)}."
+                ),
+                "success" if added_count or duplicate_count else "muted",
+            )
+        newly_downloaded = result.resources_downloaded if result is not None else 0
+        failed_count = result.resources_failed if result is not None else 0
+        self.log_message(
+            (
+                f"Browser-grid webpage image download: selected={len(selected_state.selected_resource_ids)}; "
+                f"new_downloads={newly_downloaded}; reused={len(cached_files)}; failed={failed_count}; "
+                f"session_temp={self._webpage_image_session_download_root()}; "
+                f"manifest={(result.manifest_json if result is not None else 'cached session files') or 'not written'}"
+            ),
+            "success" if newly_downloaded or cached_files else "warning",
+        )
+
+
+    def _open_source_image_canvas_grid_window(self, row_id: str) -> None:
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            return
+        if row.adapter_id in {"youtube", "twitter_x"}:
+            self._open_source_resource_window(row_id, RESOURCE_KIND_IMAGE, force_tk_image_window=True)
+            return
+        cache_key = self._webpage_image_prefetch_cache_key(row)
+        cache = self.__dict__.setdefault("webpage_image_discovery_cache_by_url", {})
+        cached_discovery = cache.get(cache_key) if cache_key else None
+        if cached_discovery is not None and getattr(cached_discovery, "resources", ()):
+            row = replace(row, image_resources=tuple(cached_discovery.resources))
+            updated_rows: list[SourceResourceRowState] = []
+            for existing_row in self.__dict__.get("source_resource_rows", ()):
+                updated_rows.append(row if existing_row.row_id == row.row_id else existing_row)
+            if updated_rows:
+                self.source_resource_rows = updated_rows
+        state = resource_dialog_state_for_row(row, RESOURCE_KIND_IMAGE)
+        resources = tuple(getattr(state, "resources", ()) or ())
+        if resources:
+            self._open_source_image_canvas_grid_for_resources(row, resources)
+            return
+        self.log_message("Image window waiting for webpage image discovery; it will open when candidates are ready.", "muted")
+
+        def _worker(row_snapshot: SourceResourceRowState) -> None:
+            try:
+                discovery = discover_webpage_images_for_row(row_snapshot)
+            except Exception as error:
+                self.after(0, lambda err=error: self.log_message(f"Image window discovery failed: {err}", "warning"))
+                return
+
+            def _apply_and_open() -> None:
+                cache_key_inner = self._webpage_image_prefetch_cache_key(row_snapshot)
+                if cache_key_inner:
+                    cache_inner = self.__dict__.setdefault("webpage_image_discovery_cache_by_url", {})
+                    cache_inner[cache_key_inner] = discovery
+                    while len(cache_inner) > 24:
+                        try:
+                            cache_inner.pop(next(iter(cache_inner)))
+                        except Exception:
+                            break
+                fresh_row = replace(row_snapshot, image_resources=tuple(getattr(discovery, "resources", ()) or ()))
+                updated_rows: list[SourceResourceRowState] = []
+                for existing_row in self.__dict__.get("source_resource_rows", ()):
+                    updated_rows.append(fresh_row if existing_row.row_id == fresh_row.row_id else existing_row)
+                if updated_rows:
+                    self.source_resource_rows = updated_rows
+                    try:
+                        self._refresh_source_resource_rows()
+                    except Exception:
+                        logger.debug("Could not refresh source rows after canvas image discovery.", exc_info=True)
+                if getattr(discovery, "resources", ()):
+                    self._open_source_image_canvas_grid_for_resources(fresh_row, tuple(discovery.resources))
+                else:
+                    warning_text = "; ".join(getattr(discovery, "warnings", ()) or ()) or "No image candidates were found."
+                    self.log_message(f"Image window found no selectable images for {row_snapshot.domain}: {warning_text}", "warning")
+
+            self.after(0, _apply_and_open)
+
+        threading.Thread(target=_worker, args=(row,), daemon=True).start()
+
+    def _open_source_image_canvas_grid_for_resources(self, row: SourceResourceRowState, resources: Sequence[Any]) -> None:
+        # V80B: keep Images inside the Python/Tk taskbar group, but restore the browser-grid interaction model.
+        # The window draws all ordered candidates on one canvas, shows hover-only Open/Add actions, and progressively fills thumbnails.
+        cards = tuple(self._source_image_browser_grid_cards(resources))
+        if not cards:
+            self.log_message("Image window found no usable image URLs for this row.", "warning")
+            return
+        row_id = str(getattr(row, "row_id", "") or "")
+        page_title = f"Images - {getattr(row, 'domain', '') or 'webpage'}"
+        source_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "")
+        selected_ids: set[str] = set()
+        photo_images_by_id: dict[str, Any] = {}
+        failed_thumbnail_ids: set[str] = set()
+        loading_thumbnail_ids: set[str] = set()
+        hover_index: int | None = None
+        redraw_after_id: Any = None
+        closed = False
+
+        window = ctk.CTkToplevel(self)
+        window.title(page_title)
+        window.geometry("1460x900")
+        try:
+            window.minsize(1100, 700)
+            window.transient(self)
+            window.focus_set()
+        except Exception:
+            pass
+
+        canvas_window_bg = COLORS.get("bg_dark", COLORS.get("bg_card", "#111827"))
+        canvas_panel_bg = COLORS.get("bg_card", canvas_window_bg)
+        canvas_input_bg = COLORS.get("bg_input", canvas_panel_bg)
+        selected_outline = COLORS.get("accent", "#38bdf8")
+
+        top = ctk.CTkFrame(window, fg_color=canvas_panel_bg)
+        top.pack(fill="x", padx=10, pady=(10, 6))
+        title_label = ctk.CTkLabel(
+            top,
+            text=f"{page_title}\n{len(cards)} ordered image candidate(s) — hover a tile for Open/Add, select tiles, then Add selected to FILES",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS["text_primary"],
+            justify="left",
+        )
+        title_label.pack(side="left", padx=10, pady=8)
+        count_var = tk.StringVar(value=f"0 selected · {len(cards)} images")
+        count_label = ctk.CTkLabel(top, textvariable=count_var, text_color=COLORS["text_secondary"])
+        count_label.pack(side="right", padx=8, pady=8)
+
+        controls = ctk.CTkFrame(window, fg_color="transparent")
+        controls.pack(fill="x", padx=10, pady=(0, 6))
+        canvas_frame = ctk.CTkFrame(window, fg_color=canvas_window_bg)
+        canvas_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        canvas = tk.Canvas(canvas_frame, background=canvas_window_bg, borderwidth=0, highlightthickness=0)
+        scrollbar = tk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Smaller cards make the in-app canvas closer to the Image Downloader browser grid and show more candidates at once.
+        tile_w = 152
+        tile_h = 188
+        gap = 8
+        image_h = 106
+
+        def _safe_window_exists() -> bool:
+            try:
+                return bool(window.winfo_exists()) and not closed
+            except Exception:
+                return False
+
+        def _card_extension_text(card: dict[str, Any]) -> str:
+            ext = str(card.get("extension") or "image").strip().lower()
+            if ext.startswith("."):
+                ext = ext[1:]
+            return (ext or "img")[:6].upper()
+
+        def _card_title(card: dict[str, Any]) -> str:
+            name = str(card.get("name") or card.get("url") or "image")
+            return name if len(name) <= 32 else name[:29] + "…"
+
+        def _layout_columns() -> int:
+            try:
+                width = max(1, int(canvas.winfo_width()))
+            except Exception:
+                width = 1200
+            return max(1, int((width + gap) // (tile_w + gap)))
+
+        def _tile_rect(index: int) -> tuple[int, int, int, int]:
+            columns = _layout_columns()
+            row_number = index // columns
+            col_number = index % columns
+            x0 = gap + col_number * (tile_w + gap)
+            y0 = gap + row_number * (tile_h + gap)
+            return x0, y0, x0 + tile_w, y0 + tile_h
+
+        def _update_count() -> None:
+            count_var.set(f"{len(selected_ids)} selected · {len(cards)} images")
+
+        def _schedule_canvas_redraw(delay_ms: int = 25) -> None:
+            nonlocal redraw_after_id
+            if not _safe_window_exists() or redraw_after_id is not None:
+                return
+            def _redraw() -> None:
+                nonlocal redraw_after_id
+                redraw_after_id = None
+                _draw_canvas()
+            try:
+                redraw_after_id = window.after(delay_ms, _redraw)
+            except Exception:
+                redraw_after_id = None
+
+        def _draw_badge(x: int, y: int, text: str, *, fill: str = "#07111c", outline: str = "#26313d") -> None:
+            bbox_pad_x = 6
+            bbox_pad_y = 3
+            approx_w = max(18, len(text) * 6 + bbox_pad_x * 2)
+            canvas.create_rectangle(x, y, x + approx_w, y + 18, fill=fill, outline=outline, width=1)
+            canvas.create_text(x + bbox_pad_x, y + 9, text=text, anchor="w", fill="#e5f3ff", font=("Segoe UI", 8, "bold"))
+
+        def _draw_canvas() -> None:
+            if not _safe_window_exists():
+                return
+            try:
+                canvas.delete("all")
+            except Exception:
+                return
+            columns = _layout_columns()
+            for index, card in enumerate(cards):
+                x0, y0, x1, y1 = _tile_rect(index)
+                resource_id = str(card.get("resource_id") or "")
+                selected = resource_id in selected_ids
+                hovered = index == hover_index
+                outline = selected_outline if selected else ("#4e6378" if hovered else "#344250")
+                fill = "#123246" if selected else ("#1c2b37" if hovered else "#17202a")
+                canvas.create_rectangle(x0, y0, x1, y1, fill=fill, outline=outline, width=2 if selected or hovered else 1)
+                canvas.create_rectangle(x0 + 7, y0 + 7, x1 - 7, y0 + 7 + image_h, fill=canvas_input_bg, outline="#26313d")
+                photo = photo_images_by_id.get(resource_id)
+                if photo is not None:
+                    canvas.create_image((x0 + x1) // 2, y0 + 10 + image_h // 2, image=photo, anchor="center")
+                else:
+                    placeholder = _card_extension_text(card)
+                    if resource_id in loading_thumbnail_ids:
+                        placeholder = "…"
+                    elif resource_id in failed_thumbnail_ids:
+                        placeholder = _card_extension_text(card)
+                    canvas.create_text((x0 + x1) // 2, y0 + 7 + image_h // 2, text=placeholder, fill="#7dd3fc", font=("Segoe UI", 22, "bold"))
+                ext_badge = _card_extension_text(card).lower()
+                _draw_badge(x0 + 9, y0 + image_h + 18, ext_badge)
+                canvas.create_text(x1 - 10, y0 + image_h + 27, text="#" + str(int(card.get("index") or index + 1)), anchor="e", fill="#e5f3ff", font=("Segoe UI", 8, "bold"))
+                dimension = ""
+                width = int(card.get("width") or 0)
+                height = int(card.get("height") or 0)
+                if width and height:
+                    dimension = f"{width}×{height}"
+                elif bool(card.get("from_link")):
+                    dimension = "linked"
+                if dimension:
+                    canvas.create_text(x0 + 9, y0 + image_h + 48, text=dimension, anchor="w", fill="#93a4b7", font=("Segoe UI", 8))
+                canvas.create_text(x0 + 9, y0 + image_h + 65, text=_card_title(card), anchor="nw", fill="#dbe8f3", font=("Segoe UI", 8), width=tile_w - 18)
+
+                if selected or hovered:
+                    # Hover-only actions restore the browser-grid behaviour without permanently cluttering every tile.
+                    check_fill = "#e5f3ff" if selected else "#101b25"
+                    canvas.create_rectangle(x0 + 8, y0 + 8, x0 + 28, y0 + 28, fill=check_fill, outline=selected_outline, width=2)
+                    if selected:
+                        canvas.create_text(x0 + 18, y0 + 18, text="✓", fill="#0f172a", font=("Segoe UI", 12, "bold"))
+                    if hovered:
+                        canvas.create_rectangle(x1 - 92, y0 + 8, x1 - 50, y0 + 29, fill="#07111c", outline="#7dd3fc", width=1)
+                        canvas.create_text(x1 - 71, y0 + 18, text="Open", fill="#e5f3ff", font=("Segoe UI", 8, "bold"))
+                        canvas.create_rectangle(x1 - 47, y0 + 8, x1 - 8, y0 + 29, fill="#07111c", outline="#7dd3fc", width=1)
+                        canvas.create_text(x1 - 27, y0 + 18, text="Add", fill="#e5f3ff", font=("Segoe UI", 8, "bold"))
+            rows = (len(cards) + columns - 1) // columns
+            canvas.configure(scrollregion=(0, 0, columns * (tile_w + gap) + gap, rows * (tile_h + gap) + gap))
+            _update_count()
+
+        def _hit_card_action(event: Any) -> tuple[int | None, str]:
+            try:
+                x = int(canvas.canvasx(event.x))
+                y = int(canvas.canvasy(event.y))
+            except Exception:
+                return None, ""
+            columns = _layout_columns()
+            col = int((x - gap) // (tile_w + gap))
+            row_number = int((y - gap) // (tile_h + gap))
+            if col < 0 or row_number < 0 or col >= columns:
+                return None, ""
+            index = row_number * columns + col
+            if index < 0 or index >= len(cards):
+                return None, ""
+            x0, y0, x1, y1 = _tile_rect(index)
+            if x < x0 or x > x1 or y < y0 or y > y1:
+                return None, ""
+            if y0 + 8 <= y <= y0 + 29:
+                if x0 + 8 <= x <= x0 + 28:
+                    return index, "toggle"
+                if x1 - 92 <= x <= x1 - 50:
+                    return index, "open"
+                if x1 - 47 <= x <= x1 - 8:
+                    return index, "add"
+            return index, "toggle"
+
+        def _open_card(index: int) -> None:
+            url = str(cards[index].get("url") or "")
+            if url:
+                try:
+                    webbrowser.open_new_tab(url)
+                except Exception:
+                    logger.debug("Could not open image URL from canvas grid.", exc_info=True)
+
+        def _add_card_to_files(index: int) -> None:
+            resource_id = str(cards[index].get("resource_id") or "")
+            if not resource_id:
+                return
+            self._download_webpage_image_resource_ids_to_files(row_id, (resource_id,))
+
+        def _toggle_index(index: int) -> None:
+            resource_id = str(cards[index].get("resource_id") or "")
+            if not resource_id:
+                return
+            if resource_id in selected_ids:
+                selected_ids.discard(resource_id)
+            else:
+                selected_ids.add(resource_id)
+
+        def _click_canvas(event: Any) -> str:
+            index, action = _hit_card_action(event)
+            if index is None:
+                return "break"
+            if action == "open":
+                _open_card(index)
+            elif action == "add":
+                _add_card_to_files(index)
+            else:
+                _toggle_index(index)
+            _draw_canvas()
+            return "break"
+
+        def _double_click_canvas(event: Any) -> str:
+            index, _action = _hit_card_action(event)
+            if index is not None:
+                _open_card(index)
+            return "break"
+
+        def _motion_canvas(event: Any) -> str:
+            nonlocal hover_index
+            index, action = _hit_card_action(event)
+            if index != hover_index:
+                hover_index = index
+                _schedule_canvas_redraw(delay_ms=10)
+            try:
+                canvas.configure(cursor="hand2" if index is not None else "")
+            except Exception:
+                pass
+            return ""
+
+        def _leave_canvas(_event: Any) -> str:
+            nonlocal hover_index
+            if hover_index is not None:
+                hover_index = None
+                _schedule_canvas_redraw(delay_ms=10)
+            return ""
+
+        def _select_all() -> None:
+            selected_ids.update(str(card.get("resource_id") or "") for card in cards if str(card.get("resource_id") or ""))
+            _draw_canvas()
+
+        def _clear_selection() -> None:
+            selected_ids.clear()
+            _draw_canvas()
+
+        def _add_selected_to_files() -> None:
+            if not selected_ids:
+                self.log_message("No image-window tiles were selected for FILES intake.", "muted")
+                return
+            self._download_webpage_image_resource_ids_to_files(row_id, tuple(selected_ids))
+
+        def _open_external_browser_grid() -> None:
+            self._open_source_image_browser_grid_for_resources(row, resources)
+
+        ctk.CTkButton(controls, text="Add selected to FILES", command=_add_selected_to_files).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(controls, text="Select all", width=96, command=_select_all).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(controls, text="Clear", width=80, command=_clear_selection).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(controls, text="Open browser view", command=_open_external_browser_grid).pack(side="right", padx=(8, 0))
+        if source_url:
+            ctk.CTkLabel(controls, text=source_url, text_color=COLORS["text_secondary"]).pack(side="right", padx=(8, 8))
+
+        def _load_thumbnail_pil(card: dict[str, Any]) -> tuple[str, Any | None]:
+            resource_id = str(card.get("resource_id") or "")
+            url = str(card.get("url") or "")
+            extension = str(card.get("extension") or "").lower()
+            if not resource_id or not url:
+                return resource_id, None
+            try:
+                request = urllib.request.Request(
+                    url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 YTCE image preview",
+                        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                        "Referer": source_url or url,
+                    },
+                )
+                with urllib.request.urlopen(request, timeout=2.5) as response:
+                    payload = response.read(2 * 1024 * 1024)
+                    content_type = str(response.headers.get("Content-Type") or "").lower()
+                if extension in {".svg", "svg"} or "svg" in content_type or url.lower().split("?", 1)[0].endswith(".svg"):
+                    try:
+                        import cairosvg  # type: ignore
+                        png_bytes = cairosvg.svg2png(bytestring=payload, output_width=tile_w - 22, output_height=image_h - 10)
+                        image = Image.open(BytesIO(png_bytes)).convert("RGBA")
+                    except Exception:
+                        return resource_id, None
+                else:
+                    image = Image.open(BytesIO(payload)).convert("RGBA")
+                image.thumbnail((tile_w - 22, image_h - 10), Image.LANCZOS)
+                return resource_id, image.copy()
+            except Exception:
+                return resource_id, None
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+
+        def _apply_thumbnail(resource_id: str, preview_image: Any | None) -> None:
+            if not _safe_window_exists() or not resource_id:
+                return
+            loading_thumbnail_ids.discard(resource_id)
+            if preview_image is None:
+                failed_thumbnail_ids.add(resource_id)
+            else:
+                try:
+                    photo_images_by_id[resource_id] = ImageTk.PhotoImage(preview_image)
+                    failed_thumbnail_ids.discard(resource_id)
+                except Exception:
+                    failed_thumbnail_ids.add(resource_id)
+            _schedule_canvas_redraw(delay_ms=60)
+
+        def _future_done(future: Any) -> None:
+            try:
+                resource_id, preview_image = future.result()
+            except Exception:
+                return
+            try:
+                self.after(0, lambda rid=resource_id, img=preview_image: _apply_thumbnail(rid, img))
+            except Exception:
+                pass
+
+        for card in cards:
+            resource_id = str(card.get("resource_id") or "")
+            if not resource_id:
+                continue
+            loading_thumbnail_ids.add(resource_id)
+            try:
+                future = executor.submit(_load_thumbnail_pil, card)
+                future.add_done_callback(_future_done)
+            except Exception:
+                loading_thumbnail_ids.discard(resource_id)
+                failed_thumbnail_ids.add(resource_id)
+
+        def _mousewheel(event: Any) -> str:
+            try:
+                delta = int(getattr(event, "delta", 0) or 0)
+                if delta:
+                    canvas.yview_scroll(int(-1 * (delta / 120)), "units")
+            except Exception:
+                pass
+            return "break"
+
+        def _close() -> None:
+            nonlocal closed
+            closed = True
+            try:
+                executor.shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                executor.shutdown(wait=False)
+            except Exception:
+                pass
+            try:
+                window.destroy()
+            except Exception:
+                pass
+
+        canvas.bind("<Button-1>", _click_canvas, add="+")
+        canvas.bind("<Double-Button-1>", _double_click_canvas, add="+")
+        canvas.bind("<Motion>", _motion_canvas, add="+")
+        canvas.bind("<Leave>", _leave_canvas, add="+")
+        canvas.bind("<MouseWheel>", _mousewheel, add="+")
+        canvas.bind("<Configure>", lambda _event: _schedule_canvas_redraw(delay_ms=40), add="+")
+        window.protocol("WM_DELETE_WINDOW", _close)
+        _draw_canvas()
+        self.log_message(
+            (
+                f"Opened in-app image window with {len(cards)} image candidate(s); "
+                "Canvas grid stays under the Python app taskbar icon; hover-only Open/Add actions restore browser-grid controls; "
+                "Add selected to FILES posts back to the app; external browser view remains optional."
+            ),
+            "success",
+        )
+
+    def _open_source_image_browser_grid_window(self, row_id: str) -> None:
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            return
+        if row.adapter_id in {"youtube", "twitter_x"}:
+            self._open_source_resource_window(row_id, RESOURCE_KIND_IMAGE, force_tk_image_window=True)
+            return
+        cache_key = self._webpage_image_prefetch_cache_key(row)
+        cache = self.__dict__.setdefault("webpage_image_discovery_cache_by_url", {})
+        cached_discovery = cache.get(cache_key) if cache_key else None
+        if cached_discovery is not None and getattr(cached_discovery, "resources", ()):  # use already-prefetched list instantly
+            row = replace(row, image_resources=tuple(cached_discovery.resources))
+            updated_rows: list[SourceResourceRowState] = []
+            for existing_row in self.__dict__.get("source_resource_rows", ()):  # keep FILES intake state in sync
+                updated_rows.append(row if existing_row.row_id == row.row_id else existing_row)
+            if updated_rows:
+                self.source_resource_rows = updated_rows
+        state = resource_dialog_state_for_row(row, RESOURCE_KIND_IMAGE)
+        resources = tuple(getattr(state, "resources", ()) or ())
+        if resources:
+            self._open_source_image_browser_grid_for_resources(row, resources)
+            return
+        self.log_message("Image browser grid waiting for webpage image discovery; it will open when candidates are ready.", "muted")
+
+        def _worker(row_snapshot: SourceResourceRowState) -> None:
+            try:
+                discovery = discover_webpage_images_for_row(row_snapshot)
+            except Exception as error:
+                self.after(0, lambda err=error: self.log_message(f"Image browser grid discovery failed: {err}", "warning"))
+                return
+            def _apply_and_open() -> None:
+                cache_key_inner = self._webpage_image_prefetch_cache_key(row_snapshot)
+                if cache_key_inner:
+                    cache_inner = self.__dict__.setdefault("webpage_image_discovery_cache_by_url", {})
+                    cache_inner[cache_key_inner] = discovery
+                    while len(cache_inner) > 24:
+                        try:
+                            cache_inner.pop(next(iter(cache_inner)))
+                        except Exception:
+                            break
+                fresh_row = replace(row_snapshot, image_resources=tuple(getattr(discovery, "resources", ()) or ()))
+                updated_rows: list[SourceResourceRowState] = []
+                for existing_row in self.__dict__.get("source_resource_rows", ()):
+                    updated_rows.append(fresh_row if existing_row.row_id == fresh_row.row_id else existing_row)
+                if updated_rows:
+                    self.source_resource_rows = updated_rows
+                    try:
+                        self._refresh_source_resource_rows()
+                    except Exception:
+                        logger.debug("Could not refresh source rows after browser-grid image discovery.", exc_info=True)
+                if getattr(discovery, "resources", ()):  # discovery-only path, then open browser-native grid
+                    self._open_source_image_browser_grid_for_resources(fresh_row, tuple(discovery.resources))
+                else:
+                    warning_text = "; ".join(getattr(discovery, "warnings", ()) or ()) or "No image candidates were found."
+                    self.log_message(f"Image browser grid found no selectable images for {row_snapshot.domain}: {warning_text}", "warning")
+            self.after(0, _apply_and_open)
+
+        threading.Thread(target=_worker, args=(row,), daemon=True).start()
+
+    def _open_source_image_browser_grid_for_resources(self, row: SourceResourceRowState, resources: Sequence[Any]) -> None:
+        cards = self._source_image_browser_grid_cards(resources)
+        if not cards:
+            self.log_message("Browser-native image grid found no usable image URLs for this row.", "warning")
+            return
+        token = uuid.uuid4().hex
+        row_id = str(getattr(row, "row_id", "") or "")
+        page_title = f"Images - {getattr(row, 'domain', '') or 'webpage'}"
+        source_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "")
+        cards_json = json.dumps(cards, ensure_ascii=False).replace("</", "<\\/")
+        app = self
+
+        class _BrowserGridHandler(http.server.BaseHTTPRequestHandler):
+            server_version = "YTCEImageGrid/1.0"
+
+            def log_message(self, format: str, *args: Any) -> None:  # keep the console quiet
+                return
+
+            def _send_bytes(self, status: int, body: bytes, content_type: str) -> None:
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self) -> None:
+                parsed = urllib.parse.urlsplit(self.path)
+                if parsed.path not in {"/", "/index.html"}:
+                    self._send_bytes(404, b"Not found", "text/plain; charset=utf-8")
+                    return
+                query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+                if query.get("token") != token:
+                    self._send_bytes(403, b"Forbidden", "text/plain; charset=utf-8")
+                    return
+                self._send_bytes(200, html_doc.encode("utf-8"), "text/html; charset=utf-8")
+
+            def do_POST(self) -> None:
+                parsed = urllib.parse.urlsplit(self.path)
+                if parsed.path != "/download-selected":
+                    self._send_bytes(404, b"Not found", "application/json; charset=utf-8")
+                    return
+                query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+                if query.get("token") != token:
+                    self._send_bytes(403, b'{"ok":false,"error":"forbidden"}', "application/json; charset=utf-8")
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0") or "0")
+                    payload = json.loads(self.rfile.read(min(length, 1024 * 1024)).decode("utf-8"))
+                    ids = tuple(str(value or "") for value in payload.get("ids", []) if str(value or ""))
+                except Exception as error:
+                    self._send_bytes(400, json.dumps({"ok": False, "error": str(error)}).encode("utf-8"), "application/json; charset=utf-8")
+                    return
+                app.after(0, lambda selected_ids=ids: app._download_webpage_image_resource_ids_to_files(row_id, selected_ids))
+                self._send_bytes(200, json.dumps({"ok": True, "queued": len(ids)}).encode("utf-8"), "application/json; charset=utf-8")
+
+        html_doc = f'''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(page_title)}</title>
+<style>
+:root {{ color-scheme: dark; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background:#0f1419; color:#e8eef2; }}
+* {{ box-sizing:border-box; }}
+body {{ margin:0; background:#0f1419; }}
+header {{ position:sticky; top:0; z-index:2; display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; padding:.55rem .7rem; background:#151b22f2; border-bottom:1px solid #29323b; backdrop-filter: blur(8px); }}
+button {{ border:1px solid #40505f; border-radius:999px; background:#1f2933; color:#e8eef2; padding:.35rem .7rem; cursor:pointer; }}
+button:hover {{ background:#2a3642; }}
+button.primary {{ background:#075985; border-color:#38bdf8; }}
+.meta {{ color:#aab7c3; font-size:.82rem; }}
+.grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(168px, 1fr)); gap:.55rem; padding:.6rem; }}
+.card {{ position:relative; min-height:186px; display:flex; align-items:center; justify-content:center; overflow:hidden; border:1px solid #2e3a44; border-radius:14px; background:conic-gradient(#1d2730 90deg,#26333d 90deg 180deg,#1d2730 180deg 270deg,#26333d 270deg); background-size:12px 12px; box-shadow:0 3px 12px #0006; cursor:pointer; }}
+.card.selected {{ border-color:#38bdf8; outline:2px solid #38bdf8; }}
+.card img {{ max-width:100%; max-height:250px; object-fit:contain; display:block; filter:drop-shadow(0 2px 5px #0008); }}
+.check {{ position:absolute; left:.35rem; top:.35rem; width:1.55rem; height:1.55rem; border-radius:.35rem; border:1px solid #9aa8b4; background:#ffffffd8; color:#0f1419; display:none; align-items:center; justify-content:center; font-weight:900; }}
+.card:hover .check, .card.selected .check {{ display:flex; }}
+.card.selected .check {{ background:#0ea5e9; border-color:#38bdf8; color:#fff; }}
+.actions {{ position:absolute; right:.35rem; top:.35rem; display:none; gap:.25rem; }}
+.card:hover .actions {{ display:flex; }}
+.actions a {{ text-decoration:none; background:#111a22d9; border:1px solid #3c4c59; color:#e8eef2; border-radius:.4rem; padding:.22rem .4rem; font-size:.75rem; }}
+.info {{ position:absolute; left:.35rem; right:.35rem; bottom:.35rem; display:flex; gap:.25rem; flex-wrap:wrap; pointer-events:none; }}
+.pill {{ background:#05080bcc; color:#fff; border-radius:.35rem; padding:.1rem .3rem; font-size:.72rem; }}
+.url {{ display:none; position:absolute; left:.35rem; right:.35rem; bottom:.35rem; background:#05080be6; color:#dbeafe; border:1px solid #33485b; border-radius:.35rem; padding:.2rem .35rem; font-size:.7rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+.card:hover .url {{ display:block; }}
+.card:hover .info {{ display:none; }}
+.err {{ color:#fecaca; background:#3b1111d9; border:1px solid #7f1d1d; border-radius:.5rem; padding:.5rem; font-size:.8rem; }}
+#status {{ min-width:18rem; }}
+</style>
+</head>
+<body>
+<header>
+<strong>{html.escape(page_title)}</strong>
+<span class="meta" id="counts">0 selected · {len(cards)} images</span>
+<button id="selectAll">Select all</button>
+<button id="clearAll">Clear all</button>
+<button id="addFiles" class="primary">Add selected to FILES</button>
+<button id="downloadSelected">Browser download selected</button>
+<span class="meta" id="status">Native browser image loading · order preserved</span>
+</header>
+<main class="grid" id="grid"></main>
+<script>
+const images = {cards_json};
+const token = {json.dumps(token)};
+const selected = new Set();
+const grid = document.getElementById('grid');
+const counts = document.getElementById('counts');
+const statusEl = document.getElementById('status');
+function updateCounts() {{ counts.textContent = `${{selected.size}} selected · ${{images.length}} images`; }}
+function setStatus(text) {{ statusEl.textContent = text; }}
+function toggle(card, id) {{ selected.has(id) ? selected.delete(id) : selected.add(id); card.classList.toggle('selected', selected.has(id)); updateCounts(); }}
+function render() {{
+  const frag = document.createDocumentFragment();
+  images.forEach((item) => {{
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.title = item.url;
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.referrerPolicy = 'no-referrer-when-downgrade';
+    img.src = item.url;
+    img.onerror = () => {{ const e = document.createElement('div'); e.className='err'; e.textContent='Error loading image'; img.replaceWith(e); }};
+    const check = document.createElement('div'); check.className='check'; check.textContent='✓';
+    const actions = document.createElement('div'); actions.className='actions';
+    const open = document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open';
+    const down = document.createElement('a'); down.href=item.url; down.download=''; down.textContent='Download';
+    actions.append(open, down);
+    const info = document.createElement('div'); info.className='info';
+    const ext = document.createElement('span'); ext.className='pill'; ext.textContent=item.extension || 'image'; info.append(ext);
+    if (item.width && item.height) {{ const size = document.createElement('span'); size.className='pill'; size.textContent=`${{item.width}}×${{item.height}}`; info.append(size); }}
+    const order = document.createElement('span'); order.className='pill'; order.textContent=`#${{item.index}}`; info.append(order);
+    const url = document.createElement('div'); url.className='url'; url.textContent=item.url;
+    card.append(img, check, actions, info, url);
+    card.addEventListener('click', (event) => {{ if (event.target.closest('a')) return; toggle(card, item.resource_id); }});
+    frag.append(card);
+  }});
+  grid.append(frag); updateCounts();
+}}
+document.getElementById('selectAll').onclick = () => {{ images.forEach(item => selected.add(item.resource_id)); document.querySelectorAll('.card').forEach(c => c.classList.add('selected')); updateCounts(); }};
+document.getElementById('clearAll').onclick = () => {{ selected.clear(); document.querySelectorAll('.card').forEach(c => c.classList.remove('selected')); updateCounts(); }};
+document.getElementById('addFiles').onclick = async () => {{
+  const ids = [...selected];
+  if (!ids.length) {{ setStatus('No images selected.'); return; }}
+  setStatus(`Adding ${{ids.length}} selected image(s) to FILES...`);
+  try {{
+    const response = await fetch(`/download-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids}})}});
+    const payload = await response.json();
+    setStatus(payload.ok ? `Queued ${{payload.queued}} image(s) for FILES intake in the app.` : `FILES intake failed: ${{payload.error || 'unknown error'}}`);
+  }} catch (error) {{ setStatus(`FILES intake failed: ${{error}}`); }}
+}};
+document.getElementById('downloadSelected').onclick = () => {{
+  const ids = new Set([...selected]);
+  images.filter(item => ids.has(item.resource_id)).forEach((item, i) => setTimeout(() => {{ const a=document.createElement('a'); a.href=item.url; a.download=''; document.body.appendChild(a); a.click(); a.remove(); }}, i*120));
+}};
+render();
+</script>
+</body>
+</html>
+'''
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _BrowserGridHandler)
+        servers = self.__dict__.setdefault("source_image_browser_grid_servers", [])
+        servers.append(server)
+        # Keep only a small number of live gallery servers.  Old browser pages can
+        # keep rendering; the newest windows stay functional for FILES callbacks.
+        while len(servers) > 4:
+            old_server = servers.pop(0)
+            try:
+                old_server.shutdown()
+                old_server.server_close()
+            except Exception:
+                pass
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        port = int(server.server_address[1])
+        url = f"http://127.0.0.1:{port}/?token={urllib.parse.quote(token)}"
+        # V80C: use the browser-native renderer for Image Downloader-like speed,
+        # but ask Windows to make the Chromium app window an owned/tool popup of
+        # the Tk root so Edge/Chrome does not remain as a separate taskbar app.
+        opened_in_app_window = False
+        taskbar_owner_requested = False
+        chromium_candidates: list[str] = []
+        explicit_browser = os.environ.get("YTCE_IMAGE_GRID_BROWSER", "").strip()
+        if explicit_browser:
+            chromium_candidates.append(explicit_browser)
+        for executable_name in ("msedge", "msedge.exe", "chrome", "chrome.exe"):
+            found_browser = shutil.which(executable_name)
+            if found_browser:
+                chromium_candidates.append(found_browser)
+        for base_var, relative_path in (
+            ("ProgramFiles", r"Microsoft\Edge\Application\msedge.exe"),
+            ("ProgramFiles(x86)", r"Microsoft\Edge\Application\msedge.exe"),
+            ("LocalAppData", r"Microsoft\Edge\Application\msedge.exe"),
+            ("ProgramFiles", r"Google\Chrome\Application\chrome.exe"),
+            ("ProgramFiles(x86)", r"Google\Chrome\Application\chrome.exe"),
+            ("LocalAppData", r"Google\Chrome\Application\chrome.exe"),
+        ):
+            base_path = os.environ.get(base_var, "").strip()
+            if base_path:
+                chromium_candidates.append(str(Path(base_path) / relative_path))
+        for browser_path in dict.fromkeys(str(candidate) for candidate in chromium_candidates if str(candidate).strip()):
+            try:
+                if not os.path.isfile(browser_path):
+                    continue
+                process = subprocess.Popen(
+                    [
+                        browser_path,
+                        f"--app={url}",
+                        "--new-window",
+                        "--no-first-run",
+                        "--disable-features=Translate",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                opened_in_app_window = True
+                taskbar_owner_requested = True
+                self._own_external_image_grid_window_for_taskbar(
+                    process_id=getattr(process, "pid", None),
+                    title_hint=page_title,
+                )
+                break
+            except Exception:
+                logger.debug("Could not open image grid in Chromium app-window mode.", exc_info=True)
+        if not opened_in_app_window:
+            webbrowser.open_new(url)
+        self.log_message(
+            (
+                f"Opened browser-native image window with {len(cards)} image candidate(s); "
+                "Add selected to FILES posts back to the app"
+                + (
+                    "; opened as a taskbar-owned Chromium app window."
+                    if taskbar_owner_requested
+                    else "; opened in the default browser."
+                )
+            ),
+            "success",
+        )
+
+
+    def _own_external_image_grid_window_for_taskbar(self, *, process_id: int | None, title_hint: str) -> None:
+        """Best-effort Windows taskbar ownership for the Chromium image-grid popup."""
+        if os.name != "nt":
+            return
+        if str(os.environ.get("YTCE_IMAGE_GRID_HIDE_BROWSER_TASKBAR", "1")).strip().lower() in {"0", "false", "no", "off"}:
+            return
+        try:
+            owner_hwnd = int(self.winfo_id())
+        except Exception:
+            owner_hwnd = 0
+        if owner_hwnd <= 0:
+            return
+        title_hint = str(title_hint or "").strip()
+
+        def _worker() -> None:
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                user32 = ctypes.windll.user32
+                GWL_EXSTYLE = -20
+                GWLP_HWNDPARENT = -8
+                WS_EX_APPWINDOW = 0x00040000
+                WS_EX_TOOLWINDOW = 0x00000080
+                SW_HIDE = 0
+                SW_SHOW = 5
+                LONG_PTR = ctypes.c_longlong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_long
+                HWND = wintypes.HWND
+                LPARAM = wintypes.LPARAM
+                BOOL = wintypes.BOOL
+                EnumWindowsProc = ctypes.WINFUNCTYPE(BOOL, HWND, LPARAM)
+                if ctypes.sizeof(ctypes.c_void_p) == 8:
+                    get_window_long_ptr = user32.GetWindowLongPtrW
+                    set_window_long_ptr = user32.SetWindowLongPtrW
+                else:
+                    get_window_long_ptr = user32.GetWindowLongW
+                    set_window_long_ptr = user32.SetWindowLongW
+                get_window_long_ptr.argtypes = [HWND, ctypes.c_int]
+                get_window_long_ptr.restype = LONG_PTR
+                set_window_long_ptr.argtypes = [HWND, ctypes.c_int, LONG_PTR]
+                set_window_long_ptr.restype = LONG_PTR
+
+                def _window_title(hwnd: int) -> str:
+                    buffer = ctypes.create_unicode_buffer(512)
+                    try:
+                        user32.GetWindowTextW(HWND(hwnd), buffer, len(buffer))
+                    except Exception:
+                        return ""
+                    return str(buffer.value or "")
+
+                for _attempt in range(80):
+                    matches: list[int] = []
+
+                    def _enum(hwnd: int, _lparam: int) -> bool:
+                        try:
+                            if int(hwnd) == owner_hwnd or not user32.IsWindowVisible(HWND(hwnd)):
+                                return True
+                            pid = wintypes.DWORD(0)
+                            user32.GetWindowThreadProcessId(HWND(hwnd), ctypes.byref(pid))
+                            title = _window_title(hwnd)
+                            pid_match = bool(process_id and int(pid.value) == int(process_id))
+                            title_match = bool(title_hint and title_hint.lower() in title.lower())
+                            generic_title_match = bool("image grid" in title.lower() and "en.wikipedia" in title.lower())
+                            if pid_match or title_match or generic_title_match:
+                                matches.append(int(hwnd))
+                        except Exception:
+                            pass
+                        return True
+
+                    user32.EnumWindows(EnumWindowsProc(_enum), LPARAM(0))
+                    if matches:
+                        for hwnd in matches[:1]:
+                            try:
+                                user32.ShowWindow(HWND(hwnd), SW_HIDE)
+                                set_window_long_ptr(HWND(hwnd), GWLP_HWNDPARENT, LONG_PTR(owner_hwnd))
+                                style = int(get_window_long_ptr(HWND(hwnd), GWL_EXSTYLE))
+                                style = (style & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW
+                                set_window_long_ptr(HWND(hwnd), GWL_EXSTYLE, LONG_PTR(style))
+                                user32.ShowWindow(HWND(hwnd), SW_SHOW)
+                                try:
+                                    user32.SetForegroundWindow(HWND(hwnd))
+                                except Exception:
+                                    pass
+                            except Exception:
+                                logger.debug("Could not make browser image grid an owned taskbar popup.", exc_info=True)
+                        return
+                    time.sleep(0.05)
+            except Exception:
+                logger.debug("Could not prepare browser image grid taskbar ownership helper.", exc_info=True)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _open_source_resource_window(self, row_id: str, resource_kind: str, *, force_tk_image_window: bool = False) -> None:
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            return
+        if (
+            resource_kind == RESOURCE_KIND_IMAGE
+            and row.adapter_id not in {"youtube", "twitter_x"}
+            and not force_tk_image_window
+        ):
+            # V80C: the Tk/canvas image grid proved too heavy for large pages.
+            # Use the browser-native grid as the normal Images surface, then
+            # immediately make the Chromium app window owned by this Tk root so
+            # it behaves like an app-owned popup instead of a separate taskbar app.
+            self._open_source_image_browser_grid_window(row_id)
             return
         state = resource_dialog_state_for_row(row, resource_kind)
         window = ctk.CTkToplevel(self)
@@ -9598,6 +10582,7 @@ class App(ctk.CTk):
         thumbnail_probe_results: list[tuple[str, str, Any]] = []
         thumbnail_probe_results_lock = threading.Lock()
         thumbnail_preview_url_by_id: dict[str, str] = {}
+        thumbnail_probe_dirty_resource_ids: set[str] = set()
         webpage_image_preview_pil_cache_by_url: dict[str, Any] = self.__dict__.setdefault(
             "webpage_image_preview_pil_cache_by_url",
             {},
@@ -9623,8 +10608,8 @@ class App(ctk.CTk):
         video_discovery_results_lock = threading.Lock()
         hidden_candidate_count = 0
         thumbnail_preview_loading_count = 0
-        default_image_render_limit = 32
-        hidden_image_render_limit = 24
+        default_image_render_limit = 96
+        hidden_image_render_limit = 384
         webpage_image_discovery_cache_by_url: dict[str, Any] = self.__dict__.setdefault(
             "webpage_image_discovery_cache_by_url",
             {},
@@ -9834,6 +10819,27 @@ class App(ctk.CTk):
                 # cache below.
                 return str(item.thumbnail_reference or "")
             return str(item.thumbnail_reference or item.reference_url or item.canonical_url or "")
+
+        def _image_open_url_for_item(item: Any) -> str:
+            if resource_kind != RESOURCE_KIND_IMAGE:
+                return ""
+            return str(
+                getattr(item, "reference_url", "")
+                or getattr(item, "canonical_url", "")
+                or getattr(item, "thumbnail_reference", "")
+                or ""
+            ).strip()
+
+        def open_image_preview_for_item(current_item: Any) -> None:
+            open_url = _image_open_url_for_item(current_item)
+            if not open_url:
+                show_image_dialog_notice("Image preview", "No previewable image URL is available for this candidate.")
+                return
+            try:
+                webbrowser.open(open_url)
+                self.log_message(f"Opened image preview: {open_url}", "muted")
+            except Exception as exc:
+                show_image_dialog_notice("Image preview failed", str(exc))
 
         def _video_frame_preview_url_for_item(item: Any) -> str:
             if resource_kind != RESOURCE_KIND_VIDEO_AUDIO:
@@ -10373,21 +11379,12 @@ class App(ctk.CTk):
             return True
 
         def _is_default_hidden_webpage_image_candidate(item: Any) -> bool:
-            """Keep the default real-site grid to previewable images only."""
+            """V79Q: default image grid no longer hides no-preview candidates."""
             if resource_kind != RESOURCE_KIND_IMAGE:
                 return False
-            if item.resource_id in selected_ids:
-                return False
-            if item.resource_id in thumbnail_images_by_id:
-                return False
-            status = thumbnail_preview_status_by_id.get(item.resource_id, "")
-            if status in {"pending", "success"}:
-                return True
-            if status in {"hidden", "failed"} or item.resource_id in thumbnail_hidden_resource_ids:
-                return True
-            return True
+            return False
 
-        def _schedule_thumbnail_probe_render(delay_ms: int = 650) -> None:
+        def _schedule_thumbnail_probe_render(delay_ms: int = 160) -> None:
             nonlocal thumbnail_probe_render_after_id
             if thumbnail_probe_render_after_id is not None:
                 return
@@ -10396,9 +11393,29 @@ class App(ctk.CTk):
                 nonlocal thumbnail_probe_render_after_id
                 thumbnail_probe_render_after_id = None
                 try:
-                    if window.winfo_exists():
-                        render_resource_list()
+                    if not window.winfo_exists():
+                        return
+                    # V79T: Image Downloader uses browser-native <img> loading, so
+                    # each image settles independently. Do the closest safe Tk
+                    # equivalent: refresh only tiles whose thumbnail result changed
+                    # instead of re-walking/repainting the whole grid.
+                    if resource_kind == RESOURCE_KIND_IMAGE and rendered_tile_refreshers_by_id:
+                        dirty_ids = tuple(thumbnail_probe_dirty_resource_ids)
+                        thumbnail_probe_dirty_resource_ids.clear()
+                        visible_by_id = {candidate.resource_id: candidate for candidate in active_state.resources}
+                        for dirty_id in dirty_ids:
+                            refresher = rendered_tile_refreshers_by_id.get(dirty_id)
+                            visible_item = visible_by_id.get(dirty_id)
+                            if refresher is None or visible_item is None:
+                                continue
+                            try:
+                                refresher(visible_item)
+                            except Exception:
+                                pass
                         refresh_count()
+                        return
+                    render_resource_list()
+                    refresh_count()
                 except Exception:
                     logger.debug("Could not refresh image preview grid after thumbnail probe.", exc_info=True)
 
@@ -10409,6 +11426,7 @@ class App(ctk.CTk):
 
         def _thumbnail_probe_success(resource_id: str, preview_image: Any) -> None:
             try:
+                thumbnail_probe_dirty_resource_ids.add(resource_id)
                 preview_url = thumbnail_preview_url_by_id.get(resource_id, "")
                 if preview_url:
                     webpage_image_preview_pil_cache_by_url[preview_url] = preview_image.copy()
@@ -10433,6 +11451,7 @@ class App(ctk.CTk):
                 thumbnail_preview_status_by_id[resource_id] = "failed"
 
         def _thumbnail_probe_failure(resource_id: str) -> None:
+            thumbnail_probe_dirty_resource_ids.add(resource_id)
             thumbnail_hidden_resource_ids.add(resource_id)
             thumbnail_preview_status_by_id[resource_id] = "failed"
 
@@ -10440,6 +11459,7 @@ class App(ctk.CTk):
             video_hover_preview_status_by_id[resource_id] = "failed"
 
         def _video_hover_probe_success(resource_id: str, preview_frames: Any) -> None:
+            thumbnail_probe_dirty_resource_ids.add(resource_id)
             if _cache_ctk_video_hover_frames_for_item(resource_id, preview_frames):
                 video_hover_preview_status_by_id[resource_id] = "success"
 
@@ -10486,7 +11506,7 @@ class App(ctk.CTk):
                         thumbnail_probe_thread_active = False
                         changed = True
                 if changed:
-                    _schedule_thumbnail_probe_render(650)
+                    _schedule_thumbnail_probe_render(160)
                 should_continue = thumbnail_probe_thread_active or video_hover_probe_thread_active
                 try:
                     with thumbnail_probe_results_lock:
@@ -10517,7 +11537,7 @@ class App(ctk.CTk):
             # Image thumbnails are cheap HTTP image fetches.  Direct video
             # frame previews can require ffmpeg startup and a ranged media read,
             # so keep the first-frame pass intentionally small.
-            candidates = candidates[: (16 if resource_kind == RESOURCE_KIND_VIDEO_AUDIO else 64)]
+            candidates = candidates[: (16 if resource_kind == RESOURCE_KIND_VIDEO_AUDIO else 96)]
             for candidate in candidates:
                 thumbnail_preview_status_by_id[candidate.resource_id] = "pending"
             thumbnail_probe_thread_active = True
@@ -10548,10 +11568,11 @@ class App(ctk.CTk):
                             headers={
                                 "User-Agent": "Mozilla/5.0 YTCE media preview",
                                 "Accept": "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8",
+                                "Referer": str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or ""),
                             },
                         )
-                        with urllib.request.urlopen(request, timeout=0.7) as response:
-                            data = response.read(384 * 1024)
+                        with urllib.request.urlopen(request, timeout=2.5) as response:
+                            data = response.read(2 * 1024 * 1024)
                         preview_image = Image.open(BytesIO(data))
                         if getattr(preview_image, "is_animated", False):
                             preview_image.seek(0)
@@ -10599,7 +11620,7 @@ class App(ctk.CTk):
 
             def _worker(items: list[Any]) -> None:
                 try:
-                    worker_count = max(1, min(4, len(items)))
+                    worker_count = max(1, min((2 if resource_kind == RESOURCE_KIND_VIDEO_AUDIO else 6), len(items)))
                     with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
                         futures = [executor.submit(_probe_one_thumbnail, item) for item in items]
                         for future in concurrent.futures.as_completed(futures):
@@ -10924,21 +11945,19 @@ class App(ctk.CTk):
             hidden_candidate_count = 0
             thumbnail_preview_loading_count = 0
             if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}:
+                # V79S: keep the image-downloader-style immediate grid, but
+                # do not build a huge Tk widget tree in one pass.  Show a
+                # majority of candidates by default, let thumbnails fill from
+                # the background probe cache, and use Show hidden for the full
+                # large-page cap.
                 _start_thumbnail_preview_probe(display_resources)
-                if not bool(show_hidden_images_var.get()):
-                    kept_resources: list[Any] = []
-                    hidden_resources: list[Any] = []
-                    for candidate_item in display_resources:
-                        if candidate_item.resource_id in selected_ids or candidate_item.resource_id in thumbnail_images_by_id:
-                            kept_resources.append(candidate_item)
-                        else:
-                            hidden_resources.append(candidate_item)
-                            if thumbnail_preview_status_by_id.get(candidate_item.resource_id) == "pending":
-                                thumbnail_preview_loading_count += 1
-                    display_resources, overflow_hidden_count = _cap_image_display_resources(tuple(kept_resources), default_image_render_limit)
-                    hidden_candidate_count = len(hidden_resources) + overflow_hidden_count
-                else:
-                    display_resources, hidden_candidate_count = _cap_image_display_resources(display_resources, hidden_image_render_limit)
+                image_render_limit = hidden_image_render_limit if bool(show_hidden_images_var.get()) else default_image_render_limit
+                display_resources, hidden_candidate_count = _cap_image_display_resources(display_resources, image_render_limit)
+                thumbnail_preview_loading_count = sum(
+                    1
+                    for candidate_item in display_resources
+                    if thumbnail_preview_status_by_id.get(candidate_item.resource_id) == "pending"
+                )
             elif resource_kind == RESOURCE_KIND_VIDEO_AUDIO and row.adapter_id not in {"youtube", "twitter_x"}:
                 display_resources = _group_video_rendition_display_resources(tuple(display_resources))
                 _start_thumbnail_preview_probe(display_resources)
@@ -11001,9 +12020,9 @@ class App(ctk.CTk):
                 )
                 if hidden_candidate_count and resource_kind == RESOURCE_KIND_IMAGE and not bool(show_hidden_images_var.get()):
                     if thumbnail_preview_loading_count:
-                        empty_text = f"Loading previewable image thumbnails... {thumbnail_preview_loading_count} candidate(s) still being checked. Enable Show hidden to inspect hidden/no-preview candidates."
+                        empty_text = f"Loading image thumbnails... {thumbnail_preview_loading_count} candidate(s) still being checked. Candidates remain visible while previews load."
                     else:
-                        empty_text = f"No visible image previews match this source/filter. Enable Show hidden to inspect {hidden_candidate_count} hidden/no-preview candidate(s)."
+                        empty_text = f"No visible image candidates match this source/filter. Enable Show hidden to inspect {hidden_candidate_count} more candidate(s) outside the current render cap."
                 empty = ctk.CTkLabel(
                     list_frame,
                     text=empty_text,
@@ -11103,7 +12122,13 @@ class App(ctk.CTk):
                         if resource_kind == RESOURCE_KIND_VIDEO_AUDIO and len(video_variant_group_members_by_rep_id.get(str(getattr(current_item, "resource_id", "") or ""), ())) > 1:
                             badge.place_forget()
                             return
-                        badge.place(relx=0.5, rely=1.0, anchor="s", y=-7)
+                        if resource_kind == RESOURCE_KIND_IMAGE:
+                            # V79Q: image tiles no longer carry per-tile action
+                            # buttons, so the dimension badge can return to the
+                            # bottom overlay while the clean grid stays compact.
+                            badge.place(relx=0.5, rely=1.0, anchor="s", y=-7)
+                        else:
+                            badge.place(relx=0.5, rely=1.0, anchor="s", y=-7)
                         badge.lift()
                     except Exception:
                         pass
@@ -11173,6 +12198,14 @@ class App(ctk.CTk):
                     )
                     variant_quality_menu.place(relx=0.0, x=7, rely=1.0, y=-7, anchor="sw")
                     variant_quality_menu.lift()
+
+                if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}:
+                    # V79Q: no per-image Preview/Download buttons.  Keep the tile
+                    # surface clean like the reference image-downloader grid; click
+                    # toggles selection, double-click opens the preview URL, and the
+                    # bottom Download selected button performs FILES intake.
+                    preview_box.bind("<Double-Button-1>", lambda _event, current_item=item: open_image_preview_for_item(current_item), add="+")
+                    preview_label.bind("<Double-Button-1>", lambda _event, current_item=item: open_image_preview_for_item(current_item), add="+")
 
                 if resource_kind == RESOURCE_KIND_VIDEO_AUDIO and video_live_preview_mode_enabled and live_preview_url:
                     _schedule_selected_video_hover_warm(item, delay_ms=1)
@@ -11704,11 +12737,10 @@ class App(ctk.CTk):
                 (
                     f"Discovered {len(discovery.resources)} webpage image candidate(s) "
                     f"from {row.domain}; discovery_method={getattr(discovery, 'network_actions_performed', 'unknown')}; "
-                    "preview thumbnails are probed in the background; "
-                    "default view shows only candidates that successfully preview; "
-                    "hidden/no-preview candidates stay hidden unless Show hidden is enabled; "
+                    "image candidates render immediately with targeted tile refreshes while Browser grid provides native browser image loading for the full ordered set; "
+                    "Show hidden raises the render cap for larger pages instead of gating no-preview candidates; "
                     "candidate lists and previews are cached/prefetched for repeated opens; "
-                    "visible rendering is capped and diff-refreshed for responsiveness; "
+                    "visible rendering is capped, dirty-tile refreshed, and browser-grid comparable for responsiveness; "
                     "downloads performed: none."
                 ),
                 "success",
@@ -12109,6 +13141,131 @@ class App(ctk.CTk):
 
             threading.Thread(target=_worker, daemon=True).start()
 
+        def open_browser_image_gallery() -> None:
+            if resource_kind != RESOURCE_KIND_IMAGE or row.adapter_id in {"youtube", "twitter_x"}:
+                return
+            try:
+                filtered_state = filter_resource_dialog_items(state, current_filters())
+                gallery_resources = tuple(filtered_state.resources)
+                cards: list[dict[str, Any]] = []
+                for index, item in enumerate(gallery_resources, start=1):
+                    image_url = _image_open_url_for_item(item)
+                    if not image_url:
+                        continue
+                    cards.append(
+                        {
+                            "index": index,
+                            "resource_id": str(getattr(item, "resource_id", "") or f"image-{index}"),
+                            "url": image_url,
+                            "name": str(getattr(item, "display_name", "") or getattr(item, "resource_id", "") or image_url),
+                            "extension": str(getattr(item, "extension", "") or getattr(item, "media_type", "") or "image"),
+                            "width": int(getattr(item, "width", 0) or 0),
+                            "height": int(getattr(item, "height", 0) or 0),
+                        }
+                    )
+                if not cards:
+                    show_image_dialog_notice("Browser image grid", "No image URLs are available for the current filters.")
+                    return
+                gallery_root = self._webpage_image_session_download_root() / "browser_image_grid"
+                gallery_root.mkdir(parents=True, exist_ok=True)
+                safe_row_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(getattr(row, "row_id", "row") or "row"))[:80]
+                gallery_path = gallery_root / f"{safe_row_id}_image_grid.html"
+                page_title = f"Image grid - {getattr(row, 'domain', '') or 'webpage'}"
+                cards_json = json.dumps(cards, ensure_ascii=False).replace("</", "<\\/")
+                html_doc = f'''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(page_title)}</title>
+<style>
+:root {{ color-scheme: dark; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background:#0f1419; color:#e8eef2; }}
+body {{ margin:0; background:#0f1419; }}
+header {{ position:sticky; top:0; z-index:2; display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; padding:.55rem .7rem; background:#151b22f2; border-bottom:1px solid #29323b; backdrop-filter: blur(8px); }}
+button {{ border:1px solid #40505f; border-radius:999px; background:#1f2933; color:#e8eef2; padding:.35rem .7rem; cursor:pointer; }}
+button:hover {{ background:#2a3642; }}
+.meta {{ color:#aab7c3; font-size:.82rem; }}
+.grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(176px, 1fr)); gap:.55rem; padding:.6rem; }}
+.card {{ position:relative; min-height:192px; display:flex; align-items:center; justify-content:center; overflow:hidden; border:1px solid #2e3a44; border-radius:14px; background:conic-gradient(#1d2730 90deg,#26333d 90deg 180deg,#1d2730 180deg 270deg,#26333d 270deg); background-size:12px 12px; box-shadow:0 3px 12px #0006; cursor:pointer; }}
+.card.selected {{ border-color:#38bdf8; outline:2px solid #38bdf8; }}
+.card img {{ max-width:100%; max-height:260px; object-fit:contain; display:block; filter:drop-shadow(0 2px 5px #0008); }}
+.check {{ position:absolute; left:.35rem; top:.35rem; width:1.55rem; height:1.55rem; border-radius:.35rem; border:1px solid #9aa8b4; background:#ffffffd8; color:#0f1419; display:none; align-items:center; justify-content:center; font-weight:900; }}
+.card:hover .check, .card.selected .check {{ display:flex; }}
+.card.selected .check {{ background:#0ea5e9; border-color:#38bdf8; color:#fff; }}
+.actions {{ position:absolute; right:.35rem; top:.35rem; display:none; gap:.25rem; }}
+.card:hover .actions {{ display:flex; }}
+.actions a {{ text-decoration:none; background:#111a22d9; border:1px solid #3c4c59; color:#e8eef2; border-radius:.4rem; padding:.22rem .4rem; font-size:.75rem; }}
+.info {{ position:absolute; left:.35rem; right:.35rem; bottom:.35rem; display:flex; gap:.25rem; flex-wrap:wrap; pointer-events:none; }}
+.pill {{ background:#05080bcc; color:#fff; border-radius:.35rem; padding:.1rem .3rem; font-size:.72rem; }}
+.url {{ display:none; position:absolute; left:.35rem; right:.35rem; bottom:.35rem; background:#05080be6; color:#dbeafe; border:1px solid #33485b; border-radius:.35rem; padding:.2rem .35rem; font-size:.7rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+.card:hover .url {{ display:block; }}
+.card:hover .info {{ display:none; }}
+.err {{ color:#fecaca; background:#3b1111d9; border:1px solid #7f1d1d; border-radius:.5rem; padding:.5rem; font-size:.8rem; }}
+</style>
+</head>
+<body>
+<header>
+<strong>{html.escape(page_title)}</strong>
+<span class="meta" id="counts">0 selected · {len(cards)} images</span>
+<button id="selectAll">Select all</button>
+<button id="clearAll">Clear all</button>
+<button id="downloadSelected">Download selected</button>
+<span class="meta">Native browser image loading · order preserved from YTCE candidate list</span>
+</header>
+<main class="grid" id="grid"></main>
+<script>
+const images = {cards_json};
+const selected = new Set();
+const grid = document.getElementById('grid');
+const counts = document.getElementById('counts');
+function updateCounts() {{ counts.textContent = `${{selected.size}} selected · ${{images.length}} images`; }}
+function toggle(card, url) {{ selected.has(url) ? selected.delete(url) : selected.add(url); card.classList.toggle('selected', selected.has(url)); updateCounts(); }}
+function render() {{
+  const frag = document.createDocumentFragment();
+  images.forEach((item) => {{
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.title = item.url;
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.referrerPolicy = 'no-referrer-when-downgrade';
+    img.src = item.url;
+    img.onerror = () => {{ const e = document.createElement('div'); e.className='err'; e.textContent='Error loading image'; img.replaceWith(e); }};
+    const check = document.createElement('div'); check.className='check'; check.textContent='✓';
+    const actions = document.createElement('div'); actions.className='actions';
+    const open = document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open';
+    const down = document.createElement('a'); down.href=item.url; down.download=''; down.textContent='Download';
+    actions.append(open, down);
+    const info = document.createElement('div'); info.className='info';
+    const ext = document.createElement('span'); ext.className='pill'; ext.textContent=item.extension || 'image'; info.append(ext);
+    if (item.width && item.height) {{ const size = document.createElement('span'); size.className='pill'; size.textContent=`${{item.width}}×${{item.height}}`; info.append(size); }}
+    const order = document.createElement('span'); order.className='pill'; order.textContent=`#${{item.index}}`; info.append(order);
+    const url = document.createElement('div'); url.className='url'; url.textContent=item.url;
+    card.append(img, check, actions, info, url);
+    card.addEventListener('click', (event) => {{ if (event.target.closest('a')) return; toggle(card, item.url); }});
+    frag.append(card);
+  }});
+  grid.append(frag); updateCounts();
+}}
+document.getElementById('selectAll').onclick = () => {{ images.forEach(item => selected.add(item.url)); document.querySelectorAll('.card').forEach(c => c.classList.add('selected')); updateCounts(); }};
+document.getElementById('clearAll').onclick = () => {{ selected.clear(); document.querySelectorAll('.card').forEach(c => c.classList.remove('selected')); updateCounts(); }};
+document.getElementById('downloadSelected').onclick = () => {{ [...selected].forEach((url, i) => setTimeout(() => {{ const a=document.createElement('a'); a.href=url; a.download=''; document.body.appendChild(a); a.click(); a.remove(); }}, i*120)); }};
+render();
+</script>
+</body>
+</html>
+'''
+                gallery_path.write_text(html_doc, encoding="utf-8")
+                webbrowser.open(gallery_path.as_uri())
+                self.log_message(
+                    f"Opened browser-native image grid with {len(cards)} image candidate(s). Primary browser image window can Add selected to FILES.",
+                    "muted",
+                )
+            except Exception as exc:
+                logger.debug("Could not open browser image grid.", exc_info=True)
+                show_image_dialog_notice("Browser image grid failed", str(exc))
+
         def download_selected_resources() -> None:
             selected_state = current_state()
             self.source_resource_selections[row.row_id] = selected_state.selected_resource_ids
@@ -12271,7 +13428,7 @@ class App(ctk.CTk):
         media_action_hint = ctk.CTkLabel(
             window,
             text=(
-                "Images are scanned automatically when this window opens. Select image tiles, then Download selected to add them to this session's temporary FILES area. Hover a file name for source details; hover an image square for dimensions; use EXPORT to choose a final output folder."
+                "Images are scanned automatically when this window opens. The app grid stays capped and tile-refreshes progressively so Tk stays responsive; Browser grid opens the full candidate order with native browser image loading. Select tiles here, then Download selected to add them to this session's FILES area. Hover a file name for source details; hover an image square for dimensions; double-click an image square to open its preview URL; use EXPORT to choose a final output folder."
                 if resource_kind == RESOURCE_KIND_IMAGE
                 else "Video/audio candidates are discovered with static + rendered probes and cached/prefetched for repeated opens. JDownloader/API3128 remains the preferred download route; Review selected still performs no generic download."
             ),
@@ -12292,6 +13449,12 @@ class App(ctk.CTk):
                 command=lambda: discover_page_images(show_messages=True),
             )
             refresh_images_button.pack(side="left", padx=(0, 8))
+            ctk.CTkButton(
+                button_row,
+                text="Browser grid",
+                width=118,
+                command=open_browser_image_gallery,
+            ).pack(side="left", padx=(0, 8))
         if resource_kind == RESOURCE_KIND_VIDEO_AUDIO and row.adapter_id not in {"youtube", "twitter_x"}:
             refresh_videos_button = ctk.CTkButton(
                 button_row,

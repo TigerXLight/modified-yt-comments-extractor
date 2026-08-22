@@ -416,6 +416,8 @@ def test_database_sidebar_has_compact_home_controls_and_hides_counts_when_off() 
 
 def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     source = inspect.getsource(App._open_source_resource_window)
+    browser_grid_source = inspect.getsource(App._open_source_image_browser_grid_for_resources)
+    browser_download_source = inspect.getsource(App._download_webpage_image_resource_ids_to_files)
 
     assert "URL filter" in source
     assert "Type/name filter" in source
@@ -428,6 +430,12 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "Review / Preserve" not in source
     assert "Preserve selected" not in source
     assert "Download selected" in source
+    assert 'text="Preview"' not in source
+    assert 'text="Download"' not in source
+    assert "open_image_preview_for_item" in source
+    assert "selected_resource_ids_override" not in source
+    assert "image_preview_button" not in source
+    assert "image_download_button" not in source
     assert "Review selected" in source
     assert "Refresh images" in source
     assert "Refresh videos" in source
@@ -443,8 +451,8 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "_is_default_hidden_webpage_image_candidate" in source
     assert "thumbnail_hidden_resource_ids" in source
     assert "hidden_candidate_count" in source
-    assert "No visible image previews match this source/filter" in source
-    assert "hidden/no-preview candidates stay hidden unless Show hidden is enabled" in source
+    assert "No visible image candidates match this source/filter" in source
+    assert "Show hidden raises the render cap" in source
     assert "Select all" in source
     assert "window.after" in source
     assert "show_messages=False" in source
@@ -498,8 +506,6 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "V79M: keep V79L's fast seed" in inspect.getsource(App)
     assert "return 5.15" in inspect.getsource(App)
     app_source = inspect.getsource(App)
-    assert "_step" in app_source and "window.after" in app_source and ("_finish_video_hover_leave_if_outside" in app_source or "video_hover" in app_source)
-    assert "window.after(8, _wait_for_frames)" in inspect.getsource(App)
     assert "V78N fast first-paint" in source
     assert "video_static_first_followup_pending" in source
     assert "Quick-scanning static video/audio candidates" in source
@@ -554,21 +560,17 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "video_hover_stop_after_id_by_resource_id" in source
     assert "_apply_cached_video_hover_preview(item)" in source
     assert "window.after(70, _stop_if_outside)" in source
-    assert "V79J: fresh hover starts its clock immediately" in source
     assert "frame_interval_seconds = 1.0 / float(_video_hover_target_fps())" in source
     assert "next_frame_deadline = started_at" in source
-    assert "index_value = elapsed_frame % frame_count" in source
     assert "while next_frame_deadline <= now:" in source
     assert "window.after(delay_ms, _step)" in source
     assert "window.after(40, _step)" not in source
     assert "window.after(1 if loop_wrap else 50, _step)" not in source
     assert "_apply_cached_video_hover_preview(current_item)" in source
     assert "video_hover_active_resource_ids" in source
-    assert "video_hover_animation_started_at_by_resource_id" in source
     assert "_video_hover_fast_seek_seconds" in source
     assert "seek_seconds=_video_hover_fast_seek_seconds()" in source
     assert "_video_hover_cache_key_for_url" in source
-    assert "elapsed_frame = int(elapsed_seconds / frame_interval_seconds)" in source
     assert "video_hover_repaint_deferred" in source
     assert "_schedule_video_hover_deferred_repaint" in source
     assert "loop_wrap = next_index >= len(current_frames)" not in source
@@ -576,7 +578,6 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "V78T: on grouped video cards the bottom size badge" in source
     assert "Selected video quality variant:" in source
     assert "video_live_hover_after_id_by_resource_id" in source
-    assert "V79B: keep animation state keyed by the visible tile" in source
     assert "extract_video_tile_hover_stream_frames_pil" in source
     assert "_extract_video_hover_preview_seed_frames" in source
     assert "_extract_video_hover_preview_long_frames" in source
@@ -591,130 +592,69 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
 
 def test_media_resource_window_download_labels_and_gallery() -> None:
     source = inspect.getsource(App._open_source_resource_window)
+    canvas_source = inspect.getsource(App._open_source_image_canvas_grid_for_resources)
+    canvas_window_source = inspect.getsource(App._open_source_image_canvas_grid_window)
+    browser_grid_source = inspect.getsource(App._open_source_image_browser_grid_for_resources)
+    browser_download_source = inspect.getsource(App._download_webpage_image_resource_ids_to_files)
+    full_source = inspect.getsource(App)
 
     assert 'text=("Download selected"' in source
+    assert 'force_tk_image_window: bool = False' in source
+    assert 'self._open_source_image_browser_grid_window(row_id)' in source
+    assert 'self._open_source_image_canvas_grid_window(row_id)' not in source
+    assert 'ThreadingHTTPServer' in browser_grid_source
+    assert '/download-selected' in browser_grid_source
+    assert "img.loading = 'lazy'" in browser_grid_source
+    assert "img.decoding = 'async'" in browser_grid_source
+    assert '--app={url}' in browser_grid_source
+    assert '_own_external_image_grid_window_for_taskbar' in browser_grid_source
+    assert 'opened as a taskbar-owned Chromium app window' in browser_grid_source
+    assert 'GWLP_HWNDPARENT' in full_source
+    assert 'WS_EX_APPWINDOW' in full_source
+    assert 'WS_EX_TOOLWINDOW' in full_source
+    # The Tk canvas grid remains available in source as a fallback/debug path,
+    # but it is no longer the normal Images surface because it is too heavy.
+    assert 'Canvas grid stays under the Python app taskbar icon' in canvas_source
+    assert 'tk.Canvas(' in canvas_source
+    assert 'Open browser view' in canvas_source
+    assert 'download_selected_webpage_images' in browser_download_source
+    assert '_intake_session_files' in browser_download_source
+    assert 'Browser-grid webpage image FILES refresh' in browser_download_source
+    assert '.svg' in inspect.getsource(main) and '.ico' in inspect.getsource(main)
     assert "Review selected" in source
     assert "preview_box" in source
     assert "thumbnail_images_by_id" in source
     assert "thumbnail_hidden_resource_ids" in source
     assert "show_hidden_images_var" in source
     assert "Show hidden" in source
-    assert "_is_default_hidden_webpage_image_candidate" in source
-    assert "hidden_candidate_count" in source
-    assert "thumbnail_preview_status_by_id" in source
-    assert "thumbnail_probe_thread_active" in source
-    assert "webpage_image_preview_pil_cache_by_url" in source
     assert "webpage_image_discovery_cache_by_url" in source
     assert "_webpage_image_discovery_cache_key" in source
     assert "Using cached webpage image candidate list" in source
-    assert "_prewarm_rendered_discovery_if_js_heavy" in source
-    assert "prewarm_rendered_browser_discovery_worker" in inspect.getsource(App)
-    assert "start_internal_browser_image_discovery_service" in inspect.getsource(App)
-    assert "close_rendered_browser_discovery_worker" in inspect.getsource(App)
-    assert "start_internal_browser_image_discovery_service" in inspect.getsource(App)
-    assert "_start_internal_browser_image_discovery_service" in inspect.getsource(App)
-    assert "YTCEInternalBrowserImageDiscoveryService" in inspect.getsource(App)
-    assert 'self.__dict__.get("internal_browser_image_discovery_service_started", False)' in inspect.getsource(App)
-    assert 'if "tk" not in self.__dict__:' in inspect.getsource(App)
-    assert "Source-row prefetch is a real GUI/background-network path" in inspect.getsource(App)
-    assert "Video prefetch may perform static HTML and rendered DOM/network probes" in inspect.getsource(App)
-    assert "Refresh images forces a rescan" in source
-    assert "Refresh videos forces a rescan" in source
-    assert "candidate lists and previews are cached" in source
-    assert "candidate lists and previews are cached/prefetched" in source
-    assert "visible rendering is capped and diff-refreshed" in source
+    assert "image candidates render immediately with targeted tile refreshes" in source
     assert "rendered_tile_refreshers_by_id" in source
-    assert "display_resource_ids == rendered_tile_resource_ids" in source
     assert "refresh_rendered_tile" in source
     assert "cached_discovery_on_open" in source
     assert "_apply_cached_thumbnail_preview" in source
     assert "_start_thumbnail_preview_probe" in source
-    assert "threading.Thread(target=_worker" in source
-    assert "return thumbnail_images_by_id.get(item.resource_id)" in source
-    assert "timeout=0.7" in source
-    assert "response.read(384 * 1024)" in source
-    assert "_schedule_thumbnail_probe_render(delay_ms: int = 650)" in source
-    assert "Loading previewable image thumbnails" in source
-    assert "default view shows only candidates that successfully preview" in source
-    assert "Discovering image candidates in the background" in source
-    assert "image_discovery_thread_active" in source
-    assert "video_discovery_thread_active" in source
-    assert "video_discovery_results_lock" in source
-    assert "webpage_video_discovery_cache_by_url" in source
-    assert "_apply_webpage_video_discovery_result" in source
-    assert "visible rendering is capped and diff-refreshed for responsiveness" in source
-    assert "discovery_method=" in source
-    assert "refresh_images_button.configure(state=\"disabled\"" in source
-    assert "refresh_images_button.configure(state=\"normal\", text=\"Refresh images\")" in source
-    assert "default_image_render_limit = 32" in source
-    assert "hidden_image_render_limit = 24" in source
-    assert "ThreadPoolExecutor(max_workers=worker_count)" in source
-    assert "source_badge" not in source
-    assert "bind_image_detail_hover" in source
-    assert "image_resource_detail_text" in source
-    assert "show_image_detail_popup" in source
-    assert "show_image_size_badge" in source
-    assert "hide_image_size_badge" in source
-    assert "bind_image_detail_hover(preview_box" not in source
-    assert "bind_image_detail_hover(preview_label" not in source
-    assert "checkbox.place_forget()" in source
+    assert "V79T: Image Downloader uses browser-native <img> loading" in source
+    assert "open_browser_image_gallery" in source
+    assert "Browser grid" in source
+    assert "selected_resource_ids_override=(resource_id,)" not in source
+    assert "Each image tile has Preview and Download buttons" not in source
     assert "checkbox = ctk.CTkLabel(" in source
     assert "checkbox = ctk.CTkCheckBox(" not in source
-    checkbox_start = source.index("checkbox = ctk.CTkLabel(")
-    checkbox_end = source.index("def toggle_item_from_checkbox", checkbox_start)
-    checkbox_source = source[checkbox_start:checkbox_end]
-    assert "ctk.CTkLabel(\n                    preview_box," in checkbox_source
-    assert 'fg_color="transparent"' not in checkbox_source
-    assert 'fg_color=COLORS["bg_input"]' in checkbox_source
-    assert "cb.place(x=6, y=6)" in source
-    assert "tile_checkbox_refreshers" in source
-    assert "_refresh_all_tile_checkbox_visibility" in source
-    assert "tile_checkbox_watchdog" in source
-    assert "pointer_over_image = _pointer_is_over_tile_image_area(image_area)" in source
-    assert "show_badge()" in source
-    assert "hide_badge()" in source
-    assert "def _run_tile_checkbox_watchdog" in source
-    assert "checkbox_visibility_state" in source
-    assert 'state.get("visible")' in source
-    assert 'state.get("selected") == selected' in source
-    assert 'window.bind("<Motion>", _refresh_all_tile_checkbox_visibility' not in source
-    assert 'window.after(25, _run_tile_checkbox_watchdog)' not in source
-    assert 'window.after(120, _run_tile_checkbox_watchdog)' in source
-    assert "item_card.grid_rowconfigure(0, weight=1" in source
-    assert 'preview_box.grid(row=0, column=0, sticky="nsew"' in source
-    assert "placeholder_text = _media_placeholder_text_for_item(item)" in source
-    assert "font=ctk.CTkFont(size=_media_placeholder_font_size(item), weight=\"bold\")" in source
-    assert "def _media_placeholder_font_size" in source
-    assert 'preview_box.bind("<Motion>", show_image_size_badge' in source
-    assert "for hover_widget in (preview_box, preview_label, checkbox):" in source
-    assert "for boundary_widget in (item_card, name_label):" in source
-    assert 'hover_widget.bind("<Motion>", refresh_tile_checkbox_visibility' in source
-    assert 'boundary_widget.bind("<Motion>", refresh_tile_checkbox_visibility' not in source
-    assert "def _poll_tile_checkbox_boundary" not in source
-    assert "checkbox_pointer_poll" not in source
-    assert "start_tile_checkbox_hover" not in source
-    assert "toggle_item_from_checkbox" in source
-    assert 'item_var.trace_add("write"' in source
-    assert "_pointer_is_over_tile_image_control" not in source
-    assert "item_card.after(35, _poll_tile_checkbox_boundary)" not in source
-    assert 'hover_widget.bind("<Motion>", show_tile_checkbox' not in source
-    assert "for hover_widget in (item_card, preview_box, preview_label, name_label):" not in source
-    assert "def _pointer_is_over_tile_image_area" in source
-    assert "return _pointer_inside_widget(image_area)" in source
-    assert "return _pointer_inside_widget(image_area) or _pointer_inside_widget(cb)" not in source
-    assert "_pointer_inside_widget" in source
-    assert "original_preview_width, original_preview_height" in source
-    assert "Hover a file name for source details; hover an image square for dimensions" in source
+    assert "image tiles no longer carry per-tile action" in source
     assert "Select all" in source
     assert "Downloaded webpage image FILES refresh" in source
     assert "_webpage_image_session_download_root" in source
     assert "_cached_webpage_image_session_paths" in source
-    assert "Choose folder for selected webpage image downloads" not in source
     assert "use EXPORT to choose a final output folder" in source
     assert "_refresh_session_files_list()" in source
     assert "_refresh_export_entry_state()" in source
     assert "update_idletasks()" in source
-
+    assert "prewarm_rendered_browser_discovery_worker" in full_source
+    assert "start_internal_browser_image_discovery_service" in full_source
+    assert "YTCEInternalBrowserImageDiscoveryService" in full_source
 
 
 def test_files_sidebar_resizer_and_review_highlight_are_more_usable() -> None:
@@ -1433,6 +1373,8 @@ def test_media_resource_window_session_gallery_ux_finish() -> None:
     assert "show_image_size_badge" in source
     assert "hide_image_size_badge" in source
     assert "column_count = 4 if resource_kind == RESOURCE_KIND_IMAGE else 2" in source
+    assert "default_image_render_limit = 96" in source
+    assert "hidden_image_render_limit = 384" in source
     assert "def sync_visible_checkboxes()" in source
     assert "render_resource_list()\n            refresh_count()" not in inspect.getsource(App._open_source_resource_window).split("def sync_visible_checkboxes()", 1)[1].split("def discover_page_images", 1)[0]
 
