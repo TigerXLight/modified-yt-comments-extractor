@@ -7421,7 +7421,7 @@ class App(ctk.CTk):
             self._start_webpage_image_source_row_prefetch(intake.rows)
             self._start_webpage_video_source_row_prefetch(intake.rows)
             self.log_message(
-                f"Added {len(intake.rows)} source row(s). Metadata probes may run for supported source rows.",
+                f"Added {len(intake.rows)} source row(s). Metadata/media LinkGrabber prechecks may run for supported source rows.",
                 "success",
             )
         if intake.duplicate_raw_urls:
@@ -8302,7 +8302,15 @@ class App(ctk.CTk):
         url = self._webpage_video_prefetch_cache_key(row)
         return url.lower().startswith(("http://", "https://"))
 
-    def _apply_prefetched_webpage_video_discovery(self, row_id: str, cache_key: str, discovery: Any) -> None:
+    def _apply_prefetched_webpage_video_discovery(
+        self,
+        row_id: str,
+        cache_key: str,
+        discovery: Any,
+        *,
+        finished: bool = True,
+        phase: str = "rendered",
+    ) -> None:
         cache = self.__dict__.setdefault("webpage_video_discovery_cache_by_url", {})
         cache[cache_key] = discovery
         while len(cache) > 24:
@@ -8310,6 +8318,13 @@ class App(ctk.CTk):
                 cache.pop(next(iter(cache)))
             except Exception:
                 break
+        phase_cache = self.__dict__.setdefault("webpage_video_discovery_cache_phase_by_url", {})
+        try:
+            phase_cache[cache_key] = str(phase or ("rendered" if finished else "quick_static"))
+            while len(phase_cache) > 24:
+                phase_cache.pop(next(iter(phase_cache)))
+        except Exception:
+            logger.debug("Could not update webpage video discovery cache phase.", exc_info=True)
         updated_rows: list[SourceResourceRowState] = []
         changed = False
         target_domain = ""
@@ -8327,7 +8342,8 @@ class App(ctk.CTk):
             except Exception:
                 logger.debug("Could not refresh source rows after video prefetch.", exc_info=True)
         inflight = self.__dict__.setdefault("webpage_video_discovery_prefetch_inflight", set())
-        inflight.discard(cache_key)
+        if finished:
+            inflight.discard(cache_key)
         summary = getattr(discovery, "summary", {}) or {}
         if discovery.resources:
             self._start_webpage_video_hover_preview_prefetch_for_discovery(
@@ -8335,15 +8351,25 @@ class App(ctk.CTk):
                 cache_key,
                 discovery,
             )
-            self.log_message(
-                (
-                    f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
-                    f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
-                    f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
-                    "Video & Audio can open from the cached candidate list; live hover uses fast-start playback, a VDH-length ~5.15s 30fps hover loop, elapsed-clock frame selection, repaint-safe instant wrapping, and a fixed wait-poll-to-playback handoff."
-                ),
-                "muted",
-            )
+            phase_text = str(phase or "rendered")
+            if "quick" in phase_text.lower():
+                self.log_message(
+                    (
+                        f"LinkGrabber quick prechecked {len(discovery.resources)} webpage video/audio candidate(s) "
+                        f"for {target_domain or cache_key}; Video & Audio can open instantly from cached quick candidates while rendered variants continue in the background."
+                    ),
+                    "muted",
+                )
+            else:
+                self.log_message(
+                    (
+                        f"Prefetched {len(discovery.resources)} webpage video/audio candidate(s) for {target_domain or cache_key}; "
+                        f"route_preference={summary.get('route_preference', 'try_jdownloader_api3128_before_yt_dlp')}; "
+                        f"recommended_backend={summary.get('recommended_backend_id', 'unknown')}; "
+                        "Video & Audio can open from the cached candidate list; live hover uses fast-start playback, a VDH-length ~5.15s 30fps hover loop, elapsed-clock frame selection, repaint-safe instant wrapping, and a fixed wait-poll-to-playback handoff."
+                    ),
+                    "muted",
+                )
 
     def _start_webpage_video_hover_preview_prefetch_for_discovery(self, label: str, page_url: str, discovery: Any) -> None:
         # Make Video DownloadHelper-style hover previews ready before the user
@@ -8474,6 +8500,27 @@ class App(ctk.CTk):
             for row in snapshot:
                 cache_key = self._webpage_video_prefetch_cache_key(row)
                 try:
+                    quick_discovery = discover_webpage_videos_for_row(
+                        row,
+                        fetch_static_html=True,
+                        run_rendered_probe=False,
+                        rendered_probe_timeout_ms=0,
+                    )
+                except Exception as error:
+                    logger.debug("Webpage video LinkGrabber quick precheck failed for %s: %s", cache_key, error)
+                    quick_discovery = None
+                if quick_discovery is not None:
+                    self.after(
+                        0,
+                        lambda row_id=row.row_id, key=cache_key, result=quick_discovery: self._apply_prefetched_webpage_video_discovery(
+                            row_id,
+                            key,
+                            result,
+                            finished=False,
+                            phase="quick_static_linkgrabber",
+                        ),
+                    )
+                try:
                     discovery = discover_webpage_videos_for_row(
                         row,
                         fetch_static_html=True,
@@ -8489,6 +8536,8 @@ class App(ctk.CTk):
                         row_id,
                         key,
                         result,
+                        finished=True,
+                        phase="rendered_linkgrabber",
                     ),
                 )
 
@@ -11161,6 +11210,7 @@ render();
         resources: Sequence[Any],
         *,
         file_intake_decisions_by_id: dict[str, Any] | None = None,
+        page_title: str = "",
     ) -> tuple[dict[str, Any], ...]:
         decisions_by_id = file_intake_decisions_by_id or {}
         resource_tuple = tuple(resources or ())
@@ -11173,6 +11223,37 @@ render();
             logger.debug("Could not group browser-native video/audio variants.", exc_info=True)
             display_resources = resource_tuple
             groups_by_rep_id = {}
+        def _browser_grid_display_name(item: Any, media_url: str, resource_id: str) -> str:
+            raw_name = str(getattr(item, "display_name", "") or getattr(item, "title", "") or "").strip()
+            lower_name = raw_name.lower()
+            generic_markers = (
+                " from a",
+                " from source",
+                "file mp4",
+                "file webm",
+                "file video",
+                "embed from",
+                "embedded_player",
+                "video_audio",
+            )
+            if (
+                not raw_name
+                or any(marker in lower_name for marker in generic_markers)
+                or lower_name in {"mp4", "webm", "video", "audio", "unknown", "unknown from a"}
+            ):
+                title = str(page_title or "").strip()
+                if title:
+                    return title
+                try:
+                    parsed_path = urllib.parse.urlsplit(media_url).path
+                    file_name = Path(urllib.parse.unquote(parsed_path or "")).name
+                    if file_name:
+                        return file_name
+                except Exception:
+                    pass
+                return str(resource_id or media_url or "media")
+            return raw_name
+
         cards: list[dict[str, Any]] = []
         for card_index, item in enumerate(tuple(display_resources or ()), start=1):
             media_url = self._source_video_audio_open_url_for_browser_grid(item)
@@ -11229,7 +11310,7 @@ render();
                 {
                     "index": card_index,
                     "resource_id": resource_id,
-                    "name": str(getattr(item, "display_name", "") or getattr(item, "title", "") or resource_id or media_url),
+                    "name": _browser_grid_display_name(item, media_url, resource_id),
                     "url": media_url,
                     "poster_url": str(getattr(item, "thumbnail_reference", "") or ""),
                     "extension": str(getattr(item, "extension", "") or getattr(item, "media_type", "") or "media"),
@@ -11330,7 +11411,10 @@ render();
                     provenance="browser_grid_webpage_video_audio_identity_cache",
                 )
             )
-        records.extend(self._webpage_video_audio_persistent_file_intake_records())
+        # Do not use persistent video/audio identity records as visible FILES state.
+        # They can survive an app restart while the FILES sidebar is empty, which
+        # makes the browser grid incorrectly claim "Added before".  Current
+        # session_files and the in-memory cache above remain authoritative.
         return tuple(records)
 
     def _build_webpage_video_audio_file_intake_dedupe_plan(
@@ -11818,22 +11902,52 @@ render();
         threading.Thread(target=_worker, args=(row,), daemon=True).start()
 
     def _open_source_video_audio_browser_grid_for_resources(self, row: SourceResourceRowState, resources: Sequence[Any]) -> None:
-        intake_decisions_by_id = self._webpage_video_audio_file_intake_decisions_for_resources(row=row, resources=resources)
-        cards = self._source_video_audio_browser_grid_cards(
-            resources,
-            file_intake_decisions_by_id=intake_decisions_by_id,
-        )
-        if not cards:
-            self.log_message("Browser-native Video & Audio found no usable media URLs for this row.", "warning")
-            return
         token = uuid.uuid4().hex
         row_id = str(getattr(row, "row_id", "") or "")
         display_title = f"Video & Audio - {getattr(row, 'domain', '') or 'webpage'}"
         taskbar_marker = f"YTCE-VIDEO-AUDIO-GRID-{token[:10]}"
         page_title = f"{display_title} [{taskbar_marker}]"
         source_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "")
+        media_page_title = str(getattr(row, "title", "") or getattr(row, "domain", "") or "webpage media")
+        cache_key = self._webpage_video_prefetch_cache_key(row)
+
+        def _latest_video_audio_cards_payload() -> dict[str, Any]:
+            latest_row = self._source_row_by_id(row_id) or row
+            latest_resources: tuple[Any, ...] = ()
+            try:
+                cached_discovery = self.__dict__.setdefault("webpage_video_discovery_cache_by_url", {}).get(cache_key) if cache_key else None
+                latest_resources = tuple(getattr(cached_discovery, "resources", ()) or ())
+            except Exception:
+                latest_resources = ()
+            row_resources = tuple(getattr(latest_row, "video_audio_resources", ()) or ())
+            if len(row_resources) > len(latest_resources):
+                latest_resources = row_resources
+            if not latest_resources:
+                latest_resources = tuple(resources or ())
+            intake_decisions_by_id = self._webpage_video_audio_file_intake_decisions_for_resources(
+                row=latest_row,
+                resources=latest_resources,
+            )
+            latest_cards = self._source_video_audio_browser_grid_cards(
+                latest_resources,
+                file_intake_decisions_by_id=intake_decisions_by_id,
+                page_title=media_page_title,
+            )
+            return {
+                "ok": True,
+                "items": latest_cards,
+                "media_count": len(latest_cards),
+                "resource_count": len(latest_resources),
+            }
+
+        initial_payload = _latest_video_audio_cards_payload()
+        cards = tuple(initial_payload.get("items", ()) or ())
+        if not cards:
+            self.log_message("Browser-native Video & Audio found no usable media URLs for this row.", "warning")
+            return
         cards_json = json.dumps(cards, ensure_ascii=False).replace("</", "<\\/")
         app = self
+        info_icon_data_uri = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAACXBIWXMAAAsTAAALEwEAmpwYAAAFIUlEQVR4nO2bX4gVdRTHR0Mt0zQzSvrDKpWtpYUP2X+1kl4rDeohfFkpyT+omWaI1ENPRT2E0Zb9JQqh0sIki+ivuKtmWRlRpCkRlQ9Wq+tutJ/4tefGt9/eOztz5zf3zm73CwvL3DPfc+bcmXPOPedMFDXQQAN5AhgOXAWsBJ4C3ge+A34GOoCjwGHga+AD4FlgCXANMCIaiADGAPOBrcAxqscfwGvGNTIqOoAL7VvuJDyOAI8Dk6KiAWgCNgJ/VTD+S+AZYCFwPdAMjANOtb/TgSn22WKT/aYCVzfQCpxdlOf7wQrf+G5gmXNOBv7zgHuAfWX4f7dYcULYq0oIYLJdpKLHntmrc9A3E3injCM+rvndANxsEVyxw0X7Guh2jtjr6f4FmJO37n9gt50+68eBFcDQqEYAhgFrLB5obLgjb8VrPM+7fD41V6Xx9lwBHPIewUV5KVvsXfx2F71zUZbOrjOATz0nhL0TgFuMuAQXjE6KilV4feg9DmFiAnAB8JuQfwScnJFzCHCtpcll9v+QjJynAHvEzl8zZwdghBdxvwXGZuScBLTTF+1ZqzzgTOCglyKrrxOAtULmavpLMho4HviBynCfjc+o40ovOyypluh8r8K7O4thxvmIlz6ftj/3fwkPB9Bzv/C5x/esakg2ekVO5jwP7BfOuXJ8nhz/PlCd8IVwtqYlaJZix0X/6VmNMt4uMWqUHB+td0bAirGE7lTxBXheTt4cwqAyd8A8OX5ryDtAePW3w/o0OfWYnHhZQIP8GLDBfvoGjQGiz6VX7Sf0n76BBXLS7lDGpMgCpwXW+ZXwz09ywruZU0j/dUBbmYtvy6PbAyxP/DgDJ0rqc8FvQmiD8qoE+3F4CR2xjVZgtgjviwYJrONcwqw4wdWpo+YAAPCkXNeKOMHnRPDOaJDAmrElvBgnuF0EZ0eDBK5HKde1I07wgAg25WjQHOBt6+x22ERobo76NBAeiBM8LIJB87HoWOU1VxSP5aRzpOjoTFqrD8/BkFkxF1/CbaH1mu5/ESfULXLDcjBis/C/ZxMl18R4VY63h9abxgFHRG5MDkb8KPzNcnyc/Pr8M/S0J80jcFAEJ4Y0wvhd0CthdNLPAug9V7gPxQl+IoIzQxpRZwdoGtwZJ/iSCLaENKLODmhJWgitEsEnQhpRZwesF+774gRvEMHPQxpRZwfsTVThAqOkO9MTeuxcDwcA50jt0dXvqg29JWoJiwaBA3SmuTXJCXfJCbtCGVJHB+gSx4IkJ4z1BiIzBqoDnO3CeTRxcQe8ICduCmFMnRywTTg3pDnxIm8wMmOgOcDLaO5apmQZjbUFGo3VxAHWdN0lfK9UQzLRiwXLsxhVYwcsFa7OqtvtwDohOq6/4IrqADfJ8voaD2Sdsu4UsnVFdoBtner8cU/mxg69KzL7bRdvWlEdYNss27xF63SBL2/k5QBb2X1dzu/Js8laKAfYboG/QntvVEQQ2AG2r6ybINmCXloAN1qjc2GSPh7wmRn5k19XuMWIpO04y/MtntPcbb8yqiX475qq29a8vB/5JpsG9wlOwJvCtTqGY5o3wseGK7dHtQawib7Y4nZ4q+DSNRm3oXKT9/lU184q81KGW4C4OOiFpUw9ayu8F7Q0JddQe6EKrwRvtZmlP1BxM4yHCvFiFb2zt5e9b+eNKngmeOuuleBS3uSoaKA3KruXpt6qdo3e0tqjVsgouqxrfWn0fwC905zptql+ne4VNtBAAw1EgfA3JRqccdS5G+4AAAAASUVORK5CYII='
         download_icon_data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAACXBIWXMAAAsTAAALEwEAmpwYAAABkklEQVR4nO2YS07DMBCGzaLcoZQDURZQIRALLlAEp6NcgYcocAQQpCDxWLXsQPrQCCMiK8GJHeIWzbfqwzP+v8hqMzFGURTlXwIMgGfgCdgwiwbwwA8Ts2jgYBYNVCAxKpAaFUiNCjQFsAwcAufAm5PrFuiHCgDrtkce2eMMOJC9Y8OvANf8ThYhMPH0vgK6MVfeFz5WIKvQ/xLohAjIsfFxA6xFCPRtDx/7IQJy5vMcyZGqUe8VKALoASOn/NTUBZg5TXo164MEBGDVKZ+ausQEmId6U7UBsAO82gFm4KsHNu1P5728TioALAEvuWXvwG5ZvXxn13zzmFTArpOZF1fCrS8IL9zNg8BWQTD3fdFn8j7tEcqt3S4JXcYHsNfU/o00qCHhDZ9EoKJEpfDJBDwSlcMnFSiRqBU+uUDu0WJm/7AGbe9vohtEggrANOZuNAYauht154FRGxJ8hT9uYh6QoXpeGIbOxDJUp+YiaCa2El07VKdiHPxUIifRkaEaOCkYM/+Cmd1rGHzlFUVRTFt8AnKNaVaHwn2+AAAAAElFTkSuQmCC"
 
         class _VideoAudioBrowserGridHandler(http.server.BaseHTTPRequestHandler):
@@ -11852,12 +11966,20 @@ render();
 
             def do_GET(self) -> None:
                 parsed = urllib.parse.urlsplit(self.path)
-                if parsed.path not in {"/", "/index.html"}:
-                    self._send_bytes(404, b"Not found", "text/plain; charset=utf-8")
-                    return
                 query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
                 if query.get("token") != token:
                     self._send_bytes(403, b"Forbidden", "text/plain; charset=utf-8")
+                    return
+                if parsed.path == "/media-items":
+                    try:
+                        payload = _latest_video_audio_cards_payload()
+                    except Exception as error:
+                        logger.debug("Could not build live Video & Audio browser payload.", exc_info=True)
+                        payload = {"ok": False, "error": str(error)}
+                    self._send_bytes(200, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+                    return
+                if parsed.path not in {"/", "/index.html"}:
+                    self._send_bytes(404, b"Not found", "text/plain; charset=utf-8")
                     return
                 self._send_bytes(200, html_doc.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -11898,28 +12020,36 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 .grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:.7rem; padding:.7rem; }}
 .card {{ position:relative; min-height:196px; overflow:hidden; border:1px solid #2e3a44; border-radius:14px; background:#101820; box-shadow:0 3px 12px #0006; cursor:pointer; }}
 .card.selected {{ border-color:#38bdf8; outline:2px solid #38bdf8; }}
-.card.intake-reused {{ border-color:#33414d; box-shadow:0 2px 9px #0007; opacity:.82; }}
+.card.intake-reused {{ border-color:#33414d; box-shadow:0 2px 9px #0007; opacity:.74; }}
+.card.intake-reused .preview {{ opacity:.52; filter:grayscale(.32) contrast(.88); }}
 .card.intake-duplicate {{ border-color:#f59e0b; outline:2px solid #f59e0b77; }}
-.preview {{ position:absolute; left:0; right:0; top:0; bottom:2.15rem; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#111827,#1f2937); }}
+.preview {{ position:absolute; left:0; right:0; top:0; bottom:2.25rem; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#111827,#1f2937); }}
 .preview video, .preview img {{ width:100%; height:100%; object-fit:contain; display:block; background:#05080b; }}
 .audio-mark {{ font-size:2.3rem; color:#93c5fd; }}
 .top-controls {{ position:absolute; left:.35rem; right:.35rem; top:.35rem; display:none; gap:.22rem; align-items:center; z-index:4; pointer-events:none; }}
 .card:hover .top-controls, .card.selected .top-controls {{ display:flex; }}
 .check {{ width:1.18rem; height:1.18rem; border-radius:.30rem; border:1px solid #9aa8b4; background:#ffffffd8; color:#0f1419; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:.74rem; line-height:1; flex:0 0 auto; pointer-events:auto; }}
 .card.selected .check {{ background:#0ea5e9; border-color:#38bdf8; color:#fff; }}
-.url-copy {{ min-width:1.9rem; border:1px solid #3c4c59; border-radius:.34rem; background:#111a22d9; color:#bfdbfe; padding:.12rem .25rem; font-size:.68rem; line-height:.95rem; cursor:pointer; pointer-events:auto; }}
-.url-copy:hover, .actions a:hover, .actions button:hover {{ background:#1e3a8a; border-color:#60a5fa; color:#fff; }}
+.url-copy, .info-copy {{ min-width:1.9rem; border:1px solid #3c4c59; border-radius:.34rem; background:#111a22d9; color:#bfdbfe; padding:.12rem .25rem; font-size:.68rem; line-height:.95rem; cursor:pointer; pointer-events:auto; }}
+.info-copy {{ width:1.18rem; min-width:1.18rem; height:1.18rem; padding:0; display:inline-flex; align-items:center; justify-content:center; }}
+.info-icon {{ width:16px; height:16px; display:block; object-fit:contain; filter:brightness(0) invert(1); opacity:1; }}
+.url-copy:hover, .info-copy:hover, .actions a:hover, .actions button:hover {{ background:#1e3a8a; border-color:#60a5fa; color:#fff; }}
 .actions {{ margin-left:auto; display:flex; gap:.22rem; pointer-events:auto; }}
 .actions a, .actions button {{ text-decoration:none; background:#111a22d9; border:1px solid #3c4c59; color:#e8eef2; border-radius:.34rem; padding:.18rem .35rem; font-size:.70rem; line-height:.95rem; white-space:nowrap; cursor:pointer; }}
 .actions .download-action {{ width:1.58rem; min-width:1.58rem; height:1.22rem; padding:0; display:inline-flex; align-items:center; justify-content:center; }}
 .download-icon {{ width:18px; height:18px; display:block; object-fit:contain; }}
 .info {{ position:absolute; left:.35rem; right:.35rem; bottom:.35rem; display:flex; gap:.25rem; flex-wrap:wrap; align-items:center; pointer-events:auto; z-index:3; }}
 .pill {{ background:#05080bcc; color:#fff; border-radius:.35rem; padding:.1rem .3rem; font-size:.72rem; pointer-events:none; }}
-.variant-select {{ max-width:8.5rem; pointer-events:auto; background:#05080bcc; color:#fff; border:1px solid #475569; border-radius:.35rem; padding:.06rem .18rem; font-size:.72rem; cursor:pointer; }}
+.variant-select {{ max-width:9.6rem; pointer-events:auto; background:#05080bcc; color:#fff; border:1px solid #475569; border-radius:.35rem; padding:.06rem .18rem; font-size:.72rem; cursor:pointer; }}
 .top-badges {{ position:absolute; left:.42rem; right:.42rem; top:.42rem; display:flex; justify-content:flex-end; align-items:flex-start; pointer-events:none; z-index:2; }}
 .intake-badge {{ background:#854d0ed9; color:#fef3c7; border:1px solid #facc1588; border-radius:.45rem; padding:.12rem .34rem; font-size:.68rem; font-weight:800; box-shadow:0 2px 8px #0008; }}
 .card:hover .intake-badge, .card.selected .intake-badge {{ opacity:0; visibility:hidden; }}
-.name {{ position:absolute; left:.4rem; right:.4rem; top:1.95rem; z-index:1; color:#dbeafe; font-size:.72rem; text-shadow:0 1px 4px #000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none; }}
+.name {{ position:absolute; left:.42rem; top:.58rem; max-width:82%; z-index:1; color:#f8fafc; font-size:.74rem; font-weight:700; text-align:left; text-shadow:0 1px 3px #000; background:#02061740; border-radius:.35rem; padding:.10rem .24rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none; }}
+.card:hover .name, .card.selected .name {{ opacity:0; visibility:hidden; }}
+.play-toggle {{ position:absolute; right:.48rem; bottom:2.55rem; z-index:5; min-width:2rem; height:1.55rem; border:1px solid #3c4c59; border-radius:.45rem; background:#111a22d9; color:#e8eef2; display:flex; align-items:center; justify-content:center; font-size:.88rem; font-weight:900; padding:0 .42rem; pointer-events:auto; }}
+.play-toggle:hover {{ background:#1e3a8a; border-color:#60a5fa; color:#fff; }}
+.card.manual-playing .play-toggle {{ background:#075985; border-color:#38bdf8; color:#fff; }}
+.dimension-pending {{ color:#cbd5e1; }}
 .err {{ color:#fecaca; background:#3b1111d9; border:1px solid #7f1d1d; border-radius:.5rem; padding:.5rem; font-size:.8rem; }}
 #status {{ min-width:18rem; }}
 </style>
@@ -11935,22 +12065,58 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 </header>
 <main class="grid" id="grid"></main>
 <script>
-const mediaItems = {cards_json};
+let mediaItems = {cards_json};
 const token = {json.dumps(token)};
 const DOWNLOAD_ICON_DATA_URI = {json.dumps(download_icon_data_uri)};
+const INFO_ICON_DATA_URI = {json.dumps(info_icon_data_uri)};
+const PAGE_MEDIA_TITLE = {json.dumps(media_page_title)};
 const selected = new Set();
 let knownCount = mediaItems.filter(item => item.file_intake_status === 'reused').length;
-const duplicateCount = mediaItems.filter(item => item.file_intake_status === 'duplicate').length;
+let duplicateCount = mediaItems.filter(item => item.file_intake_status === 'duplicate').length;
+let currentMediaSignature = '';
+function mediaSignature(items) {{ return (items || []).map((item)=>{{ const variantSig=(Array.isArray(item.variants)?item.variants:[]).map(v=>`${{v.resource_id}}:${{v.width||0}}x${{v.height||0}}:${{v.label||''}}`).join(','); return `${{item.resource_id}}:${{item.width||0}}x${{item.height||0}}:${{item.file_intake_status||''}}:${{variantSig}}`; }}).join('|'); }}
 const grid = document.getElementById('grid');
 const counts = document.getElementById('counts');
 const statusEl = document.getElementById('status');
 function updateCounts() {{ const extras=[]; if (knownCount) extras.push(`${{knownCount}} already in FILES`); if (duplicateCount) extras.push(`${{duplicateCount}} duplicate`); counts.textContent = `${{selected.size}} selected · ${{mediaItems.length}} media${{extras.length ? ' · ' + extras.join(' · ') : ''}}`; }}
 function setStatus(text) {{ statusEl.textContent = text; }}
+function formatDimensions(item) {{ const width = Number(item.width || 0); const height = Number(item.height || 0); return (width && height) ? `${{width}}×${{height}}` : ''; }}
+function variantDisplayLabel(variant) {{ const dims = formatDimensions(variant); const base = String(variant.label || '').trim(); if (dims && (!base || base === 'unknown' || base === 'Unknown quality')) return dims; if (dims && !base.includes(dims)) return `${{base}} · ${{dims}}`; return base || dims || 'Unknown quality'; }}
+function basenameFromUrl(url) {{ try {{ const path = new URL(url, window.location.href).pathname.split('/').filter(Boolean).pop() || ''; return decodeURIComponent(path).replace(/[?#].*$/, ''); }} catch(_error) {{ return ''; }} }}
+function mediaDisplayName(item) {{ const raw = String(item.name || '').trim(); const lower = raw.toLowerCase(); const generic = !raw || lower.includes(' from a') || lower.includes(' from source') || /^(file\\s+)?(mp4|webm|video|audio|embed|embedded|unknown)(\\b|_)/i.test(raw); return generic ? (PAGE_MEDIA_TITLE || basenameFromUrl(item.url) || raw || item.url) : raw; }}
+function showMediaInfo(item, displayName) {{ const dims = formatDimensions(item); setStatus(`${{displayName || mediaDisplayName(item)}}${{dims ? ' · ' + dims : ''}}`); }}
 function markCardAddedBefore(item, card, intakeBadge) {{ if (item.file_intake_status !== 'reused') knownCount += 1; item.file_intake_status='reused'; item.file_intake_label='Added before'; card.classList.remove('intake-duplicate'); card.classList.add('intake-reused'); if (intakeBadge) {{ intakeBadge.textContent='Added before'; intakeBadge.style.visibility='visible'; }} updateCounts(); }}
 async function copyTextToClipboard(text) {{ try {{ if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text); else {{ const area=document.createElement('textarea'); area.value=text; area.setAttribute('readonly',''); area.style.position='fixed'; area.style.left='-9999px'; document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove(); }} setStatus('Copied media URL to clipboard.'); }} catch(error) {{ setStatus(`Could not copy media URL: ${{error}}`); }} }}
 function toggle(card, id) {{ selected.has(id) ? selected.delete(id) : selected.add(id); card.classList.toggle('selected', selected.has(id)); updateCounts(); }}
-function renderPreview(item, container) {{ container.textContent=''; const poster = item.poster_url || ''; if (item.media_kind === 'audio') {{ const mark=document.createElement('div'); mark.className='audio-mark'; mark.textContent='♪'; container.append(mark); return; }} const video=document.createElement('video'); video.muted=true; video.loop=true; video.preload='metadata'; video.playsInline=true; if (poster) video.poster=poster; video.src=item.url; video.onmouseenter=() => video.play().catch(() => {{}}); video.onmouseleave=() => {{ try {{ video.pause(); video.currentTime=0; }} catch(_e) {{}} }}; video.onerror=() => {{ if (poster) {{ const img=document.createElement('img'); img.loading='lazy'; img.decoding='async'; img.src=poster; video.replaceWith(img); }} else {{ const e=document.createElement('div'); e.className='err'; e.textContent='Preview unavailable'; video.replaceWith(e); }} }}; container.append(video); }}
-function render() {{ const frag=document.createDocumentFragment(); mediaItems.forEach((item) => {{ const card=document.createElement('div'); card.className=item.file_intake_status ? `card intake-${{item.file_intake_status}}` : 'card'; const preview=document.createElement('div'); preview.className='preview'; renderPreview(item, preview); const name=document.createElement('div'); name.className='name'; name.textContent=item.name || item.url; const topControls=document.createElement('div'); topControls.className='top-controls'; const check=document.createElement('div'); check.className='check'; check.textContent='✓'; check.title=item.url; const urlCopy=document.createElement('button'); urlCopy.type='button'; urlCopy.className='url-copy'; urlCopy.textContent='URL'; urlCopy.title=`Copy media URL: ${{item.url}}`; urlCopy.setAttribute('aria-label','Copy media URL'); urlCopy.onclick=async(event)=>{{ event.stopPropagation(); await copyTextToClipboard(item.url); }}; const topBadges=document.createElement('div'); topBadges.className='top-badges'; const intakeBadge=document.createElement('div'); intakeBadge.className='intake-badge'; intakeBadge.textContent=item.file_intake_label || ''; if (!item.file_intake_label) intakeBadge.style.visibility='hidden'; topBadges.append(intakeBadge); const actions=document.createElement('div'); actions.className='actions'; const open=document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open'; open.title='Open media URL'; open.setAttribute('aria-label','Open media URL'); const down=document.createElement('button'); down.type='button'; down.className='download-action'; down.title='Download selected media to FILES'; down.setAttribute('aria-label','Download media to FILES'); down.onclick=async(event)=>{{ event.preventDefault(); event.stopPropagation(); setStatus(`Adding media #${{item.index}} to FILES...`); try {{ const response=await fetch(`/download-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids:[item.resource_id]}})}}); const payload=await response.json(); if (payload.ok) {{ markCardAddedBefore(item, card, intakeBadge); setStatus(`Queued media #${{item.index}} for FILES intake.`); }} else setStatus(`FILES intake failed: ${{payload.error || 'unknown error'}}`); }} catch(error) {{ setStatus(`FILES intake failed: ${{error}}`); }} }}; const downIcon=document.createElement('img'); downIcon.className='download-icon'; downIcon.alt=''; downIcon.src=DOWNLOAD_ICON_DATA_URI; down.append(downIcon); actions.append(open, down); topControls.append(check, urlCopy, actions); const info=document.createElement('div'); info.className='info'; const ext=document.createElement('span'); ext.className='pill'; ext.textContent=item.extension || item.media_kind || 'media'; info.append(ext); const variants=Array.isArray(item.variants) && item.variants.length ? item.variants : [item]; function applyVariant(variant) {{ const previousId=item.resource_id; const wasSelected=selected.has(previousId); item.resource_id=variant.resource_id || item.resource_id; item.url=variant.url || item.url; item.extension=variant.extension || item.extension || 'media'; item.mime_type=variant.mime_type || item.mime_type || ''; item.media_kind=(item.mime_type || '').startsWith('audio/') ? 'audio' : (variant.media_type || item.media_kind || 'video'); item.width=Number(variant.width || 0); item.height=Number(variant.height || 0); if (wasSelected && previousId !== item.resource_id) {{ selected.delete(previousId); selected.add(item.resource_id); }} renderPreview(item, preview); open.href=item.url; urlCopy.title=`Copy media URL: ${{item.url}}`; check.title=item.url; ext.textContent=item.extension || item.media_kind || 'media'; updateCounts(); }} if (variants.length > 1) {{ const selector=document.createElement('select'); selector.className='variant-select'; selector.title='Select video/audio variant'; variants.forEach((variant)=>{{ const option=document.createElement('option'); option.value=variant.resource_id; option.textContent=variant.label || ((variant.width && variant.height) ? `${{variant.width}}×${{variant.height}}` : 'Unknown quality'); option.title=variant.url || ''; selector.append(option); }}); selector.onchange=()=>{{ const variant=variants.find(candidate=>candidate.resource_id===selector.value) || variants[0]; applyVariant(variant); }}; info.append(selector); }} else if (item.width && item.height) {{ const size=document.createElement('span'); size.className='pill'; size.textContent=`${{item.width}}×${{item.height}}`; info.append(size); }} const order=document.createElement('span'); order.className='pill'; order.textContent=`#${{item.index}}`; info.append(order); card.append(preview, name, topControls, topBadges, info); card.addEventListener('click',(event)=>{{ if (event.target.closest('a') || event.target.closest('button') || event.target.closest('select')) return; toggle(card, item.resource_id); }}); frag.append(card); }}); grid.append(frag); updateCounts(); if (knownCount || duplicateCount) setStatus(`Added before highlighted · ${{knownCount}} already in FILES · ${{duplicateCount}} duplicate`); }}
+function stopOtherManualPlayback(currentMedia) {{ document.querySelectorAll('video[data-manual-playing="1"], audio[data-manual-playing="1"]').forEach((media)=>{{ if (media === currentMedia) return; try {{ media.dataset.manualPlaying='0'; media.pause(); media.closest('.card')?.classList.remove('manual-playing'); const button=media.closest('.card')?.querySelector('.play-toggle'); if (button) button.textContent='▶'; }} catch(_error) {{}} }}); }}
+function renderPreview(item, container, onMetadata) {{ container.textContent=''; const poster = item.poster_url || ''; if (item.media_kind === 'audio') {{ const mark=document.createElement('div'); mark.className='audio-mark'; mark.textContent='♪'; const audio=document.createElement('audio'); audio.preload='auto'; audio.src=item.url; try {{ audio.load(); }} catch(_loadError) {{}}; audio.onloadedmetadata=()=>onMetadata && onMetadata(audio); audio.onloadeddata=()=>onMetadata && onMetadata(audio); audio.oncanplay=()=>onMetadata && onMetadata(audio); container.append(mark, audio); return; }} const video=document.createElement('video'); video.muted=true; video.loop=true; video.preload='auto'; video.playsInline=true; if (poster) video.poster=poster; video.src=item.url; try {{ video.load(); }} catch(_loadError) {{}}; video.onloadedmetadata=()=>onMetadata && onMetadata(video); video.onloadeddata=()=>onMetadata && onMetadata(video); video.oncanplay=()=>onMetadata && onMetadata(video); const startHoverPreview=()=>{{ if (video.dataset.manualPlaying === '1') return; video.muted=true; video.loop=true; video.play().catch(() => {{}}); }}; const stopHoverPreview=()=>{{ if (video.dataset.manualPlaying === '1') return; try {{ video.pause(); video.currentTime=0; }} catch(_e) {{}} }}; video.onmouseenter=startHoverPreview; video.onpointerenter=startHoverPreview; video.onmouseleave=stopHoverPreview; video.onpointerleave=stopHoverPreview; video.onerror=() => {{ if (poster) {{ const img=document.createElement('img'); img.loading='lazy'; img.decoding='async'; img.src=poster; video.replaceWith(img); }} else {{ const e=document.createElement('div'); e.className='err'; e.textContent='Preview unavailable'; video.replaceWith(e); }} }}; container.append(video); }}
+function render() {{ grid.textContent=''; currentMediaSignature = mediaSignature(mediaItems); const frag=document.createDocumentFragment(); mediaItems.forEach((item) => {{ const card=document.createElement('div'); card.className=item.file_intake_status ? `card intake-${{item.file_intake_status}}` : 'card'; const preview=document.createElement('div'); preview.className='preview'; let sizePill=null; let selector=null; const updateSizeUi=(media)=>{{ const w=Number(media.videoWidth || item.width || 0); const h=Number(media.videoHeight || item.height || 0); if (w && h) {{ item.width=w; item.height=h; if (sizePill) {{ sizePill.textContent=`${{w}}×${{h}}`; sizePill.classList.remove('dimension-pending'); }} if (selector && selector.selectedIndex >= 0) {{ const opt=selector.options[selector.selectedIndex]; if (opt && (!opt.textContent || opt.textContent === 'Unknown quality' || !opt.textContent.includes('×'))) opt.textContent=`${{w}}×${{h}}`; }} }} }}; renderPreview(item, preview, updateSizeUi); let displayName=mediaDisplayName(item); const name=document.createElement('div'); name.className='name'; name.textContent=displayName; name.title=displayName; const topControls=document.createElement('div'); topControls.className='top-controls'; const check=document.createElement('div'); check.className='check'; check.textContent='✓'; check.title=item.url; const urlCopy=document.createElement('button'); urlCopy.type='button'; urlCopy.className='url-copy'; urlCopy.textContent='URL'; urlCopy.title=`Copy media URL: ${{item.url}}`; urlCopy.setAttribute('aria-label','Copy media URL'); urlCopy.onclick=async(event)=>{{ event.stopPropagation(); await copyTextToClipboard(item.url); }}; const infoCopy=document.createElement('button'); infoCopy.type='button'; infoCopy.className='info-copy'; infoCopy.title=displayName; infoCopy.setAttribute('aria-label','Show media title'); infoCopy.onmouseenter=()=>showMediaInfo(item, displayName); infoCopy.onclick=(event)=>{{ event.preventDefault(); event.stopPropagation(); showMediaInfo(item, displayName); }}; const infoIcon=document.createElement('img'); infoIcon.className='info-icon'; infoIcon.alt=''; infoIcon.src=INFO_ICON_DATA_URI; infoCopy.append(infoIcon); const topBadges=document.createElement('div'); topBadges.className='top-badges'; const intakeBadge=document.createElement('div'); intakeBadge.className='intake-badge'; intakeBadge.textContent=item.file_intake_label || ''; if (!item.file_intake_label) intakeBadge.style.visibility='hidden'; topBadges.append(intakeBadge); const actions=document.createElement('div'); actions.className='actions'; const open=document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open'; open.title='Open media URL'; open.setAttribute('aria-label','Open media URL'); const down=document.createElement('button'); down.type='button'; down.className='download-action'; down.title='Download selected media to FILES'; down.setAttribute('aria-label','Download media to FILES'); down.onclick=async(event)=>{{ event.preventDefault(); event.stopPropagation(); setStatus(`Adding media #${{item.index}} to FILES...`); try {{ const response=await fetch(`/download-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids:[item.resource_id]}})}}); const payload=await response.json(); if (payload.ok) {{ markCardAddedBefore(item, card, intakeBadge); setStatus(`Queued media #${{item.index}} for FILES intake.`); }} else setStatus(`FILES intake failed: ${{payload.error || 'unknown error'}}`); }} catch(error) {{ setStatus(`FILES intake failed: ${{error}}`); }} }}; const downIcon=document.createElement('img'); downIcon.className='download-icon'; downIcon.alt=''; downIcon.src=DOWNLOAD_ICON_DATA_URI; down.append(downIcon); actions.append(open, down); topControls.append(check, urlCopy, infoCopy, actions); const play=document.createElement('button'); play.type='button'; play.className='play-toggle'; play.textContent='▶'; play.title='Play or pause media preview audio'; play.setAttribute('aria-label','Play or pause media preview audio'); play.onclick=(event)=>{{ event.preventDefault(); event.stopPropagation(); const media=preview.querySelector('video,audio'); if (!media) {{ setStatus('Preview is not directly playable in the browser.'); return; }} if (media.dataset.manualPlaying === '1') {{ media.dataset.manualPlaying='0'; card.classList.remove('manual-playing'); try {{ media.pause(); }} catch(_error) {{}} play.textContent='▶'; return; }} stopOtherManualPlayback(media); media.dataset.manualPlaying='1'; card.classList.add('manual-playing'); try {{ media.muted=false; media.loop=false; media.volume=1.0; }} catch(_error) {{}} media.play().then(()=>{{ play.textContent='⏸'; setStatus(`Playing media #${{item.index}} preview.`); }}).catch((error)=>{{ media.dataset.manualPlaying='0'; card.classList.remove('manual-playing'); play.textContent='▶'; setStatus(`Could not play preview: ${{error}}`); }}); }}; const info=document.createElement('div'); info.className='info'; const ext=document.createElement('span'); ext.className='pill'; ext.textContent=item.extension || item.media_kind || 'media'; info.append(ext); const variants=Array.isArray(item.variants) && item.variants.length ? item.variants : [item]; function applyVariant(variant) {{ const previousId=item.resource_id; const wasSelected=selected.has(previousId); item.resource_id=variant.resource_id || item.resource_id; item.url=variant.url || item.url; item.extension=variant.extension || item.extension || 'media'; item.mime_type=variant.mime_type || item.mime_type || ''; item.media_kind=(item.mime_type || '').startsWith('audio/') ? 'audio' : (variant.media_type || item.media_kind || 'video'); item.width=Number(variant.width || 0); item.height=Number(variant.height || 0); if (wasSelected && previousId !== item.resource_id) {{ selected.delete(previousId); selected.add(item.resource_id); }} card.classList.remove('manual-playing'); play.textContent='▶'; renderPreview(item, preview, updateSizeUi); open.href=item.url; urlCopy.title=`Copy media URL: ${{item.url}}`; check.title=item.url; displayName=mediaDisplayName(item); name.textContent=displayName; name.title=displayName; infoCopy.title=displayName; ext.textContent=item.extension || item.media_kind || 'media'; if (sizePill) {{ const dims=formatDimensions(item); sizePill.textContent=dims || 'Detecting size'; sizePill.classList.toggle('dimension-pending', !dims); }} updateCounts(); }} if (variants.length > 1) {{ selector=document.createElement('select'); selector.className='variant-select'; selector.title='Select video/audio variant'; variants.forEach((variant)=>{{ const option=document.createElement('option'); option.value=variant.resource_id; option.textContent=variantDisplayLabel(variant); option.title=variant.url || ''; selector.append(option); }}); selector.onchange=()=>{{ const variant=variants.find(candidate=>candidate.resource_id===selector.value) || variants[0]; applyVariant(variant); }}; info.append(selector); }} else {{ sizePill=document.createElement('span'); sizePill.className='pill'; const dims=formatDimensions(item); sizePill.textContent=dims || 'Detecting size'; sizePill.classList.toggle('dimension-pending', !dims); info.append(sizePill); }} const order=document.createElement('span'); order.className='pill'; order.textContent=`#${{item.index}}`; info.append(order); card.append(preview, name, topControls, topBadges, play, info); card.addEventListener('click',(event)=>{{ if (event.target.closest('a') || event.target.closest('button') || event.target.closest('select')) return; toggle(card, item.resource_id); }}); frag.append(card); }}); grid.append(frag); updateCounts(); if (knownCount || duplicateCount) setStatus(`Added before highlighted · ${{knownCount}} already in FILES · ${{duplicateCount}} duplicate`); }}
+async function refreshMediaItemsFromServer() {{
+  try {{
+    const response = await fetch(`/media-items?token=${{encodeURIComponent(token)}}`, {{cache:'no-store'}});
+    const payload = await response.json();
+    if (!payload.ok || !Array.isArray(payload.items)) return;
+    const nextItems = payload.items;
+    const nextSignature = mediaSignature(nextItems);
+    if (nextSignature === currentMediaSignature) return;
+    const oldCount = mediaItems.length;
+    if (document.querySelector('.card.manual-playing') || document.querySelector('.preview:hover')) {{
+      setTimeout(refreshMediaItemsFromServer, 500);
+      return;
+    }}
+    const oldSelected = new Set(selected);
+    const nextIds = new Set(nextItems.map(item => item.resource_id));
+    selected.clear();
+    oldSelected.forEach(id => {{ if (nextIds.has(id)) selected.add(id); }});
+    mediaItems = nextItems;
+    knownCount = mediaItems.filter(item => item.file_intake_status === 'reused').length;
+    duplicateCount = mediaItems.filter(item => item.file_intake_status === 'duplicate').length;
+    render();
+    if (mediaItems.length > oldCount) setStatus(`Updated media list from rendered discovery · ${{mediaItems.length}} media.`);
+  }} catch(_error) {{}}
+}}
+setTimeout(refreshMediaItemsFromServer, 750);
+setInterval(refreshMediaItemsFromServer, 1500);
 document.getElementById('selectAll').onclick=()=>{{ mediaItems.forEach(item=>selected.add(item.resource_id)); document.querySelectorAll('.card').forEach(c=>c.classList.add('selected')); updateCounts(); }};
 document.getElementById('clearAll').onclick=()=>{{ selected.clear(); document.querySelectorAll('.card').forEach(c=>c.classList.remove('selected')); updateCounts(); }};
 document.getElementById('addFiles').onclick=async()=>{{ const ids=[...selected]; if (!ids.length) {{ setStatus('No media selected.'); return; }} setStatus(`Adding ${{ids.length}} selected media candidate(s) to FILES...`); try {{ const response=await fetch(`/download-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids}})}}); const payload=await response.json(); if (payload.ok) {{ setStatus(`Queued ${{payload.queued}} media candidate(s) for FILES intake in the app.`); }} else setStatus(`FILES intake failed: ${{payload.error || 'unknown error'}}`); }} catch(error) {{ setStatus(`FILES intake failed: ${{error}}`); }} }};

@@ -188,7 +188,12 @@ def test_enter_source_url_intake_adds_rows_and_retains_invalid_text() -> None:
     assert app.url_status.config["text"].endswith("retained")
     assert app._rows_refreshed is True
     assert app._discussion_refreshed is True
-    assert any(("Metadata probes may run" in message) or ("Network actions performed: none" in message) for message, _level in app.log_messages)
+    assert any(
+        ("Metadata probes may run" in message)
+        or ("Metadata/media LinkGrabber prechecks may run" in message)
+        or ("Network actions performed: none" in message)
+        for message, _level in app.log_messages
+    )
 
 
 def test_shift_enter_inserts_newline_without_submission() -> None:
@@ -520,6 +525,12 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "Prefetched" in app_source
     assert "_start_webpage_video_source_row_prefetch" in app_source
     assert "_apply_prefetched_webpage_video_discovery" in app_source
+    assert "finished: bool = True" in app_source
+    assert "quick_static_linkgrabber" in app_source
+    assert "finished=False" in app_source
+    assert "LinkGrabber quick prechecked" in app_source
+    assert "rendered variants continue in the background" in app_source
+    assert "rendered_linkgrabber" in app_source
     assert "Video & Audio can open from the cached candidate list" in app_source
     assert "discover_webpage_videos_for_row" in Path("main.py").read_text(encoding="utf-8")
     assert "self._start_internal_browser_image_discovery_service()" in app_source
@@ -722,7 +733,31 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'source_video_audio_browser_grid_servers' in video_browser_source
     assert 'Native browser video/audio grid' in video_browser_source
     assert 'renderPreview' in video_browser_source
+    assert '/media-items' in video_browser_source
+    assert 'refreshMediaItemsFromServer' in video_browser_source
+    assert 'mediaSignature' in video_browser_source
+    assert "grid.textContent=''" in video_browser_source
     assert 'video.play().catch' in video_browser_source
+    assert "video.preload='auto'" in video_browser_source
+    assert "audio.preload='auto'" in video_browser_source
+    assert 'onpointerenter=startHoverPreview' in video_browser_source
+    assert "document.querySelector('.preview:hover')" in video_browser_source
+    assert 'formatDimensions' in video_browser_source
+    assert 'variantDisplayLabel' in video_browser_source
+    assert 'onloadedmetadata' in video_browser_source
+    assert 'videoWidth' in video_browser_source
+    assert 'play-toggle' in video_browser_source
+    assert 'INFO_ICON_DATA_URI' in video_browser_source
+    assert 'info_icon_data_uri = INFO_ICON_DATA_URI' not in video_browser_source
+    assert 'info-copy' in video_browser_source
+    assert 'filter:brightness(0) invert(1)' in video_browser_source
+    assert 'infoCopy.onmouseenter' in video_browser_source
+    assert 'mediaDisplayName' in video_browser_source
+    assert 'PAGE_MEDIA_TITLE' in video_browser_source
+    assert 'onloadeddata' in video_browser_source
+    assert 'oncanplay' in video_browser_source
+    assert 'manual-playing' in video_browser_source
+    assert 'Play or pause media preview audio' in video_browser_source
     assert "urlCopy.textContent='URL'" in video_browser_source
     assert "open.textContent='Open'" in video_browser_source
     assert 'download-action' in video_browser_source
@@ -732,9 +767,16 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'event.stopPropagation()' in video_browser_source
     assert 'markCardAddedBefore' in video_browser_source
     assert '.actions a:hover, .actions button:hover' in video_browser_source
+    assert '.card.intake-reused .preview' in video_browser_source
+    assert 'Detecting size' in video_browser_source
     assert '_build_webpage_video_audio_file_intake_dedupe_plan' in full_source
     assert '_webpage_video_audio_files_intake_identity_store_path' in full_source
     assert 'browser_grid_webpage_video_audio_persistent_identity' in full_source
+    assert 'Do not use persistent video/audio identity records as visible FILES state' in full_source
+    assert 'page_title: str = ""' in full_source
+    assert '_browser_grid_display_name' in full_source
+    assert "lower.includes(' from source')" in video_browser_source
+    assert "PAGE_MEDIA_TITLE || basenameFromUrl" in video_browser_source
     assert 'Browser-native video/audio FILES refresh' in video_finish_source
     assert 'Browser-native video/audio download queued' in video_download_source
     assert '_intake_session_files' in video_finish_source

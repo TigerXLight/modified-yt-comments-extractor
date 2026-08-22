@@ -158,3 +158,41 @@ V80AA keeps the text `URL` and `Open` controls, uses the user's white download i
 ## 2026-08-22 - V81B browser-native Video & Audio quick-open repair
 
 V81B keeps the browser-native Video & Audio card layout from V81A but restores the fast/static-first open behaviour from the prior Tk video dialog. The browser-native window now opens from cached or quick static video/audio candidates instead of waiting for the slower rendered discovery path, gates repeated clicks while discovery is already pending, and lets the source-row rendered prefetch continue in the background. The existing VDH-length hover-preview and JDownloader/AppWork-attributed queued intake foundations remain unchanged.
+
+## 2026-08-22 - V81C browser-native Video & Audio metadata and preview polish
+
+V81C keeps the V81A/V81B browser-native Video & Audio grid and quick-open model, then adds browser-side metadata refinement and manual preview controls. Directly playable video/audio elements now update displayed dimensions after metadata loads, already-added media previews are visibly dimmed, and a per-card play/pause control allows quick media/audio checking without adding a separate LIVE action. URL, Open, and FILES download behavior remains based on the existing YTCE browser-grid and queued intake foundations; no JDownloader/AppWork source text is copied.
+
+## V81D browser-native Video & Audio polish
+
+- Added an explicit information button for video/audio cards so generic candidate labels do not have to cover the preview.
+- Kept persistent video/audio identity records as history, but no longer uses them alone to claim a restarted app has a file currently in the visible FILES list.
+- Made browser-side media metadata refresh more robust with loadeddata/canplay hooks and kept the direct FILES intake/download icon flow.
+
+## V81D info icon runtime repair
+
+- Fixed the browser-native Video & Audio grid so the Python-side info icon data URI is embedded before the browser HTML is rendered.
+- Keeps the uploaded information icon as an inline browser asset; no external runtime dependency is added.
+
+## V81E browser-native Video & Audio rich discovery refresh and info polish
+- Keeps the V81B quick/static-first browser-native Video & Audio opening path, while the open browser window now polls the app for richer rendered/prefetched media candidates and grouped rendition variants.
+- Keeps the image-window-style URL/Open/download-icon control layout, brightens the info icon, hides the title overlay while hover controls are visible, and uses the source/page title instead of generic labels such as “file MP4 from source.”
+- Source-labelled implementation in `main.py` and `main_source_resource_ui_test.py`.
+- 2026-08-22 V81E test fix: updated Video & Audio browser-grid self-test to assert generic media labels fall back to the page/source title instead of requiring the removed `file MP4` label.
+
+## V81F browser-native Video & Audio eager preview buffering and refresh guard
+
+V81F keeps the instant/static-first browser-native Video & Audio window while making the
+preview media elements more eager for hover playback.  Browser video/audio preview elements
+now use eager preload/load hints, pointer-enter hover playback handlers, and a rendered-refresh
+guard so background candidate enrichment does not rebuild cards while a user is hovering or
+manually playing a preview.  This preserves the image-window-style responsive feel while still
+allowing richer rendered variants to appear once discovery finishes.
+
+## V81G browser-native Video & Audio LinkGrabber-style source precheck
+
+V81G moves generic webpage video/audio discovery closer to JDownloader's LinkGrabber model.  When a source URL is added, YTCE now performs a quick static video/audio precheck first, caches any immediately available candidates for instant browser-native Video & Audio opening, and then continues the slower rendered/richer discovery in the background so dimensions and grouped variants can refresh later.  This preserves the V81B/V81E instant window-open behaviour while making later clicks more likely to open from already-prepared candidates.  This implementation is source-labelled and does not copy JDownloader/AppWork source code.
+
+## V81G source-add self-test wording repair
+
+V81G changes the source-add success message from the older generic metadata-probe wording to mention metadata/media LinkGrabber prechecks.  The self-test now accepts both the older wording and the new V81G wording so the behaviour change is covered without failing on stale log text.
