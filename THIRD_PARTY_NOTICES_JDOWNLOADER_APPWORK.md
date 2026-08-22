@@ -92,3 +92,14 @@ YTCE implementation:
 
 No Java source text is pasted into the Python module. The implementation ports
 the reviewed method-of-operation into YTCE's Python dataclass/test style.
+
+## V80Q browser-grid FILES dedupe integration
+
+YTCE V80Q wires the side-effect-free FILES/media intake dedupe guard into the browser-native image grid "Add selected to FILES" path.  The implementation keeps JDownloader/AppWork-style identity tracking and repeat-work avoidance labels in project terminology: source URL identity, local path identity, batch duplicate review, existing record reuse, and explicit added/reused/duplicate/failed operator counts.
+
+Reference source areas reviewed:
+
+- JDownloader/AppWork queue and watchdog infrastructure already cited above.
+- YTCE V80P `file_intake_dedupe.py`, which implements the Python/Tk FILES/media intake dedupe model from that architecture.
+
+No Java source text is pasted into this Python integration.  The functionality/structure is implemented natively in YTCE with the JDownloader/AppWork source pattern credited here.

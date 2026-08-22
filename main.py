@@ -183,6 +183,13 @@ from webpage_image_downloader_backend import (
     prewarm_rendered_browser_discovery_worker,
     start_internal_browser_image_discovery_service,
 )
+from file_intake_dedupe import (
+    ExistingFileRecord,
+    FILE_INTAKE_STATUS_ADDED,
+    FileIntakeCandidate,
+    build_file_intake_dedupe_plan,
+    render_file_intake_dedupe_summary,
+)
 from webpage_video_resource_bridge import discover_webpage_videos_for_row, discover_fast_rendered_webpage_videos_for_row
 from webpage_video_preview_backend import (
     can_generate_video_frame_preview,
@@ -9606,6 +9613,144 @@ class App(ctk.CTk):
             )
         return tuple(cards)
 
+    def _webpage_image_files_intake_identity_cache(self) -> dict[tuple[str, str], dict[str, str]]:
+        cache = self.__dict__.setdefault("webpage_image_files_intake_identity_cache", {})
+        if not isinstance(cache, dict):
+            cache = {}
+            self.webpage_image_files_intake_identity_cache = cache
+        return cache
+
+    def _webpage_image_resource_items_by_id(self, state: Any) -> dict[str, Any]:
+        resources_by_id: dict[str, Any] = {}
+        for item in tuple(getattr(state, "resources", ()) or ()):  # keep first visible candidate for a resource id
+            resource_id = str(getattr(item, "resource_id", "") or "").strip()
+            if resource_id:
+                resources_by_id.setdefault(resource_id, item)
+        return resources_by_id
+
+    def _webpage_image_file_intake_existing_records(self) -> tuple[ExistingFileRecord, ...]:
+        """Return existing FILES/session identities for browser-grid dedupe review."""
+        self._ensure_session_files_state()
+        records: list[ExistingFileRecord] = []
+        session_norms: set[str] = set()
+        for entry in tuple(getattr(self, "session_files", ()) or ()):  # visible FILES entries are authoritative
+            normalized_path = str(getattr(entry, "normalized_path", "") or "").strip()
+            local_path = str(getattr(entry, "path", "") or "").strip()
+            if normalized_path:
+                session_norms.add(normalized_path)
+            records.append(
+                ExistingFileRecord(
+                    record_id=f"session:{normalized_path or local_path}",
+                    display_name=str(getattr(entry, "display_name", "") or "").strip(),
+                    local_path=local_path,
+                    media_type=str(getattr(entry, "file_kind", "") or "").strip(),
+                    provenance="session_files",
+                )
+            )
+
+        for record in self._webpage_image_files_intake_identity_cache().values():
+            local_path = str(record.get("local_path") or "").strip()
+            if local_path:
+                try:
+                    normalized = self._normalise_session_file_path(local_path)
+                except Exception:
+                    normalized = ""
+                # The source-URL cache is only authoritative while the associated
+                # temp/local file is still visible in FILES.  This prevents a stale
+                # temp download cache from silently suppressing a new FILES add.
+                if session_norms and normalized and normalized not in session_norms:
+                    continue
+            records.append(
+                ExistingFileRecord(
+                    record_id=str(record.get("record_id") or "browser-grid-image"),
+                    display_name=str(record.get("display_name") or ""),
+                    source_url=str(record.get("source_url") or ""),
+                    local_path=local_path,
+                    media_type=str(record.get("media_type") or "image"),
+                    provenance="browser_grid_webpage_image_identity_cache",
+                )
+            )
+        return tuple(records)
+
+    def _build_webpage_image_file_intake_dedupe_plan(
+        self,
+        *,
+        row: SourceResourceRowState,
+        state: Any,
+        selected_resource_ids: tuple[str, ...],
+    ) -> Any:
+        """Review browser-grid image candidates before download/FILES mutation."""
+        resources_by_id = self._webpage_image_resource_items_by_id(state)
+        download_cache = getattr(self, "webpage_image_session_download_cache", {}) or {}
+        candidates: list[FileIntakeCandidate] = []
+        for resource_id in selected_resource_ids:
+            item = resources_by_id.get(resource_id)
+            if item is None:
+                continue
+            cached_path = str(download_cache.get((row.row_id, resource_id)) or "").strip()
+            if cached_path and not os.path.isfile(cached_path):
+                cached_path = ""
+            source_url = self._source_image_open_url_for_browser_grid(item)
+            candidates.append(
+                FileIntakeCandidate(
+                    candidate_id=resource_id,
+                    display_name=str(getattr(item, "display_name", "") or getattr(item, "resource_id", "") or source_url),
+                    source_url=source_url,
+                    local_path=cached_path,
+                    media_type="image",
+                    destination_name=str(getattr(item, "display_name", "") or ""),
+                    provenance="browser_grid_webpage_image",
+                )
+            )
+        return build_file_intake_dedupe_plan(
+            candidates=candidates,
+            existing_records=self._webpage_image_file_intake_existing_records(),
+            enrich_hashes=False,
+        )
+
+    def _remember_webpage_image_files_intake_identity_records(
+        self,
+        *,
+        row: SourceResourceRowState,
+        state: Any,
+        resource_local_paths: dict[str, str],
+        successful_paths: Sequence[str],
+    ) -> None:
+        """Remember source-URL-to-FILES identities after an actual FILES intake."""
+        success_norms: set[str] = set()
+        for path in tuple(successful_paths or ()):  # added or duplicate means FILES knows this local path
+            try:
+                success_norms.add(self._normalise_session_file_path(path))
+            except Exception:
+                continue
+        if not success_norms:
+            return
+        resources_by_id = self._webpage_image_resource_items_by_id(state)
+        cache = self._webpage_image_files_intake_identity_cache()
+        for resource_id, local_path in tuple(resource_local_paths.items()):
+            if not local_path:
+                continue
+            try:
+                normalized = self._normalise_session_file_path(local_path)
+            except Exception:
+                normalized = ""
+            if normalized not in success_norms:
+                continue
+            item = resources_by_id.get(resource_id)
+            source_url = self._source_image_open_url_for_browser_grid(item) if item is not None else ""
+            cache[(str(row.row_id), str(resource_id))] = {
+                "record_id": f"browser-grid:{row.row_id}:{resource_id}",
+                "display_name": str(getattr(item, "display_name", "") or getattr(item, "resource_id", "") or resource_id) if item is not None else str(resource_id),
+                "source_url": source_url,
+                "local_path": str(local_path),
+                "media_type": "image",
+            }
+        while len(cache) > 512:
+            try:
+                cache.pop(next(iter(cache)))
+            except Exception:
+                break
+
     def _download_webpage_image_resource_ids_to_files(self, row_id: str, selected_resource_ids: Sequence[str]) -> None:
         row = self._source_row_by_id(row_id)
         if row is None:
@@ -9622,17 +9767,42 @@ class App(ctk.CTk):
             self.log_message("Browser-grid FILES intake found no matching image candidates in the current row.", "warning")
             return
         self.source_resource_selections[row.row_id] = selected_ids
+        intake_plan = self._build_webpage_image_file_intake_dedupe_plan(
+            row=row,
+            state=state,
+            selected_resource_ids=selected_ids,
+        )
+        self.log_message(render_file_intake_dedupe_summary(intake_plan), "muted")
+        added_resource_ids = tuple(
+            decision.candidate_id
+            for decision in intake_plan.decisions
+            if decision.status == FILE_INTAKE_STATUS_ADDED and decision.candidate_id
+        )
+        if not added_resource_ids:
+            self.log_message(
+                (
+                    "Browser-grid webpage image FILES intake skipped download: "
+                    f"selected={len(selected_ids)}; reused={intake_plan.reused_count}; "
+                    f"duplicates={intake_plan.duplicate_count}; failed={intake_plan.failed_count}."
+                ),
+                "success" if intake_plan.reused_count or intake_plan.duplicate_count else "warning",
+            )
+            return
         selected_state = state.__class__(
             source_row_id=state.source_row_id,
             resource_kind=state.resource_kind,
             resources=state.resources,
-            selected_resource_ids=selected_ids,
+            selected_resource_ids=added_resource_ids,
             committed_resource_ids=state.committed_resource_ids,
         )
-        cached_files, missing_resource_ids = self._cached_webpage_image_session_paths(
-            row=row,
-            selected_resource_ids=selected_state.selected_resource_ids,
-        )
+        download_cache = getattr(self, "webpage_image_session_download_cache", {}) or {}
+        resource_local_paths: dict[str, str] = {}
+        for resource_id in added_resource_ids:
+            cached_path = str(download_cache.get((row.row_id, resource_id)) or "").strip()
+            if cached_path and os.path.isfile(cached_path):
+                resource_local_paths[resource_id] = cached_path
+        cached_files = tuple(resource_local_paths[resource_id] for resource_id in added_resource_ids if resource_id in resource_local_paths)
+        missing_resource_ids = tuple(resource_id for resource_id in added_resource_ids if resource_id not in resource_local_paths)
         result = None
         if missing_resource_ids:
             missing_state = state.__class__(
@@ -9656,19 +9826,29 @@ class App(ctk.CTk):
                     rename_files=True,
                 ),
             )
+            downloaded_files_for_missing = tuple(result.downloaded_files)
             self._remember_webpage_image_session_downloads(
                 row=row,
                 selected_resource_ids=missing_resource_ids,
-                downloaded_files=tuple(result.downloaded_files),
+                downloaded_files=downloaded_files_for_missing,
                 manifest_json=result.manifest_json,
             )
-        downloaded_files = tuple(result.downloaded_files) if result is not None else ()
-        files_for_intake = tuple(cached_files) + downloaded_files
+            for resource_id, local_path in zip(missing_resource_ids, downloaded_files_for_missing):
+                if local_path:
+                    resource_local_paths[resource_id] = str(local_path)
+        files_for_intake = tuple(resource_local_paths[resource_id] for resource_id in added_resource_ids if resource_local_paths.get(resource_id))
         if files_for_intake:
             intake_result = self._intake_session_files(
                 files_for_intake,
                 select_first=False,
                 source_label="browser-grid webpage image",
+            )
+            successful_paths = tuple(getattr(intake_result, "added_paths", ()) or ()) + tuple(getattr(intake_result, "duplicate_paths", ()) or ())
+            self._remember_webpage_image_files_intake_identity_records(
+                row=row,
+                state=state,
+                resource_local_paths=resource_local_paths,
+                successful_paths=successful_paths,
             )
             try:
                 self._refresh_session_files_list()
@@ -9682,21 +9862,24 @@ class App(ctk.CTk):
             self.log_message(
                 (
                     "Browser-grid webpage image FILES refresh: "
-                    f"visible_entries={visible_count}; added={added_count}; duplicates={duplicate_count}; "
-                    f"reused={len(cached_files)}."
+                    f"visible_entries={visible_count}; planned_added={intake_plan.added_count}; "
+                    f"planned_reused={intake_plan.reused_count}; planned_duplicates={intake_plan.duplicate_count}; "
+                    f"added={added_count}; duplicates={duplicate_count}; reused={len(cached_files)}."
                 ),
-                "success" if added_count or duplicate_count else "muted",
+                "success" if added_count or duplicate_count or intake_plan.reused_count else "muted",
             )
         newly_downloaded = result.resources_downloaded if result is not None else 0
-        failed_count = result.resources_failed if result is not None else 0
+        failed_count = (result.resources_failed if result is not None else 0) + intake_plan.failed_count
         self.log_message(
             (
-                f"Browser-grid webpage image download: selected={len(selected_state.selected_resource_ids)}; "
-                f"new_downloads={newly_downloaded}; reused={len(cached_files)}; failed={failed_count}; "
+                f"Browser-grid webpage image download: selected={len(selected_ids)}; "
+                f"new_candidates={len(added_resource_ids)}; new_downloads={newly_downloaded}; "
+                f"reused={intake_plan.reused_count + len(cached_files)}; "
+                f"duplicates={intake_plan.duplicate_count}; failed={failed_count}; "
                 f"session_temp={self._webpage_image_session_download_root()}; "
                 f"manifest={(result.manifest_json if result is not None else 'cached session files') or 'not written'}"
             ),
-            "success" if newly_downloaded or cached_files else "warning",
+            "success" if newly_downloaded or cached_files or intake_plan.reused_count else "warning",
         )
 
 

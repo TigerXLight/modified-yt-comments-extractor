@@ -682,6 +682,10 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'download_selected_webpage_images' in browser_download_source
     assert '_intake_session_files' in browser_download_source
     assert 'Browser-grid webpage image FILES refresh' in browser_download_source
+    assert 'build_file_intake_dedupe_plan' in full_source
+    assert 'render_file_intake_dedupe_summary' in browser_download_source
+    assert 'webpage_image_files_intake_identity_cache' in full_source
+    assert 'planned_added' in browser_download_source
     assert '.svg' in inspect.getsource(main) and '.ico' in inspect.getsource(main)
     assert "Review selected" in source
     assert "preview_box" in source
