@@ -117,3 +117,35 @@ V80U continues the JDownloader/AppWork-inspired identity and duplicate-avoidance
 ## V80U visual polish
 
 The browser-grid already-added state now uses a lighter ghosted card and compact badge while retaining the JDownloader/AppWork-inspired identity/reuse flow documented above.
+
+
+## V80V browser image variant selector
+
+Adds a compact browser-grid variant selector adapted from the JDownloader/AppWork-style grouping/reuse model already documented in this notice. Same-image size variants are represented as one card; the highest-dimension candidate is first/default, and alternate dimensions can be selected from the image-size control without cluttering the bottom metadata row.
+
+## V80W browser-grid controls and variant selector polish
+
+V80W continues the AppWork/JDownloader-style operator-control model by keeping resource
+identity, open/download actions, URL copying, and grouped variant selection as explicit
+per-item controls instead of hover-only hidden overlays. This is a Python/HTML/CSS/JS
+implementation in YTCE; no Java source text is copied.
+
+## V80X browser-grid compact controls
+
+V80X continues the JDownloader/AppWork-style queued media-intake and browser-grid work by keeping explicit per-card URL/Open/Download actions compact and non-blocking. The UI change keeps URL copy as an explicit control and avoids hover overlays interfering with variant-size selection.
+
+## V80Y browser-grid icon control polish
+
+V80Y keeps the browser-native grid architecture and the AppWork/JDownloader-attributed queued-runtime foundations unchanged. It only polishes the in-card browser-grid controls by replacing crowded text buttons with compact icon-labelled URL/Open/Download controls while retaining tooltips and accessible labels.
+
+## V80Z browser-grid download icon control polish
+
+V80Z keeps the text URL and text Open controls from the browser-native image grid while replacing only the compact Download text control with the user-supplied Icons8 download image as an inline data-URI icon. The AppWork/JDownloader-attributed queue, watchdog, and media-intake foundations are unchanged.
+
+## V80Z const fix for download icon data URI
+
+This repair keeps the V80Z text URL/Open controls and supplied download-icon button, and fixes the generated browser-grid page by defining the inline download icon data URI in the source-image browser script before its render path creates image cards.
+
+## V80AA browser-grid direct download icon behavior and hover polish
+
+V80AA keeps the text `URL` and `Open` controls, uses the user's white download icon for the single-image download control, routes that icon through the same FILES intake endpoint instead of browser navigation, marks the card as `Added before` after a successful per-card intake request, applies the same blue hover outline to Open/download controls as the URL button, and hides the `Added before` badge while hover controls are visible.

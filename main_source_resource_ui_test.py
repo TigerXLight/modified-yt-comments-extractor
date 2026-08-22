@@ -698,6 +698,31 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'intake-badge' in browser_grid_source
     assert 'variant_count' in full_source
     assert 'variant_resource_ids' in full_source
+    assert 'variant-select' in full_source
+    assert 'url-copy' in browser_grid_source
+    assert 'copyTextToClipboard' in browser_grid_source
+    assert "urlCopy.textContent='URL'" in browser_grid_source
+    assert "open.textContent='Open'" in browser_grid_source
+    assert 'download-action' in browser_grid_source
+    assert 'download-icon' in browser_grid_source
+    assert "const DOWNLOAD_ICON_DATA_URI = 'data:image/png;base64," in browser_grid_source
+    assert 'downIcon.src=DOWNLOAD_ICON_DATA_URI' in browser_grid_source
+    assert "down.title='Download selected image to FILES'" in browser_grid_source
+    assert "const down = document.createElement('button')" in browser_grid_source
+    assert "down.type='button'" in browser_grid_source
+    assert 'event.preventDefault()' in browser_grid_source
+    assert 'event.stopPropagation()' in browser_grid_source
+    assert 'markCardAddedBefore' in browser_grid_source
+    assert '.actions a:hover, .actions button:hover' in browser_grid_source
+    assert '.card:hover .intake-badge, .card.selected .intake-badge' in browser_grid_source
+    assert 'down.dataset.url = item.url' in browser_grid_source
+    assert 'option.textContent' in full_source
+    assert 'variant.label' in full_source
+    assert 'unknown' in full_source
+    assert "urlCopy.setAttribute('aria-label', 'Copy image URL')" in browser_grid_source
+    assert 'card:hover .info' not in browser_grid_source
+    assert 'top-badges' in full_source
+    assert 'applyVariant' in browser_grid_source
     assert 'variants' in browser_grid_source
     assert 'card.intake-reused img' in full_source
     assert 'planned_added' in browser_download_source

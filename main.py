@@ -9654,8 +9654,8 @@ class App(ctk.CTk):
         resources: Sequence[Any],
         *,
         file_intake_decisions_by_id: dict[str, Any],
-    ) -> tuple[tuple[int, Any, tuple[int, ...], tuple[str, ...]], ...]:
-        """Collapse same-image size variants while keeping the best default candidate."""
+    ) -> tuple[tuple[int, Any, tuple[int, ...], tuple[str, ...], tuple[tuple[int, Any], ...]], ...]:
+        """Collapse same-image size variants while keeping the highest-size default candidate."""
         grouped: dict[str, list[tuple[int, Any]]] = {}
         order: list[str] = []
         for original_index, item in enumerate(tuple(resources or ()), start=1):
@@ -9678,16 +9678,24 @@ class App(ctk.CTk):
                 str(getattr(item, "resource_id", "") or f"image-{original_index}")
                 for original_index, item in group
             )
-            reused_group = tuple(
-                pair for pair in group
-                if str(getattr(file_intake_decisions_by_id.get(str(getattr(pair[1], "resource_id", "") or f"image-{pair[0]}")), "status", "") or "") == FILE_INTAKE_STATUS_REUSED
+            sorted_variants = tuple(
+                sorted(
+                    group,
+                    key=lambda pair: (self._source_image_browser_grid_variant_score(pair[1]), -pair[0]),
+                    reverse=True,
+                )
             )
-            representative_pool = reused_group or tuple(group)
-            representative_index, representative_item = max(
-                representative_pool,
-                key=lambda pair: (self._source_image_browser_grid_variant_score(pair[1]), -pair[0]),
-            )
-            entries.append((min(variant_indexes), representative_item, variant_indexes, variant_ids))
+            representative_index, representative_item = sorted_variants[0]
+            representative_id = str(getattr(representative_item, "resource_id", "") or f"image-{representative_index}")
+            ordered_variants: list[tuple[int, Any]] = [(representative_index, representative_item)]
+            seen_variant_ids = {representative_id}
+            for variant_index, variant_item in sorted_variants:
+                variant_id = str(getattr(variant_item, "resource_id", "") or f"image-{variant_index}")
+                if variant_id in seen_variant_ids:
+                    continue
+                seen_variant_ids.add(variant_id)
+                ordered_variants.append((variant_index, variant_item))
+            entries.append((min(variant_indexes), representative_item, variant_indexes, variant_ids, tuple(ordered_variants)))
         return tuple(entries)
 
     def _source_image_browser_grid_cards(
@@ -9702,7 +9710,7 @@ class App(ctk.CTk):
             resources,
             file_intake_decisions_by_id=decisions_by_id,
         )
-        for card_index, (display_index, item, variant_indexes, variant_ids) in enumerate(grouped_entries, start=1):
+        for card_index, (display_index, item, variant_indexes, variant_ids, variant_items) in enumerate(grouped_entries, start=1):
             image_url = self._source_image_open_url_for_browser_grid(item)
             if not image_url:
                 continue
@@ -9726,6 +9734,36 @@ class App(ctk.CTk):
             elif intake_status == FILE_INTAKE_STATUS_FAILED:
                 intake_label = "Needs review"
             variant_count = len(tuple(variant_ids))
+            variants: list[dict[str, Any]] = []
+            for variant_index, variant_item in tuple(variant_items or ()):  # highest-dimension representative first
+                variant_url = self._source_image_open_url_for_browser_grid(variant_item)
+                if not variant_url:
+                    continue
+                variant_id = str(getattr(variant_item, "resource_id", "") or f"image-{variant_index}")
+                variant_decision = decisions_by_id.get(variant_id)
+                variant_status = str(getattr(variant_decision, "status", "") or "") if variant_decision is not None else ""
+                variant_label = ""
+                if variant_status == FILE_INTAKE_STATUS_REUSED:
+                    variant_label = "Added before"
+                elif variant_status == FILE_INTAKE_STATUS_DUPLICATE:
+                    variant_label = "Duplicate"
+                elif variant_status == FILE_INTAKE_STATUS_FAILED:
+                    variant_label = "Needs review"
+                variant_width = int(getattr(variant_item, "width", 0) or 0)
+                variant_height = int(getattr(variant_item, "height", 0) or 0)
+                variants.append(
+                    {
+                        "resource_id": variant_id,
+                        "url": variant_url,
+                        "extension": str(getattr(variant_item, "extension", "") or getattr(variant_item, "media_type", "") or "image"),
+                        "width": variant_width,
+                        "height": variant_height,
+                        "index": variant_index,
+                        "label": f"{variant_width}×{variant_height}" if variant_width and variant_height else "size unknown",
+                        "file_intake_status": variant_status,
+                        "file_intake_label": variant_label,
+                    }
+                )
             cards.append(
                 {
                     "index": display_index,
@@ -9741,6 +9779,7 @@ class App(ctk.CTk):
                     "variant_count": variant_count,
                     "variant_indexes": variant_indexes,
                     "variant_resource_ids": variant_ids,
+                    "variants": tuple(variants),
                     "file_intake_status": intake_status,
                     "file_intake_label": intake_label,
                     "file_intake_reason": intake_reason,
@@ -10721,21 +10760,25 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 .card.intake-failed {{ border-color:#f87171; }}
 .card img {{ max-width:100%; max-height:250px; object-fit:contain; display:block; filter:drop-shadow(0 2px 5px #0008); }}
 .card.intake-reused img {{ opacity:.58; filter:grayscale(.15) drop-shadow(0 2px 5px #0007); }}
-.check {{ position:absolute; left:.35rem; top:.35rem; width:1.55rem; height:1.55rem; border-radius:.35rem; border:1px solid #9aa8b4; background:#ffffffd8; color:#0f1419; display:none; align-items:center; justify-content:center; font-weight:900; }}
-.card:hover .check, .card.selected .check {{ display:flex; }}
+.top-controls {{ position:absolute; left:.30rem; right:.30rem; top:.30rem; display:none; gap:.18rem; align-items:center; z-index:4; pointer-events:none; }}
+.card:hover .top-controls, .card.selected .top-controls {{ display:flex; }}
+.check {{ width:1.16rem; height:1.16rem; border-radius:.30rem; border:1px solid #9aa8b4; background:#ffffffd8; color:#0f1419; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:.74rem; line-height:1; flex:0 0 auto; pointer-events:auto; }}
 .card.selected .check {{ background:#0ea5e9; border-color:#38bdf8; color:#fff; }}
-.actions {{ position:absolute; right:.35rem; top:.35rem; display:none; gap:.25rem; }}
-.card:hover .actions {{ display:flex; }}
-.actions a {{ text-decoration:none; background:#111a22d9; border:1px solid #3c4c59; color:#e8eef2; border-radius:.4rem; padding:.22rem .4rem; font-size:.75rem; }}
-.info {{ position:absolute; left:.35rem; right:.35rem; bottom:.35rem; display:flex; gap:.25rem; flex-wrap:wrap; pointer-events:none; }}
-.pill {{ background:#05080bcc; color:#fff; border-radius:.35rem; padding:.1rem .3rem; font-size:.72rem; }}
+.url-copy {{ min-width:1.85rem; border:1px solid #3c4c59; border-radius:.34rem; background:#111a22d9; color:#bfdbfe; padding:.12rem .24rem; font-size:.68rem; line-height:.95rem; cursor:pointer; pointer-events:auto; }}
+.url-copy:hover, .actions a:hover, .actions button:hover {{ background:#1e3a8a; border-color:#60a5fa; color:#fff; }}
+.actions {{ margin-left:auto; display:flex; gap:.18rem; pointer-events:auto; }}
+.actions a, .actions button {{ text-decoration:none; background:#111a22d9; border:1px solid #3c4c59; color:#e8eef2; border-radius:.34rem; padding:.18rem .32rem; font-size:.70rem; line-height:.95rem; white-space:nowrap; cursor:pointer; }}
+.actions .download-action {{ width:1.48rem; min-width:1.48rem; height:1.18rem; padding:0; display:inline-flex; align-items:center; justify-content:center; }}
+.download-icon {{ width:18px; height:18px; display:block; object-fit:contain; }}
+.info {{ position:absolute; left:.35rem; right:.35rem; bottom:.35rem; display:flex; gap:.25rem; flex-wrap:wrap; align-items:center; pointer-events:auto; z-index:3; }}
+.pill {{ background:#05080bcc; color:#fff; border-radius:.35rem; padding:.1rem .3rem; font-size:.72rem; pointer-events:none; }}
+.top-badges {{ position:absolute; left:.42rem; right:.42rem; top:.42rem; display:flex; justify-content:flex-end; align-items:flex-start; gap:.35rem; pointer-events:none; z-index:2; }}
 .intake-pill {{ background:#14532dcc; color:#dcfce7; border:1px solid #22c55e88; font-weight:700; }}
-.intake-badge {{ position:absolute; right:.42rem; top:.42rem; background:#854d0ed9; color:#fef3c7; border:1px solid #facc1588; border-radius:.45rem; padding:.12rem .34rem; font-size:.68rem; font-weight:800; letter-spacing:.01em; pointer-events:none; box-shadow:0 2px 8px #0008; }}
+.intake-badge {{ background:#854d0ed9; color:#fef3c7; border:1px solid #facc1588; border-radius:.45rem; padding:.12rem .34rem; font-size:.68rem; font-weight:800; letter-spacing:.01em; box-shadow:0 2px 8px #0008; }}
+.card:hover .intake-badge, .card.selected .intake-badge {{ opacity:0; visibility:hidden; }}
+.variant-select {{ max-width:5.35rem; pointer-events:auto; background:#05080bcc; color:#fff; border:1px solid #475569; border-radius:.35rem; padding:.06rem .18rem; font-size:.72rem; cursor:pointer; }}
 .card.intake-duplicate .intake-badge {{ background:#7c2d12d9; color:#ffedd5; border-color:#fb923c99; }}
 .card.intake-failed .intake-badge {{ background:#7f1d1dd9; color:#fee2e2; border-color:#f8717199; }}
-.url {{ display:none; position:absolute; left:.35rem; right:.35rem; bottom:.35rem; background:#05080be6; color:#dbeafe; border:1px solid #33485b; border-radius:.35rem; padding:.2rem .35rem; font-size:.7rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-.card:hover .url {{ display:block; }}
-.card:hover .info {{ display:none; }}
 .err {{ color:#fecaca; background:#3b1111d9; border:1px solid #7f1d1d; border-radius:.5rem; padding:.5rem; font-size:.8rem; }}
 #status {{ min-width:18rem; }}
 </style>
@@ -10754,8 +10797,9 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 <script>
 const images = {cards_json};
 const token = {json.dumps(token)};
+const DOWNLOAD_ICON_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAACXBIWXMAAAsTAAALEwEAmpwYAAADwUlEQVR4nO2cS04VQRSGS2AIjoyIDo0v1EhMjCvwGZFNGERX4tyE6BZ0oAIafCS6B1F0A84UBCKCms+UlAbh3q7q7qo+fbvPlzAhN3X+8/+d7rp9q8oYRVEURVEURVEURVEUJQRgAOgP+rASD+Ao8BL46f5eAWPSuloBcAZYZTf2f6ek9TUe4CndmZXW13iAtYwAVqT1NR48SOtrPGgAsqAByIIGIAsagCxoALKgAciCBiALGoAsaACyoAHIggYgCxqALGgAsqAByIIGIAsagCxoAN0BDgG3gWfAoufnw6/AE2BUKgDgJDDjtHRjzfVie7oFHDR1AxgB7gE/yM8qcLrqAGzNLqsrfNgep4FhUweAK8Ay5Xieo14mOcZ5UVLzEnDZSALcdAujyrIRusLNN1DgGP3AZgTdtvdJIwFwKZL5ODN6MQDLL+CaqRLgQITbTq/fgnbejqp7JrgHbixWeuwh3I1pU+FUs8hsp9NV8wg4kbN+JjnHGgUeOy1l2axkiurm+T7eAuPAYIL6mSSoN+h6WcDPVOz6nQTZLyQ+84cS1s8kYd2hgBDmUtXfLuSjR0TSGQEeEte+7im/mLL+XxH2oZnFYIMD2Ospn351tqQBlrbXTyoA2JOyvvsCNlBSY/MCAMaAeWDdvZaYBY7Hqg8ccztrNtwU+g1wrqDWZgXAlvmdvhDZufn5svXtGF3m+etFQmhiAPMZwy3vDCFPfWd+1iuT19L9G0kBQJ+7EgkNIbR+gPm421G/VP+FiC0A+OYbc3sIIfUDzceF3yfZf25iC2DrfRChIQR8LtR8y4x0/0ZaAHA4x8uwEGNDzbc1j0j3b+ogADgLfKY6dj3cJfuvhQCqC6Gw+Sn7r4UA0odQyvzU/ddCAOlCKG1+Ff3XQgDxQ4hiflX910IA8UKIZn6rAogUQlTzWxdAyRCim9/KAAqGkMT81gaQM4Rk5rc6gMAQkppv2h6A5weWjj/gNK1/eQHm37GVD4FP7u9BkRdrBWtrAJKI9y8uQBjx/sUFCCPev7gAYcT7D1iamGxhrjR1WZr4wSNi3DQUYKIOi3Ozzm7GLeEeaujV/87T+2xdNmgsuKXcPR8EW/sCJgLMr2yDRqwtSk3DblEaSR6AC8HuFFf+524l5rsAhiNtbGsKX4D9lQXgQrigt6I/2M3qVys1f1sIkxF3y/ci9gK8IWL+jiMLllp627lo6gCwD7gDfKcds5379rgGU9Nzg6bsflngfeSjAKRYdb3MudNhqplqKoqiKIqiKIqiKIqiKKZp/AYyBLhnKbdKXgAAAABJRU5ErkJggg==';
 const selected = new Set();
-const knownCount = images.filter(item => item.file_intake_status === 'reused').length;
+let knownCount = images.filter(item => item.file_intake_status === 'reused').length;
 const duplicateCount = images.filter(item => item.file_intake_status === 'duplicate').length;
 const grid = document.getElementById('grid');
 const counts = document.getElementById('counts');
@@ -10767,34 +10811,82 @@ function updateCounts() {{
   counts.textContent = `${{selected.size}} selected · ${{images.length}} images${{extras.length ? ' · ' + extras.join(' · ') : ''}}`;
 }}
 function setStatus(text) {{ statusEl.textContent = text; }}
+function markCardAddedBefore(item, card, intakeBadge) {{
+  if (item.file_intake_status !== 'reused') {{ knownCount += 1; }}
+  item.file_intake_status = 'reused';
+  item.file_intake_label = 'Added before';
+  card.classList.remove('intake-duplicate', 'intake-failed');
+  card.classList.add('intake-reused');
+  card.title = 'Added before';
+  if (intakeBadge) {{ intakeBadge.textContent='Added before'; intakeBadge.style.visibility='visible'; }}
+  updateCounts();
+}}
+async function copyTextToClipboard(text) {{
+  try {{
+    if (navigator.clipboard && window.isSecureContext) {{ await navigator.clipboard.writeText(text); }}
+    else {{
+      const area = document.createElement('textarea');
+      area.value = text; area.setAttribute('readonly', ''); area.style.position = 'fixed'; area.style.left = '-9999px';
+      document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove();
+    }}
+    setStatus('Copied image URL to clipboard.');
+  }} catch (error) {{ setStatus(`Could not copy image URL: ${{error}}`); }}
+}}
 function toggle(card, id) {{ selected.has(id) ? selected.delete(id) : selected.add(id); card.classList.toggle('selected', selected.has(id)); updateCounts(); }}
 function render() {{
   const frag = document.createDocumentFragment();
   images.forEach((item) => {{
     const card = document.createElement('div');
     card.className = item.file_intake_status ? `card intake-${{item.file_intake_status}}` : 'card';
-    card.title = item.file_intake_label ? `${{item.file_intake_label}} · ${{item.url}}` : item.url;
+    card.title = item.file_intake_label || '';
     const img = document.createElement('img');
     img.loading = 'lazy';
     img.decoding = 'async';
     img.referrerPolicy = 'no-referrer-when-downgrade';
     img.src = item.url;
     img.onerror = () => {{ const e = document.createElement('div'); e.className='err'; e.textContent='Error loading image'; img.replaceWith(e); }};
-    const check = document.createElement('div'); check.className='check'; check.textContent='✓';
+    const topControls = document.createElement('div'); topControls.className='top-controls';
+    const check = document.createElement('div'); check.className='check'; check.textContent='✓'; check.title=item.url;
+    const urlCopy = document.createElement('button'); urlCopy.type='button'; urlCopy.className='url-copy'; urlCopy.textContent='URL'; urlCopy.title=`Copy image URL: ${{item.url}}`; urlCopy.setAttribute('aria-label', 'Copy image URL');
+    urlCopy.onclick = async (event) => {{ event.stopPropagation(); await copyTextToClipboard(item.url); }};
+    const topBadges = document.createElement('div'); topBadges.className='top-badges';
     const intakeBadge = document.createElement('div'); intakeBadge.className='intake-badge'; intakeBadge.textContent=item.file_intake_label || '';
-    if (!item.file_intake_label) intakeBadge.style.display='none';
+    if (!item.file_intake_label) intakeBadge.style.visibility='hidden';
+    topBadges.append(intakeBadge);
     const actions = document.createElement('div'); actions.className='actions';
-    const open = document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open';
-    const down = document.createElement('a'); down.href=item.url; down.download=''; down.textContent='Download';
+    const open = document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open'; open.title='Open image URL'; open.setAttribute('aria-label', 'Open image URL');
+    const down = document.createElement('button'); down.type='button'; down.className='download-action'; down.title='Download selected image to FILES'; down.setAttribute('aria-label', 'Download image to FILES'); down.dataset.url=item.url;
+    down.onclick = async (event) => {{ event.preventDefault(); event.stopPropagation(); setStatus(`Adding image #${{item.index}} to FILES...`); try {{ const response = await fetch(`/download-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids:[item.resource_id]}})}}); const payload = await response.json(); if (payload.ok) {{ markCardAddedBefore(item, card, intakeBadge); setStatus(`Added image #${{item.index}} to FILES.`); }} else {{ setStatus(`FILES intake failed: ${{payload.error || 'unknown error'}}`); }} }} catch (error) {{ setStatus(`FILES intake failed: ${{error}}`); }} }};
+    const downIcon = document.createElement('img'); downIcon.className='download-icon'; downIcon.alt=''; downIcon.src=DOWNLOAD_ICON_DATA_URI; down.append(downIcon);
     actions.append(open, down);
+    topControls.append(check, urlCopy, actions);
     const info = document.createElement('div'); info.className='info';
     const ext = document.createElement('span'); ext.className='pill'; ext.textContent=item.extension || 'image'; info.append(ext);
-    if (item.width && item.height) {{ const size = document.createElement('span'); size.className='pill'; size.textContent=`${{item.width}}×${{item.height}}`; info.append(size); }}
-    if (item.variant_count && item.variant_count > 1) {{ const variants = document.createElement('span'); variants.className='pill variant-pill'; variants.textContent=`${{item.variant_count}} variants`; info.append(variants); }}
+    const variants = Array.isArray(item.variants) && item.variants.length ? item.variants : [item];
+    function applyVariant(variant) {{
+      const previousId = item.resource_id;
+      const wasSelected = selected.has(previousId);
+      item.resource_id = variant.resource_id || item.resource_id;
+      item.url = variant.url || item.url;
+      item.extension = variant.extension || item.extension || 'image';
+      item.width = Number(variant.width || 0);
+      item.height = Number(variant.height || 0);
+      item.index = Number(variant.index || item.index);
+      if (wasSelected && previousId !== item.resource_id) {{ selected.delete(previousId); selected.add(item.resource_id); }}
+      img.src = item.url; open.href = item.url; down.dataset.url = item.url; urlCopy.title = `Copy image URL: ${{item.url}}`; check.title = item.url; ext.textContent = item.extension || 'image';
+      order.textContent = `#${{item.index}}`;
+      card.title = item.file_intake_label || '';
+      updateCounts();
+    }}
+    if (variants.length > 1) {{
+      const selector = document.createElement('select'); selector.className='variant-select'; selector.title='Select image size variant';
+      variants.forEach((variant) => {{ const option = document.createElement('option'); option.value = variant.resource_id; option.textContent = variant.label || ((variant.width && variant.height) ? `${{variant.width}}×${{variant.height}}` : 'unknown'); option.title = variant.url || ''; selector.append(option); }});
+      selector.onchange = () => {{ const variant = variants.find(candidate => candidate.resource_id === selector.value) || variants[0]; applyVariant(variant); }};
+      info.append(selector);
+    }} else if (item.width && item.height) {{ const size = document.createElement('span'); size.className='pill'; size.textContent=`${{item.width}}×${{item.height}}`; info.append(size); }}
     const order = document.createElement('span'); order.className='pill'; order.textContent=`#${{item.index}}`; info.append(order);
-    const url = document.createElement('div'); url.className='url'; url.textContent=item.url;
-    card.append(img, check, intakeBadge, actions, info, url);
-    card.addEventListener('click', (event) => {{ if (event.target.closest('a')) return; toggle(card, item.resource_id); }});
+    card.append(img, topControls, topBadges, info);
+    card.addEventListener('click', (event) => {{ if (event.target.closest('a') || event.target.closest('button') || event.target.closest('select')) return; toggle(card, item.resource_id); }});
     frag.append(card);
   }});
   grid.append(frag); updateCounts();
@@ -13706,11 +13798,14 @@ button:hover {{ background:#2a3642; }}
 .card.selected .check {{ background:#0ea5e9; border-color:#38bdf8; color:#fff; }}
 .actions {{ position:absolute; right:.35rem; top:.35rem; display:none; gap:.25rem; }}
 .card:hover .actions {{ display:flex; }}
-.actions a {{ text-decoration:none; background:#111a22d9; border:1px solid #3c4c59; color:#e8eef2; border-radius:.4rem; padding:.22rem .4rem; font-size:.75rem; }}
-.info {{ position:absolute; left:.35rem; right:.35rem; bottom:.35rem; display:flex; gap:.25rem; flex-wrap:wrap; pointer-events:none; }}
+.actions a {{ text-decoration:none; background:#111a22d9; border:1px solid #3c4c59; color:#e8eef2; border-radius:.34rem; padding:.18rem .32rem; font-size:.70rem; line-height:.95rem; white-space:nowrap; }}
+.info {{ position:absolute; left:.35rem; right:.35rem; bottom:.35rem; display:flex; gap:.25rem; flex-wrap:wrap; align-items:center; pointer-events:none; }}
 .pill {{ background:#05080bcc; color:#fff; border-radius:.35rem; padding:.1rem .3rem; font-size:.72rem; }}
+.top-badges {{ position:absolute; left:.42rem; right:.42rem; top:.42rem; display:flex; justify-content:space-between; align-items:flex-start; gap:.35rem; pointer-events:none; z-index:1; }}
+.variant-badge {{ background:#1e3a8ad9; color:#dbeafe; border:1px solid #60a5fa88; border-radius:.45rem; padding:.12rem .34rem; font-size:.68rem; font-weight:800; letter-spacing:.01em; box-shadow:0 2px 8px #0008; }}
 .intake-pill {{ background:#14532dcc; color:#dcfce7; border:1px solid #22c55e88; font-weight:700; }}
-.intake-badge {{ position:absolute; right:.42rem; top:.42rem; background:#854d0ed9; color:#fef3c7; border:1px solid #facc1588; border-radius:.45rem; padding:.12rem .34rem; font-size:.68rem; font-weight:800; letter-spacing:.01em; pointer-events:none; box-shadow:0 2px 8px #0008; }}
+.intake-badge {{ background:#854d0ed9; color:#fef3c7; border:1px solid #facc1588; border-radius:.45rem; padding:.12rem .34rem; font-size:.68rem; font-weight:800; letter-spacing:.01em; box-shadow:0 2px 8px #0008; }}
+.variant-select {{ max-width:5.7rem; pointer-events:auto; background:#05080bcc; color:#fff; border:1px solid #475569; border-radius:.35rem; padding:.06rem .18rem; font-size:.72rem; }}
 .card.intake-duplicate .intake-badge {{ background:#7c2d12d9; color:#ffedd5; border-color:#fb923c99; }}
 .card.intake-failed .intake-badge {{ background:#7f1d1dd9; color:#fee2e2; border-color:#f8717199; }}
 .url {{ display:none; position:absolute; left:.35rem; right:.35rem; bottom:.35rem; background:#05080be6; color:#dbeafe; border:1px solid #33485b; border-radius:.35rem; padding:.2rem .35rem; font-size:.7rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
@@ -13731,6 +13826,7 @@ button:hover {{ background:#2a3642; }}
 <main class="grid" id="grid"></main>
 <script>
 const images = {cards_json};
+const DOWNLOAD_ICON_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAACXBIWXMAAAsTAAALEwEAmpwYAAABMklEQVR4nO3WsUoDQRCA4dFYikZvRsFCSOET2FjY+BCpLBSZXUHwGaJtbPMUVhZiYeFM0MJSUPAFBEGwFCWFJ4eNhcScOW53yXww/f7L3HIAxphKkdN82EDsyAICSz7AhJb8CpEFBJZ8gAkt+RUiCwjMAkKzgNCSCEAnvb8OWnbQSa++gvZpg1jPKzz8JXRkpr4AAFg8vJ1Dp/djB7A+zu9IE0JY5n4Lnbz8P0BecV/XICTysomsH+VvXgaZ1y2IAbHslt57Vg8xQdaT0T9a7UJ0Ovk0Oj0bYXUuilcMYkQHMousd0Nu/qF4vSBm2d7NCrE+/bLzzwv+ehVSgHy1jixvP27+fYllA1JCXtvk5LOYjPvbkCJiOSYnR5CufOp7zASiiv/3xx2wAGcBea0BxkyIL8FhuZGG4XuVAAAAAElFTkSuQmCC';
 const selected = new Set();
 const knownCount = images.filter(item => item.file_intake_status === 'reused').length;
 const duplicateCount = images.filter(item => item.file_intake_status === 'duplicate').length;
@@ -13754,8 +13850,9 @@ function render() {{
     const intakeBadge = document.createElement('div'); intakeBadge.className='intake-badge'; intakeBadge.textContent=item.file_intake_label || '';
     if (!item.file_intake_label) intakeBadge.style.display='none';
     const actions = document.createElement('div'); actions.className='actions';
-    const open = document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open';
-    const down = document.createElement('a'); down.href=item.url; down.download=''; down.textContent='Download';
+    const open = document.createElement('a'); open.href=item.url; open.target='_blank'; open.rel='noreferrer'; open.textContent='Open'; open.title='Open image URL'; open.setAttribute('aria-label', 'Open image URL');
+    const down = document.createElement('a'); down.href=item.url; down.download=''; down.className='download-action'; down.title='Download image'; down.setAttribute('aria-label', 'Download image');
+    const downIcon = document.createElement('img'); downIcon.className='download-icon'; downIcon.alt=''; downIcon.src=DOWNLOAD_ICON_DATA_URI; down.append(downIcon);
     actions.append(open, down);
     const info = document.createElement('div'); info.className='info';
     const ext = document.createElement('span'); ext.className='pill'; ext.textContent=item.extension || 'image'; info.append(ext);
