@@ -736,6 +736,10 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert '/media-items' in video_browser_source
     assert 'Quick media ready · rendered variants loading...' in video_browser_source
     assert 'Rendered variants loaded' in video_browser_source
+    assert 'source_video_audio_browser_grid_active_by_row_id' in video_browser_source
+    assert '_video_audio_window_is_current' in video_browser_source
+    assert '_video_audio_row_still_matches_window' in video_browser_source
+    assert 'payload.stale' in video_browser_source
     assert 'refresh_inflight' in video_browser_source
     assert 'renderedRefreshPending' in video_browser_source
     assert 'currentResourceCount' in video_browser_source

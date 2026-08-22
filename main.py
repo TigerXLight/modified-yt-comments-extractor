@@ -11910,6 +11910,42 @@ render();
         source_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "")
         media_page_title = str(getattr(row, "title", "") or getattr(row, "domain", "") or "webpage media")
         cache_key = self._webpage_video_prefetch_cache_key(row)
+        source_refresh_key = str(cache_key or source_url or row_id)
+        active_video_audio_windows = self.__dict__.setdefault("source_video_audio_browser_grid_active_by_row_id", {})
+        active_video_audio_windows[row_id] = {"token": token, "source_refresh_key": source_refresh_key}
+
+        def _video_audio_window_is_current() -> bool:
+            try:
+                active_window = self.__dict__.setdefault("source_video_audio_browser_grid_active_by_row_id", {}).get(row_id)
+                if not isinstance(active_window, dict):
+                    return False
+                return (
+                    str(active_window.get("token") or "") == token
+                    and str(active_window.get("source_refresh_key") or "") == source_refresh_key
+                )
+            except Exception:
+                return False
+
+        def _video_audio_row_still_matches_window(latest_row: SourceResourceRowState | None) -> bool:
+            if latest_row is None:
+                return False
+            try:
+                latest_cache_key = self._webpage_video_prefetch_cache_key(latest_row)
+            except Exception:
+                latest_cache_key = ""
+            latest_source_url = str(getattr(latest_row, "canonical_url", "") or getattr(latest_row, "raw_url", "") or "")
+            latest_refresh_key = str(latest_cache_key or latest_source_url or row_id)
+            return latest_refresh_key == source_refresh_key
+
+        def _stale_video_audio_cards_payload() -> dict[str, Any]:
+            return {
+                "ok": True,
+                "stale": True,
+                "items": [],
+                "media_count": 0,
+                "resource_count": 0,
+                "refresh_inflight": False,
+            }
 
         def _video_audio_rendered_refresh_inflight() -> bool:
             try:
@@ -11918,7 +11954,9 @@ render();
                 return False
 
         def _latest_video_audio_cards_payload() -> dict[str, Any]:
-            latest_row = self._source_row_by_id(row_id) or row
+            latest_row = self._source_row_by_id(row_id)
+            if not _video_audio_window_is_current() or not _video_audio_row_still_matches_window(latest_row):
+                return _stale_video_audio_cards_payload()
             latest_resources: tuple[Any, ...] = ()
             try:
                 cached_discovery = self.__dict__.setdefault("webpage_video_discovery_cache_by_url", {}).get(cache_key) if cache_key else None
@@ -12113,6 +12151,7 @@ async function refreshMediaItemsFromServer() {{
   try {{
     const response = await fetch(`/media-items?token=${{encodeURIComponent(token)}}`, {{cache:'no-store'}});
     const payload = await response.json();
+    if (payload.stale) return;
     if (!payload.ok || !Array.isArray(payload.items)) return;
     const nextItems = payload.items;
     const nextResourceCount = Number(payload.resource_count || nextItems.length || 0);

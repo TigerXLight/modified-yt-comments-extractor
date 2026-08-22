@@ -211,3 +211,9 @@ V81G changes the source-add success message from the older generic metadata-prob
 - Moves the V81L initial readiness status variables from the Images browser-grid setup into the Video & Audio browser-grid setup.
 - Keeps the runtime Video & Audio status wording unchanged: quick media ready while rendered variants load, then rendered variants loaded after refresh.
 - Leaves hover/playback, LinkGrabber precheck, and the top-left Video & Audio controls untouched.
+
+## YTCE V81M Video & Audio rendered refresh active-window guard
+
+- Adds a per-row active browser-window token and source/cache-key signature for the browser-native Video & Audio grid.
+- The `/media-items` refresh endpoint now marks older or source-mismatched windows as stale so the browser ignores late rendered refreshes instead of replacing a newer active window/source state.
+- Keeps V81L readiness status wording, instant quick-open, hover playback, LinkGrabber precheck, and top-left controls unchanged.
