@@ -607,11 +607,15 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert "img.loading = 'lazy'" in browser_grid_source
     assert "img.decoding = 'async'" in browser_grid_source
     assert '--app={url}' in browser_grid_source
+    assert 'YTCE-IMAGE-GRID-' in browser_grid_source
+    assert 'title_hint=taskbar_marker' in browser_grid_source
     assert '_own_external_image_grid_window_for_taskbar' in browser_grid_source
     assert 'opened as a taskbar-owned Chromium app window' in browser_grid_source
     assert 'GWLP_HWNDPARENT' in full_source
     assert 'WS_EX_APPWINDOW' in full_source
     assert 'WS_EX_TOOLWINDOW' in full_source
+    assert 'SetWindowPos' in full_source
+    assert 'SWP_FRAMECHANGED' in full_source
     # The Tk canvas grid remains available in source as a fallback/debug path,
     # but it is no longer the normal Images surface because it is too heavy.
     assert 'Canvas grid stays under the Python app taskbar icon' in canvas_source

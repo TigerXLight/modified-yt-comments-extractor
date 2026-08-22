@@ -10213,7 +10213,12 @@ class App(ctk.CTk):
             return
         token = uuid.uuid4().hex
         row_id = str(getattr(row, "row_id", "") or "")
-        page_title = f"Images - {getattr(row, 'domain', '') or 'webpage'}"
+        display_title = f"Images - {getattr(row, 'domain', '') or 'webpage'}"
+        # V80D: include a per-window marker in the document title so the
+        # Windows taskbar ownership helper can reliably target this exact
+        # Chromium app window even when Edge/Chrome reuses an existing process.
+        taskbar_marker = f"YTCE-IMAGE-GRID-{token[:10]}"
+        page_title = f"{display_title} [{taskbar_marker}]"
         source_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "")
         cards_json = json.dumps(cards, ensure_ascii=False).replace("</", "<\\/")
         app = self
@@ -10298,7 +10303,7 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 </head>
 <body>
 <header>
-<strong>{html.escape(page_title)}</strong>
+<strong>{html.escape(display_title)}</strong>
 <span class="meta" id="counts">0 selected · {len(cards)} images</span>
 <button id="selectAll">Select all</button>
 <button id="clearAll">Clear all</button>
@@ -10424,7 +10429,7 @@ render();
                 taskbar_owner_requested = True
                 self._own_external_image_grid_window_for_taskbar(
                     process_id=getattr(process, "pid", None),
-                    title_hint=page_title,
+                    title_hint=taskbar_marker,
                 )
                 break
             except Exception:
@@ -10446,7 +10451,13 @@ render();
 
 
     def _own_external_image_grid_window_for_taskbar(self, *, process_id: int | None, title_hint: str) -> None:
-        """Best-effort Windows taskbar ownership for the Chromium image-grid popup."""
+        # Best-effort Windows taskbar ownership for the Chromium image-grid popup.
+        #
+        # V80D strengthens the V80C helper. Edge/Chrome can briefly create,
+        # replace, or re-parent its app window after launch, especially when an
+        # existing browser process is reused. Therefore this worker targets a
+        # per-window title marker, repeats the owner/style update for several
+        # seconds, and forces a non-client refresh after each style change.
         if os.name != "nt":
             return
         if str(os.environ.get("YTCE_IMAGE_GRID_HIDE_BROWSER_TASKBAR", "1")).strip().lower() in {"0", "false", "no", "off"}:
@@ -10460,6 +10471,7 @@ render();
         title_hint = str(title_hint or "").strip()
 
         def _worker() -> None:
+            applied_any = False
             try:
                 import ctypes
                 from ctypes import wintypes
@@ -10471,6 +10483,11 @@ render();
                 WS_EX_TOOLWINDOW = 0x00000080
                 SW_HIDE = 0
                 SW_SHOW = 5
+                SWP_NOSIZE = 0x0001
+                SWP_NOMOVE = 0x0002
+                SWP_NOZORDER = 0x0004
+                SWP_NOACTIVATE = 0x0010
+                SWP_FRAMECHANGED = 0x0020
                 LONG_PTR = ctypes.c_longlong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_long
                 HWND = wintypes.HWND
                 LPARAM = wintypes.LPARAM
@@ -10486,54 +10503,97 @@ render();
                 get_window_long_ptr.restype = LONG_PTR
                 set_window_long_ptr.argtypes = [HWND, ctypes.c_int, LONG_PTR]
                 set_window_long_ptr.restype = LONG_PTR
+                user32.SetWindowPos.argtypes = [HWND, HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+                user32.SetWindowPos.restype = BOOL
+                user32.ShowWindow.argtypes = [HWND, ctypes.c_int]
+                user32.ShowWindow.restype = BOOL
 
                 def _window_title(hwnd: int) -> str:
-                    buffer = ctypes.create_unicode_buffer(512)
+                    buffer = ctypes.create_unicode_buffer(1024)
                     try:
                         user32.GetWindowTextW(HWND(hwnd), buffer, len(buffer))
                     except Exception:
                         return ""
                     return str(buffer.value or "")
 
-                for _attempt in range(80):
-                    matches: list[int] = []
+                hidden_once: set[int] = set()
+                successful_hwnds: set[int] = set()
+                stable_success_attempts = 0
+                max_attempts = 180  # about 9 seconds at 50 ms in a daemon thread.
+
+                for _attempt in range(max_attempts):
+                    matches: list[tuple[int, int]] = []
 
                     def _enum(hwnd: int, _lparam: int) -> bool:
                         try:
-                            if int(hwnd) == owner_hwnd or not user32.IsWindowVisible(HWND(hwnd)):
+                            hwnd_int = int(hwnd)
+                            if hwnd_int == owner_hwnd or not user32.IsWindowVisible(HWND(hwnd_int)):
                                 return True
                             pid = wintypes.DWORD(0)
-                            user32.GetWindowThreadProcessId(HWND(hwnd), ctypes.byref(pid))
-                            title = _window_title(hwnd)
+                            user32.GetWindowThreadProcessId(HWND(hwnd_int), ctypes.byref(pid))
+                            title_lower = _window_title(hwnd_int).lower()
+                            marker_match = bool(title_hint and title_hint.lower() in title_lower)
                             pid_match = bool(process_id and int(pid.value) == int(process_id))
-                            title_match = bool(title_hint and title_hint.lower() in title.lower())
-                            generic_title_match = bool("image grid" in title.lower() and "en.wikipedia" in title.lower())
-                            if pid_match or title_match or generic_title_match:
-                                matches.append(int(hwnd))
+                            generic_title_match = bool("image" in title_lower and "grid" in title_lower and "wikipedia" in title_lower)
+                            if marker_match:
+                                matches.append((0, hwnd_int))
+                            elif pid_match:
+                                matches.append((1, hwnd_int))
+                            elif generic_title_match:
+                                matches.append((2, hwnd_int))
                         except Exception:
                             pass
                         return True
 
                     user32.EnumWindows(EnumWindowsProc(_enum), LPARAM(0))
                     if matches:
-                        for hwnd in matches[:1]:
+                        matches.sort(key=lambda item: item[0])
+                        for _score, hwnd in matches[:4]:
                             try:
-                                user32.ShowWindow(HWND(hwnd), SW_HIDE)
-                                set_window_long_ptr(HWND(hwnd), GWLP_HWNDPARENT, LONG_PTR(owner_hwnd))
-                                style = int(get_window_long_ptr(HWND(hwnd), GWL_EXSTYLE))
+                                hwnd_obj = HWND(hwnd)
+                                # Hide/show once to force Windows to reconsider the
+                                # taskbar button; later refreshes are non-flickery.
+                                if hwnd not in hidden_once:
+                                    user32.ShowWindow(hwnd_obj, SW_HIDE)
+                                    hidden_once.add(hwnd)
+                                set_window_long_ptr(hwnd_obj, GWLP_HWNDPARENT, LONG_PTR(owner_hwnd))
+                                style = int(get_window_long_ptr(hwnd_obj, GWL_EXSTYLE))
                                 style = (style & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW
-                                set_window_long_ptr(HWND(hwnd), GWL_EXSTYLE, LONG_PTR(style))
-                                user32.ShowWindow(HWND(hwnd), SW_SHOW)
-                                try:
-                                    user32.SetForegroundWindow(HWND(hwnd))
-                                except Exception:
-                                    pass
+                                set_window_long_ptr(hwnd_obj, GWL_EXSTYLE, LONG_PTR(style))
+                                user32.SetWindowPos(
+                                    hwnd_obj,
+                                    HWND(0),
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+                                )
+                                user32.ShowWindow(hwnd_obj, SW_SHOW)
+                                successful_hwnds.add(hwnd)
+                                applied_any = True
                             except Exception:
                                 logger.debug("Could not make browser image grid an owned taskbar popup.", exc_info=True)
-                        return
+                        stable_success_attempts += 1
+                        if stable_success_attempts >= 24 and successful_hwnds:
+                            return
+                    else:
+                        stable_success_attempts = 0
                     time.sleep(0.05)
             except Exception:
                 logger.debug("Could not prepare browser image grid taskbar ownership helper.", exc_info=True)
+            finally:
+                if not applied_any:
+                    try:
+                        self.after(
+                            0,
+                            lambda: self.log_message(
+                                "Browser image grid taskbar ownership helper could not find the Chromium window; it may remain visible on the taskbar.",
+                                "warning",
+                            ),
+                        )
+                    except Exception:
+                        pass
 
         threading.Thread(target=_worker, daemon=True).start()
 
