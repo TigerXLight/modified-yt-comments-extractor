@@ -169,6 +169,112 @@ def _safe_int(value: Any) -> int:
         return 0
 
 
+def _dimensions_from_media_url(url: str) -> tuple[int, int]:
+    """Best-effort dimension extraction from direct media URL text.
+
+    Metro/JDownloader-style direct files often carry rendition tokens such as
+    ``1024x576_MP4_...mp4``. Capturing those during the quick static scan lets
+    the browser grid sort the highest playable variant before rendered refresh.
+    """
+    text = html.unescape(str(url or "")).replace("\\/", "/")
+    for pattern in (
+        r"(?i)(?<!\d)([1-9]\d{1,4})[x×]([1-9]\d{1,4})(?!\d)",
+        r"(?i)(?:width|w)=([1-9]\d{1,4}).{0,32}(?:height|h)=([1-9]\d{1,4})",
+        r"(?i)(?:height|h)=([1-9]\d{1,4}).{0,32}(?:width|w)=([1-9]\d{1,4})",
+    ):
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        try:
+            first = int(match.group(1))
+            second = int(match.group(2))
+        except Exception:
+            continue
+        if first > 0 and second > 0:
+            if "height" in pattern.lower() and "width" in pattern.lower() and pattern.lower().find("height") < pattern.lower().find("width"):
+                return second, first
+            return first, second
+    return 0, 0
+
+
+def _decoded_inline_media_scan_text(html_text: str) -> str:
+    text = html.unescape(str(html_text or ""))
+    # Common JavaScript/JSON escaping used around media URL arrays. Keep this
+    # deterministic: this quick scan never evaluates page scripts.
+    return (
+        text.replace("\\/", "/")
+        .replace("\\u002F", "/")
+        .replace("\\u002f", "/")
+        .replace("\\u0026", "&")
+        .replace("\\u003d", "=")
+        .replace("\\u003D", "=")
+    )
+
+
+def _trim_inline_media_url(url: str) -> str:
+    text = str(url or "").strip()
+    while text and text[-1] in {'\\', '"', "'", ',', ';', ')', ']', '}'}:
+        text = text[:-1].strip()
+    return text
+
+
+def _inline_media_url_candidates_from_html(
+    source_url: str,
+    html_text: str,
+    *,
+    page_thumbnail_url: str = "",
+    seen_urls: set[str] | None = None,
+) -> tuple[WebpageVideoCandidate, ...]:
+    """Extract direct media URLs embedded in inline JSON/script text.
+
+    The normal HTML parser catches <video>/<source>/meta URLs. Some sites expose
+    the fuller rendition list only inside serialized player configuration, where
+    JDownloader can still resolve names such as ``1024x576_MP4_...mp4`` quickly.
+    This static scan adds those direct files to the quick candidate cache without
+    launching a rendered browser or doing any download.
+    """
+    scan_text = _decoded_inline_media_scan_text(html_text)
+    if not scan_text:
+        return ()
+    seen = seen_urls if seen_urls is not None else set()
+    candidates: list[WebpageVideoCandidate] = []
+    media_url_re = re.compile(
+        r"(?i)(?:https?:)?//[^\s\"'<>]+?(?:\.mp4|\.m4v|\.webm|\.mov|\.m3u8|\.mpd|\.mp3|\.m4a)(?:\?[^\s\"'<>]*)?"
+    )
+    for match in media_url_re.finditer(scan_text):
+        raw_url = _trim_inline_media_url(match.group(0))
+        if raw_url.startswith("//"):
+            raw_url = "https:" + raw_url
+        absolute = urljoin(source_url, _clean_url(raw_url))
+        if not absolute or absolute in seen:
+            continue
+        if not _looks_like_media_url(absolute):
+            continue
+        kind, extension = classify_video_candidate_url(absolute)
+        if kind == VIDEO_CANDIDATE_KIND_UNKNOWN:
+            continue
+        seen.add(absolute)
+        width, height = _dimensions_from_media_url(absolute)
+        candidates.append(
+            WebpageVideoCandidate(
+                candidate_id=_candidate_id(absolute, "inline_script", "url"),
+                url=absolute,
+                source_url=source_url,
+                kind=kind,
+                extension=extension,
+                title="",
+                thumbnail_url="",  # keep inline direct media icons honest; let the browser use each video frame
+                width=width,
+                height=height,
+                source_tag="inline_script",
+                source_attr="url",
+                detection_reason="inline script media URL",
+                selected_by_default=kind in {VIDEO_CANDIDATE_KIND_FILE, VIDEO_CANDIDATE_KIND_STREAM},
+            )
+        )
+    return tuple(candidates)
+
+
 def _path_extension(url: str) -> str:
     parsed = urlparse(url)
     path = parsed.path.lower()
@@ -284,8 +390,9 @@ class _VideoHtmlParser(HTMLParser):
         thumbnail_url = ""
         if self._video_poster_stack:
             thumbnail_url = self._video_poster_stack[-1]
-        if not thumbnail_url:
+        if not thumbnail_url and kind != VIDEO_CANDIDATE_KIND_FILE:
             thumbnail_url = self._page_thumbnail_url
+        url_width, url_height = _dimensions_from_media_url(absolute)
         self.candidates.append(
             WebpageVideoCandidate(
                 candidate_id=_candidate_id(absolute, tag, attr_name),
@@ -296,8 +403,8 @@ class _VideoHtmlParser(HTMLParser):
                 extension=extension,
                 title=str(title or ""),
                 thumbnail_url=str(thumbnail_url or ""),
-                width=_safe_int(attr.get("width")),
-                height=_safe_int(attr.get("height")),
+                width=_safe_int(attr.get("width")) or url_width,
+                height=_safe_int(attr.get("height")) or url_height,
                 source_tag=tag,
                 source_attr=attr_name,
                 detection_reason=reason,
@@ -319,11 +426,22 @@ def discover_webpage_video_candidates_from_html(
     except Exception as exc:
         warnings.append(f"Static HTML video scan parse warning: {type(exc).__name__}: {exc}")
     decision = dict(capability_decision or build_jdownloader_capability_decision(source_url).to_dict())
+    inline_candidates = _inline_media_url_candidates_from_html(
+        source_url,
+        html_text,
+        page_thumbnail_url=parser._page_thumbnail_url,
+        seen_urls=parser._seen_urls,
+    )
     candidates = tuple(
         replace(candidate, thumbnail_url=parser._page_thumbnail_url)
-        if parser._page_thumbnail_url and not candidate.thumbnail_url
+        if (
+            parser._page_thumbnail_url
+            and not candidate.thumbnail_url
+            and candidate.kind != VIDEO_CANDIDATE_KIND_FILE
+            and candidate.source_tag != "inline_script"
+        )
         else candidate
-        for candidate in parser.candidates
+        for candidate in (*parser.candidates, *inline_candidates)
     )
     return WebpageVideoDiscoveryResult(
         source_url=str(source_url or ""),

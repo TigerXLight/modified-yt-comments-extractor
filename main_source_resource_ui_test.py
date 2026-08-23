@@ -533,6 +533,14 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "rendered_linkgrabber" in app_source
     assert "Video & Audio can open from the cached candidate list" in app_source
     assert "discover_webpage_videos_for_row" in Path("main.py").read_text(encoding="utf-8")
+    video_candidate_backend_source = Path("webpage_video_candidate_backend.py").read_text(encoding="utf-8")
+    assert "_inline_media_url_candidates_from_html" in video_candidate_backend_source
+    assert "inline script media URL" in video_candidate_backend_source
+    assert "_dimensions_from_media_url" in video_candidate_backend_source
+    assert "selected_by_default=kind in {VIDEO_CANDIDATE_KIND_FILE, VIDEO_CANDIDATE_KIND_STREAM}" in video_candidate_backend_source
+    assert "inline direct media icons honest" in video_candidate_backend_source
+    assert "candidate.kind != VIDEO_CANDIDATE_KIND_FILE" in video_candidate_backend_source
+    assert "candidate.source_tag != \"inline_script\"" in video_candidate_backend_source
     assert "self._start_internal_browser_image_discovery_service()" in app_source
     assert "trace_add" in source
     assert "filter_resource_dialog_items" in source
@@ -752,10 +760,12 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'refreshMediaItemsFromServer' in video_browser_source
     assert 'mediaSignature' in video_browser_source
     assert "grid.textContent=''" in video_browser_source
-    assert 'video.play().catch' in video_browser_source
-    assert "video.preload='auto'" in video_browser_source
-    assert "audio.preload='auto'" in video_browser_source
-    assert 'onpointerenter=startHoverPreview' in video_browser_source
+    assert 'media.play().catch' in video_browser_source
+    assert 'function activatePreview(card, preview, item, onMetadata, manual=false)' in video_browser_source
+    assert "media.preload='auto'" in video_browser_source
+    assert 'function attachPreviewSource(media, url)' in video_browser_source
+    assert "card.addEventListener('pointerenter', enterPreview)" in video_browser_source
+    assert "preview.addEventListener('pointerenter', enterPreview)" in video_browser_source
     assert "document.querySelector('.preview:hover')" in video_browser_source
     assert 'formatDimensions' in video_browser_source
     assert 'formatByteSize' in video_browser_source
@@ -807,6 +817,59 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert '.actions a:hover, .actions button:hover' in video_browser_source
     assert '.card.intake-reused .preview' in video_browser_source
     assert 'Detecting size' not in video_browser_source
+    assert "media.disablePictureInPicture=true" in video_browser_source
+    assert "disablepictureinpicture" in video_browser_source
+    assert "controlsList','nodownload noplaybackrate noremoteplayback" in video_browser_source
+    assert '_source_video_audio_browser_grid_playability_for_item' in full_source
+    assert 'playable_variants = sorted(' in full_source
+    assert 'variant for variant in variants if bool(variant.get("playable"))' in full_source
+    assert 'key=_browser_grid_variant_preference_key' in full_source
+    assert 'Media loading · rendered variants loading...' in video_browser_source
+    assert 'candidate_role_label' in video_browser_source
+    assert 'Playable media' not in video_browser_source
+    assert 'Embedded player' in full_source
+    assert 'Page wrapper' in full_source
+    assert 'Page script' in full_source
+    assert "note.textContent=candidateRoleLabel(item)" not in video_browser_source
+    assert "e.textContent='Preview unavailable'" not in video_browser_source
+    assert "return isPlayableMedia(item) ? '' : 'Preview unavailable'" not in video_browser_source
+    assert 'primePreferredVariant(item)' in video_browser_source
+    assert 'sortVariantsByPreference(variants)' in video_browser_source
+    assert 'isPlayableMedia' in video_browser_source
+    assert 'candidateRoleLabel' in video_browser_source
+    assert 'updatePlayButtonForItem' in video_browser_source
+    assert 'role-pill' in video_browser_source
+    assert "if (!isPlayableMedia(item))" in video_browser_source
+    assert 'non-playable' in video_browser_source
+    assert 'preview-note' not in video_browser_source
+    assert 'use Open for the source/player URL' in video_browser_source
+    assert '_browser_grid_variant_preference_key' in full_source
+    assert 'def _browser_grid_display_name' in full_source
+    assert 'lower_name = raw_name.lower()' in full_source
+    assert 'if playable_variants:' in full_source
+    assert 'preferred_variant = playable_variants[0]' in full_source
+    assert 'elif bool(playability.get("playable")):' in full_source
+    assert 'card_resource_id = str(preferred_variant.get("resource_id") or resource_id)' in full_source
+    assert 'function attachPreviewSource(media, url)' in video_browser_source
+    assert 'let activePreviewMedia=null' in video_browser_source
+    assert 'renderPreviewPlaceholder(item, container)' in video_browser_source
+    assert 'function activatePreview(card, preview, item, onMetadata, manual=false)' in video_browser_source
+    assert 'const enterPreview=()=>startPreviewIfHovered(card, preview, item, updateSizeUi)' in video_browser_source
+    assert 'const media=activatePreview(card, preview, item, updateSizeUi, true)' in video_browser_source
+    assert 'attachPreviewSource(media, item.url); try {{ media.muted=false' in video_browser_source
+    assert 'media.dataset.attachedUrl === nextUrl' in video_browser_source
+    assert 'staticThumbQueue' in video_browser_source
+    assert 'function attachStaticThumbnail(card, preview, item)' in video_browser_source
+    assert 'enqueueStaticThumbnail(card, preview, item' in video_browser_source
+    assert '.static-thumb' in video_browser_source
+    assert 'pauseStaticThumbnails' in video_browser_source
+    assert 'function preserveStaticFrameFromMedia(card, preview, media, item)' in video_browser_source
+    assert "canvas.toDataURL('image/jpeg', 0.72)" in video_browser_source
+    assert "media.classList.add('static-thumb')" in video_browser_source
+    assert 'const preserved=preserveStaticFrameFromMedia(card, preview, media, currentItem)' in video_browser_source
+    assert "option.title=variant.url" not in video_browser_source
+    assert 'afterFirstPaint(()=>attachPreviewSource(video, item.url))' not in video_browser_source
+    assert 'setTimeout(refreshMediaItemsFromServer, 150)' in video_browser_source
     assert '_build_webpage_video_audio_file_intake_dedupe_plan' in full_source
     assert '_webpage_video_audio_files_intake_identity_store_path' in full_source
     assert 'browser_grid_webpage_video_audio_persistent_identity' in full_source

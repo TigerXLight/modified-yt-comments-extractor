@@ -233,3 +233,60 @@ V81G changes the source-add success message from the older generic metadata-prob
 V81O repair 2: Browser-grid byte-size probes are signature-safe label-only updates; they do not advance media render signatures after local video dimension metadata changes, preventing Video & Audio card rebuild loops during variant/dimension selection.
 
 V81O repair 3: Video & Audio byte-size results are cached by resource id and URL, reused across MP4 dimension/variant changes, and excluded from media render signatures so size labels do not rebuild video cards or disappear after switching variants.
+
+## YTCE V81P Video & Audio playable-candidate clarification
+
+- Separates directly playable browser media from embedded players, page wrappers, page scripts, and unavailable preview candidates in the browser-native Video & Audio grid.
+- Keeps all candidates visible for review/Open/FILES intake, but non-playable entries no longer look like normal playable MP4/audio cards and show role labels such as `Embedded player`, `Page wrapper`, `Page script`, or `Preview unavailable`.
+- Keeps instant window opening, hover playback for direct media, byte-size labels, rendered refresh handling, and JDownloader/LinkGrabber routing unchanged.
+
+## YTCE V81P test-scope repair
+
+- Repairs the V81P self-test so Python-side candidate role literals such as `Embedded player`, `Page wrapper`, and `Page script` are asserted against the full App source instead of only the browser-grid method body.
+- Leaves runtime Video & Audio behaviour unchanged.
+
+## YTCE V81P playable-only instant-open repair
+
+- Keeps the Video & Audio browser window opening immediately even when the quick cached candidates are page wrappers/player/script assets and rendered direct MP4 variants are still loading.
+- Filters the visible Video & Audio grid to direct playable media candidates so page wrappers, embedded players, and page scripts do not appear as result cards.
+- Keeps V81O byte-size labels, hover playback for direct playable media, rendered refresh handling, and LinkGrabber/JDownloader routing unchanged.
+- V81P repair3: removed redundant playable-media badge/status wording, disabled browser Picture-in-Picture overlay for video previews, and kept webpage Source details to Title/Date/URL when metadata exists.
+
+V81P repair4 note: Video & Audio playable-only grid now primes the preferred/highest direct variant before first render and removes the visible/native "Preview unavailable" hover/overlay text from playable cards.
+
+V81P repair5 note: Video & Audio playable-only grid now promotes playable variants from wrapper representatives, prefers the highest known direct variant before JSON/render, defers preview source attachment until after first paint, and starts rendered-refresh polling sooner without blocking window creation.
+V81P repair5 test fix: refreshed playable-variant self-test scope for sorted preferred variants.
+
+V81P repair6: restored immediate preview source attachment and made preferred playable variants win first render while keeping non-playable wrappers hidden.
+
+V81P repair6 test fix: refreshed playable-variant assertion after preferred variants became the primary branch.
+
+### V81P repair7 static inline media URL scan
+- Added a static inline JSON/script URL scan for direct media URLs so quick Video & Audio precheck can see fuller MP4 rendition lists without waiting for rendered discovery.
+- The scan is deterministic text extraction only: it does not evaluate page scripts, download media, or replace the JDownloader/API3128-preferred route.
+
+### V81P repair8 variant-switch preview and honest posters
+- Removed page-level thumbnail inheritance from static inline direct MP4 candidates so unrelated video cards do not reuse the same article icon.
+- Kept variant switching live while the pointer is already over a card by restarting the selected direct media preview immediately after changing dimensions.
+- Removed direct-media URL tooltips from the dimension/variant selector; the URL remains available from the explicit URL button.
+
+### V81P repair10 single active hover-stream preview
+- Kept the larger quick direct-MP4 candidate set while rendering cards as lightweight placeholders, so the browser window no longer attaches every discovered MP4 at startup.
+- Added a single active hover-stream preview path: only the card under the pointer gets a video/audio element and media URL; moving the pointer or changing variants swaps that one active stream.
+- Dimension changes now restart the active hover preview immediately when the pointer remains over the card, while URL/full-media details stay available through the URL/Open controls rather than selector hover.
+## V81P repair10 test-fix
+
+- Refreshed the Video & Audio browser-grid self-test markers for the single-active hover-stream preview implementation.
+V81P repair10 testfix2: refreshed the self-test marker for the single active hover-stream preview path.
+
+### V81P repair11 hover-stream render unblock
+- Fixed the repair10 browser-script brace issue in `clearActivePreview`; the Video & Audio window could show the header and media count but leave the card grid blank because the generated JavaScript failed to parse.
+- Kept the single-active hover stream design: cards render first, and only the hovered media URL is attached for preview playback.
+
+
+V81P repair12 note: the Video & Audio browser grid keeps the single-active hover stream model and adds a low-priority one-at-a-time static thumbnail pass for direct playable media. The thumbnail pass is intentionally queued after first paint and pauses around hover playback so it does not preload all video streams or block instant card rendering.
+
+### V81P repair13 preserved hover-frame thumbnails
+- Kept the repair11/repair12 fast Video & Audio behavior while preserving a static frame after hover preview ends.
+- On hover leave, the browser now tries to capture the current video frame into a lightweight static thumbnail; if canvas capture is unavailable, it keeps the paused frame as a static thumbnail for that card.
+- This avoids returning hovered cards to a blank placeholder while still keeping the single-active hover-stream design for live playback.
