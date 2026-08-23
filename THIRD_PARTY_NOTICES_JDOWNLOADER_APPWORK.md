@@ -290,3 +290,23 @@ V81P repair12 note: the Video & Audio browser grid keeps the single-active hover
 - Kept the repair11/repair12 fast Video & Audio behavior while preserving a static frame after hover preview ends.
 - On hover leave, the browser now tries to capture the current video frame into a lightweight static thumbnail; if canvas capture is unavailable, it keeps the paused frame as a static thumbnail for that card.
 - This avoids returning hovered cards to a blank placeholder while still keeping the single-active hover-stream design for live playback.
+
+
+## V81Q image-grid UI cleanup
+
+V81Q keeps the browser-native Images surface but makes the visible image cards cleaner:
+duplicate/same-image variants are grouped more aggressively, the browser-only bulk
+download button is removed in favour of Add selected to FILES, image order numbers
+move to the top control row, image byte-size labels use compact KB/MB-style labels,
+and GIFs are treated as hover-animated previews instead of eagerly animating every
+GIF in the grid.
+
+
+### V81R Video/Audio badge info and compact variant selector
+- Replaced the visible Video & Audio info icon with the card `#N` badge in the same top-left control position; the badge keeps the former info hover/click behaviour.
+- Removed the duplicate bottom `#N` media-order pill from Video & Audio cards.
+- Simplified Video & Audio variant selector labels to prefer bare dimensions, e.g. `1024×576`, without repeating format/order/size text already shown elsewhere.
+
+### V81S repair3 Images badge info control
+- Makes the Images `#N` badge use the same browser-grid `info-copy` control behaviour as the Video & Audio `#N` badge while keeping its Images placement between URL and Open.
+- Hover/focus/click on the Images badge now shows the image display name, dimensions, and compact KB/MB size in the status text without selecting the card.

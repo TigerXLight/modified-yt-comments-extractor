@@ -731,6 +731,20 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert "const DOWNLOAD_ICON_DATA_URI = 'data:image/png;base64," in browser_grid_source
     assert 'downIcon.src=DOWNLOAD_ICON_DATA_URI' in browser_grid_source
     assert "down.title='Download selected image to FILES'" in browser_grid_source
+    assert "Browser download selected" not in browser_grid_source
+    assert "document.getElementById('downloadSelected')" not in browser_grid_source
+    assert "top-order" not in browser_grid_source
+    assert "function showImageInfo(item)" in browser_grid_source
+    assert "topOrder.className='info-copy'" in browser_grid_source
+    assert "topOrder.onmouseenter=()=>showImageInfo(item)" in browser_grid_source
+    assert "topOrder.onclick=(event)=>" in browser_grid_source
+    assert "topControls.append(check, urlCopy, topOrder, actions)" in browser_grid_source
+    assert "const order = document.createElement('span'); order.className='pill'; order.textContent=`#${item.index}`; info.append(order);" not in browser_grid_source
+    assert "units=['KB','MB','GB','TB']" in browser_grid_source
+    assert "return item.byte_size_label || formatByteSize(known)" not in browser_grid_source
+    assert "option.title = variant.url" not in browser_grid_source
+    assert "isGifImage" in browser_grid_source
+    assert "hover to animate" in browser_grid_source
     assert 'self._open_source_video_audio_browser_grid_window(row_id)' in source
     assert 'run_rendered_probe=False' in video_open_source
     assert 'webpage_video_audio_browser_grid_open_pending_by_key' in video_open_source
@@ -781,6 +795,10 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'file_size_bytes=' in Path("webpage_video_resource_bridge.py").read_text(encoding="utf-8")
     assert '_candidate_byte_size' in Path("webpage_video_resource_bridge.py").read_text(encoding="utf-8")
     assert 'variantDisplayLabel' in video_browser_source
+    assert 'if (dims) return dims;' in video_browser_source
+    assert 'withBytes' not in video_browser_source
+    assert 'card index lives in the top-row info badge' in video_browser_source
+    assert "const order=document.createElement('span'); order.className='pill'; order.textContent=`#${{item.index}}`; info.append(order);" not in video_browser_source
     assert 'byteSizeCacheByKey' in video_browser_source
     assert 'byteSizeProbeDoneKeys' in video_browser_source
     assert 'cacheMatchingByteSize' in video_browser_source
@@ -789,13 +807,14 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'onloadedmetadata' in video_browser_source
     assert 'videoWidth' in video_browser_source
     assert 'play-toggle' in video_browser_source
-    assert 'INFO_ICON_DATA_URI' in video_browser_source
+    assert 'INFO_ICON_DATA_URI' not in video_browser_source
     assert 'info_icon_data_uri = INFO_ICON_DATA_URI' not in video_browser_source
     assert 'info-copy' in video_browser_source
     assert '.url-copy {{ min-width:1.85rem' in video_browser_source
-    assert '.info-copy {{ width:1.20rem' in video_browser_source
-    assert 'infoIcon.src=INFO_ICON_DATA_URI' in video_browser_source
-    assert 'filter:none' in video_browser_source
+    assert '.info-copy {{ min-width:1.45rem' in video_browser_source
+    assert "infoCopy.textContent=`#${{item.index}}`" in video_browser_source
+    assert "infoCopy.setAttribute('aria-label',`Show media info for #${{item.index}}`)" in video_browser_source
+    assert 'infoIcon.src=INFO_ICON_DATA_URI' not in video_browser_source
     assert 'info-copy::before' not in video_browser_source
     assert 'display:none !important' not in video_browser_source
     assert 'opacity:.74' not in video_browser_source
