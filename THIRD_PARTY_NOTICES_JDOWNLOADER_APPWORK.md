@@ -310,3 +310,16 @@ GIF in the grid.
 ### V81S repair3 Images badge info control
 - Makes the Images `#N` badge use the same browser-grid `info-copy` control behaviour as the Video & Audio `#N` badge while keeping its Images placement between URL and Open.
 - Hover/focus/click on the Images badge now shows the image display name, dimensions, and compact KB/MB size in the status text without selecting the card.
+
+V81T video filename labels note:
+- Video & Audio keeps instant browser-grid preview behaviour while exposing direct media filenames from URL basenames when available, including JDownloader-style rendition names such as 1024x576_MP4_*.mp4.
+- Filename labels are metadata only and do not change the JDownloader/API3128 routing preference.
+- V81T test fix: refreshed Video & Audio filename self-test marker for mediaFileName fallback.
+
+### V81T repair2 - filename-first Video & Audio info badge
+
+- Makes the Video & Audio `#N` info badge show the direct media filename as the primary value when available.
+- Removes the confusing mixed page-title-plus-filename status text for Video & Audio info hover.
+- Keeps the visible card title, hover streaming, thumbnails, dimensions, variant switching, and Images window behavior unchanged.
+
+- V81T repair2 test-fix: refreshed filename-first Video & Audio self-test marker.

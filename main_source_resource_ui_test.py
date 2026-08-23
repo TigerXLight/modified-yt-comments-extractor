@@ -820,6 +820,14 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'opacity:.74' not in video_browser_source
     assert 'infoCopy.onmouseenter' in video_browser_source
     assert 'mediaDisplayName' in video_browser_source
+    assert 'mediaFileName' in video_browser_source
+    assert 'mediaInfoTooltip' in video_browser_source
+    assert 'Filename:' not in video_browser_source
+    assert 'function mediaInfoName(item, displayName)' in video_browser_source
+    assert 'return mediaFileName(item) || displayName || mediaDisplayName(item)' in video_browser_source
+    assert 'item.file_name=variant.file_name' in video_browser_source
+    assert '"file_name": self._source_video_audio_browser_grid_filename_for_url' in full_source
+    assert '_source_video_audio_browser_grid_filename_for_url' in full_source
     assert 'PAGE_MEDIA_TITLE' in video_browser_source
     assert 'onloadeddata' in video_browser_source
     assert 'oncanplay' in video_browser_source
@@ -896,8 +904,12 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'page_title: str = ""' in full_source
     assert '_browser_grid_display_name' in full_source
     assert "lower.includes(' from source')" in video_browser_source
-    assert "PAGE_MEDIA_TITLE || basenameFromUrl" in video_browser_source
+    assert "function mediaInfoName(item, displayName)" in video_browser_source
+    assert "return mediaFileName(item) || displayName || mediaDisplayName(item)" in video_browser_source
+    assert "function mediaInfoTooltip(item, displayName) {{ return mediaInfoName(item, displayName); }}" in video_browser_source
+    assert "const parts = [infoName];" in video_browser_source
     assert 'Browser-native video/audio FILES refresh' in video_finish_source
+    assert 'display_name = self._source_video_audio_browser_grid_filename_for_url(media_url, resource_id' in full_source
     assert 'Browser-native video/audio download queued' in video_download_source
     assert '_intake_session_files' in video_finish_source
     assert 'urllib.request.urlopen' in full_source
