@@ -3046,6 +3046,8 @@ internal sealed class SourceRoleEditorForm : Form
   const NATIVE_HOST_TOOLBAR = true; // R42CR: WinForms toolbar is in its own top row above WebView2; DOM toolbar is hidden and kept only as a state/bridge helper.
   let mode = {{modeJson}};
   const roles = ['PRIMARY','SECONDARY','TERTIARY','UNKNOWN'];
+  const R42ED_ROLE_COLOR_CLEANUP = true;
+  const ROLE_LABELS = { PRIMARY:'Primary evidence', SECONDARY:'Secondary report/source copy', TERTIARY:'Tertiary/background support', UNKNOWN:'Unknown / needs review', BLANK:'Metadata / not a claim' };
   const roleClasses = ['ytce-role-primary','ytce-role-secondary','ytce-role-tertiary','ytce-role-unknown','ytce-role-blank'];
   let paintScheduled = false;
   let firstPaintSent = false;
@@ -3091,7 +3093,8 @@ internal sealed class SourceRoleEditorForm : Form
       if (!document.documentElement) return;
       document.documentElement.setAttribute('data-ytce-mode', mode);
       const paintStyle = String(PAYLOAD.text_paint_style || '').toLowerCase();
-      document.documentElement.classList.toggle('ytce-r42du-text-recolor', paintStyle === 'recolor' || paintStyle === 'text_recolor');
+      document.documentElement.classList.toggle('ytce-r42du-text-recolor', paintStyle === 'recolor' || paintStyle === 'text_recolor' || paintStyle === 'colour' || paintStyle === 'color');
+      document.documentElement.classList.toggle('ytce-r42ed-text-colour-cleanup', true);
       if (document.body) document.body.setAttribute('data-ytce-mode', mode);
     } catch(e) {}
   }
@@ -3161,7 +3164,7 @@ internal sealed class SourceRoleEditorForm : Form
   // role painter then never boots, leaving the native toolbar counters at 00
   // even after archive material/source-role spans are available.
   function textForRow(row) { return clean(row.text || row.url || row.media_url || ''); }
-  post('r42dv_role_paint_js_ready', { rows_semantic_payload: (((PAYLOAD.rows_by_mode||{}).semantic||[]).length), rows_media_payload: (((PAYLOAD.rows_by_mode||{}).media||[]).length), text_paint_style: String(PAYLOAD.text_paint_style || '') });
+  post('r42dv_role_paint_js_ready', { rows_semantic_payload: (((PAYLOAD.rows_by_mode||{}).semantic||[]).length), rows_media_payload: (((PAYLOAD.rows_by_mode||{}).media||[]).length), text_paint_style: String(PAYLOAD.text_paint_style || ''), r42ed_role_colour_cleanup: R42ED_ROLE_COLOR_CLEANUP, role_labels: ROLE_LABELS });
   function classListRemoveRoles(el) { try { el.classList.remove(...roleClasses); } catch(e) { for (const c of roleClasses) el.classList.remove(c); } }
   function applyRoleClass(el, role, keepMediaOutline) {
     if (!el) return;
@@ -3169,6 +3172,8 @@ internal sealed class SourceRoleEditorForm : Form
     if (keepMediaOutline) el.classList.add('ytce-r42ai-media-outline');
     el.classList.add(roleClass(role));
     el.setAttribute('data-ytce-role', role);
+    el.setAttribute('data-ytce-role-label', ROLE_LABELS[role] || role);
+    if (!el.getAttribute('title') || /^source-role:/i.test(el.getAttribute('title') || '')) el.setAttribute('title', 'source-role: ' + (ROLE_LABELS[role] || role));
   }
   function shortText(s, n) {
     const t = clean(s || '');
@@ -3613,6 +3618,8 @@ internal sealed class SourceRoleEditorForm : Form
     const style = document.createElement('style');
     style.id = 'ytce-r42ai-style';
     style.textContent = `
+      :root{--ytce-primary:#059669;--ytce-secondary:#2563eb;--ytce-tertiary:#7e22ce;--ytce-unknown:#b45309;--ytce-blank:#64748b;--ytce-primary-bg:rgba(52,211,153,.35);--ytce-secondary-bg:rgba(147,197,253,.38);--ytce-tertiary-bg:rgba(216,180,254,.40);--ytce-unknown-bg:rgba(251,191,36,.42);--ytce-blank-bg:rgba(100,116,139,.30);}
+      html.ytce-r42ed-text-colour-cleanup .ytce-role-hit{line-height:1.35!important;}
       html.ytce-r42cr-toolbar-safe-top{scroll-padding-top:var(--ytce-r42cr-content-offset,74px)!important;}
       html.ytce-r42cr-toolbar-safe-top body{padding-top:var(--ytce-r42cr-content-offset,74px)!important;box-sizing:border-box!important;}
       html.ytce-r42cr-toolbar-safe-bottom{scroll-padding-bottom:var(--ytce-r42cr-bottom-offset,74px)!important;}
@@ -3643,11 +3650,11 @@ internal sealed class SourceRoleEditorForm : Form
       #ytce-r42ai-toolbar .ytce-nav-hidden{display:none!important;}
       #ytce-r42ai-toolbar .ytce-url{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;flex:1 1 120px!important;min-width:0!important;max-width:520px!important;color:#e5e7eb!important;font-weight:600!important;text-align:left!important;}
       .ytce-role-hit{border-radius:4px!important;box-decoration-break:clone!important;-webkit-box-decoration-break:clone!important;cursor:pointer!important;}
-      .ytce-role-primary{background:rgba(52,211,153,.35)!important;outline:2px solid rgba(16,185,129,.95)!important;}
-      .ytce-role-secondary{background:rgba(147,197,253,.38)!important;outline:2px solid rgba(59,130,246,.95)!important;}
-      .ytce-role-tertiary{background:rgba(216,180,254,.40)!important;outline:2px solid rgba(168,85,247,.95)!important;}
-      .ytce-role-unknown{background:rgba(251,191,36,.42)!important;outline:2px solid rgba(245,158,11,.98)!important;}
-      .ytce-role-blank{background:rgba(100,116,139,.42)!important;outline:2px solid rgba(71,85,105,.86)!important;color:inherit!important;text-decoration:none!important;}
+      .ytce-role-primary{background:var(--ytce-primary-bg)!important;outline:2px solid var(--ytce-primary)!important;}
+      .ytce-role-secondary{background:var(--ytce-secondary-bg)!important;outline:2px solid var(--ytce-secondary)!important;}
+      .ytce-role-tertiary{background:var(--ytce-tertiary-bg)!important;outline:2px solid var(--ytce-tertiary)!important;}
+      .ytce-role-unknown{background:var(--ytce-unknown-bg)!important;outline:2px solid var(--ytce-unknown)!important;}
+      .ytce-role-blank{background:var(--ytce-blank-bg)!important;outline:2px solid var(--ytce-blank)!important;color:inherit!important;text-decoration:none!important;}
       html.ytce-r42du-text-recolor .ytce-role-hit{background:transparent!important;outline:0!important;border-radius:0!important;padding:0!important;text-decoration-line:underline!important;text-decoration-thickness:.16em!important;text-underline-offset:.16em!important;box-shadow:inset 0 -.18em currentColor!important;}
       html.ytce-r42du-text-recolor .ytce-role-primary{color:var(--ytce-primary)!important;text-decoration-color:var(--ytce-primary)!important;}
       html.ytce-r42du-text-recolor .ytce-role-secondary{color:var(--ytce-secondary)!important;text-decoration-color:var(--ytce-secondary)!important;}
@@ -3670,7 +3677,7 @@ internal sealed class SourceRoleEditorForm : Form
       .ytce-r42cr-media-box.ytce-role-blank{border-color:rgba(148,163,184,.75)!important;}
     `;
     parent.appendChild(style);
-    post('style_installed');
+    post('style_installed', { r42ed_role_colour_cleanup: true });
     return true;
   }
 

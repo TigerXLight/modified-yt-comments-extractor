@@ -24,6 +24,21 @@ SCHEMA = "ytce.r42dw.archive_role_overlay_payload.v1"
 VALID_ROLES = {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "BLANK"}
 
 
+def _r42ed_payload_overlay_metadata() -> dict[str, Any]:
+    """Optional R42ED role logic/colour metadata for native overlays.
+
+    This import is deliberately optional so older workers can still build archive
+    role payloads if the R42ED matrix module has not been installed yet.
+    """
+    try:
+        from profile_media_semantic_media_logic_matrix_r42ed import payload_overlay_metadata_r42ed
+
+        meta = payload_overlay_metadata_r42ed()
+        return dict(meta) if isinstance(meta, Mapping) else {}
+    except Exception:
+        return {}
+
+
 def _clean(value: object) -> str:
     return " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split())
 
@@ -160,6 +175,7 @@ def build_native_role_overlay_payload_from_surface(
     media_rows = rows_by_mode["media"]
     source_title = _clean(title or surface.get("source_title") or "Archive source material")
     paint_style = _clean(text_paint_style or os.environ.get("YTCE_R42DU_TEXT_PAINT_STYLE", ""))
+    r42ed_meta = _r42ed_payload_overlay_metadata()
     payload = {
         "schema": SCHEMA,
         "version": VERSION,
@@ -181,6 +197,10 @@ def build_native_role_overlay_payload_from_surface(
         "semantic_role_text": _role_markup(semantic_rows),
         "media_role_text": _role_markup(media_rows),
         "text_paint_style": paint_style,
+        "role_comprehension_matrix": r42ed_meta.get("role_comprehension_matrix", {}),
+        "role_colour_theme": r42ed_meta.get("role_colour_theme", {}),
+        "adapter_guard_matrix": r42ed_meta.get("adapter_guard_matrix", {}),
+        "r42ed_semantic_media_logic_matrix": bool(r42ed_meta),
         "r42dw_archive_role_overlay_payload": True,
         "r42ds_source_surface_span_count": int(surface.get("span_count") or len(semantic_rows)),
         "r42ds_source_surface_role_counts": dict(surface.get("role_counts") or {}),
