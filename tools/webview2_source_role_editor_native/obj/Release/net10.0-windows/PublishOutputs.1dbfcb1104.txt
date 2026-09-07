@@ -1,0 +1,14 @@
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\YTCE.NativeSourceRoleEditor.R42BX.exe
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\runtimes\win-x86\native\WebView2Loader.dll
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\runtimes\win-x64\native\WebView2Loader.dll
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\runtimes\win-arm64\native\WebView2Loader.dll
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\YTCE.NativeSourceRoleEditor.R42BX.dll
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\YTCE.NativeSourceRoleEditor.R42BX.deps.json
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\YTCE.NativeSourceRoleEditor.R42BX.runtimeconfig.json
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\YTCE.NativeSourceRoleEditor.R42BX.pdb
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\Microsoft.Web.WebView2.Core.dll
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\Microsoft.Web.WebView2.WinForms.dll
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\Microsoft.Web.WebView2.Wpf.dll
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\Microsoft.Web.WebView2.Core.xml
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\Microsoft.Web.WebView2.WinForms.xml
+T:\References\to go\Media\tools\Modified YouTube comment extractor\profile_media_live_captures\link_source_role_webview_overlay\r42bx_native_editor_build\Microsoft.Web.WebView2.Wpf.xml

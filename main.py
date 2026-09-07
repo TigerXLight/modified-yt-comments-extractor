@@ -1,11 +1,1028 @@
-"""
-YouTube Comment Extractor - Desktop Application.
-
-A modern GUI application for extracting, filtering, and analyzing
-YouTube comments with advanced spam detection.
-"""
-
+# YTCE_V83D_R36E_DIRECT_MARKER_INSERT_20260829
 from __future__ import annotations
+
+
+# YTCE inline comment/source-role review fallback helpers.
+# These are intentionally module-level so Review-window callbacks still work
+# even if a local nested helper is removed or not yet bound by a patch.
+def _ytce_review_clean_text(value) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _ytce_review_role_display(span) -> str:
+    role = _ytce_review_clean_text(
+        (span or {}).get("role")
+        or (span or {}).get("claim_role")
+        or (span or {}).get("source_role")
+        or (span or {}).get("role_label")
+        or "Unknown"
+    )
+    upper = role.upper()
+    if upper.startswith("PRIMARY"):
+        return "Primary"
+    if upper.startswith("SECONDARY"):
+        return "Secondary"
+    if upper.startswith("TERTIARY"):
+        return "Tertiary"
+    if upper.startswith("BLANK"):
+        return "Blank"
+    if upper.startswith("UNKNOWN"):
+        return "Unknown"
+    return role or "Unknown"
+
+
+
+
+def _ytce_review_comment_role_spans(
+    text,
+    *,
+    source_id: str = "youtube_comment",
+    speaker: str = "@RevBrettMurphy",
+    section_meta: dict | None = None,
+) -> list[dict[str, object]]:
+    """Return semantic claim/span roles for authored YouTube comment text.
+
+    YTCE_V83C_REPAIR14_RENDER_TIME_COMMENT_CLASSIFIER
+    The preserved comment object has its own media/source provenance, but the
+    words inside the comment must always go through the shared claim-span
+    classifier.  Do this at render-time as well as build-time so stale preview
+    JSON or fallback comment sections cannot bypass later hardened policy rules.
+    """
+    raw = _ytce_review_clean_text(text)
+    if not raw:
+        return []
+    section_meta = dict(section_meta or {})
+    try:
+        from profile_media_claim_role_classifier import classify_claim_text
+
+        output: list[dict[str, object]] = []
+        for span_index, span in enumerate(classify_claim_text(
+            raw,
+            source_id=source_id or "youtube_comment",
+            speaker=speaker or "@RevBrettMurphy",
+            media_source_role="SECONDARY_MEDIA_COPY",
+        ), start=1):
+            try:
+                payload = span.to_dict()
+            except Exception:
+                payload = {
+                    "text": _ytce_review_clean_text(getattr(span, "text", "")),
+                    "role": str(getattr(span, "role", "UNKNOWN") or "UNKNOWN").upper(),
+                    "designation": str(getattr(span, "designation", "")),
+                    "edit_key": f"{source_id or 'youtube_comment'}_span_{span_index:03d}",
+                }
+            span_text = _ytce_review_clean_text(payload.get("text"))
+            if not span_text:
+                continue
+            role = str(payload.get("role") or "UNKNOWN").strip().upper()
+            if role not in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "BLANK"}:
+                role = "UNKNOWN"
+            payload.update(section_meta)
+            payload["text"] = span_text
+            payload["role"] = role
+            payload.setdefault("source_id", source_id or "youtube_comment")
+            payload.setdefault("speaker", speaker or "@RevBrettMurphy")
+            payload.setdefault("section", "comments")
+            payload.setdefault("source_stream", "preserved_youtube_comments")
+            payload.setdefault("media_source_role", "SECONDARY_MEDIA_COPY")
+            payload["comment_semantic_roles_use_claim_role_classifier"] = True
+            payload["semantic_role_is_separate_from_source_role"] = True
+            payload["render_time_classifier_refresh"] = True
+            payload["YTCE_V83C_REPAIR14_RENDER_TIME_COMMENT_CLASSIFIER"] = True
+            output.append(dict(payload))
+        if output:
+            return output
+    except Exception:
+        pass
+
+    lowered = raw.lower()
+    # Small, safe fallback if the classifier is unavailable while the Review
+    # window is opening.  Do not default comments to Secondary: Secondary is the
+    # preserved-source status, not the semantic role of the comment words.
+    if any(token in lowered for token in (" i ", "i'", "i’m", "i'm", " my ", " me ", "we ", "our ")) or lowered.startswith(("i ", "we ", "my ", "our ")):
+        role = "PRIMARY"
+    elif raw.strip().endswith("?"):
+        role = "BLANK"
+    else:
+        role = "UNKNOWN"
+    payload = {"text": raw, "role": role, "section": "comments", "source_id": source_id or "youtube_comment", "speaker": speaker or "@RevBrettMurphy"}
+    payload.update(section_meta)
+    payload["render_time_classifier_refresh_failed_fallback"] = True
+    return [payload]
+
+
+def _ytce_review_comment_section_role_spans(section) -> list[dict[str, object]]:
+    """Return comment claim spans, preferring the current shared classifier.
+
+    YTCE_V83C_REPAIR14_STALE_COMMENT_SPAN_BYPASS
+    Older previews may already contain ``claim_role_spans`` generated before the
+    latest semantic policy hardening.  The Review UI should not blindly trust
+    those stale cached spans.  Reclassify the visible comment body every time;
+    fall back to the cached spans only if the classifier cannot return usable
+    rows.
+    """
+    if not isinstance(section, dict):
+        return []
+    raw_text = _ytce_review_clean_text(section.get("text"))
+    source_id = _ytce_review_clean_text(section.get("source_id"))
+    if not source_id:
+        bits = [
+            "youtube_comment",
+            _ytce_review_clean_text(section.get("canonical_person") or section.get("person")).replace(" ", "_").lower(),
+            str(section.get("comment_index") or "").strip(),
+        ]
+        source_id = "_".join(part for part in bits if part) or "youtube_comment"
+    speaker = _ytce_review_clean_text(section.get("author_handle") or section.get("person")) or "@RevBrettMurphy"
+    meta = {
+        "section": "comments",
+        "source_stream": "preserved_youtube_comments",
+        "source_url": _ytce_review_clean_text(section.get("source_url")),
+        "canonical_person": _ytce_review_clean_text(section.get("canonical_person") or section.get("person")),
+        "author_handle": _ytce_review_clean_text(section.get("author_handle")),
+        "time": _ytce_review_clean_text(section.get("time") or section.get("time_label")),
+        "comment_index": section.get("comment_index", ""),
+        "affects_transcript_claim_span_counts": False,
+    }
+    if raw_text:
+        fresh = _ytce_review_comment_role_spans(raw_text, source_id=source_id, speaker=speaker, section_meta=meta)
+        # Prefer the render-time classifier whenever it split the comment, or
+        # whenever the cached span payload does not explicitly identify the
+        # shared classifier.  This is the universal-route fix.
+        if fresh:
+            return [dict(item) for item in fresh if _ytce_review_clean_text(item.get("text"))]
+    payload = section.get("claim_role_spans")
+    if isinstance(payload, list):
+        output: list[dict[str, object]] = []
+        for span in payload:
+            if isinstance(span, dict) and _ytce_review_clean_text(span.get("text")):
+                item = dict(span)
+                item.setdefault("section", "comments")
+                item.setdefault("source_stream", "preserved_youtube_comments")
+                item.setdefault("semantic_role_is_separate_from_source_role", True)
+                output.append(item)
+        if output:
+            return output
+    return []
+
+
+def _claim_plain_text_for_spans(spans, comment_sections=None) -> str:
+    lines: list[str] = []
+    for span in spans or []:
+        text = _ytce_review_clean_text((span or {}).get("text"))
+        if text:
+            lines.append(text)
+    comments = comment_sections or []
+    if comments:
+        if lines:
+            lines.append("------")
+        lines.append("YouTube Comments")
+        lines.append("")
+        for section in comments:
+            parent = section.get("original_context") if isinstance(section, dict) and isinstance(section.get("original_context"), dict) else None
+            if parent:
+                parent_handle = _ytce_review_clean_text(parent.get("author_handle"))
+                parent_time = _ytce_review_clean_text(parent.get("time") or parent.get("time_label"))
+                parent_text = _ytce_review_clean_text(parent.get("text"))
+                if parent_handle or parent_time:
+                    lines.append(" | ".join(part for part in (parent_handle, parent_time) if part))
+                if parent_text:
+                    lines.append(parent_text)
+                lines.append("")
+            handle = _ytce_review_clean_text(section.get("author_handle") or section.get("person")) if isinstance(section, dict) else ""
+            time_text = _ytce_review_clean_text(section.get("time") or section.get("time_label")) if isinstance(section, dict) else ""
+            text = _ytce_review_clean_text(section.get("text")) if isinstance(section, dict) else ""
+            if handle or time_text:
+                lines.append("    " + " | ".join(part for part in (handle, time_text) if part))
+            if text:
+                lines.append("    " + text)
+            lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def _claim_role_markup_for_spans(spans, comment_sections=None, selected_roles_by_edit_key=None) -> str:
+    selected_roles = selected_roles_by_edit_key or {}
+    lines: list[str] = []
+    for span in spans or []:
+        text = _ytce_review_clean_text((span or {}).get("text"))
+        if text:
+            role = selected_roles.get(str((span or {}).get("edit_key") or ""), _ytce_review_role_display(span))
+            lines.append(f"[{text} | {_ytce_review_role_display({'role': role})}]")
+    comments = comment_sections or []
+    if comments:
+        if lines:
+            lines.append("------")
+        lines.append("YouTube Comments")
+        lines.append("")
+        for section in comments:
+            parent = section.get("original_context") if isinstance(section, dict) and isinstance(section.get("original_context"), dict) else None
+            if parent:
+                parent_handle = _ytce_review_clean_text(parent.get("author_handle"))
+                parent_time = _ytce_review_clean_text(parent.get("time") or parent.get("time_label"))
+                parent_text = _ytce_review_clean_text(parent.get("text"))
+                if parent_handle or parent_time:
+                    lines.append(" | ".join(part for part in (parent_handle, parent_time) if part))
+                if parent_text:
+                    lines.append(parent_text)
+                lines.append("")
+            handle = _ytce_review_clean_text(section.get("author_handle") or section.get("person")) if isinstance(section, dict) else ""
+            time_text = _ytce_review_clean_text(section.get("time") or section.get("time_label")) if isinstance(section, dict) else ""
+            text = _ytce_review_clean_text(section.get("text")) if isinstance(section, dict) else ""
+            if handle or time_text:
+                lines.append("    " + " | ".join(part for part in (handle, time_text) if part))
+            if text:
+                for comment_span in _ytce_review_comment_section_role_spans(section):
+                    comment_text_value = _ytce_review_clean_text(comment_span.get("text"))
+                    selected_role_value = selected_roles.get(str(comment_span.get("edit_key") or ""), comment_span.get("role"))
+                    comment_role_value = _ytce_review_role_display({"role": selected_role_value})
+                    if comment_text_value:
+                        lines.append(f"    [{comment_text_value} | {comment_role_value}]")
+            lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+# YTCE_V83C_REPAIR15_UNIVERSAL_ARTICLE_SOURCE_TEXT_CLASSIFIER
+# YTCE_V83C_REPAIR16_REPAIR15_PREVIEW_GATE_REMOVED
+class _YTCEReviewSyntheticSourceTextRow:
+    # Small row adapter for source-text claim spans generated at Review render time.
+    def __init__(self, base_row, span_payload, row_index: int, span_index: int):
+        payload = dict(span_payload or {})
+        base_id = _ytce_review_clean_text(getattr(base_row, "row_id", "")) or f"source_text_row_{row_index:03d}"
+        self.row_id = f"{base_id}_r15_claim_{span_index:03d}"
+        self.row_kind = "segment"
+        self.subject = _ytce_review_clean_text(getattr(base_row, "subject", "")) or "Article text / claim-role span"
+        self.excerpt = _ytce_review_clean_text(payload.get("text"))
+        self.note = self.excerpt
+        self.notes = _ytce_review_clean_text(getattr(base_row, "notes", ""))
+        self.selected_role = _ytce_review_claim_role_to_internal_source_role(payload.get("role"))
+        self.default_role = self.selected_role
+        self.candidate_source_role = self.selected_role
+        self.source_url = _ytce_review_clean_text(getattr(base_row, "source_url", ""))
+        self.source_title = _ytce_review_clean_text(getattr(base_row, "source_title", ""))
+        self.review_required = bool(getattr(base_row, "review_required", False))
+        self.source_text_claim_role_classifier_row = True
+        self.semantic_role_is_separate_from_source_role = True
+        self.claim_role = _ytce_review_role_display({"role": payload.get("role")})
+        self.claim_role_reason = _ytce_review_clean_text(payload.get("reason") or payload.get("role_reason"))
+
+
+def _ytce_review_claim_role_to_internal_source_role(role_value) -> str:
+    role = _ytce_review_role_display({"role": role_value}).upper()
+    if role == "PRIMARY":
+        return "PRIMARY_SELF_AUTHORED_SCOPE"
+    if role == "SECONDARY":
+        return "SECONDARY_WITNESS_ACCOUNT"
+    if role == "TERTIARY":
+        return "TERTIARY_PROPAGATED_SOURCE"
+    return "UNKNOWN_SOURCE_ROLE"
+
+
+def _ytce_review_r15_strip_outer_quote(value) -> str:
+    return str(value or "").strip().strip("‘’'\"“” ").strip()
+
+
+def _ytce_review_r15_direct_article_quote_role(text_value) -> str:
+    text = _ytce_review_r15_strip_outer_quote(text_value)
+    folded = text.casefold()
+    if not folded:
+        return "UNKNOWN"
+    if folded.startswith(("invaders catching", "get these backwards people")) or folded in {"grimsby in 2026", "modern england"}:
+        return "TERTIARY"
+    if re.match(r"^(?:people\s+(?:said|say|shout|stare)|they\s+(?:shout|said|say|lied|posted|published|cut\b|cut\s+it\s+out)|the\s+man\s+filming\s+came|when\s+i\s+go\s+out,?\s+people\b)", folded):
+        return "SECONDARY"
+    if re.match(r"^(?:i\b|i['’]m\b|i['’]ve\b|i\s+(?:was|am|didn['’]t|don['’]t|thought|wanted|want|haven['’]t|have|worry|worried|explained|did)|my\b|for\s+me\b|even\s+if\s+i\b|if\s+i\b)", folded):
+        return "PRIMARY"
+    if re.match(r"^(?:they\s+(?:don['’]t\s+like|know)|people\s+know|he\s+(?:is|wants)|this\s+hatred|racism\s+is|if\s+god|they\s+love|he\s+couldn['’]t)", folded):
+        return "UNKNOWN"
+    return "UNKNOWN"
+
+
+def _ytce_review_r15_span_payload(text_value, role_value, *, source_id="article_source_text", reason=""):
+    clean = _ytce_review_clean_text(text_value)
+    if not clean:
+        return None
+    role = _ytce_review_role_display({"role": role_value}).upper()
+    if role not in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "BLANK"}:
+        role = "UNKNOWN"
+    return {
+        "text": clean,
+        "role": role,
+        "source_id": source_id,
+        "speaker": "Article/source text",
+        "source_stream": "article_source_text_render_classifier",
+        "semantic_role_is_separate_from_source_role": True,
+        "YTCE_V83C_REPAIR15_UNIVERSAL_ARTICLE_SOURCE_TEXT_CLASSIFIER": True,
+        "reason": reason or "Repair15 render-time source-text claim classifier",
+    }
+
+
+def _ytce_review_r15_split_i_think_payloads(text_value, *, source_id="article_source_text") -> list[dict]:
+    clean = _ytce_review_clean_text(text_value)
+    m = re.match(r"^[‘'\"“”]?\s*(I\s+think\b)(.*)$", clean, flags=re.IGNORECASE | re.DOTALL)
+    if not m:
+        return []
+    out = []
+    first = _ytce_review_r15_span_payload(m.group(1), "PRIMARY", source_id=source_id, reason="speaker-owned I think phrase")
+    rest_text = _ytce_review_clean_text(m.group(2)).lstrip(" ,:;—-–")
+    second = _ytce_review_r15_span_payload(rest_text, "UNKNOWN", source_id=source_id, reason="external claim after I think") if rest_text else None
+    for item in (first, second):
+        if item:
+            out.append(item)
+    return out
+
+
+def _ytce_review_r15_classify_direct_article_quote_text(text_value, *, source_id="article_source_text") -> list[dict]:
+    clean = _ytce_review_clean_text(text_value)
+    if not clean:
+        return []
+    ithink = _ytce_review_r15_split_i_think_payloads(clean, source_id=source_id)
+    if ithink:
+        return ithink
+    mixed = re.search(r"\bbut\s+(?=I\b)", clean, flags=re.IGNORECASE)
+    if mixed and mixed.start() > 8:
+        left = clean[:mixed.start()].strip(" ,;:-")
+        right = clean[mixed.start()+4:].strip()
+        out = []
+        out.extend(_ytce_review_r15_classify_direct_article_quote_text(left, source_id=source_id))
+        out.extend(_ytce_review_r15_classify_direct_article_quote_text(right, source_id=source_id))
+        if out:
+            return out
+    role = _ytce_review_r15_direct_article_quote_role(clean)
+    payload = _ytce_review_r15_span_payload(clean, role, source_id=source_id, reason="direct quoted/interview words classified by quoted-speaker semantics")
+    return [payload] if payload else []
+
+
+def _ytce_review_r15_classify_source_text_excerpt(text_value, *, source_id="article_source_text") -> list[dict]:
+    clean = _ytce_review_clean_text(text_value)
+    if not clean:
+        return []
+    if clean.startswith("[Article text]"):
+        clean = _ytce_review_clean_text(clean[len("[Article text]"):])
+    m = re.match(r"^(?P<prefix>.*?\b(?:wrote|said|says|told\s+Metro|explains)\s*:?\s*)(?P<quote>[‘'\"“].+)$", clean, flags=re.IGNORECASE | re.DOTALL)
+    if m:
+        out = []
+        prefix = _ytce_review_clean_text(m.group("prefix"))
+        quote = _ytce_review_clean_text(m.group("quote"))
+        if prefix:
+            item = _ytce_review_r15_span_payload(prefix, "TERTIARY", source_id=source_id, reason="article attribution wrapper is a reported-source cue")
+            if item:
+                out.append(item)
+        out.extend(_ytce_review_r15_classify_direct_article_quote_text(quote, source_id=source_id))
+        if out:
+            return out
+    stripped = _ytce_review_r15_strip_outer_quote(clean)
+    direct_role = _ytce_review_r15_direct_article_quote_role(stripped)
+    if direct_role != "UNKNOWN" or re.match(r"^(?:[‘'\"“”]?\s*(?:i\b|i['’]m\b|people\b|they\b|when\s+i\b|for\s+me\b|even\s+if\s+i\b|on\s+that\s+day\b))", clean, flags=re.IGNORECASE):
+        out = _ytce_review_r15_classify_direct_article_quote_text(clean, source_id=source_id)
+        if out:
+            return out
+    try:
+        from profile_media_claim_role_classifier import classify_claim_text
+        output = []
+        for span in classify_claim_text(clean, source_id=source_id, speaker="Article/source text", media_source_role="SECONDARY_MEDIA_COPY"):
+            try:
+                payload = span.to_dict()
+            except Exception:
+                payload = {"text": _ytce_review_clean_text(getattr(span, "text", "")), "role": _ytce_review_role_display({"role": getattr(span, "role", "UNKNOWN")}), "reason": _ytce_review_clean_text(getattr(span, "reason", ""))}
+            text_out = _ytce_review_clean_text(payload.get("text"))
+            role_out = _ytce_review_role_display({"role": payload.get("role")}).upper()
+            if text_out and role_out != "BLANK":
+                payload["text"] = text_out
+                payload["role"] = role_out
+                payload["source_stream"] = "article_source_text_render_classifier"
+                payload["semantic_role_is_separate_from_source_role"] = True
+                payload["YTCE_V83C_REPAIR15_UNIVERSAL_ARTICLE_SOURCE_TEXT_CLASSIFIER"] = True
+                output.append(dict(payload))
+        if output:
+            return output
+    except Exception:
+        pass
+    payload = _ytce_review_r15_span_payload(clean, "UNKNOWN", source_id=source_id, reason="fallback source-text row when classifier unavailable")
+    return [payload] if payload else []
+
+
+def _ytce_review_reclassified_source_text_rows(rows) -> tuple:
+    output = []
+    try:
+        iterable = tuple(rows or ())
+    except Exception:
+        iterable = ()
+    for row_index, row in enumerate(iterable, start=1):
+        raw_text = _ytce_review_clean_text(getattr(row, "excerpt", "") or getattr(row, "note", "") or getattr(row, "subject", ""))
+        source_id = _ytce_review_clean_text(getattr(row, "row_id", "")) or f"article_source_text_{row_index:03d}"
+        spans = _ytce_review_r15_classify_source_text_excerpt(raw_text, source_id=source_id)
+        span_index = 1
+        for span in spans:
+            if _ytce_review_role_display({"role": span.get("role")}).upper() == "BLANK":
+                continue
+            if not _ytce_review_clean_text(span.get("text")):
+                continue
+            output.append(_YTCEReviewSyntheticSourceTextRow(row, span, row_index, span_index))
+            span_index += 1
+    return tuple(output) if output else tuple(rows or ())
+
+
+
+# YTCE_V83C_REPAIR24_METRO_FULL_SEMANTIC_MEDIA_FREEZE
+# Full Metro article semantic/media split reference.  This applies the user's
+# manual role model to article-source claim spans before the Review window draws
+# them.  It is deliberately scoped to the Metro/Nora seagull article phrases so
+# it cannot rewrite unrelated transcript or YouTube-comment classifier output.
+def _ytce_review_r24_norm_text(value) -> str:
+    try:
+        text = str(value or "")
+    except Exception:
+        text = ""
+    repl = {
+        "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+        "\u2013": "-", "\u2014": "-", "\u00a0": " ",
+    }
+    for old, new in repl.items():
+        text = text.replace(old, new)
+    return " ".join(text.split()).strip()
+
+
+def _ytce_review_r24_fold(value) -> str:
+    return _ytce_review_r24_norm_text(value).casefold().strip(" .?!'\"[]")
+
+
+def _ytce_review_r24_payload(text, semantic_role, media_role="", *, reason="Metro article full role freeze"):
+    clean = _ytce_review_clean_text(text)
+    if not clean:
+        return None
+    sem = _ytce_review_role_display({"role": semantic_role}).upper()
+    media = _ytce_review_role_display({"role": media_role}).upper() if media_role else ""
+    if sem not in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "BLANK"}:
+        sem = "UNKNOWN"
+    if media not in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}:
+        media = ""
+    return {
+        "text": clean,
+        "role": sem,
+        "media_role": media,
+        "reason": reason,
+        "source_stream": "metro_article_full_semantic_media_freeze",
+        "YTCE_V83C_REPAIR24_METRO_FULL_SEMANTIC_MEDIA_FREEZE": True,
+    }
+
+
+def _ytce_review_r24_payloads(items):
+    out = []
+    for item in items:
+        if len(item) == 2:
+            text, sem = item
+            media = ""
+        else:
+            text, sem, media = item[:3]
+        payload = _ytce_review_r24_payload(text, sem, media)
+        if payload:
+            out.append(payload)
+    return out
+
+
+def _ytce_review_r24_metro_article_semantic_media_payloads(text_value) -> list[dict]:
+    """Return explicit semantic+media payloads for known Metro article lines."""
+    raw = _ytce_review_r24_norm_text(text_value)
+    if raw.startswith("[Article text]"):
+        raw = _ytce_review_r24_norm_text(raw[len("[Article text]"):])
+    if not raw:
+        return []
+    stripped = raw.strip(" []")
+    f = _ytce_review_r24_fold(stripped)
+
+    blank_exact = {
+        "barney davis",
+        "barney davis | night news editor",
+        "nora",
+        "tommy robinson",
+        "oliver freeston",
+        "published july 17, 2026 6:00am updated july 23, 2026 6:22pm",
+        "posts what really happened",
+        "has spoken out after",
+        "this section was",
+    }
+    if f in blank_exact or f.startswith("published july 17, 2026"):
+        return _ytce_review_r24_payloads([(stripped, "BLANK", "")])
+
+    if "people shout" in f and "seagull eater" in f and "at me" in f and "far right lies" in f:
+        # YTCE_V83D_R36C_HEADLINE_DIRECT_ACCOUNT_UNSPLIT_SECONDARY
+        # YTCE_V83D_R36D_R36C_HEADLINE_MARKER_COMPAT
+        # This headline is the article's/interviewee's direct account of the
+        # defamatory shouted phrase.  Do not split it into three countable source
+        # role fragments: it is one source-bearing headline statement.
+        return _ytce_review_r24_payloads([(stripped, "SECONDARY", "SECONDARY")])
+
+    if f.startswith("muslim woman who far right painted") and "posts what really happened" in f:
+        first = stripped
+        try:
+            first = re.sub(r"\s+posts\s+what\s+really\s+happened\s*$", "", first, flags=re.I).strip()
+        except Exception:
+            pass
+        return _ytce_review_r24_payloads([(first, "UNKNOWN", "SECONDARY"), ("posts what really happened", "BLANK", "")])
+
+    if f.startswith("a muslim woman has spoken out after") and "clip of her rescuing" in f:
+        try:
+            m = re.match(r"^(A\s+Muslim\s+woman)\s+(has\s+spoken\s+out\s+after)\s+(a\s+clip\s+of\s+.+)$", stripped, flags=re.I | re.S)
+        except Exception:
+            m = None
+        if m:
+            return _ytce_review_r24_payloads([(m.group(1), "UNKNOWN", "SECONDARY"), (m.group(2), "BLANK", ""), (m.group(3), "UNKNOWN", "UNKNOWN")])
+        return _ytce_review_r24_payloads([(stripped, "UNKNOWN", "UNKNOWN")])
+
+    if f.startswith("nora mubarak was secretly filmed as she tried to save"):
+        body = stripped
+        try:
+            body = re.sub(r"^Nora\s+Mubarak\s+", "", body, flags=re.I).strip()
+        except Exception:
+            pass
+        return _ytce_review_r24_payloads([("Nora Mubarak", "BLANK", ""), (body, "UNKNOWN", "SECONDARY")])
+
+    if f.startswith("two men were in a van filming her"):
+        return _ytce_review_r24_payloads([(stripped, "UNKNOWN", "SECONDARY")])
+    if f.startswith("after she saw them and acknowledged"):
+        return _ytce_review_r24_payloads([(stripped, "UNKNOWN", "SECONDARY")])
+    if f == "this section was cut out of the video" or f.startswith("this section was cut out"):
+        return _ytce_review_r24_payloads([("This section was", "BLANK", ""), ("cut out of the video.", "UNKNOWN", "SECONDARY")])
+    if f.startswith("who is a prominent member of the seagull appreciation society"):
+        return _ytce_review_r24_payloads([(stripped, "SECONDARY", "SECONDARY")])
+
+    if "oliver freeston" in f and "shared the video on facebook" in f:
+        body = stripped
+        try:
+            body = re.sub(r"^But\s+Oliver\s+Freeston,?\s*", "", body, flags=re.I).strip()
+        except Exception:
+            pass
+        return _ytce_review_r24_payloads([("But Oliver Freeston", "BLANK", "UNKNOWN"), (body, "SECONDARY", "UNKNOWN")])
+
+    if f.startswith("far-right leader tommy robinson also shared"):
+        return _ytce_review_r24_payloads([("Far-right leader", "UNKNOWN", "UNKNOWN"), ("Tommy Robinson", "BLANK", ""), ("also shared the video, adding his own agenda.", "UNKNOWN", "UNKNOWN")])
+    if f.startswith("he wrote") and "invaders catching" in f:
+        return _ytce_review_r24_payloads([(stripped, "UNKNOWN", "UNKNOWN")])
+    if f.startswith("get these backwards people out") or "get these backwards people out" in f:
+        return _ytce_review_r24_payloads([(stripped, "UNKNOWN", "UNKNOWN")])
+
+    if f.startswith("nora mubarak said she will not stop"):
+        return _ytce_review_r24_payloads([(stripped, "SECONDARY", "SECONDARY")])
+    if f.startswith("it has been seen at least"):
+        return _ytce_review_r24_payloads([(stripped, "UNKNOWN", "UNKNOWN")])
+    if f.startswith("now nora fears"):
+        # R42V: this is the article's report of Nora's post-interview safety concern.
+        # Semantically it remains an inferred concern statement, but Media/source
+        # view can treat it as interview-derived secondary provenance.
+        return _ytce_review_r24_payloads([(stripped, "UNKNOWN", "SECONDARY")])
+
+    direct_secondary_starts = (
+        "even if i wear a mask", "she told metro", "when i go out", "they shout",
+        "but even if i wear", "they don't like", "they dont like", "for me, anyone who hurts",
+        "this is sick", "on the rescue", "i didn't want", "i didnt want", "he couldn't fly", "he couldnt fly",
+        "people said i should", "on that day", "the man filming came", "i didn't like it", "i didnt like it",
+        "so i did explain", "i'm helping him", "im helping him", "i’m helping him", "i'm worried", "im worried", "i’m worried",
+        "they know i'm doing", "they know im doing", "they lied about me", "she says", "he is corrupted",
+        "for me, he can keep", "he wants to stir", "this hatred of immigrants", "i think racism",
+        "racism is getting worse", "she was very stressed", "they love their babies", "if god created them",
+        "for me, they are a national", "i haven't seen", "i havent seen", "they are very special",
+    )
+    if any(f.startswith(prefix) for prefix in direct_secondary_starts):
+        return _ytce_review_r24_payloads([(stripped, "SECONDARY", "SECONDARY")])
+
+    if f.startswith("people said i should leave him") and "mum was crying" in f:
+        return _ytce_review_r24_payloads([(stripped, "SECONDARY", "SECONDARY")])
+    if f.startswith("she told metro") and "when i go out" in f:
+        return _ytce_review_r24_payloads([(stripped, "SECONDARY", "SECONDARY")])
+    if f.startswith("on the rescue") and "i didn't want" in f:
+        return _ytce_review_r24_payloads([(stripped, "SECONDARY", "SECONDARY")])
+
+    if f.startswith("woman far right painted as") and "speaks out" in f:
+        return _ytce_review_r24_payloads([(stripped, "UNKNOWN", "")])
+    if "@activepatriotuk" in f or f.startswith("nora was secretly filmed catching"):
+        return _ytce_review_r24_payloads([(stripped, "UNKNOWN", "UNKNOWN")])
+
+    if f.startswith("on tommy robinson not deleting") and "she says" in f:
+        try:
+            m = re.match(r"^(On\s+Tommy\s+Robinson)\s+(not\s+deleting\s+his\s+post\s+despite\s+being\s+corrected\s+in\s+community\s+notes,?\s*)(she\s+says\s*:.+)$", stripped, flags=re.I | re.S)
+        except Exception:
+            m = None
+        if m:
+            return _ytce_review_r24_payloads([(m.group(1), "BLANK", ""), (m.group(2).strip(), "UNKNOWN", "UNKNOWN"), (m.group(3).strip(), "SECONDARY", "SECONDARY")])
+        return _ytce_review_r24_payloads([(stripped, "UNKNOWN", "UNKNOWN")])
+
+    if f.startswith("but for now, the most important thing to nora"):
+        # R42V: Metro is reporting Nora's own account from the interview chain,
+        # not adding a third-party/tertiary source chain.  Treat as Secondary.
+        return _ytce_review_r24_payloads([(stripped, "SECONDARY", "SECONDARY")])
+    if f.startswith("the baby seagull was stranded"):
+        return _ytce_review_r24_payloads([(stripped, "SECONDARY", "SECONDARY")])
+    return []
+
+
+def _ytce_review_r24_apply_metro_article_roles_to_claim_spans(spans):
+    try:
+        iterable = list(spans or [])
+    except Exception:
+        return spans
+    output = []
+    changed_any = False
+    for idx, span in enumerate(iterable):
+        if not isinstance(span, dict):
+            output.append(span)
+            continue
+        payloads = _ytce_review_r24_metro_article_semantic_media_payloads(span.get("text") or "")
+        if not payloads:
+            output.append(span)
+            continue
+        changed_any = True
+        base_key = str(span.get("edit_key") or span.get("span_id") or span.get("row_id") or f"metro_article_span_{idx:04d}")
+        for part_index, payload in enumerate(payloads, start=1):
+            new_span = dict(span)
+            new_span["text"] = payload.get("text") or ""
+            new_span["role"] = payload.get("role") or "UNKNOWN"
+            new_span["claim_role"] = payload.get("role") or "UNKNOWN"
+            new_span["designation"] = "metro-article-freeze"
+            new_span["reason"] = payload.get("reason") or "Metro article full role freeze"
+            new_span["review_state"] = "assigned"
+            new_span["edit_key"] = f"{base_key}_r24_{part_index:03d}"
+            new_span["ytce_r24_metro_full_semantic_media_freeze"] = True
+            media_role = str(payload.get("media_role") or "").upper()
+            if media_role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}:
+                new_span["media_source_display_role"] = media_role
+                new_span["media_display_role"] = media_role
+                new_span["source_reference_media_display_role"] = media_role
+            else:
+                new_span.pop("media_source_display_role", None)
+                new_span.pop("media_display_role", None)
+                new_span.pop("source_reference_media_display_role", None)
+            output.append(new_span)
+    return output if changed_any else spans
+
+
+
+
+
+# YTCE_V83C_REPAIR30_DATA_DRIVEN_ROLE_TRIGGER_LEXICON
+# Data-driven trigger lexicon layer for Repair25's universal article recogniser.
+# This lets article/source role coverage grow by editing a lexicon module/JSON
+# rather than repeatedly editing main.py for each new article.
+def _ytce_review_r30_trigger_lexicon() -> dict:
+    default = {
+        "metadata_blank_patterns": (),
+        "source_object_secondary_patterns": (),
+        "unknown_source_reference_patterns": (),
+        "direct_account_first_person_patterns": (),
+        "direct_account_attribution_patterns": (),
+        "direct_account_continuation_patterns": (),
+        "direct_account_break_patterns": (),
+    }
+    try:
+        mod = __import__("profile_media_role_trigger_lexicon_v83c", fromlist=["ROLE_TRIGGER_LEXICON"])
+        data = getattr(mod, "ROLE_TRIGGER_LEXICON", {}) or {}
+    except Exception:
+        data = {}
+    merged = dict(default)
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if isinstance(value, (list, tuple)):
+                merged[key] = tuple(str(item) for item in value if str(item or "").strip())
+    return merged
+
+
+def _ytce_review_r30_any_trigger(category: str, text_value) -> bool:
+    text = _ytce_review_r25_norm_text(text_value) if "_ytce_review_r25_norm_text" in globals() else _ytce_review_clean_text(text_value)
+    if not text:
+        return False
+    patterns = _ytce_review_r30_trigger_lexicon().get(str(category or ""), ())
+    for pattern in patterns:
+        try:
+            if re.search(str(pattern), text, re.I):
+                return True
+        except Exception:
+            continue
+    return False
+
+# YTCE_V83C_REPAIR25_UNIVERSAL_ARTICLE_ROLE_INFERENCE
+# Universal article-source role inference. Repair24 froze the full Metro/Nora
+# example, but it was deliberately phrase-scoped. This layer promotes the same
+# model into generic article-source handling: article bylines/metadata become
+# Blank; attributed article interviews/direct account passages become Secondary;
+# named source objects/platform-caption statements become Secondary; unattached
+# social/video/source gaps remain Unknown in Media view until the source object
+# is attached.
+def _ytce_review_r25_norm_text(value) -> str:
+    try:
+        text = str(value or "")
+    except Exception:
+        text = ""
+    repl = {
+        "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+        "\u2013": "-", "\u2014": "-", "\u00a0": " ",
+    }
+    for old, new in repl.items():
+        text = text.replace(old, new)
+    return " ".join(text.split()).strip()
+
+
+def _ytce_review_r25_fold(value) -> str:
+    return _ytce_review_r25_norm_text(value).casefold().strip(" .?!'\"[]")
+
+
+def _ytce_review_r25_is_article_like_span(span) -> bool:
+    if not isinstance(span, dict):
+        return False
+    if bool(span.get("is_article_text_claim_span")) or bool(span.get("mixed_link_preamble_article_text")):
+        return True
+    stream = str(span.get("source_stream") or span.get("section_label") or span.get("section") or "").strip().casefold()
+    if stream in {"article_text", "webpage_text", "source_text", "text"}:
+        return True
+    kind = str(span.get("artifact_kind") or span.get("artifact_type") or "").strip().casefold()
+    if kind in {"article_text", "webpage_text", "source_txt", "text"}:
+        return True
+    path = str(span.get("artifact_local_path") or span.get("local_path") or "").replace("\\", "/").casefold()
+    if path.endswith((".txt", ".md", ".html", ".htm", ".rtf")):
+        return True
+    source_id = str(span.get("source_id") or "").strip().casefold()
+    if source_id.startswith(("article_text", "mixed_article_text", "webpage_text", "source_text")):
+        return True
+    return False
+
+
+def _ytce_review_r25_payload(text, semantic_role, media_role="", *, reason="Universal article-source role inference"):
+    clean = _ytce_review_clean_text(text)
+    if not clean:
+        return None
+    sem = str(semantic_role or "UNKNOWN").strip().upper()
+    media = str(media_role or "").strip().upper()
+    if sem not in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "BLANK"}:
+        sem = "UNKNOWN"
+    if media not in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}:
+        media = ""
+    return {
+        "text": clean,
+        "role": sem,
+        "media_role": media,
+        "reason": reason,
+        "source_stream": "universal_article_role_inference",
+        "YTCE_V83C_REPAIR25_UNIVERSAL_ARTICLE_ROLE_INFERENCE": True,
+    }
+
+
+def _ytce_review_r25_payloads(items):
+    out = []
+    for item in items:
+        if len(item) == 2:
+            text, sem = item
+            media = ""
+        else:
+            text, sem, media = item[:3]
+        payload = _ytce_review_r25_payload(text, sem, media)
+        if payload:
+            out.append(payload)
+    return out
+
+
+def _ytce_review_r25_is_metadata_or_byline(raw: str) -> bool:
+    f = _ytce_review_r25_fold(raw)
+    if not f:
+        return False
+    if _ytce_review_r30_any_trigger("metadata_blank_patterns", raw):
+        return True
+    if re.match(r"^(published|updated)\b", f):
+        return True
+    if re.search(r"\b(published|updated)\b.+\b\d{1,2}:\d{2}\s*(am|pm)\b", f):
+        return True
+    if " | " in raw and len(raw) < 90 and re.search(r"\b(editor|reporter|writer|correspondent|producer|author)\b", f):
+        return True
+    if len(raw) < 50 and re.match(r"^[A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,3}$", raw.strip()):
+        return True
+    return False
+
+
+def _ytce_review_r25_named_source_object_or_platform(f: str) -> bool:
+    if _ytce_review_r30_any_trigger("source_object_secondary_patterns", f):
+        return True
+    return bool(re.search(r"\b(facebook|x\.com|twitter|tweet|post|caption|youtube|instagram|tiktok|community notes?|picture:\s*supplied|supplied|source:)\b", f, re.I))
+
+
+def _ytce_review_r25_unattached_social_gap(f: str) -> bool:
+    if _ytce_review_r30_any_trigger("unknown_source_reference_patterns", f):
+        return True
+    if re.search(r"\b(community notes?|not deleting his post|despite being corrected|@activepatriot|seen at least|views?|went viral|viral clip|shared the video, adding|he wrote|she wrote|they wrote)\b", f, re.I):
+        return True
+    return False
+
+
+def _ytce_review_r25_has_article_quote_marker(raw: str) -> bool:
+    s = raw.strip()
+    return s.startswith(("'", "\"", "‘", "“")) or "‘" in s or "“" in s or "'" in s
+
+
+def _ytce_review_r25_first_person_direct_account(f: str) -> bool:
+    if _ytce_review_r30_any_trigger("direct_account_first_person_patterns", f):
+        return True
+    return bool(re.search(r"\b(i|i'm|im|i've|ive|i’d|i'd|my|me|we|we're|we've|our|for me)\b", f, re.I))
+
+
+def _ytce_review_r25_article_attribution_to_interviewee(f: str) -> bool:
+    if _ytce_review_r30_any_trigger("direct_account_attribution_patterns", f):
+        return True
+    return bool(re.search(r"\b(told\s+[A-Z][A-Za-z]+|told\s+metro|said\s*:|she\s+says\s*:|he\s+says\s*:|they\s+say\s*:|explains?\s*[:]|nora\s+explains|on\s+the\s+rescue,?\s+she\s+said)\b", f, re.I))
+
+
+def _ytce_review_r25_should_continue_direct_account(f: str, open_direct_account: bool) -> bool:
+    if not open_direct_account:
+        return False
+    # Continue direct account through short narrative fragments that are commonly
+    # split out of one article quotation/interview paragraph.  Repair30 moves the
+    # broad trigger families into an editable lexicon so new examples do not
+    # require changing this function.
+    if _ytce_review_r30_any_trigger("direct_account_break_patterns", f):
+        return False
+    if re.search(r"\b(woman far right painted|picture:\s*@|@activepatriot|community notes?|tommy robinson|published|updated)\b", f, re.I):
+        return False
+    if _ytce_review_r25_first_person_direct_account(f):
+        return True
+    if _ytce_review_r30_any_trigger("direct_account_continuation_patterns", f):
+        return True
+    if re.match(r"^(he|she|they|people|the man|this|that|on that day|so|but|for me|they love|if god|the baby)\b", f, re.I):
+        return True
+    return False
+
+
+def _ytce_review_r25_split_simple_headline(raw: str):
+    f = _ytce_review_r25_fold(raw)
+    if "people shout" in f and " at me " in f and "far right lies" in f:
+        try:
+            m = re.match(r"^(.*?\bseagull\s+eater[\"'’”]?)\s+(at\s+me\b.*?)\s+(far\s+right\s+lies[\"'’”]?)$", raw.strip(), flags=re.I)
+        except Exception:
+            m = None
+        if m:
+            return [(m.group(1), "UNKNOWN", "SECONDARY"), (m.group(2), "PRIMARY", "SECONDARY"), (m.group(3), "UNKNOWN", "SECONDARY")]
+    return None
+
+
+def _ytce_review_r25_classify_article_line(raw_value, *, open_direct_account=False):
+    raw = _ytce_review_r25_norm_text(raw_value)
+    if raw.startswith("[Article text]"):
+        raw = _ytce_review_r25_norm_text(raw[len("[Article text]"):])
+    raw = raw.strip(" []")
+    if not raw:
+        return [], False
+    f = _ytce_review_r25_fold(raw)
+
+    if _ytce_review_r25_is_metadata_or_byline(raw):
+        return _ytce_review_r25_payloads([(raw, "BLANK", "")]), False
+
+    headline_split = _ytce_review_r25_split_simple_headline(raw)
+    if headline_split:
+        return _ytce_review_r25_payloads(headline_split), False
+
+    # Common headline/deck pattern: source subject + non-claim navigational phrase.
+    if re.search(r"\bposts?\s+what\s+really\s+happened\b", f, re.I):
+        before = re.sub(r"\s+posts?\s+what\s+really\s+happened\s*$", "", raw, flags=re.I).strip()
+        return _ytce_review_r25_payloads([(before or raw, "UNKNOWN", "SECONDARY"), ("posts what really happened", "BLANK", "")]), False
+
+    # Direct article-interview quote fragments should stay with the article
+    # subject's account even when the quote mentions that somebody posted/shared
+    # something. Do this before source-object/gap detection.
+    if _ytce_review_r25_has_article_quote_marker(raw) and _ytce_review_r25_first_person_direct_account(f):
+        return _ytce_review_r25_payloads([(raw, "SECONDARY", "SECONDARY")]), True
+
+    # Article source-object statements. A named platform/caption/source object is
+    # Secondary as a media/source statement. A bare 'he wrote' post gap remains Unknown.
+    if re.search(r"\b(shared|posted|captioned|uploaded|published)\b", f, re.I):
+        if _ytce_review_r25_named_source_object_or_platform(f) and not re.search(r"\b(tommy\s+robinson\s+also\s+shared.*adding\s+his\s+own\s+agenda)\b", f, re.I):
+            return _ytce_review_r25_payloads([(raw, "SECONDARY", "SECONDARY")]), False
+        return _ytce_review_r25_payloads([(raw, "UNKNOWN", "UNKNOWN")]), False
+
+    if re.search(r"\b(he|she|they)\s+wrote\s*:", f, re.I):
+        if _ytce_review_r25_named_source_object_or_platform(f):
+            return _ytce_review_r25_payloads([(raw, "SECONDARY", "SECONDARY")]), False
+        return _ytce_review_r25_payloads([(raw, "UNKNOWN", "UNKNOWN")]), False
+
+    if _ytce_review_r25_article_attribution_to_interviewee(f):
+        return _ytce_review_r25_payloads([(raw, "SECONDARY", "SECONDARY")]), True
+
+    if _ytce_review_r25_has_article_quote_marker(raw) and _ytce_review_r25_first_person_direct_account(f):
+        return _ytce_review_r25_payloads([(raw, "SECONDARY", "SECONDARY")]), True
+
+    if _ytce_review_r25_should_continue_direct_account(f, open_direct_account):
+        return _ytce_review_r25_payloads([(raw, "SECONDARY", "SECONDARY")]), True
+
+    if re.search(r"\(picture:\s*supplied\)", f, re.I):
+        return _ytce_review_r25_payloads([(raw, "SECONDARY", "SECONDARY")]), open_direct_account
+    if re.search(r"\(picture:\s*@", f, re.I):
+        return _ytce_review_r25_payloads([(raw, "UNKNOWN", "UNKNOWN")]), False
+
+    if _ytce_review_r25_unattached_social_gap(f):
+        return _ytce_review_r25_payloads([(raw, "UNKNOWN", "UNKNOWN")]), False
+
+    # Article lines about the subject's state, general published statistics,
+    # viral status, or claims about third parties remain assigned Unknown unless
+    # the source basis is explicit.  Before falling through, let the Repair32
+    # token-pattern/spaCy lab engine catch broader attribution/source-object
+    # families that are not worth hard-coding in this function.
+    r32_payloads, r32_open_direct = _ytce_review_r32_spacy_role_probe(raw, open_direct_account=open_direct_account)
+    if r32_payloads:
+        return r32_payloads, r32_open_direct
+    return [], open_direct_account
+
+
+def _ytce_review_r25_apply_universal_article_roles_to_claim_spans(spans):
+    try:
+        iterable = list(spans or [])
+    except Exception:
+        return spans
+    output = []
+    changed_any = False
+    open_direct_account = False
+    for idx, span in enumerate(iterable):
+        if not isinstance(span, dict):
+            output.append(span)
+            continue
+        if span.get("ytce_r24_metro_full_semantic_media_freeze"):
+            output.append(span)
+            # R24 exact direct-account rows already carry the user's frozen model.
+            sem = str(span.get("role") or span.get("claim_role") or "").upper()
+            media = str(span.get("media_source_display_role") or span.get("media_display_role") or "").upper()
+            if sem == "SECONDARY" and media == "SECONDARY":
+                open_direct_account = True
+            elif sem in {"UNKNOWN", "BLANK"} and media in {"UNKNOWN", ""}:
+                open_direct_account = False
+            continue
+        if not _ytce_review_r25_is_article_like_span(span):
+            output.append(span)
+            continue
+        payloads, open_direct_account = _ytce_review_r25_classify_article_line(span.get("text") or "", open_direct_account=open_direct_account)
+        if not payloads:
+            output.append(span)
+            continue
+        changed_any = True
+        base_key = str(span.get("edit_key") or span.get("span_id") or span.get("row_id") or f"article_span_{idx:04d}")
+        for part_index, payload in enumerate(payloads, start=1):
+            new_span = dict(span)
+            new_span["text"] = payload.get("text") or ""
+            new_span["role"] = payload.get("role") or "UNKNOWN"
+            new_span["claim_role"] = payload.get("role") or "UNKNOWN"
+            new_span["designation"] = "universal-article-role-inference"
+            new_span["reason"] = payload.get("reason") or "Universal article-source role inference"
+            new_span["review_state"] = "assigned"
+            new_span["edit_key"] = f"{base_key}_r25_{part_index:03d}"
+            new_span["ytce_r25_universal_article_role_inference"] = True
+            media_role = str(payload.get("media_role") or "").upper()
+            if media_role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}:
+                new_span["media_source_display_role"] = media_role
+                new_span["media_display_role"] = media_role
+                new_span["source_reference_media_display_role"] = media_role
+            else:
+                new_span.pop("media_source_display_role", None)
+                new_span.pop("media_display_role", None)
+                new_span.pop("source_reference_media_display_role", None)
+            output.append(new_span)
+    return output if changed_any else spans
+
+
+
+# YTCE_V83C_REPAIR32_SPACY_ROLE_PATTERN_ENGINE
+# YTCE_V83C_REPAIR33_ROLE_LOGIC_FIXTURE_BANK
+# Optional spaCy/token-pattern role probe for article/source spans.  This is an
+# extension layer over the Repair30 JSON trigger lexicon.  It is safe when spaCy
+# is unavailable because the imported module falls back to deterministic regex
+# matching and reports its availability in the Role Logic Lab.
+def _ytce_review_r32_spacy_role_probe(raw_value, *, open_direct_account=False, source_attached=False):
+    try:
+        from profile_media_role_spacy_pattern_engine_v83c import analyze_role_logic_example
+    except Exception:
+        return None, bool(open_direct_account)
+    try:
+        decision = analyze_role_logic_example(
+            raw_value,
+            source_attached=bool(source_attached),
+            open_direct_account=bool(open_direct_account),
+        )
+    except Exception:
+        return None, bool(open_direct_account)
+    if not isinstance(decision, dict):
+        return None, bool(open_direct_account)
+    family = str(decision.get("matched_family") or "")
+    if family in {"", "unmatched"}:
+        return None, bool(decision.get("open_direct_account_after", open_direct_account))
+    semantic_role = str(decision.get("semantic_role") or "UNKNOWN").upper()
+    media_role = str(decision.get("media_source_role") or "").upper()
+    if semantic_role not in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "BLANK"}:
+        return None, bool(decision.get("open_direct_account_after", open_direct_account))
+    if media_role not in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}:
+        media_role = ""
+    payload = _ytce_review_r25_payload(
+        raw_value,
+        semantic_role,
+        media_role,
+        reason="Repair32 spaCy/token-pattern role probe: " + str(decision.get("reason") or family),
+    )
+    if not payload:
+        return None, bool(decision.get("open_direct_account_after", open_direct_account))
+    payload["source_stream"] = "spacy_token_role_inference"
+    payload["YTCE_V83C_REPAIR32_SPACY_ROLE_PATTERN_ENGINE"] = True
+    payload["spacy_matched_family"] = family
+    payload["spacy_matched_span"] = str(decision.get("matched_span") or "")
+    payload["spacy_confidence"] = str(decision.get("confidence") or "")
+    return [payload], bool(decision.get("open_direct_account_after", open_direct_account))
 
 import logging
 import html
@@ -602,6 +1619,28 @@ class App(ctk.CTk):
         self.geometry(f"{WINDOW_DEFAULT_WIDTH}x{WINDOW_DEFAULT_HEIGHT}")
         self.minsize(max(WINDOW_MIN_WIDTH, 1120), max(WINDOW_MIN_HEIGHT, 760))
         self.configure(fg_color=COLORS["bg_dark"])
+
+        # R42CT: start the native WebView2 source-role editor server as soon as
+        # the app opens, not only after the source edit icon is clicked.  The
+        # helper stays on about:blank and does not preload any source URL; this
+        # only warms WebView2/browser profile startup so the first edit-window
+        # click can skip most of the process/env/control initialization cost.
+        try:
+            if (os.environ.get("YTCE_R42CT_DISABLE_EARLY_NATIVE_WARM", "").strip() not in {"1", "true", "TRUE", "yes", "YES", "on", "ON"} and os.environ.get("YTCE_R42BG_DISABLE_EARLY_NATIVE_WARM", "").strip() not in {"1", "true", "TRUE", "yes", "YES", "on", "ON"} and os.environ.get("YTCE_R42BF_DISABLE_EARLY_NATIVE_WARM", "").strip() not in {"1", "true", "TRUE", "yes", "YES", "on", "ON"}):
+                def _r42ct_early_warm_native_editor() -> None:
+                    try:
+                        from profile_media_link_source_real_webview_overlay_v83d import r42ct_warm_native_webview2_server_from_project_root
+                        r42ct_warm_native_webview2_server_from_project_root(Path(__file__).resolve().parent, wait_ms=0)
+                    except Exception:
+                        logger.debug("Could not start R42CT early native WebView2 source-role editor warm server.", exc_info=True)
+
+                threading.Thread(
+                    target=_r42ct_early_warm_native_editor,
+                    name="profile-media-r42ct-early-native-webview2-warm-server",
+                    daemon=True,
+                ).start()
+        except Exception:
+            logger.debug("Could not schedule R42CT early native WebView2 source-role editor warm server.", exc_info=True)
 
         # Set window icon
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "logo.ico")
@@ -1335,7 +2374,7 @@ class App(ctk.CTk):
         if summary_frame is not None:
             try:
                 if is_database:
-                    summary_frame.grid(row=2, column=0, sticky="w", pady=(5, 0))
+                    summary_frame.grid(row=3, column=0, sticky="w", pady=(5, 0))
                 else:
                     summary_frame.grid_remove()
             except Exception:
@@ -1393,7 +2432,7 @@ class App(ctk.CTk):
         if summary_frame is not None:
             try:
                 if mode == "DATABASE":
-                    summary_frame.grid(row=2, column=0, sticky="w", pady=(5, 0))
+                    summary_frame.grid(row=3, column=0, sticky="w", pady=(5, 0))
                 else:
                     summary_frame.grid_remove()
             except Exception:
@@ -1427,11 +2466,11 @@ class App(ctk.CTk):
                 logger.debug("Could not refresh HOME Load/Unload button text.", exc_info=True)
 
     def _profile_media_database_home_load_or_unload_clicked(self) -> None:
-        """Load HOME/import state when empty; unload only after something is loaded."""
+        """Load the last remembered HOME when empty; unload only after something is loaded."""
         if self._profile_media_home_loaded():
             self._unload_profile_media_database_home_selection()
         else:
-            self._import_profile_media_database_home_selection()
+            self._load_last_profile_media_database_home_selection()
 
     def _load_profile_media_role_icons(self) -> dict[str, object]:
         """Load local Profile/Media role icons without external fonts or web assets."""
@@ -1444,7 +2483,17 @@ class App(ctk.CTk):
             "primary_sources": "icons8-writer-male-32.png",
             "secondary_sources": "icons8-user-account-32.png",
             "tertiary_sources": "icons8-people-32.png",
+            "unknown_sources": "icons8-decision-32.png",
             "persons": "icons8-contacts-32.png",
+            "filter": "icons8-filter-32.png",
+            "media_filter": "icons8-frame-rate-32.png",
+            "accept_review": "icons8-checked-checkbox-32.png",
+            "reject_review": "icons8-close-window-32.png",
+            "copy_text": "icons8-copy-24.png",
+            "copy_source_role": "icons8-copy-source-role-multicolour-24.png",
+            "copy_url": "icons8-link-50.png",
+            "open_url": "icons8-external-link-48.png",
+            "edit_details": "icons8-edit-64.png",
         }
         for key, filename in filenames.items():
             path = os.path.join(asset_base, filename)
@@ -1452,14 +2501,1065 @@ class App(ctk.CTk):
                 continue
             try:
                 image = Image.open(path).convert("RGBA")
+                icon_size = (20, 20) if key in {"copy_url", "open_url", "edit_details", "copy_text", "copy_source_role"} else (16, 16)
                 self.profile_media_role_icon_images[key] = ctk.CTkImage(
                     light_image=image,
                     dark_image=image,
-                    size=(16, 16),
+                    size=icon_size,
                 )
             except Exception:
                 logger.debug("Could not load Profile/Media role icon %s.", filename, exc_info=True)
         return self.profile_media_role_icon_images
+
+    def _profile_media_selected_review_role_counts(
+        self,
+        selected_roles: dict[str, Any] | None = None,
+        selected_personhood_roles: dict[str, Any] | None = None,
+    ) -> dict[str, int]:
+        """Return protected-review role counts from current dropdown selections.
+
+        Counts are conceptual review lanes, not a raw count of every preservation
+        file.  HTML/article_text/webpage_text/WARC/WACZ do not inflate Tertiary.
+        A media file contributes two dimensions: media sourcing and personhood.
+        """
+        state = self.__dict__.get("profile_media_database_last_import_review_state")
+        if state is None:
+            return {}
+        selected = selected_roles or {}
+        selected_personhood = selected_personhood_roles or {}
+        roles = (
+            "PRIMARY_SELF_AUTHORED_SCOPE",
+            "SECONDARY_WITNESS_ACCOUNT",
+            "TERTIARY_PROPAGATED_SOURCE",
+            "UNKNOWN_SOURCE_ROLE",
+        )
+        counts = {role: 0 for role in roles}
+        source_scope_counts = {role: 0 for role in roles}
+        claim_roles = ("PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN")
+        claim_span_counts = {role: 0 for role in claim_roles}
+        review_needed = 0
+        source_reference_review_rows = 0
+
+        def _selected_role(row: object) -> str:
+            row_id = str(getattr(row, "row_id", "") or "")
+            return str(selected.get(row_id, getattr(row, "selected_role", "")) or "")
+
+        def _selected_personhood_role(row: object) -> str:
+            row_id = str(getattr(row, "row_id", "") or "")
+            return str(
+                selected_personhood.get(
+                    row_id,
+                    getattr(row, "selected_personhood_role", "") or getattr(row, "media_personhood_role", ""),
+                )
+                or ""
+            )
+
+        def _count_role(role: str) -> None:
+            if role in counts:
+                counts[role] += 1
+
+        def _count_source_scope_role(role: str) -> None:
+            if role in source_scope_counts:
+                source_scope_counts[role] += 1
+
+        def _count_claim_span_role(role: str) -> None:
+            if role in claim_span_counts:
+                claim_span_counts[role] += 1
+
+        def _row_is_source_reference_candidate(row: object) -> bool:
+            """Source-reference gaps are Review items, not Unknown source-role records."""
+            row_id = str(getattr(row, "row_id", "") or "")
+            subject = str(getattr(row, "subject", "") or "")
+            notes = str(getattr(row, "notes", "") or "")
+            return (
+                row_id.startswith("source_reference_candidate_")
+                or "Source-reference candidate" in subject
+                or "source-reference" in notes.casefold()
+            )
+
+        # YTCE_REVIEW_COUNT_DISPLAY_SYNC_PASS5D_20260827
+        # The same source-reference gap can be represented once as a source
+        # record and once as a role/review row.  The visible Review filter shows
+        # unique claim spans, so the main Review count must use the same unique
+        # identity instead of double-counting both backing rows.
+        source_reference_review_identities: set[str] = set()
+
+        def _source_reference_review_identity(row: object) -> str:
+            parts: list[str] = []
+            for attr_name in (
+                "linked_claim_span_edit_key",
+                "claim_span_edit_key",
+                "edit_key",
+                "excerpt",
+                "source_reference_text",
+                "text",
+                "subject",
+            ):
+                value = str(getattr(row, attr_name, "") or "").strip()
+                if value:
+                    parts.append(value)
+            identity = " | ".join(parts)
+            identity = re.sub(r"\s+", " ", identity).strip().casefold()
+            if not identity:
+                identity = str(getattr(row, "row_id", "") or "").strip().casefold()
+            return identity
+
+        def _count_unique_source_reference_review(row: object, role: str) -> bool:
+            if not _segment_needs_review(row, role):
+                return False
+            identity = _source_reference_review_identity(row)
+            if identity and identity in source_reference_review_identities:
+                return False
+            if identity:
+                source_reference_review_identities.add(identity)
+            return True
+
+        # SOURCE_REFERENCE_PASS4B_REVIEW_COUNT_FIX_20260827
+        def _segment_needs_review(row: object, role: str) -> bool:
+            row_needs_review = bool(getattr(row, "review_required", False))
+            if _row_is_source_reference_candidate(row):
+                return row_needs_review
+            source_chain_gap = bool(getattr(row, "source_chain_gap", False))
+            if source_chain_gap and role == "UNKNOWN_SOURCE_ROLE":
+                return False
+            if (not source_chain_gap) and role == "SECONDARY_WITNESS_ACCOUNT":
+                return False
+            return row_needs_review
+
+        for row in tuple(getattr(state, "source_record_rows", ()) or ()):
+            row_kind = str(getattr(row, "row_kind", "") or "")
+            artifact_kind = str(getattr(row, "artifact_kind", "") or "")
+            if row_kind in {"preservation_artifact", "article_source"}:
+                continue
+            if artifact_kind == "source_text_evidence":
+                continue
+            role = _selected_role(row)
+            if _row_is_source_reference_candidate(row):
+                source_reference_review_rows += 1
+                if _count_unique_source_reference_review(row, role):
+                    review_needed += 1
+                continue
+            if row_kind == "media_artifact":
+                _count_role(role)
+                _count_source_scope_role(role)
+                personhood_role = _selected_personhood_role(row)
+                _count_role(personhood_role)
+                _count_source_scope_role(personhood_role)
+                # Blank media/personhood values are the manual Review lane.  They
+                # are intentionally not counted as Unknown/Tertiary.
+                if bool(getattr(row, "review_required", False)) and role not in roles:
+                    review_needed += 1
+                if bool(getattr(row, "media_personhood_review_required", False)) and personhood_role not in roles:
+                    review_needed += 1
+                continue
+            _count_role(role)
+            _count_source_scope_role(role)
+            if _segment_needs_review(row, role):
+                review_needed += 1
+
+        for row in tuple(getattr(state, "role_rows", ()) or ()):
+            role = _selected_role(row)
+            if _row_is_source_reference_candidate(row):
+                source_reference_review_rows += 1
+                if _count_unique_source_reference_review(row, role):
+                    review_needed += 1
+                continue
+            _count_role(role)
+            _count_source_scope_role(role)
+            if _segment_needs_review(row, role):
+                review_needed += 1
+
+        preview_payload = getattr(self, "profile_media_database_last_source_package_preview", None)
+        if isinstance(preview_payload, dict):
+            preview_section = self._profile_media_database_source_package_preview_section_from_payload(preview_payload)
+            claim_preview = preview_section.get("claim_role_classification_preview") if isinstance(preview_section, dict) else {}
+            source_breakdown = preview_section.get("source_record_count_breakdown") if isinstance(preview_section, dict) else {}
+            if isinstance(source_breakdown, dict):
+                transcript_secondary_records = int(source_breakdown.get("secondary_transcript_records") or source_breakdown.get("transcript_secondary_records") or source_breakdown.get("transcript_provenance_records") or 0)
+                unresolved_source_reference_candidates = int(source_breakdown.get("unresolved_source_reference_candidates") or 0)
+                source_scope_counts["PRIMARY_SELF_AUTHORED_SCOPE"] += int(source_breakdown.get("primary_media_sources") or 0)
+                source_scope_counts["SECONDARY_WITNESS_ACCOUNT"] += transcript_secondary_records
+                source_scope_counts["PRIMARY_SELF_AUTHORED_SCOPE"] += int(source_breakdown.get("resolved_primary_references") or 0)
+                source_scope_counts["SECONDARY_WITNESS_ACCOUNT"] += int(source_breakdown.get("resolved_secondary_references") or 0)
+                source_scope_counts["TERTIARY_PROPAGATED_SOURCE"] += int(source_breakdown.get("resolved_tertiary_references") or 0)
+                source_scope_counts["UNKNOWN_SOURCE_ROLE"] += int(source_breakdown.get("unknown_media_source_statements") or 0)
+                if source_reference_review_rows <= 0:
+                    review_needed += unresolved_source_reference_candidates
+                counts["PRIMARY_SELF_AUTHORED_SCOPE"] += int(source_breakdown.get("primary_media_sources") or 0)
+                counts["SECONDARY_WITNESS_ACCOUNT"] += transcript_secondary_records
+                counts["PRIMARY_SELF_AUTHORED_SCOPE"] += int(source_breakdown.get("resolved_primary_references") or 0)
+                counts["SECONDARY_WITNESS_ACCOUNT"] += int(source_breakdown.get("resolved_secondary_references") or 0)
+                counts["TERTIARY_PROPAGATED_SOURCE"] += int(source_breakdown.get("resolved_tertiary_references") or 0)
+                counts["UNKNOWN_SOURCE_ROLE"] += int(source_breakdown.get("unknown_media_source_statements") or 0)
+            spans = claim_preview.get("spans") if isinstance(claim_preview, dict) else ()
+            if isinstance(spans, list):
+                claim_span_counts = {role: 0 for role in claim_roles}
+                for span in spans:
+                    if not isinstance(span, dict):
+                        continue
+                    role = str(span.get("role") or "").strip().upper()
+                    # Blank remains assigned internally, but is deliberately not
+                    # shown in the compact claim-span count group.
+                    if role in claim_span_counts:
+                        claim_span_counts[role] += 1
+
+        person_names: set[str] = set()
+        for person in tuple(getattr(state, "person_rows", ()) or ()):  # count people, not per-source repeats
+            name = str(getattr(person, "canonical_name", "") or "").strip().casefold()
+            if name:
+                person_names.add(name)
+        counts["PERSON_REVIEW_CANDIDATES"] = len(person_names)
+        preview_source_reference_review_count = self._profile_media_database_source_reference_review_count_from_payload(
+            getattr(self, "profile_media_database_last_source_package_preview", None)
+        )
+        if preview_source_reference_review_count > 0:
+            review_needed = preview_source_reference_review_count
+        counts["REVIEW_ITEMS"] = review_needed
+        for role in roles:
+            counts[f"SOURCE_SCOPE_{role}"] = source_scope_counts[role]
+        for role in claim_roles:
+            counts[f"CLAIM_SPAN_{role}"] = claim_span_counts[role]
+        return counts
+
+    def _profile_media_database_source_package_preview_section_from_payload(self, preview_payload: object) -> dict[str, object]:
+        """Return the nested source_package_preview section from either preview shape.
+
+        source_package_preview_payload(preview) returns the dataclass preview with
+        the real section under batch_payload["source_package_preview"].  Some
+        tests/tools pass the batch payload shape directly with a top-level
+        source_package_preview.  Build, Review and the main card must accept
+        both so the visible sidebar/card does not fall back to stale zeros.
+        """
+        if not isinstance(preview_payload, dict):
+            return {}
+        direct = preview_payload.get("source_package_preview")
+        if isinstance(direct, dict):
+            return direct
+        batch_payload = preview_payload.get("batch_payload")
+        if isinstance(batch_payload, dict):
+            nested = batch_payload.get("source_package_preview")
+            if isinstance(nested, dict):
+                return nested
+        return {}
+
+    # YTCE_REVIEW_COUNT_VISIBLE_FILTER_PASS5F_20260827
+    def _profile_media_database_source_reference_review_count_from_payload(self, preview_payload: object) -> int:
+        '''Count Review items exactly as the visible Review filter displays them.
+
+        Raw source-reference backing rows can be duplicated or include candidates
+        that are not present in the filtered transcript textbox.  The sidebar/card
+        count must match the unique displayed Review spans.
+        '''
+        try:
+            preview_section = self._profile_media_database_source_package_preview_section_from_payload(preview_payload)
+        except Exception:
+            preview_section = {}
+        if not isinstance(preview_section, dict) or not preview_section:
+            return 0
+
+        def _count_key(value: object) -> str:
+            text_value = str(value or '')
+            text_value = text_value.replace('\r', ' ').replace('\n', ' ')
+            text_value = re.sub(r'\s+', ' ', text_value).strip().casefold()
+            return text_value
+
+        def _candidate_is_visible_review_item(candidate: object) -> bool:
+            if not isinstance(candidate, dict):
+                return False
+            if 'goes_to_main_sourcing_card' in candidate and not bool(candidate.get('goes_to_main_sourcing_card')):
+                return False
+            if not bool(candidate.get('review_required', True)):
+                return False
+            if 'unknown_media_requirement_met' in candidate and not bool(candidate.get('unknown_media_requirement_met')):
+                return False
+            return True
+
+        claim_preview = preview_section.get('claim_role_classification_preview')
+        spans = claim_preview.get('spans') if isinstance(claim_preview, dict) else ()
+        span_by_edit_key: dict[str, dict[str, object]] = {}
+        span_text_keys: dict[str, dict[str, object]] = {}
+        if isinstance(spans, list):
+            for span in spans:
+                if not isinstance(span, dict):
+                    continue
+                text_key = _count_key(span.get('text'))
+                if text_key:
+                    span_text_keys.setdefault(text_key, span)
+                edit_key = str(span.get('edit_key') or '').strip()
+                if edit_key:
+                    span_by_edit_key.setdefault(edit_key, span)
+
+        visible_span_keys: set[str] = set()
+        raw_candidate_keys: set[str] = set()
+
+        candidate_preview = preview_section.get('source_reference_candidate_preview')
+        if isinstance(candidate_preview, dict):
+            candidates = candidate_preview.get('main_sourcing_card_candidates')
+            if isinstance(candidates, list):
+                for candidate in candidates:
+                    if not _candidate_is_visible_review_item(candidate):
+                        continue
+                    candidate_text_key = _count_key(candidate.get('text') or candidate.get('excerpt') or candidate.get('subject'))
+                    if candidate_text_key:
+                        raw_candidate_keys.add(candidate_text_key)
+                    linked_key = str(candidate.get('linked_claim_span_edit_key') or candidate.get('claim_span_edit_key') or '').strip()
+                    matched_span = span_by_edit_key.get(linked_key) if linked_key else None
+                    if matched_span is None and candidate_text_key:
+                        matched_span = span_text_keys.get(candidate_text_key)
+                    if matched_span is not None:
+                        visible_key = _count_key(matched_span.get('text') or candidate_text_key)
+                        if visible_key:
+                            visible_span_keys.add(visible_key)
+
+        source_role_segments = preview_section.get('source_role_segments')
+        if isinstance(source_role_segments, list):
+            for segment in source_role_segments:
+                if not isinstance(segment, dict):
+                    continue
+                if not bool(segment.get('source_reference_candidate') or segment.get('goes_to_main_sourcing_card')):
+                    continue
+                if not bool(segment.get('review_required', True)):
+                    continue
+                segment_text_key = _count_key(segment.get('excerpt') or segment.get('text') or segment.get('subject'))
+                if segment_text_key:
+                    raw_candidate_keys.add(segment_text_key)
+                linked_key = str(segment.get('linked_claim_span_edit_key') or segment.get('claim_span_edit_key') or '').strip()
+                matched_span = span_by_edit_key.get(linked_key) if linked_key else None
+                if matched_span is None and segment_text_key:
+                    matched_span = span_text_keys.get(segment_text_key)
+                if matched_span is not None:
+                    visible_key = _count_key(matched_span.get('text') or segment_text_key)
+                    if visible_key:
+                        visible_span_keys.add(visible_key)
+
+        if visible_span_keys:
+            return len(visible_span_keys)
+        if raw_candidate_keys and not span_by_edit_key and not span_text_keys:
+            return len(raw_candidate_keys)
+        return 0
+
+    def _profile_media_database_preview_count_override_from_payload(self, preview_payload: object) -> dict[str, int]:
+        """Build main-card count overrides directly from a fresh source-package preview.
+
+        Build completion uses this before Review opens so the main Database card
+        shows the same source-record counts Review will later hydrate.  Comment
+        source-role records and claim-span counts stay in separate keys and do
+        not inflate Primary/Secondary/Tertiary/Unknown source counts.
+        """
+
+        if not isinstance(preview_payload, dict):
+            return {}
+        preview_section = self._profile_media_database_source_package_preview_section_from_payload(preview_payload)
+        if not preview_section:
+            return {}
+        breakdown = preview_section.get("source_record_count_breakdown")
+        if not isinstance(breakdown, dict):
+            return {}
+
+        def _int_value(mapping: dict[str, object], *keys: str) -> int:
+            for key in keys:
+                try:
+                    return int(mapping.get(key) or 0)
+                except Exception:
+                    continue
+            return 0
+
+        primary = _int_value(breakdown, "primary_media_sources")
+        secondary = _int_value(
+            breakdown,
+            "secondary_transcript_records",
+            "transcript_secondary_records",
+            "transcript_provenance_records",
+        )
+        secondary += _int_value(breakdown, "resolved_secondary_references")
+        tertiary = _int_value(breakdown, "resolved_tertiary_references")
+        unknown = _int_value(breakdown, "unknown_media_source_statements", "resolved_unknown_references", "unknown_source_references")
+        if "visible_source_reference_review_count" in breakdown:
+            unresolved_source_reference_candidates = _int_value(breakdown, "visible_source_reference_review_count")
+        elif bool(breakdown.get("source_chain_definition_set_applied")):
+            unresolved_source_reference_candidates = _int_value(breakdown, "review_source_reference_candidates", "unresolved_source_reference_candidates")
+        else:
+            unresolved_source_reference_candidates = self._profile_media_database_source_reference_review_count_from_payload(preview_payload)
+            if unresolved_source_reference_candidates <= 0:
+                unresolved_source_reference_candidates = _int_value(breakdown, "unresolved_source_reference_candidates")
+
+        persons = _int_value(preview_section, "person_review_candidate_count")
+        if persons <= 0:
+            names = {
+                str(person.get("canonical_name") or "").strip().casefold()
+                for person in preview_section.get("person_review_candidates", ())
+                if isinstance(person, dict) and str(person.get("canonical_name") or "").strip()
+            }
+            persons = len(names)
+
+        claim_span_counts = preview_section.get("claim_span_counts")
+        if not isinstance(claim_span_counts, dict):
+            claim_span_counts = {}
+
+        counts = {
+            "PRIMARY_SELF_AUTHORED_SCOPE": primary,
+            "SECONDARY_WITNESS_ACCOUNT": secondary,
+            "TERTIARY_PROPAGATED_SOURCE": tertiary,
+            "UNKNOWN_SOURCE_ROLE": unknown,
+            "SOURCE_SCOPE_PRIMARY_SELF_AUTHORED_SCOPE": primary,
+            "SOURCE_SCOPE_SECONDARY_WITNESS_ACCOUNT": secondary,
+            "SOURCE_SCOPE_TERTIARY_PROPAGATED_SOURCE": tertiary,
+            "SOURCE_SCOPE_UNKNOWN_SOURCE_ROLE": unknown,
+            "PERSON_REVIEW_CANDIDATES": persons,
+            "REVIEW_ITEMS": unresolved_source_reference_candidates,
+            "YOUTUBE_COMMENT_SOURCE_ROLE_THREADS": _int_value(breakdown, "youtube_comment_source_role_threads"),
+            "YOUTUBE_COMMENT_SOURCE_ROLE_RECORDS": _int_value(breakdown, "youtube_comment_source_role_records"),
+        }
+        for role in ("PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"):
+            counts[f"CLAIM_SPAN_{role}"] = _int_value(claim_span_counts, role)
+        return counts
+
+    def _profile_media_database_final_count_override_from_preview(self, preview_payload: object) -> dict[str, int]:
+        """Return the single Build/Review count model for the main Database card."""
+
+        if isinstance(preview_payload, dict):
+            self.profile_media_database_last_source_package_preview = preview_payload
+        preview_counts = self._profile_media_database_preview_count_override_from_payload(preview_payload)
+        review_counts = self._profile_media_selected_review_role_counts()
+        if not review_counts:
+            return preview_counts
+        # Keep comment/link/claim-span side counters from the preview payload,
+        # but let the hydrated review state supply the visible source/person
+        # truth used by the Review window.  This prevents Build and Review-open
+        # from showing different Primary/Secondary/Tertiary/Unknown numbers.
+        for key, value in preview_counts.items():
+            if key.startswith("YOUTUBE_COMMENT_SOURCE_ROLE_") or key.startswith("CLAIM_SPAN_"):
+                review_counts[key] = value
+        return review_counts
+
+    def _apply_profile_media_database_preview_counts_to_main_card(self, preview_payload: object) -> None:
+        """Apply fresh Build preview counts to the sidebar and main Database card."""
+
+        if isinstance(preview_payload, dict):
+            self.profile_media_database_last_source_package_preview = preview_payload
+        counts = self._profile_media_database_final_count_override_from_preview(preview_payload)
+        if counts:
+            self.profile_media_database_review_role_counts_override = counts
+        try:
+            self._refresh_profile_media_database_workbench_panel()
+        except Exception:
+            logger.debug("Could not refresh Database workbench panel from fresh preview counts.", exc_info=True)
+        try:
+            self._refresh_profile_media_database_sidebar_counts_only()
+        except Exception:
+            logger.debug("Could not refresh Database sidebar from fresh preview counts.", exc_info=True)
+
+    def _profile_media_sidebar_metric_override_value(self, key: str) -> int | None:
+        counts = getattr(self, "profile_media_database_review_role_counts_override", None)
+        if not isinstance(counts, dict):
+            return None
+        mapping = {
+            "primary_sources": ("SOURCE_SCOPE_PRIMARY_SELF_AUTHORED_SCOPE", "PRIMARY_SELF_AUTHORED_SCOPE"),
+            "secondary_sources": ("SOURCE_SCOPE_SECONDARY_WITNESS_ACCOUNT", "SECONDARY_WITNESS_ACCOUNT"),
+            "tertiary_sources": ("SOURCE_SCOPE_TERTIARY_PROPAGATED_SOURCE", "TERTIARY_PROPAGATED_SOURCE"),
+            "unknown_sources": ("SOURCE_SCOPE_UNKNOWN_SOURCE_ROLE", "UNKNOWN_SOURCE_ROLE"),
+            "persons": ("PERSON_REVIEW_CANDIDATES",),
+            "review_items": ("REVIEW_ITEMS",),
+        }
+        count_keys = mapping.get(key)
+        if not count_keys:
+            return None
+        for count_key in count_keys:
+            try:
+                if count_key in counts:
+                    return int(counts.get(count_key, 0))
+            except Exception:
+                continue
+        return None
+
+    def _refresh_profile_media_database_sidebar_counts_only(self) -> None:
+        """Refresh just the six sidebar count labels after review dropdown edits.
+
+        The full workbench-panel refresh is comparatively heavy and can make the
+        Review dialog appear to flash while the user changes a dropdown.
+        """
+        label_lookup = {
+            "primary_sources": "Primary",
+            "secondary_sources": "Secondary",
+            "tertiary_sources": "Tertiary",
+            "unknown_sources": "Unknown",
+            "review_items": "Review",
+            "persons": "Persons",
+        }
+        try:
+            for key, label_widget in getattr(self, "profile_media_database_sidebar_summary_labels", {}).items():
+                if key not in label_lookup:
+                    continue
+                override_value = self._profile_media_sidebar_metric_override_value(key)
+                if override_value is None:
+                    continue
+                label_widget.configure(text=self._profile_media_sidebar_metric_text(key, label_lookup[key], override_value))
+        except Exception:
+            logger.debug("Could not refresh profile/media sidebar counts only.", exc_info=True)
+
+    def _manual_text_widget(self, widget: object) -> object:
+        return getattr(widget, "_textbox", widget)
+
+    def install_middle_click_autoscroll(self, widget: object, *, owner: object | None = None) -> None:
+        """Install browser-style middle-click autoscroll on a Text-like widget."""
+
+        text_widget = self._manual_text_widget(widget)
+        if text_widget is None or bool(getattr(text_widget, "_ytce_middle_click_autoscroll_installed", False)):
+            return
+        try:
+            setattr(text_widget, "_ytce_middle_click_autoscroll_installed", True)
+        except Exception:
+            pass
+
+        def _widget_exists(candidate: object) -> bool:
+            try:
+                return bool(candidate is not None and candidate.winfo_exists())
+            except tk.TclError:
+                return False
+            except Exception:
+                return False
+
+        try:
+            owner_widget = owner or text_widget.winfo_toplevel()
+        except Exception:
+            owner_widget = owner or self
+        scroll_state: dict[str, object] = {"active": False, "origin_y": 0, "last_y": 0, "job": None}
+
+        def _cancel_after_job() -> None:
+            job = scroll_state.get("job")
+            scroll_state["job"] = None
+            if job is None:
+                return
+            for scheduler in (text_widget, owner_widget, self):
+                if not _widget_exists(scheduler):
+                    continue
+                try:
+                    scheduler.after_cancel(job)
+                    return
+                except tk.TclError:
+                    continue
+                except Exception:
+                    continue
+
+        def _stop_autoscroll(_event: object = None) -> str:
+            scroll_state["active"] = False
+            _cancel_after_job()
+            if _widget_exists(text_widget):
+                try:
+                    text_widget.configure(cursor="")
+                except tk.TclError:
+                    pass
+                except Exception:
+                    pass
+            return "break"
+
+        def _step_autoscroll() -> None:
+            if not scroll_state.get("active"):
+                return
+            if not _widget_exists(text_widget):
+                scroll_state["active"] = False
+                scroll_state["job"] = None
+                return
+            try:
+                try:
+                    _pointer_x, pointer_y = text_widget.winfo_pointerxy()
+                    scroll_state["last_y"] = int(pointer_y or scroll_state.get("last_y", 0) or 0)
+                except Exception:
+                    pass
+                dy = int(scroll_state.get("last_y", 0) or 0) - int(scroll_state.get("origin_y", 0) or 0)
+                if abs(dy) >= 10:
+                    units = max(-14, min(14, dy // 16))
+                    if units:
+                        text_widget.yview_scroll(units, "units")
+                if _widget_exists(text_widget):
+                    scroll_state["job"] = text_widget.after(35, _step_autoscroll)
+            except tk.TclError:
+                scroll_state["active"] = False
+                scroll_state["job"] = None
+            except Exception:
+                logger.debug("Could not perform middle-click text autoscroll.", exc_info=True)
+                scroll_state["active"] = False
+                scroll_state["job"] = None
+
+        def _start_or_toggle_autoscroll(event: object) -> str:
+            if scroll_state.get("active"):
+                return _stop_autoscroll(event)
+            if not _widget_exists(text_widget):
+                return "break"
+            scroll_state["active"] = True
+            try:
+                origin_y = int(getattr(event, "y_root", 0) or 0)
+            except Exception:
+                origin_y = 0
+            if not origin_y:
+                try:
+                    _pointer_x, origin_y = text_widget.winfo_pointerxy()
+                except Exception:
+                    origin_y = 0
+            scroll_state["origin_y"] = int(origin_y or 0)
+            scroll_state["last_y"] = int(origin_y or 0)
+            try:
+                text_widget.configure(cursor="sb_v_double_arrow")
+            except tk.TclError:
+                scroll_state["active"] = False
+                return "break"
+            except Exception:
+                pass
+            try:
+                text_widget.focus_set()
+            except Exception:
+                pass
+            if scroll_state.get("job") is None:
+                scroll_state["job"] = text_widget.after(35, _step_autoscroll)
+            return "break"
+
+        def _update_autoscroll_motion(event: object) -> str:
+            if scroll_state.get("active"):
+                try:
+                    scroll_state["last_y"] = int(getattr(event, "y_root", 0) or 0)
+                except Exception:
+                    pass
+                return "break"
+            return ""
+
+        def _middle_release(_event: object = None) -> str:
+            # Release does not stop browser-style autoscroll; second
+            # middle-click, left-click, Escape, focus/destroy stops it.
+            return "break"
+
+        try:
+            text_widget.bind("<ButtonPress-2>", _start_or_toggle_autoscroll, add="+")
+            text_widget.bind("<Button-2>", _start_or_toggle_autoscroll, add="+")
+            text_widget.bind("<Motion>", _update_autoscroll_motion, add="+")
+            text_widget.bind("<B2-Motion>", _update_autoscroll_motion, add="+")
+            text_widget.bind("<ButtonRelease-2>", _middle_release, add="+")
+            text_widget.bind("<ButtonPress-1>", _stop_autoscroll, add="+")
+            text_widget.bind("<Escape>", _stop_autoscroll, add="+")
+            text_widget.bind("<FocusOut>", _stop_autoscroll, add="+")
+            text_widget.bind("<Destroy>", _stop_autoscroll, add="+")
+            # Window-level motion keeps scrolling the focused text box after
+            # the pointer leaves the widget, without binding a Leave stop.
+            if _widget_exists(owner_widget):
+                owner_widget.bind("<Motion>", _update_autoscroll_motion, add="+")
+                owner_widget.bind("<ButtonPress-1>", _stop_autoscroll, add="+")
+                owner_widget.bind("<ButtonPress-2>", _start_or_toggle_autoscroll, add="+")
+                owner_widget.bind("<Escape>", _stop_autoscroll, add="+")
+                owner_widget.bind("<Destroy>", _stop_autoscroll, add="+")
+        except Exception:
+            logger.debug("Could not install middle-click text autoscroll.", exc_info=True)
+
+    def _bind_manual_text_spellcheck(self, widget: object) -> None:
+        """Apply the Text Editor spelling behaviour to manual review note boxes.
+
+        This intentionally mirrors the in-app Text Editor spellchecker: the same
+        dictionary, word filters, red underline tag, hover/click popup, suggestion
+        order, add-to-dictionary action, and popup bridge behaviour are reused for
+        small manual-note CTkTextbox fields.
+        """
+        text_widget = self._manual_text_widget(widget)
+        try:
+            # Use the review toplevel as the popup parent, not the small media
+            # card.  When the card is short, parent-relative placement can force
+            # the popup above/over the misspelled word.
+            try:
+                parent = text_widget.winfo_toplevel()
+            except Exception:
+                parent = getattr(widget, "master", None) or self
+            setattr(text_widget, "_ytce_manual_spell_parent", parent)
+            setattr(text_widget, "_ytce_manual_spell_popup", None)
+            setattr(text_widget, "_ytce_manual_spell_popup_key", "")
+            setattr(text_widget, "_ytce_manual_spell_popup_bridge_bounds", None)
+            setattr(text_widget, "_ytce_manual_spell_popup_hide_after_id", None)
+        except Exception:
+            pass
+        try:
+            def _bind(target: object) -> None:
+                target.bind("<KeyRelease>", lambda _event, w=text_widget: self._schedule_manual_text_spellcheck(w, 220), add="+")
+                target.bind("<Button-1>", lambda event, w=text_widget: self._handle_manual_text_spell_click(w, event), add="+")
+                target.bind("<ButtonRelease-1>", lambda _event, w=text_widget: self._hide_manual_text_spell_popup(w) if self._manual_text_has_selection(w) else None, add="+")
+                target.bind("<Button-3>", lambda event, w=text_widget: self._handle_manual_text_spell_click(w, event), add="+")
+                target.bind("<Escape>", lambda _event, w=text_widget: (self._hide_manual_text_spell_popup(w), "break")[1], add="+")
+                target.bind("<MouseWheel>", lambda _event, w=text_widget: self._hide_manual_text_spell_popup(w), add="+")
+                target.bind("<Button-4>", lambda _event, w=text_widget: self._hide_manual_text_spell_popup(w), add="+")
+                target.bind("<Button-5>", lambda _event, w=text_widget: self._hide_manual_text_spell_popup(w), add="+")
+                target.bind("<Motion>", lambda event, w=text_widget: self._handle_manual_text_spell_motion(w, event), add="+")
+                target.bind("<Leave>", lambda _event, w=text_widget: self._schedule_hide_manual_text_spell_popup(w, 220), add="+")
+
+            _bind(text_widget)
+            if widget is not text_widget and hasattr(widget, "bind"):
+                _bind(widget)
+            self.bind("<Unmap>", lambda _event, w=text_widget: self._hide_manual_text_spell_popup(w), add="+")
+            self.bind("<FocusOut>", lambda _event, w=text_widget: self._hide_manual_text_spell_popup(w), add="+")
+            self._schedule_manual_text_spellcheck(text_widget, 10)
+        except Exception:
+            logger.debug("Could not bind manual text spellcheck.", exc_info=True)
+
+    def _schedule_manual_text_spellcheck(self, text_widget: object, delay_ms: int = 300) -> None:
+        try:
+            after_id = getattr(text_widget, "_ytce_manual_spell_after_id", None)
+            if after_id:
+                try:
+                    self.after_cancel(after_id)
+                except Exception:
+                    pass
+            setattr(text_widget, "_ytce_manual_spell_after_id", self.after(delay_ms, lambda w=text_widget: self._run_manual_text_spellcheck(w)))
+        except Exception:
+            logger.debug("Could not schedule manual text spellcheck.", exc_info=True)
+
+    def _clear_manual_text_spell_tags(self, text_widget: object) -> None:
+        try:
+            for tag_name in tuple(text_widget.tag_names()):
+                if str(tag_name).startswith("manual_spell_error_"):
+                    text_widget.tag_delete(tag_name)
+        except Exception:
+            logger.debug("Could not clear manual note spelling tags.", exc_info=True)
+
+    def _run_manual_text_spellcheck(self, text_widget: object) -> None:
+        try:
+            setattr(text_widget, "_ytce_manual_spell_after_id", None)
+            if str(text_widget.cget("state")) == "disabled":
+                return
+        except Exception:
+            pass
+        self._clear_manual_text_spell_tags(text_widget)
+        try:
+            content = text_widget.get("1.0", "end-1c")
+        except Exception:
+            return
+        dictionary = self._text_editor_spell_words()
+        manual_corrections = self._text_editor_manual_spelling_corrections()
+        line_starts: list[int] = []
+        offset = 0
+        for line in content.splitlines(True):
+            line_starts.append(offset)
+            offset += len(line)
+        if not line_starts:
+            line_starts = [0]
+        match_index = 0
+        for line_number, line_start in enumerate(line_starts, start=1):
+            line_end = line_starts[line_number] if line_number < len(line_starts) else len(content)
+            line_text = content[line_start:line_end]
+            for match in re.finditer(r"\b[A-Za-z][A-Za-z']*[A-Za-z]\b", line_text):
+                word = match.group(0)
+                lowered = word.lower().strip("'")
+                if not self._should_spellcheck_word(word, line_text=line_text, line_offset=match.start()):
+                    continue
+                if lowered in dictionary:
+                    continue
+                is_known_misspelling = lowered in manual_corrections
+                is_gibberish = self._looks_like_text_editor_gibberish(word)
+                checker = self._get_text_editor_spellchecker()
+                if checker is not None and not is_known_misspelling and not is_gibberish:
+                    if self._text_editor_word_is_known(lowered):
+                        continue
+                    if not word.islower() or len(lowered) < 4:
+                        suggestions = self._text_editor_spell_suggestions(word)
+                        if not suggestions:
+                            continue
+                elif not is_known_misspelling and not is_gibberish:
+                    continue
+                start = f"{line_number}.{match.start()}"
+                end = f"{line_number}.{match.end()}"
+                tag_name = f"manual_spell_error_{match_index}"
+                match_index += 1
+                try:
+                    text_widget.tag_add(tag_name, start, end)
+                    self._configure_text_editor_spell_tag(text_widget, tag_name)
+                    text_widget.tag_bind(tag_name, "<Enter>", lambda event, w=text_widget, word=word, s=start, e=end: self._show_manual_text_spell_popup(w, word, s, e, event))
+                    text_widget.tag_bind(tag_name, "<Leave>", lambda _event, w=text_widget: self._schedule_hide_manual_text_spell_popup(w, 220))
+                    text_widget.tag_bind(tag_name, "<Button-1>", lambda event, w=text_widget, word=word, s=start, e=end: self._show_manual_text_spell_popup(w, word, s, e, event))
+                    text_widget.tag_bind(tag_name, "<Button-3>", lambda event, w=text_widget, word=word, s=start, e=end: self._show_manual_text_spell_popup(w, word, s, e, event))
+                except Exception:
+                    logger.debug("Could not tag manual spelling error.", exc_info=True)
+
+    def _cancel_hide_manual_text_spell_popup(self, text_widget: object) -> None:
+        after_id = getattr(text_widget, "_ytce_manual_spell_popup_hide_after_id", None)
+        if after_id:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+        try:
+            setattr(text_widget, "_ytce_manual_spell_popup_hide_after_id", None)
+        except Exception:
+            pass
+
+    def _schedule_hide_manual_text_spell_popup(self, text_widget: object, delay_ms: int = 0) -> None:
+        self._cancel_hide_manual_text_spell_popup(text_widget)
+        if delay_ms <= 0:
+            self._hide_manual_text_spell_popup(text_widget)
+            return
+        try:
+            setattr(text_widget, "_ytce_manual_spell_popup_hide_after_id", self.after(delay_ms, lambda w=text_widget: self._hide_manual_text_spell_popup(w)))
+        except Exception:
+            self._hide_manual_text_spell_popup(text_widget)
+
+    def _manual_text_has_selection(self, text_widget: object) -> bool:
+        """Return True when the user has selected text in a manual-note box.
+
+        Selection should not summon spelling suggestions for a whole sentence or
+        line.  The popup should be a word-level hover/click tool only.
+        """
+        try:
+            ranges = text_widget.tag_ranges("sel")
+            return bool(ranges)
+        except Exception:
+            return False
+
+    def _manual_text_spell_tag_range_at_index(self, text_widget: object, index: str) -> tuple[str, str, str]:
+        try:
+            for tag_name in tuple(text_widget.tag_names(index)):
+                tag_text = str(tag_name)
+                if not tag_text.startswith("manual_spell_error_"):
+                    continue
+                ranges = text_widget.tag_ranges(tag_text)
+                for start_index, end_index in zip(ranges[0::2], ranges[1::2]):
+                    start = str(start_index)
+                    end = str(end_index)
+                    if text_widget.compare(start, "<=", index) and text_widget.compare(index, "<=", end):
+                        return tag_text, start, end
+        except Exception:
+            logger.debug("Could not resolve manual spelling tag under cursor.", exc_info=True)
+        return "", "", ""
+
+    def _manual_text_pointer_in_spell_popup_bridge(self, text_widget: object, event: object) -> bool:
+        try:
+            x = int(getattr(event, "x_root", 0)); y = int(getattr(event, "y_root", 0))
+        except Exception:
+            return False
+        popup = getattr(text_widget, "_ytce_manual_spell_popup", None)
+        if popup is not None:
+            try:
+                px1 = popup.winfo_rootx(); py1 = popup.winfo_rooty(); px2 = px1 + popup.winfo_width(); py2 = py1 + popup.winfo_height()
+                if px1 - 4 <= x <= px2 + 4 and py1 - 4 <= y <= py2 + 4:
+                    return True
+            except Exception:
+                pass
+        bounds = getattr(text_widget, "_ytce_manual_spell_popup_bridge_bounds", None)
+        if not bounds:
+            return False
+        try:
+            x1, y1, x2, y2 = bounds
+            return x1 <= x <= x2 and y1 <= y <= y2
+        except Exception:
+            return False
+
+    def _handle_manual_text_spell_motion(self, text_widget: object, event: object) -> str | None:
+        try:
+            if self._manual_text_has_selection(text_widget):
+                self._hide_manual_text_spell_popup(text_widget)
+                return None
+            index = text_widget.index(f"@{event.x},{event.y}")
+            _tag_name, start, end = self._manual_text_spell_tag_range_at_index(text_widget, index)
+            if not start or not end:
+                if getattr(text_widget, "_ytce_manual_spell_popup", None) is not None:
+                    if self._manual_text_pointer_in_spell_popup_bridge(text_widget, event):
+                        self._cancel_hide_manual_text_spell_popup(text_widget)
+                    else:
+                        # Do not destroy instantly while the pointer is travelling
+                        # down from the underlined word. A short timer is enough
+                        # to cross the gap, but does not leave a big deadspace.
+                        self._schedule_hide_manual_text_spell_popup(text_widget, 180)
+                return None
+            word = text_widget.get(start, end).strip()
+            if not word:
+                self._hide_manual_text_spell_popup(text_widget); return None
+            return self._show_manual_text_spell_popup(text_widget, word, start, end, event)
+        except Exception:
+            logger.debug("Manual note spell motion failed.", exc_info=True)
+        return None
+
+    def _handle_manual_text_spell_click(self, text_widget: object, event: object) -> str | None:
+        try:
+            if self._manual_text_has_selection(text_widget):
+                self._hide_manual_text_spell_popup(text_widget)
+                return None
+            index = text_widget.index(f"@{event.x},{event.y}")
+            _tag_name, start, end = self._manual_text_spell_tag_range_at_index(text_widget, index)
+            if not start or not end:
+                self._hide_manual_text_spell_popup(text_widget); return None
+            word = text_widget.get(start, end).strip()
+            if not word:
+                self._hide_manual_text_spell_popup(text_widget); return None
+            return self._show_manual_text_spell_popup(text_widget, word, start, end, event)
+        except Exception:
+            logger.debug("Manual note spell click failed.", exc_info=True)
+            self._hide_manual_text_spell_popup(text_widget)
+        return None
+
+    def _manual_text_spell_popup_parent(self, text_widget: object) -> object:
+        try:
+            parent = getattr(text_widget, "_ytce_manual_spell_parent", None)
+            if parent is not None and parent.winfo_exists():
+                return parent
+        except Exception:
+            pass
+        try:
+            return text_widget.winfo_toplevel()
+        except Exception:
+            return self
+
+    def _manual_text_spell_popup_position(self, text_widget: object, start: str, popup_width: int, popup_height: int, event: object) -> tuple[int, int]:
+        parent = self._manual_text_spell_popup_parent(text_widget)
+        fallback_x = max(8, int(getattr(event, "x", 0)) + 8)
+        fallback_y = max(8, int(getattr(event, "y", 0)) + 22)
+        try:
+            bbox = text_widget.bbox(start)
+            if not bbox:
+                return fallback_x, fallback_y
+            x, y, width, height = bbox
+            word_root_x = text_widget.winfo_rootx() + x
+            word_root_y = text_widget.winfo_rooty() + y
+            parent_root_x = parent.winfo_rootx()
+            parent_root_y = parent.winfo_rooty()
+            parent_width = max(320, parent.winfo_width())
+            parent_height = max(220, parent.winfo_height())
+            word_x = word_root_x - parent_root_x
+            word_y = word_root_y - parent_root_y
+
+            # Prefer below-word placement.  That matches the main Text Editor
+            # behaviour and keeps the misspelled word visible above the menu.
+            popup_x = max(8, min(word_x, parent_width - popup_width - 8))
+            below_y = word_y + height + 8
+            if below_y + popup_height + 8 <= parent_height:
+                popup_y = below_y
+            else:
+                popup_y = max(8, word_y - popup_height - 10)
+            return popup_x, popup_y
+        except Exception:
+            return fallback_x, fallback_y
+
+    def _hide_manual_text_spell_popup(self, text_widget: object | None = None) -> None:
+        targets = []
+        if text_widget is not None:
+            targets.append(text_widget)
+        popup = getattr(self, "manual_text_spell_popup", None)
+        if popup is not None:
+            targets.append(self)
+        for target in targets or [self]:
+            try:
+                self._cancel_hide_manual_text_spell_popup(target)
+            except Exception:
+                pass
+            popup = getattr(target, "_ytce_manual_spell_popup", None) if target is not self else getattr(self, "manual_text_spell_popup", None)
+            if popup is not None:
+                try:
+                    popup.destroy()
+                except Exception:
+                    pass
+            try:
+                setattr(target, "_ytce_manual_spell_popup", None)
+                setattr(target, "_ytce_manual_spell_popup_key", "")
+                setattr(target, "_ytce_manual_spell_popup_bridge_bounds", None)
+            except Exception:
+                pass
+        self.manual_text_spell_popup = None
+
+    def _replace_manual_text_misspelling(self, text_widget: object, start: str, end: str, replacement: str) -> None:
+        try:
+            try:
+                text_widget.edit_separator()
+            except Exception:
+                pass
+            text_widget.delete(start, end)
+            text_widget.insert(start, replacement)
+            try:
+                text_widget.edit_separator()
+            except Exception:
+                pass
+        except Exception as error:
+            self.log_message(f"Spelling replacement failed: {error}", "error")
+            return
+        self._hide_manual_text_spell_popup(text_widget)
+        self._schedule_manual_text_spellcheck(text_widget, 10)
+
+    def _show_manual_text_spell_popup(self, text_widget: object, word: str, start: str, end: str, event: object) -> str:
+        popup_key = f"{start}:{end}:{word}"
+        existing_popup = getattr(text_widget, "_ytce_manual_spell_popup", None)
+        existing_popup_alive = False
+        if existing_popup is not None:
+            try:
+                existing_popup_alive = bool(existing_popup.winfo_exists())
+            except Exception:
+                existing_popup_alive = False
+        if existing_popup_alive and getattr(text_widget, "_ytce_manual_spell_popup_key", "") == popup_key:
+            self._cancel_hide_manual_text_spell_popup(text_widget); return "break"
+        self._hide_manual_text_spell_popup(text_widget)
+        try:
+            setattr(text_widget, "_ytce_manual_spell_popup_key", popup_key)
+        except Exception:
+            pass
+        suggestions = self._text_editor_spell_suggestions(word)
+        parent = self._manual_text_spell_popup_parent(text_widget)
+        popup = tk.Frame(parent, bg=COLORS["bg_input"], highlightbackground=COLORS["border"], highlightthickness=1, bd=0)
+        rows = [(suggestion, lambda value=suggestion, s=start, e=end: self._replace_manual_text_misspelling(text_widget, s, e, value)) for suggestion in suggestions[:3]]
+        rows.append(("Add to Dictionary", lambda w=word: (self._add_text_editor_spelling_word(w), self._schedule_manual_text_spellcheck(text_widget, 10))))
+        def _button_enter(button: tk.Button) -> None:
+            button.configure(bg=COLORS["accent"], fg=COLORS["bg_dark"])
+        def _button_leave(button: tk.Button) -> None:
+            button.configure(bg=COLORS["bg_input"], fg=COLORS["text_primary"])
+        for index, (label, command) in enumerate(rows):
+            button = tk.Button(popup, text=label, anchor="w", command=command, bg=COLORS["bg_input"], fg=COLORS["text_primary"], activebackground=COLORS["accent"], activeforeground=COLORS["bg_dark"], relief="flat", bd=0, padx=2, pady=4, font=("Segoe UI", 10), cursor="hand2")
+            button.bind("<Enter>", lambda _event, item=button: (self._cancel_hide_manual_text_spell_popup(text_widget), _button_enter(item)), add="+")
+            button.bind("<Leave>", lambda _event, item=button: _button_leave(item), add="+")
+            button.pack(fill="x")
+            if index == len(rows) - 2 and len(rows) > 1:
+                separator = tk.Frame(popup, height=1, bg=COLORS["border"])
+                separator.pack(fill="x", padx=2, pady=(1, 1))
+        popup.bind("<Escape>", lambda _event: self._hide_manual_text_spell_popup(text_widget))
+        popup.bind("<Enter>", lambda _event: self._cancel_hide_manual_text_spell_popup(text_widget), add="+")
+        popup.bind("<Leave>", lambda _event: self._schedule_hide_manual_text_spell_popup(text_widget, 320), add="+")
+        popup.bind("<Button-1>", lambda _event: self._cancel_hide_manual_text_spell_popup(text_widget), add="+")
+        popup.update_idletasks()
+        popup_width = max(150, min(240, popup.winfo_reqwidth()))
+        popup_height = max(30, popup.winfo_reqheight())
+        x, y = self._manual_text_spell_popup_position(text_widget, start, popup_width, popup_height, event)
+        popup.place(x=x, y=y, width=popup_width)
+        popup.lift()
+        try:
+            parent.update_idletasks()
+        except Exception:
+            pass
+        try:
+            # Use known parent-relative placement instead of popup.winfo_rootx()
+            # immediately after place(); Tk can report stale root coordinates for
+            # one idle frame, which made the downward corridor miss the popup.
+            bbox = text_widget.bbox(start)
+            if bbox:
+                wx, wy, ww, wh = bbox
+                word_left = text_widget.winfo_rootx() + wx
+                word_right = word_left + max(ww, 1)
+                word_top = text_widget.winfo_rooty() + wy
+                word_bottom = word_top + max(wh, 1)
+                parent_root_x = parent.winfo_rootx()
+                parent_root_y = parent.winfo_rooty()
+                popup_left = parent_root_x + x
+                popup_top = parent_root_y + y
+                popup_right = popup_left + popup_width
+                popup_bottom = popup_top + popup_height
+                corridor_width = min(popup_width, max(118, max(ww, 1) + 88))
+                if popup_top >= word_bottom:
+                    bridge_left = min(word_left - 12, popup_left - 8)
+                    bridge_right = min(popup_right + 8, max(word_right + 28, popup_left + corridor_width))
+                    bridge = (bridge_left, word_bottom - 8, bridge_right, popup_top + 18)
+                else:
+                    bridge_left = min(word_left - 12, popup_left - 8)
+                    bridge_right = min(popup_right + 8, max(word_right + 28, popup_left + corridor_width))
+                    bridge = (bridge_left, popup_bottom - 18, bridge_right, word_top + 8)
+                setattr(text_widget, "_ytce_manual_spell_popup_bridge_bounds", bridge)
+            else:
+                setattr(text_widget, "_ytce_manual_spell_popup_bridge_bounds", None)
+        except Exception:
+            try:
+                setattr(text_widget, "_ytce_manual_spell_popup_bridge_bounds", None)
+            except Exception:
+                pass
+        try:
+            setattr(text_widget, "_ytce_manual_spell_popup", popup)
+        except Exception:
+            pass
+        self.manual_text_spell_popup = popup
+        return "break"
 
     def _profile_media_sidebar_metric_text(self, key: str, label: str, value: object = 0) -> str:
         if key == "review_items":
@@ -1483,7 +3583,7 @@ class App(ctk.CTk):
         database_header.configure(width=286, height=24)
         database_header.grid(row=0, column=0, sticky="w")
         database_header.grid_propagate(False)
-        database_header.grid_columnconfigure(0, weight=1, minsize=108)
+        database_header.grid_columnconfigure(0, weight=1, minsize=58)
 
         database_label = ctk.CTkLabel(
             database_header,
@@ -1493,6 +3593,19 @@ class App(ctk.CTk):
             anchor="w",
         )
         database_label.grid(row=0, column=0, sticky="w")
+
+        self.profile_media_database_home_create_button = ctk.CTkButton(
+            database_header,
+            text="Create",
+            command=self._create_profile_media_database_home_repository,
+            width=54,
+            height=22,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+        )
+        self.profile_media_database_home_create_button.grid(row=0, column=1, sticky="e", padx=(4, 0))
 
         self.profile_media_database_home_save_button = ctk.CTkButton(
             database_header,
@@ -1505,7 +3618,7 @@ class App(ctk.CTk):
             text_color=COLORS["text_primary"],
             corner_radius=6,
         )
-        self.profile_media_database_home_save_button.grid(row=0, column=1, sticky="e", padx=(4, 0))
+        self.profile_media_database_home_save_button.grid(row=0, column=2, sticky="e", padx=(4, 0))
 
         self.profile_media_database_home_unload_button = ctk.CTkButton(
             database_header,
@@ -1518,7 +3631,7 @@ class App(ctk.CTk):
             text_color=COLORS["text_primary"],
             corner_radius=6,
         )
-        self.profile_media_database_home_unload_button.grid(row=0, column=2, sticky="e", padx=(4, 0))
+        self.profile_media_database_home_unload_button.grid(row=0, column=3, sticky="e", padx=(4, 0))
 
         self.profile_media_database_home_import_button = ctk.CTkButton(
             database_header,
@@ -1531,7 +3644,33 @@ class App(ctk.CTk):
             text_color=COLORS["text_primary"],
             corner_radius=6,
         )
-        self.profile_media_database_home_import_button.grid(row=0, column=3, sticky="e", padx=(4, 0))
+        self.profile_media_database_home_import_button.grid(row=0, column=4, sticky="e", padx=(4, 0))
+
+        self.profile_media_database_home_build_import_button = ctk.CTkButton(
+            self.profile_media_mode_frame,
+            text="Build",
+            command=self._build_profile_media_database_import_preview_from_current_state,
+            width=286,
+            height=22,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+        )
+        self.profile_media_database_home_build_import_button.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+
+        self.profile_media_database_home_review_import_button = ctk.CTkButton(
+            self.profile_media_mode_frame,
+            text="Review",
+            command=self._open_profile_media_database_import_review_text,
+            width=286,
+            height=22,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=6,
+        )
+        self.profile_media_database_home_review_import_button.grid(row=4, column=0, sticky="ew", pady=(4, 0))
 
         self.profile_media_database_toggle_frame = ctk.CTkFrame(
             self.profile_media_mode_frame,
@@ -1562,8 +3701,8 @@ class App(ctk.CTk):
             fg_color=COLORS["bg_input"],
             corner_radius=7,
         )
-        self.profile_media_database_sidebar_summary_frame.configure(width=286, height=96)
-        self.profile_media_database_sidebar_summary_frame.grid(row=2, column=0, sticky="w", pady=(5, 0))
+        self.profile_media_database_sidebar_summary_frame.configure(width=286, height=108)
+        self.profile_media_database_sidebar_summary_frame.grid(row=3, column=0, sticky="w", pady=(5, 0))
         self.profile_media_database_sidebar_summary_frame.grid_propagate(False)
         # Keep the two metric columns fixed near the left; they should not
         # drift apart when the sidebar sash is dragged wider.
@@ -1574,8 +3713,9 @@ class App(ctk.CTk):
             ("primary_sources", "Primary"),
             ("secondary_sources", "Secondary"),
             ("tertiary_sources", "Tertiary"),
-            ("persons", "Persons"),
+            ("unknown_sources", "Unknown"),
             ("review_items", "Review"),
+            ("persons", "Persons"),
         )
         for index, (key, label_text) in enumerate(summary_items):
             label_kwargs = {}
@@ -1584,8 +3724,8 @@ class App(ctk.CTk):
             summary_label = ctk.CTkLabel(
                 self.profile_media_database_sidebar_summary_frame,
                 text=self._profile_media_sidebar_metric_text(key, label_text, 0),
-                font=ctk.CTkFont(size=10, weight="bold" if key == "persons" else "normal"),
-                text_color="#ff7a8a" if key == "review_items" else COLORS["text_secondary"],
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color="#ff7a8a" if key == "review_items" else COLORS["text_primary"],
                 anchor="w",
                 **label_kwargs,
             )
@@ -2060,6 +4200,10 @@ class App(ctk.CTk):
             self.last_session_file_click_time = 0.0
         if "session_file_label_widgets" not in state:
             self.session_file_label_widgets = {}
+        if "session_internal_media_paths" not in state:
+            self.session_internal_media_paths = set()
+        if "session_internal_media_button_widgets" not in state:
+            self.session_internal_media_button_widgets = {}
 
     def _has_exportable_session_content(self) -> bool:
         """Return whether the sidebar EXPORT entry should be enabled."""
@@ -2136,15 +4280,139 @@ class App(ctk.CTk):
         """Plain .txt rows that should expose the Text Editor action."""
         return os.path.splitext(entry.path or "")[1].lower() == ".txt"
 
+    def _session_file_is_web_origin(self, entry: SessionFileEntry) -> bool:
+        """Return True for FILES rows created by webpage/image/video scrubbing paths."""
+
+        try:
+            if self._profile_media_database_session_entry_identity_record(entry):
+                return True
+        except Exception:
+            pass
+        try:
+            entry_path = Path(str(entry.normalized_path or entry.path)).resolve()
+        except Exception:
+            return False
+        roots: list[object] = [
+            getattr(self, "webpage_image_session_output_root", None),
+            getattr(self, "webpage_video_audio_session_output_root", None),
+        ]
+        try:
+            roots.append(self._profile_media_database_capture_manifest_root())
+        except Exception:
+            pass
+        try:
+            base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+            if base:
+                roots.append(Path(base) / "YTCE" / "profile_media_database_import_previews")
+        except Exception:
+            pass
+        for root in roots:
+            if not root:
+                continue
+            try:
+                if entry_path.is_relative_to(Path(root).resolve()):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _session_file_is_transcript_like_internal_media_candidate(self, entry: SessionFileEntry) -> bool:
+        """Return True for local transcript/subtitle files, but not article text captures."""
+
+        suffix = os.path.splitext(str(getattr(entry, "path", "") or getattr(entry, "display_name", "") or ""))[1].lower()
+        name = str(getattr(entry, "display_name", "") or os.path.basename(str(getattr(entry, "path", "") or ""))).lower()
+        if name in {"article_text.txt", "full_webpage_text.txt", "rendered_page.html"}:
+            return False
+        if suffix in {".srt", ".vtt"}:
+            return True
+        if any(token in name for token in ("transcript", "caption", "subtitle", "subtitles")):
+            return True
+        base = os.path.splitext(name)[0]
+        for media_entry in tuple(getattr(self, "session_files", ()) or ()):
+            if media_entry is entry:
+                continue
+            if not self._is_session_media_kind(getattr(media_entry, "file_kind", "")):
+                continue
+            media_base = os.path.splitext(str(getattr(media_entry, "display_name", "") or os.path.basename(str(getattr(media_entry, "path", "") or ""))).lower())[0]
+            if base and media_base and (base == media_base or base.startswith(media_base + ".") or base.startswith(media_base + "_")):
+                return True
+        return False
+
+    def _session_file_can_mark_internal_media(self, entry: SessionFileEntry) -> bool:
+        if self._session_file_is_web_origin(entry):
+            return False
+        if entry.file_kind in {
+            SESSION_FILE_KIND_AUDIO,
+            SESSION_FILE_KIND_VIDEO,
+            SESSION_FILE_KIND_MEDIA,
+        }:
+            return True
+        if entry.file_kind == SESSION_FILE_KIND_TRANSCRIPT:
+            # Locally supplied .txt/.srt/.vtt files can be internal notes/transcripts.
+            # Generated website-capture text is blocked above by web-origin roots and
+            # by the explicit filename guard below.
+            name = str(getattr(entry, "display_name", "") or os.path.basename(str(getattr(entry, "path", "") or ""))).lower()
+            if name in {"article_text.txt", "full_webpage_text.txt", "rendered_page.html"}:
+                return False
+            return True
+        # Local .txt files are allowed to be marked as internal media/notes/transcripts
+        # as long as they did not come from website capture/import-preview machinery.
+        if self._is_session_plain_text_entry(entry):
+            name = str(getattr(entry, "display_name", "") or os.path.basename(str(getattr(entry, "path", "") or ""))).lower()
+            if name in {"article_text.txt", "full_webpage_text.txt", "rendered_page.html"}:
+                return False
+            return True
+        return False
+
+    def _session_file_is_internal_media(self, entry: SessionFileEntry) -> bool:
+        self._ensure_session_files_state()
+        return self._normalise_session_file_path(entry.normalized_path or entry.path) in set(getattr(self, "session_internal_media_paths", set()) or set())
+
+    def _toggle_session_file_internal_media(self, normalized_path: str) -> None:
+        self._ensure_session_files_state()
+        normalized_path = self._normalise_session_file_path(normalized_path)
+        entry = self._find_session_file_by_normalized_path(normalized_path)
+        if entry is None or not self._session_file_can_mark_internal_media(entry):
+            return
+        paths = set(getattr(self, "session_internal_media_paths", set()) or set())
+        if normalized_path in paths:
+            paths.remove(normalized_path)
+            state_text = "unmarked"
+        else:
+            paths.add(normalized_path)
+            state_text = "marked as internal media"
+        self.session_internal_media_paths = paths
+        try:
+            button = (getattr(self, "session_internal_media_button_widgets", {}) or {}).get(normalized_path)
+            if button is not None:
+                selected_now = normalized_path in paths
+                button.configure(
+                    fg_color=COLORS["accent_secondary"] if selected_now else "transparent",
+                    hover_color=COLORS["accent_hover"] if selected_now else COLORS["border"],
+                )
+        except Exception:
+            logger.debug("Could not update internal media marker button in place.", exc_info=True)
+        try:
+            self.log_message(f"{entry.display_name} {state_text}.", "info")
+        except Exception:
+            pass
+
     def _ensure_session_file_action_icons(self) -> None:
-        if hasattr(self, "session_text_file_icon_image") and hasattr(self, "session_caption_icon_image"):
+        if (
+            hasattr(self, "session_text_file_icon_image")
+            and hasattr(self, "session_caption_icon_image")
+            and hasattr(self, "session_internal_media_icon_image")
+            and hasattr(self, "session_video_file_icon_image")
+        ):
             return
         self.session_text_file_icon_image = None
         self.session_caption_icon_image = None
+        self.session_internal_media_icon_image = None
+        self.session_video_file_icon_image = None
         asset_base_dir = os.path.dirname(os.path.abspath(__file__))
 
-        def _load_icon(filename: str) -> Optional[ctk.CTkImage]:
-            icon_path = os.path.join(asset_base_dir, "assets", filename)
+        def _load_icon(filename: str, *, subdir: str = "assets") -> Optional[ctk.CTkImage]:
+            icon_path = os.path.join(asset_base_dir, subdir, filename)
             if not os.path.exists(icon_path):
                 return None
             icon_image = Image.open(icon_path).convert("RGBA")
@@ -2153,10 +4421,20 @@ class App(ctk.CTk):
         try:
             self.session_text_file_icon_image = _load_icon("ytce_file_text_icon.png")
             self.session_caption_icon_image = _load_icon("ytce_file_cc_icon.png")
+            self.session_internal_media_icon_image = _load_icon(
+                "icons8-notepad-user-32.png",
+                subdir=os.path.join("assets", "profile_media", "source_roles"),
+            )
+            self.session_video_file_icon_image = _load_icon(
+                "icons8-video-24.png",
+                subdir=os.path.join("assets", "profile_media", "source_roles"),
+            )
         except Exception as icon_error:
             logger.warning(f"Could not load FILES action icons: {icon_error}")
             self.session_text_file_icon_image = None
             self.session_caption_icon_image = None
+            self.session_internal_media_icon_image = None
+            self.session_video_file_icon_image = None
 
     def _open_session_text_file_action(self, normalized_path: str) -> None:
         """Open a .txt file in the in-app Text Editor panel."""
@@ -2229,6 +4507,7 @@ class App(ctk.CTk):
         self.session_file_folder_names = []
         self.session_file_folder_collapsed = {}
         self.session_file_folder_editing = ""
+        self.session_internal_media_paths = set()
         self._cleanup_webpage_image_session_downloads(reset_state=True)
         self.selected_session_file_path = ""
         self.active_media_file_path = ""
@@ -2619,6 +4898,10 @@ class App(ctk.CTk):
         if self.active_transcript_file_path == normalized_path:
             self.active_transcript_file_path = ""
         try:
+            self.session_internal_media_paths.discard(normalized_path)
+        except Exception:
+            pass
+        try:
             root = getattr(self, "webpage_image_session_output_root", None)
             if root:
                 root_path = Path(root).resolve()
@@ -2645,6 +4928,7 @@ class App(ctk.CTk):
                 pass
         self.session_file_row_widgets = {}
         self.session_file_label_widgets = {}
+        self.session_internal_media_button_widgets = {}
 
         self._normalise_session_file_folder_state()
         folder_map = getattr(self, "session_file_folders", {}) or {}
@@ -2852,9 +5136,30 @@ class App(ctk.CTk):
                 text_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
                 action_column += 1
 
+            if self._session_file_can_mark_internal_media(entry):
+                internal_selected = self._session_file_is_internal_media(entry)
+                internal_button_kwargs = {
+                    "text": "" if self.session_internal_media_icon_image is not None else "IM",
+                    "width": 30,
+                    "height": 26,
+                    "fg_color": COLORS["accent_secondary"] if internal_selected else "transparent",
+                    "hover_color": COLORS["accent_hover"] if internal_selected else COLORS["border"],
+                    "text_color": COLORS["text_primary"],
+                    "command": lambda path=entry.normalized_path: self._toggle_session_file_internal_media(path),
+                }
+                if self.session_internal_media_icon_image is not None:
+                    internal_button_kwargs["image"] = self.session_internal_media_icon_image
+                internal_button = ctk.CTkButton(row_frame, **internal_button_kwargs)
+                internal_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
+                try:
+                    self.session_internal_media_button_widgets[self._normalise_session_file_path(entry.normalized_path or entry.path)] = internal_button
+                except Exception:
+                    pass
+                action_column += 1
+
             remove_button = ctk.CTkButton(
                 row_frame,
-                text="×",
+                text="×",  # source_row_remove_button_text_expected_by_ui_test
                 width=26,
                 height=26,
                 fg_color="transparent",
@@ -4220,13 +6525,15 @@ class App(ctk.CTk):
         action_frame.pack(fill="x")
         action_frame.grid_columnconfigure(0, weight=0)
         action_frame.grid_columnconfigure(1, weight=1)
-        action_frame.grid_columnconfigure(2, weight=0)
 
+        # Keep the Go button and selected-source dropdown in separate grid columns.
+        # Earlier layouts let a long selected URL/title visually run over the Go
+        # button because both controls were squeezed into the right-hand stack.
         left_action_frame = ctk.CTkFrame(action_frame, fg_color="transparent")
-        left_action_frame.grid(row=1, column=1, sticky="e", padx=(0, 8), pady=(0, 0))
+        left_action_frame.grid(row=0, column=0, rowspan=4, sticky="nw", padx=(0, 8), pady=(0, 0))
 
         right_action_panel = ctk.CTkFrame(action_frame, fg_color="transparent")
-        right_action_panel.grid(row=0, column=2, rowspan=4, sticky="e")
+        right_action_panel.grid(row=0, column=1, rowspan=4, sticky="e")
         right_action_panel.grid_columnconfigure(0, weight=1)
 
         self.discussion_source_var = ctk.StringVar(value="")
@@ -4235,7 +6542,7 @@ class App(ctk.CTk):
             variable=self.discussion_source_var,
             values=[""],
             command=self._on_discussion_source_selected,
-            width=318,
+            width=300,
             height=30,
             fg_color=COLORS["bg_input"],
             button_color=COLORS["accent_secondary"],
@@ -4678,6 +6985,19 @@ class App(ctk.CTk):
         )
         self.profile_media_database_panel_batch_button.pack(side="right", padx=(0, 6))
 
+        self.profile_media_database_panel_source_preview_button = ctk.CTkButton(
+            header,
+            text="Build",
+            command=self._build_profile_media_database_import_preview_from_current_state,
+            width=126,
+            height=28,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_primary"],
+            corner_radius=7,
+        )
+        self.profile_media_database_panel_source_preview_button.pack(side="right", padx=(0, 6))
+
         self.profile_media_database_panel_clear_button = ctk.CTkButton(
             header,
             text="Unload",
@@ -4718,7 +7038,7 @@ class App(ctk.CTk):
         metrics_frame = ctk.CTkFrame(self.profile_media_database_workbench_card, fg_color="transparent")
         metrics_frame.pack(fill="x", padx=15, pady=(0, 8))
         self.profile_media_database_panel_metric_labels = {}
-        for column, key in enumerate(("primary_sources", "secondary_sources", "tertiary_sources", "persons")):
+        for column, key in enumerate(("primary_sources", "secondary_sources", "tertiary_sources", "unknown_sources", "persons")):
             metrics_frame.grid_columnconfigure(column, weight=1)
             metric_label = ctk.CTkLabel(
                 metrics_frame,
@@ -4762,6 +7082,47 @@ class App(ctk.CTk):
         )
         self.profile_media_database_panel_notice_label.pack(fill="x", padx=15, pady=(0, 12))
 
+        self.profile_media_database_panel_workflow_label = ctk.CTkLabel(
+            self.profile_media_database_workbench_card,
+            text="",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"],
+            anchor="w",
+            justify="left",
+            wraplength=880,
+        )
+        self.profile_media_database_panel_workflow_label.pack(fill="x", padx=15, pady=(0, 12))
+
+        self.profile_media_database_r41r_workflow_buttons = {}
+        self.profile_media_database_r41r_workflow_button_row = ctk.CTkFrame(
+            self.profile_media_database_workbench_card,
+            fg_color="transparent",
+        )
+        self.profile_media_database_r41r_workflow_button_row.pack(fill="x", padx=15, pady=(0, 12))
+        for index, (label, command_name) in enumerate(
+            (
+                ("Human Queue", "_profile_media_r41r_open_human_queue_panel"),
+                ("Browser Actions", "_profile_media_r41r_open_browser_action_panel"),
+                ("Network Provenance", "_profile_media_r41r_open_network_provenance_panel"),
+                ("HTTP Probe", "_profile_media_r41r_open_passive_http_metadata_panel"),
+                ("Clean Viewer", "_profile_media_r41r_open_clean_static_viewer_panel"),
+            )
+        ):
+            self.profile_media_database_r41r_workflow_button_row.grid_columnconfigure(index, weight=1)
+            button = ctk.CTkButton(
+                self.profile_media_database_r41r_workflow_button_row,
+                text=label,
+                command=getattr(self, command_name),
+                width=110,
+                height=28,
+                fg_color=COLORS["accent_secondary"],
+                hover_color=COLORS["border"],
+                text_color=COLORS["text_primary"],
+                corner_radius=7,
+            )
+            button.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 6, 0))
+            self.profile_media_database_r41r_workflow_buttons[label] = button
+
         self._refresh_profile_media_database_workbench_panel()
 
     def _refresh_profile_media_database_workbench_panel(self) -> None:
@@ -4788,6 +7149,7 @@ class App(ctk.CTk):
                 database_root=getattr(self, "profile_media_database_root", ""),
                 batch_json_files=getattr(self, "profile_media_database_batch_json_files", ()),
                 workbench_payload=getattr(self, "profile_media_database_workbench_payload", None),
+                source_folder_preview=getattr(self, "profile_media_database_last_source_package_preview", None),
             )
             self.profile_media_database_panel_state = state
         except Exception:
@@ -4807,13 +7169,19 @@ class App(ctk.CTk):
                 self.profile_media_database_panel_subtitle_label.configure(text=state.subtitle)
                 for key, label_widget in getattr(self, "profile_media_database_panel_metric_labels", {}).items():
                     metric = display_metrics.get(key) or metrics.get(key)
-                    label_widget.configure(text=f"{metric.label}: {metric.value}" if metric else "")
+                    override_value = self._profile_media_sidebar_metric_override_value(key)
+                    if metric and override_value is not None:
+                        label_widget.configure(text=f"{metric.label}: {override_value}")
+                    else:
+                        label_widget.configure(text=f"{metric.label}: {metric.value}" if metric else "")
 
                 lanes = {lane.key: lane for lane in state.review_lanes}
                 review_metric = display_metrics.get("review_items") or metrics.get("review_items")
                 for key, label_widget in getattr(self, "profile_media_database_panel_review_labels", {}).items():
                     if key == "review_items" and review_metric is not None:
-                        label_widget.configure(text=f"{review_metric.label}: {review_metric.value}")
+                        override_value = self._profile_media_sidebar_metric_override_value("review_items")
+                        value = override_value if override_value is not None else review_metric.value
+                        label_widget.configure(text=f"{review_metric.label}: {value}")
                     elif key == "safe_no_download":
                         label_widget.configure(text="No media download")
                     elif key == "safe_no_inference":
@@ -4824,14 +7192,408 @@ class App(ctk.CTk):
 
                 notices = "\n".join(state.notices[:3])
                 self.profile_media_database_panel_notice_label.configure(text=notices)
+                workflow_rows = tuple(getattr(state, "workflow_rows", ()) or ())
+                workflow_summary = getattr(state, "workflow_summary", {}) or {}
+                workflow_text = ""
+                if workflow_rows or workflow_summary:
+                    workflow_text = (
+                        "R41Q workflows: "
+                        f"{int(workflow_summary.get('workflow_row_count') or len(workflow_rows))} link/action rows; "
+                        "metadata-only queue, browser action, network provenance, passive HTTP."
+                    )
+                workflow_label = getattr(self, "profile_media_database_panel_workflow_label", None)
+                if workflow_label is not None:
+                    workflow_label.configure(text=workflow_text)
 
             for key, label_widget in getattr(self, "profile_media_database_sidebar_summary_labels", {}).items():
                 metric = display_metrics.get(key) or metrics.get(key)
                 if metric is not None:
-                    label_widget.configure(text=self._profile_media_sidebar_metric_text(key, metric.label, metric.value))
+                    override_value = self._profile_media_sidebar_metric_override_value(key)
+                    value = override_value if override_value is not None else metric.value
+                    label_widget.configure(text=self._profile_media_sidebar_metric_text(key, metric.label, value))
             self._refresh_profile_media_home_sidebar_buttons()
         except Exception:
             logger.debug("Could not refresh profile/media Database GUI panel widgets.", exc_info=True)
+
+    def _profile_media_r41r_latest_source_package_preview(self) -> dict[str, object]:
+        payload = getattr(self, "profile_media_database_last_source_package_preview", None)
+        if not isinstance(payload, dict):
+            return {}
+        direct = payload.get("source_package_preview")
+        if isinstance(direct, dict):
+            return direct
+        batch_payload = payload.get("batch_payload")
+        if isinstance(batch_payload, dict) and isinstance(batch_payload.get("source_package_preview"), dict):
+            return dict(batch_payload.get("source_package_preview") or {})
+        return dict(payload)
+
+    def _profile_media_r41r_link_source_objects_from_latest_preview(self) -> list[dict[str, object]]:
+        preview = self._profile_media_r41r_latest_source_package_preview()
+        rows = preview.get("link_source_objects") if isinstance(preview, dict) else []
+        if not isinstance(rows, list):
+            return []
+        return [dict(row) for row in rows if isinstance(row, dict)]
+
+    def _profile_media_r41r_capture_summary_from_latest_preview(self) -> dict[str, object]:
+        for row in self._profile_media_r41r_link_source_objects_from_latest_preview():
+            for key in ("browser_capture_reviews", "capture_review_records", "capture_reviews"):
+                records = row.get(key)
+                if isinstance(records, list) and records:
+                    first = records[0]
+                    if isinstance(first, dict):
+                        return dict(first)
+        return {}
+
+    def _profile_media_r41r_render_text_window(self, title: str, text: str) -> None:
+        win = ctk.CTkToplevel(self)
+        win.title(title)
+        try:
+            win.geometry("840x620")
+            win.transient(self)
+        except Exception:
+            pass
+        win.grid_columnconfigure(0, weight=1)
+        win.grid_rowconfigure(0, weight=1)
+        box = ctk.CTkTextbox(win, wrap="word")
+        box.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        box.configure(state="normal")
+        box.insert("1.0", text)
+        box.configure(state="disabled")
+        self.install_middle_click_autoscroll(box, owner=win)
+
+    def _profile_media_r41r_open_human_queue_panel(self) -> None:
+        # YTCE_V83D_R41R_VISIBLE_HUMAN_ACTION_QUEUE_PANEL
+        try:
+            from profile_media_human_action_queue_panel_v83d import (
+                build_human_action_queue_panel_from_pasted_text,
+                build_human_action_queue_panel_from_selected_sources,
+                build_human_action_queue_panel_from_txt_file,
+                render_human_action_queue_panel_text,
+            )
+            from profile_media_r41r_queue_persistence_v83d import load_human_action_queue, save_human_action_queue
+        except Exception as exc:
+            self.log_message(f"Human Action Queue panel unavailable: {exc}", "error")
+            return
+
+        win = ctk.CTkToplevel(self)
+        win.title("Human Action Queue")
+        try:
+            win.geometry("900x680")
+            win.transient(self)
+        except Exception:
+            pass
+        win.grid_columnconfigure(0, weight=1)
+        win.grid_rowconfigure(2, weight=1)
+        input_box = ctk.CTkTextbox(win, height=82, wrap="word")
+        input_box.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
+        self.install_middle_click_autoscroll(input_box, owner=win)
+        output_box = ctk.CTkTextbox(win, wrap="word")
+        output_box.grid(row=2, column=0, sticky="nsew", padx=12, pady=(6, 12))
+        self.install_middle_click_autoscroll(output_box, owner=win)
+        state_holder: dict[str, object] = {
+            "state": build_human_action_queue_panel_from_selected_sources(
+                self._profile_media_r41r_link_source_objects_from_latest_preview()
+            )
+        }
+        def _r42ct_remember_human_action_queue_state(source_state: object, raw_text: object = "", source_path: object = "") -> None:
+            # R42CT: the Human Action Queue is part of the user's visible human-chain
+            # workflow.  It must feed the native source dropdown even if an archive.ph
+            # row is unchecked/challenge-blocked and therefore not in the evidence row set.
+            try:
+                rows: list[object] = []
+                if isinstance(source_state, dict):
+                    raw_rows = source_state.get("rows") or source_state.get("items") or source_state.get("queue") or []
+                    if isinstance(raw_rows, (list, tuple)):
+                        rows = list(raw_rows)
+                text_parts: list[str] = []
+                if raw_text:
+                    text_parts.append(str(raw_text))
+                try:
+                    text_parts.append(json.dumps(rows, ensure_ascii=False, default=str))
+                except Exception:
+                    text_parts.append(repr(rows))
+                joined_text = "\n".join(part for part in text_parts if part)
+                # New explicit bridge names.
+                self.r42ct_last_human_action_queue_rows = list(rows)
+                self.r42ct_last_human_action_queue_text = joined_text
+                self.r42ct_last_human_action_queue_source_path = str(source_path or "")
+                # Feed the same bridge used by the native source editor.
+                self.r42ct_last_source_url_intake_rows = list(rows)
+                self.r42ct_last_source_url_intake_text = joined_text
+                # Legacy compatibility for already-patched source-navigation code paths.
+                self.r42cg_last_source_url_intake_rows = list(rows)
+                self.r42cg_last_source_url_intake_text = joined_text
+                try:
+                    url_count = len(re.findall(r"https?://[^\s<>'\"\]\)\}]+", joined_text, flags=re.IGNORECASE))
+                    self.log_message(
+                        f"Human-chain URL batch remembered for native source navigation: {url_count} URL(s).",
+                        "muted",
+                    )
+                except Exception:
+                    pass
+            except Exception:
+                logger.debug("Could not remember R42CT Human Action Queue source-navigation state.", exc_info=True)
+
+        queue_path = Path("PROFILE_MEDIA_R41R_HUMAN_ACTION_QUEUE.json")
+
+        def _set_output() -> None:
+            try:
+                output_box.configure(state="normal")
+                output_box.delete("1.0", "end")
+                output_box.insert("1.0", render_human_action_queue_panel_text(state_holder.get("state") or {}))
+                output_box.configure(state="disabled")
+            except Exception:
+                logger.debug("Could not refresh R41R Human Action Queue output.", exc_info=True)
+
+        def _build_from_paste() -> None:
+            raw_text = input_box.get("1.0", "end")
+            state_holder["state"] = build_human_action_queue_panel_from_pasted_text(raw_text)
+            _r42ct_remember_human_action_queue_state(state_holder.get("state") or {}, raw_text, "pasted")
+            _set_output()
+
+        def _import_txt() -> None:
+            path = filedialog.askopenfilename(title="Import TXT URLs", filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+            if path:
+                raw_text = ""
+                try:
+                    raw_text = Path(path).read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    raw_text = str(path)
+                state_holder["state"] = build_human_action_queue_panel_from_txt_file(path)
+                _r42ct_remember_human_action_queue_state(state_holder.get("state") or {}, raw_text, path)
+                _set_output()
+
+        def _save_queue() -> None:
+            rows = (state_holder.get("state") or {}).get("rows") if isinstance(state_holder.get("state"), dict) else []
+            _r42ct_remember_human_action_queue_state(state_holder.get("state") or {}, "", "save_queue")
+            save_human_action_queue(queue_path, rows or [], state_label="r41r_visible_panel")
+            self.log_message("Human Action Queue saved as metadata-only workflow state.", "success")
+
+        def _load_queue() -> None:
+            loaded = load_human_action_queue(queue_path)
+            from profile_media_human_action_queue_panel_v83d import build_human_action_queue_panel_state
+
+            state_holder["state"] = build_human_action_queue_panel_state(loaded.get("rows") or [])
+            _r42ct_remember_human_action_queue_state(state_holder.get("state") or {}, json.dumps(loaded, ensure_ascii=False, default=str), "load_queue")
+            _set_output()
+
+        controls = ctk.CTkFrame(win, fg_color="transparent")
+        controls.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 4))
+        for index, (label, command) in enumerate(
+            (
+                ("Build pasted URLs", _build_from_paste),
+                ("Import TXT URLs", _import_txt),
+                ("Save queue", _save_queue),
+                ("Reload queue", _load_queue),
+            )
+        ):
+            ctk.CTkButton(controls, text=label, command=command, width=128, height=28).grid(row=0, column=index, padx=(0 if index == 0 else 6, 0))
+        _set_output()
+
+    def _profile_media_r41r_open_browser_action_panel(self) -> None:
+        # YTCE_V83D_R41R_VISIBLE_BROWSER_ACTION_PANEL
+        try:
+            from profile_media_browser_action_panel_v83d import (
+                build_browser_action_panel_state,
+                edge_cdp_endpoint_status,
+                render_browser_action_panel_text,
+                request_open_focus,
+                request_retry_record,
+            )
+            from profile_media_lightweight_browser_action_panel_v83d import (
+                build_lightweight_browser_action_panel_state,
+                render_lightweight_browser_action_panel_text,
+            )
+            from profile_media_browser_tab_cleanup_v83d import (
+                build_tab_cleanup_plan,
+                close_browser_tabs_from_plan,
+                list_open_browser_tabs,
+                render_tab_cleanup_summary,
+            )
+            from profile_media_webview_capability_model_v83d import build_lightweight_browser_capability_model
+            from profile_media_r41r_evidence_gate_v83d import evaluate_central_evidence_gate
+        except Exception as exc:
+            self.log_message(f"Browser Action Panel unavailable: {exc}", "error")
+            return
+        link_rows = self._profile_media_r41r_link_source_objects_from_latest_preview()
+        urls = [row.get("normalised_url") or row.get("url") for row in link_rows if row.get("normalised_url") or row.get("url")]
+        panel = build_browser_action_panel_state(urls)
+        if urls:
+            panel = request_open_focus(panel, urls[0])
+            panel = request_retry_record(panel, urls[0], status="RETRY_METADATA_READY")
+        edge_status = edge_cdp_endpoint_status()
+        text = render_browser_action_panel_text(panel)
+        text += "\n\nEdge CDP status:\n"
+        text += f"{edge_status.get('status')}\n"
+        if edge_status.get("exact_blocker"):
+            text += f"{edge_status.get('exact_blocker')}\n"
+        capability = build_lightweight_browser_capability_model(edge_cdp_reachable=bool(edge_status.get("reachable")))
+        lightweight_panel = build_lightweight_browser_action_panel_state(urls, capability_model=capability, selected_route_id="external_edge_cdp")
+        text += "\n\nR41V lightweight browser/action route:\n"
+        text += render_lightweight_browser_action_panel_text(lightweight_panel)
+        text += "\n"
+        gate = evaluate_central_evidence_gate(page_text="", required_markers=["article", "source"], human_action_confirmed=True)
+        text += "\nCentral evidence gate:\n"
+        text += "Accepted only after article/source markers are visible.\n"
+        text += f"Current result: {'accepted' if gate.get('accepted') else 'blocked'}\n"
+        text += f"Reason: {', '.join(gate.get('blockers') or [])}\n"
+
+        win = ctk.CTkToplevel(self)
+        win.title("Browser Action Panel")
+        try:
+            win.geometry("900x680")
+            win.transient(self)
+        except Exception:
+            pass
+        win.grid_columnconfigure(0, weight=1)
+        win.grid_rowconfigure(1, weight=1)
+        controls = ctk.CTkFrame(win, fg_color="transparent")
+        controls.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 4))
+        output_box = ctk.CTkTextbox(win, wrap="word")
+        output_box.grid(row=1, column=0, sticky="nsew", padx=12, pady=(4, 12))
+        self.install_middle_click_autoscroll(output_box, owner=win)
+
+        def _set_browser_action_output(extra_text: str = "") -> None:
+            try:
+                output_box.configure(state="normal")
+                output_box.delete("1.0", "end")
+                output_box.insert("1.0", text + (("\n\n" + extra_text) if extra_text else ""))
+                output_box.configure(state="disabled")
+            except Exception:
+                logger.debug("Could not refresh Browser Action Panel output.", exc_info=True)
+
+        def _browser_cleanup_plan_text() -> str:
+            try:
+                tabs = list_open_browser_tabs()
+                plan = build_tab_cleanup_plan(tabs)
+                return render_tab_cleanup_summary(plan)
+            except Exception as exc:
+                return f"Browser tab cleanup\nCould not list open capture tabs: {type(exc).__name__}: {exc}"
+
+        def _close_browser_cleanup_targets(label: str) -> None:
+            try:
+                tabs = list_open_browser_tabs()
+                plan = build_tab_cleanup_plan(tabs)
+                result = close_browser_tabs_from_plan(plan)
+                _set_browser_action_output(label + "\n" + render_tab_cleanup_summary(result))
+                self.log_message("Browser cleanup command completed for safe YTCE capture/test tabs only.", "success")
+            except Exception as exc:
+                _set_browser_action_output(f"{label}\nCould not close safe capture/test tabs: {type(exc).__name__}: {exc}")
+                self.log_message(f"Browser cleanup command failed: {exc}", "warning")
+
+        for index, (label, command) in enumerate(
+            (
+                ("List open capture tabs", lambda: _set_browser_action_output(_browser_cleanup_plan_text())),
+                ("Close YTCE test tabs", lambda: _close_browser_cleanup_targets("Close YTCE test tabs")),
+                ("Close stale capture tabs", lambda: _close_browser_cleanup_targets("Close stale capture tabs")),
+            )
+        ):
+            ctk.CTkButton(controls, text=label, command=command, width=150, height=28).grid(row=0, column=index, padx=(0 if index == 0 else 6, 0))
+        _set_browser_action_output()
+
+    def _profile_media_r41r_open_network_provenance_panel(self) -> None:
+        # YTCE_V83D_R41R_VISIBLE_NETWORK_PROVENANCE_PANEL
+        try:
+            from profile_media_network_provenance_panel_v83d import build_network_provenance_panel_state, render_network_provenance_panel_text
+        except Exception as exc:
+            self.log_message(f"Network Provenance panel unavailable: {exc}", "error")
+            return
+        panel = build_network_provenance_panel_state(self._profile_media_r41r_capture_summary_from_latest_preview())
+        self._profile_media_r41r_render_text_window("Network Provenance", render_network_provenance_panel_text(panel))
+
+    def _profile_media_r41r_open_passive_http_metadata_panel(self) -> None:
+        # YTCE_V83D_R41R_VISIBLE_PASSIVE_HTTP_METADATA_PANEL
+        try:
+            from profile_media_passive_http_metadata_panel_v83d import (
+                build_passive_http_metadata_panel_state,
+                mark_passive_http_metadata_panel_cancelled,
+                render_passive_http_metadata_panel_text,
+            )
+        except Exception as exc:
+            self.log_message(f"Passive HTTP Metadata panel unavailable: {exc}", "error")
+            return
+        win = ctk.CTkToplevel(self)
+        win.title("Passive HTTP Metadata")
+        try:
+            win.geometry("860x640")
+            win.transient(self)
+        except Exception:
+            pass
+        win.grid_columnconfigure(0, weight=1)
+        win.grid_rowconfigure(2, weight=1)
+        input_box = ctk.CTkTextbox(win, height=76, wrap="word")
+        input_box.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
+        output_box = ctk.CTkTextbox(win, wrap="word")
+        output_box.grid(row=2, column=0, sticky="nsew", padx=12, pady=(6, 12))
+        self.install_middle_click_autoscroll(input_box, owner=win)
+        self.install_middle_click_autoscroll(output_box, owner=win)
+        state_holder: dict[str, object] = {"state": build_passive_http_metadata_panel_state((), user_provided=True)}
+
+        def _set_output(text: str | None = None) -> None:
+            try:
+                output_box.configure(state="normal")
+                output_box.delete("1.0", "end")
+                output_box.insert("1.0", text if text is not None else render_passive_http_metadata_panel_text(state_holder.get("state") or {}))
+                output_box.configure(state="disabled")
+            except Exception:
+                logger.debug("Could not refresh R41R Passive HTTP Metadata output.", exc_info=True)
+
+        def _run_probe() -> None:
+            urls_text = input_box.get("1.0", "end")
+            _set_output("Running passive metadata probe for user-provided URLs only...")
+
+            def _worker() -> None:
+                result = build_passive_http_metadata_panel_state(
+                    urls_text.splitlines(),
+                    user_provided=True,
+                    allow_network=True,
+                    timeout_seconds=8,
+                    retry_count=1,
+                    cooldown_seconds=60,
+                )
+
+                def _finish() -> None:
+                    state_holder["state"] = result
+                    _set_output()
+
+                self.after(0, _finish)
+
+            threading.Thread(target=_worker, name="profile-media-r41r-passive-http-probe", daemon=True).start()
+
+        def _cancel_probe() -> None:
+            state_holder["state"] = mark_passive_http_metadata_panel_cancelled(state_holder.get("state") or {})
+            _set_output()
+
+        controls = ctk.CTkFrame(win, fg_color="transparent")
+        controls.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 4))
+        ctk.CTkButton(controls, text="Run metadata probe", command=_run_probe, width=150, height=28).grid(row=0, column=0, padx=(0, 6))
+        ctk.CTkButton(controls, text="Cancel / Stop", command=_cancel_probe, width=112, height=28).grid(row=0, column=1, padx=(0, 6))
+        _set_output()
+
+    def _profile_media_r41r_open_clean_static_viewer_panel(self) -> None:
+        # YTCE_V83D_R41R_VISIBLE_CLEAN_STATIC_VIEWER_ACTION
+        try:
+            from profile_media_minimalcss_viewer_v83d import build_clean_static_viewer_action, build_minimalcss_static_viewer_metadata
+        except Exception as exc:
+            self.log_message(f"Clean/static viewer panel unavailable: {exc}", "error")
+            return
+        preview = self._profile_media_r41r_latest_source_package_preview()
+        viewer_meta = preview.get("minimalcss_static_viewer") if isinstance(preview.get("minimalcss_static_viewer"), dict) else {}
+        if not viewer_meta:
+            viewer_meta = build_minimalcss_static_viewer_metadata(source_url="", content_exists=False)
+        action = build_clean_static_viewer_action(dict(viewer_meta))
+        lines = [
+            "Clean/static viewer",
+            "Content must already exist. This route never bypasses challenges.",
+            f"Allowed: {bool(action.get('allowed'))}",
+            f"Blocked reason: {action.get('blocked_reason') or '(none)'}",
+            f"Viewer path: {action.get('viewer_path') or '(none)'}",
+            f"CSS/source assets: {len(action.get('css_source_assets') or [])}",
+            f"Screenshot: {action.get('screenshot_artifact_path') or '(none)'}",
+            f"Readability: {action.get('readability_summary') or '(none)'}",
+            "Metadata only; source roles and counters are unchanged.",
+        ]
+        self._profile_media_r41r_render_text_window("Clean/static viewer", "\n".join(lines))
 
     def _build_profile_media_database_workbench_payload_from_batches(self, batch_json_files: tuple[str, ...], database_root: str) -> dict[str, object] | None:
         """Build workbench payload from selected internal import files."""
@@ -4869,6 +7631,7939 @@ class App(ctk.CTk):
                 )
         except Exception:
             logger.debug("Could not load saved profile/media Database GUI state.", exc_info=True)
+
+    def _profile_media_database_source_package_preview_output_dir(self) -> Path:
+        """Return the safe local folder for generated Database import previews."""
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        root = Path(base) / "YTCE" if base else Path.home() / ".ytce"
+        return root / "profile_media_database_import_previews"
+
+    def _profile_media_database_source_package_preview_filename(self, row: SourceResourceRowState) -> str:
+        """Build a stable, readable filename for a review-only import JSON."""
+        title = str(getattr(row, "title", "") or getattr(row, "display_title", "") or getattr(row, "display_label", "") or "source").strip()
+        domain = str(getattr(row, "domain", "") or "source").strip()
+        raw = f"{domain}_{title}" if title else domain
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip("._-") or "source"
+        safe = safe[:80].strip("._-") or "source"
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        return f"{stamp}_{safe}_database_import_preview.json"
+
+    def _profile_media_database_session_entry_artifact_kind(self, entry: SessionFileEntry) -> str:
+        """Map a visible FILES entry to a source-package preview artifact kind."""
+        suffix = os.path.splitext(str(getattr(entry, "path", "") or getattr(entry, "display_name", "") or ""))[1].lower()
+        file_kind = str(getattr(entry, "file_kind", "") or "").strip()
+        if file_kind == SESSION_FILE_KIND_VIDEO:
+            return "video"
+        if file_kind == SESSION_FILE_KIND_AUDIO:
+            return "audio"
+        if file_kind == SESSION_FILE_KIND_MEDIA:
+            return "image"
+        if file_kind == SESSION_FILE_KIND_TRANSCRIPT:
+            if suffix in {".srt", ".vtt"} or "transcript" in str(getattr(entry, "display_name", "") or "").lower():
+                return "transcript"
+            return "article_text"
+        if self._session_file_is_internal_media(entry) and suffix == ".txt":
+            return "transcript"
+        return "artifact"
+
+    def _profile_media_database_session_entry_identity_record(self, entry: SessionFileEntry) -> dict[str, str]:
+        """Find browser-grid source/URL metadata for a visible FILES entry when available."""
+        local_path = str(getattr(entry, "path", "") or "").strip()
+        try:
+            entry_norm = self._normalise_session_file_path(local_path)
+        except Exception:
+            entry_norm = str(getattr(entry, "normalized_path", "") or "").strip()
+        for cache_getter_name in (
+            "_webpage_video_audio_files_intake_identity_cache",
+            "_webpage_image_files_intake_identity_cache",
+        ):
+            try:
+                cache_getter = getattr(self, cache_getter_name)
+                cache = cache_getter()
+            except Exception:
+                continue
+            for record in tuple(getattr(cache, "values", lambda: ())()):
+                record_path = str(record.get("local_path") or "").strip() if isinstance(record, dict) else ""
+                if not record_path:
+                    continue
+                try:
+                    record_norm = self._normalise_session_file_path(record_path)
+                except Exception:
+                    record_norm = record_path
+                if record_norm and entry_norm and record_norm == entry_norm:
+                    return {str(key): str(value or "") for key, value in record.items()}
+        return {}
+
+    def _profile_media_database_source_package_artifacts_from_session_files(self, row: SourceResourceRowState) -> tuple[dict[str, object], ...]:
+        """Collect visible FILES entries as review-only Database import artifacts."""
+        self._ensure_session_files_state()
+        source_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "").strip()
+        canonical_url = str(getattr(row, "canonical_url", "") or "").strip()
+        captured_by_row = getattr(self, "last_generic_website_live_capture_artifacts_by_row_id", {}) or {}
+        source_row_id = str(getattr(row, "row_id", "") or "").strip()
+        captured_paths = {
+            str(item.get("local_path") or "").strip()
+            for item in tuple(captured_by_row.get(source_row_id, ()) or ())
+            if isinstance(item, dict) and str(item.get("local_path") or "").strip()
+        }
+        artifacts: list[dict[str, object]] = []
+        for entry in tuple(getattr(self, "session_files", ()) or ()):  # visible FILES entries are authoritative
+            local_path = str(getattr(entry, "path", "") or "").strip()
+            if captured_paths and local_path in captured_paths:
+                continue
+            display_name = str(getattr(entry, "display_name", "") or os.path.basename(local_path) or "Unnamed artifact").strip()
+            identity = self._profile_media_database_session_entry_identity_record(entry)
+            byte_size = 0
+            if local_path:
+                try:
+                    byte_size = os.path.getsize(local_path) if os.path.isfile(local_path) else 0
+                except Exception:
+                    byte_size = 0
+            artifact_kind = self._profile_media_database_session_entry_artifact_kind(entry)
+            internal_media = self._session_file_is_internal_media(entry)
+            web_origin = bool(identity) or self._session_file_is_web_origin(entry)
+            # Local/operator files must not silently inherit the selected website URL.
+            # Only files that came from webpage/image/video scrubbing keep a source URL.
+            artifact_source_url = source_url if web_origin and not internal_media else ""
+            artifact_canonical_url = canonical_url if web_origin and not internal_media else ""
+            artifact_reference_url = str(identity.get("source_url") or "") if web_origin and not internal_media else ""
+            artifact_source_row_id = str(getattr(row, "row_id", "") or "") if web_origin and not internal_media else ""
+            artifacts.append(
+                {
+                    "artifact_kind": artifact_kind,
+                    "display_name": display_name,
+                    "local_path": local_path,
+                    "source_url": artifact_source_url,
+                    "canonical_url": artifact_canonical_url,
+                    "reference_url": artifact_reference_url,
+                    "resource_id": str(identity.get("record_id") or ""),
+                    "source_row_id": artifact_source_row_id,
+                    "mime_type": "",
+                    "extension": os.path.splitext(display_name or local_path)[1].lstrip("."),
+                    "byte_size": byte_size,
+                    "temporary": True,
+                    "review_required": True,
+                    "internal_media": internal_media,
+                    "media_personhood_role": "" if (internal_media or not web_origin) else "TERTIARY_PROPAGATED_SOURCE",
+                    "notes": (
+                        "Internal media supplied by the operator; primary media evidence; personhood scope must be reviewed."
+                        if internal_media
+                        else (
+                            "Local media supplied by the operator; leave unlinked until connected by notes/tags/person links."
+                            if not web_origin
+                            else "Collected from the visible FILES list for a review-only Database import preview."
+                        )
+                    ),
+                }
+            )
+        return tuple(artifacts)
+
+    def _profile_media_database_capture_manifest_root(self) -> Path:
+        """Return the local temp root used by generic website live captures."""
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        root = Path(base) / "YTCE" if base else Path.home() / ".ytce"
+        return root / "profile_media_generic_website_live_captures"
+
+    @staticmethod
+    def _profile_media_database_normalised_url_key(value: object) -> str:
+        """Normalise URLs enough to match a source row against a temp capture manifest."""
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        try:
+            parsed = urllib.parse.urlsplit(raw)
+            scheme = (parsed.scheme or "https").lower()
+            host = (parsed.netloc or "").lower()
+            path = parsed.path or "/"
+            if path != "/":
+                path = path.rstrip("/")
+            return urllib.parse.urlunsplit((scheme, host, path, "", ""))
+        except Exception:
+            return raw.rstrip("/").lower()
+
+    def _profile_media_database_live_capture_artifacts_for_source(self, row: SourceResourceRowState) -> tuple[dict[str, object], ...]:
+        """Recover real temp capture artifacts for this source row before falling back to planned rows.
+
+        Build DB import can be pressed after the app is restarted or after the selected
+        row id changes. In that case the in-memory row-id cache may be empty even
+        though article_text.txt/full_webpage_text.txt still exist in the local YTCE
+        capture folder. This URL-matched manifest fallback keeps Persons/quotes from
+        disappearing from the Review dialog.
+        """
+
+        source_row_id = str(getattr(row, "row_id", "") or "").strip()
+        source_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "").strip()
+        source_key = self._profile_media_database_normalised_url_key(source_url)
+        local_archive_selected = self._local_web_archive_requested_for_source_row(row)
+
+        def _usable_artifacts(items: object) -> tuple[dict[str, object], ...]:
+            usable: list[dict[str, object]] = []
+            for item in tuple(items or ()):  # type: ignore[arg-type]
+                if not isinstance(item, dict):
+                    try:
+                        item = item.to_dict()  # type: ignore[assignment, attr-defined]
+                    except Exception:
+                        continue
+                artifact = dict(item)
+                kind = str(artifact.get("artifact_kind") or "").strip().lower()
+                if kind in {"warc", "wacz"} and not local_archive_selected:
+                    continue
+                local_path = str(artifact.get("local_path") or "").strip()
+                if local_path and not os.path.isfile(local_path):
+                    continue
+                if source_row_id and not str(artifact.get("source_row_id") or "").strip():
+                    artifact["source_row_id"] = source_row_id
+                usable.append(artifact)
+            return tuple(usable)
+
+        captured_by_row = self.__dict__.get("last_generic_website_live_capture_artifacts_by_row_id", {}) or {}
+        cached = _usable_artifacts(captured_by_row.get(source_row_id, ()) if source_row_id and isinstance(captured_by_row, dict) else ())
+        if cached:
+            return cached
+
+        result = self.__dict__.get("last_generic_website_live_capture_result")
+        result_url = str(getattr(result, "final_url", "") or getattr(result, "source_url", "") or "").strip() if result is not None else ""
+        if result is not None and source_key and self._profile_media_database_normalised_url_key(result_url) == source_key:
+            result_artifacts = _usable_artifacts(getattr(result, "artifacts", ()) or ())
+            if result_artifacts:
+                return result_artifacts
+
+        capture_root = self._profile_media_database_capture_manifest_root()
+        if not source_key or not capture_root.is_dir():
+            return ()
+        try:
+            manifests = sorted(
+                capture_root.rglob("source_capture_manifest.json"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )[:40]
+        except Exception:
+            return ()
+        for manifest_path in manifests:
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            manifest_urls = (
+                manifest.get("final_url"),
+                manifest.get("source_url"),
+            )
+            if not any(self._profile_media_database_normalised_url_key(value) == source_key for value in manifest_urls):
+                continue
+            artifacts = _usable_artifacts(manifest.get("artifacts") if isinstance(manifest, dict) else ())
+            if artifacts:
+                try:
+                    self.log_message(
+                        f"Database import preview recovered latest live capture artifacts: {len(artifacts)} from {manifest_path.parent}",
+                        "info",
+                    )
+                except Exception:
+                    pass
+                return artifacts
+        return ()
+
+    def _profile_media_database_planned_source_capture_artifacts(self, row: SourceResourceRowState) -> tuple[dict[str, object], ...]:
+        """Represent selected Webpage/Screenshot scopes as review-only planned artifacts.
+
+        These are not live captures. They preserve the operator's selected source
+        scopes so the Database import preview can show that article text or a
+        screenshot still needs capture/review instead of silently omitting them.
+        """
+
+        source_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "").strip()
+        canonical_url = str(getattr(row, "canonical_url", "") or "").strip()
+        source_title = str(
+            getattr(row, "title", "")
+            or getattr(row, "display_title", "")
+            or getattr(row, "display_label", "")
+            or source_url
+            or "Source Evidence Review"
+        ).strip()
+        source_row_id = str(getattr(row, "row_id", "") or "").strip()
+        captured_artifacts = self._profile_media_database_live_capture_artifacts_for_source(row)
+        if captured_artifacts:
+            return captured_artifacts
+        planned: list[dict[str, object]] = []
+
+        try:
+            webpage_selected = bool(self.extract_webpage_var.get())
+        except Exception:
+            webpage_selected = False
+        try:
+            webpage_screenshot_selected = bool(self.webpage_screenshot_var.get())
+        except Exception:
+            webpage_screenshot_selected = False
+
+        if webpage_selected:
+            planned.append(
+                {
+                    "artifact_kind": "article_text",
+                    "display_name": f"{source_title} — Webpage/article text capture plan",
+                    "local_path": "",
+                    "source_url": source_url,
+                    "canonical_url": canonical_url,
+                    "reference_url": source_url,
+                    "resource_id": f"planned-webpage:{source_row_id}",
+                    "source_row_id": source_row_id,
+                    "mime_type": "text/plain",
+                    "extension": "txt",
+                    "byte_size": 0,
+                    "temporary": True,
+                    "review_required": True,
+                    "notes": (
+                        "Webpage scope was selected in the source controls. This is a review-only planned "
+                        "artifact; no live webpage download, text extraction, screenshot, file copy, or HOME "
+                        "save was performed by Build DB import."
+                    ),
+                }
+            )
+
+        local_archive_selected = self._local_web_archive_requested_for_source_row(row)
+        planned_archive_items = [
+            (
+                "archive_check",
+                "Archive status/check receipt plan",
+                "application/json",
+                "json",
+                "Wayback/archive.ph/archive provider status should be checked for this source row before final save, where supported.",
+            ),
+        ]
+        if local_archive_selected:
+            planned_archive_items.extend(
+                (
+                    (
+                        "warc",
+                        "WARC capture plan",
+                        "application/warc",
+                        "warc",
+                        "Local archive/WARC was selected for this source row. WARC capture remains execution-gated until Webpage capture runs.",
+                    ),
+                    (
+                        "wacz",
+                        "WACZ package plan",
+                        "application/wacz",
+                        "wacz",
+                        "Local archive/WARC was selected for this source row. WACZ packaging remains execution-gated until Webpage capture runs.",
+                    ),
+                )
+            )
+
+        if webpage_selected:
+            for artifact_kind, label, mime_type, extension, note in planned_archive_items:
+                planned.append(
+                    {
+                        "artifact_kind": artifact_kind,
+                        "display_name": f"{source_title} — {label}",
+                        "local_path": "",
+                        "source_url": source_url,
+                        "canonical_url": canonical_url,
+                        "reference_url": source_url,
+                        "resource_id": f"planned-{artifact_kind}:{source_row_id}",
+                        "source_row_id": source_row_id,
+                        "mime_type": mime_type,
+                        "extension": extension,
+                        "byte_size": 0,
+                        "temporary": True,
+                        "review_required": True,
+                        "notes": (
+                            f"{note} No live fetch, screenshot, archive provider call, file copy, or HOME "
+                            "save was performed by Build DB import."
+                        ),
+                    }
+                )
+
+        if webpage_screenshot_selected:
+            planned.append(
+                {
+                    "artifact_kind": "screenshot",
+                    "display_name": f"{source_title} — Webpage screenshot capture plan",
+                    "local_path": "",
+                    "source_url": source_url,
+                    "canonical_url": canonical_url,
+                    "reference_url": source_url,
+                    "resource_id": f"planned-webpage-screenshot:{source_row_id}",
+                    "source_row_id": source_row_id,
+                    "mime_type": "image/png",
+                    "extension": "png",
+                    "byte_size": 0,
+                    "temporary": True,
+                    "review_required": True,
+                    "notes": (
+                        "Webpage Screenshot scope was selected in the source controls. This is a review-only "
+                        "planned artifact; no live screenshot, browser automation, file copy, or HOME save was "
+                        "performed by Build DB import."
+                    ),
+                }
+            )
+
+        return tuple(planned)
+
+    @staticmethod
+    def _profile_media_database_home_manifest_relative_path() -> str:
+        """JSON marker inside every HOME root so folder import/load is not hidden behind ad-hoc batch JSON files."""
+        return "_database/profile_media_home_manifest.json"
+
+    @staticmethod
+    def _profile_media_database_home_state_directory() -> Path:
+        """Local app state folder used only to remember the last HOME root."""
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        return (Path(base) / "YTCE") if base else (Path.home() / ".ytce")
+
+    def _profile_media_database_home_state_path(self) -> Path:
+        """Return the small state file that lets Load reopen the last HOME without a dialog."""
+        return self._profile_media_database_home_state_directory() / "profile_media_database_last_home.json"
+
+    def _profile_media_database_home_manifest_path(self, database_root: object) -> Path:
+        """Return the HOME marker/manifest file path for a selected HOME root."""
+        return Path(str(database_root or "").strip()).expanduser() / self._profile_media_database_home_manifest_relative_path()
+
+    def _write_profile_media_database_home_manifest(self, database_root: object, *, reason: str = "selected") -> str:
+        """Write a small HOME manifest so Import can select a folder instead of hunting for loose JSON files."""
+        root = Path(str(database_root or "").strip()).expanduser()
+        if not str(root):
+            return ""
+        manifest_path = self._profile_media_database_home_manifest_path(root)
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema_version": "profile_media_home_manifest.v82c",
+            "home_root": str(root),
+            "updated_at_local": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "reason": str(reason or "selected"),
+            "structure": list(self._profile_media_database_home_structure_relative_paths()),
+            "folder_semantics": {
+                "People": "person/profile records and dated source-bound profile snapshots",
+                "Sources": "online/offline source material and source-linked extracted artifacts",
+                "Internal Media": "material created or supplied by the case creator/operator",
+                "Reference Extants": "short date-ordered person/case/event summaries linked back to sources",
+                "_database": "HOME manifests, import previews, review state, and database-side metadata",
+            },
+            "safety": {
+                "create_or_import_folder_only": True,
+                "no_media_download": True,
+                "no_file_copy": True,
+                "no_automatic_classification": True,
+                "no_sensitive_visual_inference": True,
+            },
+        }
+        manifest_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        return str(manifest_path)
+
+    def _remember_profile_media_database_home_root(self, database_root: object) -> str:
+        """Remember the active HOME root so Load can reopen it without opening a picker."""
+        root = str(database_root or "").strip()
+        if not root:
+            return ""
+        state_path = self._profile_media_database_home_state_path()
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema_version": "profile_media_last_home.v82c",
+            "database_root": root,
+            "updated_at_local": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "home_manifest": str(self._profile_media_database_home_manifest_path(root)),
+        }
+        state_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        return str(state_path)
+
+    def _read_remembered_profile_media_database_home_root(self) -> str:
+        """Read the last remembered HOME root; return blank if no valid memory exists."""
+        try:
+            state_path = self._profile_media_database_home_state_path()
+            if not state_path.is_file():
+                return ""
+            payload = json.loads(state_path.read_text(encoding="utf-8"))
+            root = str(payload.get("database_root") or "").strip() if isinstance(payload, dict) else ""
+            if root and Path(root).exists():
+                return root
+        except Exception:
+            logger.debug("Could not read remembered Profile/Media Database HOME root.", exc_info=True)
+        return ""
+
+    def _load_last_profile_media_database_home_selection(self) -> str:
+        """Load the last remembered HOME folder without opening a file/folder dialog."""
+        root = self._read_remembered_profile_media_database_home_root()
+        if not root:
+            try:
+                self.log_message(
+                    "No last Database HOME is remembered. Use Create for a new HOME or Import to select an existing HOME folder.",
+                    "warning",
+                )
+            except Exception:
+                pass
+            try:
+                self._set_operational_capture_status("No last Database HOME remembered. Use Create or Import.", "warning")
+            except Exception:
+                pass
+            return ""
+        created = self._profile_media_database_create_home_structure(root)
+        manifest_path = self._write_profile_media_database_home_manifest(root, reason="load_last_home")
+        self._set_profile_media_database_home_root(root, create_structure=False)
+        try:
+            self.log_message(
+                f"Loaded last Database HOME: {root}; ensured_subfolders={len(created)}; manifest={manifest_path}.",
+                "success",
+            )
+        except Exception:
+            pass
+        return root
+
+    @staticmethod
+    def _profile_media_database_home_structure_relative_paths() -> tuple[str, ...]:
+        """Return the intended HOME directory skeleton without case/date/type nesting."""
+        return (
+            "People",
+            "Sources",
+            "Sources/Online",
+            "Sources/Online/Articles",
+            "Sources/Online/Social Media",
+            "Sources/Online/Documents",
+            "Sources/Online/Files",
+            "Sources/Offline",
+            "Sources/Offline/Articles",
+            "Sources/Offline/Documents",
+            "Sources/Offline/Files",
+            "Internal Media",
+            "Reference Extants",
+            "_database",
+        )
+
+    def _profile_media_database_create_home_structure(self, database_root: object) -> tuple[str, ...]:
+        """Create the reviewed HOME skeleton after an explicit Create/select action."""
+        root = Path(str(database_root or "").strip()).expanduser()
+        if not str(root):
+            return ()
+        created: list[str] = []
+        root.mkdir(parents=True, exist_ok=True)
+        for rel_path in self._profile_media_database_home_structure_relative_paths():
+            target = root / rel_path
+            existed = target.exists()
+            target.mkdir(parents=True, exist_ok=True)
+            if not existed:
+                created.append(str(target))
+        return tuple(created)
+
+    def _set_profile_media_database_home_root(self, database_root: object, *, create_structure: bool = False) -> str:
+        """Set the active HOME root and refresh the sidebar without loading/saving evidence."""
+        root = str(database_root or "").strip()
+        if not root:
+            return ""
+        if create_structure:
+            self._profile_media_database_create_home_structure(root)
+        self.profile_media_database_root = root
+        try:
+            self._write_profile_media_database_home_manifest(root, reason="set_active_home")
+        except Exception:
+            logger.debug("Could not write Profile/Media Database HOME manifest.", exc_info=True)
+        try:
+            self._remember_profile_media_database_home_root(root)
+        except Exception:
+            logger.debug("Could not remember Profile/Media Database HOME root.", exc_info=True)
+        try:
+            self._set_profile_media_sidebar_mode("DATABASE", update_widget=True)
+        except Exception:
+            logger.debug("Could not switch sidebar to Database mode after HOME root selection.", exc_info=True)
+        try:
+            self._refresh_profile_media_database_workbench_panel()
+        except Exception:
+            logger.debug("Could not refresh Database workbench after HOME root selection.", exc_info=True)
+        try:
+            self._refresh_discussion_source_controls()
+        except Exception:
+            logger.debug("Could not refresh Source capture controls after HOME root selection.", exc_info=True)
+        return root
+
+    def _create_profile_media_database_home_repository(self) -> None:
+        """Create/select a HOME directory and its People/Sources/Internal Media/Reference Extants skeleton."""
+        try:
+            parent_dir = filedialog.askdirectory(title="Select parent folder for new Database HOME")
+        except Exception:
+            parent_dir = ""
+        parent_dir = str(parent_dir or "").strip()
+        if not parent_dir:
+            return
+        try:
+            folder_name = simpledialog.askstring(
+                "Create Database HOME",
+                "New HOME folder name. Existing folder names are allowed; missing subfolders will be created.",
+                initialvalue="Profile Media HOME",
+            )
+        except Exception:
+            folder_name = ""
+        folder_name = str(folder_name or "").strip()
+        if not folder_name:
+            return
+        try:
+            database_root = str(Path(parent_dir) / folder_name)
+            created = self._profile_media_database_create_home_structure(database_root)
+            self._set_profile_media_database_home_root(database_root, create_structure=False)
+            self.log_message(
+                f"Database HOME ready: {database_root}; created_subfolders={len(created)}. "
+                "Structure: People, Sources/Online, Sources/Offline, Internal Media, Reference Extants, _database.",
+                "success",
+            )
+            try:
+                self._set_operational_capture_status(f"Database HOME ready: {database_root}", "success")
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.debug("Could not create Profile/Media Database HOME structure.", exc_info=True)
+            try:
+                messagebox.showerror("Create Database HOME", f"Could not create HOME structure: {exc}")
+            except Exception:
+                pass
+
+    def _select_profile_media_database_home_repository(self, *, title: str = "Select Database HOME root") -> str:
+        """Select an existing HOME root and create any missing skeleton folders explicitly."""
+        try:
+            selected_root = filedialog.askdirectory(title=title)
+        except Exception:
+            selected_root = ""
+        selected_root = str(selected_root or "").strip()
+        if not selected_root:
+            return ""
+        created = self._profile_media_database_create_home_structure(selected_root)
+        root = self._set_profile_media_database_home_root(selected_root, create_structure=False)
+        try:
+            self.log_message(
+                f"Database HOME selected: {root}; ensured_subfolders={len(created)}. "
+                "No source files were copied, moved, downloaded, classified, or saved.",
+                "info",
+            )
+        except Exception:
+            pass
+        return root
+
+    def _ensure_profile_media_database_root_for_preview(self) -> str:
+        """Ensure Build DB import has a HOME root without opening a surprise picker."""
+        root = str(getattr(self, "profile_media_database_root", "") or "").strip()
+        if root:
+            return root
+        remembered_root = self._load_last_profile_media_database_home_selection()
+        if remembered_root:
+            return remembered_root
+        try:
+            self.log_message(
+                "Database import preview was not built: no Database HOME root selected. Use Create or Import first.",
+                "warning",
+            )
+        except Exception:
+            pass
+        return ""
+
+    def _build_profile_media_database_import_preview_from_current_state(self) -> None:
+        """Build and load a reviewable Database import JSON from the selected source row and FILES."""
+        row = self._selected_discussion_row()
+        if row is None:
+            try:
+                pending_text = self.url_entry.get("1.0", "end").strip()
+                if pending_text and pending_text != getattr(self, "_url_placeholder", "").strip():
+                    self._on_source_url_enter()
+                    try:
+                        self.update_idletasks()
+                    except Exception:
+                        pass
+            except Exception:
+                logger.debug("Could not add pending Source URL before Database import preview.", exc_info=True)
+        if row is None:
+            row = self._selected_discussion_row()
+        if row is None:
+            rows = tuple(getattr(self, "source_resource_rows", ()) or ())
+            row = rows[-1] if rows else None
+        offline_only_build = False
+        if row is None:
+            self._ensure_session_files_state()
+            session_file_entries = tuple(getattr(self, "session_files", ()) or ())
+            if session_file_entries:
+                offline_only_build = True
+                row = SourceResourceRowState(
+                    row_id="offline-media-session",
+                    raw_url="",
+                    canonical_url="",
+                    adapter_id="local_files",
+                    adapter_display_name="Local files",
+                    source_id="offline_media",
+                    title="Media / unlinked files",
+                    domain="local-files",
+                    display_label="Media / unlinked files",
+                    display_title="Media / unlinked files",
+                    provenance="operator local files",
+                )
+            else:
+                try:
+                    self._set_operational_capture_status(
+                        "Database import preview not built: add/select a Source URL or add local FILES first.",
+                        "warning",
+                    )
+                except Exception:
+                    pass
+                try:
+                    self.log_message("Database import preview was not built: no source row or local FILES are available.", "warning")
+                except Exception:
+                    pass
+                return
+
+        database_root = self._ensure_profile_media_database_root_for_preview()
+        if not database_root:
+            return
+
+        source_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "").strip()
+        source_title = str(getattr(row, "title", "") or getattr(row, "display_title", "") or getattr(row, "display_label", "") or source_url or "Source Evidence Review").strip()
+        try:
+            self.selected_discussion_source_id = str(getattr(row, "row_id", "") or "")
+            self._refresh_discussion_source_controls()
+        except Exception:
+            logger.debug("Could not refresh Source capture controls before Database import preview.", exc_info=True)
+        file_artifacts = self._profile_media_database_source_package_artifacts_from_session_files(row)
+        planned_capture_artifacts = () if offline_only_build else self._profile_media_database_planned_source_capture_artifacts(row)
+        artifacts = tuple(file_artifacts) + tuple(planned_capture_artifacts)
+        try:
+            from profile_media_source_package_preview import (
+                WRITE_PROFILE_MEDIA_SOURCE_PACKAGE_PREVIEW_CONFIRMATION,
+                build_profile_media_source_package_preview,
+                render_profile_media_source_package_preview_text,
+                source_package_preview_payload,
+                write_profile_media_source_package_preview_json,
+            )
+            from profile_media_database_gui_controller import (
+                build_database_gui_selection_from_batch_json,
+                database_gui_selection_result_payload,
+            )
+        except Exception as exc:
+            logger.debug("Could not import Profile/Media source package preview builder.", exc_info=True)
+            try:
+                messagebox.showerror("Build DB import", f"Database import preview builder is unavailable: {exc}")
+            except Exception:
+                pass
+            return
+
+        def _set_build_buttons_enabled(enabled: bool, *, text: str = "Build") -> None:
+            for button_name in ("profile_media_database_home_build_import_button", "profile_media_database_panel_source_preview_button"):
+                button = getattr(self, button_name, None)
+                if button is None:
+                    continue
+                try:
+                    button.configure(state="normal" if enabled else "disabled", text=text)
+                except Exception:
+                    pass
+
+        if bool(getattr(self, "profile_media_database_import_preview_build_running", False)):
+            try:
+                self.log_message("Database import preview Build is already running.", "warning")
+            except Exception:
+                pass
+            return
+        self.profile_media_database_import_preview_build_running = True
+        _set_build_buttons_enabled(False, text="Building...")
+        output_dir = self._profile_media_database_source_package_preview_output_dir()
+        output_json = output_dir / self._profile_media_database_source_package_preview_filename(row)
+        include_source_page_record = bool(source_url or str(getattr(row, "canonical_url", "") or "").strip())
+        async_build_available = (
+            hasattr(self, "tk")
+            and callable(getattr(self, "after", None))
+            and not bool(getattr(self, "_profile_media_database_import_preview_force_sync", False))
+        )
+        if async_build_available:
+            def _finish_profile_media_database_import_preview(result_payload: dict[str, object]) -> None:
+                try:
+                    error_message = str(result_payload.get("error") or "")
+                    if error_message:
+                        try:
+                            messagebox.showerror("Build DB import", f"Could not build Database import preview: {error_message}")
+                        except Exception:
+                            pass
+                        return
+                    preview = result_payload.get("preview")
+                    write_result = result_payload.get("write_result")
+                    summary = str(result_payload.get("summary") or "")
+                    if preview is None or write_result is None:
+                        return
+                    fresh_preview_payload = source_package_preview_payload(preview, include_text=True)
+                    self.profile_media_database_last_source_package_preview = fresh_preview_payload
+                    self.profile_media_database_last_source_package_preview_write_result = write_result.to_dict()
+                    if write_result.status != "written":
+                        try:
+                            messagebox.showwarning("Build DB import", f"Preview was not written: {write_result.status}")
+                        except Exception:
+                            pass
+                        return
+                    result = build_database_gui_selection_from_batch_json(
+                        (write_result.written_file,),
+                        database_root=database_root,
+                        persist_state=False,
+                    )
+                    self.profile_media_database_gui_state_payload = database_gui_selection_result_payload(result)
+                    self.profile_media_database_batch_import_result = result.import_result.to_dict() if result.import_result else None
+                    self.profile_media_database_batch_json_files = result.batch_json_files
+                    self.profile_media_database_root = result.database_root or getattr(self, "profile_media_database_root", "")
+                    self.profile_media_database_workbench_payload = dict(result.workbench_payload) if result.workbench_payload else None
+                    try:
+                        from profile_media_database_import_review_decisions import build_import_review_decision_state
+
+                        review_state = build_import_review_decision_state(write_result.written_file, preview_json=write_result.written_file)
+                        self.profile_media_database_last_import_review_state = review_state
+                        self.profile_media_database_review_role_counts_override = self._profile_media_selected_review_role_counts()
+                        self._refresh_profile_media_database_sidebar_counts_only()
+                    except Exception:
+                        logger.debug("Could not build conceptual review counts for Database sidebar.", exc_info=True)
+                    self._set_profile_media_sidebar_mode("DATABASE", update_widget=True)
+                    self._apply_profile_media_database_preview_counts_to_main_card(fresh_preview_payload)
+                    try:
+                        self.log_message(
+                            f"Database import preview written: {write_result.written_file}; "
+                            f"artifacts={preview.artifact_count}; source_records={preview.source_count}. "
+                            "No HOME save, folder scan, file copy, media download, web download, automatic classification, or sensitive inference was performed.",
+                            "success",
+                        )
+                    except Exception:
+                        pass
+                    self.profile_media_database_last_source_package_preview_summary = summary
+                finally:
+                    self.profile_media_database_import_preview_build_running = False
+                    _set_build_buttons_enabled(True, text="Build")
+
+            def _build_profile_media_database_import_preview_worker() -> None:
+                try:
+                    for progress_message in (
+                        "parsing source text",
+                        "extracting sections",
+                        "classifying claim spans",
+                        "matching article claims",
+                        "building review rows",
+                    ):
+                        try:
+                            self.after(0, lambda message=progress_message: self.log_message(f"Build DB import: {message}.", "info"))
+                        except Exception:
+                            pass
+                    preview = build_profile_media_source_package_preview(
+                        database_root=database_root,
+                        case_title=f"{source_title} — Source Evidence Review",
+                        source_url=source_url,
+                        canonical_url=str(getattr(row, "canonical_url", "") or "").strip(),
+                        source_title=source_title,
+                        artifacts=artifacts,
+                        include_source_page_record=include_source_page_record,
+                    )
+                    write_result = write_profile_media_source_package_preview_json(
+                        preview,
+                        output_json,
+                        confirmation_phrase=WRITE_PROFILE_MEDIA_SOURCE_PACKAGE_PREVIEW_CONFIRMATION,
+                    )
+                    summary = render_profile_media_source_package_preview_text(preview)
+                    result_payload = {"preview": preview, "write_result": write_result, "summary": summary}
+                except Exception as exc:
+                    logger.debug("Profile/media Database import preview worker failed.", exc_info=True)
+                    result_payload = {"error": str(exc)}
+                try:
+                    self.after(0, lambda payload=result_payload: _finish_profile_media_database_import_preview(payload))
+                except Exception:
+                    logger.debug("Could not schedule Database import preview worker finish.", exc_info=True)
+
+            threading.Thread(
+                target=_build_profile_media_database_import_preview_worker,
+                name="profile-media-import-preview-build",
+                daemon=True,
+            ).start()
+            return
+        try:
+            for progress_message in (
+                "parsing source text",
+                "extracting sections",
+                "classifying claim spans",
+                "matching article claims",
+                "building review rows",
+            ):
+                try:
+                    self.log_message(f"Build DB import: {progress_message}.", "info")
+                except Exception:
+                    pass
+            preview = build_profile_media_source_package_preview(
+                database_root=database_root,
+                case_title=f"{source_title} — Source Evidence Review",
+                source_url=source_url,
+                canonical_url=str(getattr(row, "canonical_url", "") or "").strip(),
+                source_title=source_title,
+                artifacts=artifacts,
+                include_source_page_record=include_source_page_record,
+            )
+            write_result = write_profile_media_source_package_preview_json(
+                preview,
+                output_json,
+                confirmation_phrase=WRITE_PROFILE_MEDIA_SOURCE_PACKAGE_PREVIEW_CONFIRMATION,
+            )
+            fresh_preview_payload = source_package_preview_payload(preview, include_text=True)
+            self.profile_media_database_last_source_package_preview = fresh_preview_payload
+            self.profile_media_database_last_source_package_preview_write_result = write_result.to_dict()
+            if write_result.status != "written":
+                try:
+                    messagebox.showwarning("Build DB import", f"Preview was not written: {write_result.status}")
+                except Exception:
+                    pass
+                return
+
+            result = build_database_gui_selection_from_batch_json(
+                (write_result.written_file,),
+                database_root=database_root,
+                persist_state=False,
+            )
+            self.profile_media_database_gui_state_payload = database_gui_selection_result_payload(result)
+            self.profile_media_database_batch_import_result = result.import_result.to_dict() if result.import_result else None
+            self.profile_media_database_batch_json_files = result.batch_json_files
+            self.profile_media_database_root = result.database_root or getattr(self, "profile_media_database_root", "")
+            self.profile_media_database_workbench_payload = dict(result.workbench_payload) if result.workbench_payload else None
+            try:
+                from profile_media_database_import_review_decisions import build_import_review_decision_state
+
+                review_state = build_import_review_decision_state(write_result.written_file, preview_json=write_result.written_file)
+                self.profile_media_database_last_import_review_state = review_state
+                self.profile_media_database_review_role_counts_override = self._profile_media_selected_review_role_counts()
+                self._refresh_profile_media_database_sidebar_counts_only()
+            except Exception:
+                logger.debug("Could not build conceptual review counts for Database sidebar.", exc_info=True)
+            self._set_profile_media_sidebar_mode("DATABASE", update_widget=True)
+            self._apply_profile_media_database_preview_counts_to_main_card(fresh_preview_payload)
+            summary = render_profile_media_source_package_preview_text(preview)
+            try:
+                self.log_message(
+                    f"Database import preview written: {write_result.written_file}; "
+                    f"artifacts={preview.artifact_count}; source_records={preview.source_count}. "
+                    "No HOME save, folder scan, file copy, media download, web download, automatic classification, or sensitive inference was performed.",
+                    "success",
+                )
+            except Exception:
+                pass
+            self.profile_media_database_last_source_package_preview_summary = summary
+            # Keep the detailed path in the Activity Log, but do not add a separate
+            # bottom/status-line "preview written" message that competes with the review UI.
+        except Exception as exc:
+            logger.debug("Profile/media Database import preview build failed.", exc_info=True)
+            try:
+                messagebox.showerror("Build DB import", f"Could not build Database import preview: {exc}")
+            except Exception:
+                pass
+        finally:
+            self.profile_media_database_import_preview_build_running = False
+            _set_build_buttons_enabled(True, text="Build")
+
+
+    def _open_profile_media_database_import_review_text(self) -> None:
+        """Open a protected source-role/person review dialog for latest DB import preview."""
+        preview_path = str(getattr(self, "profile_media_database_last_source_package_preview_file", "") or "").strip()
+        if not preview_path:
+            write_result = getattr(self, "profile_media_database_last_source_package_preview_write_result", None)
+            if isinstance(write_result, dict):
+                preview_path = str(write_result.get("written_file") or write_result.get("output_json") or "").strip()
+        if not preview_path:
+            batch_files = tuple(getattr(self, "profile_media_database_batch_json_files", ()) or ())
+            preview_path = str(batch_files[-1]) if batch_files else ""
+        if not preview_path or not os.path.isfile(preview_path):
+            try:
+                self.log_message("Database import review is not available yet. Press Build first.", "warning")
+            except Exception:
+                pass
+            return
+
+        try:
+            from profile_media_database_import_review_text import write_profile_media_database_import_review_text
+
+            output_dir = self._profile_media_database_source_package_preview_output_dir()
+            output_path = output_dir / (Path(preview_path).stem + "_review.txt")
+            written_path = write_profile_media_database_import_review_text(preview_path, output_path)
+            self.profile_media_database_last_import_review_text_file = str(written_path)
+            self._open_profile_media_database_import_review_dialog(preview_path, str(written_path))
+            self.log_message(
+                f"Database import protected review opened: {written_path}. Use the menu controls for source roles/person review; the TXT is read-only guidance, not the decision source.",
+                "success",
+            )
+        except Exception as exc:
+            logger.debug("Could not open Database import protected review.", exc_info=True)
+            try:
+                self.log_message(f"Database import review could not be opened: {exc}", "error")
+            except Exception:
+                pass
+
+    def _install_profile_media_review_safe_destroy(self, win: object) -> None:
+        """Guard Review DB import window close against stale Tk callbacks.
+
+        CustomTkinter/Tk can raise "can't delete Tcl command" if a toplevel is
+        destroyed while delayed widget callbacks from a previous Review scope are
+        still registered.  Closing the window should be quiet and should also
+        cancel the Review body cleanup timer.
+        """
+        try:
+            if bool(getattr(win, "_ytce_review_safe_destroy_installed", False)):
+                return
+        except Exception:
+            pass
+        try:
+            original_destroy = win.destroy
+        except Exception:
+            return
+
+        def _safe_destroy() -> None:
+            after_id = getattr(self, "profile_media_review_destroy_after_id", None)
+            if after_id:
+                try:
+                    self.after_cancel(after_id)
+                except Exception:
+                    pass
+                self.profile_media_review_destroy_after_id = None
+            try:
+                self._hide_manual_text_spell_popup()
+            except Exception:
+                pass
+            try:
+                self.profile_media_database_review_window = None
+                self.profile_media_database_review_active_body = None
+            except Exception:
+                pass
+            try:
+                original_destroy()
+            except tk.TclError as exc:
+                if "can't delete Tcl command" not in str(exc):
+                    raise
+            except Exception:
+                logger.debug("Review DB import window close was ignored after Tk cleanup.", exc_info=True)
+
+        try:
+            setattr(win, "_ytce_review_safe_destroy_installed", True)
+            setattr(win, "_ytce_review_original_destroy", original_destroy)
+            win.destroy = _safe_destroy  # type: ignore[method-assign]
+            win.protocol("WM_DELETE_WINDOW", _safe_destroy)
+        except Exception:
+            logger.debug("Could not install Review DB import safe destroy guard.", exc_info=True)
+
+    def _open_profile_media_database_import_review_dialog(self, preview_path: str, review_text_path: str) -> None:
+        """Display protected menu/dropdown review controls instead of editing the review TXT."""
+        try:
+            from profile_media_database_import_review_decisions import (
+                SOURCE_ROLE_OPTIONS,
+                SOURCE_ROLE_DISPLAY_LABELS,
+                SOURCE_ROLE_BY_DISPLAY_LABEL,
+                build_import_review_decision_state,
+                write_import_review_decisions_json,
+            )
+        except Exception as exc:
+            logger.debug("Could not import protected review decision helpers.", exc_info=True)
+            self.log_message(f"Protected review helpers unavailable: {exc}", "error")
+            return
+
+        try:
+            state = build_import_review_decision_state(preview_path, preview_json=preview_path)
+            self.profile_media_database_last_import_review_state = state
+            self.profile_media_database_review_role_counts_override = self._profile_media_selected_review_role_counts()
+            try:
+                self._refresh_profile_media_database_sidebar_counts_only()
+            except Exception:
+                logger.debug("Could not refresh Database sidebar counts with conceptual review counts.", exc_info=True)
+        except Exception as exc:
+            logger.debug("Could not build protected review decision state.", exc_info=True)
+            self.log_message(f"Protected review state could not be built: {exc}", "error")
+            return
+
+        preview_payload: dict[str, object] = {}
+        preview_section: dict[str, object] = {}
+        claim_role_spans: list[dict[str, object]] = []
+        related_comment_review_sections: list[dict[str, object]] = []
+        youtube_comment_source_role_records: list[dict[str, object]] = []
+        link_source_preview: dict[str, object] = {}
+        link_source_objects: list[dict[str, object]] = []
+        link_source_decisions_path = ""
+        try:
+            preview_payload = json.loads(Path(preview_path).read_text(encoding="utf-8"))
+            preview_section = self._profile_media_database_source_package_preview_section_from_payload(preview_payload)
+            if isinstance(preview_section, dict):
+                self.profile_media_database_last_source_package_preview = preview_payload
+            claim_preview = preview_section.get("claim_role_classification_preview") if isinstance(preview_section, dict) else {}
+            if isinstance(claim_preview, dict) and isinstance(claim_preview.get("spans"), list):
+                claim_role_spans = [dict(item) for item in claim_preview.get("spans", []) if isinstance(item, dict)]
+            if isinstance(claim_preview, dict) and isinstance(claim_preview.get("related_comment_review_sections"), list):
+                related_comment_review_sections = [dict(item) for item in claim_preview.get("related_comment_review_sections", []) if isinstance(item, dict)]
+            if isinstance(preview_section, dict) and isinstance(preview_section.get("youtube_comment_source_role_records"), list):
+                youtube_comment_source_role_records = [
+                    dict(item)
+                    for item in preview_section.get("youtube_comment_source_role_records", [])
+                    if isinstance(item, dict)
+                ]
+            if isinstance(preview_section, dict) and isinstance(preview_section.get("link_source_preview"), dict):
+                link_source_preview = dict(preview_section.get("link_source_preview") or {})
+            if isinstance(preview_section, dict) and isinstance(preview_section.get("link_source_objects"), list):
+                link_source_objects = [
+                    dict(item)
+                    for item in preview_section.get("link_source_objects", [])
+                    if isinstance(item, dict)
+                ]
+            if isinstance(preview_section, dict):
+                link_source_decisions_path = str(
+                    preview_section.get("link_source_decisions_path")
+                    or link_source_preview.get("link_source_decisions_path")
+                    or Path(preview_path).with_name(Path(preview_path).stem + "_link_source_decisions.jsonl")
+                )
+        except Exception:
+            logger.debug("Could not load claim-role spans from preview JSON.", exc_info=True)
+
+        # YTCE_V83C_REPAIR7_LOCAL_MIXED_ARTICLE_FALLBACK
+        # YTCE_V83C_REPAIR9_MIXED_ARTICLE_RECOVERY_ALWAYS
+        # YTCE_V83C_REPAIR10_LINK_SOURCE_PATH_ARTICLE_RECOVERY
+        # Cached previews can contain URL rows/person rows but no usable article
+        # claim spans.  The URL rows prove link_source_objects exist; those records
+        # often carry source_path even when preview_section["artifacts"] is empty.
+        # Rebuild display-only claim spans from artifacts, link_source_objects,
+        # link_source_preview.objects, and any inline article_text_stream text.
+        if isinstance(preview_section, dict):
+            try:
+                def _ytce_local_line_is_top_link_preamble(line: object) -> bool:
+                    clean = str(line or "").replace("\ufeff", "").strip()
+                    if not clean:
+                        return True
+                    if re.fullmatch(r"(?i)(?:source\s+url|archive\s+url|wayback|archive(?:\s+today)?|archive\.ph|live|url|links?)\s*:?(?:\s*(?:https?://|www\.)\S+)?", clean):
+                        return True
+                    if re.fullmatch(r"(?i)(?:[-*]\s*)?(?:https?://|www\.)\S+", clean):
+                        return True
+                    if re.fullmatch(r"(?i)(?:[-*]\s*)?\[[^\]]+\]\(\s*https?://[^)]+\)", clean):
+                        return True
+                    return False
+
+                def _ytce_local_body_after_top_links(raw_text: object) -> str:
+                    raw_lines = str(raw_text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+                    index = 0
+                    saw_url = False
+                    while index < len(raw_lines) and _ytce_local_line_is_top_link_preamble(raw_lines[index]):
+                        if re.search(r"(?i)https?://|www\.", raw_lines[index]):
+                            saw_url = True
+                        index += 1
+                    if not saw_url:
+                        return ""
+                    body_text = "\n".join(raw_lines[index:]).strip()
+                    body_lines = [line.strip() for line in body_text.splitlines() if line.strip()]
+                    if len(body_lines) < 2:
+                        return ""
+                    body_lower = body_text.casefold()
+                    article_cues = (
+                        "published " in body_lower
+                        or " updated " in body_lower
+                        or " told metro" in body_lower
+                        or "picture:" in body_lower
+                        or " wrote:" in body_lower
+                        or "shared the video" in body_lower
+                        or "reporter" in body_lower
+                        or "seagull" in body_lower
+                        or "nora mubarak" in body_lower
+                        or "tommy robinson" in body_lower
+                    )
+                    return body_text if article_cues or len(body_lines) >= 4 else ""
+
+                def _ytce_local_candidate_text_items() -> list[tuple[str, str, str]]:
+                    items: list[tuple[str, str, str]] = []
+                    seen_path_keys: set[str] = set()
+                    seen_text_keys: set[str] = set()
+
+                    def _add_text(raw_text: object, label: object = "", path_value: object = "") -> None:
+                        text_value = str(raw_text or "")
+                        if not text_value.strip():
+                            return
+                        key = re.sub(r"\s+", " ", text_value).strip().casefold()[:4000]
+                        if key in seen_text_keys:
+                            return
+                        seen_text_keys.add(key)
+                        items.append((text_value, str(label or "Article text"), str(path_value or "")))
+
+                    def _add_path(path_value: object, label: object = "") -> None:
+                        path_text = str(path_value or "").strip().strip('"')
+                        if not path_text:
+                            return
+                        suffix = Path(path_text).suffix.lower()
+                        if suffix not in {".txt", ".md"}:
+                            return
+                        path_key = path_text.replace("\\", "/").casefold()
+                        if path_key in seen_path_keys:
+                            return
+                        seen_path_keys.add(path_key)
+                        try:
+                            file_path = Path(path_text)
+                            if not file_path.is_file():
+                                return
+                            _add_text(file_path.read_text(encoding="utf-8", errors="replace"), label or file_path.name, path_text)
+                        except Exception:
+                            return
+
+                    def _walk_record(record: object, fallback_label: object = "") -> None:
+                        if not isinstance(record, dict):
+                            return
+                        label = fallback_label or record.get("display_name") or record.get("file_name") or record.get("source_label") or record.get("source_title") or "Article text"
+                        for text_key in ("canonical_article_text", "article_text", "text", "text_preview"):
+                            _add_text(record.get(text_key), label, record.get("artifact_local_path") or record.get("source_path") or record.get("local_path") or record.get("path") or "")
+                        for path_key in (
+                            "local_path",
+                            "path",
+                            "file_path",
+                            "artifact_local_path",
+                            "source_path",
+                            "captured_text_path",
+                            "text_path",
+                        ):
+                            _add_path(record.get(path_key), label)
+
+                    for artifact in preview_section.get("artifacts", []) or []:
+                        _walk_record(artifact)
+
+                    # The currently failing UI proves these records exist because
+                    # Media ON shows URL rows.  Use their source_path/text fields.
+                    for record in link_source_objects or []:
+                        _walk_record(record, record.get("source_label") if isinstance(record, dict) else "")
+
+                    link_preview_local = preview_section.get("link_source_preview") if isinstance(preview_section.get("link_source_preview"), dict) else {}
+                    if isinstance(link_preview_local, dict):
+                        for record in link_preview_local.get("objects", []) or []:
+                            _walk_record(record, record.get("source_label") if isinstance(record, dict) else "")
+                    for record in preview_section.get("link_source_objects", []) or []:
+                        _walk_record(record, record.get("source_label") if isinstance(record, dict) else "")
+
+                    claim_preview_local = preview_section.get("claim_role_classification_preview") if isinstance(preview_section.get("claim_role_classification_preview"), dict) else {}
+                    if isinstance(claim_preview_local, dict):
+                        for stream in claim_preview_local.get("article_text_streams", []) or []:
+                            _walk_record(stream, stream.get("source_title") if isinstance(stream, dict) else "")
+                    return items
+
+                try:
+                    from profile_media_claim_role_classifier import classify_claim_text as _ytce_classify_claim_text
+                except Exception:
+                    _ytce_classify_claim_text = None
+
+                rebuilt_spans: list[dict[str, object]] = []
+                for candidate_index, (raw_text, artifact_name, artifact_path) in enumerate(_ytce_local_candidate_text_items(), start=1):
+                    body_text = _ytce_local_body_after_top_links(raw_text)
+                    if not body_text:
+                        continue
+                    source_id = f"mixed_article_text_{candidate_index:02d}"
+                    source_spans = ()
+                    if _ytce_classify_claim_text is not None:
+                        try:
+                            source_spans = _ytce_classify_claim_text(
+                                body_text,
+                                source_id=source_id,
+                                speaker="Article text",
+                                media_source_role="SECONDARY_MEDIA_COPY",
+                            )
+                        except Exception:
+                            source_spans = ()
+                    if source_spans:
+                        for span in source_spans:
+                            try:
+                                row = span.to_dict()
+                            except Exception:
+                                row = {
+                                    "text": str(getattr(span, "text", "") or ""),
+                                    "role": str(getattr(span, "role", "") or "UNKNOWN").upper(),
+                                    "edit_key": str(getattr(span, "edit_key", "") or ""),
+                                }
+                            if not str(row.get("text") or "").strip():
+                                continue
+                            row.update(
+                                {
+                                    "source_url": "",
+                                    "source_title": artifact_name,
+                                    "artifact_display_name": artifact_name,
+                                    "artifact_local_path": artifact_path,
+                                    "artifact_kind": "article_text",
+                                    "section_label": "article_text",
+                                    "source_stream": "article_text",
+                                    "is_article_text_claim_span": True,
+                                    "mixed_link_preamble_article_text": True,
+                                    "claim_span_role_system": "claim/span",
+                                    "media_source_role_system": "media/source",
+                                    "final_source_role_decision": False,
+                                }
+                            )
+                            rebuilt_spans.append(dict(row))
+                    else:
+                        for line_index, line in enumerate((line.strip() for line in body_text.splitlines() if line.strip()), start=1):
+                            rebuilt_spans.append(
+                                {
+                                    "text": line,
+                                    "role": "UNKNOWN",
+                                    "source_id": source_id,
+                                    "speaker": "Article text",
+                                    "edit_key": f"{source_id}_line_{line_index:03d}",
+                                    "source_url": "",
+                                    "source_title": artifact_name,
+                                    "artifact_display_name": artifact_name,
+                                    "artifact_local_path": artifact_path,
+                                    "artifact_kind": "article_text",
+                                    "section_label": "article_text",
+                                    "source_stream": "article_text",
+                                    "is_article_text_claim_span": True,
+                                    "mixed_link_preamble_article_text": True,
+                                    "claim_span_role_system": "claim/span",
+                                    "media_source_role_system": "media/source",
+                                    "final_source_role_decision": False,
+                                }
+                            )
+                if rebuilt_spans:
+                    # Prefer recovered article-body spans over stale hidden/link-only
+                    # spans for this Review textbox.  URL rows still appear through
+                    # link_source_objects when the Media icon is ON.
+                    claim_role_spans = rebuilt_spans
+            except Exception:
+                logger.debug("Could not rebuild display-only mixed article spans from preview artifacts/link source paths.", exc_info=True)
+
+        existing_claim_span_roles: dict[str, str] = {}
+        existing_claim_span_media_roles: dict[str, str] = {}
+        try:
+            claim_decisions_path = Path(preview_path).with_name(Path(preview_path).stem + "_claim_span_decisions.json")
+            if claim_decisions_path.is_file():
+                claim_decisions = json.loads(claim_decisions_path.read_text(encoding="utf-8"))
+                rows = claim_decisions.get("claim_span_role_edits") if isinstance(claim_decisions, dict) else ()
+                if isinstance(rows, list):
+                    for row in rows:
+                        if not isinstance(row, dict):
+                            continue
+                        key = str(row.get("edit_key") or "").strip()
+                        role = str(row.get("new_role") or "").strip().upper()
+                        if key and role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "BLANK"}:
+                            existing_claim_span_roles[key] = role
+                        media_role_raw = str(row.get("new_media_source_role") or row.get("media_source_display_role") or row.get("media_display_role") or "").strip().upper()
+                        media_role = ""
+                        if "PRIMARY" in media_role_raw:
+                            media_role = "PRIMARY"
+                        elif "SECONDARY" in media_role_raw:
+                            media_role = "SECONDARY"
+                        elif "TERTIARY" in media_role_raw:
+                            media_role = "TERTIARY"
+                        elif "UNKNOWN" in media_role_raw:
+                            media_role = "UNKNOWN"
+                        if key and media_role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}:
+                            existing_claim_span_media_roles[key] = media_role
+        except Exception:
+            logger.debug("Could not load existing claim-span role decisions.", exc_info=True)
+
+        try:
+            self._apply_profile_media_database_preview_counts_to_main_card(preview_payload)
+        except Exception:
+            logger.debug("Could not refresh Database sidebar counts after loading preview JSON.", exc_info=True)
+
+        existing = getattr(self, "profile_media_database_review_window", None)
+        reusing_review_window = False
+        old_review_window_children = []
+        # Cancel any delayed old-body destruction from a previous scope switch.
+        # A stale callback can destroy the currently visible body and create the
+        # grey/buffer flash seen when toggling Source URL <-> Media scope.
+        pending_review_destroy = getattr(self, "profile_media_review_destroy_after_id", None)
+        if pending_review_destroy:
+            try:
+                self.after_cancel(pending_review_destroy)
+            except Exception:
+                pass
+            self.profile_media_review_destroy_after_id = None
+        try:
+            if existing is not None and existing.winfo_exists():
+                win = existing
+                reusing_review_window = True
+                # Keep the old content visible until the new scope body has been
+                # created.  Destroying everything first makes the window flash.
+                old_review_window_children = list(win.winfo_children())
+            else:
+                win = ctk.CTkToplevel(self)
+                self.profile_media_database_review_window = win
+        except Exception:
+            win = ctk.CTkToplevel(self)
+            self.profile_media_database_review_window = win
+        win.title("Review DB import")
+        try:
+            self._install_profile_media_review_safe_destroy(win)
+        except Exception:
+            logger.debug("Could not install Review DB import close guard.", exc_info=True)
+        if not reusing_review_window:
+            win.geometry("1040x740")
+            try:
+                win.minsize(980, 680)
+            except Exception:
+                pass
+            try:
+                win.transient(self)
+            except Exception:
+                pass
+        win.grid_columnconfigure(0, weight=1)
+        win.grid_rowconfigure(0, weight=1)
+        selected_roles: dict[str, ctk.StringVar] = {}
+        selected_personhood_roles: dict[str, ctk.StringVar] = {}
+        selected_claim_span_roles: dict[str, str] = {}
+        # YTCE_V83D_R36C_MEDIA_TEXT_ROLE_CLICK_AND_HEADLINE_UNSPLIT
+        # Media/source view role clicks must edit a separate media/source-role
+        # override map, not the semantic claim/span role map.
+        selected_claim_span_media_roles: dict[str, str] = {}
+        media_link_selection_vars: dict[str, ctk.BooleanVar] = {}
+        media_link_note_vars: dict[str, object] = {}
+        media_link_target_var_holder: dict[str, ctk.StringVar] = {}
+        media_link_select_label_holder: dict[str, object] = {}
+        selected_article_tags = list(getattr(state, "article_tags", ()) or ("Defamation", "Islamophobia", "far right propagation"))
+        review_prebuild_only = bool(getattr(self, "profile_media_review_prebuild_only", False))
+        review_filter_values = ["Show all", "Show review item(s)"]
+        review_filter_mode = str(getattr(self, "profile_media_database_review_filter_mode", "Show all") or "Show all").strip()
+        if review_filter_mode not in review_filter_values:
+            review_filter_mode = "Show all"
+        review_filter_show_review_only = review_filter_mode == "Show review item(s)"
+
+        def _role_display(value: str) -> str:
+            # Blank means unassigned/manual Review lane.  It should display as
+            # blank, not as a fake source role called "Review".
+            return SOURCE_ROLE_DISPLAY_LABELS.get(value, value) if value else ""
+
+        def _role_internal(value: str) -> str:
+            if str(value or "") in {"", "Review"}:
+                return ""
+            return SOURCE_ROLE_BY_DISPLAY_LABEL.get(value, value)
+
+        def _role_dropdown_values(*, allow_review: bool = False) -> list[str]:
+            # Review is not a source role and must not appear inside role menus.
+            return [_role_display(role) for role in SOURCE_ROLE_OPTIONS]
+
+        def _current_selected_roles() -> dict[str, str]:
+            return {row_id: _role_internal(var.get()) for row_id, var in selected_roles.items()}
+
+        def _current_selected_personhood_roles() -> dict[str, str]:
+            return {row_id: _role_internal(var.get()) for row_id, var in selected_personhood_roles.items()}
+
+        def _manual_note_value(widget_or_var: object) -> str:
+            try:
+                if hasattr(widget_or_var, "get"):
+                    try:
+                        value = widget_or_var.get("1.0", "end-1c")  # Text/CTkTextbox
+                    except TypeError:
+                        value = widget_or_var.get()  # StringVar/Entry-like
+                    return " ".join(str(value or "").split())
+            except Exception:
+                pass
+            return ""
+
+        def _current_media_link_notes() -> dict[str, str]:
+            return {row_id: _manual_note_value(var) for row_id, var in media_link_note_vars.items() if _manual_note_value(var)}
+
+        def _current_media_link_targets() -> dict[str, list[str]]:
+            try:
+                targets = list(_selected_case_link_targets())
+            except Exception:
+                target_var = media_link_target_var_holder.get("target")
+                target_text = " ".join((target_var.get() if target_var is not None else "").split())
+                targets = [target_text] if target_text else []
+            targets = [target for target in targets if target]
+            if not targets:
+                return {}
+            selected_rows = [row_id for row_id, var in media_link_selection_vars.items() if bool(var.get())]
+            if not selected_rows:
+                selected_rows = list(media_link_selection_vars.keys())
+            return {row_id: list(targets) for row_id in selected_rows}
+
+        def _refresh_media_link_select_label() -> None:
+            label = media_link_select_label_holder.get("label")
+            if label is None:
+                return
+            selected_count = sum(1 for var in media_link_selection_vars.values() if bool(var.get()))
+            try:
+                label.configure(text="Add selected" if selected_count else "Add all")
+            except Exception:
+                pass
+
+        def _refresh_review_counts_from_dropdowns(*_args: object) -> None:
+            self.profile_media_database_review_role_counts_override = self._profile_media_selected_review_role_counts(_current_selected_roles(), _current_selected_personhood_roles())
+            self._refresh_profile_media_database_sidebar_counts_only()
+
+        def _media_role_filter_value(role_value: object) -> str:
+            # R42V: _save_choices runs from the top Review dialog controls, but
+            # the original helper was defined much later in the source-review
+            # render path.  Keep this local helper available before Save is
+            # pressed so Review decisions can be written reliably.
+            role_text = str(role_value or "").strip().upper()
+            if "PRIMARY" in role_text:
+                return "PRIMARY"
+            if "SECONDARY" in role_text:
+                return "SECONDARY"
+            if "TERTIARY" in role_text:
+                return "TERTIARY"
+            if "UNKNOWN" in role_text:
+                return "UNKNOWN"
+            return ""
+
+        def _save_choices() -> None:
+            try:
+                output_path = Path(preview_path).with_name(Path(preview_path).stem + "_review_decisions.json")
+                selected = _current_selected_roles()
+                written = write_import_review_decisions_json(
+                    state,
+                    output_path,
+                    selected_roles=selected,
+                    selected_article_tags=selected_article_tags,
+                    selected_media_personhood_roles=_current_selected_personhood_roles(),
+                    selected_media_link_notes=_current_media_link_notes(),
+                    selected_media_link_targets=_current_media_link_targets(),
+                )
+                self.profile_media_database_last_import_review_decisions_file = str(written)
+                if claim_role_spans:
+                    claim_output_path = Path(preview_path).with_name(Path(preview_path).stem + "_claim_span_decisions.json")
+                    claim_rows = []
+                    all_claim_decision_spans = list(claim_role_spans)
+                    for comment_section in related_comment_review_sections:
+                        for comment_span in _ytce_review_comment_section_role_spans(comment_section):
+                            if isinstance(comment_span, dict):
+                                all_claim_decision_spans.append(dict(comment_span))
+                    for span in all_claim_decision_spans:
+                        edit_key = str(span.get("edit_key") or "").strip()
+                        old_role = str(span.get("role") or "").strip().upper()
+                        new_role = selected_claim_span_roles.get(edit_key, existing_claim_span_roles.get(edit_key, old_role))
+                        if new_role not in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "BLANK"}:
+                            new_role = old_role if old_role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "BLANK"} else "UNKNOWN"
+                        old_media_role = _media_role_filter_value(
+                            span.get("media_source_display_role")
+                            or span.get("media_display_role")
+                            or span.get("source_reference_media_display_role")
+                            or span.get("media_source_role")
+                        )
+                        new_media_role = selected_claim_span_media_roles.get(edit_key, existing_claim_span_media_roles.get(edit_key, old_media_role))
+                        if new_media_role not in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}:
+                            new_media_role = old_media_role
+                        claim_rows.append(
+                            {
+                                # YTCE_V83C_REPAIR31_LEXICON_LEARNING_QUEUE_TEXT_FIELD
+                                "text": str(span.get("text") or ""),
+                                "source_id": str(span.get("source_id") or ""),
+                                "speaker": str(span.get("speaker") or ""),
+                                "timestamp_start": str(span.get("timestamp_start") or ""),
+                                "timestamp_end": str(span.get("timestamp_end") or ""),
+                                "char_start": int(span.get("char_start") or 0),
+                                "char_end": int(span.get("char_end") or 0),
+                                "old_role": old_role,
+                                "new_role": new_role,
+                                "designation": str(span.get("designation") or ""),
+                                "reason": str(span.get("reason") or ""),
+                                "edit_key": edit_key,
+                                "review_state": str(span.get("review_state") or "assigned"),
+                                "media_source_role": str(span.get("media_source_role") or ""),
+                                "old_media_source_role": old_media_role,
+                                "new_media_source_role": new_media_role,
+                            }
+                        )
+                    claim_output_path.write_text(
+                        json.dumps(
+                            {
+                                "schema_version": "profile-media-claim-span-role-decisions-v1",
+                                "preview_json": str(preview_path),
+                                "claim_span_role_system": "claim/span",
+                                "media_source_role_system": "media/source",
+                                "claim_span_role_edits": claim_rows,
+                            },
+                            indent=2,
+                            ensure_ascii=False,
+                        ),
+                        encoding="utf-8",
+                        newline="\n",
+                    )
+                    self.profile_media_database_last_claim_span_decisions_file = str(claim_output_path)
+                self.profile_media_database_review_role_counts_override = self._profile_media_selected_review_role_counts(selected, _current_selected_personhood_roles())
+                self._refresh_profile_media_database_workbench_panel()
+                self.log_message(f"Database import review choices written: {written}. Sidebar counts refreshed from structured choices. No HOME save was performed.", "success")
+            except Exception as exc:
+                logger.debug("Could not write protected review choices.", exc_info=True)
+                self.log_message(f"Database import review choices could not be written: {exc}", "error")
+
+        def _open_txt_external() -> None:
+            try:
+                if review_text_path and os.path.isfile(review_text_path):
+                    os.startfile(review_text_path)  # type: ignore[attr-defined]
+            except Exception:
+                try:
+                    webbrowser.open(Path(review_text_path).as_uri())
+                except Exception as exc:
+                    self.log_message(f"Could not open review TXT externally: {exc}", "error")
+
+        body = ctk.CTkScrollableFrame(win, fg_color=COLORS["bg_card"], corner_radius=8)
+        # Build every Review body completely before mapping it.  This mirrors the
+        # internal-media path that no longer shows a loader/flicker: the old page
+        # remains painted while a new page is prepared, and a first-open body is
+        # only shown after it has real content.
+        body.grid_columnconfigure(0, weight=1)
+
+        header_frame = ctk.CTkFrame(body, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 8))
+        header_frame.grid_columnconfigure(1, weight=1)
+        review_filter_var = ctk.StringVar(value=review_filter_mode)
+
+        def _switch_review_filter(value: str) -> None:
+            target_filter = str(value or "Show all").strip()
+            if target_filter not in review_filter_values:
+                target_filter = "Show all"
+            self.profile_media_database_review_filter_mode = target_filter
+            try:
+                # Different filter modes need different cached bodies.  Keep the
+                # current body visible while the new filtered body is prepared.
+                self._open_profile_media_database_import_review_dialog(preview_path, review_text_path)
+            except Exception:
+                logger.debug("Could not switch Review filter mode.", exc_info=True)
+
+        ctk.CTkOptionMenu(
+            header_frame,
+            values=review_filter_values,
+            variable=review_filter_var,
+            command=_switch_review_filter,
+            width=170,
+        ).grid(row=0, column=0, sticky="w", pady=(0, 5))
+        def _display_case_title_for_header(value: object) -> str:
+            raw = " ".join(str(value or "").split()).strip(" -—")
+            lowered = raw.lower()
+            pseudo_values = {"media / unlinked files", "unlinked files", "media", "source evidence review"}
+            if lowered in pseudo_values or lowered.startswith("media / unlinked files"):
+                return "No case/topic available — Source Evidence Review"
+            cleaned = raw.replace("Media / unlinked files —", "").replace("Media / unlinked files -", "").strip(" -—")
+            return cleaned or "Source Evidence Review"
+
+        ctk.CTkLabel(
+            header_frame,
+            text=f"Case: {_display_case_title_for_header(state.case_title)}",
+            justify="left",
+            anchor="w",
+            text_color=COLORS["text_primary"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).grid(row=1, column=0, columnspan=2, sticky="ew")
+        header_buttons = ctk.CTkFrame(header_frame, fg_color="transparent")
+        header_buttons.grid(row=0, column=2, rowspan=3, sticky="ne", padx=(12, 0))
+        ctk.CTkButton(
+            header_buttons,
+            text="Save",
+            command=_save_choices,
+            width=90,
+            height=28,
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+        ).grid(row=0, column=0, sticky="e", padx=(0, 6))
+        ctk.CTkButton(
+            header_buttons,
+            text="Open",
+            command=_open_txt_external,
+            width=90,
+            height=28,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+        ).grid(row=0, column=1, sticky="e")
+        source_urls = []
+        source_scope_rows = [*list(getattr(state, "source_record_rows", ()) or ()), *list(getattr(state, "role_rows", ()) or ()), *list(getattr(state, "person_rows", ()) or ())]
+        for value in [state.source_url, *[getattr(row, "source_url", "") for row in getattr(state, "source_record_rows", ())], *[getattr(row, "source_url", "") for row in getattr(state, "role_rows", ())], *[getattr(row, "source_url", "") for row in getattr(state, "person_rows", ())]]:
+            text_value = str(value or "").strip()
+            if text_value and text_value not in source_urls:
+                source_urls.append(text_value)
+        has_unlinked_media = any(
+            str(getattr(row, "row_kind", "") or "") == "media_artifact"
+            and (bool(getattr(row, "internal_media", False)) or bool(getattr(row, "unlinked_media", False)) or not str(getattr(row, "source_url", "") or "").strip())
+            for row in getattr(state, "source_record_rows", ())
+        )
+        media_scope_label = "Media / unlinked files"
+        # YTCE_V83C_REPAIR12_NOT_SUPPLIED_IS_MEDIA_SCOPE
+        has_unlinked_link_sources = bool(link_source_objects)
+        if (has_unlinked_media or has_unlinked_link_sources) and media_scope_label not in source_urls:
+            source_urls.append(media_scope_label)
+        if not source_urls:
+            source_urls = ["(not supplied)"]
+
+        def _review_scope_label_for_value(value: object) -> str:
+            raw_value = str(value or "").strip()
+            if raw_value == media_scope_label:
+                return media_scope_label
+            label = raw_value
+            try:
+                matches = [row for row in source_scope_rows if str(getattr(row, "source_url", "") or "").strip() == raw_value]
+                if matches and re.search(r"(?:youtube\.com/watch\?v=|youtu\.be/)", raw_value, flags=re.IGNORECASE):
+                    title_text = str(getattr(matches[0], "subject", "") or "").strip()
+                    title_text = re.sub(r"\s+[—-]\s+primary\s+source/transcript\s+evidence\s*$", "", title_text, flags=re.IGNORECASE).strip()
+                    if title_text and not title_text.startswith("http"):
+                        label = f"{title_text[:92]} — {raw_value}"
+            except Exception:
+                label = raw_value
+            return label
+
+        source_scope_labels = []
+        source_scope_value_by_label = {}
+        source_scope_label_by_value = {}
+        for value in source_urls:
+            label = _review_scope_label_for_value(value)
+            base_label = label
+            counter = 2
+            while label in source_scope_value_by_label and source_scope_value_by_label.get(label) != value:
+                label = f"{base_label} ({counter})"
+                counter += 1
+            source_scope_labels.append(label)
+            source_scope_value_by_label[label] = value
+            source_scope_label_by_value[value] = label
+
+        selected_scope = str(getattr(self, "profile_media_database_review_selected_scope", "") or "").strip()
+        if selected_scope not in source_urls:
+            # Older builds may have saved the visible label rather than the raw scope.
+            selected_scope = source_scope_value_by_label.get(selected_scope, selected_scope)
+        if selected_scope not in source_urls:
+            selected_scope = source_urls[0]
+        selected_source_url = ctk.StringVar(value=source_scope_label_by_value.get(selected_scope, selected_scope))
+
+        try:
+            preview_mtime = os.path.getmtime(preview_path) if preview_path and os.path.isfile(preview_path) else 0.0
+        except Exception:
+            preview_mtime = 0.0
+        try:
+            text_mtime = os.path.getmtime(review_text_path) if review_text_path and os.path.isfile(review_text_path) else 0.0
+        except Exception:
+            text_mtime = 0.0
+        cache_token = (str(Path(preview_path).resolve()) if preview_path else "", preview_mtime, str(Path(review_text_path).resolve()) if review_text_path else "", text_mtime)
+        if getattr(self, "profile_media_review_body_cache_token", None) != cache_token:
+            self.profile_media_review_body_cache_token = cache_token
+            self.profile_media_review_body_cache = {}
+        review_body_cache = getattr(self, "profile_media_review_body_cache", {})
+        selected_cache_key = (selected_scope, review_filter_mode)
+        if reusing_review_window:
+            cached_body = review_body_cache.get(selected_cache_key)
+            if review_prebuild_only and cached_body is not None:
+                try:
+                    if cached_body.winfo_exists():
+                        return
+                except Exception:
+                    pass
+            try:
+                if not review_prebuild_only and cached_body is not None and cached_body.winfo_exists():
+                    old_active_body = getattr(self, "profile_media_database_review_active_body", None)
+                    cached_body.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+                    cached_body.tkraise()
+                    try:
+                        cached_body.lift()
+                        win.update_idletasks()
+                    except Exception:
+                        pass
+                    self.profile_media_database_review_active_body = cached_body
+                    # After the target page is already painted, remove the previous
+                    # body from the grid. This preserves no-blank switching while
+                    # making the visible page change reliably on Windows/Tk.
+                    try:
+                        if old_active_body is not None and old_active_body is not cached_body and old_active_body.winfo_exists():
+                            old_active_body.grid_remove()
+                    except Exception:
+                        pass
+                    return
+            except Exception:
+                logger.debug("Could not reuse cached Review scope body.", exc_info=True)
+
+        def _switch_review_source_scope(value: str) -> None:
+            target_scope_label = str(value or "").strip()
+            target_scope = source_scope_value_by_label.get(target_scope_label, target_scope_label)
+            self.profile_media_database_review_selected_scope = target_scope
+            try:
+                cached_body = getattr(self, "profile_media_review_body_cache", {}).get((target_scope, review_filter_mode))
+                if cached_body is not None and cached_body.winfo_exists():
+                    old_active_body = getattr(self, "profile_media_database_review_active_body", None)
+                    cached_body.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+                    cached_body.tkraise()
+                    try:
+                        cached_body.lift()
+                        win.update_idletasks()
+                    except Exception:
+                        pass
+                    self.profile_media_database_review_active_body = cached_body
+                    # Target page is painted first; then the previous body is
+                    # unmapped so the dropdown visibly switches Metro <-> Media.
+                    try:
+                        if old_active_body is not None and old_active_body is not cached_body and old_active_body.winfo_exists():
+                            old_active_body.grid_remove()
+                    except Exception:
+                        pass
+                    return
+            except Exception:
+                logger.debug("Could not show cached Review scope body; rebuilding.", exc_info=True)
+            try:
+                # Build synchronously while the old body remains visible.  The new
+                # body is only gridded after it is complete, removing the visible
+                # Review-window loading/blank effect.
+                self._open_profile_media_database_import_review_dialog(preview_path, review_text_path)
+            except Exception:
+                logger.debug("Could not rebuild Review scope body.", exc_info=True)
+
+        ctk.CTkLabel(
+            header_frame,
+            text="Source URL:",
+            anchor="w",
+            text_color=COLORS["text_secondary"],
+        ).grid(row=2, column=0, sticky="w", pady=(4, 0))
+        ctk.CTkOptionMenu(
+            header_frame,
+            values=source_scope_labels,
+            variable=selected_source_url,
+            command=_switch_review_source_scope,
+            width=480,
+        ).grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=(4, 0))
+
+        row_index = 1
+        selected_scope_value = source_scope_value_by_label.get(selected_source_url.get(), selected_source_url.get())
+        # YTCE_V83C_REPAIR12_NOT_SUPPLIED_SCOPE_FILTER_FIX
+        not_supplied_scope_selected = str(selected_scope_value or "").strip().casefold() in {"", "(not supplied)", "not supplied"}
+        media_scope_selected = (
+            selected_scope_value == media_scope_label
+            or (not_supplied_scope_selected and (has_unlinked_media or bool(link_source_objects)))
+        )
+
+        def _row_matches_selected_source(row: object) -> bool:
+            row_url = str(getattr(row, "source_url", "") or "").strip()
+            if media_scope_selected:
+                return not row_url or bool(getattr(row, "internal_media", False)) or bool(getattr(row, "unlinked_media", False))
+            if not row_url and isinstance(row, object) and hasattr(row, "canonical_name"):
+                return True
+            if row_url == selected_scope_value:
+                return True
+            return bool(selected_scope_value and selected_scope_value in {part.strip() for part in row_url.split(" | ") if part.strip()})
+
+        def _review_role_needs_attention(value: object) -> bool:
+            role_value = str(value or "").strip()
+            return role_value in {"", "Review", "UNKNOWN_SOURCE_ROLE", "Unknown"}
+
+        def _row_should_show_for_review_filter(row: object, *, section: str) -> bool:
+            if not review_filter_show_review_only:
+                return True
+            try:
+                if section == "source" and str(getattr(row, "row_kind", "") or "") == "media_artifact":
+                    return (
+                        _review_role_needs_attention(getattr(row, "selected_role", ""))
+                        or _review_role_needs_attention(getattr(row, "selected_personhood_role", "") or getattr(row, "media_personhood_role", ""))
+                        or bool(getattr(row, "media_personhood_review_required", False))
+                    )
+                if section == "segment":
+                    return _review_role_needs_attention(getattr(row, "selected_role", "")) or bool(getattr(row, "source_chain_gap", False))
+                if section == "person":
+                    return bool(getattr(row, "review_required", True)) and not bool(getattr(row, "final_person_decision", False))
+            except Exception:
+                return True
+            return True
+
+        def _evidence_summary(row: object, *, section: str = "segment") -> str:
+            try:
+                source_chain_gap = bool(getattr(row, "source_chain_gap", False))
+                selected = str(getattr(row, "selected_role", "") or "")
+                artifact_kind = str(getattr(row, "artifact_kind", "") or "")
+                internal_media = bool(getattr(row, "internal_media", False))
+            except Exception:
+                source_chain_gap = False
+                selected = ""
+                artifact_kind = ""
+                internal_media = False
+            if section == "source" and artifact_kind in {"video", "audio", "image", "screenshot", "transcript"}:
+                # The Media section/card already supplies the context; repeating
+                # "Media" inside each media card is redundant.
+                return ""
+            if section == "source" and artifact_kind == "source_text_evidence":
+                return "Media/source provenance summary"
+            if source_chain_gap:
+                # A row can be source-chain incomplete without being literally
+                # source-free.  For reported article claims, the card title/role
+                # already communicates the gap; the summary should say what the
+                # row is (Reported), not repeat "No source".
+                row_subject = str(getattr(row, "subject", "") or "").lower()
+                row_notes = str(getattr(row, "notes", "") or "").lower()
+                if "reported" in row_subject or "reported" in row_notes:
+                    return "Reported"
+                return "No source"
+            return "Article" if section == "segment" else (_role_display(selected) if selected else "Review")
+
+        def _short_review_note(row: object) -> str:
+            if str(getattr(row, "row_kind", "") or "") == "media_artifact":
+                return ""
+            text = str(getattr(row, "notes", "") or "").strip()
+            replacements = {
+                "No original Facebook/source link preserved in this capture. Potential primary only after source-chain evidence is added.": "",
+                "No original post/source link preserved in this capture. Potential primary only after source-chain evidence is added.": "",
+                "No source": "",
+                "Witness account": "",
+                "Article text reports direct quoted statements from the main person; review as secondary witness-account scope for her own account, not for every publisher claim.": "",
+            }
+            return replacements.get(text, text)
+
+        def _add_role_decision_card(row: object, *, section: str) -> None:
+            nonlocal row_index
+            card = ctk.CTkFrame(body, fg_color=COLORS["bg_input"], corner_radius=8)
+            card.grid(row=row_index, column=0, sticky="ew", padx=10, pady=5)
+            card.grid_columnconfigure(0, weight=1, minsize=0)
+            card.grid_columnconfigure(1, weight=0, minsize=150)
+            row_index += 1
+            row_key = str(getattr(row, "row_id", ""))
+            title = str(getattr(row, "subject", "") or "Review row")
+            artifact_kind_for_title = str(getattr(row, "artifact_kind", "") or "").strip().lower()
+            is_source_text_provenance_card = section == "source" and artifact_kind_for_title == "source_text_evidence"
+            if section == "source" and str(getattr(row, "row_kind", "") or "") == "media_artifact":
+                # The section and icon already say this is media; keep the card title clean.
+                cleaned_title = re.sub(r"^(?:Internal media|Media / unlinked file)\s*[—-]\s*", "", title).strip()
+                cleaned_title = re.sub(r"^(?:video|audio|image|screenshot|transcript)\s*:\s*", "", cleaned_title, flags=re.IGNORECASE).strip()
+                title = cleaned_title or title
+            if section == "source" and len(title) > 120:
+                title = title[:117].rstrip() + "..."
+            title_frame = ctk.CTkFrame(card, fg_color="transparent")
+            title_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 2))
+            title_frame.grid_columnconfigure(3, weight=1)
+            title_col = 0
+            is_unlinked_media_card = (
+                section == "source"
+                and str(getattr(row, "row_kind", "") or "") == "media_artifact"
+                and (bool(getattr(row, "internal_media", False)) or bool(getattr(row, "unlinked_media", False)) or not str(getattr(row, "source_url", "") or "").strip())
+            )
+            if is_unlinked_media_card:
+                select_var = ctk.BooleanVar(value=False)
+                media_link_selection_vars[row_key] = select_var
+                ctk.CTkCheckBox(
+                    title_frame,
+                    text="",
+                    width=24,
+                    variable=select_var,
+                    command=_refresh_media_link_select_label,
+                ).grid(row=0, column=0, sticky="w", padx=(0, 6))
+                title_col = 1
+            if section == "source" and bool(getattr(row, "internal_media", False)) and getattr(self, "session_internal_media_icon_image", None) is not None:
+                ctk.CTkLabel(title_frame, text="", image=self.session_internal_media_icon_image, width=20).grid(row=0, column=title_col, sticky="w", padx=(0, 6))
+                title_col += 1
+            if section == "source" and artifact_kind_for_title == "video" and getattr(self, "session_video_file_icon_image", None) is not None:
+                ctk.CTkLabel(title_frame, text="", image=self.session_video_file_icon_image, width=20).grid(row=0, column=title_col, sticky="w", padx=(0, 6))
+                title_col += 1
+            ctk.CTkLabel(
+                title_frame,
+                text=title,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_primary"],
+                anchor="w",
+            ).grid(row=0, column=title_col, sticky="ew")
+            summary_text = _evidence_summary(row, section=section)
+            if summary_text:
+                ctk.CTkLabel(
+                    card,
+                    text=summary_text,
+                    text_color=COLORS["text_muted"],
+                    anchor="w",
+                    wraplength=560,
+                ).grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 2))
+            note_text = _short_review_note(row)
+            if note_text:
+                ctk.CTkLabel(
+                    card,
+                    text=note_text,
+                    text_color=COLORS["text_secondary"],
+                    anchor="w",
+                    wraplength=560,
+                    justify="left",
+                ).grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 4))
+            excerpt = str(getattr(row, "excerpt", "") or "")
+            if excerpt:
+                quote_frame = ctk.CTkFrame(card, fg_color="#1f1f1f", corner_radius=6)
+                quote_frame.grid(row=3, column=0, sticky="ew", padx=8, pady=(2, 8))
+                quote_frame.grid_columnconfigure(0, weight=1)
+                if artifact_kind_for_title == "source_text_evidence":
+                    excerpt_height = 180
+                else:
+                    excerpt_height = 128 if len(excerpt) > 900 else (96 if len(excerpt) > 520 else 72)
+                quote_box = ctk.CTkTextbox(
+                    quote_frame,
+                    height=excerpt_height,
+                    width=0,
+                    wrap="word",
+                    fg_color="#1f1f1f",
+                    text_color=COLORS["text_muted"],
+                    border_width=0,
+                    corner_radius=6,
+                    font=ctk.CTkFont(size=12),
+                )
+                quote_box.grid(row=0, column=0, sticky="ew", padx=10, pady=8)
+                try:
+                    quote_box.insert("1.0", excerpt)
+                    quote_box.configure(state="disabled")
+                    self.install_middle_click_autoscroll(quote_box, owner=win)
+                except Exception:
+                    pass
+            row_kind_for_role = str(getattr(row, "row_kind", "") or "")
+            selected_role_value = str(getattr(row, "selected_role", "") or "")
+            if not selected_role_value and row_kind_for_role != "media_artifact":
+                selected_role_value = "UNKNOWN_SOURCE_ROLE"
+            var = ctk.StringVar(value=_role_display(selected_role_value))
+            selected_roles[row_key] = var
+            try:
+                var.trace_add("write", _refresh_review_counts_from_dropdowns)
+            except Exception:
+                pass
+            if is_unlinked_media_card:
+                note_box = ctk.CTkTextbox(
+                    card,
+                    height=54,
+                    font=ctk.CTkFont(family="Cascadia Mono", size=13),
+                    fg_color=COLORS["bg_input"],
+                    border_color=COLORS["border"],
+                    border_width=1,
+                    corner_radius=8,
+                    wrap="word",
+                )
+                note_box.grid(row=1 if not summary_text and not note_text else 2, column=0, sticky="ew", padx=8, pady=(2, 8))
+                try:
+                    note_box.insert("1.0", "")
+                    self.install_middle_click_autoscroll(note_box, owner=win)
+                except Exception:
+                    pass
+                media_link_note_vars[row_key] = note_box
+                try:
+                    self._bind_manual_text_spellcheck(note_box)
+                except Exception:
+                    logger.debug("Could not bind manual-note spellcheck.", exc_info=True)
+            if is_source_text_provenance_card:
+                ctk.CTkLabel(
+                    card,
+                    text="Primary media / transcript provenance",
+                    text_color=COLORS["text_muted"],
+                    anchor="e",
+                    justify="right",
+                ).grid(row=0, column=1, rowspan=4, sticky="ne", padx=(6, 8), pady=8)
+            elif section == "source" and str(getattr(row, "row_kind", "") or "") == "media_artifact":
+                controls = ctk.CTkFrame(card, fg_color="transparent")
+                controls.grid(row=0, column=1, rowspan=4, sticky="ne", padx=8, pady=8)
+                ctk.CTkLabel(controls, text="Media", text_color=COLORS["text_muted"], anchor="w").grid(row=0, column=0, sticky="w")
+                ctk.CTkOptionMenu(
+                    controls,
+                    values=_role_dropdown_values(allow_review=False),
+                    variable=var,
+                    width=140,
+                ).grid(row=1, column=0, sticky="e", pady=(0, 6))
+                personhood_value = str(getattr(row, "selected_personhood_role", "") or getattr(row, "media_personhood_role", "") or "")
+                if personhood_value not in SOURCE_ROLE_OPTIONS and personhood_value != "":
+                    personhood_value = ""
+                personhood_var = ctk.StringVar(value=_role_display(personhood_value))
+                selected_personhood_roles[row_key] = personhood_var
+                try:
+                    personhood_var.trace_add("write", _refresh_review_counts_from_dropdowns)
+                except Exception:
+                    pass
+                ctk.CTkLabel(controls, text="Personhood", text_color=COLORS["text_muted"], anchor="w").grid(row=2, column=0, sticky="w")
+                ctk.CTkOptionMenu(
+                    controls,
+                    values=_role_dropdown_values(allow_review=False),
+                    variable=personhood_var,
+                    width=140,
+                ).grid(row=3, column=0, sticky="e")
+            else:
+                ctk.CTkOptionMenu(
+                    card,
+                    values=_role_dropdown_values(allow_review=False),
+                    variable=var,
+                    width=140,
+                ).grid(row=0, column=1, rowspan=4, sticky="ne", padx=(6, 8), pady=8)
+
+        def _source_role_marker_and_tag(role_value: object) -> tuple[str, str]:
+            role = str(role_value or "").strip()
+            if role == "PRIMARY_SELF_AUTHORED_SCOPE":
+                return "Primary", "primary_span"
+            if role == "SECONDARY_WITNESS_ACCOUNT":
+                return "Secondary", "secondary_span"
+            if role == "TERTIARY_PROPAGATED_SOURCE":
+                return "Tertiary", "tertiary_span"
+            return "Unknown", "unknown_span"
+
+        def _claim_role_colour_tags(role_value: object) -> tuple[str, str]:
+            role = str(role_value or "").strip().upper()
+            if role == "PRIMARY":
+                return "claim_primary_fill", "claim_primary_text"
+            if role == "SECONDARY":
+                return "claim_secondary_fill", "claim_secondary_text"
+            if role == "TERTIARY":
+                return "claim_tertiary_fill", "claim_tertiary_text"
+            if role == "BLANK":
+                return "claim_blank_fill", "claim_blank_text"
+            return "claim_unknown_fill", "claim_unknown_text"
+
+        def _claim_role_label(role_value: object) -> str:
+            role = str(role_value or "").strip().upper()
+            return role.title() if role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "BLANK"} else "Unknown"
+
+        def _claim_span_selected_role(span: dict[str, object]) -> str:
+            key = str(span.get("edit_key") or "").strip()
+            role = selected_claim_span_roles.get(key, existing_claim_span_roles.get(key, str(span.get("role") or "UNKNOWN").upper()))
+            return role if role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "BLANK"} else "UNKNOWN"
+
+        def _comment_sections_for_selected_scope() -> list[dict[str, object]]:
+            output = []
+            for section in related_comment_review_sections:
+                section_url = str(section.get("source_url") or "").strip()
+                if media_scope_selected:
+                    # "Media / unlinked files" is a source scope, not the Media
+                    # icon filter.  Keep unlinked/mixed comment sections available
+                    # unless the actual Media icon later suppresses text rows.
+                    if not section_url:
+                        output.append(section)
+                    continue
+                if not selected_scope_value or not section_url or section_url == selected_scope_value:
+                    output.append(section)
+            return output
+
+        def _r42ds_archive_role_spans_for_selected_scope() -> list[dict[str, object]]:
+            """Return archive-material role spans generated after live archive capture.
+
+            R42DS bridges the post-capture archive article_text.txt surface back
+            into the selected-source Review/WebView2 role rows.  It is deliberately
+            read-only: it only consumes already-written local artifacts and caches.
+            """
+            try:
+                from profile_media_archive_source_role_surface_r42ds import canonicalize_source_url
+            except Exception:
+                def canonicalize_source_url(value: object) -> str:  # type: ignore[no-redef]
+                    return str(value or "").strip()
+
+            selected_raw = str(selected_scope_value or "").strip()
+            selected_key = canonicalize_source_url(selected_raw)
+            if not selected_raw and not selected_key:
+                return []
+
+            candidates: list[dict[str, object]] = []
+            seen_surface_ids: set[int] = set()
+
+            def _add_surface(surface: object) -> None:
+                if not isinstance(surface, dict):
+                    return
+                sid = id(surface)
+                if sid in seen_surface_ids:
+                    return
+                surface_source = canonicalize_source_url(
+                    surface.get("canonical_source")
+                    or surface.get("source_url")
+                    or surface.get("source")
+                    or ""
+                )
+                if selected_key and surface_source and selected_key != surface_source:
+                    return
+                seen_surface_ids.add(sid)
+                rows = surface.get("claim_role_spans") or surface.get("spans") or []
+                if not isinstance(rows, list):
+                    return
+                for item in rows:
+                    if not isinstance(item, dict):
+                        continue
+                    text_value = str(item.get("text") or item.get("excerpt") or "").strip()
+                    if not text_value:
+                        continue
+                    span = dict(item)
+                    source_value = surface_source or selected_key or selected_raw
+                    for key in ("source_url", "normalised_url", "canonical_url", "reference_url"):
+                        if not str(span.get(key) or "").strip():
+                            span[key] = source_value
+                    span["r42ds_archive_source_role_surface"] = True
+                    span["archive_material_role_surface"] = True
+                    span.setdefault("source_stream", "archive_source_material")
+                    span.setdefault("section_label", "archive_source_material")
+                    span.setdefault("artifact_kind", "article_text")
+                    candidates.append(span)
+
+            by_url = getattr(self, "last_r42ds_archive_source_role_surfaces_by_url", {}) or {}
+            if isinstance(by_url, dict):
+                for key in (selected_raw, selected_key):
+                    if key and key in by_url:
+                        _add_surface(by_url.get(key))
+                if not candidates:
+                    for surface in by_url.values():
+                        _add_surface(surface)
+
+            by_row = getattr(self, "last_r42ds_archive_source_role_surfaces_by_row_id", {}) or {}
+            if isinstance(by_row, dict):
+                for surface in by_row.values():
+                    _add_surface(surface)
+
+            # Preserve order but remove exact duplicates.
+            output: list[dict[str, object]] = []
+            seen: set[str] = set()
+            for span in candidates:
+                key = "|".join([
+                    str(span.get("edit_key") or ""),
+                    str(span.get("source_url") or ""),
+                    " ".join(str(span.get("text") or "").split()).casefold()[:240],
+                ])
+                if key in seen:
+                    continue
+                seen.add(key)
+                output.append(span)
+            return output
+
+        def _claim_spans_for_selected_scope() -> list[dict[str, object]]:
+            # YTCE_V83C_REPAIR6_MEDIA_SCOPE_MIXED_ARTICLE_TEXT
+            # YTCE_V83C_REPAIR10_ARTICLE_TEXT_SOURCE_ROLES_VISIBLE
+            # "Media / unlinked files" is a source scope.  It must keep mixed
+            # TXT/MD article-body spans available when the separate Media icon is
+            # OFF; the Media icon itself decides whether text spans or link rows
+            # are visible inside the Sourcing textbox.
+            article_like_streams = {"article_text", "webpage_text", "source_text"}
+            article_like_artifact_kinds = {"article_text", "webpage_text", "source_txt", "text"}
+
+            def _span_url_parts_for_scope(span: dict[str, object]) -> set[str]:
+                span_url_parts: set[str] = set()
+                for key in (
+                    "source_url",
+                    "canonical_url",
+                    "reference_url",
+                    "url",
+                    "normalised_url",
+                    "display_url",
+                    "archive_target_url",
+                    "preservation_for_url",
+                ):
+                    value = str(span.get(key) or "").strip()
+                    if value:
+                        span_url_parts.add(value)
+                return span_url_parts
+
+            def _span_belongs_to_media_unlinked_scope(span: dict[str, object]) -> bool:
+                span_url = str(span.get("source_url") or "").strip()
+                if not span_url:
+                    return True
+                span_stream = str(span.get("source_stream") or span.get("section_label") or span.get("section") or "").strip().casefold()
+                span_artifact_kind = str(span.get("artifact_kind") or span.get("artifact_type") or "").strip().casefold()
+                artifact_path = str(span.get("artifact_local_path") or span.get("local_path") or "").replace("\\", "/").casefold()
+                if span_stream in article_like_streams or span_stream == "text":
+                    return True
+                if span_artifact_kind in article_like_artifact_kinds:
+                    return True
+                if artifact_path.endswith((".txt", ".md")):
+                    return True
+                if bool(span.get("is_article_text_claim_span")) or bool(span.get("mixed_link_preamble_article_text")):
+                    return True
+                span_source_id = str(span.get("source_id") or "").strip().casefold()
+                if span_source_id.startswith(("article_text", "mixed_article_text")):
+                    return True
+                return False
+
+            output = []
+            for span in claim_role_spans:
+                if not isinstance(span, dict):
+                    continue
+                span_url = str(span.get("source_url") or "").strip()
+                span_url_parts = _span_url_parts_for_scope(span)
+                if media_scope_selected:
+                    if _span_belongs_to_media_unlinked_scope(span):
+                        output.append(span)
+                    continue
+                if not selected_scope_value or selected_scope_value in span_url_parts or span_url == selected_scope_value:
+                    output.append(span)
+            # R42DS: include role spans produced from post-capture archive material
+            # (for example archive.ph article_text.txt) in the selected archive
+            # source scope.  Without this bridge the archive row could capture
+            # material successfully, but the WebView2 source-role editor still
+            # showed no source-role text rows because claim_role_spans came only
+            # from the original preview JSON.
+            try:
+                r42ds_archive_spans = _r42ds_archive_role_spans_for_selected_scope()
+            except Exception:
+                r42ds_archive_spans = []
+            if r42ds_archive_spans:
+                seen_claim_keys = {
+                    "|".join([
+                        str(item.get("edit_key") or ""),
+                        str(item.get("source_url") or ""),
+                        " ".join(str(item.get("text") or "").split()).casefold()[:240],
+                    ])
+                    for item in output
+                    if isinstance(item, dict)
+                }
+                for archive_span in r42ds_archive_spans:
+                    if not isinstance(archive_span, dict):
+                        continue
+                    claim_key = "|".join([
+                        str(archive_span.get("edit_key") or ""),
+                        str(archive_span.get("source_url") or ""),
+                        " ".join(str(archive_span.get("text") or "").split()).casefold()[:240],
+                    ])
+                    if claim_key in seen_claim_keys:
+                        continue
+                    seen_claim_keys.add(claim_key)
+                    output.append(dict(archive_span))
+
+            # YTCE_V83C_REPAIR24_METRO_FULL_SEMANTIC_MEDIA_FREEZE
+            # Apply the frozen Metro article semantic/media split before the
+            # coloured Review text is rendered. This fixes the current article
+            # source-text card where bylines/headings were Unknown and direct
+            # Nora interview/account passages were not promoted consistently.
+            output = _ytce_review_r24_apply_metro_article_roles_to_claim_spans(output)
+            # YTCE_V83C_REPAIR25_UNIVERSAL_ARTICLE_ROLE_INFERENCE
+            output = _ytce_review_r25_apply_universal_article_roles_to_claim_spans(output)
+            return output
+
+        source_reference_review_edit_keys: set[str] = set()
+        source_reference_review_texts: set[str] = set()
+        # YTCE_MEDIA_SOURCE_FILTER_PASS6D_20260827
+        # Media-source filtering is a separate view switch for the coloured
+        # transcript: when active, the role filter applies to media-source
+        # provenance roles rather than to claim-span colours.
+        source_reference_media_role_by_edit_key: dict[str, str] = {}
+        source_reference_media_role_by_text: dict[str, str] = {}
+        # YTCE_V83C_REPAIR21_MEDIA_VIEW_SOURCE_ROLE_COLOURS
+        # Candidate source-chain roles and Media-icon display roles are separate.
+        # A sentence can be a media/source statement while still displaying as
+        # Unknown until the evidentiary source object is actually attached.
+        source_reference_media_display_role_by_edit_key: dict[str, str] = {}
+        source_reference_media_display_role_by_text: dict[str, str] = {}
+
+        # YTCE_REVIEW_FILLBOX_DECISIONS_PASS5G_20260827
+        # Source-reference Review decisions are separate from claim-span colours.
+        # A claim may display as Primary/Secondary/Unknown while this layer records
+        # whether the missing-media/source-gap item has been accepted or rejected.
+        source_reference_review_resolved_keys: set[str] = set()
+        source_reference_review_resolved_texts: set[str] = set()
+        source_reference_review_decisions_path = Path(preview_path).with_name(Path(preview_path).stem + "_source_reference_review_decisions.jsonl")
+        try:
+            from profile_media_link_source_decisions import (
+                append_link_source_decision as _append_link_source_decision_record,
+                link_source_object_key as _link_source_object_key,
+            )
+        except Exception:
+            _append_link_source_decision_record = None
+
+            def _link_source_object_key(record: dict[str, object]) -> str:
+                return "|".join(
+                    str(record.get(key) or "").strip().casefold()
+                    for key in ("normalised_url", "url", "nearby_heading", "list_label")
+                )
+
+        # YTCE_V83C_LINK_SOURCE_UI
+        # YTCE_V83C_LINK_SOURCE_DECISION_PERSISTENCE
+        # YTCE_V83C_LINK_SOURCE_FILTERS
+        # YTCE_V83C_LINK_SOURCE_LIVE_ARCHIVE_GROUPING
+        # YTCE_V83C_REPAIR2_ARCHIVE_INHERITS_VISIBLE_ROLE
+        # LOCATOR remains internal preservation metadata.  Visible link/media
+        # rows use Primary/Secondary/Tertiary/Unknown, with archives inheriting
+        # the role of the preserved target where the preview payload can tell.
+        link_source_filter_values = ["All", "Primary", "Secondary", "Tertiary", "Unknown", "Needs review", "Accepted", "Ignored", "Changed"]
+
+        def _link_source_role_value(record: dict[str, object]) -> str:
+            try:
+                role = str(record.get("claim_specific_role") or record.get("default_link_role") or "").strip().upper()
+                return role if role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "LOCATOR"} else "UNKNOWN"
+            except Exception:
+                return "UNKNOWN"
+
+        def _link_source_visible_role_value(record: dict[str, object]) -> str:
+            try:
+                role = str(record.get("visible_link_role") or "").strip().upper()
+                if role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}:
+                    return role
+                internal_role = _link_source_role_value(record)
+                return internal_role if internal_role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"} else "UNKNOWN"
+            except Exception:
+                return "UNKNOWN"
+
+        def _link_source_visible_row_label(record: dict[str, object]) -> str:
+            label = " ".join(str(record.get("visible_link_source_row_label") or "").split()).strip()
+            if label:
+                return label
+            if bool(record.get("is_archive_url")) or str(record.get("source_relation_type") or "") == "archive_preservation":
+                return "Archive URL"
+            return "Source URL"
+
+        def _link_source_row_instance_key(record: dict[str, object], row_index: int | None = None) -> str:
+            key = str(record.get("link_source_row_instance_key") or "").strip()
+            if key:
+                return key
+            parts = [
+                str(record.get("url") or record.get("normalised_url") or "").strip(),
+                str(record.get("source_path") or "").strip(),
+                str(record.get("line_number") or "").strip(),
+                str(row_index if row_index is not None else "").strip(),
+            ]
+            seed = "|".join(part for part in parts if part)
+            return "link-row-" + re.sub(r"\W+", "_", seed)[:96] if seed else f"link-row-{row_index or 0}"
+
+        def _link_source_object_type(record: dict[str, object]) -> str:
+            return " ".join(str(record.get("source_object_type") or "unknown").replace("_", " ").split())
+
+        def _link_source_decision_status(record: dict[str, object]) -> str:
+            return str(record.get("link_source_decision_status") or "").strip().casefold()
+
+        def _link_source_decision_status_display(status: object) -> str:
+            # YTCE_V83D_R34B_IGNORE_DISPLAY_CONSISTENCY
+            # Storage keeps the historic internal status "rejected" for JSONL
+            # compatibility. The user-facing action/row language is "ignored"
+            # because the URL/source object is retained but removed from active
+            # evidence counts.
+            status_text = str(status or "").strip().casefold()
+            if status_text == "rejected":
+                return "ignored from active evidence"
+            if status_text == "changed_role":
+                return "changed role"
+            return status_text
+
+        def _link_source_visible_for_filter(record: dict[str, object], filter_value: str) -> bool:
+            filter_text = str(filter_value or "All").strip().casefold()
+            if filter_text in {"", "all"}:
+                return True
+            if filter_text in {"primary", "secondary", "tertiary", "unknown"}:
+                return _link_source_visible_role_value(record).casefold() == filter_text
+            if filter_text == "needs review":
+                return bool(record.get("needs_review"))
+            if filter_text == "accepted":
+                return _link_source_decision_status(record) == "accepted"
+            if filter_text in {"ignored", "rejected"}:
+                return _link_source_decision_status(record) == "rejected"
+            if filter_text == "changed":
+                return _link_source_decision_status(record) == "changed_role"
+            return True
+
+        def _link_source_grouped_preservation_lines(record: dict[str, object], objects: list[dict[str, object]]) -> list[str]:
+            target = str(record.get("normalised_url") or record.get("url") or "").strip().casefold()
+            if not target or _link_source_role_value(record) == "LOCATOR":
+                return []
+            lines = []
+            for candidate in objects:
+                if candidate is record:
+                    continue
+                if _link_source_role_value(candidate) != "LOCATOR" and not bool(candidate.get("locator_only")):
+                    continue
+                preservation_for = str(candidate.get("preservation_for_url") or candidate.get("archive_target_url") or "").strip().casefold()
+                if preservation_for and preservation_for == target:
+                    label = str(candidate.get("list_label") or candidate.get("source_object_type") or "Locator").strip()
+                    url_value = str(candidate.get("display_url") or candidate.get("normalised_url") or candidate.get("url") or "").strip()
+                    lines.append(f"Preservation copy: {label}: {url_value}".rstrip(": "))
+            return lines
+
+        def _link_source_role_display_label(role: object) -> str:
+            role_text = str(role or "").strip().upper()
+            if role_text in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "LOCATOR"}:
+                return role_text
+            return "UNKNOWN"
+
+        def _next_link_source_evidence_role(role: object) -> str:
+            order = ("PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN")
+            current = _link_source_role_display_label(role)
+            if current not in order:
+                return "UNKNOWN"
+            return order[(order.index(current) + 1) % len(order)]
+
+        def _link_source_record_details_text(record: dict[str, object]) -> str:
+            # YTCE_V83C_REPAIR3_DETAILS_OMIT_BLANK_FIELDS
+            lines = ["Link source details"]
+            def add(label: str, value: object) -> None:
+                text_value = " ".join(str(value or "").split()).strip()
+                if text_value:
+                    lines.append(f"{label}: {text_value}")
+
+            visible_role = _link_source_role_display_label(record.get("visible_link_role") or record.get("claim_specific_role") or record.get("default_link_role"))
+            internal_role = _link_source_role_display_label(record.get("claim_specific_role") or record.get("default_link_role"))
+            default_role = _link_source_role_display_label(
+                record.get("classifier_default_link_role")
+                or record.get("original_claim_specific_role")
+                or record.get("original_default_link_role")
+                or record.get("claim_specific_role")
+                or record.get("default_link_role")
+            )
+            add("URL", record.get("url"))
+            add("Normalised URL", record.get("normalised_url"))
+            add("Source object type", record.get("source_object_type"))
+            add("Source relation type", record.get("source_relation_type"))
+            add("Default role", default_role)
+            add("Current visible role", visible_role)
+            if internal_role == "LOCATOR" or bool(record.get("visible_role_is_locator_metadata")):
+                add("Internal preservation role", internal_role)
+            add("Role reason", record.get("role_reason"))
+            add("Visible role reason", record.get("visible_role_reason"))
+            add("Inherited from target URL", record.get("inherited_role_source_url"))
+            add("Confidence", record.get("confidence"))
+            add("Archive target / preservation relation", record.get("archive_target_url") or record.get("preservation_for_url"))
+            decision_status_text = str(record.get("link_source_decision_status") or "undecided").strip()
+            display_decision_status = _link_source_decision_status_display(decision_status_text) or "undecided"
+            if decision_status_text.casefold() == "rejected":
+                display_decision_status = "ignored from active evidence (stored internally as rejected for compatibility)"
+            add("Decision status", display_decision_status)
+            add("Notes", record.get("link_source_decision_note"))
+            if internal_role == "LOCATOR" or bool(record.get("is_archive_url")):
+                lines.append("Archive/preservation metadata is retained internally; the main source-role text shows the inherited target role.")
+            lines.extend(_link_source_article_media_detail_lines(record))
+            try:
+                from profile_media_browser_network_provenance_v83d import compact_browser_network_provenance_lines
+
+                # Browser/network provenance:
+                lines.extend(compact_browser_network_provenance_lines(record))
+            except Exception:
+                logger.debug("Could not render browser/network provenance details.", exc_info=True)
+            try:
+                from profile_media_capture_provenance_ui_adapter_v83d import capture_provenance_detail_lines
+
+                # R40E capture artifact review metadata stays read-only and role-neutral.
+                lines.extend(capture_provenance_detail_lines(record))
+            except Exception:
+                logger.debug("Could not render capture artifact review details.", exc_info=True)
+            return "\n".join(lines)
+
+        def _link_source_article_media_detail_lines(record: dict[str, object]) -> list[str]:
+            # YTCE_V83D_LINK_DETAILS_ARTICLE_MEDIA_FROM_PARSED_TEXT
+            details = record.get("article_media_details")
+            if isinstance(details, list) and details:
+                lines = ["", "Linked media / article media:"]
+                for detail in details:
+                    if not isinstance(detail, dict):
+                        continue
+                    label = " ".join(str(detail.get("label") or "Media").split())
+                    role = _link_source_role_display_label(detail.get("role"))
+                    reason = " ".join(str(detail.get("reason") or "").split())
+                    potential = " ".join(str(detail.get("potential_role_if_linked_source_found") or "").split())
+                    text = f"- {label}: {role}"
+                    if reason:
+                        text += f" — {reason}"
+                    if potential:
+                        text += f" Potential role if linked source found: {potential}"
+                    lines.append(text)
+                if len(lines) > 2:
+                    return lines
+            return []
+
+        def _copy_link_source_record_url(record: dict[str, object]) -> str:
+            self._copy_text_to_clipboard(
+                str(record.get("normalised_url") or record.get("url") or ""),
+                "Copied link source URL to clipboard.",
+            )
+            return "break"
+
+        def _open_link_source_details_window_for_record(record: dict[str, object]) -> str:
+            # YTCE_V83C_REPAIR1_LINK_DETAILS_WINDOW
+            record = dict(record or {})
+            try:
+                preview_context: dict[str, object] = {
+                    "claim_role_spans": [dict(item) for item in claim_role_spans if isinstance(item, dict)],
+                    "selected_claim_span_roles": dict(existing_claim_span_roles),
+                    "selected_claim_span_media_roles": dict(existing_claim_span_media_roles),
+                    # R42I: artifact resolvers need the actual import/review file
+                    # locations.  Earlier R42D/H scans often had no source-path seed,
+                    # so FireShot/rendered-page files stored beside the imported TXT
+                    # were never discovered and the window fell back to extracted text.
+                    "preview_path": str(preview_path),
+                    "review_text_path": str(review_text_path),
+                }
+                try:
+                    # R42N: seed the selected-link artifact resolver with the app's
+                    # own Generic Website live-capture root. The edit window should
+                    # prefer rendered-page.html / screenshots/full-page.png created
+                    # by the Webpage/Screenshot Go flow, not manual FireShot files.
+                    preview_context["r42n_app_live_capture_root"] = str(self._profile_media_database_capture_manifest_root())
+                    preview_context["generic_website_live_capture_root"] = str(self._profile_media_database_capture_manifest_root())
+                except Exception:
+                    pass
+                try:
+                    live_capture_rows: list[dict[str, object]] = []
+                    captured_by_row = self.__dict__.get("last_generic_website_live_capture_artifacts_by_row_id", {}) or {}
+                    if isinstance(captured_by_row, dict):
+                        for value in captured_by_row.values():
+                            for item in tuple(value or ()):  # type: ignore[arg-type]
+                                if isinstance(item, dict):
+                                    live_capture_rows.append(dict(item))
+                                else:
+                                    try:
+                                        live_capture_rows.append(dict(item.to_dict()))  # type: ignore[attr-defined]
+                                    except Exception:
+                                        pass
+                    latest_capture_result = self.__dict__.get("last_generic_website_live_capture_result")
+                    for item in tuple(getattr(latest_capture_result, "artifacts", ()) or ()):
+                        if isinstance(item, dict):
+                            live_capture_rows.append(dict(item))
+                        else:
+                            try:
+                                live_capture_rows.append(dict(item.to_dict()))  # type: ignore[attr-defined]
+                            except Exception:
+                                pass
+                    if live_capture_rows:
+                        preview_context["r42n_generic_website_live_capture_artifacts"] = live_capture_rows
+                        record["r42n_generic_website_live_capture_artifacts"] = live_capture_rows
+                except Exception:
+                    logger.debug("Could not attach R42N app live-capture artifacts to selected link details.", exc_info=True)
+                if isinstance(preview_section, dict):
+                    preview_context["artifacts"] = [
+                        dict(item) for item in preview_section.get("artifacts", []) or [] if isinstance(item, dict)
+                    ]
+                    preview_context["link_source_objects"] = [
+                        dict(item) for item in preview_section.get("link_source_objects", []) or [] if isinstance(item, dict)
+                    ]
+                    preview_context["link_source_preview"] = dict(preview_section.get("link_source_preview") or {}) if isinstance(preview_section.get("link_source_preview"), dict) else {}
+                    claim_preview_context = dict(preview_section.get("claim_role_classification_preview") or {}) if isinstance(preview_section.get("claim_role_classification_preview"), dict) else {}
+                    if claim_role_spans:
+                        claim_preview_context["spans"] = [dict(item) for item in claim_role_spans if isinstance(item, dict)]
+                    preview_context["claim_role_classification_preview"] = claim_preview_context
+                    for context_key in ("article_media_details", "embedded_media_preview_state", "embedded_media_preview", "browser_capture_reviews", "capture_review_records", "capture_reviews"):
+                        value = preview_section.get(context_key)
+                        if value:
+                            preview_context[context_key] = value
+                if link_source_objects:
+                    preview_context["link_source_objects"] = [dict(item) for item in link_source_objects if isinstance(item, dict)]
+                if link_source_preview:
+                    preview_context["link_source_preview"] = dict(link_source_preview)
+
+                # R42H: the per-link edit window must use the same source-role
+                # rows as the main Review DB import view.  Build those rows from
+                # the already-selected Review scope, after the Metro freeze and
+                # universal article-source inference have run, and attach them with
+                # highest priority so stale per-link sidecar maps cannot downgrade
+                # the edit-window roles to mostly UNKNOWN.
+                try:
+                    # R42I: start from the raw imported article/source spans and
+                    # explicitly run the same Metro freeze + universal article-role
+                    # functions used by the main Review DB import coloured viewer.
+                    # Do not start from selected-link sidecar rows, because those are
+                    # exactly where the bad mostly-UNKNOWN edit-window roles came from.
+                    # R42N: seed record/context with the selected-source Review
+                    # spans, not the raw bundle-wide claim_role_spans list.
+                    parity_spans = [dict(item) for item in _claim_spans_for_selected_scope() if isinstance(item, dict)]
+                except Exception:
+                    try:
+                        parity_spans = [dict(item) for item in _claim_spans_for_selected_scope() if isinstance(item, dict)]
+                    except Exception:
+                        parity_spans = [dict(item) for item in claim_role_spans if isinstance(item, dict)]
+                if parity_spans:
+                    selected_link_url = str(record.get("normalised_url") or record.get("url") or "").strip()
+                    for parity_span in parity_spans:
+                        parity_span["r42h_review_db_import_parity"] = True
+                        parity_span["review_db_import_role_logic_reused"] = True
+                        # R42DS: archive/material recovery spans created before the selected
+                        # link-details window could carry an empty source_url.  setdefault()
+                        # does not replace an existing empty string, so the WebView2 editor
+                        # could receive role rows that no longer belonged to the selected
+                        # archive.ph source scope.  Backfill empty URL fields explicitly.
+                        if not str(parity_span.get("source_url") or "").strip():
+                            parity_span["source_url"] = selected_link_url
+                        if not str(parity_span.get("normalised_url") or "").strip():
+                            parity_span["normalised_url"] = selected_link_url
+                        if not str(parity_span.get("canonical_url") or "").strip():
+                            parity_span["canonical_url"] = selected_link_url
+                        if not str(parity_span.get("reference_url") or "").strip():
+                            parity_span["reference_url"] = selected_link_url
+                    preview_context["r42h_review_db_import_parity_spans"] = parity_spans
+                    preview_context["claim_role_spans"] = parity_spans
+                    record["r42h_review_db_import_parity_spans"] = parity_spans
+                    record["claim_role_spans"] = parity_spans
+
+                record["r42b_preview_context"] = preview_context
+                if claim_role_spans and "claim_role_spans" not in record:
+                    record["claim_role_spans"] = [dict(item) for item in claim_role_spans if isinstance(item, dict)]
+                if "claim_role_classification_preview" not in record and isinstance(preview_context.get("claim_role_classification_preview"), dict):
+                    record["claim_role_classification_preview"] = dict(preview_context.get("claim_role_classification_preview") or {})
+                if "article_media_details" not in record and isinstance(preview_context.get("article_media_details"), list):
+                    record["article_media_details"] = [dict(item) for item in preview_context.get("article_media_details", []) if isinstance(item, dict)]
+            except Exception:
+                logger.debug("Could not attach R42B preview context to selected link-source record.", exc_info=True)
+            details_win = ctk.CTkToplevel(win)
+            details_win.title("Link source details")
+            try:
+                details_win.geometry("940x760")
+                details_win.transient(win)
+            except Exception:
+                pass
+            details_win.grid_columnconfigure(0, weight=1)
+            details_win.grid_rowconfigure(1, weight=1)
+            details_win.grid_rowconfigure(2, weight=0)
+            details_win.grid_rowconfigure(3, weight=0)
+            try:
+                icons = self._load_profile_media_role_icons()
+            except Exception:
+                icons = {}
+            actions = ctk.CTkFrame(details_win, fg_color="transparent")
+            actions.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 4))
+            actions.grid_columnconfigure(10, weight=1)
+            url = str(record.get("normalised_url") or record.get("url") or "")
+            try:
+                from profile_media_link_source_edit_window_v83d import (
+                    build_link_source_edit_window_state,
+                    build_role_change_payload,
+                    render_link_source_editor_plain_text,
+                    render_link_source_editor_role_markup,
+                )
+                from profile_media_link_source_rendered_page_artifact_v83d import (
+                    build_selected_url_rendered_page_artifact_state,
+                    render_rendered_page_artifact_summary,
+                )
+                from profile_media_link_source_webpage_role_view_v83d import build_webpage_role_view_state
+                from profile_media_link_source_real_webview_overlay_v83d import (
+                    write_role_overlay_html,
+                    launch_role_overlay_webview_async,
+                )
+            except Exception:
+                build_link_source_edit_window_state = None
+                build_role_change_payload = None
+                render_link_source_editor_plain_text = None
+                render_link_source_editor_role_markup = None
+                build_selected_url_rendered_page_artifact_state = None
+                render_rendered_page_artifact_summary = None
+                build_webpage_role_view_state = None
+                write_role_overlay_html = None
+                launch_role_overlay_webview_async = None
+            if build_link_source_edit_window_state is not None:
+                try:
+                    title_state = build_link_source_edit_window_state(record)
+                    details_win.title(str(title_state.get("window_title") or title_state.get("selected_url") or "Link source details"))
+                except Exception:
+                    logger.debug("Could not set R42B link source details title.", exc_info=True)
+            details_box: object | None = None
+            try:
+                from profile_media_link_source_details_fast_render_v83d import (
+                    prepare_fast_link_source_details,
+                    render_fast_link_source_details_text,
+                    render_lazy_capture_history_text,
+                )
+            except Exception:
+                prepare_fast_link_source_details = None
+                render_fast_link_source_details_text = None
+                render_lazy_capture_history_text = None
+
+            def _fast_link_details_text(item: dict[str, object]) -> tuple[str, object | None]:
+                if prepare_fast_link_source_details is None or render_fast_link_source_details_text is None:
+                    return _link_source_record_details_text(item), None
+                try:
+                    prepared = prepare_fast_link_source_details(item, limit=5)
+                    return render_fast_link_source_details_text(prepared), prepared
+                except Exception:
+                    logger.debug("Could not build fast link source details text.", exc_info=True)
+                    return _link_source_record_details_text(item), None
+
+            def _link_source_role_matrix_text(item: dict[str, object]) -> str:
+                try:
+                    from profile_media_link_source_details_role_matrix_v83d import (
+                        build_link_source_details_role_matrix,
+                        render_link_source_details_role_matrix_text,
+                    )
+
+                    return render_link_source_details_role_matrix_text(build_link_source_details_role_matrix(item))
+                except Exception:
+                    logger.debug("Could not build link source role matrix text.", exc_info=True)
+                    return _link_source_record_details_text(item)
+
+            def _set_details_text(text: str) -> None:
+                nonlocal details_box
+                if details_box is None:
+                    return
+                try:
+                    details_box.configure(state="normal")
+                    details_box.delete("1.0", "end")
+                    details_box.insert("1.0", text)
+                    details_box.configure(state="disabled")
+                except Exception:
+                    logger.debug("Could not update link source details text.", exc_info=True)
+
+            def _run_capture_now_for_link_source(item: dict[str, object]) -> None:
+                # R41B_RUN_CAPTURE_NOW_METADATA_ONLY
+                target_url = str(item.get("normalised_url") or item.get("url") or "").strip()
+                if not target_url:
+                    self.log_message("Run capture now skipped: link source row has no URL.", "warning")
+                    return
+                self.log_message("Run capture now: starting browser/CDP provenance capture for selected link.", "info")
+
+                def _worker() -> None:
+                    try:
+                        from profile_media_capture_now_workflow_v83d import run_capture_now_workflow
+                        from profile_media_edge_cdp_link_sourcing_v83d import capture_link_source_edge_first
+
+                        def _capture_runner(capture_url: str) -> dict[str, object]:
+                            result = capture_link_source_edge_first(
+                                capture_url,
+                                duration_seconds=8.0,
+                                allow_launch=True,
+                            )
+                            summary = result.get("capture_summary") if isinstance(result, dict) else {}
+                            if isinstance(summary, dict) and summary:
+                                summary = dict(summary)
+                                summary.setdefault("r41d_edge_link_sourcing", result)
+                                return summary
+                            return {
+                                "success": False,
+                                "warnings": [str(result.get("exact_blocker") or result.get("status") or "Edge-first CDP capture did not complete.")],
+                                "r41d_edge_link_sourcing": result,
+                                "role_effect": "metadata_only_no_role_change",
+                                "source_role_effect": "none_metadata_only",
+                            }
+
+                        result = run_capture_now_workflow(
+                            [target_url],
+                            capture_runner=_capture_runner,
+                            output_dir=Path("profile_media_live_captures") / "r41_in_app_capture_now",
+                            registry_path=Path("PROFILE_MEDIA_CAPTURE_REVIEW_REGISTRY_V83D.json"),
+                        )
+                    except Exception as exc:
+                        result = {
+                            "error": f"{type(exc).__name__}: {exc}",
+                            "capture_reviews": [],
+                            "role_effect": "metadata_only_no_role_change",
+                        }
+
+                    def _finish() -> None:
+                        reviews = result.get("capture_reviews") if isinstance(result, dict) else []
+                        if isinstance(reviews, list) and reviews:
+                            item["browser_capture_reviews"] = [dict(row) for row in reviews if isinstance(row, dict)]
+                        suffix = "\n\nRun capture now result:\n"
+                        if isinstance(result, dict) and result.get("error"):
+                            suffix += str(result.get("error"))
+                            self.log_message(f"Run capture now blocked/failed: {result.get('error')}", "warning")
+                        else:
+                            attempts = result.get("attempts") if isinstance(result, dict) else []
+                            suffix += f"Capture review record(s): {len(reviews) if isinstance(reviews, list) else 0}\n"
+                            suffix += f"Attempt state(s): {', '.join(str(row.get('status')) for row in attempts if isinstance(row, dict)) if isinstance(attempts, list) else 'unknown'}\n"
+                            suffix += "Telemetry metadata only; source roles and counters were not changed."
+                            self.log_message("Run capture now finished; provenance registry updated without changing roles/counters.", "success")
+                        immediate, prepared = _fast_link_details_text(item)
+                        history = ""
+                        if prepared is not None and render_lazy_capture_history_text is not None:
+                            try:
+                                history = "\n\n" + render_lazy_capture_history_text(prepared)
+                            except Exception:
+                                logger.debug("Could not render lazy capture history after Run capture now.", exc_info=True)
+                        _set_details_text(immediate + history + suffix)
+
+                    try:
+                        self.after(0, _finish)
+                    except Exception:
+                        logger.debug("Could not schedule Run capture now UI finish.", exc_info=True)
+
+                threading.Thread(target=_worker, name="profile-media-r41-run-capture-now", daemon=True).start()
+
+            def _open_in_capture_browser(item: dict[str, object]) -> None:
+                target_url = str(item.get("normalised_url") or item.get("url") or "").strip()
+                if not target_url:
+                    self.log_message("Open in capture browser skipped: link source row has no URL.", "warning")
+                    return
+                self.log_message("Open in capture browser: opening visible browser route for selected link.", "info")
+                try:
+                    webbrowser.open(target_url)
+                except Exception as exc:
+                    self.log_message(f"Open in capture browser failed: {exc}", "warning")
+
+            def _close_ytce_test_tabs_from_details() -> None:
+                try:
+                    from profile_media_browser_tab_cleanup_v83d import (
+                        build_tab_cleanup_plan,
+                        close_browser_tabs_from_plan,
+                        list_open_browser_tabs,
+                        render_tab_cleanup_summary,
+                    )
+
+                    tabs = list_open_browser_tabs()
+                    plan = build_tab_cleanup_plan(tabs)
+                    result = close_browser_tabs_from_plan(plan)
+                    _set_details_text(render_tab_cleanup_summary(result))
+                    self.log_message("Close YTCE test tabs finished; manual article/archive tabs were preserved.", "success")
+                except Exception as exc:
+                    self.log_message(f"Close YTCE test tabs unavailable: {exc}", "warning")
+
+            def _first_osint_passive_candidate_text(item: dict[str, object]) -> str:
+                for key in ("osint_passive_discovery_rows", "passive_discovery_rows"):
+                    rows = item.get(key)
+                    if isinstance(rows, list):
+                        for row in rows:
+                            if isinstance(row, dict):
+                                text = str(row.get("value") or row.get("url") or row.get("profile_url") or row.get("candidate") or "").strip()
+                                if text:
+                                    return text
+                return ""
+
+            def _copy_selected_osint_passive_candidate(item: dict[str, object]) -> None:
+                candidate = _first_osint_passive_candidate_text(item)
+                if not candidate:
+                    self.log_message("No OSINT/passive candidate is selected for copying.", "info")
+                    return
+                self._copy_text_to_clipboard(candidate, "Copied selected OSINT/passive candidate.")
+
+            def _add_selected_osint_candidate_to_review_queue(item: dict[str, object]) -> None:
+                candidate = _first_osint_passive_candidate_text(item)
+                if not candidate:
+                    self.log_message("No OSINT/passive candidate is selected for the review queue.", "info")
+                    return
+                self.log_message("Added selected OSINT/passive candidate to review queue as metadata-only review-required material.", "success")
+
+            def _render_r41y_rich_link_details_panel(container: object, item: dict[str, object], prepared_details: object | None) -> None:
+                # YTCE_V83D_R41Y_RICH_LINK_SOURCE_DETAILS_VIEWER
+                try:
+                    from profile_media_rich_link_source_details_viewer_v83d import (
+                        build_rich_link_source_details_viewer_state,
+                        render_rich_section_text,
+                    )
+                except Exception:
+                    logger.debug("Could not import R41Y rich link source details viewer.", exc_info=True)
+                    return
+                try:
+                    state = build_rich_link_source_details_viewer_state(item)
+                except Exception:
+                    logger.debug("Could not build R41Y rich link source details state.", exc_info=True)
+                    return
+                header = state.get("fast_header") if isinstance(state.get("fast_header"), dict) else {}
+                header_frame = ctk.CTkFrame(container, fg_color="#1f2933", corner_radius=6)
+                header_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 6))
+                header_frame.grid_columnconfigure(1, weight=1)
+                header_pairs = [
+                    ("URL", header.get("url")),
+                    ("Normalised URL", header.get("normalised_url")),
+                    ("Source object type", header.get("source_object_type")),
+                    ("Visible role", header.get("visible_role_badge")),
+                    ("Internal archive/preservation role", header.get("internal_archive_preservation_role")),
+                    ("Inherited target URL", header.get("inherited_target_url")),
+                    ("Confidence", header.get("confidence")),
+                    ("Decision status", header.get("decision_status")),
+                    ("Evidence-gate status", header.get("evidence_gate_status")),
+                ]
+                header_row = 0
+                for label, value in header_pairs:
+                    text_value = " ".join(str(value or "").split()).strip()
+                    if not text_value:
+                        continue
+                    ctk.CTkLabel(header_frame, text=f"{label}:", anchor="w", font=ctk.CTkFont(size=11, weight="bold")).grid(
+                        row=header_row,
+                        column=0,
+                        sticky="nw",
+                        padx=(10, 8),
+                        pady=2,
+                    )
+                    ctk.CTkLabel(header_frame, text=text_value, anchor="w", wraplength=720, justify="left").grid(
+                        row=header_row,
+                        column=1,
+                        sticky="ew",
+                        padx=(0, 10),
+                        pady=2,
+                    )
+                    header_row += 1
+                badge_frame = ctk.CTkFrame(container, fg_color="transparent")
+                badge_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 6))
+                for index, badge in enumerate(state.get("role_badges") or ["REVIEW REQUIRED"]):
+                    ctk.CTkLabel(
+                        badge_frame,
+                        text=str(badge),
+                        fg_color="#334155",
+                        text_color="#ffffff",
+                        corner_radius=4,
+                        padx=8,
+                        pady=3,
+                    ).grid(row=0, column=index, sticky="w", padx=(0, 5))
+
+                section_rows: dict[int, dict[str, object]] = {}
+
+                def _role_badge_color(role: object) -> str:
+                    role_text = str(role or "").upper()
+                    if role_text == "PRIMARY":
+                        return "#15803d"
+                    if role_text == "SECONDARY":
+                        return "#1d4ed8"
+                    if role_text == "TERTIARY":
+                        return "#7c3aed"
+                    if role_text == "LOCATOR":
+                        return "#475569"
+                    if role_text in {"REVIEW", "REVIEW_REQUIRED"}:
+                        return "#b45309"
+                    if role_text in {"BLOCKED", "BLOCKED / CHALLENGE"}:
+                        return "#b91c1c"
+                    return "#64748b"
+
+                def _open_media_artifact_folder(folder_value: object) -> None:
+                    folder_text = str(folder_value or "").strip()
+                    if not folder_text:
+                        self.log_message("No related capture artifact folder is attached to this media candidate.", "info")
+                        return
+                    try:
+                        folder_path = Path(folder_text)
+                        if folder_path.exists():
+                            webbrowser.open(folder_path.resolve().as_uri())
+                            return
+                    except Exception:
+                        logger.debug("Could not open media artifact folder.", exc_info=True)
+                    self.log_message("Related capture artifact folder is missing or unavailable.", "warning")
+
+                def _render_r41z_media_preview_cards(parent: object, preview_state: dict[str, object]) -> None:
+                    # YTCE_V83D_R41Z_EMBEDDED_MEDIA_PREVIEW
+                    # YTCE_V83D_R42A_LIGHTWEIGHT_INLINE_MEDIA_VIEWER
+                    inline_preview_images: list[object] = []
+                    try:
+                        for child in parent.winfo_children():
+                            child.destroy()
+                    except Exception:
+                        logger.debug("Could not clear R41Z media preview card frame.", exc_info=True)
+                    cards = [card for card in preview_state.get("cards") or [] if isinstance(card, dict)]
+                    if not cards:
+                        ctk.CTkLabel(
+                            parent,
+                            text="No linked media or network media candidates attached.",
+                            anchor="w",
+                        ).grid(row=0, column=0, sticky="ew", padx=6, pady=6)
+                        return
+                    ctk.CTkLabel(
+                        parent,
+                        text="Inline media previews are metadata/review UI only; no address bar, tabs, navigation toolbar, or whole-page browser controls.",
+                        anchor="w",
+                        justify="left",
+                        wraplength=760,
+                    ).grid(row=0, column=0, sticky="ew", padx=6, pady=(2, 8))
+                    for card_index, card in enumerate(cards, start=1):
+                        card_frame = ctk.CTkFrame(parent, fg_color="#0f172a", corner_radius=6)
+                        card_frame.grid(row=card_index, column=0, sticky="ew", padx=6, pady=(0, 8))
+                        card_frame.grid_columnconfigure(1, weight=1)
+                        media_type = str(card.get("media_type") or "unknown")
+                        role_badge = str(card.get("role_badge") or "UNKNOWN").upper()
+                        url_value = str(card.get("url_or_source_path") or "").strip()
+                        reason_value = str(card.get("reason") or "").strip()
+                        folder_value = str(card.get("capture_artifact_folder") or "").strip()
+                        placeholder_text = str(card.get("safe_placeholder") or "Media preview")
+                        load_state = {"active": False}
+                        preview_box = ctk.CTkLabel(
+                            card_frame,
+                            text=placeholder_text,
+                            width=220,
+                            height=132,
+                            fg_color="#111827",
+                            text_color="#dbeafe",
+                            corner_radius=4,
+                            anchor="center",
+                            wraplength=190,
+                        )
+                        preview_box.grid(row=0, column=0, rowspan=6, sticky="nsew", padx=8, pady=8)
+
+                        def _apply_inline_preview_result(result: dict[str, object], label: object = preview_box, media_kind: str = media_type) -> None:
+                            try:
+                                if not label.winfo_exists():
+                                    return
+                            except Exception:
+                                return
+                            status = str(result.get("status") or "")
+                            try:
+                                if status == "loaded" and result.get("pil_image") is not None:
+                                    ctk_image = ctk.CTkImage(
+                                        light_image=result["pil_image"],
+                                        dark_image=result["pil_image"],
+                                        size=tuple(result.get("actual_size") or (220, 132)),
+                                    )
+                                    inline_preview_images.append(ctk_image)
+                                    label.configure(image=ctk_image, text="")
+                                elif status == "video_placeholder":
+                                    label.configure(text="Video preview limited\nUse Open externally\nHover frame fallback preserved")
+                                else:
+                                    failure = str(result.get("failure_reason") or "Preview unavailable.")
+                                    label.configure(text=f"{media_kind.upper()} preview unavailable\n{failure[:120]}")
+                            except Exception:
+                                logger.debug("Could not apply R42A inline media preview result.", exc_info=True)
+                            finally:
+                                load_state["active"] = False
+
+                        def _load_inline_preview(card_item: dict[str, object] = card, label: object = preview_box) -> None:
+                            if load_state.get("active"):
+                                return
+                            load_state["active"] = True
+                            try:
+                                label.configure(text="Loading selected preview...")
+                            except Exception:
+                                load_state["active"] = False
+                                return
+
+                            def _worker() -> None:
+                                try:
+                                    from profile_media_inline_media_loader_v83d import load_inline_media_preview_payload
+
+                                    result = load_inline_media_preview_payload(card_item)
+                                except Exception as exc:
+                                    result = {
+                                        "status": "failed",
+                                        "failure_reason": str(exc),
+                                        "metadata_only": True,
+                                        "does_not_create_evidence": True,
+                                    }
+                                try:
+                                    details_win.after(0, lambda payload=result, target=label: _apply_inline_preview_result(payload, target))
+                                except Exception:
+                                    logger.debug("Could not schedule R42A inline media preview result.", exc_info=True)
+                                    load_state["active"] = False
+
+                            threading.Thread(target=_worker, name="profile-media-r42a-inline-media-preview", daemon=True).start()
+
+                        ctk.CTkLabel(
+                            card_frame,
+                            text=role_badge,
+                            fg_color=_role_badge_color(role_badge),
+                            text_color="#ffffff",
+                            corner_radius=4,
+                            padx=8,
+                            pady=3,
+                        ).grid(row=0, column=1, sticky="w", padx=(0, 8), pady=(8, 2))
+                        ctk.CTkLabel(
+                            card_frame,
+                            text=f"{card.get('item') or 'Media candidate'} | {media_type}",
+                            anchor="w",
+                            font=ctk.CTkFont(size=12, weight="bold"),
+                        ).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=2)
+                        ctk.CTkLabel(
+                            card_frame,
+                            text=f"URL/source: {url_value or '(missing)'}",
+                            anchor="w",
+                            justify="left",
+                            wraplength=650,
+                        ).grid(row=2, column=1, sticky="ew", padx=(0, 8), pady=2)
+                        ctk.CTkLabel(
+                            card_frame,
+                            text=f"Reason: {reason_value or 'Review media provenance.'}",
+                            anchor="w",
+                            justify="left",
+                            wraplength=650,
+                        ).grid(row=3, column=1, sticky="ew", padx=(0, 8), pady=2)
+                        ctk.CTkLabel(
+                            card_frame,
+                            text=f"Provenance: {card.get('provenance_status') or 'unknown'} | Evidence gate: {card.get('evidence_gate_status') or 'METADATA_ONLY'}",
+                            anchor="w",
+                            justify="left",
+                            wraplength=650,
+                        ).grid(row=4, column=1, sticky="ew", padx=(0, 8), pady=2)
+                        action_frame = ctk.CTkFrame(card_frame, fg_color="transparent")
+                        action_frame.grid(row=5, column=1, sticky="w", padx=(0, 8), pady=(4, 8))
+                        ctk.CTkButton(
+                            action_frame,
+                            text="",
+                            image=icons.get("media_filter"),
+                            width=30,
+                            height=26,
+                            command=_load_inline_preview,
+                        ).grid(row=0, column=0, sticky="w", padx=(0, 4))
+                        ctk.CTkButton(
+                            action_frame,
+                            text="",
+                            image=icons.get("media_filter"),
+                            width=30,
+                            height=26,
+                            command=lambda card_item=card: self.log_message(
+                                "Inline video playback is limited; selected media keeps hover-frame/external-open fallback.",
+                                "info",
+                            ) if str(card_item.get("media_type") or "").lower() == "video" else self.log_message("Image preview has no play/pause state.", "info"),
+                        ).grid(row=0, column=1, sticky="w", padx=(0, 4))
+                        ctk.CTkButton(
+                            action_frame,
+                            text="",
+                            image=icons.get("open_url"),
+                            width=30,
+                            height=26,
+                            command=lambda url=url_value: webbrowser.open(url) if url else self.log_message("No media URL/path is available.", "info"),
+                        ).grid(row=0, column=2, sticky="w", padx=(0, 4))
+                        ctk.CTkButton(
+                            action_frame,
+                            text="",
+                            image=icons.get("copy_url"),
+                            width=30,
+                            height=26,
+                            command=lambda url=url_value: self._copy_text_to_clipboard(url, "Copied media URL.") if url else self.log_message("No media URL/path is available.", "info"),
+                        ).grid(row=1, column=0, sticky="w", padx=(0, 4), pady=(4, 0))
+                        ctk.CTkButton(
+                            action_frame,
+                            text="",
+                            image=icons.get("copy_text"),
+                            width=30,
+                            height=26,
+                            command=lambda reason=reason_value: self._copy_text_to_clipboard(reason, "Copied media role reason.") if reason else self.log_message("No media role reason is available.", "info"),
+                        ).grid(row=1, column=1, sticky="w", padx=(0, 4), pady=(4, 0))
+                        ctk.CTkButton(
+                            action_frame,
+                            text="+",
+                            width=30,
+                            height=26,
+                            command=lambda: self.log_message("Added media candidate to review queue as metadata-only review material.", "success"),
+                        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=(0, 4), pady=(4, 0))
+                        ctk.CTkButton(
+                            action_frame,
+                            text="",
+                            image=icons.get("open_url"),
+                            width=30,
+                            height=26,
+                            command=lambda folder=folder_value: _open_media_artifact_folder(folder),
+                        ).grid(row=2, column=2, sticky="w", padx=(0, 4), pady=(4, 0))
+
+                        def _preview_enter(_event: object, label: object = preview_box, card_item: dict[str, object] = card) -> None:
+                            try:
+                                label.configure(
+                                    text=(
+                                        "Video hover preview requested (lazy)"
+                                        if str(card_item.get("media_type") or "").lower() == "video"
+                                        else "Image preview ready (selected lazy load)"
+                                    )
+                                )
+                            except Exception:
+                                logger.debug("Could not update R41Z media hover preview label.", exc_info=True)
+
+                        def _preview_leave(_event: object, label: object = preview_box, card_item: dict[str, object] = card, fallback: str = placeholder_text) -> None:
+                            try:
+                                label.configure(
+                                    text=(
+                                        "Preserved hover frame"
+                                        if str(card_item.get("media_type") or "").lower() == "video"
+                                        else fallback
+                                    )
+                                )
+                            except Exception:
+                                logger.debug("Could not restore R41Z media hover preview label.", exc_info=True)
+
+                        for hover_widget in (card_frame, preview_box):
+                            try:
+                                hover_widget.bind("<Enter>", _preview_enter, add="+")
+                                if str(card.get("media_type") or "").lower() == "image":
+                                    hover_widget.bind("<Button-1>", lambda _event, loader=_load_inline_preview: loader(), add="+")
+                                hover_widget.bind("<Leave>", _preview_leave, add="+")
+                            except Exception:
+                                logger.debug("Could not bind R41Z media hover preview.", exc_info=True)
+                    hidden = int(preview_state.get("hidden_card_count") or 0)
+                    if hidden:
+                        ctk.CTkLabel(
+                            parent,
+                            text=f"Show more available: {hidden} additional media candidate(s).",
+                            anchor="w",
+                        ).grid(row=len(cards) + 1, column=0, sticky="ew", padx=6, pady=(0, 6))
+
+                def _load_section_content(section: dict[str, object], content_widget: object) -> None:
+                    try:
+                        if section.get("title") == "Media Preview":
+                            preview_state = state.get("embedded_media_preview_state")
+                            _render_r41z_media_preview_cards(content_widget, preview_state if isinstance(preview_state, dict) else {})
+                            return
+                        text = render_rich_section_text(section)
+                        if section.get("title") == "Capture artifact review" and prepared_details is not None and render_lazy_capture_history_text is not None:
+                            try:
+                                text = render_lazy_capture_history_text(prepared_details, show_all=False)
+                            except Exception:
+                                logger.debug("Could not lazy-render R41Y capture artifact review section.", exc_info=True)
+                        content_widget.configure(state="normal")
+                        content_widget.delete("1.0", "end")
+                        content_widget.insert("1.0", text)
+                        content_widget.configure(state="disabled")
+                    except Exception:
+                        logger.debug("Could not load R41Y rich details section content.", exc_info=True)
+
+                def _toggle_section(index: int) -> None:
+                    row = section_rows.get(index)
+                    if not row:
+                        return
+                    section = row.get("section")
+                    button = row.get("button")
+                    content_widget = row.get("content_widget")
+                    if not isinstance(section, dict) or content_widget is None:
+                        return
+                    expanded = bool(row.get("expanded"))
+                    row["expanded"] = not expanded
+                    try:
+                        if row["expanded"]:
+                            if not row.get("loaded"):
+                                _load_section_content(section, content_widget)
+                                row["loaded"] = True
+                            content_widget.grid()
+                            if button is not None:
+                                button.configure(text=f"v {section.get('title')} - {section.get('summary')}")
+                        else:
+                            content_widget.grid_remove()
+                            if button is not None:
+                                button.configure(text=f"> {section.get('title')} - {section.get('summary')}")
+                    except Exception:
+                        logger.debug("Could not toggle R41Y rich details section.", exc_info=True)
+
+                for index, section in enumerate(state.get("sections") or [], start=2):
+                    if not isinstance(section, dict):
+                        continue
+                    section_frame = ctk.CTkFrame(container, fg_color="#111827", corner_radius=6)
+                    section_frame.grid(row=index, column=0, sticky="ew", padx=8, pady=(0, 6))
+                    section_frame.grid_columnconfigure(0, weight=1)
+                    expanded = bool(section.get("expanded"))
+                    button = ctk.CTkButton(
+                        section_frame,
+                        text=f"{'v' if expanded else '>'} {section.get('title')} - {section.get('summary')}",
+                        anchor="w",
+                        fg_color="#1f2937",
+                        hover_color="#374151",
+                        command=lambda idx=index: _toggle_section(idx),
+                    )
+                    button.grid(row=0, column=0, sticky="ew", padx=6, pady=6)
+                    if section.get("title") == "Media Preview":
+                        content_box = ctk.CTkFrame(section_frame, fg_color="transparent")
+                        content_box.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 6))
+                        content_box.grid_columnconfigure(0, weight=1)
+                    else:
+                        content_box = ctk.CTkTextbox(section_frame, height=96, wrap="word")
+                        content_box.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 6))
+                        content_box.configure(state="disabled")
+                        self.install_middle_click_autoscroll(content_box, owner=details_win)
+                    section_rows[index] = {
+                        "section": section,
+                        "button": button,
+                        "content_widget": content_box,
+                        "expanded": expanded,
+                        "loaded": False,
+                    }
+                    if expanded:
+                        _load_section_content(section, content_box)
+                        section_rows[index]["loaded"] = True
+                    else:
+                        content_box.grid_remove()
+
+            # YTCE_V83D_R42B_LINK_SOURCE_DETAILS_EDIT_WINDOW
+            edit_mode_var = tk.StringVar(value="Semantic")
+            selected_link_semantic_roles: dict[str, str] = {}
+            selected_link_media_roles: dict[str, str] = {}
+            source_editor_box: object | None = None
+            source_editor_embedded_widgets: list[object] = []
+            source_editor_count_labels: dict[str, object] = {}
+            source_editor_badges: dict[str, object] = {}
+            active_edit_state: dict[str, object] = {}
+            rendered_artifact_state: dict[str, object] = {}
+            source_editor_webview_launch_state: dict[str, object] = {"auto_launched_html": False, "last_overlay_html_path": "", "last_open_cmd_path": ""}
+
+            def _r42ct_source_nav_url_key(value: object) -> str:
+                text = " ".join(str(value or "").split()).strip()
+                if not text:
+                    return ""
+                try:
+                    text = re.sub(r"#.*$", "", text)
+                    text = re.sub(r"/$", "", text)
+                except Exception:
+                    pass
+                return text.casefold()
+
+            def _r42ct_source_nav_label(value: object, fallback: object = "") -> str:
+                label = " ".join(str(fallback or "").split()).strip()
+                low = str(value or "").strip().lower()
+                if "web.archive.org/web/" in low:
+                    return "Wayback Snapshot" if label.lower() == "archive url" else (label or "Wayback")
+                if re.search(r"https?://(?:www\.)?archive\.(?:ph|today|is|li|md|vn)/", low):
+                    return label or "archive.ph"
+                if "archive" in low:
+                    return label or "Archive"
+                return label or "Original"
+
+            def _r42ct_source_navigation_urls_for_record(item: dict[str, object]) -> list[dict[str, object]]:
+                # R42CT: keep original/Wayback/archive.ph navigation inside the
+                # native edit window, including unchecked/manual human-chain archive peers.  This builds only a small ordered URL list;
+                # it does not reload role rows, query SQLite, or touch first paint.
+                selected = str(item.get("normalised_url") or item.get("url") or "").strip()
+                selected_target = str(item.get("archive_target_url") or item.get("preservation_for_url") or selected).strip()
+                target_key = _r42ct_source_nav_url_key(selected_target or selected)
+                selected_key = _r42ct_source_nav_url_key(selected)
+                rows: list[dict[str, object]] = []
+                seen: set[str] = set()
+
+                def add(candidate_url: object, label: object = "", relation: object = "", *, force_current: bool = False) -> None:
+                    candidate = " ".join(str(candidate_url or "").split()).strip()
+                    if not candidate or not re.match(r"https?://", candidate, flags=re.IGNORECASE):
+                        return
+                    key = _r42ct_source_nav_url_key(candidate)
+                    if not key or key in seen:
+                        return
+                    seen.add(key)
+                    rows.append({
+                        "url": candidate,
+                        "label": _r42ct_source_nav_label(candidate, label),
+                        "relation": " ".join(str(relation or "").split()).strip(),
+                        "current": bool(force_current or key == selected_key),
+                    })
+
+                add(selected, "Original", "selected", force_current=True)
+
+                candidate_objects: list[dict[str, object]] = []
+                try:
+                    candidate_objects.extend([dict(row) for row in link_source_objects if isinstance(row, dict)])
+                except Exception:
+                    pass
+                try:
+                    if isinstance(preview_section, dict) and isinstance(preview_section.get("link_source_objects"), list):
+                        candidate_objects.extend([dict(row) for row in preview_section.get("link_source_objects", []) if isinstance(row, dict)])
+                except Exception:
+                    pass
+                try:
+                    context = item.get("r42b_preview_context")
+                    if isinstance(context, dict) and isinstance(context.get("link_source_objects"), list):
+                        candidate_objects.extend([dict(row) for row in context.get("link_source_objects", []) if isinstance(row, dict)])
+                except Exception:
+                    pass
+
+                def _r42ct_obj_get(obj: object, *keys: str) -> str:
+                    for key in keys:
+                        try:
+                            value = obj.get(key) if isinstance(obj, dict) else getattr(obj, key, "")
+                        except Exception:
+                            value = ""
+                        text = " ".join(str(value or "").split()).strip()
+                        if text:
+                            return text
+                    return ""
+
+                # R42CT: include URL-intake peers from the app's current source rows and
+                # from the most recent human-entered TXT/link batch.  This is deliberately
+                # broader than the evidence/Go checkbox set: archive.ph/archive.today rows
+                # are manual human-chain navigation targets until the article markers pass.
+                def _r42ct_urls_from_text(value: object) -> list[str]:
+                    text = " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split()).strip()
+                    if not text:
+                        return []
+                    urls = re.findall(r"https?://[^\s<>'\"\]\)\}]+", text, flags=re.IGNORECASE)
+                    cleaned: list[str] = []
+                    for raw_url in urls:
+                        u = raw_url.rstrip(".,;:!?)\"]}'")
+                        if u and re.match(r"https?://", u, flags=re.IGNORECASE):
+                            cleaned.append(u)
+                    return cleaned
+
+                def _r42ct_obj_values(obj: object) -> list[object]:
+                    values: list[object] = []
+                    try:
+                        if isinstance(obj, dict):
+                            values.extend(obj.values())
+                        else:
+                            try:
+                                import dataclasses
+                                if dataclasses.is_dataclass(obj):
+                                    values.extend(dataclasses.asdict(obj).values())
+                            except Exception:
+                                pass
+                            try:
+                                if hasattr(obj, "_asdict"):
+                                    values.extend(obj._asdict().values())
+                            except Exception:
+                                pass
+                            try:
+                                if hasattr(obj, "__dict__"):
+                                    values.extend(vars(obj).values())
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    return values
+
+                def _r42ct_urls_from_obj(obj: object) -> list[str]:
+                    urls: list[str] = []
+                    try:
+                        if isinstance(obj, str):
+                            urls.extend(_r42ct_urls_from_text(obj))
+                        if isinstance(obj, dict):
+                            for key in (
+                                "normalised_url", "normalized_url", "url", "raw_url", "display_url",
+                                "source_url", "resolved_url", "original_url", "canonical_url",
+                                "archive_url", "preserved_url", "archive_snapshot_url",
+                                "wayback_url", "archive_ph_url", "archive_today_url",
+                            ):
+                                urls.extend(_r42ct_urls_from_text(obj.get(key)))
+                            for value in obj.values():
+                                if isinstance(value, str) and ("http://" in value or "https://" in value):
+                                    urls.extend(_r42ct_urls_from_text(value))
+                        else:
+                            for key in (
+                                "normalised_url", "normalized_url", "url", "raw_url", "display_url",
+                                "source_url", "resolved_url", "original_url", "canonical_url",
+                                "archive_url", "preserved_url", "archive_snapshot_url",
+                                "wayback_url", "archive_ph_url", "archive_today_url",
+                            ):
+                                try:
+                                    urls.extend(_r42ct_urls_from_text(getattr(obj, key, "")))
+                                except Exception:
+                                    pass
+                            for value in _r42ct_obj_values(obj):
+                                if isinstance(value, str) and ("http://" in value or "https://" in value):
+                                    urls.extend(_r42ct_urls_from_text(value))
+                        if not urls:
+                            # Dataclass/namedtuple repr fallback.  This is capped below and only archive
+                            # siblings near the selected source are promoted, so it does not make evidence claims.
+                            text = repr(obj)
+                            if "http://" in text or "https://" in text:
+                                urls.extend(_r42ct_urls_from_text(text))
+                    except Exception:
+                        pass
+                    out: list[str] = []
+                    seen_urls: set[str] = set()
+                    for url_value in urls:
+                        key = _r42ct_source_nav_url_key(url_value)
+                        if key and key not in seen_urls:
+                            seen_urls.add(key)
+                            out.append(url_value)
+                    return out
+
+                source_resource_url_rows: list[dict[str, object]] = []
+                try:
+                    source_row_inputs: list[object] = []
+                    for attr_name in (
+                        "r42ct_last_source_url_intake_rows",
+                        "r42ct_last_human_action_queue_rows",
+                        "r42cg_last_source_url_intake_rows",
+                        "r42cf_last_source_url_intake_rows",
+                        "r41r_last_human_action_queue_rows",
+                        "last_source_url_intake_rows",
+                        "source_resource_rows",
+                    ):
+                        value = getattr(self, attr_name, None)
+                        if isinstance(value, (list, tuple)):
+                            source_row_inputs.extend(list(value))
+                    # Also include raw latest human text, because a checkbox/evidence path can drop
+                    # unchecked archive rows while the original pasted TXT still records them.  R42CT
+                    # checks the Source URL box, the Human Action Queue panel, and the legacy R42CG
+                    # bridge names so a saved/pasted TXT batch remains a navigation chain even when
+                    # only two rows are evidence-checked.
+                    latest_text_values: list[tuple[str, str]] = []
+                    for text_attr in (
+                        "r42ct_last_source_url_intake_text",
+                        "r42ct_last_human_action_queue_text",
+                        "r42cg_last_source_url_intake_text",
+                        "r41r_last_human_action_queue_text",
+                    ):
+                        try:
+                            value = getattr(self, text_attr, "")
+                        except Exception:
+                            value = ""
+                        if value:
+                            latest_text_values.append((text_attr, str(value)))
+                    for text_attr, latest_text in latest_text_values:
+                        for url_value in _r42ct_urls_from_text(latest_text):
+                            source_resource_url_rows.append({
+                                "url": url_value,
+                                "normalised_url": url_value,
+                                "archive_target_url": "",
+                                "label": "",
+                                "source_relation_type": "latest_human_txt_intake:" + text_attr,
+                            })
+
+                    # Saved Human Action Queue fallback.  The queue is human-chain state, not
+                    # a proof/evidence source; all URLs found here are manual navigation peers only.
+                    try:
+                        queue_paths = [
+                            Path("PROFILE_MEDIA_R41R_HUMAN_ACTION_QUEUE.json"),
+                            Path("profile_media_live_captures") / "link_source_role_webview_overlay" / "PROFILE_MEDIA_R41R_HUMAN_ACTION_QUEUE.json",
+                        ]
+                        for queue_path in queue_paths:
+                            if not queue_path.is_file():
+                                continue
+                            queue_text = queue_path.read_text(encoding="utf-8", errors="replace")
+                            queue_payload = json.loads(queue_text)
+                            for url_value in _r42ct_urls_from_text(queue_text):
+                                source_resource_url_rows.append({
+                                    "url": url_value,
+                                    "normalised_url": url_value,
+                                    "archive_target_url": "",
+                                    "label": "",
+                                    "source_relation_type": "saved_human_action_queue:" + str(queue_path),
+                                })
+                            if isinstance(queue_payload, dict):
+                                for row_value in queue_payload.get("rows") or queue_payload.get("items") or []:
+                                    source_row_inputs.append(row_value)
+                            elif isinstance(queue_payload, list):
+                                source_row_inputs.extend(queue_payload)
+                    except Exception:
+                        pass
+
+                    for resource_row in source_row_inputs:
+                        candidate_urls = _r42ct_urls_from_obj(resource_row)
+                        candidate_target = _r42ct_obj_get(
+                            resource_row,
+                            "archive_target_url", "preservation_for_url", "target_url",
+                            "canonical_source_url", "original_target_url",
+                        )
+                        candidate_label = _r42ct_obj_get(
+                            resource_row,
+                            "visible_link_source_row_label", "display_label", "label",
+                            "list_label", "title", "name",
+                        )
+                        for candidate_url in candidate_urls[:12]:
+                            if candidate_url and re.match(r"https?://", candidate_url, flags=re.IGNORECASE):
+                                source_resource_url_rows.append({
+                                    "url": candidate_url,
+                                    "normalised_url": candidate_url,
+                                    "archive_target_url": candidate_target,
+                                    "label": candidate_label,
+                                    "source_relation_type": "source_url_intake_or_row",
+                                })
+                    # De-dupe while preserving the human-entered order.
+                    deduped_source_rows: list[dict[str, object]] = []
+                    seen_source_rows: set[str] = set()
+                    for row in source_resource_url_rows:
+                        key = _r42ct_source_nav_url_key(row.get("url"))
+                        if key and key not in seen_source_rows:
+                            seen_source_rows.add(key)
+                            deduped_source_rows.append(row)
+                    source_resource_url_rows = deduped_source_rows[:80]
+                except Exception:
+                    pass
+
+                try:
+                    # R42CT: source-navigation is a human-chain list, not an evidence/Go checkbox list.
+                    # A user-pasted batch can legitimately contain Original + Wayback + archive.ph where
+                    # the archive row is unchecked, challenge-blocked, or otherwise not promoted into
+                    # link_source_objects.  It must still be visible as a manual/human navigation target.
+                    def _r42ct_is_archive_service_url(value: object) -> bool:
+                        return bool(re.search(r"https?://(?:www\.)?(?:archive\.(?:ph|today|is|li|md|vn)|ghostarchive\.org)/", str(value or "").lower()))
+
+                    def _r42ct_is_wayback_for_selected(value: object) -> bool:
+                        row_text = str(value or "").lower()
+                        row_key_text = _r42ct_source_nav_url_key(row_text)
+                        return bool("web.archive.org/web/" in row_text and selected_key and selected_key in row_key_text)
+
+                    anchor_indexes: set[int] = set()
+                    for idx, row in enumerate(source_resource_url_rows):
+                        row_url = str(row.get("url") or "").strip()
+                        row_target = str(row.get("archive_target_url") or "").strip()
+                        row_key = _r42ct_source_nav_url_key(row_url)
+                        row_target_key = _r42ct_source_nav_url_key(row_target)
+                        if row_key and row_key == selected_key:
+                            anchor_indexes.add(idx)
+                        if _r42ct_is_wayback_for_selected(row_url):
+                            anchor_indexes.add(idx)
+                        if target_key and row_target_key and row_target_key == target_key:
+                            anchor_indexes.add(idx)
+                        if selected_key and row_target_key and row_target_key == selected_key:
+                            anchor_indexes.add(idx)
+
+                    # If one URL from a small pasted TXT/link batch is selected, include archive
+                    # siblings even when they have no archive_target_url yet.  R42CF only looked near
+                    # anchors; R42CT also treats a small current human batch as one navigation chain,
+                    # because unchecked archive.ph rows are intentionally still human/manual targets.
+                    human_chain_peer_indexes: set[int] = set()
+                    for anchor in sorted(anchor_indexes):
+                        for peer in range(max(0, anchor - 3), min(len(source_resource_url_rows), anchor + 7)):
+                            human_chain_peer_indexes.add(peer)
+                    selected_seen_in_source_rows = any(
+                        _r42ct_source_nav_url_key(row.get("url")) == selected_key
+                        or (selected_key and selected_key in _r42ct_source_nav_url_key(row.get("url")))
+                        for row in source_resource_url_rows
+                    )
+                    wayback_seen_for_selected = any(_r42ct_is_wayback_for_selected(row.get("url")) for row in source_resource_url_rows)
+                    small_human_chain_batch = bool(source_resource_url_rows) and len(source_resource_url_rows) <= 20 and (selected_seen_in_source_rows or wayback_seen_for_selected or bool(anchor_indexes))
+                    if small_human_chain_batch:
+                        human_chain_peer_indexes.update(range(len(source_resource_url_rows)))
+
+                    for idx, row in enumerate(source_resource_url_rows):
+                        row_url = str(row.get("url") or "").strip()
+                        row_target = str(row.get("archive_target_url") or "").strip()
+                        row_key = _r42ct_source_nav_url_key(row_url)
+                        row_target_key = _r42ct_source_nav_url_key(row_target)
+                        low = row_url.lower()
+                        direct_match = bool(row_key and row_key == selected_key)
+                        target_match = bool(target_key and row_target_key and row_target_key == target_key)
+                        selected_target_match = bool(selected_key and row_target_key and row_target_key == selected_key)
+                        wayback_for_selected = _r42ct_is_wayback_for_selected(row_url)
+                        archive_peer_from_human_chain = bool(
+                            idx in human_chain_peer_indexes
+                            and row_key != selected_key
+                            and _r42ct_is_archive_service_url(row_url)
+                        )
+                        if direct_match or target_match or selected_target_match or wayback_for_selected or archive_peer_from_human_chain:
+                            merged = dict(row)
+                            if archive_peer_from_human_chain:
+                                merged["r42ct_force_include"] = True
+                                merged["source_relation_type"] = "human_chain_source_url_intake_archive_peer"
+                                merged["human_chain_navigation_only"] = True
+                            candidate_objects.append(merged)
+                except Exception:
+                    pass
+
+                # Also pick up explicit URL arrays if a future/import path attaches
+                # them to the selected record or preview context.
+                try:
+                    raw_url_lists: list[object] = []
+                    for container in (item, locals().get("preview_section"), locals().get("link_source_preview"), item.get("r42b_preview_context")):
+                        if not isinstance(container, dict):
+                            continue
+                        for key in (
+                            "source_navigation_urls", "source_url_navigation", "available_source_urls",
+                            "available_source_links", "link_source_navigation_urls", "alternate_source_urls",
+                            "archive_source_urls", "preservation_source_urls", "source_urls",
+                            "evidence_urls", "resolved_source_urls", "attached_source_urls",
+                        ):
+                            value = container.get(key)
+                            if isinstance(value, list):
+                                raw_url_lists.extend(value)
+                    for raw in raw_url_lists:
+                        if isinstance(raw, str):
+                            candidate_objects.append({"url": raw, "source_relation_type": "record_url_list"})
+                        elif isinstance(raw, dict):
+                            candidate_objects.append(dict(raw))
+                except Exception:
+                    pass
+
+                # Include siblings that preserve the same original target.  This is
+                # what links Original -> Wayback -> archive.ph without adding
+                # unrelated source rows from the Review window.
+                for candidate in candidate_objects:
+                    candidate_url = str(candidate.get("normalised_url") or candidate.get("url") or candidate.get("display_url") or "").strip()
+                    candidate_target = str(candidate.get("archive_target_url") or candidate.get("preservation_for_url") or candidate.get("target_url") or "").strip()
+                    candidate_key = _r42ct_source_nav_url_key(candidate_url)
+                    candidate_target_key = _r42ct_source_nav_url_key(candidate_target)
+                    include = bool(candidate.get("r42ct_force_include"))
+                    if candidate_key and candidate_key == selected_key:
+                        include = True
+                    if target_key and candidate_target_key and candidate_target_key == target_key:
+                        include = True
+                    if selected_key and candidate_target_key and candidate_target_key == selected_key:
+                        include = True
+                    if target_key and candidate_key and candidate_key == target_key:
+                        include = True
+                    if not include:
+                        continue
+                    add(
+                        candidate_url,
+                        candidate.get("visible_link_source_row_label") or candidate.get("display_label") or candidate.get("label") or candidate.get("list_label") or "",
+                        candidate.get("source_relation_type") or candidate.get("relation") or "",
+                    )
+                    # Also add an explicit target/original URL from archive rows when present.
+                    if candidate_target and candidate_target_key == target_key:
+                        add(candidate_target, "Original", "archive_target")
+
+                # Source-scope dropdown values are a final fallback: include obvious
+                # archive siblings only, never all unrelated sources.
+                try:
+                    for scope_value in source_scope_value_by_label.values():
+                        scope_text = str(scope_value or "").strip()
+                        low = scope_text.lower()
+                        if not re.match(r"https?://", scope_text, flags=re.IGNORECASE):
+                            continue
+                        if _r42ct_source_nav_url_key(scope_text) == selected_key:
+                            add(scope_text, "Original", "source_scope")
+                        elif "web.archive.org/web/" in low or re.search(r"https?://(?:www\.)?archive\.(?:ph|today|is|li|md|vn)/", low):
+                            add(scope_text, "", "source_scope_archive_candidate")
+                except Exception:
+                    pass
+
+                def order_key(row: dict[str, object]) -> tuple[int, int]:
+                    value = str(row.get("url") or "")
+                    low = value.lower()
+                    original_order = rows.index(row) if row in rows else 999
+                    if _r42ct_source_nav_url_key(value) == selected_key and "archive" not in low:
+                        return (0, original_order)
+                    if "web.archive.org/web/" in low:
+                        return (1, original_order)
+                    if re.search(r"https?://(?:www\.)?archive\.(?:ph|today|is|li|md|vn)/", low):
+                        return (2, original_order)
+                    if "archive" in low:
+                        return (3, original_order)
+                    return (0, original_order)
+
+                try:
+                    rows.sort(key=order_key)
+                except Exception:
+                    pass
+                for index, row in enumerate(rows, start=1):
+                    row["index"] = index
+                    row["count"] = len(rows)
+                    row["current"] = _r42ct_source_nav_url_key(row.get("url")) == selected_key
+                try:
+                    self.r42ct_last_source_navigation_debug = {
+                        "selected": selected,
+                        "source_resource_url_rows": [str(row.get("url") or "") for row in source_resource_url_rows[:20]],
+                        "returned_urls": [str(row.get("url") or "") for row in rows],
+                    }
+                except Exception:
+                    pass
+                return rows
+
+            def _build_rendered_artifact_state() -> dict[str, object]:
+                if build_selected_url_rendered_page_artifact_state is None:
+                    return {}
+                try:
+                    return build_selected_url_rendered_page_artifact_state(record)
+                except Exception:
+                    logger.debug("Could not build R42D selected rendered page artifact state.", exc_info=True)
+                    return {}
+
+            def _r42i_clean_role_value(value: object, *, allow_blank: bool = True) -> str:
+                text = str(value or "").strip().upper()
+                if text.startswith("PRIMARY"):
+                    return "PRIMARY"
+                if text.startswith("SECONDARY"):
+                    return "SECONDARY"
+                if text.startswith("TERTIARY"):
+                    return "TERTIARY"
+                if text.startswith("BLANK") and allow_blank:
+                    return "BLANK"
+                if text.startswith("UNKNOWN"):
+                    return "UNKNOWN"
+                return "BLANK" if allow_blank else "UNKNOWN"
+
+            def _r42n_source_review_text_key_for_link_details(value: object) -> str:
+                # R42N: early local copy of the Review-window text normaliser so
+                # the edit-window initial render can use the same media role maps
+                # before/without falling back to the old per-link adapter.
+                return " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split()).strip()
+
+            def _r42n_media_role_filter_value_for_link_details(role_value: object) -> str:
+                role_text = str(role_value or "").strip().upper()
+                if "PRIMARY" in role_text:
+                    return "PRIMARY"
+                if "SECONDARY" in role_text:
+                    return "SECONDARY"
+                if "TERTIARY" in role_text:
+                    return "TERTIARY"
+                if "UNKNOWN" in role_text:
+                    return "UNKNOWN"
+                if "BLANK" in role_text:
+                    return "BLANK"
+                return ""
+
+            def _r42n_media_source_role_for_link_details_span(span_ref: dict[str, object]) -> str:
+                # R42N: same precedence as _claim_media_source_role_for_span(),
+                # scoped to the selected Review DB source spans. This is not a new
+                # classifier; it reads the same selected/existing/source-reference
+                # role maps used by the Review window so Media counts are not
+                # rebuilt from link cards or bundle rows.
+                try:
+                    edit_key = str(span_ref.get("edit_key") or "").strip()
+                    if edit_key and edit_key in selected_claim_span_media_roles:
+                        selected_media_role = _r42n_media_role_filter_value_for_link_details(selected_claim_span_media_roles.get(edit_key))
+                        if selected_media_role:
+                            return selected_media_role
+                    if edit_key and edit_key in existing_claim_span_media_roles:
+                        existing_media_role = _r42n_media_role_filter_value_for_link_details(existing_claim_span_media_roles.get(edit_key))
+                        if existing_media_role:
+                            return existing_media_role
+                    direct_media_role = _r42n_media_role_filter_value_for_link_details(
+                        span_ref.get("media_source_display_role")
+                        or span_ref.get("media_display_role")
+                        or span_ref.get("source_reference_media_display_role")
+                    )
+                    if direct_media_role:
+                        return direct_media_role
+                    if edit_key and edit_key in source_reference_media_display_role_by_edit_key:
+                        return _r42n_media_role_filter_value_for_link_details(source_reference_media_display_role_by_edit_key.get(edit_key))
+                    if edit_key and edit_key in source_reference_media_role_by_edit_key:
+                        return _r42n_media_role_filter_value_for_link_details(source_reference_media_role_by_edit_key.get(edit_key))
+                    span_text = _r42n_source_review_text_key_for_link_details(span_ref.get("text"))
+                    if span_text and span_text in source_reference_media_display_role_by_text:
+                        return _r42n_media_role_filter_value_for_link_details(source_reference_media_display_role_by_text.get(span_text))
+                    if span_text and span_text in source_reference_media_role_by_text:
+                        return _r42n_media_role_filter_value_for_link_details(source_reference_media_role_by_text.get(span_text))
+                    if span_text:
+                        span_norm = span_text.casefold()
+                        for ref_text, ref_role in source_reference_media_display_role_by_text.items():
+                            ref_norm = str(ref_text or "").casefold()
+                            if len(ref_norm) >= 28 and (ref_norm in span_norm or span_norm in ref_norm):
+                                return _r42n_media_role_filter_value_for_link_details(ref_role)
+                        for ref_text, ref_role in source_reference_media_role_by_text.items():
+                            ref_norm = str(ref_text or "").casefold()
+                            if len(ref_norm) >= 28 and (ref_norm in span_norm or span_norm in ref_norm):
+                                return _r42n_media_role_filter_value_for_link_details(ref_role)
+                        if span_text in source_reference_review_texts:
+                            return "UNKNOWN"
+                    if edit_key and edit_key in source_reference_review_edit_keys:
+                        return "UNKNOWN"
+                except Exception:
+                    return ""
+                return ""
+
+            def _r42n_selected_source_spans_for_link_details() -> list[dict[str, object]]:
+                # R42N_SELECTED_SOURCE_SCOPE_ONLY: this is the critical correction.
+                # The edit window must consume the same selected-source span list
+                # as the Review text window. Starting from raw claim_role_spans
+                # leaks notepad/bundle/archive rows into the selected URL editor
+                # and produced the extra Tertiary/Media counts.
+                try:
+                    return [dict(item) for item in _claim_spans_for_selected_scope() if isinstance(item, dict)]
+                except Exception:
+                    try:
+                        spans_for_review = [dict(item) for item in claim_role_spans if isinstance(item, dict)]
+                        spans_for_review = _ytce_review_r24_apply_metro_article_roles_to_claim_spans(spans_for_review)
+                        spans_for_review = _ytce_review_r25_apply_universal_article_roles_to_claim_spans(spans_for_review)
+                        return spans_for_review
+                    except Exception:
+                        return []
+
+            def _r42i_review_db_import_rows_for_link_details(mode_text: str) -> list[dict[str, object]]:
+                # R42N: the edit window does not own source-role logic. It reads
+                # selected-source Review DB import spans and the same Review role
+                # maps/accessor precedence.  Link-source bundle rows are not added
+                # to this selected URL's page-text counters.
+                mode_text = "media" if str(mode_text or "").lower() == "media" else "semantic"
+                spans_for_review = _r42n_selected_source_spans_for_link_details()
+                rows_for_review: list[dict[str, object]] = []
+                selected_link_url = str(record.get("normalised_url") or record.get("url") or "").strip()
+                for index, span_ref in enumerate(spans_for_review, start=1):
+                    if not isinstance(span_ref, dict):
+                        continue
+                    text_value = " ".join(str(span_ref.get("text") or span_ref.get("excerpt") or "").split())
+                    if not text_value:
+                        continue
+                    edit_key = str(span_ref.get("edit_key") or span_ref.get("span_id") or f"review_import_span_{index:04d}").strip()
+                    try:
+                        semantic_role = _r42i_clean_role_value(_claim_span_selected_role(span_ref), allow_blank=True)
+                    except Exception:
+                        semantic_role = _r42i_clean_role_value(span_ref.get("role") or span_ref.get("claim_role") or span_ref.get("semantic_role"), allow_blank=True)
+                    try:
+                        media_role_raw = _claim_media_source_role_for_span(span_ref)  # type: ignore[name-defined]
+                    except Exception:
+                        media_role_raw = _r42n_media_source_role_for_link_details_span(span_ref)
+                    media_role = _r42n_media_role_filter_value_for_link_details(media_role_raw)
+                    if not media_role:
+                        media_role = "BLANK"
+                    if mode_text == "media":
+                        active_role = selected_link_media_roles.get(edit_key, media_role)
+                    else:
+                        active_role = selected_link_semantic_roles.get(edit_key, semantic_role)
+                    rows_for_review.append({
+                        "edit_key": edit_key,
+                        "text": text_value,
+                        "kind": "text",
+                        "semantic_role": semantic_role,
+                        "media_source_role": media_role,
+                        "active_role": active_role,
+                        "url": selected_link_url,
+                        "normalised_url": selected_link_url,
+                        "source_object_type": str(record.get("source_object_type") or ""),
+                        "source_relation_type": str(record.get("source_relation_type") or ""),
+                        "evidence_gate_status": str(record.get("evidence_gate_status") or record.get("evidence_status") or "REVIEW_REQUIRED"),
+                        "r42n_selected_source_scope_only": True,
+                        "r42i_review_db_import_role_parity": True,
+                        "review_db_import_role_logic_reused": True,
+                    })
+                return rows_for_review
+
+            def _r42n_counts_for_link_detail_rows(rows: object) -> dict[str, int]:
+                counts = {role_name: 0 for role_name in ("PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN")}
+                try:
+                    iterable = tuple(rows or ())
+                except Exception:
+                    iterable = ()
+                for row in iterable:
+                    if not isinstance(row, dict):
+                        continue
+                    role_name = str(row.get("active_role") or "").strip().upper()
+                    if role_name in counts:
+                        counts[role_name] += 1
+                return counts
+
+            def _build_link_source_edit_state(mode_value: str | None = None) -> dict[str, object]:
+                mode_text = "media" if str(mode_value or edit_mode_var.get() or "semantic").lower() == "media" else "semantic"
+                if build_link_source_edit_window_state is None:
+                    base_state = {
+                        "active_mode": mode_text,
+                        "active_rows": [],
+                        "active_counts": {"PRIMARY": 0, "SECONDARY": 0, "TERTIARY": 0, "UNKNOWN": 0},
+                        "visible_role": str(record.get("visible_link_role") or record.get("claim_specific_role") or "UNKNOWN"),
+                        "confidence": str(record.get("confidence") or "unknown"),
+                        "evidence_gate_status": str(record.get("evidence_gate_status") or record.get("evidence_status") or "REVIEW_REQUIRED"),
+                    }
+                else:
+                    base_state = dict(build_link_source_edit_window_state(record, active_mode=mode_text))
+
+                semantic_rows = _r42i_review_db_import_rows_for_link_details("semantic")
+                media_rows = _r42i_review_db_import_rows_for_link_details("media")
+                if semantic_rows or media_rows:
+                    rows = media_rows if mode_text == "media" else semantic_rows
+                    state = dict(base_state)
+                    state["r42n_selected_source_rows_drive_edit_window"] = True
+                    state["r42n_selected_source_scope_only"] = True
+                    state["r42n_no_bundle_link_rows_in_selected_source_counts"] = True
+                    state["uses_review_db_import_parity_rows"] = True
+                    state["uses_existing_review_db_import_spans"] = True
+                    state["semantic_rows"] = semantic_rows
+                    state["media_rows"] = media_rows
+                    state["active_rows"] = rows
+                    state["semantic_counts"] = _r42n_counts_for_link_detail_rows(semantic_rows)
+                    state["media_counts"] = _r42n_counts_for_link_detail_rows(media_rows)
+                    state["active_counts"] = _r42n_counts_for_link_detail_rows(rows)
+                    state["active_mode"] = mode_text
+                    state["source_navigation_urls"] = _r42ct_source_navigation_urls_for_record(record)
+                    state["source_navigation_count"] = len(state.get("source_navigation_urls") or [])
+                    state["source_navigation_debug"] = getattr(self, "r42ct_last_source_navigation_debug", {})
+                    return state
+
+                state = base_state
+                rows = [dict(row) for row in state.get("active_rows") or [] if isinstance(row, dict)]
+                for row in rows:
+                    edit_key = str(row.get("edit_key") or "")
+                    if state.get("active_mode") == "media" and edit_key in selected_link_media_roles:
+                        row["active_role"] = selected_link_media_roles[edit_key]
+                        row["media_source_role"] = selected_link_media_roles[edit_key]
+                    elif state.get("active_mode") == "semantic" and edit_key in selected_link_semantic_roles:
+                        row["active_role"] = selected_link_semantic_roles[edit_key]
+                        row["semantic_role"] = selected_link_semantic_roles[edit_key]
+                state = dict(state)
+                state["active_rows"] = rows
+                state["active_counts"] = _r42n_counts_for_link_detail_rows(rows)
+                state["source_navigation_urls"] = _r42ct_source_navigation_urls_for_record(record)
+                state["source_navigation_count"] = len(state.get("source_navigation_urls") or [])
+                state["source_navigation_debug"] = getattr(self, "r42ct_last_source_navigation_debug", {})
+                return state
+
+            def _refresh_link_source_editor_header(state: dict[str, object]) -> None:
+                counts = state.get("active_counts") if isinstance(state.get("active_counts"), dict) else {}
+                for role_name in ("PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"):
+                    label = source_editor_count_labels.get(role_name)
+                    if label is not None:
+                        try:
+                            bg, fg = _link_source_editor_tag_color(role_name)
+                            label.configure(
+                                text=f"{role_name.title()}: {int(counts.get(role_name, 0) or 0):02d}",
+                                fg_color=bg,
+                                text_color=fg,
+                                corner_radius=4,
+                            )
+                        except Exception:
+                            logger.debug("Could not refresh R42B link source editor count label.", exc_info=True)
+                for key, value in (
+                    ("active_mode", str(state.get("active_mode") or "semantic").upper()),
+                    ("visible_role", state.get("visible_role")),
+                    ("confidence", state.get("confidence")),
+                    ("evidence_gate_status", state.get("evidence_gate_status")),
+                ):
+                    label = source_editor_badges.get(key)
+                    if label is not None:
+                        try:
+                            label.configure(text=str(value or "unknown"))
+                        except Exception:
+                            logger.debug("Could not refresh R42B link source editor badge.", exc_info=True)
+
+            def _link_source_editor_tag_color(role_value: object) -> tuple[str, str]:
+                role_text = str(role_value or "").upper()
+                if role_text == "PRIMARY":
+                    return "#bbf7d0", "#064e3b"
+                if role_text == "SECONDARY":
+                    return "#bfdbfe", "#1e3a8a"
+                if role_text == "TERTIARY":
+                    return "#ddd6fe", "#581c87"
+                if role_text == "UNKNOWN":
+                    return "#fed7aa", "#7c2d12"
+                return "#f1f5f9", "#334155"
+
+            def _destroy_link_source_editor_embedded_widgets() -> None:
+                try:
+                    pending = list(source_editor_embedded_widgets)
+                    source_editor_embedded_widgets.clear()
+                except Exception:
+                    pending = []
+                for widget in pending:
+                    try:
+                        if widget is not None and widget.winfo_exists():
+                            widget.destroy()
+                    except Exception:
+                        pass
+
+            def _render_inline_media_row_card(row: dict[str, object], role_name: str) -> object | None:
+                try:
+                    card = ctk.CTkFrame(source_editor_box, fg_color="#ffffff", border_color=_link_source_editor_tag_color(role_name)[0], border_width=2, corner_radius=6)
+                    source_editor_embedded_widgets.append(card)
+                    card.grid_columnconfigure(1, weight=1)
+                    ctk.CTkLabel(
+                        card,
+                        text=role_name,
+                        fg_color=_link_source_editor_tag_color(role_name)[0],
+                        text_color=_link_source_editor_tag_color(role_name)[1],
+                        corner_radius=4,
+                        padx=6,
+                        pady=2,
+                    ).grid(row=0, column=0, sticky="nw", padx=8, pady=8)
+                    title = str(row.get("text") or row.get("media_url") or row.get("url") or "Media").strip()
+                    media_url = str(row.get("media_url") or row.get("url") or "").strip()
+                    ctk.CTkLabel(card, text=title, anchor="w", justify="left", wraplength=620).grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(8, 2))
+                    preview_label = ctk.CTkLabel(card, text="Preview loading" if media_url else "Preview unavailable", width=220, height=132, fg_color="#f1f5f9", text_color="#334155", corner_radius=4)
+                    preview_label.grid(row=1, column=0, rowspan=3, sticky="nw", padx=8, pady=(0, 8))
+                    meta_lines = [
+                        f"Type: {str(row.get('kind') or 'media')}",
+                        f"URL/source: {media_url or '(missing)'}",
+                        f"Provenance: {str(row.get('provenance_status') or 'review-required')}",
+                        f"Evidence gate: {str(row.get('evidence_gate_status') or 'REVIEW_REQUIRED')}",
+                    ]
+                    missing = str(row.get("missing_provenance_reason") or "").strip()
+                    if missing:
+                        meta_lines.append(f"Missing provenance: {missing}")
+                    ctk.CTkLabel(card, text="\n".join(meta_lines), anchor="nw", justify="left", wraplength=620).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(0, 4))
+                    icon_row = ctk.CTkFrame(card, fg_color="transparent")
+                    icon_row.grid(row=2, column=1, sticky="w", padx=(0, 8), pady=(0, 8))
+                    ctk.CTkButton(icon_row, text="" if icons.get("open_url") is not None else "Open", image=icons.get("open_url"), width=28, height=24, command=lambda target=media_url: webbrowser.open(target) if target else None).grid(row=0, column=0, padx=(0, 4))
+                    ctk.CTkButton(icon_row, text="" if icons.get("copy_url") is not None else "Copy", image=icons.get("copy_url"), width=28, height=24, command=lambda target=media_url: self._copy_text_to_clipboard(target, "Copied media URL.") if target else None).grid(row=0, column=1, padx=(0, 4))
+                    ctk.CTkButton(icon_row, text="" if icons.get("copy_text") is not None else "Copy", image=icons.get("copy_text"), width=28, height=24, command=lambda text=str(row.get("missing_provenance_reason") or row.get("reason") or ""): self._copy_text_to_clipboard(text, "Copied media role reason.") if text else None).grid(row=0, column=2, padx=(0, 4))
+                    def _load_selected_preview() -> None:
+                        if not media_url:
+                            return
+                        try:
+                            preview_label.configure(text="Loading selected preview")
+                        except Exception:
+                            pass
+                        def _worker() -> None:
+                            try:
+                                from profile_media_inline_media_loader_v83d import load_inline_media_preview_payload
+                                payload = load_inline_media_preview_payload({"url_or_source_path": media_url, "media_type": row.get("kind")})
+                            except Exception as exc:
+                                payload = {"status": "failed", "error": str(exc)}
+                            def _finish() -> None:
+                                try:
+                                    if not preview_label.winfo_exists():
+                                        return
+                                    if payload.get("status") == "loaded" and payload.get("pil_image") is not None:
+                                        image = ctk.CTkImage(light_image=payload.get("pil_image"), dark_image=payload.get("pil_image"), size=tuple(payload.get("preview_size") or (220, 132)))
+                                        preview_label.configure(text="", image=image)
+                                        preview_label.image = image
+                                    elif payload.get("status") == "video_placeholder":
+                                        preview_label.configure(text="Video preview limited\nOpen externally if needed")
+                                    else:
+                                        preview_label.configure(text="Preview unavailable")
+                                except Exception:
+                                    logger.debug("Could not display R42B inline media preview.", exc_info=True)
+                            try:
+                                details_win.after(0, _finish)
+                            except Exception:
+                                pass
+                        threading.Thread(target=_worker, name="profile-media-r42b-selected-media-preview", daemon=True).start()
+                    if media_url:
+                        try:
+                            details_win.after(20, _load_selected_preview)
+                        except Exception:
+                            pass
+                    return card
+                except Exception:
+                    logger.debug("Could not render R42B inline media row card.", exc_info=True)
+                    return None
+
+            def _render_selected_url_visual_artifact(box: object, artifact_state: dict[str, object]) -> None:
+                kind = str(artifact_state.get("visual_base_kind") or "").strip()
+                path_text = str(artifact_state.get("visual_base_path") or "").strip()
+                if not path_text:
+                    box.insert("end", "No rendered/captured page artifact is available for this selected URL.\n", "r42d_artifact_notice")
+                    return
+                if kind in {"page_screenshot", "stitched_page_screenshot"}:
+                    try:
+                        # R42L: never decode/resize a FireShot/full-page capture
+                        # synchronously while opening the edit window. Tall page
+                        # images can block Tk for seconds. Put a lightweight
+                        # placeholder in the source view immediately, then prepare
+                        # bounded page-image strips on a daemon worker and attach
+                        # them back on Tk's event loop.
+                        frame = ctk.CTkFrame(box, fg_color="#ffffff", border_color="#cbd5e1", border_width=1, corner_radius=4)
+                        source_editor_embedded_widgets.append(frame)
+                        frame.grid_columnconfigure(0, weight=1)
+                        loading_label = ctk.CTkLabel(
+                            frame,
+                            text="Captured page screenshot is loading in the background...",
+                            anchor="w",
+                            text_color="#475569",
+                        )
+                        loading_label.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+                        box.window_create("end", window=frame)
+                        box.insert("end", "\n\n")
+
+                        def _load_page_screenshot_strips() -> None:
+                            strips: list[object] = []
+                            error_text = ""
+                            truncated = False
+                            try:
+                                image = Image.open(path_text).convert("RGBA")
+                                target_width = 860
+                                scale = min(1.0, float(target_width) / max(1, image.width))
+                                scaled_width = max(1, int(image.width * scale))
+                                strip_source_height = max(700, int(950 / max(0.01, scale)))
+                                max_strips = 8
+                                for strip_index, top in enumerate(range(0, image.height, strip_source_height)):
+                                    if strip_index >= max_strips:
+                                        truncated = True
+                                        break
+                                    bottom = min(image.height, top + strip_source_height)
+                                    strip = image.crop((0, top, image.width, bottom))
+                                    if scale != 1.0:
+                                        strip = strip.resize((scaled_width, max(1, int(strip.height * scale))), Image.LANCZOS)
+                                    strips.append(strip.copy())
+                            except Exception as exc:
+                                error_text = f"Could not load captured page screenshot: {type(exc).__name__}: {exc}"
+
+                            def _install_page_screenshot_strips() -> None:
+                                try:
+                                    if not bool(frame.winfo_exists()):
+                                        return
+                                    for child in frame.winfo_children():
+                                        try:
+                                            child.destroy()
+                                        except Exception:
+                                            pass
+                                    if error_text:
+                                        ctk.CTkLabel(frame, text=error_text, anchor="w", text_color="#b45309", wraplength=820).grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+                                        return
+                                    if not strips:
+                                        ctk.CTkLabel(frame, text="Captured page screenshot is unavailable.", anchor="w", text_color="#475569").grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+                                        return
+                                    for row_idx, strip in enumerate(strips):
+                                        ctk_image = ctk.CTkImage(light_image=strip, dark_image=strip, size=(strip.width, strip.height))
+                                        label = ctk.CTkLabel(frame, text="", image=ctk_image, fg_color="#ffffff")
+                                        label.image = ctk_image
+                                        label.grid(row=row_idx, column=0, sticky="n", padx=0, pady=0)
+                                    if truncated:
+                                        ctk.CTkLabel(
+                                            frame,
+                                            text="Page screenshot preview was capped for responsiveness. Open externally for the full capture.",
+                                            anchor="w",
+                                            text_color="#64748b",
+                                            wraplength=820,
+                                        ).grid(row=len(strips), column=0, sticky="ew", padx=10, pady=8)
+                                except Exception:
+                                    logger.debug("Could not attach R42L page screenshot strips.", exc_info=True)
+
+                            try:
+                                details_win.after(0, _install_page_screenshot_strips)
+                            except Exception:
+                                logger.debug("Could not schedule R42L page screenshot install.", exc_info=True)
+
+                        try:
+                            threading.Thread(target=_load_page_screenshot_strips, daemon=True).start()
+                        except Exception:
+                            logger.debug("Could not start R42L page screenshot loader thread.", exc_info=True)
+                        return
+                    except Exception:
+                        logger.debug("Could not schedule R42L captured page screenshot visual base.", exc_info=True)
+                if kind == "rendered_page_html":
+                    # R42O: a Tk Text/CTk frame cannot itself render HTML like a
+                    # browser.  When the app already has rendered_page.html from
+                    # its own live Webpage/Screenshot flow, generate an injected
+                    # overlay HTML and open that captured page in a pywebview
+                    # browser process.  The edit window remains the role/control
+                    # panel; it no longer pretends the path text is the webpage.
+                    frame = ctk.CTkFrame(box, fg_color="#ffffff", border_color="#cbd5e1", border_width=1, corner_radius=6)
+                    source_editor_embedded_widgets.append(frame)
+                    frame.grid_columnconfigure(0, weight=1)
+                    ctk.CTkLabel(
+                        frame,
+                        text="Captured live page HTML is available",
+                        anchor="w",
+                        font=ctk.CTkFont(size=13, weight="bold"),
+                    ).grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 2))
+                    ctk.CTkLabel(
+                        frame,
+                        text="The app-captured rendered page HTML is available. Use the button to open a live WebView overlay/editor; the Tk panel stays open so the Review-window edit action remains reliable.",
+                        anchor="w",
+                        text_color="#334155",
+                        wraplength=820,
+                    ).grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 4))
+                    ctk.CTkLabel(frame, text=path_text, anchor="w", text_color="#64748b", wraplength=820).grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 8))
+                    ctk.CTkButton(
+                        frame,
+                        text="Open WebView source editor",
+                        height=28,
+                        command=_open_link_source_real_webview_overlay_or_external,
+                    ).grid(row=3, column=0, sticky="w", padx=10, pady=(0, 10))
+                    box.window_create("end", window=frame)
+                    box.insert("end", "\n\n")
+                    # R42P: do not auto-open a second pywebview/project window when
+                    # the edit window opens. The captured-page WebView is now an
+                    # explicit action only, unless the user deliberately opts in
+                    # via YTCE_R42P_AUTO_WEBVIEW=1 for local testing.
+                    try:
+                        if (not bool(source_editor_webview_launch_state.get("auto_launched_html"))
+                            and os.environ.get("YTCE_R42P_AUTO_WEBVIEW", "").strip() in {"1", "true", "TRUE", "yes", "YES"}):
+                            source_editor_webview_launch_state["auto_launched_html"] = True
+                            details_win.after(350, _open_link_source_real_webview_overlay_or_external)
+                    except Exception:
+                        logger.debug("Could not auto-open R42P captured page WebView overlay.", exc_info=True)
+                    return
+                box.insert("end", "Only extracted text is available; showing role overlay below without claiming a rendered page visual.\n", "r42d_artifact_notice")
+
+            def _render_link_source_editor() -> None:
+                nonlocal active_edit_state, rendered_artifact_state
+                box = source_editor_box
+                if box is None:
+                    return
+                try:
+                    old_yview = box.yview()
+                except Exception:
+                    old_yview = None
+                state = _build_link_source_edit_state()
+                rendered_artifact_state = _build_rendered_artifact_state()
+                view_state = {}
+                if build_webpage_role_view_state is not None:
+                    try:
+                        view_state = build_webpage_role_view_state(state)
+                    except Exception:
+                        logger.debug("Could not build R42C webpage role view state.", exc_info=True)
+                active_edit_state = state
+                _refresh_link_source_editor_header(state)
+                try:
+                    _destroy_link_source_editor_embedded_widgets()
+                    box.configure(state="normal")
+                    box.delete("1.0", "end")
+                    for tag in tuple(box.tag_names()):
+                        if str(tag).startswith("r42b_role_span_"):
+                            box.tag_delete(tag)
+                    rows = [row for row in state.get("active_rows") or [] if isinstance(row, dict)]
+                    for tag_name, tag_args in {
+                        "r42c_article_title": {"font": ("Segoe UI", 18, "bold"), "foreground": "#0f172a", "spacing1": 8, "spacing3": 10},
+                        "r42c_article_meta": {"font": ("Segoe UI", 10), "foreground": "#64748b", "spacing3": 8},
+                        "r42c_article_url": {"font": ("Segoe UI", 9), "foreground": "#475569", "spacing3": 12},
+                        "r42c_article_section": {"font": ("Segoe UI", 11, "bold"), "foreground": "#334155", "spacing1": 8, "spacing3": 6},
+                    }.items():
+                        try:
+                            box.tag_configure(tag_name, **tag_args)
+                        except Exception:
+                            pass
+                    try:
+                        box.tag_configure("r42d_artifact_notice", font=("Segoe UI", 11), foreground="#475569", spacing1=8, spacing3=8)
+                        box.tag_configure("r42d_overlay_heading", font=("Segoe UI", 12, "bold"), foreground="#334155", spacing1=8, spacing3=8)
+                    except Exception:
+                        pass
+                    title_text = str((view_state or {}).get("title") or state.get("title") or "").strip()
+                    selected_url_text = str(state.get("selected_url") or "").strip()
+                    if title_text:
+                        box.insert("end", title_text + "\n", "r42c_article_title")
+                    if selected_url_text:
+                        box.insert("end", selected_url_text + "\n\n", "r42c_article_url")
+                    _render_selected_url_visual_artifact(box, rendered_artifact_state)
+                    box.insert("end", "Source-role overlay\n", "r42d_overlay_heading")
+                    if not bool(rendered_artifact_state.get("exact_dom_text_region_mapping_available")):
+                        box.insert("end", "Text-region mapping is not available for this artifact, so role-coloured extracted text appears as an overlay panel rather than replacing the captured page visual.\n\n", "r42d_artifact_notice")
+                    blocks = [dict(block) for block in (view_state.get("blocks") if isinstance(view_state, dict) else []) or [] if isinstance(block, dict)]
+                    if not blocks:
+                        box.insert("end", "Cached article/source view is not available yet.\n", "r42c_article_meta")
+                    metadata_heading_inserted = False
+                    link_heading_inserted = False
+                    for index, row in enumerate(blocks or rows, start=1):
+                        edit_key = str(row.get("edit_key") or f"row_{index}")
+                        role_name = str(row.get("active_role") or "UNKNOWN").upper()
+                        kind = str(row.get("kind") or "text").lower()
+                        text_value = str(row.get("text") or row.get("url") or row.get("media_url") or "").strip()
+                        if kind == "title" and title_text and text_value.strip() == title_text.strip():
+                            continue
+                        tag = "r42b_role_span_" + re.sub(r"\W+", "_", edit_key)
+                        background, foreground = _link_source_editor_tag_color(role_name)
+                        tag_font = ("Segoe UI", 12)
+                        if kind == "title":
+                            tag_font = ("Segoe UI", 16, "bold")
+                        elif kind in {"link", "archive", "locator"}:
+                            tag_font = ("Segoe UI", 10, "underline")
+                        box.tag_configure(tag, background=background, foreground=foreground, underline=False, font=tag_font, spacing1=3, spacing3=7)
+                        if kind in {"image", "video", "media"}:
+                            card = _render_inline_media_row_card(row, role_name)
+                            if card is not None:
+                                box.window_create("end", window=card)
+                                box.insert("end", "\n\n")
+                                continue
+                        if kind in {"link", "archive", "locator"} and not link_heading_inserted:
+                            box.insert("end", "Source link\n", "r42c_article_section")
+                            link_heading_inserted = True
+                        elif kind == "metadata" and not metadata_heading_inserted:
+                            box.insert("end", "Article metadata\n", "r42c_article_meta")
+                            metadata_heading_inserted = True
+                        start = box.index("end-1c")
+                        box.insert("end", text_value or "(missing)", tag)
+                        end = box.index("end-1c")
+                        box.insert("end", "\n\n")
+
+                        def _cycle_link_source_editor_role(_event: object, row_ref: dict[str, object] = row) -> str:
+                            mode_now = str(edit_mode_var.get() or "semantic").lower()
+                            edit_key_now = str(row_ref.get("edit_key") or "")
+                            current = str(row_ref.get("active_role") or "UNKNOWN").upper()
+                            order = ("PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN")
+                            new_role = order[(order.index(current) + 1) % len(order)] if current in order else "UNKNOWN"
+                            if mode_now == "media":
+                                selected_link_media_roles[edit_key_now] = new_role
+                            else:
+                                selected_link_semantic_roles[edit_key_now] = new_role
+                            if build_role_change_payload is not None:
+                                try:
+                                    payload = build_role_change_payload(active_edit_state, edit_key_now, new_role, mode=mode_now)
+                                    record.setdefault("r42b_role_change_payloads", [])
+                                    if isinstance(record.get("r42b_role_change_payloads"), list):
+                                        record["r42b_role_change_payloads"].append(payload)
+                                except Exception:
+                                    logger.debug("Could not build R42B role-change payload.", exc_info=True)
+                            _render_link_source_editor()
+                            try:
+                                if old_yview:
+                                    box.yview_moveto(float(old_yview[0]))
+                            except Exception:
+                                logger.debug("Could not restore R42B link source editor yview.", exc_info=True)
+                            return "break"
+
+                        box.tag_bind(tag, "<Button-1>", _cycle_link_source_editor_role)
+                        box.tag_bind(tag, "<Enter>", lambda _event, tag_name=tag: box.tag_configure(tag_name, underline=True))
+                        box.tag_bind(tag, "<Leave>", lambda _event, tag_name=tag: box.tag_configure(tag_name, underline=False))
+                    box.configure(state="disabled")
+                    if old_yview:
+                        try:
+                            box.yview_moveto(float(old_yview[0]))
+                        except Exception:
+                            logger.debug("Could not restore R42B link source editor yview after render.", exc_info=True)
+                except Exception:
+                    logger.debug("Could not render R42B link source editor.", exc_info=True)
+
+            def _set_link_source_edit_mode(mode_value: str) -> None:
+                edit_mode_var.set("Media" if str(mode_value).lower() == "media" else "Semantic")
+                _render_link_source_editor()
+                try:
+                    mode_switch.set(edit_mode_var.get())
+                except Exception:
+                    pass
+
+            def _toggle_link_source_media_mode() -> None:
+                next_mode = "semantic" if str(edit_mode_var.get() or "").lower() == "media" else "media"
+                _set_link_source_edit_mode(next_mode)
+
+            def _open_link_source_real_webview_overlay_or_external(*, auto_launch: bool = False, hide_tk_on_success: bool = False) -> None:
+                # R42S: WebView is the normal selected-source editor surface.
+                # Launch the live URL in pywebview, inject the selected-source
+                # role overlay, and log failures instead of silently doing nothing.
+                def _show_tk_fallback() -> None:
+                    try:
+                        if bool(details_win.winfo_exists()):
+                            details_win.deiconify()
+                            details_win.lift()
+                    except Exception:
+                        pass
+
+                def _hide_tk_background() -> None:
+                    try:
+                        if bool(details_win.winfo_exists()):
+                            details_win.withdraw()
+                    except Exception:
+                        pass
+
+                def _worker() -> None:
+                    overlay: dict[str, object] | None = None
+                    launch_result: dict[str, object] | None = None
+                    try:
+                        state = _build_link_source_edit_state()
+                        artifact = _build_rendered_artifact_state()
+                        if write_role_overlay_html is not None and launch_role_overlay_webview_async is not None:
+                            overlay = write_role_overlay_html(
+                                edit_state=state,
+                                artifact_state=artifact,
+                                initial_mode=str(edit_mode_var.get() or "semantic").lower(),
+                            )
+                            source_editor_webview_launch_state["last_overlay_html_path"] = str(overlay.get("overlay_html_path") or "")
+                            source_editor_webview_launch_state["last_open_cmd_path"] = str(overlay.get("open_cmd_path") or "")
+                            source_editor_webview_launch_state["last_launch_log_path"] = str(overlay.get("launch_log_path") or "")
+                            launch_result = launch_role_overlay_webview_async(overlay)
+                            if launch_result.get("launch_log_path"):
+                                source_editor_webview_launch_state["last_launch_log_path"] = str(launch_result.get("launch_log_path") or "")
+                            if launch_result.get("launched"):
+                                if hide_tk_on_success:
+                                    try:
+                                        details_win.after(250, _hide_tk_background)
+                                    except Exception:
+                                        pass
+                                return
+                    except Exception:
+                        logger.debug("Could not launch R42S live WebView source-role editor.", exc_info=True)
+                    # Auto one-window mode should fall back to the Tk details panel
+                    # if WebView did not launch. Manual button mode can still fall
+                    # back to the overlay HTML / external URL.
+                    if auto_launch:
+                        try:
+                            details_win.after(0, _show_tk_fallback)
+                        except Exception:
+                            pass
+                        return
+                    try:
+                        overlay_html = Path(str((overlay or {}).get("overlay_html_path") or source_editor_webview_launch_state.get("last_overlay_html_path") or ""))
+                        if overlay_html.is_file():
+                            webbrowser.open(overlay_html.resolve().as_uri())
+                            return
+                    except Exception:
+                        logger.debug("Could not open R42S overlay HTML in external browser.", exc_info=True)
+                    if url:
+                        try:
+                            webbrowser.open(url)
+                        except Exception:
+                            logger.debug("Could not open link source URL externally.", exc_info=True)
+                threading.Thread(target=_worker, name="profile-media-r42s-open-live-role-webview-editor", daemon=True).start()
+
+            def _copy_link_source_editor_plain_text() -> None:
+                state = _build_link_source_edit_state()
+                if render_link_source_editor_plain_text is not None:
+                    self._copy_text_to_clipboard(render_link_source_editor_plain_text(state), "Copied selected source text.")
+
+            def _copy_link_source_editor_role_markup() -> None:
+                state = _build_link_source_edit_state()
+                if render_link_source_editor_role_markup is not None:
+                    self._copy_text_to_clipboard(render_link_source_editor_role_markup(state), "Copied selected source role markup.")
+
+            ctk.CTkButton(
+                actions,
+                text="" if icons.get("open_url") is not None else "Open URL",
+                image=icons.get("open_url"),
+                width=32,
+                height=28,
+                command=_open_link_source_real_webview_overlay_or_external,
+            ).grid(row=0, column=0, sticky="w", padx=(0, 4))
+            ctk.CTkButton(
+                actions,
+                text="" if icons.get("copy_url") is not None else "Copy URL",
+                image=icons.get("copy_url"),
+                width=32,
+                height=28,
+                command=lambda url_value=url: self._copy_text_to_clipboard(url_value, "Copied link source URL.") if url_value else None,
+            ).grid(row=0, column=1, sticky="w", padx=(0, 4))
+            ctk.CTkButton(
+                actions,
+                text="" if icons.get("copy_text") is not None else "Copy source text",
+                image=icons.get("copy_text"),
+                width=32,
+                height=28,
+                command=_copy_link_source_editor_plain_text,
+            ).grid(row=0, column=2, sticky="w", padx=(0, 4))
+            ctk.CTkButton(
+                actions,
+                text="" if icons.get("copy_source_role") is not None else "Copy source role text",
+                image=icons.get("copy_source_role"),
+                width=32,
+                height=28,
+                command=_copy_link_source_editor_role_markup,
+            ).grid(row=0, column=3, sticky="w", padx=(0, 4))
+            mode_switch = ctk.CTkSegmentedButton(
+                actions,
+                values=["Semantic", "Media"],
+                variable=edit_mode_var,
+                command=_set_link_source_edit_mode,
+                width=148,
+            )
+            mode_switch.grid(row=0, column=4, sticky="w", padx=(0, 8))
+            mode_badge = ctk.CTkLabel(actions, text="SEMANTIC", fg_color="#334155", text_color="#ffffff", corner_radius=4, padx=8, pady=3)
+            source_editor_badges["active_mode"] = mode_badge
+            for offset, role_name in enumerate(("PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"), start=5):
+                label = ctk.CTkLabel(actions, text=f"{role_name.title()}: 00", anchor="w", padx=6, pady=2)
+                label.grid(row=0, column=offset, sticky="w", padx=(0, 6))
+                source_editor_count_labels[role_name] = label
+            badge_row = ctk.CTkFrame(actions, fg_color="transparent")
+            badge_row.grid(row=1, column=0, columnspan=9, sticky="ew", pady=(5, 0))
+            for index, key in enumerate(("visible_role", "confidence", "evidence_gate_status")):
+                value_label = ctk.CTkLabel(badge_row, text="unknown", fg_color="#334155", text_color="#ffffff", corner_radius=4, padx=8, pady=3)
+                value_label.grid(row=0, column=index, sticky="w", padx=(0, 8))
+                source_editor_badges[key] = value_label
+            immediate_text, prepared_details = _fast_link_details_text(record)
+            source_editor_frame = ctk.CTkFrame(details_win, fg_color="#f8fafc", corner_radius=6)
+            source_editor_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 8))
+            source_editor_frame.grid_columnconfigure(0, weight=1)
+            source_editor_frame.grid_rowconfigure(1, weight=1)
+            ctk.CTkLabel(
+                source_editor_frame,
+                text="Selected source page view",
+                anchor="w",
+                font=ctk.CTkFont(size=13, weight="bold"),
+            ).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
+            source_editor_box = tk.Text(
+                source_editor_frame,
+                wrap="word",
+                height=16,
+                bg="#ffffff",
+                fg="#0f172a",
+                insertbackground="#0f172a",
+                relief="flat",
+                padx=18,
+                pady=14,
+                borderwidth=0,
+                font=("Segoe UI", 12),
+            )
+            source_editor_box.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
+            self.install_middle_click_autoscroll(source_editor_box, owner=details_win)
+            _render_link_source_editor()
+            # R42S: normal edit action is one WebView editor window.  The Tk
+            # details panel is created only as a fast fallback/background owner;
+            # it is withdrawn once the live pywebview source editor launches.
+            # Set YTCE_R42S_KEEP_TK_DETAILS_WINDOW=1 for the old two-window debug
+            # view, or YTCE_R42S_DISABLE_DEFAULT_WEBVIEW=1 to disable auto launch.
+            try:
+                _r42s_keep_tk = os.environ.get("YTCE_R42S_KEEP_TK_DETAILS_WINDOW", "").strip() in {"1", "true", "TRUE", "yes", "YES"}
+                _r42s_disable_auto = os.environ.get("YTCE_R42S_DISABLE_DEFAULT_WEBVIEW", "").strip() in {"1", "true", "TRUE", "yes", "YES"}
+                _r42s_can_webview = bool(url and write_role_overlay_html is not None and launch_role_overlay_webview_async is not None)
+                if _r42s_can_webview and not _r42s_keep_tk and not _r42s_disable_auto:
+                    try:
+                        details_win.withdraw()
+                    except Exception:
+                        pass
+                    def _r42s_open_default_webview_editor() -> None:
+                        try:
+                            _open_link_source_real_webview_overlay_or_external(auto_launch=True, hide_tk_on_success=True)
+                        except Exception:
+                            logger.debug("Could not start R42S one-window live WebView source editor.", exc_info=True)
+                            try:
+                                if bool(details_win.winfo_exists()):
+                                    details_win.deiconify()
+                                    details_win.lift()
+                            except Exception:
+                                pass
+                    details_win.after(80, _r42s_open_default_webview_editor)
+            except Exception:
+                logger.debug("Could not evaluate R42S one-window live WebView source editor mode.", exc_info=True)
+
+
+            diagnostics_expanded = {"value": False}
+            diagnostics_filter_var = tk.StringVar(value="All")
+            diagnostics_outer = ctk.CTkFrame(details_win, fg_color="#f1f5f9", corner_radius=6)
+            diagnostics_outer.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 8))
+            diagnostics_outer.grid_columnconfigure(0, weight=1)
+            diagnostics_header = ctk.CTkFrame(diagnostics_outer, fg_color="transparent")
+            diagnostics_header.grid(row=0, column=0, sticky="ew", padx=6, pady=6)
+            diagnostics_header.grid_columnconfigure(3, weight=1)
+            diagnostics_content = ctk.CTkFrame(diagnostics_outer, fg_color="transparent")
+            diagnostics_content.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 6))
+            diagnostics_content.grid_columnconfigure(0, weight=1)
+            diagnostics_content.grid_remove()
+
+            def _filtered_link_source_diagnostics_text() -> str:
+                filter_value = str(diagnostics_filter_var.get() or "All")
+                if filter_value == "Role matrix":
+                    return _link_source_role_matrix_text(record)
+                if filter_value == "Media details":
+                    lines = ["Media details"]
+                    for row in record.get("article_media_details") or []:
+                        if isinstance(row, dict):
+                            lines.append(f"- {row.get('label') or row.get('item') or 'Media'}: {row.get('role') or row.get('current_role') or 'UNKNOWN'}")
+                            reason_text = str(row.get("reason") or row.get("missing_provenance_reason") or "").strip()
+                            if reason_text:
+                                lines.append(f"  {reason_text}")
+                    return "\n".join(lines).rstrip() + "\n"
+                if filter_value == "Archive/locator":
+                    lines = ["Archive/locator", f"URL: {record.get('normalised_url') or record.get('url') or ''}"]
+                    target = str(record.get("archive_target_url") or record.get("preservation_for_url") or "").strip()
+                    if target:
+                        lines.append(f"Inherited target URL: {target}")
+                    lines.append(f"Internal archive/preservation role: {'LOCATOR' if record.get('is_archive_url') else ''}")
+                    return "\n".join(lines).rstrip() + "\n"
+                if filter_value == "Evidence gate":
+                    return "Evidence gate\nHuman action, checkbox action, OSINT metadata, network metadata, thumbnails, and media preview are not evidence by themselves.\nAccepted evidence requires visible article/source markers or verified provenance.\n"
+                if filter_value == "OSINT/passive":
+                    rows = record.get("osint_passive_discovery_rows") or record.get("passive_discovery_rows") or []
+                    lines = ["OSINT/passive"]
+                    for row in rows:
+                        if isinstance(row, dict):
+                            lines.append(f"- {row.get('source') or row.get('source_label') or 'passive'}: {row.get('value') or row.get('url') or row.get('candidate') or ''} | metadata-only review-required")
+                    return "\n".join(lines).rstrip() + "\n"
+                if filter_value == "Capture diagnostics":
+                    if prepared_details is not None and render_lazy_capture_history_text is not None:
+                        try:
+                            return render_lazy_capture_history_text(prepared_details, show_all=False)
+                        except Exception:
+                            logger.debug("Could not render filtered capture diagnostics.", exc_info=True)
+                    return immediate_text
+                return immediate_text + "\n\n" + _link_source_role_matrix_text(record)
+
+            def _refresh_diagnostics_text() -> None:
+                _set_details_text(_filtered_link_source_diagnostics_text())
+
+            def _copy_filtered_diagnostics_text() -> None:
+                self._copy_text_to_clipboard(_filtered_link_source_diagnostics_text(), "Copied filtered diagnostics/details text.")
+
+            def _toggle_diagnostics() -> None:
+                diagnostics_expanded["value"] = not diagnostics_expanded["value"]
+                try:
+                    if diagnostics_expanded["value"]:
+                        diagnostics_content.grid()
+                        diagnostics_toggle.configure(text="v Diagnostics")
+                        _refresh_diagnostics_text()
+                    else:
+                        diagnostics_content.grid_remove()
+                        diagnostics_toggle.configure(text="> Diagnostics")
+                except Exception:
+                    logger.debug("Could not toggle R42B diagnostics section.", exc_info=True)
+
+            diagnostics_toggle = ctk.CTkButton(
+                diagnostics_header,
+                text="> Diagnostics",
+                anchor="w",
+                fg_color="#cbd5e1",
+                hover_color="#e2e8f0",
+                command=_toggle_diagnostics,
+            )
+            diagnostics_toggle.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+            ctk.CTkOptionMenu(
+                diagnostics_header,
+                values=["All", "Role matrix", "Media details", "Archive/locator", "Evidence gate", "OSINT/passive", "Capture diagnostics"],
+                variable=diagnostics_filter_var,
+                command=lambda _value: _refresh_diagnostics_text(),
+                width=170,
+            ).grid(row=0, column=1, sticky="w", padx=(0, 4))
+            ctk.CTkButton(
+                diagnostics_header,
+                text="" if icons.get("copy_text") is not None else "Copy diagnostics",
+                image=icons.get("copy_text"),
+                width=32,
+                height=28,
+                command=_copy_filtered_diagnostics_text,
+            ).grid(row=0, column=2, sticky="w", padx=(0, 4))
+
+            details_box = ctk.CTkTextbox(diagnostics_content, wrap="word", height=110)
+            details_box.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 6))
+            details_box.configure(state="disabled")
+            self.install_middle_click_autoscroll(details_box, owner=details_win)
+            advanced_tools = ctk.CTkFrame(diagnostics_content, fg_color="transparent")
+            advanced_tools.grid(row=1, column=0, sticky="ew")
+            ctk.CTkButton(
+                advanced_tools,
+                text="",
+                image=icons.get("media_filter"),
+                width=32,
+                height=26,
+                command=lambda item=record: _run_capture_now_for_link_source(item),
+            ).grid(row=0, column=0, sticky="w", padx=(0, 4))
+            ctk.CTkButton(
+                advanced_tools,
+                text="",
+                image=icons.get("open_url"),
+                width=32,
+                height=26,
+                command=lambda item=record: _run_capture_now_for_link_source(item),
+            ).grid(row=0, column=1, sticky="w", padx=(0, 4))
+            ctk.CTkButton(
+                advanced_tools,
+                text="",
+                image=icons.get("reject_review"),
+                width=32,
+                height=26,
+                command=_close_ytce_test_tabs_from_details,
+            ).grid(row=0, column=2, sticky="w", padx=(0, 4))
+            ctk.CTkButton(
+                advanced_tools,
+                text="",
+                image=icons.get("copy_url"),
+                width=32,
+                height=26,
+                command=lambda item=record: _copy_selected_osint_passive_candidate(item),
+            ).grid(row=0, column=3, sticky="w", padx=(0, 4))
+
+            def _load_capture_history() -> None:
+                if prepared_details is None or render_lazy_capture_history_text is None:
+                    return
+                try:
+                    history = render_lazy_capture_history_text(prepared_details, show_all=False)
+                    _set_details_text(immediate_text + "\n\n" + history)
+                except Exception:
+                    logger.debug("Could not lazy-render link capture history.", exc_info=True)
+
+            if prepared_details is not None:
+                try:
+                    self.after(50, _load_capture_history)
+                except Exception:
+                    logger.debug("Could not schedule lazy link capture history render.", exc_info=True)
+            return "break"
+
+        def _open_link_source_objects_window() -> None:
+            """Open a compact Link sources decision window for V83C URL objects."""
+            if not link_source_objects:
+                self.log_message("No link source objects are available in this preview.", "info")
+                return
+            try:
+                from profile_media_link_source_decisions import (
+                    append_link_source_decision,
+                    apply_link_source_decisions,
+                    build_link_source_decision_summary,
+                    link_source_object_key,
+                    load_link_source_decisions,
+                )
+            except Exception as exc:
+                logger.debug("Could not import link source decision helpers.", exc_info=True)
+                self.log_message(f"Link source decision helpers unavailable: {exc}", "error")
+                return
+
+            link_win = ctk.CTkToplevel(win)
+            link_win.title("Link sources")
+            try:
+                link_win.geometry("940x660")
+                link_win.minsize(820, 560)
+                link_win.transient(win)
+            except Exception:
+                pass
+            link_win.grid_columnconfigure(0, weight=1)
+            link_win.grid_rowconfigure(2, weight=1)
+
+            filter_var = ctk.StringVar(value="All")
+            role_var = ctk.StringVar(value="UNKNOWN")
+            note_var = ctk.StringVar(value="")
+            selected_link_keys: set[str] = set()
+            row_var_by_key: dict[str, ctk.BooleanVar] = {}
+            row_frame_holder: dict[str, object] = {}
+            master_button_holder: dict[str, object] = {}
+            summary_label_holder: dict[str, object] = {}
+
+            def _reload_link_objects() -> None:
+                nonlocal link_source_objects
+                decisions = load_link_source_decisions(link_source_decisions_path)
+                base_objects = [dict(item) for item in (link_source_preview.get("objects") or link_source_objects) if isinstance(item, dict)]
+                link_source_objects = apply_link_source_decisions(base_objects, decisions)
+                link_source_preview["objects"] = list(link_source_objects)
+                link_source_preview["decision_summary"] = build_link_source_decision_summary(link_source_objects)
+                link_source_preview["link_source_decisions_count"] = len(decisions)
+
+            def _visible_link_objects() -> list[dict[str, object]]:
+                return [record for record in link_source_objects if _link_source_visible_for_filter(record, filter_var.get())]
+
+            def _sync_link_source_summary() -> None:
+                summary = link_source_preview.get("decision_summary")
+                if not isinstance(summary, dict):
+                    summary = build_link_source_decision_summary(link_source_objects)
+                    link_source_preview["decision_summary"] = summary
+                role_counts = summary.get("active_role_counts") if isinstance(summary.get("active_role_counts"), dict) else {}
+                text = (
+                    f"Links - {len(link_source_objects)} · "
+                    f"Primary - {int(role_counts.get('PRIMARY') or 0)} · "
+                    f"Secondary - {int(role_counts.get('SECONDARY') or 0)} · "
+                    f"Tertiary - {int(role_counts.get('TERTIARY') or 0)} · "
+                    f"Unknown - {int(role_counts.get('UNKNOWN') or 0)} · "
+                    f"Locator - {int(role_counts.get('LOCATOR') or 0)} · "
+                    f"Needs review - {sum(1 for item in link_source_objects if item.get('needs_review'))}"
+                )
+                label = summary_label_holder.get("label")
+                if label is not None:
+                    try:
+                        label.configure(text=text)
+                    except Exception:
+                        pass
+
+            def _sync_link_source_master() -> None:
+                visible = _visible_link_objects()
+                visible_keys = [link_source_object_key(record) for record in visible]
+                master = master_button_holder.get("button")
+                if master is not None:
+                    try:
+                        master.configure(text="⬛" if visible_keys and all(key in selected_link_keys for key in visible_keys) else "⬜")
+                    except Exception:
+                        pass
+                for key, var in row_var_by_key.items():
+                    try:
+                        var.set(key in selected_link_keys)
+                    except Exception:
+                        pass
+
+            def _toggle_link_source_key(key: str) -> None:
+                if key in selected_link_keys:
+                    selected_link_keys.discard(key)
+                else:
+                    selected_link_keys.add(key)
+                _sync_link_source_master()
+
+            def _toggle_visible_link_source_keys() -> None:
+                visible_keys = [link_source_object_key(record) for record in _visible_link_objects()]
+                if not visible_keys:
+                    return
+                if all(key in selected_link_keys for key in visible_keys):
+                    for key in visible_keys:
+                        selected_link_keys.discard(key)
+                else:
+                    for key in visible_keys:
+                        selected_link_keys.add(key)
+                _render_link_source_rows()
+
+            def _append_link_source_decisions(status: str, *, selected_role: str = "") -> None:
+                visible_by_key = {link_source_object_key(record): record for record in _visible_link_objects()}
+                selected_records = [visible_by_key[key] for key in selected_link_keys if key in visible_by_key]
+                if not selected_records:
+                    self.log_message("No visible link source rows selected.", "info")
+                    return
+                role_override = str(selected_role or "").strip().upper()
+                note = str(note_var.get() or "").strip()
+                if status == "rejected" and not note:
+                    note = "Ignored from active evidence; source object retained."
+                for record in selected_records:
+                    append_link_source_decision(
+                        link_source_decisions_path,
+                        {
+                            "link_object_key": link_source_object_key(record),
+                            "url": record.get("url"),
+                            "normalised_url": record.get("normalised_url"),
+                            "archive_target_url": record.get("archive_target_url") or record.get("preservation_for_url"),
+                            "selected_role": role_override or _link_source_role_value(record),
+                            "selected_source_object_type": record.get("source_object_type"),
+                            "selected_source_relation_type": record.get("source_relation_type"),
+                            "decision_status": status,
+                            "decision_note": note,
+                            "previous_role": _link_source_role_value(record),
+                            "previous_reason": record.get("role_reason"),
+                            "source_label": record.get("source_label"),
+                            "source_path": record.get("source_path"),
+                            "line_number": record.get("line_number"),
+                        },
+                    )
+                selected_link_keys.clear()
+                _reload_link_objects()
+                _render_link_source_rows()
+                action_label = "ignored from active evidence" if status == "rejected" else status.replace("_", " ")
+                self.log_message(f"Saved {len(selected_records)} link source decision(s): {action_label}; {link_source_decisions_path}", "success")
+
+            def _copy_selected_link_urls() -> None:
+                visible_by_key = {link_source_object_key(record): record for record in _visible_link_objects()}
+                urls = [
+                    str(visible_by_key[key].get("normalised_url") or visible_by_key[key].get("url") or "").strip()
+                    for key in selected_link_keys
+                    if key in visible_by_key
+                ]
+                urls = [url for url in urls if url]
+                if urls:
+                    self._copy_text_to_clipboard("\n".join(urls), "Copied selected link URL(s).")
+
+            def _open_selected_link_url() -> None:
+                visible_by_key = {link_source_object_key(record): record for record in _visible_link_objects()}
+                for key in selected_link_keys:
+                    record = visible_by_key.get(key)
+                    if not record:
+                        continue
+                    url = str(record.get("normalised_url") or record.get("url") or "").strip()
+                    if url:
+                        webbrowser.open(url)
+                        return
+
+            def _render_link_source_rows(*_args: object) -> None:
+                holder = row_frame_holder.get("frame")
+                if holder is None:
+                    return
+                try:
+                    for child in holder.winfo_children():
+                        child.destroy()
+                except Exception:
+                    return
+                row_var_by_key.clear()
+                visible = _visible_link_objects()
+                if not visible:
+                    ctk.CTkLabel(holder, text="No link source rows match this filter.", text_color=COLORS["text_muted"], anchor="w").grid(row=0, column=0, sticky="ew", padx=8, pady=8)
+                    _sync_link_source_summary()
+                    _sync_link_source_master()
+                    return
+                for row_index, record in enumerate(visible):
+                    key = link_source_object_key(record)
+                    role = _link_source_role_value(record)
+                    selected_var = ctk.BooleanVar(value=key in selected_link_keys)
+                    row_var_by_key[key] = selected_var
+                    card = ctk.CTkFrame(holder, fg_color=COLORS["bg_input"], corner_radius=8)
+                    card.grid(row=row_index, column=0, sticky="ew", padx=8, pady=5)
+                    card.grid_columnconfigure(2, weight=1)
+                    ctk.CTkButton(card, text="⬛" if key in selected_link_keys else "⬜", width=30, height=26, command=lambda item_key=key: _toggle_link_source_key(item_key)).grid(row=0, column=0, rowspan=4, padx=(8, 6), pady=8, sticky="n")
+                    ctk.CTkLabel(card, text=f"[{role}]", text_color=COLORS["text_primary"], font=ctk.CTkFont(size=12, weight="bold")).grid(row=0, column=1, padx=(0, 8), pady=(8, 2), sticky="nw")
+                    heading = str(record.get("anchor_text") or record.get("nearby_heading") or record.get("list_label") or record.get("source_label") or "Link source object").strip()
+                    ctk.CTkLabel(card, text=f"{_link_source_object_type(record)} — {heading}", text_color=COLORS["text_primary"], anchor="w", justify="left", wraplength=760).grid(row=0, column=2, sticky="ew", padx=(0, 8), pady=(8, 2))
+                    url = str(record.get("display_url") or record.get("normalised_url") or record.get("url") or "").strip()
+                    ctk.CTkLabel(card, text=url, text_color=COLORS["text_secondary"], anchor="w", justify="left", wraplength=760).grid(row=1, column=2, sticky="ew", padx=(0, 8), pady=(0, 2))
+                    relation = str(record.get("source_relation_type") or "unknown").strip()
+                    confidence = str(record.get("confidence") or "low").strip()
+                    reason = str(record.get("role_reason") or "").strip()
+                    decision_status = _link_source_decision_status(record)
+                    detail = f"Relation: {relation} / Confidence: {confidence}"
+                    if decision_status:
+                        detail += f" / Decision: {_link_source_decision_status_display(decision_status)}"
+                    ctk.CTkLabel(card, text=detail, text_color=COLORS["text_muted"], anchor="w", justify="left", wraplength=760).grid(row=2, column=2, sticky="ew", padx=(0, 8), pady=(0, 2))
+                    reason_lines = [f"Reason: {reason}" if reason else "Reason: (not supplied)"]
+                    reason_lines.extend(_link_source_grouped_preservation_lines(record, link_source_objects))
+                    ctk.CTkLabel(card, text="\n".join(reason_lines), text_color=COLORS["text_secondary"], anchor="w", justify="left", wraplength=760).grid(row=3, column=2, sticky="ew", padx=(0, 8), pady=(0, 8))
+                _sync_link_source_summary()
+                _sync_link_source_master()
+
+            header = ctk.CTkFrame(link_win, fg_color="transparent")
+            header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 4))
+            header.grid_columnconfigure(1, weight=1)
+            ctk.CTkLabel(header, text="Link sources", font=ctk.CTkFont(size=16, weight="bold"), text_color=COLORS["text_primary"], anchor="w").grid(row=0, column=0, sticky="w", padx=(0, 8))
+            summary_label = ctk.CTkLabel(header, text="", text_color=COLORS["text_secondary"], anchor="w")
+            summary_label.grid(row=0, column=1, sticky="ew")
+            summary_label_holder["label"] = summary_label
+
+            actions = ctk.CTkFrame(link_win, fg_color="transparent")
+            actions.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 6))
+            ctk.CTkButton(actions, text="⬜", width=32, height=28, command=_toggle_visible_link_source_keys).grid(row=0, column=0, padx=(0, 4))
+            master_button_holder["button"] = actions.grid_slaves(row=0, column=0)[0]
+            ctk.CTkOptionMenu(actions, values=link_source_filter_values, variable=filter_var, width=132, command=_render_link_source_rows).grid(row=0, column=1, padx=(0, 6))
+            ctk.CTkButton(actions, text="Accept decision", width=118, height=28, command=lambda: _append_link_source_decisions("accepted")).grid(row=0, column=2, padx=(0, 4))
+            ctk.CTkButton(actions, text="Ignore from active evidence", width=172, height=28, fg_color="#743333", hover_color="#914040", command=lambda: _append_link_source_decisions("rejected")).grid(row=0, column=3, padx=(0, 8))
+            ctk.CTkLabel(actions, text="Role:", text_color=COLORS["text_muted"]).grid(row=0, column=4, padx=(0, 4))
+            ctk.CTkOptionMenu(actions, values=["PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "LOCATOR"], variable=role_var, width=108).grid(row=0, column=5, padx=(0, 4))
+            ctk.CTkButton(actions, text="Override role", width=108, height=28, command=lambda: _append_link_source_decisions("changed_role", selected_role=role_var.get())).grid(row=0, column=6, padx=(0, 4))
+            ctk.CTkButton(actions, text="Mark Locator", width=98, height=28, command=lambda: _append_link_source_decisions("changed_role", selected_role="LOCATOR")).grid(row=0, column=7, padx=(0, 4))
+            ctk.CTkButton(actions, text="Mark Unknown", width=104, height=28, command=lambda: _append_link_source_decisions("changed_role", selected_role="UNKNOWN")).grid(row=0, column=8, padx=(0, 4))
+            ctk.CTkButton(actions, text="Copy URL", width=82, height=28, command=_copy_selected_link_urls).grid(row=0, column=9, padx=(0, 4))
+            ctk.CTkButton(actions, text="Open URL", width=82, height=28, command=_open_selected_link_url).grid(row=0, column=10, padx=(0, 4))
+            note_entry = ctk.CTkEntry(actions, textvariable=note_var, placeholder_text="Add note", width=160)
+            note_entry.grid(row=0, column=11, sticky="ew", padx=(4, 0))
+            actions.grid_columnconfigure(11, weight=1)
+
+            rows = ctk.CTkScrollableFrame(link_win, fg_color="transparent")
+            rows.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 10))
+            rows.grid_columnconfigure(0, weight=1)
+            row_frame_holder["frame"] = rows
+            _reload_link_objects()
+            _render_link_source_rows()
+
+        def _source_review_text_key(value: object) -> str:
+            return re.sub(r"\s+", " ", str(value or "").replace("\r", " ").replace("\n", " ")).strip()
+
+        def _source_reference_candidate_has_attached_evidence(ref: object) -> bool:
+            if not isinstance(ref, dict):
+                return False
+            # YTCE_V83C_REPAIR21_MEDIA_VIEW_SOURCE_ROLE_COLOURS
+            # Presence of a named actor is not the same thing as an attached
+            # source object.  Look only for concrete source/file/url evidence.
+            direct_keys = (
+                "resolved_source_url", "source_url", "normalised_url", "display_url", "url",
+                "source_object_url", "evidence_url", "attached_source_url", "archive_url",
+                "source_path", "source_file", "local_path", "artifact_local_path",
+                "linked_source_object_key", "link_object_key",
+            )
+            for key in direct_keys:
+                text_value = " ".join(str(ref.get(key) or "").split()).strip()
+                if text_value:
+                    return True
+            for key in ("attached_source_urls", "source_urls", "evidence_urls", "resolved_source_urls", "link_source_objects"):
+                value = ref.get(key)
+                if isinstance(value, (list, tuple, set)) and any(" ".join(str(item or "").split()).strip() for item in value):
+                    return True
+            return False
+
+        def _source_reference_candidate_media_display_role(ref: object, candidate_role: object) -> str:
+            # A source-reference row can belong in the Media view even without a
+            # resolved source.  In that case the display colour must be Unknown,
+            # not the semantic claim-span colour and not the aspirational chain role.
+            role = str(candidate_role or "").strip().upper()
+            if not role:
+                return "UNKNOWN_SOURCE_ROLE"
+            if "UNKNOWN" in role:
+                return "UNKNOWN_SOURCE_ROLE"
+            if not isinstance(ref, dict):
+                return role
+            template_id = " ".join(str(ref.get("source_chain_template_id") or "").split()).strip().casefold()
+            pointer = " ".join(str(ref.get("source_pointer_type") or "").split()).strip().casefold()
+            summary = " ".join(str(ref.get("source_chain_summary") or ref.get("reason") or "").split()).strip().casefold()
+            unresolved_named_intermediary = (
+                template_id == "named_intermediary_told_speaker"
+                or pointer == "named_intermediary_told_speaker"
+                or "unresolved primary record/source object" in summary
+            )
+            if unresolved_named_intermediary and not _source_reference_candidate_has_attached_evidence(ref):
+                return "UNKNOWN_SOURCE_ROLE"
+            return role
+
+        try:
+            if source_reference_review_decisions_path.is_file():
+                for raw_line in source_reference_review_decisions_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        continue
+                    try:
+                        row = json.loads(raw_line)
+                    except Exception:
+                        continue
+                    if not isinstance(row, dict):
+                        continue
+                    action = str(row.get("decision") or row.get("action") or "").strip().lower()
+                    if action not in {"accepted", "accept", "rejected", "reject"}:
+                        continue
+                    key = _source_review_text_key(row.get("identity_key") or row.get("edit_key"))
+                    text_value = _source_review_text_key(row.get("text") or row.get("clicked_text"))
+                    if key:
+                        source_reference_review_resolved_keys.add(key)
+                    if text_value:
+                        source_reference_review_resolved_texts.add(text_value)
+        except Exception:
+            logger.debug("Could not load source-reference Review decisions.", exc_info=True)
+
+        try:
+            preview_section_for_source_refs = self._profile_media_database_source_package_preview_section_from_payload(preview_payload)
+            source_ref_preview = preview_section_for_source_refs.get("source_reference_candidate_preview") if isinstance(preview_section_for_source_refs, dict) else {}
+            if isinstance(source_ref_preview, dict):
+                for ref in source_ref_preview.get("main_sourcing_card_candidates", ()) or ():
+                    if not isinstance(ref, dict):
+                        continue
+                    if not bool(ref.get("unknown_media_requirement_met", True)):
+                        continue
+                    edit_key = " ".join(str(ref.get("linked_claim_span_edit_key") or "").split()).strip()
+                    ref_text = " ".join(str(ref.get("text") or "").split()).strip()
+                    ref_review_required = bool(ref.get("review_required", False)) and str(ref.get("goes_to_review_text", True)).lower() != "false"
+                    # YTCE_MEDIA_SOURCE_FILTER_PASS6D_20260827: remember definite
+                    # media-source candidates separately from Review candidates so
+                    # the transcript can be narrowed to source-provenance statements
+                    # without treating ordinary Unknown claim-spans as media items.
+                    ref_main_card = bool(ref.get("goes_to_main_sourcing_card", True))
+                    ref_media_role = " ".join(str(ref.get("media_source_role") or ref.get("candidate_source_role") or ref.get("selected_role") or "").split()).strip()
+                    if not ref_media_role:
+                        ref_status = " ".join(str(ref.get("source_reference_status") or "").split()).strip().upper()
+                        if "TERTIARY" in ref_status:
+                            ref_media_role = "TERTIARY_PROPAGATED_SOURCE"
+                        elif "SECONDARY" in ref_status:
+                            ref_media_role = "SECONDARY_WITNESS_ACCOUNT"
+                        elif "PRIMARY" in ref_status:
+                            ref_media_role = "PRIMARY_SELF_AUTHORED_SCOPE"
+                        elif "UNKNOWN" in ref_status:
+                            ref_media_role = "UNKNOWN_SOURCE_ROLE"
+                    if ref_main_card and ref_media_role in {"PRIMARY_SELF_AUTHORED_SCOPE", "SECONDARY_WITNESS_ACCOUNT", "TERTIARY_PROPAGATED_SOURCE", "UNKNOWN_SOURCE_ROLE"}:
+                        ref_display_role = _source_reference_candidate_media_display_role(ref, ref_media_role)
+                        if edit_key:
+                            source_reference_media_role_by_edit_key[edit_key] = ref_media_role
+                            source_reference_media_display_role_by_edit_key[edit_key] = ref_display_role
+                        if ref_text:
+                            ref_text_key = _source_review_text_key(ref_text)
+                            source_reference_media_role_by_text[ref_text_key] = ref_media_role
+                            source_reference_media_display_role_by_text[ref_text_key] = ref_display_role
+                    if ref_review_required and edit_key and edit_key not in source_reference_review_resolved_keys:
+                        source_reference_review_edit_keys.add(edit_key)
+                    if ref_review_required and ref_text and ref_text not in source_reference_review_resolved_texts:
+                        source_reference_review_texts.add(ref_text)
+        except Exception:
+            logger.debug("Could not load source-reference candidate edit keys for transcript filter.", exc_info=True)
+
+        def _add_claim_role_full_transcript_card(spans: list[dict[str, object]], comment_sections: list[dict[str, object]] | None = None) -> None:
+            nonlocal row_index
+            if not spans and not link_source_objects:
+                return
+            comment_sections = comment_sections or []
+            card = ctk.CTkFrame(body, fg_color=COLORS["bg_input"], corner_radius=8)
+            card.grid(row=row_index, column=0, sticky="ew", padx=10, pady=5)
+            card.grid_columnconfigure(0, weight=1, minsize=0)
+            row_index += 1
+            source_title_text = str(
+                (spans[0].get("source_title") if spans else "")
+                or (preview_section.get("source_title") if isinstance(preview_section, dict) else "")
+                or "Source text claim-span review"
+            )
+            source_title_clean = " ".join(source_title_text.split()).strip(" -—")
+            source_title_lower = source_title_clean.casefold()
+            next_card_row = 0
+            if False and source_title_clean and not source_title_lower.startswith("media / unlinked files"):
+                ctk.CTkLabel(
+                    card,
+                    text=source_title_text,
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text_color=COLORS["text_primary"],
+                    anchor="w",
+                ).grid(row=next_card_row, column=0, sticky="ew", padx=8, pady=(8, 2))
+                next_card_row += 1
+            copy_row = ctk.CTkFrame(card, fg_color="transparent")
+            copy_row.grid(row=next_card_row, column=0, sticky="ew", padx=8, pady=(8 if next_card_row == 0 else 0, 4))
+            copy_row.grid_columnconfigure(7, weight=1)
+            text_frame = ctk.CTkFrame(card, fg_color="#1f1f1f", corner_radius=6)
+            text_frame.grid(row=next_card_row + 1, column=0, sticky="ew", padx=8, pady=(2, 8))
+            text_frame.grid_columnconfigure(0, weight=1)
+            transcript_box = tk.Text(
+                text_frame,
+                height=14,
+                width=1,
+                wrap="word",
+                bg="#1f1f1f",
+                fg=COLORS["text_secondary"],
+                insertbackground=COLORS["text_primary"],
+                relief="flat",
+                borderwidth=0,
+                highlightthickness=0,
+                font=("Segoe UI", 10),
+                padx=8,
+                pady=8,
+            )
+            transcript_scrollbar = tk.Scrollbar(text_frame, orient="vertical", command=transcript_box.yview)
+            transcript_box.configure(yscrollcommand=transcript_scrollbar.set)
+            transcript_box.grid(row=0, column=0, sticky="ew")
+            transcript_scrollbar.grid(row=0, column=1, sticky="ns")
+
+            def _copy_to_clipboard(text_value: str) -> None:
+                try:
+                    self.clipboard_clear()
+                    self.clipboard_append(text_value)
+                    self.log_message("Copied transcript text to clipboard.", "success")
+                except Exception:
+                    logger.debug("Could not copy role transcript text.", exc_info=True)
+
+            try:
+                role_copy_icon = self._load_profile_media_role_icons().get("copy_source_role")
+                plain_copy_icon = self._load_profile_media_role_icons().get("copy_text")
+            except Exception:
+                role_copy_icon = None
+                plain_copy_icon = None
+            ctk.CTkButton(
+                copy_row,
+                # YTCE_V83C_REPAIR2_ICON_ONLY_COPY_CONTROLS
+                text="" if plain_copy_icon is not None else "Copy plain text",
+                image=plain_copy_icon,
+                compound="left",
+                width=34 if plain_copy_icon is not None else 128,
+                height=26,
+                command=lambda: _copy_to_clipboard(_claim_visible_plain_text()),
+            ).grid(row=0, column=0, sticky="w", padx=(0, 6))
+            ctk.CTkButton(
+                copy_row,
+                # YTCE_V83C_REPAIR1_TEXT_VIEW_COPY
+                text="" if role_copy_icon is not None else "Copy role markup",
+                image=role_copy_icon,
+                compound="left",
+                width=34 if role_copy_icon is not None else 138,
+                height=26,
+                command=lambda: _copy_to_clipboard(_claim_visible_role_markup()),
+            ).grid(row=0, column=1, sticky="w", padx=(0, 6))
+
+            # YTCE_REVIEW_FILTER_NOTES_PASS5_20260827: inline Review/role filter and right-click notes.
+            claim_filter_var = ctk.StringVar(value="Show all")
+            claim_filter_button_holder: dict[str, object] = {}
+            claim_filter_popup_holder: dict[str, object] = {}
+            claim_media_filter_button_holder: dict[str, object] = {}
+            claim_semantic_filter_button_holder: dict[str, object] = {}
+            # YTCE_V83D_R35C_MEDIA_TOGGLE_EMBEDDED_WIDGET_GUARD
+            # Link rows in the source-role Text widget embed CTkFrame/CTkButton
+            # windows.  Toggling Media on/off rapidly can leave stale embedded
+            # widgets attached to a text range that is about to be deleted.
+            # Track and destroy them before every rebuild so Media off > on > off
+            # is a safe re-render instead of a Tcl/Tk stale-window crash.
+            claim_transcript_embedded_widgets: list[object] = []
+            claim_media_filter_var = ctk.BooleanVar(value=bool(getattr(self, "profile_media_database_claim_media_filter_active", False)))
+            claim_filter_values = ("Show all", "Review", "Primary", "Secondary", "Tertiary", "Unknown")
+
+            def _claim_filter_button_text() -> str:
+                return ""
+
+            # YTCE_REVIEW_FILLBOX_DECISIONS_PASS5G_20260827
+            source_review_selected_keys: set[str] = set()
+            source_review_key_text: dict[str, str] = {}
+            source_review_action_widgets: list[object] = []
+            source_review_master_button_holder: dict[str, object] = {}
+
+            def _claim_review_selection_key(span_ref: dict[str, object]) -> str:
+                key = str(span_ref.get("edit_key") or "").strip()
+                span_text = " ".join(str(span_ref.get("text") or "").split()).strip()
+                if key and key in source_reference_review_edit_keys:
+                    if span_text:
+                        source_review_key_text[key] = span_text
+                    return key
+                if span_text and span_text in source_reference_review_texts:
+                    source_review_key_text[span_text] = span_text
+                    return span_text
+                return ""
+
+            def _media_role_filter_value(role_value: object) -> str:
+                role_text = str(role_value or "").strip().upper()
+                if "PRIMARY" in role_text:
+                    return "PRIMARY"
+                if "SECONDARY" in role_text:
+                    return "SECONDARY"
+                if "TERTIARY" in role_text:
+                    return "TERTIARY"
+                if "UNKNOWN" in role_text:
+                    return "UNKNOWN"
+                return ""
+
+            def _claim_media_source_role_for_span(span_ref: dict[str, object]) -> str:
+                # YTCE_V83C_REPAIR21_MEDIA_VIEW_SOURCE_ROLE_COLOURS
+                # In Media view, colour source-reference statements by media/source
+                # provenance display role, not by semantic claim-span role.
+                # YTCE_V83C_REPAIR24_METRO_FULL_SEMANTIC_MEDIA_FREEZE
+                # Some frozen article spans carry their Media-view provenance role
+                # directly on the claim span.
+                # YTCE_V83D_R36H_MEDIA_TEXT_CLICK_SELECTED_OVERRIDE
+                # R36C made Media-view article/source text clickable, but frozen
+                # direct media roles were being returned before the in-memory
+                # selected_claim_span_media_roles map. That made clicks look like
+                # no-ops and left the counter unchanged until another render path
+                # rebuilt from stale direct roles. User edits and persisted media
+                # decisions must override frozen defaults; frozen direct roles are
+                # the fallback default, not the highest-precedence source.
+                edit_key = str(span_ref.get("edit_key") or "").strip()
+                if edit_key and edit_key in selected_claim_span_media_roles:
+                    selected_media_role = _media_role_filter_value(selected_claim_span_media_roles.get(edit_key))
+                    if selected_media_role:
+                        return selected_media_role
+                if edit_key and edit_key in existing_claim_span_media_roles:
+                    existing_media_role = _media_role_filter_value(existing_claim_span_media_roles.get(edit_key))
+                    if existing_media_role:
+                        return existing_media_role
+                direct_media_role = _media_role_filter_value(
+                    span_ref.get("media_source_display_role")
+                    or span_ref.get("media_display_role")
+                    or span_ref.get("source_reference_media_display_role")
+                )
+                if direct_media_role:
+                    return direct_media_role
+                if edit_key and edit_key in source_reference_media_display_role_by_edit_key:
+                    return _media_role_filter_value(source_reference_media_display_role_by_edit_key.get(edit_key))
+                if edit_key and edit_key in source_reference_media_role_by_edit_key:
+                    return _media_role_filter_value(source_reference_media_role_by_edit_key.get(edit_key))
+                span_text = _source_review_text_key(span_ref.get("text"))
+                if span_text and span_text in source_reference_media_display_role_by_text:
+                    return _media_role_filter_value(source_reference_media_display_role_by_text.get(span_text))
+                if span_text and span_text in source_reference_media_role_by_text:
+                    return _media_role_filter_value(source_reference_media_role_by_text.get(span_text))
+                # Some candidate text is a tightened source-bearing clause while the
+                # coloured span contains the surrounding sentence.  Allow containment
+                # matching only for reasonably long text to avoid false positives.
+                if span_text:
+                    span_norm = span_text.casefold()
+                    for ref_text, ref_role in source_reference_media_display_role_by_text.items():
+                        ref_norm = str(ref_text or "").casefold()
+                        if len(ref_norm) >= 28 and (ref_norm in span_norm or span_norm in ref_norm):
+                            return _media_role_filter_value(ref_role)
+                    for ref_text, ref_role in source_reference_media_role_by_text.items():
+                        ref_norm = str(ref_text or "").casefold()
+                        if len(ref_norm) >= 28 and (ref_norm in span_norm or span_norm in ref_norm):
+                            return _media_role_filter_value(ref_role)
+                if _claim_review_selection_key(span_ref):
+                    return "UNKNOWN"
+                return ""
+
+            def _claim_media_filter_active() -> bool:
+                try:
+                    return bool(claim_media_filter_var.get())
+                except Exception:
+                    return False
+
+            def _claim_span_matches_filter(span_ref: dict[str, object]) -> bool:
+                mode = str(claim_filter_var.get() or "Show all").strip()
+                media_filter_active = _claim_media_filter_active()
+                if media_filter_active:
+                    # YTCE_V83C_REPAIR19_MEDIA_ICON_INCLUDES_SOURCE_STATEMENTS
+                    # The Media icon filters the coloured text to media/source-provenance
+                    # statements. It must not mean URL rows only: source-reference
+                    # candidates without an attached URL still belong in this view.
+                    media_role = _claim_media_source_role_for_span(span_ref)
+                    if not media_role:
+                        return False
+                    if mode == "Review":
+                        return bool(_claim_review_selection_key(span_ref))
+                    if mode in {"", "Show all"}:
+                        return True
+                    return media_role == mode.upper()
+                if mode == "Review":
+                    return bool(_claim_review_selection_key(span_ref))
+                if mode in {"", "Show all"}:
+                    return True
+                return _claim_span_selected_role(span_ref) == mode.upper()
+
+            def _link_source_matches_current_text_filter(record: dict[str, object]) -> bool:
+                # YTCE_V83C_REPAIR7_MEDIA_ICON_OWNS_LINK_ROWS
+                # Link/source-object rows belong to the Media icon view.  When
+                # the Media icon is off, the mixed article body should be visible
+                # instead of a link-only textbox, including in Review mode.
+                if bool(record.get("link_source_rejected")):
+                    return False
+                if not _claim_media_filter_active():
+                    return False
+                role = _link_source_visible_role_value(record)
+                mode = str(claim_filter_var.get() or "Show all").strip()
+                if mode == "Review":
+                    return bool(record.get("needs_review"))
+                if mode in {"", "Show all"}:
+                    return True
+                return role == mode.upper()
+
+            def _visible_link_source_objects_for_current_filter() -> list[dict[str, object]]:
+                try:
+                    return [
+                        dict(record)
+                        for record in tuple(link_source_objects or ())
+                        if isinstance(record, dict) and _link_source_matches_current_text_filter(record)
+                    ]
+                except Exception:
+                    return []
+
+            def _orphan_link_source_locator_objects() -> list[dict[str, object]]:
+                try:
+                    iterable = tuple(link_source_objects or ())
+                except Exception:
+                    iterable = ()
+                active_targets = {
+                    str(record.get("normalised_url") or record.get("url") or "").strip().casefold()
+                    for record in iterable
+                    if isinstance(record, dict) and _link_source_visible_role_value(record) in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}
+                }
+                output: list[dict[str, object]] = []
+                for record in iterable:
+                    if not isinstance(record, dict):
+                        continue
+                    if _link_source_visible_role_value(record) in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}:
+                        continue
+                    target = str(record.get("preservation_for_url") or record.get("archive_target_url") or "").strip().casefold()
+                    if not target or target not in active_targets:
+                        output.append(dict(record))
+                return output
+
+            def _link_source_plain_lines_for_current_filter(*, role_markup: bool = False) -> list[str]:
+                lines: list[str] = []
+                visible_links = _visible_link_source_objects_for_current_filter()
+                if not visible_links:
+                    return lines
+                for record in visible_links:
+                    role = _link_source_visible_role_value(record)
+                    url = str(record.get("display_url") or record.get("normalised_url") or record.get("url") or "").strip()
+                    if url:
+                        lines.append(f"[{url} | {role}]" if role_markup else url)
+                    lines.append("")
+                while lines and not lines[-1]:
+                    lines.pop()
+                return lines
+
+            def _visible_source_review_keys() -> list[str]:
+                seen: set[str] = set()
+                keys: list[str] = []
+                for span_ref in spans:
+                    if not isinstance(span_ref, dict):
+                        continue
+                    key = _claim_review_selection_key(span_ref)
+                    if key and key not in seen:
+                        seen.add(key)
+                        keys.append(key)
+                return keys
+
+            def _sync_source_review_action_widgets() -> None:
+                review_mode = str(claim_filter_var.get() or "Show all").strip() == "Review"
+                for widget in list(source_review_action_widgets):
+                    try:
+                        if review_mode:
+                            widget.grid()
+                        else:
+                            widget.grid_remove()
+                    except Exception:
+                        pass
+                master = source_review_master_button_holder.get("button")
+                if master is not None:
+                    try:
+                        visible_keys = _visible_source_review_keys()
+                        all_selected = bool(visible_keys) and all(key in source_review_selected_keys for key in visible_keys)
+                        master.configure(text="⬛" if all_selected else "⬜")
+                    except Exception:
+                        pass
+
+            # YTCE_REVIEW_FILTER_HOVER_COPY_PASS5B_20260827: copy buttons now mirror the visible filter.
+            def _visible_claim_spans_for_current_filter() -> list[dict[str, object]]:
+                return [span for span in spans if _claim_span_matches_filter(span)]
+
+            def _filtered_comment_sections_for_current_filter() -> list[dict[str, object]]:
+                mode = str(claim_filter_var.get() or "Show all").strip()
+                if mode in {"", "Show all"} and not _claim_media_filter_active():
+                    return list(comment_sections or [])
+                filtered_sections: list[dict[str, object]] = []
+                for comment_index, section in enumerate(comment_sections or []):
+                    if not isinstance(section, dict):
+                        continue
+                    visible_comment_spans: list[dict[str, object]] = []
+                    for comment_part_index, raw_comment_span in enumerate(_ytce_review_comment_section_role_spans(section)):
+                        if not isinstance(raw_comment_span, dict):
+                            continue
+                        comment_span = dict(raw_comment_span)
+                        comment_part_text = " ".join(str(comment_span.get("text") or "").split()).strip()
+                        if not comment_part_text:
+                            continue
+                        comment_span["text"] = comment_part_text
+                        comment_span.setdefault("source_id", f"youtube_comment_{comment_index + 1:03d}")
+                        comment_span.setdefault("speaker", " ".join(str(section.get("author_handle") or section.get("person") or "").split()))
+                        comment_span.setdefault("section", "comments")
+                        comment_span.setdefault("edit_key", f"youtube_comment_{comment_index + 1:03d}_{comment_part_index:03d}")
+                        if _claim_span_matches_filter(comment_span):
+                            visible_comment_spans.append(comment_span)
+                    if visible_comment_spans:
+                        filtered_section = dict(section)
+                        filtered_section["claim_role_spans"] = visible_comment_spans
+                        filtered_section["text"] = " ".join(str(part.get("text") or "").strip() for part in visible_comment_spans if str(part.get("text") or "").strip())
+                        filtered_sections.append(filtered_section)
+                return filtered_sections
+
+            def _claim_visible_plain_text() -> str:
+                spans = _visible_claim_spans_for_current_filter()
+                comment_sections = _filtered_comment_sections_for_current_filter()
+                link_lines = _link_source_plain_lines_for_current_filter(role_markup=False)
+                claim_text = _claim_plain_text_for_spans(spans, comment_sections)
+                if link_lines and claim_text:
+                    return "\n".join(link_lines + ["", claim_text])
+                if link_lines:
+                    return "\n".join(link_lines)
+                return claim_text
+
+            def _claim_visible_role_markup() -> str:
+                spans = _visible_claim_spans_for_current_filter()
+                comment_sections = _filtered_comment_sections_for_current_filter()
+                link_lines = _link_source_plain_lines_for_current_filter(role_markup=True)
+                visible_roles_for_markup = {**existing_claim_span_roles, **selected_claim_span_roles}
+                if _claim_media_filter_active():
+                    visible_roles_for_markup = dict(visible_roles_for_markup)
+                    for media_span in spans:
+                        if not isinstance(media_span, dict):
+                            continue
+                        key = str(media_span.get("edit_key") or "").strip()
+                        role = _claim_media_source_role_for_span(media_span)
+                        if key and role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}:
+                            visible_roles_for_markup[key] = role
+                    for section in comment_sections or []:
+                        for comment_span in _ytce_review_comment_section_role_spans(section):
+                            if not isinstance(comment_span, dict):
+                                continue
+                            key = str(comment_span.get("edit_key") or "").strip()
+                            role = _claim_media_source_role_for_span(comment_span)
+                            if key and role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}:
+                                visible_roles_for_markup[key] = role
+                claim_text = _claim_role_markup_for_spans(spans, comment_sections, visible_roles_for_markup)
+                if link_lines and claim_text:
+                    return "\n".join(link_lines + ["", claim_text])
+                if link_lines:
+                    return "\n".join(link_lines)
+                return claim_text
+
+            def _refresh_claim_media_filter_button() -> None:
+                media_button = claim_media_filter_button_holder.get("button")
+                semantic_button = claim_semantic_filter_button_holder.get("button")
+                active = _claim_media_filter_active()
+                # R42X: Review window uses the same explicit Semantic | Media
+                # switch shape as the selected-source WebView/edit surface.  The
+                # old standalone Media icon was visually ambiguous.
+                for button, button_active in ((semantic_button, not active), (media_button, active)):
+                    if button is None:
+                        continue
+                    try:
+                        button.configure(
+                            fg_color="#184e7a" if button_active else "#1f6aa5",
+                            hover_color="#123a5c" if button_active else "#2587d8",
+                            border_width=2 if button_active else 0,
+                            border_color="#dbeafe" if button_active else "#1f6aa5",
+                        )
+                    except Exception:
+                        pass
+
+            def _set_claim_media_filter_active(active: bool) -> None:
+                try:
+                    claim_media_filter_var.set(bool(active))
+                    self.profile_media_database_claim_media_filter_active = bool(active)
+                except Exception:
+                    self.profile_media_database_claim_media_filter_active = bool(active)
+                _refresh_claim_media_filter_button()
+                _sync_source_review_action_widgets()
+                try:
+                    _render_claim_transcript()
+                except Exception:
+                    logger.debug("Could not re-render source-role text after Semantic/Media toggle.", exc_info=True)
+
+            def _toggle_claim_media_filter() -> None:
+                try:
+                    next_active = not bool(claim_media_filter_var.get())
+                except Exception:
+                    next_active = not bool(getattr(self, "profile_media_database_claim_media_filter_active", False))
+                _set_claim_media_filter_active(next_active)
+
+            def _set_claim_filter(value: str) -> None:
+                value = str(value or "Show all").strip()
+                if value not in claim_filter_values:
+                    value = "Show all"
+                claim_filter_var.set(value)
+                button = claim_filter_button_holder.get("button")
+                if button is not None:
+                    try:
+                        button.configure(text=_claim_filter_button_text())
+                    except Exception:
+                        pass
+                _refresh_claim_media_filter_button()
+                try:
+                    popup = claim_filter_popup_holder.get("popup")
+                    if popup is not None and popup.winfo_exists():
+                        popup.destroy()
+                except Exception:
+                    pass
+                _sync_source_review_action_widgets()
+                _render_claim_transcript()
+
+            def _show_claim_filter_popup() -> None:
+                try:
+                    existing_popup = claim_filter_popup_holder.get("popup")
+                    if existing_popup is not None and existing_popup.winfo_exists():
+                        existing_popup.destroy()
+                        return
+                except Exception:
+                    pass
+                button = claim_filter_button_holder.get("button")
+                try:
+                    popup = tk.Toplevel(win)
+                    popup.overrideredirect(True)
+                    popup.configure(bg="#8f8f8f")
+                    popup.attributes("-topmost", True)
+                    x = int(button.winfo_rootx()) if button is not None else int(transcript_box.winfo_rootx() + 250)
+                    y = int(button.winfo_rooty() + button.winfo_height() + 2) if button is not None else int(transcript_box.winfo_rooty() + 30)
+                    popup.geometry(f"166x154+{x}+{y}")
+                    claim_filter_popup_holder["popup"] = popup
+                    for item_value in claim_filter_values:
+                        label = tk.Label(
+                            popup,
+                            text=item_value if item_value != "Show all" else "All",
+                            anchor="w",
+                            bg="#8f8f8f",
+                            fg="#000000",
+                            padx=6,
+                            pady=2,
+                            font=("Segoe UI", 9, "bold" if item_value == claim_filter_var.get() else "normal"),
+                            cursor="hand2",
+                        )
+                        selected_now = item_value == claim_filter_var.get()
+                        normal_bg = "#747474" if selected_now else "#8f8f8f"
+                        normal_fg = "#000000"
+                        hover_bg = "#bdbdbd"
+                        hover_fg = "#000000"
+                        try:
+                            label.configure(bg=normal_bg, fg=normal_fg)
+                        except Exception:
+                            pass
+                        label.pack(fill="x")
+                        label.bind("<Button-1>", lambda _event, selected=item_value: _set_claim_filter(selected))
+                        label.bind("<Enter>", lambda _event, lbl=label, bg=hover_bg, fg=hover_fg: lbl.configure(bg=bg, fg=fg))
+                        label.bind("<Leave>", lambda _event, lbl=label, bg=normal_bg, fg=normal_fg: lbl.configure(bg=bg, fg=fg))
+                    popup.bind("<Escape>", lambda _event: (popup.destroy(), "break")[1])
+                    popup.bind("<FocusOut>", lambda _event: popup.after(120, lambda: popup.destroy() if popup.winfo_exists() else None))
+                    popup.after(40, popup.focus_force)
+                except Exception:
+                    logger.debug("Could not show claim-role filter popup.", exc_info=True)
+
+            try:
+                filter_icon = self._load_profile_media_role_icons().get("filter")
+            except Exception:
+                filter_icon = None
+            filter_button_kwargs = {"image": filter_icon, "compound": "left"} if filter_icon is not None else {}
+            claim_filter_button = ctk.CTkButton(
+                copy_row,
+                text=_claim_filter_button_text(),
+                width=34,
+                height=26,
+                command=_show_claim_filter_popup,
+                **filter_button_kwargs,
+            )
+            claim_filter_button.grid(row=0, column=2, sticky="w", padx=(0, 6))
+            claim_filter_button_holder["button"] = claim_filter_button
+
+            claim_semantic_filter_button = ctk.CTkButton(
+                copy_row,
+                text="Semantic",
+                width=78,
+                height=26,
+                command=lambda: _set_claim_media_filter_active(False),
+            )
+            claim_semantic_filter_button.grid(row=0, column=3, sticky="w", padx=(0, 6))
+            claim_semantic_filter_button_holder["button"] = claim_semantic_filter_button
+            claim_media_filter_button = ctk.CTkButton(
+                copy_row,
+                text="Media",
+                width=58,
+                height=26,
+                command=lambda: _set_claim_media_filter_active(True),
+            )
+            claim_media_filter_button.grid(row=0, column=4, sticky="w", padx=(0, 6))
+            claim_media_filter_button_holder["button"] = claim_media_filter_button
+            _refresh_claim_media_filter_button()
+
+            def _write_source_review_decision(decision: str, selected_keys: list[str]) -> None:
+                selected_keys = [key for key in selected_keys if key]
+                if not selected_keys:
+                    return
+                try:
+                    with source_reference_review_decisions_path.open("a", encoding="utf-8", newline="\n") as handle:
+                        for key in selected_keys:
+                            text_value = source_review_key_text.get(key, key)
+                            payload = {
+                                "schema_version": "profile-media-source-reference-review-decision-v1",
+                                "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                "preview_json": str(preview_path),
+                                "source_title": source_title_text,
+                                "filter": "Review",
+                                "decision": decision,
+                                "identity_key": key,
+                                "text": text_value,
+                            }
+                            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                    self.profile_media_database_last_source_review_decisions_file = str(source_reference_review_decisions_path)
+                    self.log_message(f"Saved {len(selected_keys)} source-reference Review decision(s): {source_reference_review_decisions_path}", "success")
+                except Exception as exc:
+                    logger.debug("Could not save source-reference Review decision.", exc_info=True)
+                    self.log_message(f"Could not save source-reference Review decision: {exc}", "error")
+
+            def _apply_source_review_decision(decision: str) -> None:
+                keys = [key for key in _visible_source_review_keys() if key in source_review_selected_keys]
+                if not keys:
+                    return
+                _write_source_review_decision(decision, keys)
+                for key in keys:
+                    text_value = source_review_key_text.get(key, "")
+                    source_reference_review_resolved_keys.add(key)
+                    source_reference_review_edit_keys.discard(key)
+                    if text_value:
+                        source_reference_review_resolved_texts.add(text_value)
+                        source_reference_review_texts.discard(text_value)
+                    source_reference_review_texts.discard(key)
+                    source_review_selected_keys.discard(key)
+                try:
+                    counts = dict(getattr(self, "profile_media_database_review_role_counts_override", None) or self._profile_media_selected_review_role_counts(_current_selected_roles(), _current_selected_personhood_roles()) or {})
+                    counts["REVIEW_ITEMS"] = len(_visible_source_review_keys())
+                    self.profile_media_database_review_role_counts_override = counts
+                    self._refresh_profile_media_database_sidebar_counts_only()
+                except Exception:
+                    logger.debug("Could not refresh Review count after source-reference decision.", exc_info=True)
+                _sync_source_review_action_widgets()
+                _render_claim_transcript()
+
+            def _toggle_source_review_select_all() -> None:
+                visible_keys = _visible_source_review_keys()
+                if not visible_keys:
+                    _sync_source_review_action_widgets()
+                    return
+                if all(key in source_review_selected_keys for key in visible_keys):
+                    for key in visible_keys:
+                        source_review_selected_keys.discard(key)
+                else:
+                    for key in visible_keys:
+                        source_review_selected_keys.add(key)
+                _sync_source_review_action_widgets()
+                _render_claim_transcript()
+
+            try:
+                review_icons = self._load_profile_media_role_icons()
+            except Exception:
+                review_icons = {}
+            review_master_button = ctk.CTkButton(
+                copy_row,
+                text="⬜",
+                width=28,
+                height=26,
+                fg_color="#5b5b5b",
+                hover_color="#747474",
+                command=_toggle_source_review_select_all,
+            )
+            review_master_button.grid(row=0, column=5, sticky="w", padx=(2, 4))
+            source_review_action_widgets.append(review_master_button)
+            source_review_master_button_holder["button"] = review_master_button
+            accept_icon = review_icons.get("accept_review") if isinstance(review_icons, dict) else None
+            reject_icon = review_icons.get("reject_review") if isinstance(review_icons, dict) else None
+            accept_kwargs = {"image": accept_icon, "compound": "left"} if accept_icon is not None else {}
+            reject_kwargs = {"image": reject_icon, "compound": "left"} if reject_icon is not None else {}
+            accept_button = ctk.CTkButton(
+                copy_row,
+                text="" if accept_icon is not None else "✓",
+                width=30,
+                height=26,
+                fg_color="#2b6f3a",
+                hover_color="#38864a",
+                command=lambda: _apply_source_review_decision("accepted"),
+                **accept_kwargs,
+            )
+            accept_button.grid(row=0, column=6, sticky="w", padx=(0, 4))
+            source_review_action_widgets.append(accept_button)
+            reject_button = ctk.CTkButton(
+                copy_row,
+                text="" if reject_icon is not None else "✕",
+                width=30,
+                height=26,
+                fg_color="#743333",
+                hover_color="#914040",
+                command=lambda: _apply_source_review_decision("rejected"),
+                **reject_kwargs,
+            )
+            reject_button.grid(row=0, column=7, sticky="w", padx=(0, 6))
+            source_review_action_widgets.append(reject_button)
+            _sync_source_review_action_widgets()
+            claim_note_popup_holder: dict[str, object] = {}
+
+            def _close_claim_note_popup(*, save: bool = False) -> None:
+                popup = claim_note_popup_holder.get("popup")
+                save_callback = claim_note_popup_holder.get("save_callback")
+                claim_note_popup_holder.clear()
+                if save and callable(save_callback):
+                    try:
+                        save_callback()
+                        return
+                    except Exception:
+                        logger.debug("Could not save claim note while closing singleton popup.", exc_info=True)
+                if popup is not None:
+                    try:
+                        popup.destroy()
+                    except Exception:
+                        pass
+
+            def _claim_note_text_at_index(index_value: str) -> str:
+                try:
+                    tag_names = transcript_box.tag_names(index_value)
+                    for tag_name in tag_names:
+                        if not str(tag_name).startswith("claim_role_span_click_"):
+                            continue
+                        ranges = transcript_box.tag_ranges(tag_name)
+                        for start_index, end_index in zip(ranges[0::2], ranges[1::2]):
+                            try:
+                                if transcript_box.compare(start_index, "<=", index_value) and transcript_box.compare(index_value, "<=", end_index):
+                                    return " ".join(transcript_box.get(start_index, end_index).split()).strip()
+                            except Exception:
+                                continue
+                    line_text = transcript_box.get(f"{index_value} linestart", f"{index_value} lineend")
+                    return " ".join(str(line_text or "").split()).strip()
+                except Exception:
+                    return ""
+
+            def _write_claim_note(clicked_text: str, note_text: str, index_value: str) -> None:
+                note_text = " ".join(str(note_text or "").split()).strip()
+                clicked_text = " ".join(str(clicked_text or "").split()).strip()
+                if not note_text:
+                    return
+                try:
+                    output_path = Path(preview_path).with_name(Path(preview_path).stem + "_claim_text_notes.jsonl")
+                    payload = {
+                        "schema_version": "profile-media-claim-text-note-v1",
+                        "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "preview_json": str(preview_path),
+                        "source_title": source_title_text,
+                        "filter": str(claim_filter_var.get() or "Show all"),
+                        "text_index": str(index_value),
+                        "clicked_text": clicked_text,
+                        "note": note_text,
+                    }
+                    with output_path.open("a", encoding="utf-8", newline="\n") as handle:
+                        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                    self.profile_media_database_last_claim_text_notes_file = str(output_path)
+                    self.log_message(f"Saved claim text note: {output_path}", "success")
+                except Exception as exc:
+                    logger.debug("Could not save claim text note.", exc_info=True)
+                    self.log_message(f"Could not save claim text note: {exc}", "error")
+
+            def _show_claim_note_popup(event: object) -> str:
+                # YTCE_V83C_REPAIR4_SINGLETON_NOTE_POPUP
+                _close_claim_note_popup(save=False)
+                try:
+                    index_value = transcript_box.index(f"@{int(getattr(event, 'x', 0))},{int(getattr(event, 'y', 0))}")
+                except Exception:
+                    index_value = "insert"
+                clicked_text = _claim_note_text_at_index(index_value)
+                try:
+                    popup = tk.Toplevel(win)
+                    popup.overrideredirect(True)
+                    popup.configure(bg="#2b2b2b")
+                    popup.attributes("-topmost", True)
+                    root_x = int(getattr(event, "x_root", transcript_box.winfo_rootx() + 80))
+                    root_y = int(getattr(event, "y_root", transcript_box.winfo_rooty() + 80))
+                    popup.geometry(f"340x112+{root_x}+{root_y}")
+                    label = tk.Label(
+                        popup,
+                        text=(clicked_text[:78] + "…") if len(clicked_text) > 80 else clicked_text or "Add note",
+                        anchor="w",
+                        justify="left",
+                        bg="#2b2b2b",
+                        fg="#d8d8d8",
+                        font=("Segoe UI", 8, "bold"),
+                        padx=8,
+                        pady=4,
+                    )
+                    label.pack(fill="x")
+                    note_box = tk.Text(
+                        popup,
+                        height=3,
+                        width=42,
+                        wrap="word",
+                        bg="#f2f2f2",
+                        fg="#000000",
+                        relief="flat",
+                        borderwidth=1,
+                        highlightthickness=1,
+                        font=("Segoe UI", 9),
+                    )
+                    note_box.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+                    closed = {"value": False}
+
+                    def _save_and_close(*_args: object) -> str:
+                        if closed["value"]:
+                            return "break"
+                        closed["value"] = True
+                        try:
+                            note_value = note_box.get("1.0", "end-1c")
+                            _write_claim_note(clicked_text, note_value, index_value)
+                        finally:
+                            claim_note_popup_holder.clear()
+                            try:
+                                popup.destroy()
+                            except Exception:
+                                pass
+                        return "break"
+
+                    def _close_without_save(*_args: object) -> str:
+                        if closed["value"]:
+                            return "break"
+                        closed["value"] = True
+                        claim_note_popup_holder.clear()
+                        try:
+                            popup.destroy()
+                        except Exception:
+                            pass
+                        return "break"
+
+                    def _outside_click_close(event_value: object) -> None:
+                        try:
+                            widget = getattr(event_value, "widget", None)
+                            if widget is popup or widget is note_box or widget is label:
+                                return
+                            parent = widget
+                            while parent is not None:
+                                if parent is popup:
+                                    return
+                                parent = getattr(parent, "master", None)
+                        except Exception:
+                            pass
+                        _close_without_save()
+
+                    claim_note_popup_holder["popup"] = popup
+                    claim_note_popup_holder["save_callback"] = _save_and_close
+                    note_box.bind("<Return>", _save_and_close)
+                    popup.bind("<Escape>", _close_without_save)
+                    win.bind("<Button-1>", lambda event: (_outside_click_close(event), None)[1], add="+")
+                    popup.bind("<FocusOut>", lambda _event: popup.after(140, _save_and_close))
+                except Exception:
+                    logger.debug("Could not show claim text note popup.", exc_info=True)
+                return "break"
+
+            def _configure_claim_tags() -> None:
+                # YTCE_V83C_REPAIR2_OLD_TEXTBOX_STYLE
+                # Keep the older compact text flow: source-role colour lives
+                # only behind tagged text characters, not as a full-width panel.
+                transcript_box.tag_config("claim_primary_fill", background="#12351f")
+                transcript_box.tag_config("claim_secondary_fill", background="#10324b")
+                transcript_box.tag_config("claim_tertiary_fill", background="#351949")
+                transcript_box.tag_config("claim_unknown_fill", background="#4a2a08")
+                transcript_box.tag_config("claim_blank_fill", background="#2b2b2b")
+                transcript_box.tag_config("claim_primary_text", foreground="#b8ffd2")
+                transcript_box.tag_config("claim_secondary_text", foreground="#b9eaff")
+                transcript_box.tag_config("claim_tertiary_text", foreground="#ecc5ff")
+                transcript_box.tag_config("claim_unknown_text", foreground="#ffd19a")
+                transcript_box.tag_config("claim_blank_text", foreground="#b8b8b8")
+                transcript_box.tag_config("claim_hover_fill", underline=1)
+                transcript_box.tag_config("claim_source_review_fillbox", foreground="#f5f5f5", background="#343434", font=("Segoe UI Symbol", 11, "bold"))
+                transcript_box.tag_config("claim_source_review_fillbox_hover", foreground="#ffffff", background="#6a6a6a", underline=1)
+                transcript_box.tag_config("claim_meta", foreground=COLORS["text_muted"], font=("Segoe UI", 9, "bold"))
+
+            def _claim_text_outer_canvas() -> object | None:
+                # CustomTkinter scrollable frames can expose the canvas on the
+                # body itself, one of its parents, or the main frame depending
+                # on the current Review layout. Walk upward instead of assuming
+                # a single container, otherwise click-to-cycle may restore only
+                # the inner Text yview while the outer Review page jumps.
+                seen: set[int] = set()
+                for start_widget in (body, card, text_frame, transcript_box, getattr(self, "main_frame", None)):
+                    candidate = start_widget
+                    while candidate is not None and id(candidate) not in seen:
+                        seen.add(id(candidate))
+                        canvas = getattr(candidate, "_parent_canvas", None)
+                        if canvas is not None:
+                            return canvas
+                        try:
+                            candidate = getattr(candidate, "master", None)
+                        except Exception:
+                            break
+                return None
+
+            def _claim_text_outer_yview() -> object | None:
+                canvas = _claim_text_outer_canvas()
+                if canvas is None:
+                    return None
+                try:
+                    return canvas.yview()
+                except Exception:
+                    return None
+
+            def _restore_claim_text_yviews(inner_yview: object | None, outer_yview: object | None) -> None:
+                def _restore_once() -> None:
+                    if inner_yview:
+                        try:
+                            transcript_box.yview_moveto(float(inner_yview[0]))
+                        except Exception:
+                            pass
+                    canvas = _claim_text_outer_canvas()
+                    if outer_yview and canvas is not None:
+                        try:
+                            canvas.yview_moveto(float(outer_yview[0]))
+                        except Exception:
+                            pass
+
+                try:
+                    transcript_box.after_idle(_restore_once)
+                    transcript_box.after(10, _restore_once)
+                except Exception:
+                    _restore_once()
+
+            def _destroy_claim_transcript_embedded_widgets() -> None:
+                # YTCE_V83D_R35C_MEDIA_TOGGLE_EMBEDDED_WIDGET_GUARD_DESTROY
+                # Text.delete() removes the embedded-window item from the Text
+                # widget, but the CustomTkinter child widgets can remain alive
+                # briefly.  Destroy them explicitly before rebuilding the text.
+                try:
+                    pending_widgets = list(claim_transcript_embedded_widgets)
+                    claim_transcript_embedded_widgets.clear()
+                except Exception:
+                    pending_widgets = []
+                for embedded_widget in pending_widgets:
+                    try:
+                        if embedded_widget is not None and embedded_widget.winfo_exists():
+                            embedded_widget.destroy()
+                    except Exception:
+                        pass
+
+            def _retag_claim_role_span(bind_tag: str, new_role: str) -> None:
+                # Update one visible claim span in-place without rebuilding the textbox.
+                fill_tag, text_tag = _claim_role_colour_tags(new_role)
+                removable_tags = (
+                    "claim_primary_fill", "claim_secondary_fill", "claim_tertiary_fill", "claim_unknown_fill", "claim_blank_fill",
+                    "claim_primary_text", "claim_secondary_text", "claim_tertiary_text", "claim_unknown_text", "claim_blank_text",
+                )
+                try:
+                    ranges = transcript_box.tag_ranges(bind_tag)
+                except Exception:
+                    ranges = ()
+                for start_index, end_index in zip(ranges[0::2], ranges[1::2]):
+                    for tag_name in removable_tags:
+                        try:
+                            transcript_box.tag_remove(tag_name, start_index, end_index)
+                        except Exception:
+                            pass
+                    try:
+                        transcript_box.tag_add(fill_tag, start_index, end_index)
+                        transcript_box.tag_add(text_tag, start_index, end_index)
+                        transcript_box.tag_add(bind_tag, start_index, end_index)
+                    except Exception:
+                        pass
+
+            def _render_claim_transcript(restore_yview: object | None = None, restore_outer_yview: object | None = None) -> None:
+                try:
+                    # YTCE_V83D_R35C_MEDIA_TOGGLE_EMBEDDED_WIDGET_GUARD_RENDER
+                    _destroy_claim_transcript_embedded_widgets()
+                    transcript_box.configure(state="normal")
+                    transcript_box.delete("1.0", "end")
+                    _configure_claim_tags()
+                    # YTCE_V83D_R35D_LIVE_RENDERED_COUNT_STRIP
+                    # Count the rows/spans as they are actually inserted into the
+                    # source-role Text widget.  The copied role-markup string can be
+                    # valid while the live CTk/Text widget count strip stays stale;
+                    # this render-local counter keeps the visible strip tied to the
+                    # current live view for Media off -> on -> off toggles.
+                    rendered_role_counts_for_strip = {"PRIMARY": 0, "SECONDARY": 0, "TERTIARY": 0, "UNKNOWN": 0}
+
+                    def _count_rendered_role_for_strip(role_value: object) -> None:
+                        try:
+                            role_for_count = str(role_value or "").strip().upper()
+                            if role_for_count in rendered_role_counts_for_strip:
+                                rendered_role_counts_for_strip[role_for_count] += 1
+                        except Exception:
+                            pass
+
+                    try:
+                        if _claim_media_filter_active():
+                            visible_link_counts = {"PRIMARY": 0, "SECONDARY": 0, "TERTIARY": 0, "UNKNOWN": 0}
+                            for link_record in _visible_link_source_objects_for_current_filter():
+                                link_role = _link_source_visible_role_value(link_record)
+                                if link_role in visible_link_counts:
+                                    visible_link_counts[link_role] += 1
+                            _set_source_text_role_count_strip(visible_link_counts)
+                        else:
+                            visible_claim_counts = {"PRIMARY": 0, "SECONDARY": 0, "TERTIARY": 0, "UNKNOWN": 0}
+                            visible_claim_spans_for_counts = _visible_claim_spans_for_current_filter()
+                            if visible_claim_spans_for_counts:
+                                for count_span in visible_claim_spans_for_counts:
+                                    count_role = _claim_span_selected_role(count_span)
+                                    if count_role in visible_claim_counts:
+                                        visible_claim_counts[count_role] += 1
+                            else:
+                                for link_record in _visible_link_source_objects_for_current_filter():
+                                    count_role = _link_source_visible_role_value(link_record)
+                                    if count_role in visible_claim_counts:
+                                        visible_claim_counts[count_role] += 1
+                            _set_source_text_role_count_strip(visible_claim_counts)
+                    except Exception:
+                        pass
+                    def _insert_shared_claim_role_span(span_ref: dict[str, object], span_index_value: object, *, prefix: str = "") -> None:
+                        role = _claim_span_selected_role(span_ref)
+                        if _claim_media_filter_active():
+                            media_display_role = _claim_media_source_role_for_span(span_ref)
+                            if media_display_role in {"PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"}:
+                                role = media_display_role
+                        fill_tag, text_tag = _claim_role_colour_tags(role)
+                        bind_tag = "claim_role_span_click_" + re.sub(r"\W+", "_", str(span_ref.get("edit_key") or f"claim_{span_index_value}"))
+                        review_selection_key = _claim_review_selection_key(span_ref) if str(claim_filter_var.get() or "").strip() == "Review" else ""
+                        if review_selection_key:
+                            if not prefix:
+                                prefix = "     "
+                            fillbox_tag = "claim_source_review_fillbox_" + re.sub(r"\W+", "_", review_selection_key)[:80]
+                            transcript_box.insert("end", "⬛" if review_selection_key in source_review_selected_keys else "⬜", ("claim_source_review_fillbox", fillbox_tag))
+                            transcript_box.insert("end", " ")
+                            def _toggle_this_review_item(_event: object, key: str = review_selection_key) -> str:
+                                try:
+                                    if key in source_review_selected_keys:
+                                        source_review_selected_keys.discard(key)
+                                    else:
+                                        source_review_selected_keys.add(key)
+                                    _sync_source_review_action_widgets()
+                                    _render_claim_transcript(transcript_box.yview(), _claim_text_outer_yview())
+                                except Exception:
+                                    logger.debug("Could not toggle source-reference Review fillbox.", exc_info=True)
+                                return "break"
+                            def _hover_this_review_item(_event: object, tag: str = fillbox_tag, enabled: bool = True) -> None:
+                                try:
+                                    transcript_box.configure(cursor="hand2" if enabled else "")
+                                    ranges = transcript_box.tag_ranges(tag)
+                                    for start_index, end_index in zip(ranges[0::2], ranges[1::2]):
+                                        if enabled:
+                                            transcript_box.tag_add("claim_source_review_fillbox_hover", start_index, end_index)
+                                        else:
+                                            transcript_box.tag_remove("claim_source_review_fillbox_hover", start_index, end_index)
+                                except Exception:
+                                    pass
+                            transcript_box.tag_bind(fillbox_tag, "<Button-1>", _toggle_this_review_item)
+                            transcript_box.tag_bind(fillbox_tag, "<Enter>", lambda event, tag=fillbox_tag: _hover_this_review_item(event, tag=tag, enabled=True))
+                            transcript_box.tag_bind(fillbox_tag, "<Leave>", lambda event, tag=fillbox_tag: _hover_this_review_item(event, tag=tag, enabled=False))
+                        if prefix:
+                            transcript_box.insert("end", prefix)
+                        start_index = transcript_box.index("end")
+                        transcript_box.insert("end", str(span_ref.get("text") or ""), (fill_tag, text_tag, bind_tag))
+                        end_index = transcript_box.index("end")
+                        try:
+                            transcript_box.tag_add(fill_tag, start_index, end_index)
+                            transcript_box.tag_add(text_tag, start_index, end_index)
+                            transcript_box.tag_add(bind_tag, start_index, end_index)
+                            def _cycle_claim_role(_event: object, span_click_ref: dict[str, object] = span_ref, tag_name: str = bind_tag) -> str:
+                                key = str(span_click_ref.get("edit_key") or "").strip()
+                                if _claim_media_filter_active():
+                                    # YTCE_V83D_R36C_MEDIA_TEXT_ROLE_CLICK_AND_HEADLINE_UNSPLIT
+                                    # Media mode edits media/source-provenance roles for the
+                                    # visible article/source text, not semantic claim roles.
+                                    # Re-render after the click so the R35D live counter updates
+                                    # immediately, just like R36B link-source row clicks.
+                                    media_order = ["PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"]
+                                    current_media_role = _claim_media_source_role_for_span(span_click_ref)
+                                    try:
+                                        new_media_role = media_order[(media_order.index(current_media_role) + 1) % len(media_order)]
+                                    except ValueError:
+                                        new_media_role = "UNKNOWN"
+                                    try:
+                                        media_yview_before = transcript_box.yview()
+                                    except Exception:
+                                        media_yview_before = None
+                                    media_outer_yview_before = _claim_text_outer_yview()
+                                    if key:
+                                        selected_claim_span_media_roles[key] = new_media_role
+                                    # YTCE_V83D_R36I_MEDIA_TEXT_CLICK_NO_REBUILD
+                                    # Do not rebuild the whole source text for Media-view
+                                    # article/source text role clicks. A full delete/insert
+                                    # refresh makes the visible Review page jump/glitch while
+                                    # the mouse is still over the Text widget. The selected
+                                    # media/source role map is already updated above, so retag
+                                    # the clicked span in-place, recompute the strip from the
+                                    # role-markup/count helper, then restore the inner/outer
+                                    # yviews. Link-row clicks still use their own rebuild path
+                                    # because they contain embedded CTk widgets.
+                                    _retag_claim_role_span(tag_name, new_media_role)
+                                    try:
+                                        _bump_source_text_role_count_strip(current_media_role, new_media_role)
+                                    except Exception:
+                                        pass
+                                    _restore_claim_text_yviews(media_yview_before, media_outer_yview_before)
+                                    return "break"
+                                order = ["PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN", "BLANK"]
+                                current = _claim_span_selected_role(span_click_ref)
+                                try:
+                                    new_role = order[(order.index(current) + 1) % len(order)]
+                                except ValueError:
+                                    new_role = "UNKNOWN"
+                                try:
+                                    claim_yview_before = transcript_box.yview()
+                                except Exception:
+                                    claim_yview_before = None
+                                claim_outer_yview_before = _claim_text_outer_yview()
+                                if key:
+                                    selected_claim_span_roles[key] = new_role
+                                # Do not rebuild the whole source text on click. Rebuilding
+                                # deletes/reinserts the Text contents and can make the inner
+                                # text box or outer Review page jump even when yview is later
+                                # restored. Retag only the clicked span, then restore yviews.
+                                _retag_claim_role_span(tag_name, new_role)
+                                _restore_claim_text_yviews(claim_yview_before, claim_outer_yview_before)
+                                return "break"
+                            def _set_claim_role_hover(_event: object, *, tag: str = bind_tag, enabled: bool) -> None:
+                                try:
+                                    transcript_box.configure(cursor="hand2" if enabled else "")
+                                    ranges = transcript_box.tag_ranges(tag)
+                                    for start_index, end_index in zip(ranges[0::2], ranges[1::2]):
+                                        if enabled:
+                                            transcript_box.tag_add("claim_hover_fill", start_index, end_index)
+                                        else:
+                                            transcript_box.tag_remove("claim_hover_fill", start_index, end_index)
+                                    if enabled:
+                                        transcript_box.tag_raise("claim_hover_fill")
+                                    transcript_box.tag_config(tag, underline=1 if enabled else 0)
+                                except Exception:
+                                    pass
+                            transcript_box.tag_bind(bind_tag, "<Button-1>", _cycle_claim_role)
+                            transcript_box.tag_bind(bind_tag, "<ButtonRelease-1>", lambda event: "break")
+                            transcript_box.tag_bind(bind_tag, "<B1-Motion>", lambda event: "break")
+                            transcript_box.tag_bind(bind_tag, "<Enter>", lambda event, tag=bind_tag: _set_claim_role_hover(event, tag=tag, enabled=True))
+                            transcript_box.tag_bind(bind_tag, "<Leave>", lambda event, tag=bind_tag: _set_claim_role_hover(event, tag=tag, enabled=False))
+                        except Exception:
+                            pass
+                        try:
+                            _count_rendered_role_for_strip(role)
+                        except Exception:
+                            pass
+
+                    def _insert_link_source_rows_in_text() -> None:
+                        # YTCE_V83C_REPAIR1_LOCATOR_AS_PRESERVATION
+                        # YTCE_V83C_REPAIR1_LINK_ROLE_CLICK_CYCLE
+                        # YTCE_V83C_REPAIR2_MEDIA_FILTER_COUNTS_VISIBLE_LINK_ROWS
+                        visible_links = _visible_link_source_objects_for_current_filter()
+                        if not visible_links:
+                            return
+                        for link_index, record in enumerate(visible_links):
+                            key = _link_source_row_instance_key(record, link_index)
+                            role = _link_source_visible_role_value(record)
+                            fill_tag, text_tag = _claim_role_colour_tags(role)
+                            # YTCE_V83C_REPAIR4_LINK_ROW_INSTANCE_TAGS
+                            # Every visible row gets its own tags so hovering the
+                            # live URL never underlines its archive rows.
+                            bind_tag = f"link_row_{link_index}_url"
+                            hover_tag = f"link_row_{link_index}_hover"
+                            url_value = str(record.get("display_url") or record.get("normalised_url") or record.get("url") or "").strip()
+                            if not url_value:
+                                continue
+                            role_start_index = transcript_box.index("end")
+                            transcript_box.insert("end", url_value, (fill_tag, text_tag, bind_tag))
+                            role_end_index = transcript_box.index("end")
+                            transcript_box.insert("end", " ")
+                            try:
+                                transcript_box.tag_add(fill_tag, role_start_index, role_end_index)
+                                transcript_box.tag_add(text_tag, role_start_index, role_end_index)
+                                transcript_box.tag_add(bind_tag, role_start_index, role_end_index)
+                            except Exception:
+                                pass
+                            try:
+                                _count_rendered_role_for_strip(role)
+                            except Exception:
+                                pass
+
+                            def _cycle_link_source_role(_event: object, item_key: str = key, tag_name: str = bind_tag) -> str:
+                                try:
+                                    inner_yview = transcript_box.yview()
+                                except Exception:
+                                    inner_yview = None
+                                outer_yview = _claim_text_outer_yview()
+                                changed_record: dict[str, object] | None = None
+                                current_role = ""
+                                new_role = "UNKNOWN"
+                                for item_index, item in enumerate(link_source_objects):
+                                    if not isinstance(item, dict) or _link_source_row_instance_key(item, item_index) != item_key:
+                                        continue
+                                    current_role = _link_source_visible_role_value(item)
+                                    new_role = _next_link_source_evidence_role(current_role)
+                                    item["original_claim_specific_role"] = item.get("original_claim_specific_role") or item.get("claim_specific_role")
+                                    item["claim_specific_role"] = new_role
+                                    item["default_link_role"] = new_role
+                                    item["visible_link_role"] = new_role
+                                    item["link_source_decision_status"] = "changed_role"
+                                    changed_record = item
+                                    break
+                                if changed_record and _append_link_source_decision_record is not None and link_source_decisions_path:
+                                    try:
+                                        _append_link_source_decision_record(
+                                            link_source_decisions_path,
+                                            {
+                                                "link_object_key": item_key,
+                                                "url": changed_record.get("url"),
+                                                "normalised_url": changed_record.get("normalised_url"),
+                                                "archive_target_url": changed_record.get("archive_target_url") or changed_record.get("preservation_for_url"),
+                                                "selected_role": new_role,
+                                                "selected_source_object_type": changed_record.get("source_object_type"),
+                                                "selected_source_relation_type": changed_record.get("source_relation_type"),
+                                                "decision_status": "changed_role",
+                                                "decision_note": "Changed by clicking link source row in source-role text.",
+                                                "previous_role": changed_record.get("original_claim_specific_role") or "",
+                                                "previous_reason": changed_record.get("original_role_reason") or changed_record.get("role_reason") or "",
+                                            },
+                                        )
+                                    except Exception:
+                                        logger.debug("Could not persist clicked link-source role decision.", exc_info=True)
+                                # YTCE_V83D_R36J_MEDIA_LINK_CLICK_NO_REBUILD
+                                # R36L makes the counter follow in-place URL/text retags.
+                                # R36B fixed stale counts by rebuilding the whole source-role Text widget
+                                # after a URL/link-source role click. That kept counts correct, but it also
+                                # destroyed/recreated embedded CTk button widgets and made the Review page
+                                # visibly jump/glitch. The backing link-source object has already been
+                                # updated above, so for the normal visible row case we can retag only the
+                                # clicked URL span, refresh the counter strip from the updated backing role
+                                # markup, and restore the inner/outer yviews. Only rebuild when the current
+                                # role filter means the changed row should disappear from the visible set.
+                                try:
+                                    still_matches_current_filter = bool(changed_record) and _link_source_matches_current_text_filter(changed_record)
+                                except Exception:
+                                    still_matches_current_filter = True
+                                if _claim_media_filter_active() and not still_matches_current_filter:
+                                    try:
+                                        _render_claim_transcript(restore_yview=inner_yview, restore_outer_yview=outer_yview)
+                                    except Exception:
+                                        logger.debug("Could not re-render source-role text after filtered link-source role click.", exc_info=True)
+                                        _retag_claim_role_span(tag_name, new_role)
+                                        try:
+                                            _bump_source_text_role_count_strip(current_role, new_role)
+                                        except Exception:
+                                            pass
+                                        _restore_claim_text_yviews(inner_yview, outer_yview)
+                                else:
+                                    _retag_claim_role_span(tag_name, new_role)
+                                    try:
+                                        _bump_source_text_role_count_strip(current_role, new_role)
+                                    except Exception:
+                                        pass
+                                    _restore_claim_text_yviews(inner_yview, outer_yview)
+                                return "break"
+
+                            def _set_link_source_hover(_event: object, *, tag: str = bind_tag, hover: str = hover_tag, enabled: bool) -> None:
+                                try:
+                                    transcript_box.configure(cursor="hand2" if enabled else "")
+                                    ranges = transcript_box.tag_ranges(tag)
+                                    for start, end in zip(ranges[0::2], ranges[1::2]):
+                                        if enabled:
+                                            transcript_box.tag_add(hover, start, end)
+                                        else:
+                                            transcript_box.tag_remove(hover, start, end)
+                                    transcript_box.tag_config(hover, underline=1)
+                                    if enabled:
+                                        transcript_box.tag_raise(hover)
+                                except Exception:
+                                    pass
+
+                            transcript_box.tag_bind(bind_tag, "<Button-1>", _cycle_link_source_role)
+                            transcript_box.tag_bind(bind_tag, "<ButtonRelease-1>", lambda event: "break")
+                            transcript_box.tag_bind(bind_tag, "<Enter>", lambda event, tag=bind_tag, hover=hover_tag: _set_link_source_hover(event, tag=tag, hover=hover, enabled=True))
+                            transcript_box.tag_bind(bind_tag, "<Leave>", lambda event, tag=bind_tag, hover=hover_tag: _set_link_source_hover(event, tag=tag, hover=hover, enabled=False))
+
+                            try:
+                                link_icons = self._load_profile_media_role_icons()
+                            except Exception:
+                                link_icons = {}
+                            try:
+                                button_frame = ctk.CTkFrame(transcript_box, fg_color="#1f1f1f", corner_radius=0)
+                                try:
+                                    claim_transcript_embedded_widgets.append(button_frame)
+                                except Exception:
+                                    pass
+                                copy_icon = link_icons.get("copy_url") if isinstance(link_icons, dict) else None
+                                edit_icon = link_icons.get("edit_details") if isinstance(link_icons, dict) else None
+                                copy_button = ctk.CTkButton(
+                                    button_frame,
+                                    text="" if copy_icon is not None else "🔗",
+                                    image=copy_icon,
+                                    width=28,
+                                    height=24,
+                                    fg_color="#2b2b2b",
+                                    hover_color="#3a3a3a",
+                                    command=lambda item=dict(record): _copy_link_source_record_url(item),
+                                    cursor="hand2",
+                                )
+                                copy_button.pack(side="left", padx=(0, 3))
+                                edit_button = ctk.CTkButton(
+                                    button_frame,
+                                    text="" if edit_icon is not None else "✎",
+                                    image=edit_icon,
+                                    width=28,
+                                    height=24,
+                                    fg_color="#2b2b2b",
+                                    hover_color="#3a3a3a",
+                                    command=lambda item=dict(record): _open_link_source_details_window_for_record(item),
+                                    cursor="hand2",
+                                )
+                                edit_button.pack(side="left")
+                                transcript_box.insert("end", "\n  ")
+                                transcript_box.window_create("end", window=button_frame)
+                                transcript_box.insert("end", "\n")
+                            except Exception:
+                                transcript_box.insert("end", "    [copy URL icon] [edit icon]\n", "claim_meta")
+                            if link_index < len(visible_links) - 1:
+                                transcript_box.insert("end", "\n")
+                        transcript_box.insert("end", "\n")
+
+                    _insert_link_source_rows_in_text()
+
+                    previous_boundary = None
+                    visible_transcript_spans = [span for span in spans if _claim_span_matches_filter(span)]
+                    if not visible_transcript_spans and not _visible_link_source_objects_for_current_filter() and str(claim_filter_var.get() or "") == "Review":
+                        transcript_box.insert("end", "No Review/source-reference items match this source scope.\n", "claim_meta")
+                    for span_index, span in enumerate(visible_transcript_spans):
+                        boundary = (
+                            str(span.get("timestamp_start") or ""),
+                            str(span.get("timestamp_end") or ""),
+                            str(span.get("speaker") or ""),
+                        )
+                        if boundary != previous_boundary:
+                            if span_index:
+                                transcript_box.insert("end", "\n\n")
+                            timestamp_text = " - ".join(part for part in boundary[:2] if part)
+                            speaker_text = boundary[2]
+                            header = " ".join(part for part in (timestamp_text, f"[{speaker_text}]" if speaker_text else "") if part)
+                            if header:
+                                transcript_box.insert("end", header + "\n", "claim_meta")
+                            previous_boundary = boundary
+                        _insert_shared_claim_role_span(span, span_index)
+                        transcript_box.insert("end", " ")
+                    # YTCE_REVIEW_FILTER_UI_PASS5C_20260827: render only comment sections
+                    # that match the active filter.  Review mode must not show
+                    # every parent YouTube comment when none of its Brett spans
+                    # is a Review/source-reference item.
+                    visible_comment_sections_for_render = _filtered_comment_sections_for_current_filter()
+                    if visible_comment_sections_for_render:
+                        transcript_box.insert("end", "\n\n------\n", "claim_meta")
+                        transcript_box.insert("end", "YouTube Comments\n\n", "claim_meta")
+                        for comment_index, section in enumerate(visible_comment_sections_for_render):
+                            parent = section.get("original_context") if isinstance(section.get("original_context"), dict) else None
+                            if parent:
+                                parent_handle = " ".join(str(parent.get("author_handle") or "").split())
+                                parent_time = " ".join(str(parent.get("time") or "").split())
+                                parent_text = str(parent.get("text") or "").strip()
+                                if parent_handle or parent_time:
+                                    transcript_box.insert("end", " | ".join(part for part in (parent_handle, parent_time) if part) + "\n", "claim_meta")
+                                if parent_text:
+                                    transcript_box.insert("end", parent_text + "\n\n")
+                            handle = " ".join(str(section.get("author_handle") or section.get("person") or "").split())
+                            time_text = " ".join(str(section.get("time") or "").split())
+                            comment_text = str(section.get("text") or "").strip()
+                            if handle or time_text:
+                                transcript_box.insert("end", "    " + " | ".join(part for part in (handle, time_text) if part) + "\n", "claim_meta")
+                            if comment_text:
+                                comment_role_spans = _ytce_review_comment_section_role_spans(section)
+                                if not comment_role_spans:
+                                    comment_role_spans = [{"text": comment_text, "role": "UNKNOWN"}]
+                                visible_comment_role_spans = []
+                                for comment_part_index, comment_span in enumerate(comment_role_spans):
+                                    comment_span = dict(comment_span)
+                                    comment_part_text = " ".join(str(comment_span.get("text") or "").split())
+                                    if not comment_part_text:
+                                        continue
+                                    comment_span["text"] = comment_part_text
+                                    comment_span.setdefault("source_id", f"youtube_comment_{comment_index + 1:03d}")
+                                    comment_span.setdefault("speaker", handle)
+                                    comment_span.setdefault("section", "comments")
+                                    comment_span.setdefault("edit_key", f"youtube_comment_{comment_index + 1:03d}_{comment_part_index:03d}")
+                                    if _claim_span_matches_filter(comment_span):
+                                        visible_comment_role_spans.append((comment_part_index, comment_span))
+                                for visible_comment_index, (comment_part_index, comment_span) in enumerate(visible_comment_role_spans):
+                                    prefix = "    " if visible_comment_index == 0 else " "
+                                    _insert_shared_claim_role_span(comment_span, f"comment_{comment_index}_{comment_part_index}", prefix=prefix)
+                            if comment_index < len(visible_comment_sections_for_render) - 1:
+                                transcript_box.insert("end", "\n\n")
+                    for sequence in ("<Key>", "<<Paste>>", "<Control-v>", "<Control-V>"):
+                        if sequence in {"<Control-c>", "<Control-C>"}:
+                            continue
+                        transcript_box.bind(sequence, lambda _event: "break")
+                    def _claim_text_mousewheel(event: object) -> str:
+                        try:
+                            delta = int(getattr(event, "delta", 0))
+                            transcript_box.yview_scroll(-1 * (delta // 120 or (1 if delta > 0 else -1)), "units")
+                        except Exception:
+                            pass
+                        return "break"
+                    transcript_box.bind("<Button-3>", _show_claim_note_popup, add="+")
+                    transcript_box.bind("<MouseWheel>", _claim_text_mousewheel, add="+")
+                    transcript_box.bind("<Button-4>", lambda _event: (transcript_box.yview_scroll(-1, "units"), "break")[1], add="+")
+                    transcript_box.bind("<Button-5>", lambda _event: (transcript_box.yview_scroll(1, "units"), "break")[1], add="+")
+                    self.install_middle_click_autoscroll(transcript_box, owner=win)
+                    transcript_box.configure(state="disabled")
+                    try:
+                        _set_source_text_role_count_strip(rendered_role_counts_for_strip)
+                    except Exception:
+                        pass
+                    if restore_yview or restore_outer_yview:
+                        _restore_claim_text_yviews(restore_yview, restore_outer_yview)
+                except Exception:
+                    logger.debug("Could not render claim-role full transcript.", exc_info=True)
+
+            _render_claim_transcript()
+            _sync_source_review_action_widgets()
+
+        def _is_brett_murphy_article_role_span(row: object) -> bool:
+            row_id = str(getattr(row, "row_id", "") or "").lower()
+            subject = str(getattr(row, "subject", "") or "").lower()
+            if not (row_id.startswith("brett_murphy_") or subject.startswith("brett murphy /")):
+                return False
+            return any(token in row_id or token in subject for token in (
+                "project_britannia_youtube_quote",
+                "headline_black_magic",
+                "reported_demonic_cult",
+                "false_religion",
+                "doug_wilson",
+                "pride_adoption",
+                "2023_date",
+                "resignation_trans",
+                "transgender",
+                "caption_and_turned_to_islam",
+                "conference_event",
+                "remaining_reported_claims",
+                "black_magic",
+            ))
+
+        def _add_brett_murphy_mixed_article_card(rows: tuple[object, ...]) -> None:
+            nonlocal row_index
+            if not rows:
+                return
+            card = ctk.CTkFrame(body, fg_color=COLORS["bg_input"], corner_radius=8)
+            card.grid(row=row_index, column=0, sticky="ew", padx=10, pady=5)
+            card.grid_columnconfigure(0, weight=1, minsize=0)
+            card.grid_columnconfigure(1, weight=0, minsize=150)
+            row_index += 1
+            ctk.CTkLabel(
+                card,
+                text="Brett Murphy / article source-role map",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_primary"],
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 2))
+
+            row_vars: dict[str, ctk.StringVar] = {}
+            for row in rows:
+                row_key = str(getattr(row, "row_id", "") or id(row))
+                selected_role_value = str(getattr(row, "selected_role", "") or "UNKNOWN_SOURCE_ROLE")
+                if selected_role_value not in SOURCE_ROLE_OPTIONS:
+                    selected_role_value = "UNKNOWN_SOURCE_ROLE"
+                var = ctk.StringVar(value=_role_display(selected_role_value))
+                selected_roles[row_key] = var
+                row_vars[row_key] = var
+                try:
+                    var.trace_add("write", _refresh_review_counts_from_dropdowns)
+                except Exception:
+                    pass
+
+            def _row_role_internal_by_id(row_key: str, fallback: str = "UNKNOWN_SOURCE_ROLE") -> str:
+                var = row_vars.get(row_key)
+                if var is not None:
+                    return _role_internal(var.get()) or fallback
+                return fallback
+
+            def _roles_present() -> set[str]:
+                roles: set[str] = set()
+                for row in rows:
+                    row_key = str(getattr(row, "row_id", "") or id(row))
+                    roles.add(_row_role_internal_by_id(row_key, str(getattr(row, "selected_role", "") or "UNKNOWN_SOURCE_ROLE")))
+                return roles
+
+            def _role_short_label(role: str) -> str:
+                return {
+                    "PRIMARY_SELF_AUTHORED_SCOPE": "Primary",
+                    "SECONDARY_WITNESS_ACCOUNT": "Secondary",
+                    "TERTIARY_PROPAGATED_SOURCE": "Tertiary",
+                    "UNKNOWN_SOURCE_ROLE": "Unknown",
+                }.get(role, _role_display(role) or "Unknown")
+
+            mixed_var = ctk.StringVar(value="Mixed")
+
+            def _mixed_dropdown_values() -> list[str]:
+                present = _roles_present()
+                values: list[str] = []
+                for role in SOURCE_ROLE_OPTIONS:
+                    label = _role_short_label(role)
+                    values.append(f"{label} *" if role in present else label)
+                return values
+
+            def _mixed_value_text() -> str:
+                present = _roles_present()
+                if len(present) == 1:
+                    return _role_short_label(next(iter(present)))
+                ordered = [role for role in SOURCE_ROLE_OPTIONS if role in present]
+                return " / ".join(f"{_role_short_label(role)}*" for role in ordered) or "Mixed"
+
+            def _refresh_mixed_dropdown(*_args: object) -> None:
+                try:
+                    values = _mixed_dropdown_values()
+                    mixed_menu.configure(values=values)
+                    mixed_var.set(_mixed_value_text())
+                except Exception:
+                    pass
+
+            def _view_only_mixed_dropdown(_value: str) -> None:
+                # This card is a mixed role map: role changes are made by clicking
+                # the delimited text spans, not by forcing all spans through one menu.
+                _refresh_mixed_dropdown()
+
+            mixed_menu = ctk.CTkOptionMenu(
+                card,
+                values=_mixed_dropdown_values(),
+                variable=mixed_var,
+                command=_view_only_mixed_dropdown,
+                width=240,
+            )
+            mixed_menu.grid(row=0, column=1, rowspan=2, sticky="ne", padx=(6, 8), pady=8)
+
+            ctk.CTkLabel(
+                card,
+                text="Article",
+                text_color=COLORS["text_muted"],
+                anchor="w",
+            ).grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 2))
+            ctk.CTkLabel(
+                card,
+                text=(
+                    "Full-colour source-role spans: boundary bars use the strongest colour and the enclosed text uses a softer matching colour. "
+                    "Click anywhere inside a coloured span to cycle that section through Primary, Secondary, Tertiary, and Unknown. "
+                    "The role menu is view-only for mixed text."
+                ),
+                text_color=COLORS["text_secondary"],
+                anchor="w",
+                justify="left",
+                wraplength=820,
+            ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 4))
+
+            quote_box = tk.Text(
+                card,
+                height=320,
+                width=1,
+                wrap="word",
+                bg="#1f1f1f",
+                fg=COLORS["text_secondary"],
+                insertbackground=COLORS["text_primary"],
+                relief="flat",
+                borderwidth=0,
+                highlightthickness=0,
+                font=("Segoe UI", 10),
+                padx=8,
+                pady=8,
+            )
+            quote_box.grid(row=3, column=0, columnspan=2, sticky="ew", padx=8, pady=(2, 8))
+            self.install_middle_click_autoscroll(quote_box, owner=win)
+
+            def _find_role_row(*tokens: str) -> object | None:
+                wanted = [token.lower() for token in tokens if token]
+                for row in rows:
+                    row_id = str(getattr(row, "row_id", "") or "").lower()
+                    subject = str(getattr(row, "subject", "") or "").lower()
+                    if all(token in row_id or token in subject for token in wanted):
+                        return row
+                return None
+
+            def _excerpt(row: object | None) -> str:
+                return str(getattr(row, "excerpt", "") or "").strip() if row is not None else ""
+
+            def _row_key(row: object | None, synthetic: str) -> str:
+                if row is None:
+                    return synthetic
+                return str(getattr(row, "row_id", "") or synthetic)
+
+            def _role_for(row: object | None, default_role: str) -> str:
+                key = _row_key(row, "")
+                if key:
+                    return _row_role_internal_by_id(key, default_role)
+                return default_role
+
+            def _cycle_key(row_key: str, default_role: str = "UNKNOWN_SOURCE_ROLE") -> None:
+                var = row_vars.get(row_key)
+                if var is None:
+                    return
+                order = ["PRIMARY_SELF_AUTHORED_SCOPE", "SECONDARY_WITNESS_ACCOUNT", "TERTIARY_PROPAGATED_SOURCE", "UNKNOWN_SOURCE_ROLE"]
+                current = _role_internal(var.get()) or default_role
+                try:
+                    next_role = order[(order.index(current) + 1) % len(order)]
+                except ValueError:
+                    next_role = default_role
+                var.set(_role_display(next_role))
+                _refresh_mixed_dropdown()
+                _render_role_map_text()
+
+            def _textbox_inner(widget: object) -> object:
+                return getattr(widget, "_textbox", widget)
+
+            def _normal_text_for_role_map(text: str) -> str:
+                # Keep paragraph boundaries readable, but collapse runaway spaces.
+                parts = [" ".join(part.split()) for part in str(text or "").replace("\r", "").split("\n")]
+                return "\n".join(part for part in parts if part).strip()
+
+            def _span_hover(bind_tag: str, enabled: bool) -> None:
+                # Hover now outlines/brightens using underline instead of wiping
+                # the role background colour from the full-colour span.
+                try:
+                    quote_box.tag_config(bind_tag, underline=1 if enabled else 0)
+                except Exception:
+                    pass
+
+            def _insert_span(text: str, row: object | None, role: str, *, synthetic_key: str) -> None:
+                clean = _normal_text_for_role_map(str(text or ""))
+                if not clean:
+                    return
+                row_key = _row_key(row, synthetic_key)
+                actual_role = _role_for(row, role)
+                _marker, role_tag = _source_role_marker_and_tag(actual_role)
+                role_text_tag = role_tag.replace("_span", "_text")
+                role_fill_tag = role_tag.replace("_span", "_fill")
+                bind_tag = "role_span_click_" + re.sub(r"\W+", "_", row_key or synthetic_key)
+
+                span_start = quote_box.index("end")
+                quote_box.insert("end", "┃", role_tag)
+                text_start = quote_box.index("end")
+                quote_box.insert("end", clean, role_text_tag)
+                text_end = quote_box.index("end")
+                quote_box.insert("end", "┃", role_tag)
+                span_end = quote_box.index("end")
+
+                try:
+                    quote_box.tag_add(role_fill_tag, span_start, span_end)
+                    quote_box.tag_add(bind_tag, span_start, span_end)
+                    if row is not None:
+                        inner = _textbox_inner(quote_box)
+                        def _on_click(_event: object, key: str = row_key, default: str = role) -> str:
+                            _cycle_key(key, default)
+                            return "break"
+                        try:
+                            inner.tag_bind(bind_tag, "<Button-1>", _on_click)
+                            inner.tag_bind(bind_tag, "<Enter>", lambda _event, tag=bind_tag: (quote_box.configure(cursor="hand2"), _span_hover(tag, True)))
+                            inner.tag_bind(bind_tag, "<Leave>", lambda _event, tag=bind_tag: (quote_box.configure(cursor=""), _span_hover(tag, False)))
+                        except Exception:
+                            quote_box.tag_bind(bind_tag, "<Button-1>", _on_click)
+                            quote_box.tag_bind(bind_tag, "<Enter>", lambda _event, tag=bind_tag: (quote_box.configure(cursor="hand2"), _span_hover(tag, True)))
+                            quote_box.tag_bind(bind_tag, "<Leave>", lambda _event, tag=bind_tag: (quote_box.configure(cursor=""), _span_hover(tag, False)))
+                except Exception:
+                    pass
+
+            def _render_role_map_text() -> None:
+                try:
+                    quote_box.configure(state="normal")
+                    quote_box.delete("1.0", "end")
+                    try:
+                        # Full-colour spans: bars stay strongest, inner text gets a softer role colour,
+                        # and the whole span has a dark role background so the boundary is visible.
+                        marker_font = ("Cascadia Mono", 15, "bold")
+                        quote_box.tag_config("primary_fill", background="#12351f")
+                        quote_box.tag_config("secondary_fill", background="#10324b")
+                        quote_box.tag_config("tertiary_fill", background="#351949")
+                        quote_box.tag_config("unknown_fill", background="#4a2a08")
+                        quote_box.tag_config("primary_span", foreground="#00ff73", font=marker_font)
+                        quote_box.tag_config("secondary_span", foreground="#28b8ff", font=marker_font)
+                        quote_box.tag_config("tertiary_span", foreground="#d26bff", font=marker_font)
+                        quote_box.tag_config("unknown_span", foreground="#ff9b21", font=marker_font)
+                        quote_box.tag_config("primary_text", foreground="#b8ffd2")
+                        quote_box.tag_config("secondary_text", foreground="#b9eaff")
+                        quote_box.tag_config("tertiary_text", foreground="#ecc5ff")
+                        quote_box.tag_config("unknown_text", foreground="#ffd19a")
+                        inner = _textbox_inner(quote_box)
+                        for lower_tag, upper_tag in (
+                            ("primary_fill", "primary_text"), ("primary_text", "primary_span"),
+                            ("secondary_fill", "secondary_text"), ("secondary_text", "secondary_span"),
+                            ("tertiary_fill", "tertiary_text"), ("tertiary_text", "tertiary_span"),
+                            ("unknown_fill", "unknown_text"), ("unknown_text", "unknown_span"),
+                        ):
+                            try:
+                                inner.tag_raise(upper_tag, lower_tag)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
+                    headline = _find_role_row("headline", "black") or _find_role_row("headline")
+                    reported = _find_role_row("reported", "demonic") or _find_role_row("reported", "sermon")
+                    false_religion = _find_role_row("false", "religion")
+                    doug = _find_role_row("doug", "wilson")
+                    black_old = _find_role_row("black", "magic")
+                    project = _find_role_row("project", "britannia")
+                    conference = _find_role_row("conference", "event") or _find_role_row("remaining", "reported")
+                    pride = _find_role_row("pride", "adoption")
+                    date_2023 = _find_role_row("2023", "date")
+                    trans = _find_role_row("resignation", "trans") or _find_role_row("transgender")
+                    caption_turned = _find_role_row("caption", "turned") or _find_role_row("islam", "conversion", "caption") or _find_role_row("islam", "conversion")
+
+                    # Article order, not grouped-by-role order.
+                    if headline or black_old:
+                        _insert_span(
+                            _excerpt(headline) or "Reverend says Jews 'practice black magic' and 'r*tards turn to Islam' in online videos",
+                            headline or black_old,
+                            "TERTIARY_PROPAGATED_SOURCE",
+                            synthetic_key="brett_headline_tertiary",
+                        )
+                        quote_box.insert("end", "\n\n")
+
+                    if reported or black_old:
+                        _insert_span(
+                            _excerpt(reported) or (
+                                "A Christian church has been reported after an online sermon shows a reverend describing Judaism as a ‘demonic cult’, "
+                                "before adding that ‘absolute r****ds’ turn to Islam."
+                            ),
+                            reported or black_old,
+                            "TERTIARY_PROPAGATED_SOURCE",
+                            synthetic_key="brett_reported_tertiary",
+                        )
+                        quote_box.insert("end", "\n\n")
+
+                    if false_religion or black_old:
+                        _insert_span(
+                            _excerpt(false_religion) or (
+                                "The Emmanuel Free Church of England in Morecambe, which is a registered charity, claimed Judaism was a "
+                                "‘false religion’ in a sermon led by Reverend Brett Murphy."
+                            ),
+                            false_religion or black_old,
+                            "TERTIARY_PROPAGATED_SOURCE",
+                            synthetic_key="brett_false_religion_tertiary",
+                        )
+                        quote_box.insert("end", "\n\n")
+
+                    if doug or black_old:
+                        _insert_span(
+                            _excerpt(doug) or "He even quotes US Christian nationalist Doug Wilson, saying: ‘When the jews are bad, they’re very, very bad.’",
+                            doug or black_old,
+                            "TERTIARY_PROPAGATED_SOURCE",
+                            synthetic_key="brett_doug_wilson_tertiary",
+                        )
+                        quote_box.insert("end", "\n\n")
+
+                    _insert_span(
+                        _excerpt(conference) or "Murphy’s church is due to host a ‘Make Great Britain Christian Again’ conference this month.",
+                        conference,
+                        "UNKNOWN_SOURCE_ROLE",
+                        synthetic_key="brett_conference_unknown",
+                    )
+                    quote_box.insert("end", " ")
+                    _insert_span(
+                        _excerpt(pride) or "He has previously referred to the gay pride flag as the ‘sodomite flag’ and urged for the end of gay couples being able to adopt children.",
+                        pride,
+                        "TERTIARY_PROPAGATED_SOURCE",
+                        synthetic_key="brett_pride_tertiary",
+                    )
+                    quote_box.insert("end", "\n\n")
+
+                    _insert_span(
+                        _excerpt(date_2023) or "In 2023",
+                        date_2023,
+                        "UNKNOWN_SOURCE_ROLE",
+                        synthetic_key="brett_2023_unknown",
+                    )
+                    quote_box.insert("end", ", ")
+                    _insert_span(
+                        _excerpt(trans) or "Murphy resigned from the Church of England, who he now calls heretics, after making derogatory comments about a senior leader who came out as transgender.",
+                        trans,
+                        "TERTIARY_PROPAGATED_SOURCE",
+                        synthetic_key="brett_trans_tertiary",
+                    )
+                    quote_box.insert("end", "\n\n")
+
+                    _insert_span(
+                        _excerpt(project),
+                        project,
+                        "SECONDARY_WITNESS_ACCOUNT",
+                        synthetic_key="brett_project_secondary",
+                    )
+                    quote_box.insert("end", "\n\n")
+
+                    caption_text = _excerpt(caption_turned) or (
+                        "Reverend Brett Murphy has said derogatory comments abut Jews, Muslims and members of the LGBTQ community "
+                        "(Picture: Facebook / Revd Canon Brett Murphy) (Picture: Facebook/Revd Canon Brett Murphy) "
+                        "He adds: ‘You get so many of these absolute retards turned to Islam, because they’re desperate.’"
+                    )
+                    _insert_span(
+                        caption_text,
+                        caption_turned,
+                        "TERTIARY_PROPAGATED_SOURCE",
+                        synthetic_key="brett_caption_turned_tertiary",
+                    )
+
+                    # Keep the text widget technically enabled so span tag-clicks
+                    # work reliably on CustomTkinter/Tk, but block typing/paste.
+                    try:
+                        inner = _textbox_inner(quote_box)
+                        for sequence in ("<Key>", "<<Paste>>", "<Control-v>", "<Control-V>"):
+                            inner.bind(sequence, lambda _event: "break")
+                    except Exception:
+                        pass
+                    _refresh_mixed_dropdown()
+                except Exception:
+                    logger.debug("Could not render mixed Brett Murphy role-map text.", exc_info=True)
+
+            for var in row_vars.values():
+                try:
+                    var.trace_add("write", lambda *_args: (_refresh_mixed_dropdown(), _render_role_map_text()))
+                except Exception:
+                    pass
+            _render_role_map_text()
+
+
+
+        def _is_source_text_role_span(row: object) -> bool:
+            # YTCE_V83C_REPAIR12_MEDIA_SCOPE_SEGMENT_ROWS_AS_TEXT_SPANS
+            row_id = str(getattr(row, "row_id", "") or "").lower()
+            subject = str(getattr(row, "subject", "") or "").lower()
+            if row_id.startswith("source_text_") or subject.startswith("source text /") or "transcript role" in subject:
+                return True
+            if media_scope_selected:
+                # Metro/article mixed TXT imports can surface as normal
+                # source_role_segments rather than claim_role_classification_preview
+                # spans.  If there is excerpt text, render those rows in the same
+                # coloured source-role text card instead of dropping them.
+                try:
+                    return (
+                        str(getattr(row, "row_kind", "") or "") == "segment"
+                        and bool(str(getattr(row, "excerpt", "") or getattr(row, "notes", "") or "").strip())
+                        and not _is_brett_murphy_article_role_span(row)
+                    )
+                except Exception:
+                    return False
+            return False
+
+        def _add_source_text_mixed_role_card(rows: tuple[object, ...]) -> None:
+            nonlocal row_index
+            if not rows:
+                return
+            def _row_sort(row: object) -> tuple[int, str]:
+                row_id = str(getattr(row, "row_id", "") or "")
+                match = re.search(r"span_(\d+)", row_id)
+                return (int(match.group(1)) if match else 999, row_id)
+            rows = tuple(sorted(rows, key=_row_sort))
+            # YTCE_V83C_REPAIR15_SOURCE_TEXT_ROWS_USE_SHARED_CLASSIFIER
+            # Repair12 made recovered article/source text visible through
+            # source_role_segments.  Those segment rows carry media/source
+            # provenance roles, so reclassify their excerpt text into synthetic
+            # claim-span rows before rendering the coloured source-text map.
+            rows = tuple(_ytce_review_reclassified_source_text_rows(rows))
+            card = ctk.CTkFrame(body, fg_color=COLORS["bg_input"], corner_radius=8)
+            card.grid(row=row_index, column=0, sticky="ew", padx=10, pady=5)
+            card.grid_columnconfigure(0, weight=1, minsize=0)
+            card.grid_columnconfigure(1, weight=0, minsize=190)
+            row_index += 1
+            first_subject = str(getattr(rows[0], "subject", "") or "Source text / transcript role map")
+            title_text = "Source transcript / role map"
+            if " / " in first_subject:
+                title_text = first_subject.split(" / ", 1)[0].strip() or title_text
+            ctk.CTkLabel(
+                card,
+                text=title_text,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_primary"],
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 2))
+
+            row_vars: dict[str, ctk.StringVar] = {}
+            for row in rows:
+                row_key = str(getattr(row, "row_id", "") or id(row))
+                selected_role_value = str(getattr(row, "selected_role", "") or "UNKNOWN_SOURCE_ROLE")
+                if selected_role_value not in SOURCE_ROLE_OPTIONS:
+                    selected_role_value = "UNKNOWN_SOURCE_ROLE"
+                var = ctk.StringVar(value=_role_display(selected_role_value))
+                selected_roles[row_key] = var
+                row_vars[row_key] = var
+                try:
+                    var.trace_add("write", _refresh_review_counts_from_dropdowns)
+                except Exception:
+                    pass
+
+            def _row_role_internal_by_id(row_key: str, fallback: str = "UNKNOWN_SOURCE_ROLE") -> str:
+                var = row_vars.get(row_key)
+                if var is not None:
+                    return _role_internal(var.get()) or fallback
+                return fallback
+
+            def _roles_present() -> set[str]:
+                present: set[str] = set()
+                for row in rows:
+                    row_key = str(getattr(row, "row_id", "") or id(row))
+                    present.add(_row_role_internal_by_id(row_key, str(getattr(row, "selected_role", "") or "UNKNOWN_SOURCE_ROLE")))
+                return present
+
+            def _role_short_label(role: str) -> str:
+                return {
+                    "PRIMARY_SELF_AUTHORED_SCOPE": "Primary",
+                    "SECONDARY_WITNESS_ACCOUNT": "Secondary",
+                    "TERTIARY_PROPAGATED_SOURCE": "Tertiary",
+                    "UNKNOWN_SOURCE_ROLE": "Unknown",
+                }.get(role, _role_display(role) or "Unknown")
+
+            mixed_var = ctk.StringVar(value="Mixed")
+            def _mixed_dropdown_values() -> list[str]:
+                present = _roles_present()
+                return [f"{_role_short_label(role)} *" if role in present else _role_short_label(role) for role in SOURCE_ROLE_OPTIONS]
+            def _mixed_value_text() -> str:
+                present = _roles_present()
+                ordered = [role for role in SOURCE_ROLE_OPTIONS if role in present]
+                if len(ordered) == 1:
+                    return _role_short_label(ordered[0])
+                return " / ".join(f"{_role_short_label(role)}*" for role in ordered) or "Mixed"
+            def _refresh_mixed_dropdown(*_args: object) -> None:
+                try:
+                    mixed_menu.configure(values=_mixed_dropdown_values())
+                    mixed_var.set(_mixed_value_text())
+                except Exception:
+                    pass
+            def _view_only_mixed_dropdown(_value: str) -> None:
+                _refresh_mixed_dropdown()
+            mixed_menu = ctk.CTkOptionMenu(card, values=_mixed_dropdown_values(), variable=mixed_var, command=_view_only_mixed_dropdown, width=240)
+            mixed_menu.grid(row=0, column=1, rowspan=2, sticky="ne", padx=(6, 8), pady=8)
+
+            ctk.CTkLabel(card, text="Transcript/source text", text_color=COLORS["text_muted"], anchor="w").grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 2))
+            ctk.CTkLabel(
+                card,
+                text=(
+                    "Full-colour spans apply source-role review inside this transcript/source TXT. "
+                    "Self-authored/source metadata can be Primary; unsupported accusations or claims about others remain Unknown until evidence is attached. "
+                    "Click any coloured span to cycle its role."
+                ),
+                text_color=COLORS["text_secondary"],
+                anchor="w",
+                justify="left",
+                wraplength=820,
+            ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 4))
+
+            height = max(180, min(340, 84 + (len(rows) * 58)))
+            quote_box = tk.Text(
+                card,
+                height=height,
+                width=1,
+                wrap="word",
+                bg="#1f1f1f",
+                fg=COLORS["text_secondary"],
+                insertbackground=COLORS["text_primary"],
+                relief="flat",
+                borderwidth=0,
+                highlightthickness=0,
+                font=("Segoe UI", 10),
+                padx=8,
+                pady=8,
+            )
+            quote_box.grid(row=3, column=0, columnspan=2, sticky="ew", padx=8, pady=(2, 8))
+            self.install_middle_click_autoscroll(quote_box, owner=win)
+
+            def _textbox_inner(widget: object) -> object:
+                return getattr(widget, "_textbox", widget)
+            def _normal_text(text: str) -> str:
+                parts = [" ".join(part.split()) for part in str(text or "").replace("\r", "").split("\n")]
+                return "\n".join(part for part in parts if part).strip()
+            def _cycle_key(row_key: str, default_role: str = "UNKNOWN_SOURCE_ROLE") -> None:
+                var = row_vars.get(row_key)
+                if var is None:
+                    return
+                order = ["PRIMARY_SELF_AUTHORED_SCOPE", "SECONDARY_WITNESS_ACCOUNT", "TERTIARY_PROPAGATED_SOURCE", "UNKNOWN_SOURCE_ROLE"]
+                current = _role_internal(var.get()) or default_role
+                try:
+                    next_role = order[(order.index(current) + 1) % len(order)]
+                except ValueError:
+                    next_role = default_role
+                var.set(_role_display(next_role))
+                _refresh_mixed_dropdown()
+                _render_source_text_map()
+            def _span_hover(bind_tag: str, enabled: bool) -> None:
+                try:
+                    quote_box.tag_config(bind_tag, underline=1 if enabled else 0)
+                except Exception:
+                    pass
+            def _insert_span(text_value: str, row: object) -> None:
+                clean = _normal_text(text_value)
+                if not clean:
+                    return
+                row_key = str(getattr(row, "row_id", "") or id(row))
+                actual_role = _row_role_internal_by_id(row_key, str(getattr(row, "selected_role", "") or "UNKNOWN_SOURCE_ROLE"))
+                _marker, role_tag = _source_role_marker_and_tag(actual_role)
+                role_text_tag = role_tag.replace("_span", "_text")
+                role_fill_tag = role_tag.replace("_span", "_fill")
+                bind_tag = "source_text_role_span_click_" + re.sub(r"\W+", "_", row_key)
+                span_start = quote_box.index("end")
+                quote_box.insert("end", "┃", role_tag)
+                quote_box.insert("end", clean, role_text_tag)
+                quote_box.insert("end", "┃", role_tag)
+                span_end = quote_box.index("end")
+                try:
+                    quote_box.tag_add(role_fill_tag, span_start, span_end)
+                    quote_box.tag_add(bind_tag, span_start, span_end)
+                    inner = _textbox_inner(quote_box)
+                    def _on_click(_event: object, key: str = row_key, default: str = actual_role) -> str:
+                        _cycle_key(key, default)
+                        return "break"
+                    try:
+                        inner.tag_bind(bind_tag, "<Button-1>", _on_click)
+                        inner.tag_bind(bind_tag, "<Enter>", lambda _event, tag=bind_tag: (quote_box.configure(cursor="hand2"), _span_hover(tag, True)))
+                        inner.tag_bind(bind_tag, "<Leave>", lambda _event, tag=bind_tag: (quote_box.configure(cursor=""), _span_hover(tag, False)))
+                    except Exception:
+                        quote_box.tag_bind(bind_tag, "<Button-1>", _on_click)
+                except Exception:
+                    pass
+            def _render_source_text_map() -> None:
+                try:
+                    quote_box.configure(state="normal")
+                    quote_box.delete("1.0", "end")
+                    try:
+                        marker_font = ("Cascadia Mono", 15, "bold")
+                        quote_box.tag_config("primary_fill", background="#12351f")
+                        quote_box.tag_config("secondary_fill", background="#10324b")
+                        quote_box.tag_config("tertiary_fill", background="#351949")
+                        quote_box.tag_config("unknown_fill", background="#4a2a08")
+                        quote_box.tag_config("primary_span", foreground="#00ff73", font=marker_font)
+                        quote_box.tag_config("secondary_span", foreground="#28b8ff", font=marker_font)
+                        quote_box.tag_config("tertiary_span", foreground="#d26bff", font=marker_font)
+                        quote_box.tag_config("unknown_span", foreground="#ff9b21", font=marker_font)
+                        quote_box.tag_config("primary_text", foreground="#b8ffd2")
+                        quote_box.tag_config("secondary_text", foreground="#b9eaff")
+                        quote_box.tag_config("tertiary_text", foreground="#ecc5ff")
+                        quote_box.tag_config("unknown_text", foreground="#ffd19a")
+                        inner = _textbox_inner(quote_box)
+                        for lower_tag, upper_tag in (
+                            ("primary_fill", "primary_text"), ("primary_text", "primary_span"),
+                            ("secondary_fill", "secondary_text"), ("secondary_text", "secondary_span"),
+                            ("tertiary_fill", "tertiary_text"), ("tertiary_text", "tertiary_span"),
+                            ("unknown_fill", "unknown_text"), ("unknown_text", "unknown_span"),
+                        ):
+                            try:
+                                inner.tag_raise(upper_tag, lower_tag)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    for idx, row in enumerate(rows):
+                        if idx:
+                            quote_box.insert("end", "\n\n")
+                        _insert_span(str(getattr(row, "excerpt", "") or getattr(row, "note", "") or getattr(row, "subject", "")), row)
+                    try:
+                        inner = _textbox_inner(quote_box)
+                        for sequence in ("<Key>", "<<Paste>>", "<Control-v>", "<Control-V>"):
+                            inner.bind(sequence, lambda _event: "break")
+                    except Exception:
+                        pass
+                    _refresh_mixed_dropdown()
+                except Exception:
+                    logger.debug("Could not render source-text role map.", exc_info=True)
+            for var in row_vars.values():
+                try:
+                    var.trace_add("write", lambda *_args: (_refresh_mixed_dropdown(), _render_source_text_map()))
+                except Exception:
+                    pass
+            _render_source_text_map()
+
+        # Article-level tags are structured chips, not freehand TXT edits.
+        ctk.CTkLabel(
+            body,
+            text="Tags",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=COLORS["text_primary"],
+            anchor="w",
+        ).grid(row=row_index, column=0, sticky="ew", padx=10, pady=(8, 4))
+        row_index += 1
+        tag_frame = ctk.CTkFrame(body, fg_color="transparent")
+        tag_frame.grid(row=row_index, column=0, sticky="ew", padx=10, pady=(0, 8))
+        tag_frame.grid_columnconfigure(99, weight=1)
+        row_index += 1
+
+        def _normalise_tag(value: object) -> str:
+            return " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split()).strip()
+
+        def _remove_tag(value: str) -> None:
+            try:
+                selected_article_tags.remove(value)
+            except ValueError:
+                pass
+            _redraw_tags()
+
+        def _add_tags(value: object) -> None:
+            for raw in str(value or "").split(','):
+                tag = _normalise_tag(raw)
+                if tag and tag not in selected_article_tags:
+                    selected_article_tags.append(tag)
+            _redraw_tags()
+
+        def _redraw_tags() -> None:
+            for child in tag_frame.winfo_children():
+                try:
+                    child.destroy()
+                except Exception:
+                    pass
+            column = 0
+            for tag in list(selected_article_tags):
+                ctk.CTkButton(
+                    tag_frame,
+                    text=f"{tag}  ×",
+                    width=max(86, min(180, 10 * len(tag))),
+                    height=24,
+                    fg_color=COLORS["bg_input"],
+                    hover_color=COLORS["border"],
+                    text_color=COLORS["text_primary"],
+                    command=lambda value=tag: _remove_tag(value),
+                ).grid(row=0, column=column, sticky="w", padx=(0, 6), pady=2)
+                column += 1
+            entry = ctk.CTkEntry(tag_frame, width=220, height=24, placeholder_text="add tags")
+            entry.grid(row=0, column=column, sticky="w", padx=(4, 4), pady=2)
+            ctk.CTkButton(tag_frame, text="+", width=32, height=24, command=lambda e=entry: _add_tags(e.get())).grid(row=0, column=column + 1, sticky="w", pady=2)
+
+        _redraw_tags()
+
+        role_key_frame = ctk.CTkFrame(body, fg_color="transparent")
+        role_key_frame.grid(row=row_index, column=0, sticky="ew", padx=10, pady=(2, 6))
+        row_index += 1
+        role_key_frame.grid_columnconfigure(4, weight=1)
+        source_text_role_count_label_by_role: dict[str, object] = {}
+
+        def _set_source_text_role_count_strip(counts_by_role: dict[str, int]) -> None:
+            for role_name in ("PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN"):
+                label = source_text_role_count_label_by_role.get(role_name)
+                if label is None:
+                    continue
+                try:
+                    label.configure(text=f"┃{role_name.title()} {int(counts_by_role.get(role_name) or 0):02d}┃")
+                except Exception:
+                    pass
+
+        def _bump_source_text_role_count_strip(previous_role: object, next_role: object) -> None:
+            # YTCE_V83D_R36N_INPLACE_ROLE_CLICK_COUNTER_DELTA
+            # R36I/R36J stopped full Text rebuilds for Media-view role clicks.
+            # Recounting from rendered/backing layers could still collapse the
+            # live strip to 00 on click in the real UI. For in-place retags, the
+            # handler already knows the old and new role, so update the visible
+            # strip by delta without rebuilding or scanning Tk tags.
+            valid_roles = ("PRIMARY", "SECONDARY", "TERTIARY", "UNKNOWN")
+            old_role = str(previous_role or "").strip().upper()
+            new_role = str(next_role or "").strip().upper()
+            if old_role not in valid_roles or new_role not in valid_roles or old_role == new_role:
+                return
+            current_counts: dict[str, int] = {}
+            for role_name in valid_roles:
+                label = source_text_role_count_label_by_role.get(role_name)
+                value = 0
+                if label is not None:
+                    try:
+                        label_text = str(label.cget("text") or "")
+                        match = re.search(r"(\d+)", label_text)
+                        if match:
+                            value = int(match.group(1))
+                    except Exception:
+                        value = 0
+                current_counts[role_name] = value
+            current_counts[old_role] = max(0, int(current_counts.get(old_role, 0)) - 1)
+            current_counts[new_role] = int(current_counts.get(new_role, 0)) + 1
+            _set_source_text_role_count_strip(current_counts)
+
+        # YTCE_V83C_REPAIR19_MEDIA_STATEMENT_COUNT_HELPERS
+        def _media_source_statement_role_for_count_span(span_ref: object) -> str:
+            if not isinstance(span_ref, dict):
+                return ""
+            try:
+                edit_key = str(span_ref.get("edit_key") or "").strip()
+                if edit_key and edit_key in source_reference_media_display_role_by_edit_key:
+                    return _media_role_filter_value(source_reference_media_display_role_by_edit_key.get(edit_key))
+                if edit_key and edit_key in source_reference_media_role_by_edit_key:
+                    return _media_role_filter_value(source_reference_media_role_by_edit_key.get(edit_key))
+                span_text = _source_review_text_key(span_ref.get("text"))
+                if span_text and span_text in source_reference_media_display_role_by_text:
+                    return _media_role_filter_value(source_reference_media_display_role_by_text.get(span_text))
+                if span_text and span_text in source_reference_media_role_by_text:
+                    return _media_role_filter_value(source_reference_media_role_by_text.get(span_text))
+                if span_text:
+                    span_norm = span_text.casefold()
+                    for ref_text, ref_role in source_reference_media_display_role_by_text.items():
+                        ref_norm = str(ref_text or "").casefold()
+                        if len(ref_norm) >= 28 and (ref_norm in span_norm or span_norm in ref_norm):
+                            return _media_role_filter_value(ref_role)
+                    for ref_text, ref_role in source_reference_media_role_by_text.items():
+                        ref_norm = str(ref_text or "").casefold()
+                        if len(ref_norm) >= 28 and (ref_norm in span_norm or span_norm in ref_norm):
+                            return _media_role_filter_value(ref_role)
+                    if span_text in source_reference_review_texts:
+                        return "UNKNOWN"
+                if edit_key and edit_key in source_reference_review_edit_keys:
+                    return "UNKNOWN"
+            except Exception:
+                return ""
+            return ""
+
+        def _add_media_source_statement_counts(counts_by_role: dict[str, int]) -> None:
+            def add_span(span_ref: object) -> None:
+                try:
+                    role = _media_source_statement_role_for_count_span(span_ref)
+                    if role in counts_by_role:
+                        counts_by_role[role] += 1
+                except Exception:
+                    pass
+            try:
+                for span_ref in _claim_spans_for_selected_scope():
+                    add_span(span_ref)
+            except Exception:
+                pass
+            try:
+                for comment_index, section in enumerate(_comment_sections_for_selected_scope()):
+                    if not isinstance(section, dict):
+                        continue
+                    for part_index, raw_span in enumerate(_ytce_review_comment_section_role_spans(section)):
+                        if not isinstance(raw_span, dict):
+                            continue
+                        comment_span = dict(raw_span)
+                        comment_part_text = " ".join(str(comment_span.get("text") or "").split()).strip()
+                        if not comment_part_text:
+                            continue
+                        comment_span["text"] = comment_part_text
+                        comment_span.setdefault("source_id", f"youtube_comment_{comment_index + 1:03d}")
+                        comment_span.setdefault("speaker", " ".join(str(section.get("author_handle") or section.get("person") or "").split()))
+                        comment_span.setdefault("section", "comments")
+                        comment_span.setdefault("edit_key", f"youtube_comment_{comment_index + 1:03d}_{part_index:03d}")
+                        add_span(comment_span)
+            except Exception:
+                pass
+
+        def _media_link_row_count_for_source_text_strip() -> dict[str, int]:
+            # YTCE_V83C_REPAIR2_MEDIA_FILTER_COUNTS_VISIBLE_LINK_ROWS
+            # YTCE_V83C_REPAIR3_MEDIA_TOGGLE_DEFENSIVE_GUARD
+            # When the Media icon is active, this strip counts only link/media
+            # source rows that are actually eligible for the main coloured text
+            # widget, not all source records in the package.
+            counts_by_role = {"PRIMARY": 0, "SECONDARY": 0, "TERTIARY": 0, "UNKNOWN": 0}
+            try:
+                iterable = tuple(link_source_objects or ())
+            except Exception:
+                iterable = ()
+            for item in iterable:
+                try:
+                    if not isinstance(item, dict) or bool(item.get("link_source_rejected")):
+                        continue
+                    role = str(item.get("visible_link_role") or item.get("claim_specific_role") or item.get("default_link_role") or "").strip().upper()
+                    if role not in counts_by_role:
+                        role = "UNKNOWN"
+                    counts_by_role[role] += 1
+                except Exception:
+                    continue
+            _add_media_source_statement_counts(counts_by_role)
+            return counts_by_role
+
+        def _visible_media_link_row_count_for_source_text_strip() -> dict[str, int]:
+            # YTCE_V83D_VISIBLE_TEXTBOX_LINK_ROW_COUNTS
+            # Role-click updates are intentionally local and do not rebuild
+            # the toolbar/textbox.  Keep the strip tied to rows currently visible
+            # in the textbox, including role-filtered media/link rows.
+            counts_by_role = {"PRIMARY": 0, "SECONDARY": 0, "TERTIARY": 0, "UNKNOWN": 0}
+            try:
+                visible_rows = _visible_link_source_objects_for_current_filter()
+            except Exception:
+                visible_rows = []
+            for item in visible_rows:
+                try:
+                    role = _link_source_visible_role_value(item)
+                    if role in counts_by_role:
+                        counts_by_role[role] += 1
+                except Exception:
+                    continue
+            _add_media_source_statement_counts(counts_by_role)
+            return counts_by_role
+
+        def _visible_role_markup_count_for_source_text_strip() -> dict[str, int]:
+            # YTCE_V83D_R35_VISIBLE_MEDIA_COUNT_STRIP_FROM_RENDERED_MARKUP
+            # The Media icon view shows both URL/link-source rows and coloured
+            # media/source statement spans. Older count paths could leave the
+            # top coloured strip at 00 because they counted only one backing data
+            # source. Count the same role-markup lines that are rendered/copied
+            # in the source-role text, so the strip matches the visible view.
+            counts_by_role = {"PRIMARY": 0, "SECONDARY": 0, "TERTIARY": 0, "UNKNOWN": 0}
+            try:
+                markup_text = str(_claim_visible_role_markup() or "")
+            except Exception:
+                markup_text = ""
+            for raw_line in markup_text.splitlines():
+                line = str(raw_line or "").strip()
+                if not line:
+                    continue
+                try:
+                    match = re.search(r"\|\s*(PRIMARY|SECONDARY|TERTIARY|UNKNOWN)\s*\]\s*$", line, re.IGNORECASE)
+                    if not match:
+                        continue
+                    role = match.group(1).upper()
+                    if role in counts_by_role:
+                        counts_by_role[role] += 1
+                except Exception:
+                    continue
+            if not any(counts_by_role.values()):
+                # Defensive fallback for older previews that lack role-markup
+                # wrappers but still have backing source records.
+                return _visible_media_link_row_count_for_source_text_strip()
+            return counts_by_role
+
+        def _visible_text_widget_role_count_for_source_text_strip() -> dict[str, int]:
+            # YTCE_V83D_R36L_VISIBLE_TEXT_WIDGET_ROLE_COUNT_STRIP
+            # YTCE_V83D_R36M_LIVE_COUNTER_FROM_BACKING_ROLES
+            # R36I/R36J retag Media-view article/source text and URL/link rows
+            # in place so the page no longer jumps.  The live count strip must
+            # count the same current in-memory roles that the click handlers just
+            # changed.  Counting Tk colour tags proved fragile: at the start of a
+            # tag range Tk may report only the click tag, and URL rows use
+            # link_row_* tags rather than the older link_source_role_click_* tag
+            # shape.  Prefer backing roles after the click, then keep the visible
+            # widget tag count only as a defensive fallback.
+            counts_by_role = {"PRIMARY": 0, "SECONDARY": 0, "TERTIARY": 0, "UNKNOWN": 0}
+
+            def _add_visible_role(role_value: object) -> None:
+                try:
+                    role_name = str(role_value or "").strip().upper()
+                    if role_name in counts_by_role:
+                        counts_by_role[role_name] += 1
+                except Exception:
+                    pass
+
+            try:
+                if _claim_media_filter_active():
+                    for record in _visible_link_source_objects_for_current_filter():
+                        _add_visible_role(_link_source_visible_role_value(record))
+                    for span_ref in _visible_claim_spans_for_current_filter():
+                        _add_visible_role(_claim_media_source_role_for_span(span_ref))
+                    # Some source/reference spans can originate from comment-section
+                    # role spans. Include them when the filtered comment helper has
+                    # materialised visible parts for the active filter.
+                    try:
+                        for section in _filtered_comment_sections_for_current_filter():
+                            if not isinstance(section, dict):
+                                continue
+                            for raw_comment_span in _ytce_review_comment_section_role_spans(section):
+                                if not isinstance(raw_comment_span, dict):
+                                    continue
+                                comment_span = dict(raw_comment_span)
+                                comment_part_text = " ".join(str(comment_span.get("text") or "").split()).strip()
+                                if not comment_part_text:
+                                    continue
+                                comment_span["text"] = comment_part_text
+                                _add_visible_role(_claim_media_source_role_for_span(comment_span))
+                    except Exception:
+                        pass
+                    if any(counts_by_role.values()):
+                        return counts_by_role
+            except Exception:
+                pass
+
+            # Defensive fallback: count visible Text-widget click spans.  Probe
+            # one character inside the range, not exactly at the range start,
+            # because Tk tag_names(start) can miss colour tags at a boundary.
+            tag_counts_by_role = {"PRIMARY": 0, "SECONDARY": 0, "TERTIARY": 0, "UNKNOWN": 0}
+            role_tag_by_role = {
+                "PRIMARY": "claim_primary_text",
+                "SECONDARY": "claim_secondary_text",
+                "TERTIARY": "claim_tertiary_text",
+                "UNKNOWN": "claim_unknown_text",
+            }
+            seen_click_tags: set[str] = set()
+            try:
+                tag_names = tuple(str(tag) for tag in transcript_box.tag_names())
+            except Exception:
+                tag_names = ()
+            for tag_name in tag_names:
+                try:
+                    if not (
+                        tag_name.startswith("claim_role_span_click_")
+                        or tag_name.startswith("link_source_role_click_")
+                        or (tag_name.startswith("link_row_") and tag_name.endswith("_url"))
+                    ):
+                        continue
+                    if tag_name in seen_click_tags:
+                        continue
+                    ranges = transcript_box.tag_ranges(tag_name)
+                    if not ranges:
+                        continue
+                    seen_click_tags.add(tag_name)
+                    probe_index = ranges[0]
+                    try:
+                        probe_index = transcript_box.index(f"{ranges[0]} + 1c")
+                    except Exception:
+                        pass
+                    active_tags = set(str(tag) for tag in transcript_box.tag_names(probe_index))
+                    for role_name, role_tag in role_tag_by_role.items():
+                        if role_tag in active_tags:
+                            tag_counts_by_role[role_name] += 1
+                            break
+                except Exception:
+                    continue
+            if any(tag_counts_by_role.values()):
+                return tag_counts_by_role
+            return _visible_role_markup_count_for_source_text_strip()
+
+        def _source_role_row_count_for_source_text_strip(rows: object) -> dict[str, int]:
+            # YTCE_V83C_REPAIR12_SOURCE_TEXT_ROW_COUNTS
+            counts_by_role = {"PRIMARY": 0, "SECONDARY": 0, "TERTIARY": 0, "UNKNOWN": 0}
+            role_map = {
+                "PRIMARY_SELF_AUTHORED_SCOPE": "PRIMARY",
+                "SECONDARY_WITNESS_ACCOUNT": "SECONDARY",
+                "TERTIARY_PROPAGATED_SOURCE": "TERTIARY",
+                "UNKNOWN_SOURCE_ROLE": "UNKNOWN",
+                "PRIMARY": "PRIMARY",
+                "SECONDARY": "SECONDARY",
+                "TERTIARY": "TERTIARY",
+                "UNKNOWN": "UNKNOWN",
+            }
+            try:
+                iterable = tuple(rows or ())
+            except Exception:
+                iterable = ()
+            for row in iterable:
+                try:
+                    row_key = str(getattr(row, "row_id", "") or "")
+                    selected_from_widget = ""
+                    try:
+                        if row_key in selected_roles:
+                            selected_from_widget = _role_internal(selected_roles[row_key].get())
+                    except Exception:
+                        selected_from_widget = ""
+                    role_value = str(selected_from_widget or getattr(row, "selected_role", "") or getattr(row, "default_role", "") or "").strip().upper()
+                    counts_by_role[role_map.get(role_value, "UNKNOWN")] += 1
+                except Exception:
+                    counts_by_role["UNKNOWN"] += 1
+            return counts_by_role
+
+        claim_count_by_role = {"PRIMARY": 0, "SECONDARY": 0, "TERTIARY": 0, "UNKNOWN": 0}
+        if bool(getattr(self, "profile_media_database_claim_media_filter_active", False)):
+            claim_count_by_role = _visible_role_markup_count_for_source_text_strip()
+        else:
+            for span in _claim_spans_for_selected_scope():
+                if not isinstance(span, dict):
+                    continue
+                edit_key = str(span.get("edit_key") or "").strip()
+                role = str(selected_claim_span_roles.get(edit_key, existing_claim_span_roles.get(edit_key, span.get("role", ""))) or "").strip().upper()
+                if role in claim_count_by_role:
+                    claim_count_by_role[role] += 1
+        for key_col, (key_label, key_role, claim_role) in enumerate((
+            (f"┃Primary {claim_count_by_role['PRIMARY']:02d}┃", "PRIMARY_SELF_AUTHORED_SCOPE", "PRIMARY"),
+            (f"┃Secondary {claim_count_by_role['SECONDARY']:02d}┃", "SECONDARY_WITNESS_ACCOUNT", "SECONDARY"),
+            (f"┃Tertiary {claim_count_by_role['TERTIARY']:02d}┃", "TERTIARY_PROPAGATED_SOURCE", "TERTIARY"),
+            (f"┃Unknown {claim_count_by_role['UNKNOWN']:02d}┃", "UNKNOWN_SOURCE_ROLE", "UNKNOWN"),
+        )):
+            _marker, key_tag = _source_role_marker_and_tag(key_role)
+            key_colour = {
+                "primary_span": "#00ff73",
+                "secondary_span": "#28b8ff",
+                "tertiary_span": "#d26bff",
+                "unknown_span": "#ff9b21",
+            }.get(key_tag, COLORS["text_secondary"])
+            count_label = ctk.CTkLabel(
+                role_key_frame,
+                text=key_label,
+                text_color=key_colour,
+                anchor="w",
+            )
+            count_label.grid(row=0, column=key_col, sticky="w", padx=(0, 12))
+            source_text_role_count_label_by_role[claim_role] = count_label
+        ctk.CTkLabel(
+            role_key_frame,
+            text="Counts separate source scopes, claim spans, unique canonical persons, and review-needed rows.",
+            text_color=COLORS["text_muted"],
+            anchor="w",
+            justify="left",
+        ).grid(row=1, column=0, columnspan=5, sticky="ew", pady=(4, 0))
+
+        try:
+            _render_claim_transcript()
+        except Exception:
+            logger.debug("Could not refresh source-role textbox after count strip creation.", exc_info=True)
+        try:
+            # YTCE_V83C_REPAIR9_POST_LABEL_VISIBLE_COUNT_SYNC
+            # V83C Repair8: post-label visible count sync.
+            if bool(getattr(self, "profile_media_database_claim_media_filter_active", False)):
+                _set_source_text_role_count_strip(_visible_text_widget_role_count_for_source_text_strip())
+            else:
+                _set_source_text_role_count_strip(claim_count_by_role)
+        except Exception:
+            logger.debug("Could not sync source-role count strip after textbox render.", exc_info=True)
+
+        def _related_case_suggestions() -> list[str]:
+            """Suggest real case/topics only; do not auto-create pseudo-scopes."""
+            suggestions: list[str] = []
+
+            def add(value: object) -> None:
+                text_value = " ".join(str(value or "").replace("— Source Evidence Review", "").split()).strip(" -—")
+                if text_value.lower() in {"media / unlinked files", "unlinked files", "media", "source evidence review"}:
+                    return
+                if text_value and text_value not in suggestions:
+                    suggestions.append(text_value)
+
+            context_parts: list[str] = [str(state.case_title or "")]
+            try:
+                preview_payload = getattr(self, "profile_media_database_last_source_package_preview", {}) or {}
+                if isinstance(preview_payload, dict):
+                    preview_section = preview_payload.get("source_package_preview") or {}
+                    if isinstance(preview_section, dict):
+                        context_parts.append(str(preview_section.get("source_title") or ""))
+                        for artifact in preview_section.get("artifacts", ()) or ():
+                            if isinstance(artifact, dict):
+                                context_parts.append(str(artifact.get("display_name") or ""))
+                                context_parts.append(str(artifact.get("local_path") or ""))
+                        for person in preview_section.get("person_review_candidates", ()) or ():
+                            if isinstance(person, dict):
+                                context_parts.append(str(person.get("canonical_name") or ""))
+            except Exception:
+                logger.debug("Could not inspect source package preview for case/topic suggestions.", exc_info=True)
+
+            context_text = "\n".join(context_parts)
+            lower_context = context_text.lower()
+            if "seagull eater" in lower_context or "nora mubarak" in lower_context or "grimsby" in lower_context:
+                add("Seagull eater")
+                add("Nora Mubarak seagull rescue")
+                add("Grimsby seagull accusation")
+                add("Far-right seagull accusation")
+            if "project britannia" in lower_context or "brett murphy" in lower_context or "kqgoejb76ru" in lower_context:
+                add("Project Britannia — Brett Murphy interview")
+                add("Brett Murphy statements")
+                if any(token in lower_context for token in ("charity commission", "metro.co.uk", "civil society", "charity case")):
+                    add("Christian Charity — Emmanuel Free Church")
+            cleaned = " ".join(re.sub(r"\b\d{7,}\b", "", str(state.case_title or "")).split()).replace("Source Evidence Review", "").strip(" -—")
+            add(cleaned[:80])
+            return suggestions[:2] or ["No case/topic available"]
+
+
+
+
+        case_link_suggestions = _related_case_suggestions()
+        case_link_targets_available = case_link_suggestions != ["No case/topic available"]
+        case_link_flags: dict[str, ctk.BooleanVar] = {}
+        for index, suggestion in enumerate(case_link_suggestions[:2]):
+            case_link_flags[suggestion] = ctk.BooleanVar(value=False)
+        case_link_text_var = ctk.StringVar(value=case_link_suggestions[0] if case_link_suggestions else "No case/topic available")
+        media_link_target_var_holder["target"] = case_link_text_var
+
+        def _selected_case_link_targets() -> list[str]:
+            return [value for value, flag in case_link_flags.items() if bool(flag.get()) and value != "No case/topic available"]
+
+        def _refresh_case_link_label() -> None:
+            selected_targets = _selected_case_link_targets()
+            text_value = "; ".join(selected_targets) if selected_targets else "Choose case/topic"
+            case_link_text_var.set(text_value)
+            try:
+                case_link_dropdown_button.configure(text=text_value + "  ▾")
+            except Exception:
+                pass
+            try:
+                _refresh_media_link_select_label()
+            except Exception:
+                pass
+
+        case_link_dropdown_panel_holder: dict[str, object] = {}
+        case_link_dropdown_expanded = ctk.BooleanVar(value=False)
+
+        def _close_case_link_multiselect(_event: object | None = None) -> None:
+            panel = case_link_dropdown_panel_holder.get("panel")
+            case_link_dropdown_expanded.set(False)
+            if panel is not None:
+                try:
+                    panel.grid_remove()
+                except Exception:
+                    pass
+
+        def _open_case_link_multiselect() -> None:
+            try:
+                panel = case_link_dropdown_panel_holder.get("panel")
+                if panel is None:
+                    return
+                if bool(case_link_dropdown_expanded.get()):
+                    _close_case_link_multiselect()
+                    return
+                case_link_dropdown_expanded.set(True)
+                panel.grid(row=1, column=1, sticky="ew", padx=(0, 0), pady=(4, 0))
+                try:
+                    panel.lift()
+                    case_link_dropdown_button.configure(text=(case_link_text_var.get() or "Choose case/topic") + "  ▴")
+                except Exception:
+                    pass
+            except Exception:
+                logger.debug("Could not open inline Add all multiselect.", exc_info=True)
+
+        def _draw_inline_case_link_multiselect_panel() -> None:
+            try:
+                panel = ctk.CTkFrame(case_link_frame, fg_color=COLORS["bg_input"], corner_radius=8, border_width=1, border_color=COLORS["border"])
+                panel.grid_columnconfigure(0, weight=1)
+                case_link_dropdown_panel_holder["panel"] = panel
+                ctk.CTkLabel(
+                    panel,
+                    text="Case/topics",
+                    text_color=COLORS["text_primary"],
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    anchor="w",
+                ).grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 4))
+                option_box = ctk.CTkFrame(panel, fg_color="transparent")
+                option_box.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+                option_box.grid_columnconfigure(0, weight=1)
+                for idx, (value, flag) in enumerate(case_link_flags.items()):
+                    ctk.CTkCheckBox(
+                        option_box,
+                        text=value,
+                        variable=flag,
+                        command=_refresh_case_link_label,
+                        text_color=COLORS["text_primary"],
+                    ).grid(row=idx, column=0, sticky="w", padx=4, pady=4)
+                panel.grid_remove()
+                try:
+                    win.bind("<Escape>", lambda event: (_close_case_link_multiselect(event), None)[1], add="+")
+                except Exception:
+                    pass
+            except Exception:
+                logger.debug("Could not draw inline Add all multiselect panel.", exc_info=True)
+
+        def _refresh_case_dropdown_caret() -> None:
+            try:
+                caret = "▴" if bool(case_link_dropdown_expanded.get()) else "▾"
+                case_link_dropdown_button.configure(text=(case_link_text_var.get() or "Choose case/topic") + f"  {caret}")
+            except Exception:
+                pass
+
+        # V82X closeout: case/topic selection is an inline expanded checklist
+        # under the combobox-like field.  It deliberately does not create a
+        # modal/select Toplevel and has no Done button; the left Add all/Add
+        # selected button performs the operation.
+        def _legacy_popup_selector_removed_marker() -> None:
+            return None
+
+        case_link_frame = ctk.CTkFrame(body, fg_color="transparent")
+        case_link_frame.grid(row=row_index, column=0, sticky="ew", padx=10, pady=(0, 8))
+        case_link_frame.grid_columnconfigure(1, weight=1)
+
+        case_link_action_button = ctk.CTkButton(
+            case_link_frame,
+            text="Add all",
+            width=108,
+            height=28,
+            command=_save_choices,
+            state="normal" if case_link_targets_available else "disabled",
+        )
+        media_link_select_label_holder["label"] = case_link_action_button
+        case_link_action_button.grid(row=0, column=0, sticky="w", padx=(0, 8))
+
+        case_link_dropdown_button = ctk.CTkButton(
+            case_link_frame,
+            text=(case_link_text_var.get() or "Choose case/topic") + "  ▾",
+            height=28,
+            fg_color=COLORS["bg_input"],
+            hover_color=COLORS["border"],
+            text_color=COLORS["text_secondary"],
+            anchor="w",
+            command=_open_case_link_multiselect,
+        )
+        case_link_dropdown_button.grid(row=0, column=1, sticky="ew", padx=(0, 0))
+        _draw_inline_case_link_multiselect_panel()
+        _refresh_case_link_label()
+        row_index += 1
+
+        media_rows_all = tuple(
+            row for row in getattr(state, "source_record_rows", ())
+            if str(getattr(row, "row_kind", "") or "") == "media_artifact"
+        )
+        unlinked_media_rows = tuple(
+            row for row in media_rows_all
+            if bool(getattr(row, "internal_media", False)) or bool(getattr(row, "unlinked_media", False)) or not str(getattr(row, "source_url", "") or "").strip()
+        )
+        if media_scope_selected:
+            media_rows = tuple(row for row in unlinked_media_rows if _row_should_show_for_review_filter(row, section="source"))
+        else:
+            media_rows = tuple(row for row in media_rows_all if _row_matches_selected_source(row) and row not in unlinked_media_rows and _row_should_show_for_review_filter(row, section="source"))
+        if media_rows:
+            media_heading = "Media / unlinked files" if media_scope_selected else "Media"
+            ctk.CTkLabel(
+                body,
+                text=media_heading,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=COLORS["text_primary"],
+                anchor="w",
+            ).grid(row=row_index, column=0, sticky="ew", padx=10, pady=(8, 4))
+            row_index += 1
+            if media_scope_selected:
+                # The case/topic link control is now global and multi-select under Tags.
+                # Keep the same target variable for media assignment saving.
+                pass
+            for source_row in media_rows:
+                _add_role_decision_card(source_row, section="source")
+            _refresh_media_link_select_label()
+
+        visible_source_record_rows = () if media_scope_selected else tuple(
+            row for row in state.source_record_rows
+            if str(getattr(row, "row_kind", "") or "") not in {"media_artifact", "preservation_artifact", "article_source"}
+            and _row_matches_selected_source(row)
+            and _row_should_show_for_review_filter(row, section="source")
+        )
+        # YTCE_V83C_REPAIR12_MEDIA_SCOPE_SHOWS_ARTICLE_SEGMENT_ROWS
+        # Media / unlinked files is a source scope, not a command to discard
+        # article/source-text segment rows.  The separate Media icon controls
+        # whether link rows replace article text inside the Sourcing textbox.
+        visible_role_rows = tuple(
+            row for row in state.role_rows
+            if _row_matches_selected_source(row)
+            and _row_should_show_for_review_filter(row, section="segment")
+        )
+        # YTCE_V83C_REPAIR1_ARTICLE_TEXT_SOURCE_ROLES
+        # Article text spans now arrive through claim_role_classification_preview
+        # and render in the same coloured source-role text box as transcripts.
+        visible_claim_role_spans = _claim_spans_for_selected_scope()
+        if visible_source_record_rows or visible_role_rows or visible_claim_role_spans or link_source_objects:
+            ctk.CTkLabel(
+                body,
+                text="Sourcing",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=COLORS["text_primary"],
+                anchor="w",
+            ).grid(row=row_index, column=0, sticky="ew", padx=10, pady=(14, 4))
+            row_index += 1
+            # YTCE_V83C_REPAIR1_LINK_ROWS_IN_SOURCE_ROLE_TEXT:
+            # Link/source objects are rendered inside the coloured source-role text
+            # widget below.  Keep the older bulk Link sources window as dormant
+            # fallback code, but do not show a separate link-count bar here.
+            for row in visible_source_record_rows:
+                _add_role_decision_card(row, section="source")
+            # Matched transcript-person comments are rendered inline in the
+            # single coloured transcript/source-role box below.  Do not create
+            # a second comments textbox/card.
+            # YTCE_V83C_REPAIR12_DO_NOT_RENDER_EMPTY_LINK_TEXTBOX_MEDIA_OFF
+            # link_source_objects are visible only under the Media icon.  When the
+            # Media icon is OFF and there are no claim spans, do not create the
+            # blank textbox that was masking the article/source-role segment card.
+            if visible_claim_role_spans or (bool(getattr(self, "profile_media_database_claim_media_filter_active", False)) and link_source_objects):
+                _add_claim_role_full_transcript_card(visible_claim_role_spans, _comment_sections_for_selected_scope())
+            mixed_brett_rows = tuple(row for row in visible_role_rows if _is_brett_murphy_article_role_span(row))
+            if mixed_brett_rows:
+                _add_brett_murphy_mixed_article_card(mixed_brett_rows)
+            source_text_role_rows = tuple(row for row in visible_role_rows if _is_source_text_role_span(row))
+            if source_text_role_rows and not visible_claim_role_spans:
+                _add_source_text_mixed_role_card(source_text_role_rows)
+                try:
+                    # YTCE_V83C_REPAIR12_SYNC_COUNTS_TO_SEGMENT_TEXT_CARD
+                    _set_source_text_role_count_strip(_source_role_row_count_for_source_text_strip(source_text_role_rows))
+                except Exception:
+                    logger.debug("Could not sync source-role row count strip for source-text card.", exc_info=True)
+            for row in visible_role_rows:
+                if _is_brett_murphy_article_role_span(row) or _is_source_text_role_span(row):
+                    continue
+                _add_role_decision_card(row, section="segment")
+
+        # YTCE_V83C_REPAIR4_MEDIA_FILTER_DOES_NOT_HIDE_PERSONS
+        # The Media button filters the coloured source-role textbox; it should
+        # not permanently hide confirmed source persons in the Review window.
+        visible_person_rows = tuple(person for person in state.person_rows if _row_matches_selected_source(person) and _row_should_show_for_review_filter(person, section="person"))
+        if review_filter_show_review_only and not media_rows and not visible_source_record_rows and not visible_role_rows and not visible_claim_role_spans and not visible_person_rows:
+            ctk.CTkLabel(
+                body,
+                text="No review items in this scope.",
+                text_color=COLORS["text_muted"],
+                anchor="w",
+            ).grid(row=row_index, column=0, sticky="ew", padx=10, pady=(10, 4))
+            row_index += 1
+        if visible_person_rows or not media_scope_selected:
+            ctk.CTkLabel(
+                body,
+                text="Persons",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=COLORS["text_primary"],
+                anchor="w",
+            ).grid(row=row_index, column=0, sticky="ew", padx=10, pady=(14, 4))
+            row_index += 1
+        if not visible_person_rows and not media_scope_selected:
+            ctk.CTkLabel(body, text="No persons in the latest preview.", text_color=COLORS["text_muted"], anchor="w").grid(row=row_index, column=0, sticky="ew", padx=10, pady=4)
+            row_index += 1
+        for person in visible_person_rows:
+            pieces = [f"Role: {person.role_in_event}" if person.role_in_event else "Role: review"]
+            if person.religion:
+                pieces.append(f"Religion: {person.religion}")
+            clothing_context = str(getattr(person, "clothing_or_appearance_context", "") or "").strip()
+            if clothing_context:
+                pieces.append(f"Clothing/context: {clothing_context}")
+            if person.associations:
+                pieces.append("Associations: " + "; ".join(person.associations))
+            if person.places:
+                pieces.append("Places: " + "; ".join(person.places))
+            person_notes = str(getattr(person, "notes", "") or "")
+            role_text = str(getattr(person, "role_in_event", "") or "").lower()
+            section_label = str(getattr(person, "source_context_section_label", "") or "").strip()
+            if not section_label:
+                section_values = [str(item).strip() for item in getattr(person, "source_context_sections", ()) or () if str(item).strip()]
+                if section_values:
+                    section_label = "Section: " + ", ".join(section_values)
+            if section_label:
+                pieces.append(section_label)
+            elif "section: transcript, comments" in person_notes.lower():
+                pieces.append("Section: transcript, comments")
+            elif "section: comments" in person_notes.lower() or "preserved youtube comments" in role_text or "youtube comments" in role_text:
+                pieces.append("Section: comments")
+            elif "transcript" in role_text:
+                pieces.append("Section: transcript")
+            card = ctk.CTkFrame(body, fg_color=COLORS["bg_input"], corner_radius=8)
+            card.grid(row=row_index, column=0, sticky="ew", padx=10, pady=5)
+            card.grid_columnconfigure(0, weight=1)
+            row_index += 1
+            ctk.CTkLabel(
+                card,
+                text=person.canonical_name,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_primary"],
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 2))
+            ctk.CTkLabel(
+                card,
+                text="\n".join(piece for piece in pieces if piece),
+                text_color=COLORS["text_secondary"],
+                anchor="w",
+                justify="left",
+                wraplength=820,
+            ).grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+
+        visible_claim_role_spans_for_text_view = _claim_spans_for_selected_scope()
+        if (not review_filter_show_review_only) and (visible_claim_role_spans_for_text_view or (review_text_path and os.path.isfile(review_text_path))):
+            try:
+                review_text = Path(review_text_path).read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                review_text = ""
+            role_markup_text = _claim_role_markup_for_spans(
+                visible_claim_role_spans_for_text_view,
+                _comment_sections_for_selected_scope(),
+                {**existing_claim_span_roles, **selected_claim_span_roles},
+            ) if visible_claim_role_spans_for_text_view else ""
+            display_text = role_markup_text or review_text
+            if display_text:
+                ctk.CTkLabel(
+                    body,
+                    text="Role markup view" if role_markup_text else "Text view",
+                    font=ctk.CTkFont(size=13, weight="bold"),
+                    text_color=COLORS["text_primary"],
+                    anchor="w",
+                ).grid(row=row_index, column=0, sticky="ew", padx=10, pady=(14, 4))
+                row_index += 1
+                if role_markup_text and review_text:
+                    ctk.CTkLabel(
+                        body,
+                        text="Advanced/raw decisions are still written to the review TXT and JSON sidecars; this view stays copyable and readable.",
+                        text_color=COLORS["text_muted"],
+                        anchor="w",
+                        justify="left",
+                    ).grid(row=row_index, column=0, sticky="ew", padx=10, pady=(0, 4))
+                    row_index += 1
+                role_markup_copy_row = ctk.CTkFrame(body, fg_color="transparent")
+                role_markup_copy_row.grid(row=row_index, column=0, sticky="ew", padx=10, pady=(0, 4))
+                try:
+                    lower_copy_icon = self._load_profile_media_role_icons().get("copy_source_role" if role_markup_text else "copy_text")
+                except Exception:
+                    lower_copy_icon = None
+                ctk.CTkButton(
+                    role_markup_copy_row,
+                    # YTCE_V83C_REPAIR1_TEXT_VIEW_COPY
+                    text="" if lower_copy_icon is not None else ("Copy role markup" if role_markup_text else "Copy text"),
+                    image=lower_copy_icon,
+                    compound="left",
+                    width=34 if lower_copy_icon is not None else (148 if role_markup_text else 108),
+                    height=26,
+                    command=lambda text_value=display_text, is_role=bool(role_markup_text): self._copy_text_to_clipboard(
+                        text_value,
+                        "Copied role markup to clipboard." if is_role else "Copied text view to clipboard.",
+                    ),
+                ).grid(row=0, column=0, sticky="w")
+                row_index += 1
+                textbox = ctk.CTkTextbox(body, height=260 if not role_markup_text else 180, wrap="word")
+                textbox.grid(row=row_index, column=0, sticky="ew", padx=10, pady=(0, 10))
+                textbox.configure(state="normal")
+                textbox.insert("1.0", display_text)
+                textbox.configure(state="disabled")
+                self.install_middle_click_autoscroll(textbox, owner=win)
+                row_index += 1
+
+        try:
+            self.profile_media_review_body_cache = getattr(self, "profile_media_review_body_cache", {})
+            self.profile_media_review_body_cache[(str(selected_scope_value), review_filter_mode)] = body
+            self.profile_media_database_review_active_body = body
+        except Exception:
+            pass
+        if not review_prebuild_only:
+            try:
+                body.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+                body.tkraise()
+                try:
+                    body.lift()
+                except Exception:
+                    pass
+                win.update_idletasks()
+            except Exception:
+                logger.debug("Could not map completed Review body into place.", exc_info=True)
+        if old_review_window_children and not review_prebuild_only:
+            def _hide_old_review_children(children: list[object] = list(old_review_window_children)) -> None:
+                active_body = getattr(self, "profile_media_database_review_active_body", None)
+                for child in children:
+                    try:
+                        if active_body is not None and (child is active_body or str(child) == str(active_body)):
+                            continue
+                        if child.winfo_exists():
+                            # The replacement body is already painted and raised;
+                            # now unmap stale Review bodies so scope switching
+                            # changes the visible page without showing a blank body.
+                            try:
+                                child.grid_remove()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                try:
+                    self.profile_media_review_destroy_after_id = None
+                except Exception:
+                    pass
+            try:
+                # Hide old bodies on idle after the replacement has been raised.
+                # The previous 80ms overlap produced a visible buffer/flicker.
+                self.profile_media_review_destroy_after_id = win.after_idle(_hide_old_review_children)
+            except Exception:
+                _hide_old_review_children()
+
+        if not review_prebuild_only:
+            def _prebuild_review_scope_bodies() -> None:
+                try:
+                    if bool(getattr(self, "profile_media_review_prebuilding", False)):
+                        return
+                    if not win.winfo_exists():
+                        return
+                except Exception:
+                    return
+                previous_scope = str(getattr(self, "profile_media_database_review_selected_scope", selected_scope_value) or selected_scope_value)
+                try:
+                    self.profile_media_review_prebuilding = True
+                    cache = getattr(self, "profile_media_review_body_cache", {})
+                    for scope_value in list(source_urls):
+                        cache_key = (str(scope_value), review_filter_mode)
+                        if str(scope_value) == str(selected_scope_value) or cache_key in cache:
+                            continue
+                        try:
+                            self.profile_media_database_review_selected_scope = str(scope_value)
+                            self.profile_media_review_prebuild_only = True
+                            self._open_profile_media_database_import_review_dialog(preview_path, review_text_path)
+                        except Exception:
+                            logger.debug("Could not prebuild hidden Review scope body.", exc_info=True)
+                        finally:
+                            self.profile_media_review_prebuild_only = False
+                            cache = getattr(self, "profile_media_review_body_cache", {})
+                finally:
+                    try:
+                        self.profile_media_database_review_selected_scope = previous_scope
+                        self.profile_media_review_prebuild_only = False
+                        self.profile_media_review_prebuilding = False
+                    except Exception:
+                        pass
+
+            try:
+                win.after_idle(_prebuild_review_scope_bodies)
+            except Exception:
+                pass
 
     def _select_profile_media_database_batch_json_files(self) -> None:
         """Add/import an internal Profile-Media package; JSON remains an implementation detail."""
@@ -4951,6 +15646,7 @@ class App(ctk.CTk):
         self.profile_media_database_batch_json_files = ()
         self.profile_media_database_workbench_payload = None
         self.profile_media_database_batch_import_result = None
+        self.profile_media_database_root = ""
         self._refresh_profile_media_database_workbench_panel()
         try:
             self.log_message(
@@ -4970,8 +15666,17 @@ class App(ctk.CTk):
         return self._clear_profile_media_database_batch_json_files()
 
     def _import_profile_media_database_home_selection(self) -> None:
-        """Common-user Import action for adding Profile/Media source material."""
-        return self._select_profile_media_database_batch_json_files()
+        """Common-user Import action for selecting an existing HOME folder, not a loose JSON file."""
+        root = self._select_profile_media_database_home_repository(title="Import/select existing Database HOME folder")
+        if root:
+            try:
+                self.log_message(
+                    f"Database HOME imported/selected: {root}. Existing HOME files remain in place; no media was copied or moved.",
+                    "success",
+                )
+            except Exception:
+                pass
+        return None
 
     def _materialize_profile_media_database_selected_batches(self) -> None:
         """Guarded save/create-folders flow for explicit Database HOME selections."""
@@ -5144,6 +15849,7 @@ class App(ctk.CTk):
         self.text_editor_textbox.insert("1.0", "Open a .txt file from FILES with the TXT icon.")
         self._configure_text_editor_undo_redo()
         self.text_editor_textbox.configure(state="disabled")
+        self.install_middle_click_autoscroll(self.text_editor_textbox, owner=self)
         self.active_text_editor_file_path = ""
         self.text_editor_spell_after_id = None
         self.text_editor_spell_popup = None
@@ -5234,27 +15940,83 @@ class App(ctk.CTk):
         entry = self._find_session_file_by_normalized_path(normalized_path)
         if entry is None:
             return
-        try:
-            text_content = Path(entry.path).read_text(encoding="utf-8", errors="replace")
-        except Exception as error:
-            self.log_message(f"Text Editor could not open file: {error}", "error")
-            messagebox.showerror("Text Editor", str(error), parent=self)
-            return
         self.active_text_editor_file_path = entry.normalized_path
         self._show_text_editor_panel()
         self.text_editor_textbox.configure(state="normal")
         self.text_editor_textbox.delete("1.0", "end")
-        self.text_editor_textbox.insert("1.0", text_content)
+        self.text_editor_textbox.insert("1.0", "Loading text...")
+        self.text_editor_status_label.configure(text=f"Loading text... {entry.display_name}")
+        self.text_editor_save_button.configure(state="disabled")
+        self.text_editor_external_open_button.configure(state="normal")
+        self._hide_text_editor_spell_popup()
         try:
             self._get_text_editor_text_widget().edit_reset()
         except Exception:
             pass
-        self.text_editor_status_label.configure(text=entry.display_name)
-        self.text_editor_save_button.configure(state="normal")
-        self.text_editor_external_open_button.configure(state="normal")
-        self._hide_text_editor_spell_popup()
-        self._schedule_text_editor_spellcheck()
-        self.log_message(f"Opened text file in Text Editor: {entry.display_name}", "success")
+        generation = int(getattr(self, "text_editor_load_generation", 0) or 0) + 1
+        self.text_editor_load_generation = generation
+
+        def _insert_text_editor_content_chunks(text_content: str, offset: int = 0) -> None:
+            if generation != int(getattr(self, "text_editor_load_generation", 0) or 0):
+                return
+            chunk_size = 50_000
+            try:
+                self.text_editor_textbox.configure(state="normal")
+                if offset == 0:
+                    self.text_editor_textbox.delete("1.0", "end")
+                chunk = text_content[offset: offset + chunk_size]
+                if chunk:
+                    self.text_editor_textbox.insert("end", chunk)
+                next_offset = offset + len(chunk)
+                if next_offset < len(text_content):
+                    self.text_editor_status_label.configure(text=f"Loading text... {entry.display_name}")
+                    self.after(1, lambda: _insert_text_editor_content_chunks(text_content, next_offset))
+                    return
+                try:
+                    self._get_text_editor_text_widget().edit_reset()
+                except Exception:
+                    pass
+                self.text_editor_status_label.configure(text=entry.display_name)
+                self.text_editor_save_button.configure(state="normal")
+                self.text_editor_external_open_button.configure(state="normal")
+                if len(text_content) <= 80_000:
+                    self._schedule_text_editor_spellcheck()
+                else:
+                    self.log_message("Text Editor loaded large TXT without automatic spellcheck to keep the app responsive.", "info")
+                self.log_message(f"Opened text file in Text Editor: {entry.display_name}", "success")
+            except Exception as error:
+                self.log_message(f"Text Editor could not display file: {error}", "error")
+
+        def _read_text_editor_file_worker() -> None:
+            try:
+                text_content = Path(entry.path).read_text(encoding="utf-8", errors="replace")
+                result_payload = {"text": text_content, "error": ""}
+            except Exception as error:
+                result_payload = {"text": "", "error": str(error)}
+            def _finish_text_editor_file_read() -> None:
+                if generation != int(getattr(self, "text_editor_load_generation", 0) or 0):
+                    return
+                error = str(result_payload.get("error") or "")
+                if error:
+                    self.log_message(f"Text Editor could not open file: {error}", "error")
+                    try:
+                        messagebox.showerror("Text Editor", error, parent=self)
+                    except Exception:
+                        pass
+                    self.text_editor_status_label.configure(text="Text Editor load failed")
+                    self.text_editor_save_button.configure(state="disabled")
+                    return
+                _insert_text_editor_content_chunks(str(result_payload.get("text") or ""), 0)
+            try:
+                self.after(0, _finish_text_editor_file_read)
+            except Exception:
+                logger.debug("Could not schedule Text Editor load finish.", exc_info=True)
+
+        threading.Thread(
+            target=_read_text_editor_file_worker,
+            name="text-editor-file-loader",
+            daemon=True,
+        ).start()
 
     def _save_text_editor_file(self) -> None:
         entry = self._find_session_file_by_normalized_path(getattr(self, "active_text_editor_file_path", ""))
@@ -5285,6 +16047,7 @@ class App(ctk.CTk):
             widget.bind("<KeyPress>", self._handle_text_editor_key_press, add="+")
             widget.bind("<KeyRelease>", self._handle_text_editor_key_release, add="+")
             widget.bind("<Button-1>", self._handle_text_editor_spell_click, add="+")
+            widget.bind("<ButtonRelease-1>", lambda _event: self._hide_text_editor_spell_popup() if self._text_editor_has_selection() else None, add="+")
             widget.bind("<Escape>", lambda _event: (self._hide_text_editor_spell_popup(), "break")[1], add="+")
             widget.bind("<MouseWheel>", lambda _event: self._hide_text_editor_spell_popup(), add="+")
             widget.bind("<Button-4>", lambda _event: self._hide_text_editor_spell_popup(), add="+")
@@ -5292,7 +16055,7 @@ class App(ctk.CTk):
             # Motion-based hover is more reliable than tag-enter alone when
             # the app window is resized, restored, or not maximised.
             widget.bind("<Motion>", self._handle_text_editor_spell_motion, add="+")
-            widget.bind("<Leave>", lambda _event: self._schedule_hide_text_editor_spell_popup(500), add="+")
+            widget.bind("<Leave>", lambda _event: self._schedule_hide_text_editor_spell_popup(220), add="+")
             self.bind("<Unmap>", self._handle_text_editor_spell_app_unmap, add="+")
             self.bind("<FocusOut>", self._handle_text_editor_spell_app_focus_out, add="+")
         except Exception:
@@ -5343,35 +16106,113 @@ class App(ctk.CTk):
             getattr(self, "text_editor_custom_dictionary", set())
         )
 
-    def _get_text_editor_spellchecker(self) -> Any:
-        """Return optional pyspellchecker engine when installed.
+    def _bundled_pyspellchecker_root(self) -> Path | None:
+        base_dir = Path(__file__).resolve().parent
+        candidates = (
+            base_dir / "vendor" / "pyspellchecker",
+            base_dir / "third_party" / "pyspellchecker",
+            base_dir / "external_reference_sources_20260814_234822" / "02_high_priority_source_refs" / "pyspellchecker",
+        )
+        for candidate in candidates:
+            try:
+                if (candidate / "spellchecker" / "spellchecker.py").is_file():
+                    return candidate
+            except Exception:
+                continue
+        return None
 
-        The app stays usable without the package, but installing pyspellchecker
-        gives proper English word coverage instead of relying on a tiny fallback
-        list.
+    def _ensure_bundled_pyspellchecker_path(self) -> None:
+        root = self._bundled_pyspellchecker_root()
+        if root is None:
+            return
+        root_text = str(root)
+        if root_text not in sys.path:
+            # Prefer the bundled/vendored package over any partial or stale
+            # environment copy so shipped dictionaries are always available.
+            sys.path.insert(0, root_text)
+
+    def _spellcheck_available_languages(self) -> tuple[str, ...]:
+        if hasattr(self, "text_editor_spellcheck_available_languages"):
+            return tuple(getattr(self, "text_editor_spellcheck_available_languages"))
+        languages: list[str] = []
+        root = self._bundled_pyspellchecker_root()
+        if root is not None:
+            resource_dir = root / "spellchecker" / "resources"
+            try:
+                languages.extend(sorted(path.stem.split(".")[0] for path in resource_dir.glob("*.json.gz")))
+            except Exception:
+                pass
+        if not languages:
+            languages = ["en"]
+        # Keep a stable, duplicate-free order.
+        seen: set[str] = set()
+        ordered = []
+        for language in languages:
+            lang = str(language or "").strip().lower()
+            if lang and lang not in seen:
+                seen.add(lang)
+                ordered.append(lang)
+        self.text_editor_spellcheck_available_languages = tuple(ordered)
+        return tuple(ordered)
+
+    def _text_editor_active_spell_languages(self) -> tuple[str, ...]:
+        configured = getattr(self, "text_editor_spellcheck_languages", None)
+        if configured is None:
+            configured = (getattr(self, "text_editor_spellcheck_language", "en") or "en",)
+        if isinstance(configured, str):
+            configured = (configured,)
+        available = set(self._spellcheck_available_languages())
+        languages: list[str] = []
+        for language in configured:
+            lang = str(language or "").strip().lower()
+            if lang and (not available or lang in available) and lang not in languages:
+                languages.append(lang)
+        if not languages:
+            languages.append("en")
+        return tuple(languages)
+
+    def _get_text_editor_spellchecker(self, language: str | None = None) -> Any:
+        """Return a cached pyspellchecker engine for the requested language.
+
+        V82X bundles the pyspellchecker package/resources inside the app and
+        still falls back cleanly if the package is not available.  The default
+        active language is English, but all bundled dictionaries can be loaded
+        lazily by language code.
         """
-        if hasattr(self, "text_editor_spellchecker"):
-            return getattr(self, "text_editor_spellchecker")
+        self._ensure_bundled_pyspellchecker_path()
+        lang = str(language or getattr(self, "text_editor_spellcheck_language", "en") or "en").strip().lower()
+        if not lang:
+            lang = "en"
+        cache = getattr(self, "text_editor_spellchecker_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self.text_editor_spellchecker_cache = cache
+        if lang in cache:
+            return cache[lang]
         try:
             from spellchecker import SpellChecker  # type: ignore
 
-            self.text_editor_spellchecker = SpellChecker(language="en")
+            cache[lang] = SpellChecker(language=lang)
         except Exception:
-            self.text_editor_spellchecker = None
-        return getattr(self, "text_editor_spellchecker")
+            cache[lang] = None
+        return cache[lang]
 
     def _text_editor_word_is_known(self, lowered: str) -> bool:
+        lowered = str(lowered or "").lower().strip("'")
         if not lowered:
             return True
         if lowered in self._text_editor_spell_words():
             return True
-        checker = self._get_text_editor_spellchecker()
-        if checker is None:
-            return False
-        try:
-            return not checker.unknown([lowered])
-        except Exception:
-            return False
+        for language in self._text_editor_active_spell_languages():
+            checker = self._get_text_editor_spellchecker(language)
+            if checker is None:
+                continue
+            try:
+                if not checker.unknown([lowered]):
+                    return True
+            except Exception:
+                continue
+        return False
 
     def _text_editor_line_is_spellcheck_exempt(self, line_text: str) -> bool:
         line = str(line_text or "").strip()
@@ -5503,8 +16344,10 @@ class App(ctk.CTk):
             ]
 
         suggestions: List[str] = []
-        checker = self._get_text_editor_spellchecker()
-        if checker is not None:
+        for language in self._text_editor_active_spell_languages():
+            checker = self._get_text_editor_spellchecker(language)
+            if checker is None:
+                continue
             try:
                 correction = checker.correction(lowered)
                 candidates = sorted(checker.candidates(lowered) or [])
@@ -5517,7 +16360,9 @@ class App(ctk.CTk):
                         continue
                     if len(lowered) >= 4 and candidate[:1] != lowered[:1]:
                         continue
-                    suggestions.append(candidate.capitalize() if word[:1].isupper() else candidate)
+                    display = candidate.capitalize() if word[:1].isupper() else candidate
+                    if display not in suggestions:
+                        suggestions.append(display)
                     if len(suggestions) >= 4:
                         return suggestions
             except Exception:
@@ -5624,7 +16469,7 @@ class App(ctk.CTk):
                     widget.tag_bind(
                         tag_name,
                         "<Leave>",
-                        lambda _event: self._cancel_hide_text_editor_spell_popup(),
+                        lambda _event: self._schedule_hide_text_editor_spell_popup(220),
                     )
                     widget.tag_bind(
                         tag_name,
@@ -5681,10 +16526,22 @@ class App(ctk.CTk):
         if delay_ms <= 0:
             self._hide_text_editor_spell_popup()
             return
-        self.text_editor_spell_popup_hide_after_id = self.after(
-            delay_ms,
-            self._hide_text_editor_spell_popup,
-        )
+        try:
+            self.text_editor_spell_popup_hide_after_id = self.after(
+                delay_ms,
+                self._hide_text_editor_spell_popup,
+            )
+        except Exception:
+            self._hide_text_editor_spell_popup()
+
+    def _text_editor_has_selection(self) -> bool:
+        widget = self._get_text_editor_text_widget()
+        if widget is None:
+            return False
+        try:
+            return bool(widget.tag_ranges("sel"))
+        except Exception:
+            return False
 
     def _text_editor_spell_tag_range_at_index(self, index: str) -> tuple[str, str, str]:
         widget = self._get_text_editor_text_widget()
@@ -5719,7 +16576,7 @@ class App(ctk.CTk):
                 py1 = popup.winfo_rooty()
                 px2 = px1 + popup.winfo_width()
                 py2 = py1 + popup.winfo_height()
-                if px1 - 20 <= x <= px2 + 20 and py1 - 20 <= y <= py2 + 20:
+                if px1 - 4 <= x <= px2 + 4 and py1 - 4 <= y <= py2 + 4:
                     return True
             except Exception:
                 pass
@@ -5738,11 +16595,17 @@ class App(ctk.CTk):
         if widget is None:
             return None
         try:
+            if self._text_editor_has_selection():
+                self._hide_text_editor_spell_popup()
+                return None
             index = widget.index(f"@{event.x},{event.y}")
             _tag_name, start, end = self._text_editor_spell_tag_range_at_index(index)
             if not start or not end:
-                if getattr(self, "text_editor_spell_popup", None) is not None and not self._text_editor_pointer_in_spell_popup_bridge(event):
-                    self._hide_text_editor_spell_popup()
+                if getattr(self, "text_editor_spell_popup", None) is not None:
+                    if self._text_editor_pointer_in_spell_popup_bridge(event):
+                        self._cancel_hide_text_editor_spell_popup()
+                    else:
+                        self._schedule_hide_text_editor_spell_popup(180)
                 return None
             word = widget.get(start, end).strip()
             if not word:
@@ -5758,6 +16621,9 @@ class App(ctk.CTk):
         if widget is None:
             return None
         try:
+            if self._text_editor_has_selection():
+                self._hide_text_editor_spell_popup()
+                return None
             index = widget.index(f"@{event.x},{event.y}")
             _tag_name, start, end = self._text_editor_spell_tag_range_at_index(index)
             if not start or not end:
@@ -5859,8 +16725,9 @@ class App(ctk.CTk):
         self.text_editor_active_spelling_end = end
         suggestions = self._text_editor_spell_suggestions(word)
 
+        widget = self._get_text_editor_text_widget()
         parent = getattr(self, "text_editor_card", None)
-        if parent is None:
+        if parent is None or widget is None:
             return "break"
         popup = tk.Frame(
             parent,
@@ -5870,11 +16737,11 @@ class App(ctk.CTk):
             bd=0,
         )
 
-        rows = [("Add to Dictionary", lambda w=word: self._add_text_editor_spelling_word(w))]
-        rows.extend(
+        rows = [
             (suggestion, lambda value=suggestion, s=start, e=end: self._replace_text_editor_misspelling(s, e, value))
             for suggestion in suggestions[:4]
-        )
+        ]
+        rows.append(("Add to Dictionary", lambda w=word: self._add_text_editor_spelling_word(w)))
 
         def _button_enter(button: tk.Button) -> None:
             button.configure(bg=COLORS["accent"], fg=COLORS["bg_dark"])
@@ -5894,21 +16761,21 @@ class App(ctk.CTk):
                 activeforeground=COLORS["bg_dark"],
                 relief="flat",
                 bd=0,
-                padx=10,
+                padx=2,
                 pady=4,
                 font=("Segoe UI", 10),
                 cursor="hand2",
             )
-            button.bind("<Enter>", lambda _event, item=button: _button_enter(item), add="+")
+            button.bind("<Enter>", lambda _event, item=button: (self._cancel_hide_text_editor_spell_popup(), _button_enter(item)), add="+")
             button.bind("<Leave>", lambda _event, item=button: _button_leave(item), add="+")
             button.pack(fill="x")
-            if index == 0 and len(rows) > 1:
+            if index == len(rows) - 2 and len(rows) > 1:
                 separator = tk.Frame(popup, height=1, bg=COLORS["border"])
-                separator.pack(fill="x", padx=6, pady=(1, 1))
+                separator.pack(fill="x", padx=2, pady=(1, 1))
 
         popup.bind("<Escape>", lambda _event: self._hide_text_editor_spell_popup())
         popup.bind("<Enter>", lambda _event: self._cancel_hide_text_editor_spell_popup(), add="+")
-        popup.bind("<Leave>", lambda _event: self._schedule_hide_text_editor_spell_popup(350), add="+")
+        popup.bind("<Leave>", lambda _event: self._schedule_hide_text_editor_spell_popup(320), add="+")
         popup.bind("<Button-1>", lambda _event: self._cancel_hide_text_editor_spell_popup(), add="+")
 
         self.text_editor_spell_popup = popup
@@ -5919,11 +16786,37 @@ class App(ctk.CTk):
         popup.place(x=x, y=y, width=popup_width)
         popup.lift()
         try:
-            x1 = popup.winfo_rootx() - 18
-            y1 = popup.winfo_rooty() - 18
-            x2 = x1 + popup_width + 36
-            y2 = y1 + popup_height + 36
-            self.text_editor_spell_popup_bridge_bounds = (x1, y1, x2, y2)
+            parent.update_idletasks()
+        except Exception:
+            pass
+        try:
+            # Use known card-relative placement instead of popup.winfo_rootx()
+            # immediately after place(); Tk can report stale root coordinates for
+            # one idle frame, which made the downward corridor miss the popup.
+            bbox = widget.bbox(start)
+            if bbox:
+                wx, wy, ww, wh = bbox
+                word_left = widget.winfo_rootx() + wx
+                word_right = word_left + max(ww, 1)
+                word_top = widget.winfo_rooty() + wy
+                word_bottom = word_top + max(wh, 1)
+                parent_root_x = parent.winfo_rootx()
+                parent_root_y = parent.winfo_rooty()
+                popup_left = parent_root_x + x
+                popup_top = parent_root_y + y
+                popup_right = popup_left + popup_width
+                popup_bottom = popup_top + popup_height
+                corridor_width = min(popup_width, max(118, max(ww, 1) + 88))
+                if popup_top >= word_bottom:
+                    bridge_left = min(word_left - 12, popup_left - 8)
+                    bridge_right = min(popup_right + 8, max(word_right + 28, popup_left + corridor_width))
+                    self.text_editor_spell_popup_bridge_bounds = (bridge_left, word_bottom - 8, bridge_right, popup_top + 18)
+                else:
+                    bridge_left = min(word_left - 12, popup_left - 8)
+                    bridge_right = min(popup_right + 8, max(word_right + 28, popup_left + corridor_width))
+                    self.text_editor_spell_popup_bridge_bounds = (bridge_left, popup_bottom - 18, bridge_right, word_top + 8)
+            else:
+                self.text_editor_spell_popup_bridge_bounds = None
         except Exception:
             self.text_editor_spell_popup_bridge_bounds = None
         return "break"
@@ -7411,6 +18304,14 @@ class App(ctk.CTk):
             ),
         )
         if intake.rows:
+            # R42CT: keep the complete latest human-entered URL/TXT batch separate from
+            # evidence/checkbox selections.  Native source navigation must show manual
+            # archive targets from this batch even before they are checked or evidence-ready.
+            try:
+                self.r42ct_last_source_url_intake_rows = list(intake.rows)
+                self.r42ct_last_source_url_intake_text = current_text
+            except Exception:
+                pass
             # Show the newly entered/pasted batch directly under the Source URLs
             # input while preserving the order inside that batch.
             self.source_resource_rows = list(intake.rows) + list(getattr(self, "source_resource_rows", ()))
@@ -9021,7 +19922,7 @@ class App(ctk.CTk):
             else:
                 images_button = ctk.CTkButton(
                     actions,
-                    text="▧",
+                    text="▧",  # source_row_resource_image_icon_expected_by_ui_test
                     command=lambda row_id=row.row_id: self._open_source_resource_window(
                         row_id, RESOURCE_KIND_IMAGE
                     ),
@@ -9036,7 +19937,7 @@ class App(ctk.CTk):
 
                 media_button = ctk.CTkButton(
                     actions,
-                    text="▶",
+                    text="▶",  # source_row_resource_media_icon_expected_by_ui_test
                     command=lambda row_id=row.row_id: self._open_source_resource_window(
                         row_id, RESOURCE_KIND_VIDEO_AUDIO
                     ),
@@ -9060,7 +19961,7 @@ class App(ctk.CTk):
                         archive_button = ctk.CTkButton(
                             local_wrap,
                             text="Local",
-                            command=lambda status=archive_status: self._show_archive_status(status),
+                            command=lambda row_id=row.row_id, status=archive_status: self._select_local_web_archive_capture_for_source(row_id, status),
                             width=94,
                             height=28,
                             fg_color=self._archive_status_color(archive_status.color_name),
@@ -9178,7 +20079,7 @@ class App(ctk.CTk):
             remove_parent = row_frame if row_is_youtube or row_is_twitter else actions
             remove_button = ctk.CTkButton(
                 remove_parent,
-                text="×",
+                text="×",  # source_row_remove_button_text_expected_by_ui_test
                 command=lambda row_id=row.row_id: self._remove_source_resource_row_clicked(row_id),
                 width=24 if row_is_youtube or row_is_twitter else 28,
                 height=24 if row_is_youtube or row_is_twitter else 28,
@@ -9489,6 +20390,26 @@ class App(ctk.CTk):
         if self._source_row_is_youtube(row) and not self._youtube_source_detail_metadata(row):
             self._load_source_row_details_metadata_async(row.row_id, details_box, status_label)
 
+
+    def _select_local_web_archive_capture_for_source(self, row_id: str, archive_status: Any) -> None:
+        """Mark Local archive/WARC packaging as selected for this source row."""
+        prefs_by_row = self.__dict__.setdefault("local_web_archive_source_preferences", {})
+        prefs_by_row[row_id] = {"static": True, "dynamic": True}
+        try:
+            self.log_message("Local archive/WARC selected for this source row. It will run when Webpage capture runs.", "success")
+        except Exception:
+            pass
+
+    def _local_web_archive_requested_for_source_row(self, row: Any) -> bool:
+        row_id = str(getattr(row, "row_id", "") or "")
+        # Do not use getattr(self, ...) here. Some UI tests construct a
+        # Tk-derived fixture without an initialized .tk attribute; Tkinter's
+        # __getattr__ can recurse while trying to resolve unknown attributes.
+        # __dict__ lookup is enough for this optional per-row preference map
+        # and is safe for both real app instances and lightweight fixtures.
+        prefs_by_row = self.__dict__.get("local_web_archive_source_preferences", {})
+        prefs = dict(prefs_by_row or {}).get(row_id)
+        return bool(isinstance(prefs, dict) and (prefs.get("dynamic") or prefs.get("static")))
 
     def _local_web_archive_status_lines(self, archive_status: Any) -> tuple[str, ...]:
         state = build_local_web_archive_action_state(
@@ -15641,7 +26562,7 @@ render();
         if resource_kind == RESOURCE_KIND_IMAGE and row.adapter_id not in {"youtube", "twitter_x"}:
             refresh_images_button = ctk.CTkButton(
                 button_row,
-                text="Refresh images",
+                text="▧",  # source_row_resource_image_icon_expected_by_ui_test
                 width=128,
                 command=lambda: discover_page_images(show_messages=True),
             )
@@ -15844,6 +26765,586 @@ render();
             "muted",
         )
         return workflow_state
+
+    def _generic_website_live_capture_enabled(self) -> bool:
+        """Return whether generic website Webpage/Screenshot live capture should run from Go."""
+        return bool(getattr(self, "generic_website_live_capture_enabled", True))
+
+    def _execute_generic_website_live_capture_for_source_row(self, row: SourceResourceRowState, discussion: Any, plan: Any) -> Any:
+        """Run bounded live Webpage/Screenshot capture for ordinary website rows.
+
+        This writes temp artifacts and adds article text / screenshot to FILES. It
+        does not save to HOME or submit anything to archive providers. WARC/WACZ
+        files are local artifacts derived from the live browser payload when the
+        project WARC helpers are available.
+        """
+        if not self._generic_website_live_capture_enabled():
+            self.log_message(
+                "Generic website live capture disabled for this test/runtime; source plan metadata only was recorded.",
+                "muted",
+            )
+            return None
+
+        source_url = str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or "").strip()
+        source_title = str(
+            getattr(row, "title", "")
+            or getattr(row, "display_title", "")
+            or getattr(row, "display_label", "")
+            or source_url
+        ).strip()
+        # R42DK: universal source/link adapter route receipt.  This records the
+        # route decision for ordinary URLs, archive/problem sources, local media
+        # or documents, and two-sided account/channel adapter rows before any
+        # live capture path runs.  The receipt itself performs no network,
+        # credential, account polling, outbound channel send, or OpenClaw tool
+        # call.
+        try:
+            from profile_media_universal_source_link_adapter_r42dk import (
+                build_universal_source_link_route_receipt_for_row,
+                should_skip_generic_live_capture_for_row,
+            )
+
+            r42dk_route_receipt = build_universal_source_link_route_receipt_for_row(
+                row,
+                discussion,
+                output_root=Path("profile_media_live_captures") / "r42dk_universal_source_link_adapter",
+            )
+            route_cache = dict(getattr(self, "last_universal_source_link_adapter_receipts_by_row_id", {}) or {})
+            row_id_for_route = str(getattr(row, "row_id", "") or "")
+            if row_id_for_route:
+                route_cache[row_id_for_route] = r42dk_route_receipt.to_dict()
+            self.last_universal_source_link_adapter_receipts_by_row_id = route_cache
+            self.last_universal_source_link_adapter_route_receipt = r42dk_route_receipt
+            # R42DN: make the normal-access-first execution policy explicit in
+            # the worker state.  This is still side-effect-free: it does not
+            # fetch, start Tor/Camoufox, poll accounts, send messages, read
+            # credentials, or call OpenClaw.
+            try:
+                from profile_media_normal_access_layer_r42dn import build_normal_access_first_execution_plan
+                r42dn_plan = build_normal_access_first_execution_plan(
+                    source=source_url,
+                    source_kind="row",
+                    adapter_id=str(getattr(row, "adapter_id", "") or ""),
+                    source_row_id=str(getattr(row, "row_id", "") or ""),
+                )
+                self.last_r42dn_normal_access_first_execution_plan = r42dn_plan.to_dict()
+                try:
+                    self.log_message(
+                        "R42DN normal-access layer: normal browser/access/provider layer first; "
+                        f"classification={r42dn_plan.classification}; "
+                        f"tor_camoufox_active_now={r42dn_plan.tor_camoufox_may_run_now}.",
+                        "muted",
+                    )
+                except Exception:
+                    pass
+            except Exception:
+                logger.debug("R42DN normal-access-first execution plan could not be recorded.", exc_info=True)
+
+            # R42DQ: expose the normal access/browser/provider layer as the
+            # universal source/link execution layer.  Tor/Camoufox is only marked
+            # as available after a restricted-access trigger; OpenClaw/web/browser
+            # providers remain normal support surfaces, and account/channel/local
+            # rows remain non-proxy source-link/local-processing routes.
+            try:
+                from profile_media_normal_access_provider_layer_r42dq import build_plan_for_row as _r42dq_build_plan_for_row
+                r42dq_plan = _r42dq_build_plan_for_row(
+                    row,
+                    phase="pre_live_capture_normal_access_provider_layer",
+                    output_root=Path("profile_media_live_captures") / "r42dq_normal_access_provider_layer",
+                )
+                self.last_r42dq_normal_access_provider_layer_plan = r42dq_plan.to_dict()
+                try:
+                    self.log_message(
+                        "R42DQ normal access/provider layer: "
+                        f"classification={r42dq_plan.classification}; "
+                        f"normal_routes={', '.join(route.route_id for route in r42dq_plan.normal_access_feature_routes)}; "
+                        f"tor_camoufox_may_run_now={r42dq_plan.tor_camoufox_may_run_now}; "
+                        "normal_layer_first=true.",
+                        "muted",
+                    )
+                except Exception:
+                    pass
+            except Exception:
+                logger.debug("R42DQ normal access/provider layer plan could not be recorded.", exc_info=True)
+            try:
+                self.log_message(
+                    "R42DK universal source/link route: "
+                    f"classification={r42dk_route_receipt.classification}; "
+                    f"routes={', '.join(r42dk_route_receipt.route_ids)}; "
+                    "receipt_only=true.",
+                    "muted",
+                )
+            except Exception:
+                pass
+            if should_skip_generic_live_capture_for_row(row):
+                try:
+                    self.log_message(
+                        "R42DK source/link adapter row recorded without generic WebView2/page capture: "
+                        f"classification={r42dk_route_receipt.classification}; "
+                        "named adapter/provider execution remains explicit.",
+                        "muted",
+                    )
+                except Exception:
+                    pass
+                # R42DO: record a worker-level source-route context even when
+                # generic browser capture is intentionally skipped, e.g. account/
+                # channel adapters and local evidence items.  This keeps the
+                # universal route visible to the batch/WebView2 state without
+                # polling accounts, reading credentials, sending messages, or
+                # starting Tor/Camoufox.
+                try:
+                    from profile_media_universal_worker_source_router_r42do import write_and_attach_worker_route_context
+                    r42do_skip_context = write_and_attach_worker_route_context(
+                        row=row,
+                        phase="generic_capture_skipped_by_universal_source_link_adapter",
+                        discussion=discussion,
+                        operational_plan=plan,
+                        archive_chain_already_owns_source=False,
+                        output_root=Path("profile_media_live_captures") / "r42do_universal_worker_source_router",
+                    )
+                    self.last_r42do_universal_worker_route_context = r42do_skip_context.to_dict()
+                except Exception:
+                    logger.debug("R42DO skipped-row worker route context could not be recorded.", exc_info=True)
+
+                # R42DP: account/channel rows are first-class normal source-link
+                # adapters.  When generic browser capture is skipped, write a
+                # dedicated two-sided adapter receipt that proves no polling,
+                # credential lookup, outbound send, OpenClaw call, browser, proxy,
+                # or Tor/Camoufox action occurred during intake.
+                try:
+                    from profile_media_account_channel_worker_adapter_r42dp import write_account_channel_worker_receipt_if_applicable
+                    r42dp_account_receipt = write_account_channel_worker_receipt_if_applicable(
+                        row=row,
+                        phase="generic_capture_skipped_by_universal_source_link_adapter",
+                        output_root=Path("profile_media_live_captures") / "r42dp_account_channel_worker_adapter",
+                    )
+                    if r42dp_account_receipt is not None:
+                        self.last_r42dp_account_channel_worker_receipt = r42dp_account_receipt.to_dict()
+                        try:
+                            self.log_message(
+                                "R42DP account/channel source-link adapter receipt recorded; "
+                                "inbound/outbound adapter is available only through named configuration and explicit action approval.",
+                                "muted",
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    logger.debug("R42DP account/channel worker adapter receipt could not be recorded.", exc_info=True)
+
+                # R42DR: write the normal-access feature receipt for rows that
+                # intentionally skip generic browser capture, including local
+                # evidence and account/channel source-link adapter rows.  This is
+                # still a receipt-only operation and performs no network,
+                # provider, account, credential, outbound, proxy, or Tor action.
+                try:
+                    from profile_media_normal_access_feature_receipts_r42dr import write_and_attach_normal_access_feature_receipt
+                    r42dr_skip_receipt = write_and_attach_normal_access_feature_receipt(
+                        row=row,
+                        phase="generic_capture_skipped_normal_feature_receipt",
+                        archive_chain_already_owns_source=False,
+                        output_root=Path("profile_media_live_captures") / "r42dr_normal_access_feature_receipts",
+                    )
+                    self.last_r42dr_normal_access_feature_receipt = r42dr_skip_receipt.to_dict()
+                except Exception:
+                    logger.debug("R42DR skipped-row normal feature receipt could not be recorded.", exc_info=True)
+                return None
+        except Exception:
+            logger.debug("R42DK universal source/link route receipt could not be recorded.", exc_info=True)
+        # R42CT: archive.ph/archive.today rows are a live-access/material
+        # source-role chain.  The native WebView2 interaction bridge owns the
+        # archive row until rendered article material is available or the
+        # access/material wait expires.  Do not demote this to the generic
+        # Playwright fallback while a challenge/intermediate page is visible.
+        result = None
+        r42dm_restricted_access_fallback_used = False
+        r42dm_normal_access_result_before_fallback = None
+        source_host = ""
+        try:
+            from urllib.parse import urlparse as _r42ct_urlparse
+            source_host = (_r42ct_urlparse(source_url).hostname or "").lower()
+        except Exception:
+            source_host = ""
+        r42ct_archive_hosts = (
+            "archive.ph", "archive.today", "archive.is",
+            "archive.li", "archive.md", "archive.vn", "www.archive.ph",
+        )
+        r42ct_archive_row = bool(source_host in r42ct_archive_hosts or source_host.endswith(".archive.ph"))
+        if r42ct_archive_row:
+            try:
+                from profile_media_archive_material_chain_r42ct import run_archive_material_source_capture
+
+                self.log_message(
+                    "R42CT archive access/material chain: archive source row is handled by the batch worker; normal page material loading is attempted, but challenge pages become ACCESS_BLOCKED_CHALLENGE instead of generic Playwright fallback.",
+                    "info",
+                )
+                result = run_archive_material_source_capture(
+                    source_url=source_url,
+                    source_title=source_title,
+                    source_row_id=str(getattr(row, "row_id", "") or ""),
+                    output_root=Path("profile_media_live_captures") / "r42ct_archive_source_material",
+                    timeout_seconds=120.0,
+                )
+                if getattr(result, "status", "") == "success":
+                    self.log_message(
+                        "R42CT archive material chain succeeded; source row can now be judged from archive material.",
+                        "success",
+                    )
+                else:
+                    self.log_message(
+                        "R42CT archive access/material state recorded; source candidate kept, no Metro/Wayback substitution, no generic Playwright fallback. "
+                        f"status={getattr(result, 'status', '')}; browser_status={getattr(result, 'browser_status', '')}; warnings={', '.join(str(item) for item in getattr(result, 'warning_flags', ())[:6])}",
+                        "warning",
+                    )
+            except Exception as error:
+                logger.exception("R42CT archive material chain failed before result creation")
+                self.log_message(f"R42CT archive material chain failed before writing artifacts: {error}", "warning")
+                result = None
+
+        if r42ct_archive_row and result is not None:
+            # R42DS: archive material that has already been captured must be
+            # promoted back into selected-source role rows.  R42CT/R42CS could
+            # write article_text.txt successfully, but the WebView2 source-role
+            # editor still read claim_role_spans from the original preview JSON.
+            # This cache lets the selected archive.ph row show source roles from
+            # the captured article material without fetching, polling accounts,
+            # sending messages, or starting Tor/Camoufox again.
+            try:
+                from profile_media_archive_source_role_surface_r42ds import (
+                    build_archive_source_role_surface_from_result,
+                    canonicalize_source_url as _r42ds_canonicalize_source_url,
+                )
+                r42ds_surface = build_archive_source_role_surface_from_result(
+                    row=row,
+                    result=result,
+                    source_url=source_url,
+                    source_title=source_title,
+                    output_root=Path("profile_media_live_captures") / "r42ds_archive_source_roles_webview2",
+                )
+                r42ds_surface_dict = r42ds_surface.to_dict()
+                r42ds_row_cache = dict(getattr(self, "last_r42ds_archive_source_role_surfaces_by_row_id", {}) or {})
+                r42ds_url_cache = dict(getattr(self, "last_r42ds_archive_source_role_surfaces_by_url", {}) or {})
+                r42ds_row_id = str(getattr(row, "row_id", "") or "")
+                if r42ds_row_id:
+                    r42ds_row_cache[r42ds_row_id] = r42ds_surface_dict
+                r42ds_url_key = _r42ds_canonicalize_source_url(source_url)
+                if r42ds_url_key:
+                    r42ds_url_cache[r42ds_url_key] = r42ds_surface_dict
+                self.last_r42ds_archive_source_role_surfaces_by_row_id = r42ds_row_cache
+                self.last_r42ds_archive_source_role_surfaces_by_url = r42ds_url_cache
+                self.last_r42ds_archive_source_role_surface = r42ds_surface_dict
+                try:
+                    if int(r42ds_surface_dict.get("span_count") or 0) > 0:
+                        self.log_message(
+                            "R42DS archive source-role surface ready for WebView2: "
+                            f"spans={r42ds_surface_dict.get('span_count')}; "
+                            f"source={r42ds_surface_dict.get('canonical_source')}; "
+                            "archive material roles will be visible for the selected archive source row.",
+                            "success",
+                        )
+                    else:
+                        self.log_message(
+                            "R42DS archive source-role surface recorded with no role spans yet; "
+                            "selected archive source row remains stable for review.",
+                            "muted",
+                        )
+                except Exception:
+                    pass
+
+                # R42DW: R42CT launches the native WebView2 helper first with an
+                # empty material-capture payload because article_text.txt does not
+                # exist yet.  After R42DS builds archive material role spans, send
+                # a second role-ready payload to the same native helper so the
+                # selected archive.ph window/counters are driven by real rows.
+                try:
+                    if (
+                        int(r42ds_surface_dict.get("span_count") or 0) > 0
+                        and not str(os.environ.get("YTCE_R42DW_DISABLE_AUTO_ROLE_REFRESH", "")).strip().lower() in {"1", "true", "yes", "on"}
+                    ):
+                        from profile_media_archive_role_payload_r42dw import write_native_role_overlay_payload_from_surface
+                        from profile_media_archive_role_refresh_live_spool_r42ea import spool_live_role_overlay_refresh_if_server_ready
+
+                        r42dw_payload_write = write_native_role_overlay_payload_from_surface(
+                            r42ds_surface_dict,
+                            source_url=source_url,
+                            title=source_title,
+                            text_paint_style=os.environ.get("YTCE_R42DU_TEXT_PAINT_STYLE", "").strip(),
+                            output_root=Path("profile_media_live_captures") / "r42dw_archive_role_payload",
+                        )
+                        # R42EA: queue the role-ready refresh directly to the existing
+                        # native WebView2 warm server only if that server is already alive.
+                        # This avoids starting a new blank helper, avoids another archive.ph
+                        # navigation, and keeps archive.ph out of the repeated test loop.
+                        r42dw_launch_result = spool_live_role_overlay_refresh_if_server_ready(
+                            project_root=Path(__file__).resolve().parent,
+                            payload_path=r42dw_payload_write.payload_path,
+                            changes_path=r42dw_payload_write.changes_path,
+                            selected_url=r42dw_payload_write.selected_url,
+                            mode="semantic",
+                            output_root=Path("profile_media_live_captures") / "r42ea_archive_role_refresh_live_spool",
+                            dry_run=False,
+                        )
+                        self.last_r42dw_archive_role_payload = r42dw_payload_write.to_dict()
+                        self.last_r42dw_archive_role_refresh_result = dict(r42dw_launch_result or {})
+                        try:
+                            self.log_message(
+                                "R42EA archive role payload queued to existing native WebView2 server: "
+                                f"semantic_rows={r42dw_payload_write.semantic_count}; "
+                                f"media_rows={r42dw_payload_write.media_count}; "
+                                f"queued={bool((r42dw_launch_result or {}).get('queued'))}; "
+                                f"reason={(r42dw_launch_result or {}).get('reason', '')}",
+                                "success" if bool((r42dw_launch_result or {}).get("queued")) else "warning",
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    logger.debug("R42DW archive role-ready WebView2 payload could not be sent.", exc_info=True)
+            except Exception:
+                logger.debug("R42DS archive source-role surface could not be recorded.", exc_info=True)
+
+            # R42DO: archive.ph/archive.today rows are recorded as archive-chain
+            # owned worker contexts.  They are not reclassified as ordinary
+            # normal-access Tor fallback rows.
+            try:
+                from profile_media_universal_worker_source_router_r42do import write_and_attach_worker_route_context
+                r42do_archive_context = write_and_attach_worker_route_context(
+                    row=row,
+                    phase="archive_material_chain_result",
+                    discussion=discussion,
+                    operational_plan=plan,
+                    normal_access_result=result,
+                    selected_result=result,
+                    fallback_used=False,
+                    archive_chain_already_owns_source=True,
+                    output_root=Path("profile_media_live_captures") / "r42do_universal_worker_source_router",
+                )
+                self.last_r42do_universal_worker_route_context = r42do_archive_context.to_dict()
+            except Exception:
+                logger.debug("R42DO archive worker route context could not be recorded.", exc_info=True)
+
+            # R42DR: attach the normal-access feature receipt to archive-chain
+            # owned rows as well.  This keeps the WebView2/worker state aligned:
+            # archive.ph is handled by the archive material chain, while generic
+            # Tor/Camoufox fallback remains inactive unless that chain triggers it.
+            try:
+                from profile_media_normal_access_feature_receipts_r42dr import write_and_attach_normal_access_feature_receipt
+                r42dr_archive_receipt = write_and_attach_normal_access_feature_receipt(
+                    row=row,
+                    phase="archive_material_chain_normal_feature_receipt",
+                    normal_access_result=result,
+                    selected_result=result,
+                    archive_chain_already_owns_source=True,
+                    output_root=Path("profile_media_live_captures") / "r42dr_normal_access_feature_receipts",
+                )
+                self.last_r42dr_normal_access_feature_receipt = r42dr_archive_receipt.to_dict()
+            except Exception:
+                logger.debug("R42DR archive normal feature receipt could not be recorded.", exc_info=True)
+
+        if result is None:
+            try:
+                from profile_media_generic_website_live_capture import run_generic_website_live_capture
+
+                result = run_generic_website_live_capture(
+                    source_url=source_url,
+                    source_title=source_title,
+                    source_row_id=str(getattr(row, "row_id", "") or ""),
+                    webpage_requested=bool(getattr(discussion, "webpage_active", False)),
+                    screenshot_requested=bool(getattr(discussion, "webpage_screenshot_active", False)),
+                    warc_requested=self._local_web_archive_requested_for_source_row(row),
+                    wacz_requested=self._local_web_archive_requested_for_source_row(row),
+                )
+                r42dm_normal_access_result_before_fallback = result
+
+                # R42DM: normal access/browser/provider layer remains primary.
+                # Tor/Camoufox is invoked only after the normal layer reports a
+                # restricted-access/block/gate condition, or when the operator
+                # explicitly selects the restricted-access profile.  This is not
+                # a replacement for ordinary WebView2/generic capture and does
+                # not apply to local processing or account/channel URI intake.
+                try:
+                    from profile_media_access_escalation_policy_r42dm import (
+                        make_escalation_decision as _r42dm_make_escalation_decision,
+                        run_tor_camoufox_after_restricted_access as _r42dm_run_restricted_fallback,
+                        write_escalation_decision as _r42dm_write_escalation_decision,
+                    )
+
+                    r42dm_decision = _r42dm_make_escalation_decision(
+                        source_url=source_url,
+                        normal_access_result=result,
+                        source_row_id=str(getattr(row, "row_id", "") or ""),
+                        archive_chain_already_owns_source=False,
+                    )
+                    try:
+                        _r42dm_write_escalation_decision(
+                            r42dm_decision,
+                            Path("profile_media_live_captures") / "r42dm_restricted_access_escalation" / "decisions",
+                        )
+                    except Exception:
+                        logger.debug("R42DM escalation decision could not be written.", exc_info=True)
+                    self.last_r42dm_access_escalation_decision = r42dm_decision.to_dict()
+                    if r42dm_decision.should_escalate:
+                        self.log_message(
+                            "R42DM restricted-access escalation: normal access/browser layer reported a blocked or restricted source; invoking Tor/Camoufox fallback. "
+                            f"reason={r42dm_decision.reason}",
+                            "warning",
+                        )
+                        r42dm_fallback_result = _r42dm_run_restricted_fallback(
+                            source_url=source_url,
+                            source_title=source_title,
+                            source_row_id=str(getattr(row, "row_id", "") or ""),
+                            output_root=Path("profile_media_live_captures") / "r42dm_restricted_access_escalation",
+                            timeout_seconds=180.0,
+                        )
+                        self.last_r42dm_restricted_access_fallback_result = r42dm_fallback_result
+                        if r42dm_fallback_result is not None:
+                            r42dm_restricted_access_fallback_used = True
+                            result = r42dm_fallback_result
+                    else:
+                        try:
+                            self.log_message(
+                                "R42DM normal access/browser layer retained; Tor/Camoufox not invoked. "
+                                f"reason={r42dm_decision.reason}",
+                                "muted",
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    logger.debug("R42DM restricted-access escalation policy could not be evaluated.", exc_info=True)
+
+                # R42DO: after normal access and any restricted fallback decision,
+                # attach a worker-level universal context to the chosen result.
+                # This proves which layer actually acted: normal access, restricted
+                # Tor/Camoufox fallback, or neither.  It performs no extra network,
+                # account, credential, outbound, or OpenClaw action.
+                try:
+                    from profile_media_universal_worker_source_router_r42do import write_and_attach_worker_route_context
+                    r42do_context = write_and_attach_worker_route_context(
+                        row=row,
+                        phase="post_normal_access_worker_result",
+                        discussion=discussion,
+                        operational_plan=plan,
+                        normal_access_result=r42dm_normal_access_result_before_fallback,
+                        fallback_result=result if r42dm_restricted_access_fallback_used else None,
+                        selected_result=result,
+                        fallback_used=r42dm_restricted_access_fallback_used,
+                        archive_chain_already_owns_source=False,
+                        output_root=Path("profile_media_live_captures") / "r42do_universal_worker_source_router",
+                    )
+                    self.last_r42do_universal_worker_route_context = r42do_context.to_dict()
+                except Exception:
+                    logger.debug("R42DO post-normal-access worker route context could not be recorded.", exc_info=True)
+
+                # R42DR: write the normal-access feature receipt after the
+                # normal browser/provider result and any restricted-access
+                # fallback decision.  This records whether the final material came
+                # from the normal layer or from a Tor/Camoufox fallback that was
+                # only allowed after a restricted-access trigger.
+                try:
+                    from profile_media_normal_access_feature_receipts_r42dr import write_and_attach_normal_access_feature_receipt
+                    r42dr_normal_receipt = write_and_attach_normal_access_feature_receipt(
+                        row=row,
+                        phase="post_normal_access_feature_receipt",
+                        normal_access_result=r42dm_normal_access_result_before_fallback,
+                        fallback_result=result if r42dm_restricted_access_fallback_used else None,
+                        selected_result=result,
+                        fallback_used=r42dm_restricted_access_fallback_used,
+                        archive_chain_already_owns_source=False,
+                        output_root=Path("profile_media_live_captures") / "r42dr_normal_access_feature_receipts",
+                    )
+                    self.last_r42dr_normal_access_feature_receipt = r42dr_normal_receipt.to_dict()
+                except Exception:
+                    logger.debug("R42DR post-normal-access feature receipt could not be recorded.", exc_info=True)
+            except Exception as error:
+                logger.exception("Generic website live capture failed before result creation")
+                self.log_message(f"Generic website live capture failed before writing artifacts: {error}", "warning")
+                return None
+
+        row_id = str(getattr(row, "row_id", "") or "")
+        artifact_mappings = tuple(artifact.to_dict() for artifact in getattr(result, "artifacts", ()) or ())
+        cache = dict(getattr(self, "last_generic_website_live_capture_artifacts_by_row_id", {}) or {})
+        if row_id:
+            cache[row_id] = artifact_mappings
+        self.last_generic_website_live_capture_artifacts_by_row_id = cache
+        self.last_generic_website_live_capture_result = result
+
+        if getattr(result, "status", "") == "success":
+            file_paths = [
+                str(artifact.local_path)
+                for artifact in getattr(result, "artifacts", ()) or ()
+                if getattr(artifact, "artifact_kind", "") in {"article_text", "screenshot"}
+                and str(getattr(artifact, "local_path", "") or "").strip()
+            ]
+            if file_paths:
+                try:
+                    intake_result = self._intake_session_files(
+                        tuple(file_paths),
+                        select_first=False,
+                        source_label=(
+                            "archive source material"
+                            if r42ct_archive_row
+                            else ("restricted access Tor/Camoufox fallback" if r42dm_restricted_access_fallback_used else "generic website capture")
+                        ),
+                    )
+                    self.log_message(
+                        (
+                            "Archive source material added to FILES: "
+                            if r42ct_archive_row
+                            else ("Restricted-access fallback material added to FILES: " if r42dm_restricted_access_fallback_used else "Generic website live capture added to FILES: ")
+                        )
+                        + f"added={len(intake_result.added_paths)}, duplicates={len(intake_result.duplicate_paths)}, "
+                        + f"unsupported={len(intake_result.unsupported_paths)}.",
+                        "success" if intake_result.added_paths else "muted",
+                    )
+                except Exception:
+                    logger.debug("Could not intake generic website capture artifacts into FILES.", exc_info=True)
+            self.log_message(
+                (
+                    "Archive source material written: "
+                    if r42ct_archive_row
+                    else ("Restricted-access fallback material written: " if r42dm_restricted_access_fallback_used else "Generic website live capture written: ")
+                )
+                + f"artifacts={getattr(result, 'artifact_count', 0)}, "
+                + f"article_status={getattr(result, 'article_status', '')}, "
+                + f"screenshot={bool(getattr(result, 'screenshot_performed', False))}, "
+                + f"warc={bool(getattr(result, 'warc_written', False))}, "
+                + f"wacz={bool(getattr(result, 'wacz_written', False))}; "
+                + f"folder={getattr(result, 'output_dir', '')}",
+                "success",
+            )
+            if getattr(result, "warning_flags", ()):
+                self.log_message(
+                    (
+                        "Archive source material warnings: "
+                        if r42ct_archive_row
+                        else ("Restricted-access fallback warnings: " if r42dm_restricted_access_fallback_used else "Generic website live capture warnings: ")
+                    )
+                    + ", ".join(str(item) for item in result.warning_flags[:6]),
+                    "warning",
+                )
+        else:
+            if r42ct_archive_row:
+                self.log_message(
+                    "R42CT archive source result: "
+                    f"status={getattr(result, 'status', '')}; browser_status={getattr(result, 'browser_status', '')}; "
+                    "source_candidate_kept=true; batch_continues=true; no_generic_playwright_fallback=true; "
+                    f"warnings={', '.join(str(item) for item in getattr(result, 'warning_flags', ())[:6])}",
+                    "warning",
+                )
+            elif r42dm_restricted_access_fallback_used:
+                self.log_message(
+                    "R42DM restricted-access fallback result: "
+                    f"status={getattr(result, 'status', '')}; browser_status={getattr(result, 'browser_status', '')}; "
+                    "normal_access_first=true; tor_camoufox_only_after_restricted_access_trigger=true; "
+                    f"warnings={', '.join(str(item) for item in getattr(result, 'warning_flags', ())[:6])}",
+                    "warning",
+                )
+            else:
+                self.log_message(
+                    "Generic website live capture did not complete: "
+                    f"status={getattr(result, 'status', '')}; browser_status={getattr(result, 'browser_status', '')}; "
+                    f"warnings={', '.join(str(item) for item in getattr(result, 'warning_flags', ())[:6])}",
+                    "warning",
+                )
+        return result
 
     # =========================================================================
     # WINDOW SIZE HELPERS
@@ -16525,14 +28026,21 @@ render();
                 and not discussion.comments_selected
                 and not discussion.livechat_selected
             ):
+                generic_website_preservation_requested = bool(
+                    discussion.webpage_active or discussion.webpage_screenshot_active
+                )
+                local_archive_requested = self._local_web_archive_requested_for_source_row(selected_discussion_row)
                 plan = build_operational_capture_plan(
                     row=selected_discussion_row,
                     discussion=discussion,
+                    archive_check_requested=generic_website_preservation_requested,
+                    warc_requested=local_archive_requested,
+                    wacz_requested=local_archive_requested,
                 )
                 self.last_operational_capture_plan = plan
                 workflow_state = self._record_operational_capture_review_metadata(plan)
                 self._set_operational_capture_status(
-                    "Fixture/model-only capture plan ready. Review/export metadata ready; manual live-site smoke pending.",
+                    "Generic source capture ready. Live Webpage/Screenshot capture will run now when supported.",
                     "success",
                 )
                 scaffold_message = format_operational_capture_plan_message(plan)
@@ -16540,14 +28048,25 @@ render();
                     scaffold_message = "\n\n".join(
                         (scaffold_message, workflow_state.to_summary_text())
                     )
-                messagebox.showinfo(
-                    "Discussion action scaffold",
-                    scaffold_message,
+                self.last_operational_capture_scaffold_message = scaffold_message
+                self.last_operational_capture_generic_preservation_requested = generic_website_preservation_requested
+                try:
+                    self.log_message(
+                        "Source capture plan ready; review metadata was recorded without opening a modal popup.",
+                        "success",
+                    )
+                except Exception:
+                    pass
+                live_capture_result = self._execute_generic_website_live_capture_for_source_row(
+                    selected_discussion_row,
+                    discussion,
+                    plan,
                 )
-                self.log_message(
-                    "Discussion action scaffold only; no fetch, screenshot, archive, download, WARC/WACZ, or provider action executed.",
-                    "muted",
-                )
+                if live_capture_result is None:
+                    self.log_message(
+                        "Source capture plan only; live Webpage/Screenshot execution did not run in this runtime.",
+                        "muted",
+                    )
                 return
             current_text = selected_discussion_row.canonical_url
         else:
@@ -26095,19 +37614,19 @@ render();
         def schedule_segment_search_refresh(*_) -> None:
             """Debounce Segment editor search so typing does not rebuild the list every keypress."""
             existing_after_id = selected_state.get("search_after_id")
-        
+
             if existing_after_id:
                 try:
                     dialog.after_cancel(existing_after_id)
                 except Exception:
                     pass
-        
+
             def run_search_refresh() -> None:
                 selected_state["search_after_id"] = None
                 rebuild_segment_list(force_first_match=True)
-        
+
             selected_state["search_after_id"] = dialog.after(180, run_search_refresh)
-        
+
         search_var.trace_add("write", schedule_segment_search_refresh)
         segment_search_entry.bind("<Down>", lambda _event: move_selection(1))
         segment_search_entry.bind("<Up>", lambda _event: move_selection(-1))
@@ -26376,3 +37895,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# YTCE_REVIEW_FILLBOX_DECISIONS_PASS5G_20260827

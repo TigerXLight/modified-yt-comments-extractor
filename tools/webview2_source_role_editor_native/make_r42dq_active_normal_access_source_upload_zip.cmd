@@ -1,0 +1,6 @@
+@echo off
+setlocal
+cd /d "%~dp0..\.."
+echo [R42DQ] Building active normal-access/provider source upload ZIP...
+call "%~dp0_r42dq_python.cmd" -c "from pathlib import Path; from datetime import datetime; import zipfile, shutil; root=Path.cwd(); stamp=datetime.now().strftime('%Y%m%d_%H%M%S'); out=root/'profile_media_live_captures'/'r42dq_normal_access_provider_layer'; out.mkdir(parents=True, exist_ok=True); zip_path=out/f'r42dq_active_normal_access_source_upload_{stamp}.zip'; include=['main.py','source_adapters.py','source_resource_state.py','profile_media_normal_access_provider_layer_r42dq.py','profile_media_normal_access_provider_layer_r42dq_test.py','profile_media_account_channel_worker_adapter_r42dp.py','profile_media_universal_worker_source_router_r42do.py','profile_media_normal_access_layer_r42dn.py','profile_media_access_escalation_policy_r42dm.py','profile_media_universal_source_link_adapter_r42dk.py','profile_media_universal_source_link_adapter_r42dl.py']; z=zipfile.ZipFile(zip_path,'w',compression=zipfile.ZIP_DEFLATED); [z.write(root/rel,'project/'+rel.replace('\\\\','/')) for rel in include if (root/rel).is_file()]; z.close(); downloads=Path.home()/'Downloads'/zip_path.name; shutil.copy2(zip_path, downloads); print('[DONE] Created:', zip_path); print('[DONE] Copied to Downloads:', downloads)"
+exit /b %ERRORLEVEL%

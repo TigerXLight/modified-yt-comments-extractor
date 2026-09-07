@@ -1,0 +1,8 @@
+@echo off
+setlocal EnableExtensions
+cd /d "%~dp0\..\.."
+set "STAMP=%DATE:~-4%%DATE:~3,2%%DATE:~0,2%_%TIME:~0,2%%TIME:~3,2%%TIME:~6,2%"
+set "STAMP=%STAMP: =0%"
+set "OUT=%USERPROFILE%\Downloads\ytce_r42cu_camofox_browser_backend_debug_%STAMP%.zip"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $root=(Get-Location).Path; $out=$env:OUT; $tmp=Join-Path $env:TEMP ('ytce_r42cu_debug_' + [guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Force -Path $tmp | Out-Null; $items=@('profile_media_live_captures\r42cu_camofox_browser_manual_test','profile_media_live_captures\r42ct_archive_source_material','profile_media_live_captures\r42cs_archive_source_material','tools\camofox_browser_backend_r42cu\README_R42CU.md','R42CU_APPLY_TEST_COMMANDS_20260906.md','YTCE_R42CU_OPENCLAW_CAMOUFOX_BROWSER_IMPLEMENTATION_NOTES_20260906.md'); foreach($rel in $items){ $src=Join-Path $root $rel; if(Test-Path -LiteralPath $src){ $dst=Join-Path $tmp $rel; New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null; Copy-Item -LiteralPath $src -Destination $dst -Recurse -Force } }; Get-ChildItem -LiteralPath (Join-Path $root 'tools\camofox_browser_backend_r42cu\jo_inc_camofox_browser') -Recurse -Force | Where-Object { -not $_.PSIsContainer -and $_.FullName -notmatch '\\node_modules\\' } | Select-Object FullName,Length,LastWriteTime | Out-File -LiteralPath (Join-Path $tmp 'bundled_camofox_browser_tree.txt') -Encoding utf8; Compress-Archive -LiteralPath (Join-Path $tmp '*') -DestinationPath $out -Force; Write-Host 'Created debug ZIP:' $out"
+exit /b %ERRORLEVEL%

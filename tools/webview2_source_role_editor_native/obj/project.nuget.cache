@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "eUe7AXhMhOw=",
+  "success": true,
+  "projectFilePath": "T:\\References\\to go\\Media\\tools\\Modified YouTube comment extractor\\tools\\webview2_source_role_editor_native\\YTCE.NativeSourceRoleEditor.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\fahad\\.nuget\\packages\\microsoft.web.webview2\\1.0.4191.47\\microsoft.web.webview2.1.0.4191.47.nupkg.sha512"
+  ],
+  "logs": []
+}

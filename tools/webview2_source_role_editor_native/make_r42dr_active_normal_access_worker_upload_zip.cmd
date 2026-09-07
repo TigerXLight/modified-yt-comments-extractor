@@ -1,0 +1,7 @@
+@echo off
+setlocal
+cd /d "%~dp0..\.."
+echo [R42DR] Building active normal-access/source-router source upload ZIP...
+call tools\webview2_source_role_editor_native\_r42dr_python.cmd -c "import os, zipfile, shutil, pathlib, datetime; root=pathlib.Path.cwd(); stamp=datetime.datetime.now().strftime('%Y%m%d_%H%M%S'); out=root/'profile_media_live_captures'/'r42dr_normal_access_feature_receipts'; out.mkdir(parents=True, exist_ok=True); zip_path=out/('r42dr_active_normal_access_worker_source_upload_'+stamp+'.zip'); files=['main.py','source_adapters.py','source_resource_state.py','profile_media_normal_access_feature_receipts_r42dr.py','profile_media_normal_access_feature_receipts_r42dr_test.py','profile_media_normal_access_provider_layer_r42dq.py','profile_media_account_channel_worker_adapter_r42dp.py','profile_media_universal_worker_source_router_r42do.py','profile_media_normal_access_layer_r42dn.py','profile_media_access_escalation_policy_r42dm.py','profile_media_universal_source_link_adapter_r42dk.py','profile_media_universal_source_link_adapter_r42dl.py']; z=zipfile.ZipFile(zip_path,'w',zipfile.ZIP_DEFLATED); [z.write(root/f, 'project/'+f.replace('\\\\','/')) for f in files if (root/f).is_file()]; z.close(); dl=pathlib.Path(os.environ.get('USERPROFILE',''))/'Downloads'/zip_path.name; shutil.copy2(zip_path, dl); print('[DONE] Created:', zip_path); print('[DONE] Copied to Downloads:', dl)"
+if errorlevel 1 exit /b 1
+exit /b 0
