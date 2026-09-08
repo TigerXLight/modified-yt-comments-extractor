@@ -3949,6 +3949,7 @@ class App(ctk.CTk):
         for widget in (
             getattr(self, "file_converter_card", None),
             getattr(self, "file_converter_drop_frame", None),
+            getattr(self, "file_converter_drop_list_frame", None),
             getattr(self, "file_converter_queue_textbox", None),
         ):
             if widget is None:
@@ -3968,12 +3969,12 @@ class App(ctk.CTk):
         self.file_converter_drag_drop_available = bound
         return bound
 
-    def _set_file_converter_drop_highlight(self, active: bool) -> None:
+    def _set_file_converter_drop_highlight(self, active: bool, message: str = "") -> None:
         frame = getattr(self, "file_converter_drop_frame", None)
         if frame is not None:
             try:
                 frame.configure(
-                    border_width=1 if active else 0,
+                    border_width=2 if active else 0,
                     border_color="#8a63d2" if active else COLORS["border"],
                 )
             except Exception:
@@ -3982,7 +3983,7 @@ class App(ctk.CTk):
         if label is not None:
             try:
                 label.configure(
-                    text="Release to hold files in File Converter" if active else "Drop files here — held only in File Converter until Convert",
+                    text=message or ("Release to hold selected FILES in File Converter" if active else "Drop files here — held only in File Converter until Convert"),
                     text_color="#c5a6ff" if active else COLORS["text_muted"],
                 )
             except Exception:
@@ -4317,6 +4318,22 @@ class App(ctk.CTk):
             self.session_file_conversion_group_collapsed = {}
         if "session_file_converter_select_widgets" not in state:
             self.session_file_converter_select_widgets = {}
+        if "session_file_selected_paths" not in state:
+            self.session_file_selected_paths = set()
+        if "session_file_select_widgets" not in state:
+            self.session_file_select_widgets = {}
+        if "session_file_select_vars" not in state:
+            self.session_file_select_vars = {}
+        if "file_converter_item_widgets" not in state:
+            self.file_converter_item_widgets = {}
+        if "file_converter_item_select_vars" not in state:
+            self.file_converter_item_select_vars = {}
+        if "file_converter_item_target_vars" not in state:
+            self.file_converter_item_target_vars = {}
+        if "session_file_drag_source_paths" not in state:
+            self.session_file_drag_source_paths = []
+        if "session_file_drag_over_converter" not in state:
+            self.session_file_drag_over_converter = False
 
     def _has_exportable_session_content(self) -> bool:
         """Return whether the sidebar EXPORT entry should be enabled."""
@@ -4781,6 +4798,8 @@ class App(ctk.CTk):
             return COLORS["accent"], COLORS["bg_dark"]
         if active_media:
             return "#4b2d73", "#f4ecff"
+        if entry.normalized_path in (getattr(self, "session_file_selected_paths", set()) or set()):
+            return "#1d3b52", COLORS["text_primary"]
         if selected:
             return COLORS["accent_secondary"], COLORS["text_primary"]
         if self._session_file_entry_needs_review(entry):
@@ -4846,8 +4865,12 @@ class App(ctk.CTk):
 
     def _begin_session_file_drag(self, normalized_path: str) -> None:
         self._ensure_session_files_state()
-        self.session_file_drag_source_path = self._normalise_session_file_path(normalized_path)
+        source_paths = self._selected_session_file_paths_for_drag(normalized_path)
+        self.session_file_drag_source_paths = source_paths
+        self.session_file_drag_source_path = source_paths[0] if source_paths else self._normalise_session_file_path(normalized_path)
         self.session_file_drag_hover_path = ""
+        self.session_file_drag_over_converter = False
+        self._set_file_converter_drop_highlight(False)
 
     def _session_file_path_for_widget(self, widget: Any) -> str:
         row_widgets = getattr(self, "session_file_row_widgets", {}) or {}
@@ -4867,7 +4890,16 @@ class App(ctk.CTk):
             target_widget = self.winfo_containing(event.x_root, event.y_root)
         except Exception:
             target_widget = None
-        target_path = self._session_file_path_for_widget(target_widget) if target_widget is not None else ""
+        over_converter = bool(target_widget is not None and self._session_file_drop_target_is_converter(target_widget))
+        previous_converter = bool(getattr(self, "session_file_drag_over_converter", False))
+        if over_converter != previous_converter:
+            self.session_file_drag_over_converter = over_converter
+            count = len(getattr(self, "session_file_drag_source_paths", []) or [getattr(self, "session_file_drag_source_path", "")])
+            self._set_file_converter_drop_highlight(
+                over_converter,
+                f"Release to hold {count} selected FILES item(s) in File Converter" if over_converter else "",
+            )
+        target_path = "" if over_converter else (self._session_file_path_for_widget(target_widget) if target_widget is not None else "")
         target_path = self._normalise_session_file_path(target_path) if target_path else ""
         if target_path == getattr(self, "session_file_drag_source_path", ""):
             target_path = ""
@@ -4883,6 +4915,7 @@ class App(ctk.CTk):
         targets = {
             getattr(self, "file_converter_card", None),
             getattr(self, "file_converter_drop_frame", None),
+            getattr(self, "file_converter_drop_list_frame", None),
             getattr(self, "file_converter_queue_textbox", None),
         }
         current = widget
@@ -4897,6 +4930,13 @@ class App(ctk.CTk):
         source_path = self._normalise_session_file_path(
             getattr(self, "session_file_drag_source_path", "") or normalized_path
         )
+        drag_paths = [
+            self._normalise_session_file_path(path)
+            for path in (getattr(self, "session_file_drag_source_paths", []) or [source_path])
+            if path and os.path.isfile(str(path))
+        ]
+        if not drag_paths and source_path:
+            drag_paths = [source_path]
         target_path = getattr(self, "session_file_drag_hover_path", "") or ""
         target_widget = None
         if not target_path:
@@ -4906,15 +4946,21 @@ class App(ctk.CTk):
                 target_widget = None
             if target_widget is not None and self._session_file_drop_target_is_converter(target_widget):
                 self.session_file_drag_source_path = ""
+                self.session_file_drag_source_paths = []
                 self.session_file_drag_hover_path = ""
+                self.session_file_drag_over_converter = False
+                self._set_file_converter_drop_highlight(False)
                 self._cancel_session_file_global_drag_bindings()
-                self._file_converter_add_paths([source_path], add_to_session=False, select_first=False, source_label="FILES drag")
+                self._file_converter_add_paths(drag_paths, add_to_session=False, select_first=False, source_label="FILES drag")
                 self._show_file_converter_panel()
                 self._refresh_session_files_list()
                 return
             target_path = self._session_file_path_for_widget(target_widget) if target_widget is not None else ""
         self.session_file_drag_source_path = ""
+        self.session_file_drag_source_paths = []
         self.session_file_drag_hover_path = ""
+        self.session_file_drag_over_converter = False
+        self._set_file_converter_drop_highlight(False)
         self._cancel_session_file_global_drag_bindings()
         if target_path and self._normalise_session_file_path(target_path) != source_path:
             self._create_session_file_folder_from_drop(source_path, target_path)
@@ -5047,6 +5093,14 @@ class App(ctk.CTk):
             ]
         except Exception:
             pass
+        try:
+            self.session_file_selected_paths.discard(normalized_path)
+        except Exception:
+            pass
+        try:
+            self.session_file_converter_selected_paths.discard(normalized_path)
+        except Exception:
+            pass
         if self.selected_session_file_path == normalized_path:
             self.selected_session_file_path = ""
         if self.active_media_file_path == normalized_path:
@@ -5087,6 +5141,8 @@ class App(ctk.CTk):
         self.session_file_label_widgets = {}
         self.session_internal_media_button_widgets = {}
         self.session_file_converter_select_widgets = {}
+        self.session_file_select_widgets = {}
+        self.session_file_select_vars = {}
 
         self._normalise_session_file_folder_state()
         self._normalise_session_file_conversion_group_state()
@@ -5230,11 +5286,27 @@ class App(ctk.CTk):
             self._ensure_session_file_action_icons()
             row_frame = ctk.CTkFrame(self.files_list_frame, fg_color="transparent")
             row_frame.grid(row=render_row, column=0, sticky="ew", padx=(18 if (nested or conversion_nested) else 4, 4), pady=2)
-            row_frame.grid_columnconfigure(0, weight=1)
-            row_frame.grid_columnconfigure(1, weight=0)
+            row_frame.grid_columnconfigure(0, weight=0)
+            row_frame.grid_columnconfigure(1, weight=1)
             row_frame.grid_columnconfigure(2, weight=0)
+            row_frame.grid_columnconfigure(3, weight=0)
             drag_hover = entry.normalized_path == getattr(self, "session_file_drag_hover_path", "")
             row_color, text_color = self._session_file_label_colors(entry, drag_hover=drag_hover)
+            select_var = ctk.BooleanVar(value=self._session_file_selected_enabled(entry.normalized_path))
+            self.session_file_select_vars[entry.normalized_path] = select_var
+            select_box = ctk.CTkCheckBox(
+                row_frame,
+                text="",
+                width=22,
+                variable=select_var,
+                command=lambda path=entry.normalized_path, var=select_var: self._toggle_session_file_selected(path, var),
+                fg_color=COLORS["accent"],
+                hover_color=COLORS["accent_hover"],
+                border_color=COLORS["border"],
+                checkmark_color="#000000",
+            )
+            select_box.grid(row=0, column=0, sticky="w", padx=(0, 4))
+            self.session_file_select_widgets[entry.normalized_path] = select_box
             label = ctk.CTkLabel(
                 row_frame,
                 text=self._session_file_label_text(entry, drag_hover=drag_hover),
@@ -5244,16 +5316,17 @@ class App(ctk.CTk):
                 text_color=text_color,
                 corner_radius=6,
                 justify="left",
-                wraplength=max(340, min(600, int(getattr(self, "sidebar_width", self.SIDEBAR_WIDTH)) - 92)),
+                wraplength=max(300, min(560, int(getattr(self, "sidebar_width", self.SIDEBAR_WIDTH)) - 120)),
             )
-            label.grid(row=0, column=0, sticky="ew")
+            label.grid(row=0, column=1, sticky="ew")
             self._bind_session_file_drag_handlers(label, entry.normalized_path)
+            self._bind_session_file_drag_handlers(row_frame, entry.normalized_path)
             self.session_file_row_widgets[entry.normalized_path] = row_frame
             self.session_file_label_widgets[entry.normalized_path] = label
-            action_column = 1
-            # R42EK: no converter checkbox, queue arrow, or K button on FILES rows.
-            # FILES rows remain file entries; conversion selection lives in the
-            # File Converter hold box and in image/video/audio windows.
+            action_column = 2
+            # R42EL: restore the normal FILES multi-select tickbox for highlight/drag.
+            # It does not queue conversion.  K/keep-original remains inside File
+            # Converter/media conversion only.
 
             if nested and not conversion_nested:
                 out_button = ctk.CTkButton(
@@ -7227,7 +7300,7 @@ class App(ctk.CTk):
             controls,
             values=self._file_converter_target_formats(),
             variable=self.file_converter_format_var,
-            command=lambda _value=None: self._file_converter_refresh_queue_label(),
+            command=self._file_converter_apply_global_format_to_selected,
             width=92,
             height=28,
             fg_color=COLORS["bg_input"],
@@ -7235,12 +7308,17 @@ class App(ctk.CTk):
             button_hover_color=COLORS["border"],
         )
         self.file_converter_format_menu.pack(side="left", padx=(8, 14))
-        ctk.CTkLabel(
+        self.file_converter_take_all_button = ctk.CTkButton(
             controls,
-            text="Take all:",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 6))
+            text="Take all",
+            command=self._file_converter_take_all_from_files,
+            width=72,
+            height=28,
+            fg_color=COLORS["bg_input"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+        )
+        self.file_converter_take_all_button.pack(side="left", padx=(0, 6))
         self.file_converter_take_all_var = ctk.StringVar(value="auto")
         self.file_converter_take_all_menu = ctk.CTkOptionMenu(
             controls,
@@ -7252,18 +7330,7 @@ class App(ctk.CTk):
             button_color=COLORS["accent_secondary"],
             button_hover_color=COLORS["border"],
         )
-        self.file_converter_take_all_menu.pack(side="left", padx=(0, 8))
-        self.file_converter_take_all_button = ctk.CTkButton(
-            controls,
-            text="Take",
-            command=self._file_converter_take_all_from_files,
-            width=52,
-            height=28,
-            fg_color=COLORS["bg_input"],
-            hover_color=COLORS["border"],
-            corner_radius=8,
-        )
-        self.file_converter_take_all_button.pack(side="left", padx=(0, 14))
+        self.file_converter_take_all_menu.pack(side="left", padx=(0, 14))
         self.file_converter_keep_batch_var = ctk.BooleanVar(value=False)
         self.file_converter_keep_batch_checkbox = ctk.CTkCheckBox(
             controls,
@@ -7319,15 +7386,15 @@ class App(ctk.CTk):
             text_color=COLORS["text_muted"],
         )
         self.file_converter_drop_label.pack(fill="x", padx=10, pady=(8, 2))
-        self.file_converter_queue_textbox = ctk.CTkTextbox(
+        self.file_converter_drop_list_frame = ctk.CTkScrollableFrame(
             self.file_converter_drop_frame,
-            height=104,
+            height=150,
             fg_color=COLORS["bg_input"],
-            text_color=COLORS["text_primary"],
-            font=ctk.CTkFont(size=11),
             corner_radius=8,
         )
-        self.file_converter_queue_textbox.pack(fill="x", padx=10, pady=(0, 10))
+        self.file_converter_drop_list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self.file_converter_queue_textbox = None  # R42EL: held items are rendered as Review-style rows, not a plain activity log.
+        self.file_converter_item_widgets = {}
         self._file_converter_refresh_format_menu()
         self._file_converter_refresh_queue_label()
         self.file_converter_card.grid_remove()
@@ -7350,6 +7417,70 @@ class App(ctk.CTk):
         self.session_file_keep_original = keep_set
         self._refresh_session_files_list()
         self._file_converter_refresh_queue_label()
+
+    def _toggle_session_file_keep_original_from_converter(self, normalized_path: str, var: Any = None) -> None:
+        """R42EL: K/keep-original is interactive only inside File Converter/media conversion."""
+        self._ensure_session_files_state()
+        path = self._normalise_session_file_path(normalized_path)
+        keep_set = set(getattr(self, "session_file_keep_original", set()) or set())
+        wanted = None
+        if var is not None:
+            try:
+                wanted = bool(var.get())
+            except Exception:
+                wanted = None
+        if wanted is None:
+            wanted = path not in keep_set
+        if wanted:
+            keep_set.add(path)
+        else:
+            keep_set.discard(path)
+        self.session_file_keep_original = keep_set
+        self._file_converter_refresh_queue_label()
+
+    def _session_file_selected_enabled(self, normalized_path: str) -> bool:
+        self._ensure_session_files_state()
+        try:
+            path = self._normalise_session_file_path(normalized_path)
+        except Exception:
+            path = str(normalized_path or "")
+        return path in (getattr(self, "session_file_selected_paths", set()) or set())
+
+    def _toggle_session_file_selected(self, normalized_path: str, var: Any = None) -> None:
+        """R42EL: FILES tickbox is a normal multi-select/highlight control, not a converter queue switch."""
+        self._ensure_session_files_state()
+        try:
+            path = self._normalise_session_file_path(normalized_path)
+        except Exception:
+            path = str(normalized_path or "")
+        selected_set = set(getattr(self, "session_file_selected_paths", set()) or set())
+        wanted = None
+        if var is not None:
+            try:
+                wanted = bool(var.get())
+            except Exception:
+                wanted = None
+        if wanted is None:
+            wanted = path not in selected_set
+        if wanted:
+            selected_set.add(path)
+            self.selected_session_file_path = path
+        else:
+            selected_set.discard(path)
+        self.session_file_selected_paths = selected_set
+        self._set_session_file_label_visual(path, drag_hover=False)
+
+    def _selected_session_file_paths_for_drag(self, normalized_path: str) -> list[str]:
+        self._ensure_session_files_state()
+        path = self._normalise_session_file_path(normalized_path)
+        selected = [
+            self._normalise_session_file_path(value)
+            for value in (getattr(self, "session_file_selected_paths", set()) or set())
+            if value and os.path.isfile(str(value))
+        ]
+        if path in selected:
+            return list(dict.fromkeys(selected))
+        return [path] if path else []
 
     def _file_converter_set_status(self, message: str, *, error: bool = False) -> None:
         label = getattr(self, "file_converter_status_label", None)
@@ -7455,8 +7586,11 @@ class App(ctk.CTk):
         for path in accepted_paths:
             if path not in queued:
                 queued.append(path)
-            if any(path == getattr(entry, "normalized_path", "") for entry in getattr(self, "session_files", []) or []):
-                selected_set.add(path)
+            selected_set.add(path)
+            try:
+                self._file_converter_item_target_var_for_path(path)
+            except Exception:
+                pass
         self.file_converter_queued_paths = queued
         self.session_file_converter_selected_paths = selected_set
         self._file_converter_refresh_format_menu()
@@ -7535,6 +7669,8 @@ class App(ctk.CTk):
     def _file_converter_clear_queue(self) -> None:
         self.file_converter_queued_paths = []
         self.session_file_converter_selected_paths = set()
+        self.file_converter_item_target_vars = {}
+        self.file_converter_item_select_vars = {}
         self._refresh_session_files_list()
         self._file_converter_refresh_format_menu()
         self._file_converter_refresh_queue_label()
@@ -7551,66 +7687,253 @@ class App(ctk.CTk):
         except Exception:
             return "unknown", "detect_failed", "?"
 
-    def _file_converter_refresh_queue_label(self) -> None:
+    def _file_converter_item_target_var_for_path(self, normalized_path: str) -> Any:
         self._ensure_session_files_state()
-        queued = [p for p in getattr(self, "file_converter_queued_paths", []) or [] if os.path.isfile(p)]
-        self.file_converter_queued_paths = queued
-        textbox = getattr(self, "file_converter_queue_textbox", None)
-        if textbox is None:
-            return
+        path = self._normalise_session_file_path(normalized_path)
+        target_vars = getattr(self, "file_converter_item_target_vars", {}) or {}
+        var = target_vars.get(path)
+        if var is None:
+            kind = self._file_converter_kind_for_path(path)
+            var = ctk.StringVar(value=self._file_converter_target_formats_for_kind(kind)[0])
+            target_vars[path] = var
+            self.file_converter_item_target_vars = target_vars
+        return var
+
+    def _file_converter_item_target_for_path(self, normalized_path: str) -> str:
         try:
-            self._file_converter_refresh_format_menu()
-            textbox.configure(state="normal")
-            textbox.delete("1.0", "end")
-            target_format = (getattr(self, "file_converter_format_var", None).get() if getattr(self, "file_converter_format_var", None) else "auto").strip().lower().lstrip(".")
-            if queued:
-                textbox.insert("end", "Files held in File Converter:\n")
-                for index, path in enumerate(queued, start=1):
-                    keep = self._session_file_keep_original_enabled(path) or bool(getattr(self, "file_converter_keep_batch_var", None) and self.file_converter_keep_batch_var.get())
-                    kind, method, default_fmt = self._file_converter_detect_display(path)
-                    suffix = default_fmt if target_format == "auto" else target_format
-                    textbox.insert("end", f"{index}. {'K ' if keep else 'DEL '}[{kind}/{method} -> .{suffix}] {os.path.basename(path)}\n")
-            else:
-                textbox.insert("end", "Drop files here — held only in File Converter until Convert. Or drag FILES rows / use Take all.\n")
-            textbox.configure(state="disabled")
+            var = self._file_converter_item_target_var_for_path(normalized_path)
+            value = str(var.get() or "auto").strip().lower().lstrip(".") or "auto"
+        except Exception:
+            value = "auto"
+        kind = self._file_converter_kind_for_path(normalized_path)
+        allowed = self._file_converter_target_formats_for_kind(kind)
+        return value if value in allowed else "auto"
+
+    def _file_converter_set_item_target(self, normalized_path: str, value: str) -> None:
+        self._ensure_session_files_state()
+        path = self._normalise_session_file_path(normalized_path)
+        target = str(value or "auto").strip().lower().lstrip(".") or "auto"
+        allowed = self._file_converter_target_formats_for_kind(self._file_converter_kind_for_path(path))
+        if target not in allowed:
+            target = "auto"
+        try:
+            self._file_converter_item_target_var_for_path(path).set(target)
         except Exception:
             pass
+        self._file_converter_set_status(f"{os.path.basename(path)} target set to {target}.")
+
+    def _file_converter_set_item_selected(self, normalized_path: str, selected: bool) -> None:
+        self._ensure_session_files_state()
+        path = self._normalise_session_file_path(normalized_path)
+        selected_set = set(getattr(self, "session_file_converter_selected_paths", set()) or set())
+        if selected:
+            selected_set.add(path)
+        else:
+            selected_set.discard(path)
+        self.session_file_converter_selected_paths = selected_set
+        self._file_converter_refresh_format_menu()
+        self._file_converter_set_status(f"{len(selected_set)} File Converter item(s) selected.")
+
+    def _file_converter_apply_global_format_to_selected(self, value: str | None = None) -> None:
+        """R42EL: Convert-to applies to selected held rows, not blindly to every FILES row."""
+        self._ensure_session_files_state()
+        target = str(value or (getattr(self, "file_converter_format_var", None).get() if getattr(self, "file_converter_format_var", None) else "auto") or "auto").strip().lower().lstrip(".") or "auto"
+        queued = [p for p in getattr(self, "file_converter_queued_paths", []) or [] if os.path.isfile(p)]
+        selected_set = set(getattr(self, "session_file_converter_selected_paths", set()) or set())
+        changed = 0
+        for path in queued:
+            if path not in selected_set:
+                continue
+            allowed = self._file_converter_target_formats_for_kind(self._file_converter_kind_for_path(path))
+            if target not in allowed:
+                continue
+            try:
+                self._file_converter_item_target_var_for_path(path).set(target)
+                changed += 1
+            except Exception:
+                pass
+        self._file_converter_refresh_queue_label()
+        if changed:
+            self._file_converter_set_status(f"Applied target '{target}' to {changed} selected held item(s).")
+
+    def _file_converter_refresh_queue_label(self) -> None:
+        self._ensure_session_files_state()
+        queued = [self._normalise_session_file_path(p) for p in getattr(self, "file_converter_queued_paths", []) or [] if os.path.isfile(str(p))]
+        self.file_converter_queued_paths = list(dict.fromkeys(queued))
+        selected_set = set(getattr(self, "session_file_converter_selected_paths", set()) or set())
+        selected_set = {path for path in selected_set if path in self.file_converter_queued_paths}
+        self.session_file_converter_selected_paths = selected_set
+        target_vars = getattr(self, "file_converter_item_target_vars", {}) or {}
+        self.file_converter_item_target_vars = {path: var for path, var in target_vars.items() if path in self.file_converter_queued_paths}
+        frame = getattr(self, "file_converter_drop_list_frame", None)
+        if frame is None:
+            textbox = getattr(self, "file_converter_queue_textbox", None)
+            if textbox is None:
+                return
+            try:
+                textbox.configure(state="normal")
+                textbox.delete("1.0", "end")
+                textbox.insert("end", "File Converter held-item renderer is unavailable.\n")
+                textbox.configure(state="disabled")
+            except Exception:
+                pass
+            return
+        try:
+            for child in frame.winfo_children():
+                child.destroy()
+        except Exception:
+            pass
+        self.file_converter_item_widgets = {}
+        self.file_converter_item_select_vars = {}
+        try:
+            self._file_converter_refresh_format_menu()
+        except Exception:
+            pass
+        if not self.file_converter_queued_paths:
+            empty = ctk.CTkLabel(
+                frame,
+                text="Drop files here, drag ticked FILES rows here, or use Take all. Files stay here until Convert finishes.",
+                text_color=COLORS["text_muted"],
+                font=ctk.CTkFont(size=12),
+                wraplength=620,
+                justify="center",
+            )
+            empty.pack(fill="both", expand=True, padx=10, pady=34)
+            return
+        for index, path in enumerate(self.file_converter_queued_paths, start=1):
+            kind, method, default_fmt = self._file_converter_detect_display(path)
+            allowed = self._file_converter_target_formats_for_kind(kind)
+            target_var = self._file_converter_item_target_var_for_path(path)
+            try:
+                if str(target_var.get() or "auto").strip().lower().lstrip(".") not in allowed:
+                    target_var.set("auto")
+            except Exception:
+                pass
+            selected_var = ctk.BooleanVar(value=path in selected_set)
+            self.file_converter_item_select_vars[path] = selected_var
+            keep_var = ctk.BooleanVar(
+                value=bool(
+                    self._session_file_keep_original_enabled(path)
+                    or (getattr(self, "file_converter_keep_batch_var", None) and self.file_converter_keep_batch_var.get())
+                )
+            )
+            row = ctk.CTkFrame(
+                frame,
+                fg_color="#202020" if path in selected_set else COLORS["bg_input"],
+                corner_radius=8,
+                border_width=1,
+                border_color=COLORS["accent_secondary"] if path in selected_set else COLORS["border"],
+            )
+            row.pack(fill="x", padx=2, pady=3)
+            row.grid_columnconfigure(2, weight=1)
+            ctk.CTkCheckBox(
+                row,
+                text="",
+                width=24,
+                variable=selected_var,
+                command=lambda p=path, v=selected_var: self._file_converter_set_item_selected(p, bool(v.get())),
+                fg_color=COLORS["accent"],
+                hover_color=COLORS["accent_hover"],
+                border_color=COLORS["border"],
+                checkmark_color="#000000",
+            ).grid(row=0, column=0, rowspan=2, sticky="w", padx=(8, 4), pady=7)
+            ctk.CTkLabel(
+                row,
+                text=f"{index}.",
+                width=24,
+                text_color=COLORS["text_muted"],
+                font=ctk.CTkFont(size=11),
+            ).grid(row=0, column=1, rowspan=2, sticky="nw", pady=(8, 0))
+            ctk.CTkLabel(
+                row,
+                text=os.path.basename(path),
+                text_color=COLORS["text_primary"],
+                font=ctk.CTkFont(size=12, weight="bold"),
+                anchor="w",
+                justify="left",
+                wraplength=420,
+            ).grid(row=0, column=2, sticky="ew", padx=(2, 8), pady=(7, 0))
+            ctk.CTkLabel(
+                row,
+                text=f"{kind}/{method}  default → .{default_fmt}",
+                text_color=COLORS["text_muted"],
+                font=ctk.CTkFont(size=10),
+                anchor="w",
+            ).grid(row=1, column=2, sticky="ew", padx=(2, 8), pady=(0, 7))
+            ctk.CTkOptionMenu(
+                row,
+                values=allowed,
+                variable=target_var,
+                command=lambda value, p=path: self._file_converter_set_item_target(p, value),
+                width=82,
+                height=26,
+                fg_color=COLORS["bg_input"],
+                button_color=COLORS["accent_secondary"],
+                button_hover_color=COLORS["border"],
+            ).grid(row=0, column=3, rowspan=2, sticky="e", padx=(4, 6), pady=7)
+            ctk.CTkCheckBox(
+                row,
+                text="K",
+                width=44,
+                variable=keep_var,
+                command=lambda p=path, v=keep_var: self._toggle_session_file_keep_original_from_converter(p, v),
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=COLORS["text_secondary"],
+                fg_color=COLORS["accent"],
+                hover_color=COLORS["accent_hover"],
+                border_color=COLORS["border"],
+                checkmark_color="#000000",
+            ).grid(row=0, column=4, rowspan=2, sticky="e", padx=(0, 8), pady=7)
+            self.file_converter_item_widgets[path] = row
 
     def _file_converter_convert_clicked(self) -> None:
         if getattr(self, "file_converter_running", False):
             return
         self._ensure_session_files_state()
-        queued = [p for p in getattr(self, "file_converter_queued_paths", []) or [] if os.path.isfile(p)]
+        queued = [self._normalise_session_file_path(p) for p in getattr(self, "file_converter_queued_paths", []) or [] if os.path.isfile(str(p))]
+        selected_set = set(getattr(self, "session_file_converter_selected_paths", set()) or set())
+        selected_paths = [path for path in queued if path in selected_set]
         if not queued:
-            self._file_converter_set_status("Tick a FILES row or drop a same-type file into File Converter first.", error=True)
+            self._file_converter_set_status("Drop files here, drag ticked FILES rows, or use Take all first.", error=True)
             return
-        self._file_converter_refresh_format_menu()
-        target_format = (getattr(self, "file_converter_format_var", None).get() if getattr(self, "file_converter_format_var", None) else "auto").strip().lower().lstrip(".") or "auto"
-        allowed_formats = self._file_converter_target_formats_for_kind(self._file_converter_current_kind())
-        if target_format not in allowed_formats:
-            self._file_converter_set_status("Choose a target format that matches the selected file type.", error=True)
+        if not selected_paths:
+            self._file_converter_set_status("Tick one or more held File Converter rows before pressing Convert.", error=True)
             return
+        kinds = tuple(dict.fromkeys(self._file_converter_kind_for_path(path) for path in selected_paths))
+        known = tuple(kind for kind in kinds if kind and kind != "unknown")
+        if len(known) != 1 or len(known) != len(kinds):
+            self._file_converter_set_status("Selected held rows must be one file type per conversion run.", error=True)
+            return
+        target_by_path: dict[str, str] = {}
+        for path in selected_paths:
+            target_format = self._file_converter_item_target_for_path(path)
+            allowed_formats = self._file_converter_target_formats_for_kind(self._file_converter_kind_for_path(path))
+            if target_format not in allowed_formats:
+                self._file_converter_set_status(f"Choose a valid target for {os.path.basename(path)}.", error=True)
+                return
+            target_by_path[path] = target_format
         keep_all = bool(getattr(self, "file_converter_keep_batch_var", None) and self.file_converter_keep_batch_var.get())
-        delete_count = sum(1 for path in queued if not (keep_all or self._session_file_keep_original_enabled(path)))
+        delete_count = sum(1 for path in selected_paths if not (keep_all or self._session_file_keep_original_enabled(path)))
+        target_summary = ", ".join(sorted(set(target_by_path.values())))
         if delete_count:
             ok = messagebox.askyesno(
                 "Confirm original removal",
-                f"Convert {len(queued)} file(s) using target '{target_format}'?\n\n{delete_count} original file(s) will be removed only after successful conversion because K/Keep is not enabled.",
+                f"Convert {len(selected_paths)} selected held file(s) using target(s): {target_summary}?\n\n{delete_count} original file(s) will be removed only after successful conversion because K/Keep is not enabled.",
             )
             if not ok:
                 self._file_converter_set_status("Conversion cancelled before deleting originals.")
                 return
         self.file_converter_running = True
-        self._file_converter_set_status(f"Converting {len(queued)} file(s) to '{target_format}'...")
+        self._file_converter_set_status(f"Converting {len(selected_paths)} selected held file(s)...")
         try:
             self.file_converter_convert_button.configure(state="disabled")
         except Exception:
             pass
         thread = threading.Thread(
             target=self._file_converter_run_worker,
-            args=(tuple(queued), target_format, keep_all),
+            args=(tuple(selected_paths), target_by_path, keep_all),
             daemon=True,
-            name="YTCEFileConverterR42EJ",
+            name="YTCEFileConverterR42EL",
         )
         thread.start()
 
@@ -7669,7 +7992,7 @@ class App(ctk.CTk):
             logger.debug("Could not refresh FILES after media-window conversion.", exc_info=True)
         self._file_converter_set_status(f"Media-window conversion complete: {converted} converted, {failed} failed.", error=bool(failed))
 
-    def _file_converter_run_worker(self, paths: tuple[str, ...], target_format: str, keep_all: bool) -> None:
+    def _file_converter_run_worker(self, paths: tuple[str, ...], target_format_by_path: dict[str, str] | str, keep_all: bool) -> None:
         try:
             from profile_media_file_converter_r42eh import plan_conversion, run_conversion
         except Exception as import_error:
@@ -7678,6 +8001,10 @@ class App(ctk.CTk):
         results = []
         for path in paths:
             keep_original = bool(keep_all or self._session_file_keep_original_enabled(path))
+            if isinstance(target_format_by_path, dict):
+                target_format = str(target_format_by_path.get(path) or "auto")
+            else:
+                target_format = str(target_format_by_path or "auto")
             try:
                 plan = plan_conversion(path, target_format or "auto", keep_original=keep_original)
                 result = run_conversion(plan)
@@ -7738,8 +8065,27 @@ class App(ctk.CTk):
                         pass
             else:
                 failed += 1
-        self.file_converter_queued_paths = []
-        self.session_file_converter_selected_paths = set()
+        processed_paths = {
+            self._normalise_session_file_path(str(result.get("input_path") or ""))
+            for result in results
+            if str(result.get("input_path") or "").strip()
+        }
+        remaining = [
+            path for path in getattr(self, "file_converter_queued_paths", []) or []
+            if self._normalise_session_file_path(path) not in processed_paths and os.path.isfile(str(path))
+        ]
+        self.file_converter_queued_paths = remaining
+        self.session_file_converter_selected_paths = {
+            path for path in (getattr(self, "session_file_converter_selected_paths", set()) or set())
+            if path in remaining
+        }
+        try:
+            self.file_converter_item_target_vars = {
+                path: var for path, var in (getattr(self, "file_converter_item_target_vars", {}) or {}).items()
+                if path in remaining
+            }
+        except Exception:
+            pass
         self._refresh_session_files_list()
         self._file_converter_refresh_queue_label()
         self._file_converter_set_status(f"Conversion complete: {converted} converted, {failed} failed.", error=bool(failed))
@@ -38979,3 +39325,9 @@ if __name__ == "__main__":
 # R42EK_MEDIA_WINDOWS_DOWNLOAD_THEN_CONVERT_BEFORE_FILES
 # R42EK_FILES_HEADER_OPEN_FOLDER_ICON
 # R42EK_TAKE_ALL_BY_FILE_TYPE
+
+# R42EL_REVIEW_STYLE_FILE_CONVERTER_ROWS
+# R42EL_FILES_TICKBOX_RESTORED_FOR_MULTISELECT_DRAG
+# R42EL_HELD_ITEM_PER_ROW_TARGET_DROPDOWNS
+# R42EL_DRAG_HOVER_CONVERTER_ANIMATION
+# R42EL_CONVERT_TO_APPLIES_TO_SELECTED_HELD_ROWS
