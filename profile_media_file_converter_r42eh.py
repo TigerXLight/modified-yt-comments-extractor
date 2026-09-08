@@ -17,6 +17,7 @@ import html
 import json
 import mimetypes
 import os
+import re
 import shutil
 import subprocess
 
@@ -251,18 +252,30 @@ def choose_default_target_format(input_kind: str) -> str:
     return DEFAULT_FORMAT_BY_KIND.get(str(input_kind or "").lower(), "")
 
 
-def _make_output_path(input_path: Path, target_format: str, output_dir: str | os.PathLike[str] | None, overwrite: bool) -> Path:
+def _safe_output_suffix(file_suffix: str) -> str:
+    suffix = str(file_suffix or "").strip()
+    if not suffix:
+        return ""
+    suffix = re.sub(r"[^A-Za-z0-9_.-]+", "_", suffix)[:64]
+    if not suffix:
+        return ""
+    return suffix if suffix.startswith("_") else "_" + suffix
+
+
+def _make_output_path(input_path: Path, target_format: str, output_dir: str | os.PathLike[str] | None, overwrite: bool, file_suffix: str = "") -> Path:
     folder = Path(output_dir).expanduser() if output_dir else input_path.parent
     folder.mkdir(parents=True, exist_ok=True)
     stem = input_path.stem or "converted"
     suffix = ".jpg" if target_format == "jpeg" else f".{target_format}"
-    candidate = folder / f"{stem}{suffix}"
+    name_suffix = _safe_output_suffix(file_suffix)
+    candidate = folder / f"{stem}{name_suffix}{suffix}"
     if candidate.resolve() == input_path.resolve():
         candidate = folder / f"{stem}_converted{suffix}"
     if overwrite or not candidate.exists():
         return candidate
+    base = f"{stem}{name_suffix}" if name_suffix else f"{stem}_converted"
     for index in range(2, 1000):
-        candidate = folder / f"{stem}_converted_{index}{suffix}"
+        candidate = folder / f"{base}_{index}{suffix}"
         if not candidate.exists():
             return candidate
     raise RuntimeError("Could not allocate a unique converter output path")
@@ -286,50 +299,78 @@ def _available_ffmpeg_encoders() -> set[str]:
     return encoders
 
 
-def _audio_codec(fmt: str) -> tuple[list[str], dict[str, Any]]:
+def _normalise_bitrate(value: str, default: str = "128k") -> str:
+    bitrate = str(value or "").strip().lower()
+    if re.fullmatch(r"\d{2,4}k", bitrate):
+        return bitrate
+    return default
+
+
+def _audio_codec(fmt: str, *, compress: bool = False, audio_bitrate: str = "") -> tuple[list[str], dict[str, Any]]:
+    bitrate = _normalise_bitrate(audio_bitrate, "128k") if compress else "192k"
     mapping = {
-        "mp3": ["-c:a", "libmp3lame", "-b:a", "192k"],
-        "m4a": ["-c:a", "aac", "-b:a", "192k"],
-        "aac": ["-c:a", "aac", "-b:a", "192k"],
+        "mp3": ["-c:a", "libmp3lame", "-b:a", bitrate],
+        "m4a": ["-c:a", "aac", "-b:a", bitrate],
+        "aac": ["-c:a", "aac", "-b:a", bitrate],
         "wav": ["-c:a", "pcm_s16le"],
         "flac": ["-c:a", "flac"],
-        "opus": ["-c:a", "libopus", "-b:a", "128k"],
-        "ogg": ["-c:a", "libvorbis", "-q:a", "5"],
+        "opus": ["-c:a", "libopus", "-b:a", _normalise_bitrate(audio_bitrate, "96k") if compress else "128k"],
+        "ogg": ["-c:a", "libvorbis", "-q:a", "3" if compress else "5"],
     }
     args = list(mapping[fmt])
-    return args, {"family": "audio", "codec_args": args}
+    return args, {"family": "audio", "codec_args": args, "compress": bool(compress), "audio_bitrate": bitrate}
 
 
-def _video_codecs(fmt: str) -> tuple[list[str], dict[str, Any]]:
+def _video_codecs(fmt: str, *, compress: bool = False, video_crf: int = 23, video_max_dimension: int = 0, audio_bitrate: str = "") -> tuple[list[str], dict[str, Any]]:
     encoders = _available_ffmpeg_encoders()
+    crf = max(16, min(38, int(video_crf if compress else 23)))
+    audio_br = _normalise_bitrate(audio_bitrate, "128k") if compress else "192k"
     if fmt == "webm":
         if "libvpx-vp9" in encoders:
-            args = ["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-c:a", "libopus"]
+            args = ["-c:v", "libvpx-vp9", "-crf", str(max(24, crf + 4)), "-b:v", "0", "-c:a", "libopus", "-b:a", _normalise_bitrate(audio_bitrate, "96k") if compress else "128k"]
         elif "libvpx" in encoders:
-            args = ["-c:v", "libvpx", "-b:v", "1M", "-c:a", "libopus"]
+            args = ["-c:v", "libvpx", "-b:v", "900k" if compress else "1M", "-c:a", "libopus"]
         elif "libaom-av1" in encoders:
-            args = ["-c:v", "libaom-av1", "-crf", "34", "-b:v", "0", "-c:a", "libopus"]
+            args = ["-c:v", "libaom-av1", "-crf", str(max(28, crf + 6)), "-b:v", "0", "-c:a", "libopus"]
         else:
-            args = ["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-c:a", "libopus"]
+            args = ["-c:v", "libvpx-vp9", "-crf", str(max(24, crf + 4)), "-b:v", "0", "-c:a", "libopus"]
     elif fmt in {"mp4", "mov"}:
-        args = ["-c:v", "libx264", "-preset", "medium", "-crf", "23", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+        args = ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf), "-c:a", "aac", "-b:a", audio_br, "-movflags", "+faststart"]
     else:  # mkv
-        args = ["-c:v", "libx264", "-preset", "medium", "-crf", "23", "-c:a", "aac", "-b:a", "192k"]
-    return args, {"family": "video", "codec_args": args, "ffmpeg_encoder_count": len(encoders)}
+        args = ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf), "-c:a", "aac", "-b:a", audio_br]
+    max_side = 0
+    if compress:
+        try:
+            max_side = max(0, int(video_max_dimension or 0))
+        except Exception:
+            max_side = 0
+        if max_side:
+            scale = f"scale='if(gt(iw,ih),min({max_side},iw),-2)':'if(gt(ih,iw),min({max_side},ih),-2)'"
+            args = ["-vf", scale] + args
+    return args, {"family": "video", "codec_args": args, "ffmpeg_encoder_count": len(encoders), "compress": bool(compress), "crf": crf, "max_dimension": max_side}
 
 
-def _image_codec(fmt: str, image_quality: int) -> tuple[list[str], dict[str, Any]]:
+def _image_codec(fmt: str, image_quality: int, *, compress: bool = False, image_max_dimension: int = 0) -> tuple[list[str], dict[str, Any]]:
     q = max(1, min(100, int(image_quality)))
+    args: list[str] = []
+    max_side = 0
+    if compress:
+        try:
+            max_side = max(0, int(image_max_dimension or 0))
+        except Exception:
+            max_side = 0
+        if max_side:
+            args += ["-vf", f"scale='if(gt(iw,ih),min({max_side},iw),-2)':'if(gt(ih,iw),min({max_side},ih),-2)'"]
     if fmt == "jpg":
         qscale = max(2, min(31, int(round((100 - q) / 3.25)) or 2))
-        args = ["-frames:v", "1", "-q:v", str(qscale)]
+        args += ["-frames:v", "1", "-q:v", str(qscale)]
     elif fmt == "webp":
-        args = ["-lossless", "0", "-quality", str(q)]
-    elif fmt in {"png", "bmp", "tiff"}:
-        args = ["-frames:v", "1"]
-    else:
-        args = []
-    return args, {"family": "image", "quality": q, "codec_args": args}
+        args += ["-lossless", "0", "-quality", str(q)]
+    elif fmt == "png":
+        args += ["-frames:v", "1", "-compression_level", "9" if compress else "6"]
+    elif fmt in {"bmp", "tiff"}:
+        args += ["-frames:v", "1"]
+    return args, {"family": "image", "quality": q, "codec_args": args, "compress": bool(compress), "max_dimension": max_side}
 
 
 def _validate_route(input_kind: str, output_kind: str, target_format: str) -> None:
@@ -343,7 +384,7 @@ def _validate_route(input_kind: str, output_kind: str, target_format: str) -> No
     raise ValueError(f"Unsupported converter route: {input_kind} -> {target_format} ({output_kind})")
 
 
-def plan_conversion(input_path: str | os.PathLike[str], target_format: str = "auto", *, output_dir: str | os.PathLike[str] | None = None, keep_original: bool = False, overwrite: bool = False, image_quality: int = 92) -> dict[str, Any]:
+def plan_conversion(input_path: str | os.PathLike[str], target_format: str = "auto", *, output_dir: str | os.PathLike[str] | None = None, keep_original: bool = False, overwrite: bool = False, image_quality: int = 92, compress: bool = False, image_max_dimension: int = 0, video_crf: int = 23, video_max_dimension: int = 0, audio_bitrate: str = "", file_suffix: str = "") -> dict[str, Any]:
     input_file = Path(input_path).expanduser().resolve()
     if not input_file.is_file():
         raise FileNotFoundError(str(input_file))
@@ -357,25 +398,25 @@ def plan_conversion(input_path: str | os.PathLike[str], target_format: str = "au
     output_kind = output_kind_for_format(fmt)
     _validate_route(input_kind, output_kind, fmt)
 
-    output_file = _make_output_path(input_file, fmt, output_dir, overwrite)
+    output_file = _make_output_path(input_file, fmt, output_dir, overwrite, file_suffix if compress else "")
     preset: dict[str, Any] = {}
     if output_kind == "text":
         method = "python_text"
         command = ["python_text_convert", str(input_file), str(output_file)]
-        preset = {"family": "text", "preserve_original_text": True}
+        preset = {"family": "text", "preserve_original_text": True, "compress": False}
     else:
         method = "ffmpeg"
         ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
         command = [ffmpeg, "-hide_banner", "-y", "-i", str(input_file), "-map_metadata", "0"]
         if output_kind == "audio":
             command += ["-vn"]
-            args, preset = _audio_codec(fmt)
+            args, preset = _audio_codec(fmt, compress=bool(compress), audio_bitrate=audio_bitrate)
             command += args
         elif output_kind == "video":
-            args, preset = _video_codecs(fmt)
+            args, preset = _video_codecs(fmt, compress=bool(compress), video_crf=video_crf, video_max_dimension=video_max_dimension, audio_bitrate=audio_bitrate)
             command += args
         elif output_kind == "image":
-            args, preset = _image_codec(fmt, image_quality)
+            args, preset = _image_codec(fmt, image_quality, compress=bool(compress), image_max_dimension=image_max_dimension)
             command += args
         else:
             raise ValueError(f"Unsupported converter route: {input_kind} -> {fmt}")
