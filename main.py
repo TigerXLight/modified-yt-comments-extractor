@@ -3743,6 +3743,9 @@ class App(ctk.CTk):
 
     def _create_files_section(self) -> None:
         """Create the session-only local files section in the sidebar."""
+        # R42EK: FILES keeps only file/library actions here.  Converter keep/selection
+        # controls live inside the File Converter/media windows, not each FILES row.
+        self._ensure_session_file_action_icons()
         divider = ctk.CTkFrame(self.sidebar_scroll, fg_color=COLORS["border"], height=1)
         divider.pack(fill="x", padx=16, pady=(8, 6))
 
@@ -3761,6 +3764,23 @@ class App(ctk.CTk):
         )
         files_label.grid(row=0, column=0, sticky="w")
 
+        # R42EK: open the latest converter output folder from the FILES header,
+        # separated from Clear all to avoid destructive-action mis-clicks.
+        files_output_folder_kwargs = {
+            "text": "" if getattr(self, "file_converter_open_folder_icon_image", None) is not None else "Open",
+            "width": 30 if getattr(self, "file_converter_open_folder_icon_image", None) is not None else 48,
+            "height": 24,
+            "command": self._open_file_converter_output_folder,
+            "fg_color": COLORS["bg_input"],
+            "hover_color": COLORS["border"],
+            "text_color": COLORS["text_primary"],
+            "corner_radius": 6,
+        }
+        if getattr(self, "file_converter_open_folder_icon_image", None) is not None:
+            files_output_folder_kwargs["image"] = self.file_converter_open_folder_icon_image
+        self.files_output_folder_button = ctk.CTkButton(self.files_header_frame, **files_output_folder_kwargs)
+        self.files_output_folder_button.grid(row=0, column=1, sticky="e", padx=(18, 8))
+
         self.files_clear_all_button = ctk.CTkButton(
             self.files_header_frame,
             text="Clear all",
@@ -3772,7 +3792,7 @@ class App(ctk.CTk):
             text_color=COLORS["text_primary"],
             corner_radius=6,
         )
-        self.files_clear_all_button.grid(row=0, column=1, sticky="e", padx=(0, 3))
+        self.files_clear_all_button.grid(row=0, column=2, sticky="e", padx=(0, 3))
 
         self.files_add_button_tooltip_text = "Add files"
         self.files_add_button = ctk.CTkButton(
@@ -3797,7 +3817,7 @@ class App(ctk.CTk):
             text_color=COLORS["text_primary"],
             corner_radius=6,
         )
-        self.files_expand_all_button.grid(row=0, column=2, sticky="e", padx=(0, 3))
+        self.files_expand_all_button.grid(row=0, column=3, sticky="e", padx=(0, 3))
 
         self.files_collapse_all_button = ctk.CTkButton(
             self.files_header_frame,
@@ -3810,9 +3830,9 @@ class App(ctk.CTk):
             text_color=COLORS["text_primary"],
             corner_radius=6,
         )
-        self.files_collapse_all_button.grid(row=0, column=3, sticky="e", padx=(0, 3))
+        self.files_collapse_all_button.grid(row=0, column=4, sticky="e", padx=(0, 3))
 
-        self.files_add_button.grid(row=0, column=4, sticky="e")
+        self.files_add_button.grid(row=0, column=5, sticky="e")
 
         self.files_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
         self.files_frame.pack(fill="x", padx=8)
@@ -4810,6 +4830,10 @@ class App(ctk.CTk):
             return "break"
         self.last_session_file_click_path = normalized_path
         self.last_session_file_click_time = now
+        # R42EK: a single click highlights the row for drag/take-all workflows,
+        # without adding converter checkboxes to every FILES row.
+        self.selected_session_file_path = normalized_path
+        self._set_session_file_label_visual(normalized_path, drag_hover=False)
         self._begin_session_file_drag(normalized_path)
         return None
 
@@ -4855,18 +4879,39 @@ class App(ctk.CTk):
             if target_path:
                 self._set_session_file_label_visual(target_path, drag_hover=True)
 
+    def _session_file_drop_target_is_converter(self, widget: Any) -> bool:
+        targets = {
+            getattr(self, "file_converter_card", None),
+            getattr(self, "file_converter_drop_frame", None),
+            getattr(self, "file_converter_queue_textbox", None),
+        }
+        current = widget
+        while current is not None:
+            if current in targets:
+                return True
+            current = getattr(current, "master", None)
+        return False
+
     def _finish_session_file_drag(self, normalized_path: str, event: Any) -> None:
         self._ensure_session_files_state()
         source_path = self._normalise_session_file_path(
             getattr(self, "session_file_drag_source_path", "") or normalized_path
         )
         target_path = getattr(self, "session_file_drag_hover_path", "") or ""
+        target_widget = None
         if not target_path:
-            target_widget = None
             try:
                 target_widget = self.winfo_containing(event.x_root, event.y_root)
             except Exception:
                 target_widget = None
+            if target_widget is not None and self._session_file_drop_target_is_converter(target_widget):
+                self.session_file_drag_source_path = ""
+                self.session_file_drag_hover_path = ""
+                self._cancel_session_file_global_drag_bindings()
+                self._file_converter_add_paths([source_path], add_to_session=False, select_first=False, source_label="FILES drag")
+                self._show_file_converter_panel()
+                self._refresh_session_files_list()
+                return
             target_path = self._session_file_path_for_widget(target_widget) if target_widget is not None else ""
         self.session_file_drag_source_path = ""
         self.session_file_drag_hover_path = ""
@@ -5206,40 +5251,9 @@ class App(ctk.CTk):
             self.session_file_row_widgets[entry.normalized_path] = row_frame
             self.session_file_label_widgets[entry.normalized_path] = label
             action_column = 1
-
-            converter_selected_var = ctk.BooleanVar(value=entry.normalized_path in (getattr(self, "file_converter_queued_paths", []) or []))
-            converter_checkbox = ctk.CTkCheckBox(
-                row_frame,
-                text="",
-                variable=converter_selected_var,
-                width=24,
-                height=24,
-                checkbox_width=16,
-                checkbox_height=16,
-                fg_color=COLORS["accent"],
-                hover_color=COLORS["accent_hover"],
-                border_color=COLORS["border"],
-                command=lambda path=entry.normalized_path, var=converter_selected_var: self._toggle_file_converter_file_selection_from_checkbox(path, var),
-            )
-            converter_checkbox.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
-            self.session_file_converter_select_widgets[entry.normalized_path] = converter_checkbox
-            action_column += 1
-
-            keep_selected = self._session_file_keep_original_enabled(entry.normalized_path)
-            keep_button_kwargs = {
-                "text": "" if self.session_keep_file_icon_image is not None else "K",
-                "width": 30,
-                "height": 26,
-                "fg_color": COLORS["accent_secondary"] if keep_selected else "transparent",
-                "hover_color": COLORS["accent_hover"] if keep_selected else COLORS["border"],
-                "text_color": COLORS["text_primary"] if keep_selected else COLORS["text_muted"],
-                "command": lambda path=entry.normalized_path: self._toggle_session_file_keep_original(path),
-            }
-            if self.session_keep_file_icon_image is not None:
-                keep_button_kwargs["image"] = self.session_keep_file_icon_image
-            keep_button = ctk.CTkButton(row_frame, **keep_button_kwargs)
-            keep_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
-            action_column += 1
+            # R42EK: no converter checkbox, queue arrow, or K button on FILES rows.
+            # FILES rows remain file entries; conversion selection lives in the
+            # File Converter hold box and in image/video/audio windows.
 
             if nested and not conversion_nested:
                 out_button = ctk.CTkButton(
@@ -7194,7 +7208,7 @@ class App(ctk.CTk):
         title.pack(side="left")
         self.file_converter_status_label = ctk.CTkLabel(
             header,
-            text="Tick FILES rows or drop same-type files. Converted outputs return to FILES.",
+            text="Drop, drag, or Take all same-type files here. Converted outputs return to FILES.",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_muted"],
         )
@@ -7221,6 +7235,35 @@ class App(ctk.CTk):
             button_hover_color=COLORS["border"],
         )
         self.file_converter_format_menu.pack(side="left", padx=(8, 14))
+        ctk.CTkLabel(
+            controls,
+            text="Take all:",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 6))
+        self.file_converter_take_all_var = ctk.StringVar(value="auto")
+        self.file_converter_take_all_menu = ctk.CTkOptionMenu(
+            controls,
+            values=["auto", "image", "video", "audio", "text"],
+            variable=self.file_converter_take_all_var,
+            width=82,
+            height=28,
+            fg_color=COLORS["bg_input"],
+            button_color=COLORS["accent_secondary"],
+            button_hover_color=COLORS["border"],
+        )
+        self.file_converter_take_all_menu.pack(side="left", padx=(0, 8))
+        self.file_converter_take_all_button = ctk.CTkButton(
+            controls,
+            text="Take",
+            command=self._file_converter_take_all_from_files,
+            width=52,
+            height=28,
+            fg_color=COLORS["bg_input"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+        )
+        self.file_converter_take_all_button.pack(side="left", padx=(0, 14))
         self.file_converter_keep_batch_var = ctk.BooleanVar(value=False)
         self.file_converter_keep_batch_checkbox = ctk.CTkCheckBox(
             controls,
@@ -7250,27 +7293,12 @@ class App(ctk.CTk):
             corner_radius=8,
         )
         self.file_converter_convert_button.pack(side="left")
-        open_folder_button_kwargs = {
-            "text": "" if getattr(self, "file_converter_open_folder_icon_image", None) is not None else "Open output folder",
-            "command": self._open_file_converter_output_folder,
-            "width": 42 if getattr(self, "file_converter_open_folder_icon_image", None) is not None else 140,
-            "height": 30,
-            "fg_color": COLORS["accent_secondary"],
-            "hover_color": COLORS["border"],
-            "corner_radius": 8,
-        }
-        if getattr(self, "file_converter_open_folder_icon_image", None) is not None:
-            open_folder_button_kwargs["image"] = self.file_converter_open_folder_icon_image
-        self.file_converter_open_output_button = ctk.CTkButton(
-            button_row,
-            **open_folder_button_kwargs,
-        )
-        self.file_converter_open_output_button.pack(side="left", padx=(8, 0))
+        # R42EK: output-folder access moved to the FILES header icon.
         self.file_converter_clear_button = ctk.CTkButton(
             button_row,
-            text="Clear converter",
+            text="Clear",
             command=self._file_converter_clear_queue,
-            width=112,
+            width=68,
             height=30,
             fg_color=COLORS["bg_input"],
             hover_color=COLORS["border"],
@@ -7290,16 +7318,16 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=12),
             text_color=COLORS["text_muted"],
         )
-        self.file_converter_drop_label.pack(fill="x", padx=10, pady=10)
+        self.file_converter_drop_label.pack(fill="x", padx=10, pady=(8, 2))
         self.file_converter_queue_textbox = ctk.CTkTextbox(
-            self.file_converter_card,
-            height=96,
+            self.file_converter_drop_frame,
+            height=104,
             fg_color=COLORS["bg_input"],
             text_color=COLORS["text_primary"],
             font=ctk.CTkFont(size=11),
             corner_radius=8,
         )
-        self.file_converter_queue_textbox.pack(fill="x", padx=15, pady=(0, 12))
+        self.file_converter_queue_textbox.pack(fill="x", padx=10, pady=(0, 10))
         self._file_converter_refresh_format_menu()
         self._file_converter_refresh_queue_label()
         self.file_converter_card.grid_remove()
@@ -7435,6 +7463,38 @@ class App(ctk.CTk):
         self._file_converter_refresh_queue_label()
         self._file_converter_set_status(f"File Converter holds {len(queued)} {incoming_kind} file(s).")
 
+    def _file_converter_kind_matches_take_all_filter(self, path: str, filter_kind: str) -> bool:
+        detected = self._file_converter_kind_for_path(path)
+        if filter_kind == "auto":
+            return detected in {"text", "image", "audio", "video"}
+        return detected == filter_kind
+
+    def _file_converter_take_all_from_files(self) -> None:
+        self._ensure_session_files_state()
+        requested = str(getattr(self, "file_converter_take_all_var", None).get() if getattr(self, "file_converter_take_all_var", None) else "auto").strip().lower() or "auto"
+        entries = [entry for entry in getattr(self, "session_files", []) or [] if os.path.isfile(getattr(entry, "normalized_path", ""))]
+        if not entries:
+            self._file_converter_set_status("No FILES entries are available to take into File Converter.", error=True)
+            return
+        if requested == "auto":
+            existing_kind = self._file_converter_current_kind()
+            if existing_kind:
+                requested = existing_kind
+            else:
+                kinds = tuple(dict.fromkeys(self._file_converter_kind_for_path(entry.normalized_path) for entry in entries))
+                known = tuple(kind for kind in kinds if kind in {"text", "image", "audio", "video"})
+                if len(known) != 1:
+                    self._file_converter_set_status("Take all:auto needs only one FILES type present, or choose image/video/audio/text.", error=True)
+                    return
+                requested = known[0]
+        paths = [entry.normalized_path for entry in entries if self._file_converter_kind_matches_take_all_filter(entry.normalized_path, requested)]
+        if not paths:
+            self._file_converter_set_status(f"No {requested} files found in FILES.", error=True)
+            return
+        self._file_converter_add_paths(paths, add_to_session=False, select_first=False, source_label=f"FILES Take all:{requested}")
+        self._show_file_converter_panel()
+        self._file_converter_set_status(f"Took {len(paths)} {requested} file(s) from FILES into File Converter.")
+
     def _file_converter_add_selected_files(self) -> None:
         self._ensure_session_files_state()
         selected = getattr(self, "selected_session_file_path", "") or ""
@@ -7511,7 +7571,7 @@ class App(ctk.CTk):
                     suffix = default_fmt if target_format == "auto" else target_format
                     textbox.insert("end", f"{index}. {'K ' if keep else 'DEL '}[{kind}/{method} -> .{suffix}] {os.path.basename(path)}\n")
             else:
-                textbox.insert("end", "No files held. Tick FILES-row fill boxes or drop same-type files here.\n")
+                textbox.insert("end", "Drop files here — held only in File Converter until Convert. Or drag FILES rows / use Take all.\n")
             textbox.configure(state="disabled")
         except Exception:
             pass
@@ -7553,6 +7613,61 @@ class App(ctk.CTk):
             name="YTCEFileConverterR42EJ",
         )
         thread.start()
+
+    def _file_converter_convert_paths_direct_to_files(
+        self,
+        paths: Sequence[str],
+        *,
+        target_format: str = "auto",
+        keep_original: bool = False,
+        source_label: str = "media window conversion",
+    ) -> None:
+        """Convert media-window temp files, then add results to FILES.
+
+        R42EK keeps media-window conversion out of the main File Converter hold box:
+        selected webpage media downloads to temp, converts locally, and only successful
+        output files enter FILES.  Originals enter FILES only when Keep original is on.
+        """
+        try:
+            from profile_media_file_converter_r42eh import plan_conversion, run_conversion
+        except Exception as import_error:
+            self.log_message(f"Media-window converter backend import failed: {import_error}", "error")
+            return
+        usable = [str(path) for path in paths or () if str(path or "").strip() and os.path.isfile(str(path))]
+        if not usable:
+            self.log_message("Media-window conversion found no downloaded local files to convert.", "warning")
+            return
+        converted = 0
+        failed = 0
+        for input_path in usable:
+            try:
+                plan = plan_conversion(input_path, target_format or "auto", keep_original=bool(keep_original))
+                result = run_conversion(plan)
+            except Exception as conversion_error:
+                result = {"success": False, "input_path": input_path, "output_path": "", "target_format": target_format, "error": str(conversion_error), "original_deleted": False}
+            output_path = str(result.get("output_path") or "")
+            if result.get("success") and output_path and os.path.isfile(output_path):
+                converted += 1
+                self.file_converter_last_output_dir = os.path.dirname(output_path)
+                intake_paths = [output_path]
+                if keep_original and input_path and os.path.isfile(input_path):
+                    intake_paths.insert(0, input_path)
+                try:
+                    self._intake_session_files(tuple(intake_paths), select_first=True, source_label=source_label)
+                except Exception:
+                    logger.debug("Could not add media-window converted output to FILES.", exc_info=True)
+                if keep_original and input_path and os.path.isfile(input_path):
+                    self._add_file_converter_conversion_group(input_path, output_path, str(result.get("target_format") or target_format or "auto"))
+                self.log_message(f"Converted media-window file to FILES: {os.path.basename(output_path)}", "success")
+            else:
+                failed += 1
+                self.log_message(f"Media-window conversion failed for {os.path.basename(input_path)}: {result.get('error', 'unknown error')}", "warning")
+        try:
+            self._refresh_session_files_list()
+            self._refresh_export_entry_state()
+        except Exception:
+            logger.debug("Could not refresh FILES after media-window conversion.", exc_info=True)
+        self._file_converter_set_status(f"Media-window conversion complete: {converted} converted, {failed} failed.", error=bool(failed))
 
     def _file_converter_run_worker(self, paths: tuple[str, ...], target_format: str, keep_all: bool) -> None:
         try:
@@ -21957,24 +22072,75 @@ class App(ctk.CTk):
         )
 
 
-    def _download_webpage_image_resource_ids_to_files_and_convert(self, row_id: str, selected_resource_ids: Sequence[str]) -> None:
+    def _download_webpage_image_resource_ids_to_files_and_convert(
+        self,
+        row_id: str,
+        selected_resource_ids: Sequence[str],
+        *,
+        target_format: str = "auto",
+        keep_original: bool = False,
+    ) -> None:
         selected_ids = tuple(dict.fromkeys(str(resource_id or "") for resource_id in selected_resource_ids if str(resource_id or "")))
         if not selected_ids:
             self.log_message("No image-window candidates were selected for conversion.", "muted")
             return
-        self._download_webpage_image_resource_ids_to_files(row_id, selected_ids)
-        cache = getattr(self, "webpage_image_session_download_cache", {}) or {}
-        paths = []
-        for resource_id in selected_ids:
-            local_path = str(cache.get((row_id, resource_id)) or "").strip()
-            if local_path and os.path.isfile(local_path) and local_path not in paths:
-                paths.append(local_path)
-        if not paths:
-            self.log_message("Image conversion found no local files yet; add to FILES first if this candidate was already reused or skipped.", "warning")
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            self.log_message("Image-window conversion failed: source row no longer exists.", "warning")
             return
-        self._file_converter_add_paths(paths, add_to_session=False, select_first=False, source_label="image window")
-        self._show_file_converter_panel()
-        self._file_converter_set_status(f"Held {len(paths)} image file(s) from the image window for conversion.")
+        state = resource_dialog_state_for_row(row, RESOURCE_KIND_IMAGE)
+        available_ids = {str(getattr(item, "resource_id", "") or "") for item in getattr(state, "resources", ()) or ()}
+        selected_ids = tuple(resource_id for resource_id in selected_ids if resource_id in available_ids)
+        if not selected_ids:
+            self.log_message("Image-window conversion found no matching candidates.", "warning")
+            return
+        self.source_resource_selections[row.row_id] = selected_ids
+        download_cache = getattr(self, "webpage_image_session_download_cache", {}) or {}
+        resource_local_paths: dict[str, str] = {}
+        for resource_id in selected_ids:
+            cached_path = str(download_cache.get((row.row_id, resource_id)) or "").strip()
+            if cached_path and os.path.isfile(cached_path):
+                resource_local_paths[resource_id] = cached_path
+        missing_resource_ids = tuple(resource_id for resource_id in selected_ids if resource_id not in resource_local_paths)
+        if missing_resource_ids:
+            missing_state = state.__class__(
+                source_row_id=state.source_row_id,
+                resource_kind=state.resource_kind,
+                resources=state.resources,
+                selected_resource_ids=missing_resource_ids,
+                committed_resource_ids=state.committed_resource_ids,
+            )
+            result = download_selected_webpage_images(
+                row=row,
+                state=missing_state,
+                output_dir=self._webpage_image_session_download_root(),
+                filters=MediaResourceFilterState(
+                    url_filter="",
+                    text_filter="",
+                    min_width=0,
+                    min_height=0,
+                    only_linked_resources=False,
+                    save_to_subfolder=True,
+                    rename_files=True,
+                ),
+            )
+            downloaded_files_for_missing = tuple(result.downloaded_files)
+            self._remember_webpage_image_session_downloads(
+                row=row,
+                selected_resource_ids=missing_resource_ids,
+                downloaded_files=downloaded_files_for_missing,
+                manifest_json=result.manifest_json,
+            )
+            for resource_id, local_path in zip(missing_resource_ids, downloaded_files_for_missing):
+                if local_path:
+                    resource_local_paths[resource_id] = str(local_path)
+        paths = [resource_local_paths[resource_id] for resource_id in selected_ids if resource_local_paths.get(resource_id)]
+        self._file_converter_convert_paths_direct_to_files(
+            paths,
+            target_format=target_format or "auto",
+            keep_original=bool(keep_original),
+            source_label="image-window conversion",
+        )
 
 
     def _open_source_image_canvas_grid_window(self, row_id: str) -> None:
@@ -22567,11 +22733,13 @@ class App(ctk.CTk):
                     length = int(self.headers.get("Content-Length", "0") or "0")
                     payload = json.loads(self.rfile.read(min(length, 1024 * 1024)).decode("utf-8"))
                     ids = tuple(str(value or "") for value in payload.get("ids", []) if str(value or ""))
+                    target_format = str(payload.get("target_format") or "auto").strip().lower().lstrip(".") or "auto"
+                    keep_original = bool(payload.get("keep_original"))
                 except Exception as error:
                     self._send_bytes(400, json.dumps({"ok": False, "error": str(error)}).encode("utf-8"), "application/json; charset=utf-8")
                     return
                 if parsed.path == "/download-convert-selected":
-                    app.after(0, lambda selected_ids=ids: app._download_webpage_image_resource_ids_to_files_and_convert(row_id, selected_ids))
+                    app.after(0, lambda selected_ids=ids, fmt=target_format, keep=keep_original: app._download_webpage_image_resource_ids_to_files_and_convert(row_id, selected_ids, target_format=fmt, keep_original=keep))
                 else:
                     app.after(0, lambda selected_ids=ids: app._download_webpage_image_resource_ids_to_files(row_id, selected_ids))
                 self._send_bytes(200, json.dumps({"ok": True, "queued": len(ids), "convert": parsed.path == "/download-convert-selected"}).encode("utf-8"), "application/json; charset=utf-8")
@@ -22590,6 +22758,8 @@ header {{ position:sticky; top:0; z-index:2; display:flex; flex-wrap:wrap; gap:.
 button {{ border:1px solid #40505f; border-radius:999px; background:#1f2933; color:#e8eef2; padding:.35rem .7rem; cursor:pointer; }}
 button:hover {{ background:#2a3642; }}
 button.primary {{ background:#075985; border-color:#38bdf8; }}
+select {{ border:1px solid #40505f; border-radius:999px; background:#1f2933; color:#e8eef2; padding:.35rem .55rem; }}
+select {{ border:1px solid #40505f; border-radius:999px; background:#1f2933; color:#e8eef2; padding:.35rem .55rem; }}
 .meta {{ color:#aab7c3; font-size:.82rem; }}
 .grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(168px, 1fr)); gap:.55rem; padding:.6rem; }}
 .card {{ position:relative; min-height:186px; display:flex; align-items:center; justify-content:center; overflow:hidden; border:1px solid #2e3a44; border-radius:14px; background:conic-gradient(#1d2730 90deg,#26333d 90deg 180deg,#1d2730 180deg 270deg,#26333d 270deg); background-size:12px 12px; box-shadow:0 3px 12px #0006; cursor:pointer; }}
@@ -22630,6 +22800,8 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 <button id="selectAll">Select all</button>
 <button id="clearAll">Clear all</button>
 <button id="addFiles" class="primary">Add selected to FILES</button>
+<select id="convertTarget" title="Image conversion target"><option value="auto">auto</option><option value="webp">webp</option><option value="png">png</option><option value="jpg">jpg</option><option value="bmp">bmp</option><option value="tiff">tiff</option></select>
+<label class="meta"><input id="convertKeep" type="checkbox"> Keep original</label>
 <button id="convertFiles" class="primary">Convert selected</button>
 <span class="meta" id="status">Native browser image loading · order preserved</span>
 </header>
@@ -22788,12 +22960,14 @@ document.getElementById('addFiles').onclick = async () => {{
 document.getElementById('convertFiles').onclick = async () => {{
   const ids = [...selected];
   if (!ids.length) {{ setStatus('No images selected for conversion.'); return; }}
-  setStatus(`Adding and queueing ${{ids.length}} selected image(s) for conversion...`);
+  const target_format = document.getElementById('convertTarget').value || 'auto';
+  const keep_original = document.getElementById('convertKeep').checked;
+  setStatus(`Downloading then converting ${{ids.length}} selected image(s) to ${{target_format}}...`);
   try {{
-    const response = await fetch(`/download-convert-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids}})}});
+    const response = await fetch(`/download-convert-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids, target_format, keep_original}})}});
     const payload = await response.json();
-    setStatus(payload.ok ? `Sent ${{payload.queued}} image(s) to File Converter.` : `File Converter add failed: ${{payload.error || 'unknown error'}}`);
-  }} catch (error) {{ setStatus(`File Converter add failed: ${{error}}`); }}
+    setStatus(payload.ok ? `Conversion started for ${{payload.queued}} image(s); outputs will enter FILES after conversion.` : `Conversion failed to start: ${{payload.error || 'unknown error'}}`);
+  }} catch (error) {{ setStatus(`Conversion failed to start: ${{error}}`); }}
 }};
 render();
 </script>
@@ -23719,7 +23893,7 @@ render();
             raise RuntimeError("Downloaded media file was empty.")
         return str(target_path)
 
-    def _download_webpage_video_audio_resource_ids_to_files(self, row_id: str, selected_resource_ids: Sequence[str], *, convert_after: bool = False) -> None:
+    def _download_webpage_video_audio_resource_ids_to_files(self, row_id: str, selected_resource_ids: Sequence[str], *, convert_after: bool = False, convert_target_format: str = "auto", convert_keep_original: bool = False) -> None:
         row = self._source_row_by_id(row_id)
         if row is None:
             self.log_message("Browser-native video/audio FILES intake failed: source row no longer exists.", "warning")
@@ -23773,6 +23947,8 @@ render();
                 downloaded_count=0,
                 failed_messages=(),
                 convert_after=convert_after,
+                convert_target_format=convert_target_format,
+                convert_keep_original=convert_keep_original,
             )
             return
         self.log_message(f"Browser-native video/audio download queued for {len(missing_resource_ids)} candidate(s).", "muted")
@@ -23813,13 +23989,15 @@ render();
                     downloaded_count=count,
                     failed_messages=failures,
                     convert_after=convert_after,
+                    convert_target_format=convert_target_format,
+                    convert_keep_original=convert_keep_original,
                 ),
             )
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _download_webpage_video_audio_resource_ids_to_files_and_convert(self, row_id: str, selected_resource_ids: Sequence[str]) -> None:
-        self._download_webpage_video_audio_resource_ids_to_files(row_id, selected_resource_ids, convert_after=True)
+    def _download_webpage_video_audio_resource_ids_to_files_and_convert(self, row_id: str, selected_resource_ids: Sequence[str], *, target_format: str = "auto", keep_original: bool = False) -> None:
+        self._download_webpage_video_audio_resource_ids_to_files(row_id, selected_resource_ids, convert_after=True, convert_target_format=target_format, convert_keep_original=keep_original)
 
     def _finish_webpage_video_audio_files_intake(
         self,
@@ -23832,7 +24010,27 @@ render();
         downloaded_count: int,
         failed_messages: Sequence[str],
         convert_after: bool = False,
+        convert_target_format: str = "auto",
+        convert_keep_original: bool = False,
     ) -> None:
+        if convert_after:
+            paths_to_convert = []
+            for resource_id in selected_ids:
+                local_path = str(resource_local_paths.get(resource_id) or "").strip()
+                if local_path and os.path.isfile(local_path) and local_path not in paths_to_convert:
+                    paths_to_convert.append(local_path)
+            if paths_to_convert:
+                self._file_converter_convert_paths_direct_to_files(
+                    paths_to_convert,
+                    target_format=convert_target_format or "auto",
+                    keep_original=bool(convert_keep_original),
+                    source_label="video-audio-window conversion",
+                )
+            else:
+                self.log_message("Video & Audio conversion found no downloaded local files to convert.", "warning")
+            if failed_messages:
+                self.log_message("Browser-native video/audio conversion download warnings: " + "; ".join(tuple(failed_messages)[:3]), "warning")
+            return
         files_for_intake = tuple(resource_local_paths[resource_id] for resource_id in selected_ids if resource_local_paths.get(resource_id))
         if files_for_intake:
             intake_result = self._intake_session_files(
@@ -23877,19 +24075,6 @@ render();
             ),
             "success" if downloaded_count or intake_plan.reused_count else "warning",
         )
-        if convert_after:
-            paths_to_convert = []
-            for resource_id in selected_ids:
-                local_path = str(resource_local_paths.get(resource_id) or "").strip()
-                if local_path and os.path.isfile(local_path) and local_path not in paths_to_convert:
-                    paths_to_convert.append(local_path)
-            if paths_to_convert:
-                self._file_converter_add_paths(paths_to_convert, add_to_session=False, select_first=False, source_label="Video & Audio window")
-                self._show_file_converter_panel()
-                self._file_converter_set_status(f"Held {len(paths_to_convert)} video/audio file(s) from the media window for conversion.")
-            else:
-                self.log_message("Video & Audio conversion found no local files yet; add to FILES first if this candidate was skipped or reused.", "warning")
-
     def _open_source_video_audio_browser_grid_window(self, row_id: str) -> None:
         row = self._source_row_by_id(row_id)
         if row is None:
@@ -24233,11 +24418,13 @@ render();
                     length = int(self.headers.get("Content-Length", "0") or "0")
                     payload = json.loads(self.rfile.read(min(length, 1024 * 1024)).decode("utf-8"))
                     ids = tuple(str(value or "") for value in payload.get("ids", []) if str(value or ""))
+                    target_format = str(payload.get("target_format") or "auto").strip().lower().lstrip(".") or "auto"
+                    keep_original = bool(payload.get("keep_original"))
                 except Exception as error:
                     self._send_bytes(400, json.dumps({"ok": False, "error": str(error)}).encode("utf-8"), "application/json; charset=utf-8")
                     return
                 if parsed.path == "/download-convert-selected":
-                    app.after(0, lambda selected_ids=ids: app._download_webpage_video_audio_resource_ids_to_files_and_convert(row_id, selected_ids))
+                    app.after(0, lambda selected_ids=ids, fmt=target_format, keep=keep_original: app._download_webpage_video_audio_resource_ids_to_files_and_convert(row_id, selected_ids, target_format=fmt, keep_original=keep))
                 else:
                     app.after(0, lambda selected_ids=ids: app._download_webpage_video_audio_resource_ids_to_files(row_id, selected_ids))
                 self._send_bytes(200, json.dumps({"ok": True, "queued": len(ids), "convert": parsed.path == "/download-convert-selected"}).encode("utf-8"), "application/json; charset=utf-8")
@@ -24432,7 +24619,7 @@ setInterval(refreshMediaItemsFromServer, 1000);
 document.getElementById('selectAll').onclick=()=>{{ mediaItems.forEach(item=>selected.add(item.resource_id)); document.querySelectorAll('.card').forEach(c=>c.classList.add('selected')); updateCounts(); }};
 document.getElementById('clearAll').onclick=()=>{{ selected.clear(); document.querySelectorAll('.card').forEach(c=>c.classList.remove('selected')); updateCounts(); }};
 document.getElementById('addFiles').onclick=async()=>{{ const ids=[...selected]; if (!ids.length) {{ setStatus('No media selected.'); return; }} setStatus(`Adding ${{ids.length}} selected media candidate(s) to FILES...`); try {{ const response=await fetch(`/download-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids}})}}); const payload=await response.json(); if (payload.ok) {{ setStatus(`Queued ${{payload.queued}} media candidate(s) for FILES intake in the app.`); }} else setStatus(`FILES intake failed: ${{payload.error || 'unknown error'}}`); }} catch(error) {{ setStatus(`FILES intake failed: ${{error}}`); }} }};
-document.getElementById('convertFiles').onclick=async()=>{{ const ids=[...selected]; if (!ids.length) {{ setStatus('No media selected for conversion.'); return; }} setStatus(`Adding ${{ids.length}} selected media candidate(s) to File Converter...`); try {{ const response=await fetch(`/download-convert-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids}})}}); const payload=await response.json(); if (payload.ok) {{ setStatus(`Sent ${{payload.queued}} media candidate(s) to File Converter.`); }} else setStatus(`File Converter add failed: ${{payload.error || 'unknown error'}}`); }} catch(error) {{ setStatus(`File Converter add failed: ${{error}}`); }} }};
+document.getElementById('convertFiles').onclick=async()=>{{ const ids=[...selected]; if (!ids.length) {{ setStatus('No media selected for conversion.'); return; }} const target_format=document.getElementById('convertTarget').value || 'auto'; const keep_original=document.getElementById('convertKeep').checked; setStatus(`Downloading then converting ${{ids.length}} selected media candidate(s) to ${{target_format}}...`); try {{ const response=await fetch(`/download-convert-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids,target_format,keep_original}})}}); const payload=await response.json(); if (payload.ok) {{ setStatus(`Conversion started for ${{payload.queued}} media candidate(s); outputs will enter FILES after conversion.`); }} else setStatus(`Conversion failed to start: ${{payload.error || 'unknown error'}}`); }} catch(error) {{ setStatus(`Conversion failed to start: ${{error}}`); }} }};
 render();
 </script>
 </body>
@@ -24502,7 +24689,7 @@ render();
             (
                 f"Opened browser-native Video & Audio window with {len(cards)} media candidate(s); "
                 f"already in FILES before add={sum(1 for card in cards if str(card.get('file_intake_status') or '') == FILE_INTAKE_STATUS_REUSED)}; "
-                "Add selected to FILES posts back to the app"
+                "Add selected to FILES and Convert selected post back to the app"
                 + (
                     "; opened as a taskbar-owned Chromium app window."
                     if taskbar_owner_requested
@@ -38785,3 +38972,10 @@ if __name__ == "__main__":
 # R42EJ_CONVERTER_NO_ACTIVE_MEDIA_BUTTON
 # R42EJ_CONVERTER_OPEN_FOLDER_ICON
 # R42EJ_CONVERSION_GROUP_NOT_FOLDER
+
+# R42EK_FILE_CONVERTER_WINDOW_AND_FILES_CLEANUP
+# R42EK_FILES_ROWS_NO_CONVERTER_CHECKBOX_NO_K
+# R42EK_DROP_BOX_HOLDS_LIST_INSIDE_DROP_AREA
+# R42EK_MEDIA_WINDOWS_DOWNLOAD_THEN_CONVERT_BEFORE_FILES
+# R42EK_FILES_HEADER_OPEN_FOLDER_ICON
+# R42EK_TAKE_ALL_BY_FILE_TYPE
