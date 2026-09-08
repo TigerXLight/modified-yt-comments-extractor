@@ -3913,7 +3913,7 @@ class App(ctk.CTk):
         return bound
 
     def _bind_file_converter_drop_targets(self) -> bool:
-        """Bind file drops for the collapsible R42EG converter panel."""
+        """Bind file drops for the main-app file converter panel."""
         bound = False
         if not getattr(self, "file_drag_drop_ready", False):
             self.file_converter_drag_drop_available = False
@@ -5172,6 +5172,19 @@ class App(ctk.CTk):
                 keep_button_kwargs["image"] = self.session_keep_file_icon_image
             keep_button = ctk.CTkButton(row_frame, **keep_button_kwargs)
             keep_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
+            action_column += 1
+
+            convert_button = ctk.CTkButton(
+                row_frame,
+                text="↔",
+                width=30,
+                height=26,
+                fg_color="transparent",
+                hover_color=COLORS["border"],
+                text_color=COLORS["text_primary"],
+                command=lambda path=entry.normalized_path: self._file_converter_add_session_file(path),
+            )
+            convert_button.grid(row=0, column=action_column, sticky="e", padx=(4, 0))
             action_column += 1
 
             if nested:
@@ -7032,7 +7045,7 @@ class App(ctk.CTk):
         ]
 
     def _create_file_converter_section(self) -> None:
-        """Create the R42EG collapsible multipurpose file converter panel."""
+        """Create the main-app collapsible multipurpose file converter panel."""
         self.file_converter_card = ctk.CTkFrame(
             self.main_frame,
             fg_color=COLORS["bg_card"],
@@ -7107,6 +7120,17 @@ class App(ctk.CTk):
             corner_radius=8,
         )
         self.file_converter_add_selected_button.pack(side="left")
+        self.file_converter_add_active_media_button = ctk.CTkButton(
+            button_row,
+            text="Add active media",
+            command=self._file_converter_add_active_media_file,
+            width=125,
+            height=30,
+            fg_color=COLORS["accent_secondary"],
+            hover_color=COLORS["border"],
+            corner_radius=8,
+        )
+        self.file_converter_add_active_media_button.pack(side="left", padx=(8, 0))
         self.file_converter_convert_button = ctk.CTkButton(
             button_row,
             text="Convert",
@@ -7248,6 +7272,36 @@ class App(ctk.CTk):
         paths = [selected] if selected else [entry.normalized_path for entry in getattr(self, "session_files", []) or []]
         self._file_converter_add_paths(paths, add_to_session=False, select_first=False, source_label="FILES")
         self._show_file_converter_panel()
+
+    def _file_converter_add_session_file(self, normalized_path: str) -> None:
+        self._ensure_session_files_state()
+        try:
+            path = self._normalise_session_file_path(normalized_path)
+        except Exception:
+            path = str(normalized_path or "")
+        if not path or not os.path.isfile(path):
+            self._file_converter_set_status("Selected FILES row is no longer available for conversion.", error=True)
+            return
+        self.selected_session_file_path = path
+        self._file_converter_add_paths([path], add_to_session=False, select_first=False, source_label="FILES row")
+        self._show_file_converter_panel()
+
+    def _file_converter_add_active_media_file(self) -> None:
+        candidates = (
+            getattr(self, "active_media_file_path", "") or "",
+            getattr(self, "selected_session_file_path", "") or "",
+            getattr(self, "linked_transcript_media_path", "") or "",
+        )
+        for raw_path in candidates:
+            try:
+                path = self._normalise_session_file_path(str(raw_path or ""))
+            except Exception:
+                path = str(raw_path or "")
+            if path and os.path.isfile(path):
+                self._file_converter_add_paths([path], add_to_session=False, select_first=False, source_label="active media")
+                self._show_file_converter_panel()
+                return
+        self._file_converter_set_status("No active image/audio/video file is available for conversion yet.", error=True)
 
     def _file_converter_clear_queue(self) -> None:
         self.file_converter_queued_paths = []
@@ -21670,6 +21724,26 @@ class App(ctk.CTk):
         )
 
 
+    def _download_webpage_image_resource_ids_to_files_and_convert(self, row_id: str, selected_resource_ids: Sequence[str]) -> None:
+        selected_ids = tuple(dict.fromkeys(str(resource_id or "") for resource_id in selected_resource_ids if str(resource_id or "")))
+        if not selected_ids:
+            self.log_message("No image-window candidates were selected for conversion.", "muted")
+            return
+        self._download_webpage_image_resource_ids_to_files(row_id, selected_ids)
+        cache = getattr(self, "webpage_image_session_download_cache", {}) or {}
+        paths = []
+        for resource_id in selected_ids:
+            local_path = str(cache.get((row_id, resource_id)) or "").strip()
+            if local_path and os.path.isfile(local_path) and local_path not in paths:
+                paths.append(local_path)
+        if not paths:
+            self.log_message("Image conversion queued no local files yet; add to FILES first if this candidate was already reused or skipped.", "warning")
+            return
+        self._file_converter_add_paths(paths, add_to_session=False, select_first=False, source_label="image window")
+        self._show_file_converter_panel()
+        self._file_converter_set_status(f"Queued {len(paths)} image file(s) from the image window for conversion.")
+
+
     def _open_source_image_canvas_grid_window(self, row_id: str) -> None:
         row = self._source_row_by_id(row_id)
         if row is None:
@@ -22008,7 +22082,14 @@ class App(ctk.CTk):
         def _open_external_browser_grid() -> None:
             self._open_source_image_browser_grid_for_resources(row, resources)
 
+        def _convert_selected_from_window() -> None:
+            if not selected_ids:
+                self.log_message("No image-window tiles were selected for conversion.", "muted")
+                return
+            self._download_webpage_image_resource_ids_to_files_and_convert(row_id, tuple(selected_ids))
+
         ctk.CTkButton(controls, text="Add selected to FILES", command=_add_selected_to_files).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(controls, text="Convert selected", command=_convert_selected_from_window).pack(side="left", padx=(0, 8))
         ctk.CTkButton(controls, text="Select all", width=96, command=_select_all).pack(side="left", padx=(0, 8))
         ctk.CTkButton(controls, text="Clear", width=80, command=_clear_selection).pack(side="left", padx=(0, 8))
         ctk.CTkButton(controls, text="Open browser view", command=_open_external_browser_grid).pack(side="right", padx=(8, 0))
@@ -22120,7 +22201,7 @@ class App(ctk.CTk):
             (
                 f"Opened in-app image window with {len(cards)} image candidate(s); "
                 "Canvas grid stays under the Python app taskbar icon; hover-only Open/Add actions restore browser-grid controls; "
-                "Add selected to FILES posts back to the app; external browser view remains optional."
+                "Add selected to FILES posts back to the app; Convert selected queues local conversion; external browser view remains optional."
             ),
             "success",
         )
@@ -22242,7 +22323,7 @@ class App(ctk.CTk):
 
             def do_POST(self) -> None:
                 parsed = urllib.parse.urlsplit(self.path)
-                if parsed.path != "/download-selected":
+                if parsed.path not in {"/download-selected", "/download-convert-selected"}:
                     self._send_bytes(404, b"Not found", "application/json; charset=utf-8")
                     return
                 query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
@@ -22256,8 +22337,11 @@ class App(ctk.CTk):
                 except Exception as error:
                     self._send_bytes(400, json.dumps({"ok": False, "error": str(error)}).encode("utf-8"), "application/json; charset=utf-8")
                     return
-                app.after(0, lambda selected_ids=ids: app._download_webpage_image_resource_ids_to_files(row_id, selected_ids))
-                self._send_bytes(200, json.dumps({"ok": True, "queued": len(ids)}).encode("utf-8"), "application/json; charset=utf-8")
+                if parsed.path == "/download-convert-selected":
+                    app.after(0, lambda selected_ids=ids: app._download_webpage_image_resource_ids_to_files_and_convert(row_id, selected_ids))
+                else:
+                    app.after(0, lambda selected_ids=ids: app._download_webpage_image_resource_ids_to_files(row_id, selected_ids))
+                self._send_bytes(200, json.dumps({"ok": True, "queued": len(ids), "convert": parsed.path == "/download-convert-selected"}).encode("utf-8"), "application/json; charset=utf-8")
 
         html_doc = f'''<!doctype html>
 <html lang="en">
@@ -22313,6 +22397,7 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 <button id="selectAll">Select all</button>
 <button id="clearAll">Clear all</button>
 <button id="addFiles" class="primary">Add selected to FILES</button>
+<button id="convertFiles" class="primary">Convert selected</button>
 <span class="meta" id="status">Native browser image loading · order preserved</span>
 </header>
 <main class="grid" id="grid"></main>
@@ -22467,6 +22552,16 @@ document.getElementById('addFiles').onclick = async () => {{
     setStatus(payload.ok ? `Queued ${{payload.queued}} image(s) for FILES intake in the app.` : `FILES intake failed: ${{payload.error || 'unknown error'}}`);
   }} catch (error) {{ setStatus(`FILES intake failed: ${{error}}`); }}
 }};
+document.getElementById('convertFiles').onclick = async () => {{
+  const ids = [...selected];
+  if (!ids.length) {{ setStatus('No images selected for conversion.'); return; }}
+  setStatus(`Adding and queueing ${{ids.length}} selected image(s) for conversion...`);
+  try {{
+    const response = await fetch(`/download-convert-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids}})}});
+    const payload = await response.json();
+    setStatus(payload.ok ? `Queued ${{payload.queued}} image(s) for app conversion.` : `Conversion queue failed: ${{payload.error || 'unknown error'}}`);
+  }} catch (error) {{ setStatus(`Conversion queue failed: ${{error}}`); }}
+}};
 render();
 </script>
 </body>
@@ -22541,7 +22636,7 @@ render();
             (
                 f"Opened browser-native image window with {len(cards)} image candidate(s); "
                 f"already in FILES before add={sum(1 for card in cards if str(card.get('file_intake_status') or '') == FILE_INTAKE_STATUS_REUSED)}; "
-                "Add selected to FILES posts back to the app"
+                "Add selected to FILES posts back to the app; Convert selected queues local conversion"
                 + (
                     "; opened as a taskbar-owned Chromium app window."
                     if taskbar_owner_requested
@@ -23391,7 +23486,7 @@ render();
             raise RuntimeError("Downloaded media file was empty.")
         return str(target_path)
 
-    def _download_webpage_video_audio_resource_ids_to_files(self, row_id: str, selected_resource_ids: Sequence[str]) -> None:
+    def _download_webpage_video_audio_resource_ids_to_files(self, row_id: str, selected_resource_ids: Sequence[str], *, convert_after: bool = False) -> None:
         row = self._source_row_by_id(row_id)
         if row is None:
             self.log_message("Browser-native video/audio FILES intake failed: source row no longer exists.", "warning")
@@ -23444,6 +23539,7 @@ render();
                 resource_local_paths=resource_local_paths,
                 downloaded_count=0,
                 failed_messages=(),
+                convert_after=convert_after,
             )
             return
         self.log_message(f"Browser-native video/audio download queued for {len(missing_resource_ids)} candidate(s).", "muted")
@@ -23483,10 +23579,14 @@ render();
                     resource_local_paths=paths,
                     downloaded_count=count,
                     failed_messages=failures,
+                    convert_after=convert_after,
                 ),
             )
 
         threading.Thread(target=_worker, daemon=True).start()
+
+    def _download_webpage_video_audio_resource_ids_to_files_and_convert(self, row_id: str, selected_resource_ids: Sequence[str]) -> None:
+        self._download_webpage_video_audio_resource_ids_to_files(row_id, selected_resource_ids, convert_after=True)
 
     def _finish_webpage_video_audio_files_intake(
         self,
@@ -23498,6 +23598,7 @@ render();
         resource_local_paths: dict[str, str],
         downloaded_count: int,
         failed_messages: Sequence[str],
+        convert_after: bool = False,
     ) -> None:
         files_for_intake = tuple(resource_local_paths[resource_id] for resource_id in selected_ids if resource_local_paths.get(resource_id))
         if files_for_intake:
@@ -23543,6 +23644,18 @@ render();
             ),
             "success" if downloaded_count or intake_plan.reused_count else "warning",
         )
+        if convert_after:
+            paths_to_convert = []
+            for resource_id in selected_ids:
+                local_path = str(resource_local_paths.get(resource_id) or "").strip()
+                if local_path and os.path.isfile(local_path) and local_path not in paths_to_convert:
+                    paths_to_convert.append(local_path)
+            if paths_to_convert:
+                self._file_converter_add_paths(paths_to_convert, add_to_session=False, select_first=False, source_label="Video & Audio window")
+                self._show_file_converter_panel()
+                self._file_converter_set_status(f"Queued {len(paths_to_convert)} video/audio file(s) from the media window for conversion.")
+            else:
+                self.log_message("Video & Audio conversion queued no local files yet; add to FILES first if this candidate was skipped or reused.", "warning")
 
     def _open_source_video_audio_browser_grid_window(self, row_id: str) -> None:
         row = self._source_row_by_id(row_id)
@@ -23876,7 +23989,7 @@ render();
 
             def do_POST(self) -> None:
                 parsed = urllib.parse.urlsplit(self.path)
-                if parsed.path != "/download-selected":
+                if parsed.path not in {"/download-selected", "/download-convert-selected"}:
                     self._send_bytes(404, b'{"ok":false,"error":"not found"}', "application/json; charset=utf-8")
                     return
                 query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
@@ -23890,8 +24003,11 @@ render();
                 except Exception as error:
                     self._send_bytes(400, json.dumps({"ok": False, "error": str(error)}).encode("utf-8"), "application/json; charset=utf-8")
                     return
-                app.after(0, lambda selected_ids=ids: app._download_webpage_video_audio_resource_ids_to_files(row_id, selected_ids))
-                self._send_bytes(200, json.dumps({"ok": True, "queued": len(ids)}).encode("utf-8"), "application/json; charset=utf-8")
+                if parsed.path == "/download-convert-selected":
+                    app.after(0, lambda selected_ids=ids: app._download_webpage_video_audio_resource_ids_to_files_and_convert(row_id, selected_ids))
+                else:
+                    app.after(0, lambda selected_ids=ids: app._download_webpage_video_audio_resource_ids_to_files(row_id, selected_ids))
+                self._send_bytes(200, json.dumps({"ok": True, "queued": len(ids), "convert": parsed.path == "/download-convert-selected"}).encode("utf-8"), "application/json; charset=utf-8")
 
         html_doc = f'''<!doctype html>
 <html lang="en">
@@ -23960,6 +24076,7 @@ button.primary {{ background:#075985; border-color:#38bdf8; }}
 <button id="selectAll">Select all</button>
 <button id="clearAll">Clear all</button>
 <button id="addFiles" class="primary">Add selected to FILES</button>
+<button id="convertFiles" class="primary">Convert selected</button>
 <span class="meta" id="status">{html.escape(initial_status_text)}</span>
 </header>
 <main class="grid" id="grid"></main>
@@ -24082,6 +24199,7 @@ setInterval(refreshMediaItemsFromServer, 1000);
 document.getElementById('selectAll').onclick=()=>{{ mediaItems.forEach(item=>selected.add(item.resource_id)); document.querySelectorAll('.card').forEach(c=>c.classList.add('selected')); updateCounts(); }};
 document.getElementById('clearAll').onclick=()=>{{ selected.clear(); document.querySelectorAll('.card').forEach(c=>c.classList.remove('selected')); updateCounts(); }};
 document.getElementById('addFiles').onclick=async()=>{{ const ids=[...selected]; if (!ids.length) {{ setStatus('No media selected.'); return; }} setStatus(`Adding ${{ids.length}} selected media candidate(s) to FILES...`); try {{ const response=await fetch(`/download-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids}})}}); const payload=await response.json(); if (payload.ok) {{ setStatus(`Queued ${{payload.queued}} media candidate(s) for FILES intake in the app.`); }} else setStatus(`FILES intake failed: ${{payload.error || 'unknown error'}}`); }} catch(error) {{ setStatus(`FILES intake failed: ${{error}}`); }} }};
+document.getElementById('convertFiles').onclick=async()=>{{ const ids=[...selected]; if (!ids.length) {{ setStatus('No media selected for conversion.'); return; }} setStatus(`Adding and queueing ${{ids.length}} selected media candidate(s) for conversion...`); try {{ const response=await fetch(`/download-convert-selected?token=${{encodeURIComponent(token)}}`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{ids}})}}); const payload=await response.json(); if (payload.ok) {{ setStatus(`Queued ${{payload.queued}} media candidate(s) for app conversion.`); }} else setStatus(`Conversion queue failed: ${{payload.error || 'unknown error'}}`); }} catch(error) {{ setStatus(`Conversion queue failed: ${{error}}`); }} }};
 render();
 </script>
 </body>
