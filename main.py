@@ -6208,6 +6208,16 @@ class App(ctk.CTk):
             height=spec["cog_height"],
         )
 
+        def _keep_cog_visible() -> None:
+            # R42EV: CTkButton repaint/hover can temporarily draw above raw tk.Label
+            # children. Keep the settings cog raised so it is visible before hover.
+            try:
+                settings_button.lift()
+            except Exception:
+                pass
+
+        _keep_cog_visible()
+
         def _set_button_normal() -> None:
             try:
                 action_button.configure(
@@ -6234,6 +6244,7 @@ class App(ctk.CTk):
                     settings_button.configure(fg=spec["fallback_cog_normal_fg"])
             except Exception:
                 pass
+            _keep_cog_visible()
 
         def _set_button_hover() -> None:
             try:
@@ -6261,6 +6272,7 @@ class App(ctk.CTk):
                     settings_button.configure(fg=spec["fallback_cog_normal_fg"])
             except Exception:
                 pass
+            _keep_cog_visible()
 
         def _set_cog_icon_hover() -> None:
             try:
@@ -6288,6 +6300,7 @@ class App(ctk.CTk):
                     settings_button.configure(fg=spec["fallback_cog_hover_fg"])
             except Exception:
                 pass
+            _keep_cog_visible()
 
         def _sync_hover_from_pointer() -> None:
             try:
@@ -6329,6 +6342,13 @@ class App(ctk.CTk):
         settings_button.bind("<Enter>", _cog_enter)
         settings_button.bind("<Leave>", _cog_leave)
         settings_button.bind("<Button-1>", lambda _event: settings_command())
+        try:
+            action_button.bind("<Configure>", lambda _event: _keep_cog_visible(), add="+")
+            button_wrap.bind("<Map>", lambda _event: _keep_cog_visible(), add="+")
+            self.after(50, _keep_cog_visible)
+            self.after(250, _keep_cog_visible)
+        except Exception:
+            pass
 
         setattr(self, wrap_attr, button_wrap)
         setattr(self, button_attr, action_button)
@@ -7779,7 +7799,7 @@ class App(ctk.CTk):
             "audio_bitrate": "160k",
             "audio_sample_rate": "source",
             "audio_channels": "source",
-            "playback_speed": "1.0",
+            "playback_speed": "1.0x",
             "cue_split_mode": "off",
         }
 
@@ -8018,7 +8038,8 @@ class App(ctk.CTk):
         merged["audio_sample_rate"] = sample_label if sample_label in self._file_converter_allowed_audio_sample_rates() else str(defaults["audio_sample_rate"])
         channels = str(merged.get("audio_channels") or defaults["audio_channels"]).strip().lower()
         merged["audio_channels"] = channels if channels in self._file_converter_allowed_audio_channels() else str(defaults["audio_channels"])
-        merged["playback_speed"] = self._file_converter_playback_speed_to_value(str(merged.get("playback_speed") or defaults["playback_speed"]))
+        speed_label = self._file_converter_value_to_playback_speed_label(str(merged.get("playback_speed") or defaults["playback_speed"]))
+        merged["playback_speed"] = speed_label if speed_label in self._file_converter_allowed_playback_speeds() else "1.0x"
         video_encoder = str(merged.get("video_encoder") or defaults["video_encoder"]).strip().lower()
         merged["video_encoder"] = video_encoder if video_encoder in self._file_converter_allowed_video_encoders() else str(defaults["video_encoder"])
         video_preset = str(merged.get("video_preset") or defaults["video_preset"]).strip().lower()
