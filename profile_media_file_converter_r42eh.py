@@ -1198,6 +1198,240 @@ def run_conversion(plan: dict[str, Any], *, timeout: int = 1800) -> dict[str, An
     return result
 
 
+
+# R42FB: no-network cross-capability profile and local efficiency estimator.
+def _windows_cim_json(class_name: str, properties: tuple[str, ...], *, timeout: int = 8) -> list[dict[str, Any]]:
+    """Read Windows CIM data without adding a dependency.
+
+    The function is best-effort.  It never performs network activity and returns
+    an empty list if PowerShell/CIM is unavailable.
+    """
+    if os.name != "nt":
+        return []
+    props = ",".join(properties)
+    cmd = [
+        "powershell",
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-Command",
+        f"Get-CimInstance {class_name} | Select-Object {props} | ConvertTo-Json -Compress -Depth 3",
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
+    except Exception:
+        return []
+    if proc.returncode != 0 or not (proc.stdout or "").strip():
+        return []
+    try:
+        payload = json.loads(proc.stdout)
+    except Exception:
+        return []
+    if isinstance(payload, dict):
+        return [payload]
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    return []
+
+
+def _memory_total_bytes() -> int:
+    try:
+        import psutil  # type: ignore
+        return int(psutil.virtual_memory().total)
+    except Exception:
+        pass
+    if os.name == "nt":
+        rows = _windows_cim_json("Win32_ComputerSystem", ("TotalPhysicalMemory",), timeout=6)
+        for row in rows:
+            try:
+                return int(row.get("TotalPhysicalMemory") or 0)
+            except Exception:
+                pass
+    return 0
+
+
+def _system_resource_profile() -> dict[str, Any]:
+    import platform
+    import sys
+    memory = _memory_total_bytes()
+    gpus: list[dict[str, Any]] = []
+    for row in _windows_cim_json("Win32_VideoController", ("Name", "AdapterRAM", "DriverVersion", "VideoProcessor"), timeout=8):
+        ram = 0
+        try:
+            ram = int(row.get("AdapterRAM") or 0)
+        except Exception:
+            ram = 0
+        gpus.append({
+            "name": str(row.get("Name") or ""),
+            "adapter_ram_bytes": ram,
+            "adapter_ram_gb": round(ram / (1024 ** 3), 2) if ram else 0,
+            "driver_version": str(row.get("DriverVersion") or ""),
+            "video_processor": str(row.get("VideoProcessor") or ""),
+        })
+    return {
+        "schema": R42EH_SCHEMA + ".system_resource_profile",
+        "platform": platform.platform(),
+        "python": sys.version.split()[0],
+        "cpu_count": os.cpu_count() or 0,
+        "processor": platform.processor(),
+        "memory_total_bytes": memory,
+        "memory_total_gb": round(memory / (1024 ** 3), 2) if memory else 0,
+        "gpus": gpus,
+        "side_effects": {"network_actions_performed": False, "archive_ph_hit": False, "native_webview2_started": False, "app_started": False},
+    }
+
+
+def _ffmpeg_version_line() -> str:
+    ffmpeg = _ffmpeg_path()
+    try:
+        proc = subprocess.run([ffmpeg, "-hide_banner", "-version"], capture_output=True, text=True, timeout=8, encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return f"unavailable: {exc}"
+    first = (proc.stdout or proc.stderr or "").splitlines()
+    return first[0] if first else ""
+
+
+def _encoder_family_for_impl(encoder: str) -> str:
+    e = str(encoder or "").lower()
+    if "265" in e or "hevc" in e:
+        return "h265"
+    if "vp9" in e:
+        return "vp9"
+    if "av1" in e or e in {"libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"}:
+        return "av1"
+    return "h264"
+
+
+def _default_encoder_probe_order(include_slow: bool = True) -> list[str]:
+    order = [
+        "h264_amf", "hevc_amf", "av1_amf",
+        "h264_mf", "hevc_mf", "av1_mf",
+        "h264_nvenc", "hevc_nvenc", "av1_nvenc",
+        "h264_qsv", "hevc_qsv", "av1_qsv",
+        "h264_vulkan", "hevc_vulkan", "av1_vulkan",
+        "libx264", "libx265", "libvpx-vp9", "libsvtav1", "libsvt_av1",
+    ]
+    if include_slow:
+        order += ["libaom-av1", "librav1e"]
+    return order
+
+
+def _benchmark_single_encoder(encoder: str, *, timeout: int = 25, duration_seconds: float = 3.0, width: int = 1280, height: int = 720, fps: int = 30) -> dict[str, Any]:
+    import tempfile
+    import time
+    ffmpeg = _ffmpeg_path()
+    args, ext = _quick_encoder_test_args(encoder)
+    with tempfile.TemporaryDirectory(prefix="ytce_r42fb_encoder_bench_") as tmp:
+        out_path = Path(tmp) / f"bench_{encoder}{ext}"
+        cmd = [
+            ffmpeg, "-hide_banner", "-y",
+            "-f", "lavfi", "-i", f"testsrc2=size={width}x{height}:rate={fps}",
+            "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000",
+            "-t", str(duration_seconds),
+            *args,
+            "-c:a", "aac", "-b:a", "96k",
+            str(out_path),
+        ]
+        start = time.perf_counter()
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
+            elapsed = max(0.001, time.perf_counter() - start)
+            ok = proc.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0
+            size = out_path.stat().st_size if out_path.exists() else 0
+            speed_multiple = round(duration_seconds / elapsed, 3)
+            estimated_3min_1080p_seconds = round((180.0 / max(0.001, speed_multiple)) * 2.25, 1)
+            return {
+                "encoder": encoder,
+                "family": _encoder_family_for_impl(encoder),
+                "ok": bool(ok),
+                "elapsed_seconds": round(elapsed, 3),
+                "source_seconds": duration_seconds,
+                "speed_multiple": speed_multiple,
+                "output_bytes": int(size),
+                "output_mib": round(size / (1024 ** 2), 4) if size else 0,
+                "estimated_3min_1080p_seconds": estimated_3min_1080p_seconds,
+                "command_encoder_impl": encoder,
+                "stderr_tail": (proc.stderr or "")[-1200:],
+            }
+        except Exception as exc:
+            return {"encoder": encoder, "family": _encoder_family_for_impl(encoder), "ok": False, "error": repr(exc)}
+
+
+def build_converter_optimisation_capability_profile(*, benchmark: bool = False, timeout: int = 45, include_slow: bool = False) -> dict[str, Any]:
+    """Build a no-network machine profile for Optimised conversion/compression.
+
+    This is the production-facing capability layer R42FB adds.  It separates:
+    - compiled FFmpeg support,
+    - encoders that actually run on this PC,
+    - rough throughput estimates, and
+    - an Optimised recommendation that balances clarity, size, and time.
+    """
+    encoders = _available_ffmpeg_encoders()
+    runnable_probe = _probe_runnable_video_encoders(encoders, timeout=max(3, min(12, int(timeout))), include_slow=include_slow)
+    runnable = set(runnable_probe.get("runnable_encoders") or [])
+    capability = _system_capability_probe(encoders, runnable)
+    benchmarks: list[dict[str, Any]] = []
+    if benchmark:
+        per_encoder_timeout = max(8, min(30, int(timeout)))
+        for encoder in _default_encoder_probe_order(include_slow=include_slow):
+            if encoder not in runnable:
+                continue
+            # Keep the default audit bounded.  Slow AV1 software can be tested by
+            # enabling include_slow, but Optimised must not silently choose an
+            # absurdly slow path.
+            if encoder in {"libaom-av1", "librav1e"} and not include_slow:
+                continue
+            benchmarks.append(_benchmark_single_encoder(encoder, timeout=per_encoder_timeout, duration_seconds=3.0, width=1280, height=720, fps=30))
+
+    def _rank(item: dict[str, Any]) -> float:
+        if not item.get("ok"):
+            return -9999.0
+        family = str(item.get("family") or "h264")
+        quality_size_score = {"av1": 4.0, "h265": 3.4, "vp9": 3.1, "h264": 2.4}.get(family, 2.0)
+        speed = float(item.get("speed_multiple") or 0.0)
+        runtime = float(item.get("estimated_3min_1080p_seconds") or 9999.0)
+        runtime_penalty = 0.0 if runtime <= 360 else min(4.0, (runtime - 360) / 180.0)
+        return round(quality_size_score + min(3.0, speed / 2.0) - runtime_penalty, 4)
+
+    ranked = sorted((dict(item, optimisation_score=_rank(item)) for item in benchmarks if item.get("ok")), key=lambda x: x.get("optimisation_score", -9999), reverse=True)
+    fastest = sorted((item for item in benchmarks if item.get("ok")), key=lambda x: float(x.get("elapsed_seconds") or 9999))
+    default_encoder = ""
+    default_reason = ""
+    if ranked:
+        default_encoder = str(ranked[0].get("encoder") or "")
+        default_reason = "benchmark-balanced winner: quality/size proxy plus practical runtime"
+    elif runnable:
+        default_encoder = _choose_existing_encoder(runnable, ("hevc_amf", "h264_amf", "h264_mf", "hevc_mf", "libx264", "libx265", "libvpx-vp9", "libsvtav1", "libsvt_av1"), "libx264")
+        default_reason = "runnable probe available but benchmark disabled/empty; chose safe runnable fallback"
+    elif encoders:
+        default_encoder = _choose_existing_encoder(encoders, ("libx264", "h264", "h264_mf", "h264_amf"), "libx264")
+        default_reason = "compiled encoders only; runnable probe found nothing, so use conservative fallback"
+    else:
+        default_reason = "no FFmpeg encoders detected"
+
+    return {
+        "schema": R42EH_SCHEMA + ".optimisation_capability_profile.r42fb",
+        "mode": "NO_NETWORK_LOCAL_CAPABILITY_AND_OPTIONAL_SYNTHETIC_BENCHMARK",
+        "system": _system_resource_profile(),
+        "ffmpeg": {
+            "path": _ffmpeg_path(),
+            "ffprobe_path": _ffprobe_path(),
+            "version": _ffmpeg_version_line(),
+            "compiled_encoder_count": len(encoders),
+            "compiled_relevant_encoders": sorted(name for name in encoders if name in set(_default_encoder_probe_order(True))),
+        },
+        "runnable_probe": runnable_probe,
+        "capability": capability,
+        "benchmarks": benchmarks,
+        "recommendation": {
+            "optimised_default_encoder_impl": default_encoder,
+            "reason": default_reason,
+            "ranked_benchmark_choices": ranked[:8],
+            "fastest_benchmark_choices": fastest[:5],
+            "runtime_rule": "Optimised may spend more time only while estimated runtime remains practical; Speed uses the quickest readable route.",
+        },
+        "side_effects": {"network_actions_performed": False, "archive_ph_hit": False, "native_webview2_started": False, "app_started": False},
+    }
+
 def probe_environment() -> dict[str, Any]:
     return {
         "schema": R42EH_SCHEMA + ".environment",
@@ -1226,5 +1460,6 @@ def probe_environment() -> dict[str, Any]:
         "video_preset_options": list(VIDEO_PRESET_OPTIONS),
         "video_fps_options": list(VIDEO_FPS_OPTIONS),
         "optimisation_preset_options": ["Optimised", "Speed"],
+        "capability_profile_function": "build_converter_optimisation_capability_profile",
         "side_effects": {"network_actions_performed": False, "archive_ph_hit": False, "native_webview2_started": False, "app_started": False},
     }
