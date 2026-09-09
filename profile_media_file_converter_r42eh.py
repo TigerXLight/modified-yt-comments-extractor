@@ -29,7 +29,11 @@ VIDEO_INPUT_EXTENSIONS = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".wmv", ".flv
 IMAGE_INPUT_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".ico"}
 TEXT_INPUT_EXTENSIONS = {".txt", ".md", ".html", ".htm", ".json", ".csv", ".xml", ".srt", ".vtt", ".log"}
 
-AUDIO_OUTPUT_FORMATS = {"mp3", "m4a", "aac", "wav", "flac", "opus", "ogg"}
+AUDIO_BITRATE_OPTIONS = ("9k", "16k", "24k", "32k", "48k", "64k", "96k", "128k", "160k", "192k", "256k", "320k", "512k", "768k", "1024k")
+AUDIO_SAMPLE_RATE_OPTIONS = ("8000", "12000", "16000", "22050", "24000", "32000", "44100", "48000", "88200", "96000", "192000")
+
+# R42EQ: expanded to match the Convertit-style audio option range where local FFmpeg supports it.
+AUDIO_OUTPUT_FORMATS = {"mp3", "m4a", "aac", "wav", "flac", "opus", "ogg", "wma", "mka", "spx", "amr"}
 VIDEO_OUTPUT_FORMATS = {"mp4", "mkv", "webm", "mov"}
 IMAGE_OUTPUT_FORMATS = {"webp", "jpg", "jpeg", "png", "bmp", "tiff"}
 TEXT_OUTPUT_FORMATS = {"txt", "md", "html", "json", "csv"}
@@ -306,22 +310,36 @@ def _normalise_bitrate(value: str, default: str = "128k") -> str:
     return default
 
 
-def _audio_codec(fmt: str, *, compress: bool = False, audio_bitrate: str = "") -> tuple[list[str], dict[str, Any]]:
-    bitrate = _normalise_bitrate(audio_bitrate, "128k") if compress else "192k"
+def _normalise_sample_rate(value: str, default: str = "") -> str:
+    sample_rate = str(value or "").strip().lower()
+    if sample_rate in {"", "source"}:
+        return ""
+    return sample_rate if sample_rate in AUDIO_SAMPLE_RATE_OPTIONS else default
+
+
+def _audio_codec(fmt: str, *, compress: bool = False, audio_bitrate: str = "", audio_sample_rate: str = "") -> tuple[list[str], dict[str, Any]]:
+    bitrate = _normalise_bitrate(audio_bitrate, "160k" if compress else "256k")
     mapping = {
         "mp3": ["-c:a", "libmp3lame", "-b:a", bitrate],
         "m4a": ["-c:a", "aac", "-b:a", bitrate],
         "aac": ["-c:a", "aac", "-b:a", bitrate],
         "wav": ["-c:a", "pcm_s16le"],
         "flac": ["-c:a", "flac"],
-        "opus": ["-c:a", "libopus", "-b:a", _normalise_bitrate(audio_bitrate, "96k") if compress else "128k"],
+        "opus": ["-c:a", "libopus", "-b:a", _normalise_bitrate(audio_bitrate, "96k") if compress else bitrate],
         "ogg": ["-c:a", "libvorbis", "-q:a", "3" if compress else "5"],
+        "wma": ["-c:a", "wmav2", "-b:a", bitrate],
+        "mka": ["-c:a", "libvorbis", "-q:a", "3" if compress else "5"],
+        "spx": ["-c:a", "libspeex"],
+        "amr": ["-c:a", "amr_wb", "-b:a", _normalise_bitrate(audio_bitrate, "24k")],
     }
     args = list(mapping[fmt])
-    return args, {"family": "audio", "codec_args": args, "compress": bool(compress), "audio_bitrate": bitrate}
+    sample_rate = _normalise_sample_rate(audio_sample_rate)
+    if sample_rate:
+        args += ["-ar", sample_rate]
+    return args, {"family": "audio", "codec_args": args, "compress": bool(compress), "audio_bitrate": bitrate, "audio_sample_rate": sample_rate or "source"}
 
 
-def _video_codecs(fmt: str, *, compress: bool = False, video_crf: int = 23, video_max_dimension: int = 0, audio_bitrate: str = "") -> tuple[list[str], dict[str, Any]]:
+def _video_codecs(fmt: str, *, compress: bool = False, video_crf: int = 23, video_max_dimension: int = 0, audio_bitrate: str = "", audio_sample_rate: str = "") -> tuple[list[str], dict[str, Any]]:
     encoders = _available_ffmpeg_encoders()
     crf = max(16, min(38, int(video_crf if compress else 23)))
     audio_br = _normalise_bitrate(audio_bitrate, "128k") if compress else "192k"
@@ -347,7 +365,10 @@ def _video_codecs(fmt: str, *, compress: bool = False, video_crf: int = 23, vide
         if max_side:
             scale = f"scale='if(gt(iw,ih),min({max_side},iw),-2)':'if(gt(ih,iw),min({max_side},ih),-2)'"
             args = ["-vf", scale] + args
-    return args, {"family": "video", "codec_args": args, "ffmpeg_encoder_count": len(encoders), "compress": bool(compress), "crf": crf, "max_dimension": max_side}
+    sample_rate = _normalise_sample_rate(audio_sample_rate)
+    if sample_rate:
+        args += ["-ar", sample_rate]
+    return args, {"family": "video", "codec_args": args, "ffmpeg_encoder_count": len(encoders), "compress": bool(compress), "crf": crf, "max_dimension": max_side, "audio_bitrate": audio_br, "audio_sample_rate": sample_rate or "source"}
 
 
 def _image_codec(fmt: str, image_quality: int, *, compress: bool = False, image_max_dimension: int = 0) -> tuple[list[str], dict[str, Any]]:
@@ -384,7 +405,7 @@ def _validate_route(input_kind: str, output_kind: str, target_format: str) -> No
     raise ValueError(f"Unsupported converter route: {input_kind} -> {target_format} ({output_kind})")
 
 
-def plan_conversion(input_path: str | os.PathLike[str], target_format: str = "auto", *, output_dir: str | os.PathLike[str] | None = None, keep_original: bool = False, overwrite: bool = False, image_quality: int = 92, compress: bool = False, image_max_dimension: int = 0, video_crf: int = 23, video_max_dimension: int = 0, audio_bitrate: str = "", file_suffix: str = "") -> dict[str, Any]:
+def plan_conversion(input_path: str | os.PathLike[str], target_format: str = "auto", *, output_dir: str | os.PathLike[str] | None = None, keep_original: bool = False, overwrite: bool = False, image_quality: int = 92, compress: bool = False, image_max_dimension: int = 0, video_crf: int = 23, video_max_dimension: int = 0, audio_bitrate: str = "", audio_sample_rate: str = "", preserve_metadata: bool = True, file_suffix: str = "") -> dict[str, Any]:
     input_file = Path(input_path).expanduser().resolve()
     if not input_file.is_file():
         raise FileNotFoundError(str(input_file))
@@ -407,13 +428,15 @@ def plan_conversion(input_path: str | os.PathLike[str], target_format: str = "au
     else:
         method = "ffmpeg"
         ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
-        command = [ffmpeg, "-hide_banner", "-y", "-i", str(input_file), "-map_metadata", "0"]
+        command = [ffmpeg, "-hide_banner", "-y", "-i", str(input_file)]
+        if preserve_metadata:
+            command += ["-map_metadata", "0"]
         if output_kind == "audio":
             command += ["-vn"]
-            args, preset = _audio_codec(fmt, compress=bool(compress), audio_bitrate=audio_bitrate)
+            args, preset = _audio_codec(fmt, compress=bool(compress), audio_bitrate=audio_bitrate, audio_sample_rate=audio_sample_rate)
             command += args
         elif output_kind == "video":
-            args, preset = _video_codecs(fmt, compress=bool(compress), video_crf=video_crf, video_max_dimension=video_max_dimension, audio_bitrate=audio_bitrate)
+            args, preset = _video_codecs(fmt, compress=bool(compress), video_crf=video_crf, video_max_dimension=video_max_dimension, audio_bitrate=audio_bitrate, audio_sample_rate=audio_sample_rate)
             command += args
         elif output_kind == "image":
             args, preset = _image_codec(fmt, image_quality, compress=bool(compress), image_max_dimension=image_max_dimension)
@@ -546,5 +569,7 @@ def probe_environment() -> dict[str, Any]:
             "auto": ["auto"],
         },
         "default_format_by_kind": dict(DEFAULT_FORMAT_BY_KIND),
+        "audio_bitrate_options": list(AUDIO_BITRATE_OPTIONS),
+        "audio_sample_rate_options": ["source", *AUDIO_SAMPLE_RATE_OPTIONS],
         "side_effects": {"network_actions_performed": False, "archive_ph_hit": False, "native_webview2_started": False, "app_started": False},
     }
