@@ -3983,8 +3983,18 @@ class App(ctk.CTk):
         if label is not None:
             try:
                 has_held = bool(getattr(self, "file_converter_queued_paths", []) or [])
+                if has_held and not active and not message:
+                    label.configure(text="")
+                    label.pack_forget()
+                    return
+                if not label.winfo_manager():
+                    frame_list = getattr(self, "file_converter_drop_list_frame", None)
+                    kwargs = {"fill": "x", "padx": 10, "pady": (8, 2)}
+                    if frame_list is not None:
+                        kwargs["before"] = frame_list
+                    label.pack(**kwargs)
                 label.configure(
-                    text=message or ("Release to hold selected FILES in File Converter" if active else ("" if has_held else "Drop files here — held only in File Converter until Convert")),
+                    text=message or ("Release to hold selected FILES in File Converter" if active else "Drop files here — held only in File Converter until Convert"),
                     text_color="#c5a6ff" if active else COLORS["text_muted"],
                 )
             except Exception:
@@ -4907,13 +4917,14 @@ class App(ctk.CTk):
         self._show_session_file_drag_ghost(event)
 
     def _session_file_drag_ghost_text(self) -> str:
+        """R42EP: drag ghost shows only the dragged file name/count, not a checkbox glyph."""
         paths = [path for path in getattr(self, "session_file_drag_source_paths", []) or [] if path]
         if len(paths) > 1:
-            return f"⬜ {len(paths)} FILES"
+            return f"{len(paths)} FILES"
         if paths:
-            return "⬜ " + os.path.basename(paths[0])
+            return os.path.basename(paths[0])
         path = getattr(self, "session_file_drag_source_path", "") or ""
-        return "⬜ " + (os.path.basename(path) if path else "FILES")
+        return os.path.basename(path) if path else "FILES"
 
     def _show_session_file_drag_ghost(self, event: Any = None) -> None:
         """R42EN: lightweight cursor-following drag ghost for FILES → File Converter drag."""
@@ -7271,9 +7282,9 @@ class App(ctk.CTk):
 
         self.show_transcript_panel_button = ctk.CTkButton(
             self.editor_toggle_button_frame,
-            text="Transcript",
+            text="Transcript Editor",
             command=self._toggle_transcript_panel,
-            width=105,
+            width=145,
             height=30,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=COLORS["accent_secondary"],
@@ -7432,7 +7443,7 @@ class App(ctk.CTk):
         title.pack(side="left")
         self.file_converter_status_label = ctk.CTkLabel(
             header,
-            text="Drop, drag, or Take all files here. Convert selected rows one file type per run.",
+            text="Drop, drag, or Take all files here. Converted files return to FILES root.",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_muted"],
         )
@@ -7485,7 +7496,7 @@ class App(ctk.CTk):
         self.file_converter_keep_batch_var = ctk.BooleanVar(value=False)
         self.file_converter_keep_batch_checkbox = ctk.CTkCheckBox(
             controls,
-            text="Keep all originals for this run",
+            text="Keep all original files",
             variable=self.file_converter_keep_batch_var,
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_secondary"],
@@ -7495,19 +7506,6 @@ class App(ctk.CTk):
             checkmark_color="#000000",
         )
         self.file_converter_keep_batch_checkbox.pack(side="left")
-        self.file_converter_compression_settings_button = ctk.CTkButton(
-            controls,
-            text="⚙",
-            command=self._open_file_converter_compression_settings_window,
-            width=32,
-            height=28,
-            fg_color=COLORS["bg_input"],
-            hover_color=COLORS["border"],
-            text_color=COLORS["text_primary"],
-            font=ctk.CTkFont(family="Segoe UI Symbol", size=13, weight="bold"),
-            corner_radius=8,
-        )
-        self.file_converter_compression_settings_button.pack(side="left", padx=(8, 0))
 
         button_row = ctk.CTkFrame(self.file_converter_card, fg_color="transparent")
         button_row.pack(fill="x", padx=15, pady=(0, 8))
@@ -7536,6 +7534,15 @@ class App(ctk.CTk):
             corner_radius=8,
         )
         self.file_converter_clear_button.pack(side="left", padx=(8, 0))
+        self._create_asr_action_control(
+            button_row,
+            text="Compression",
+            command=self._file_converter_toggle_compression_for_selected,
+            settings_command=self._open_file_converter_compression_settings_window,
+            wrap_attr="file_converter_compression_button_wrap",
+            button_attr="file_converter_compression_button",
+            settings_attr="file_converter_compression_settings_button",
+        )
 
         self.file_converter_drop_frame = ctk.CTkFrame(
             self.file_converter_card,
@@ -7552,7 +7559,7 @@ class App(ctk.CTk):
         self.file_converter_drop_label.pack(fill="x", padx=10, pady=(8, 2))
         self.file_converter_drop_list_frame = ctk.CTkScrollableFrame(
             self.file_converter_drop_frame,
-            height=150,
+            height=190,
             fg_color=COLORS["bg_input"],
             corner_radius=8,
         )
@@ -7601,7 +7608,6 @@ class App(ctk.CTk):
             keep_set.discard(path)
         self.session_file_keep_original = keep_set
         self._file_converter_sync_keep_button(path)
-        self._file_converter_set_status(f"Keep original {'ON' if wanted else 'OFF'} for {os.path.basename(path)}.")
 
     def _session_file_selected_enabled(self, normalized_path: str) -> bool:
         self._ensure_session_files_state()
@@ -7648,8 +7654,12 @@ class App(ctk.CTk):
         return [path] if path else []
 
     def _file_converter_default_compression_settings(self) -> dict[str, object]:
-        """R42EO: simple getButterfly-style compression defaults for K/C rows."""
+        """R42EP: simple-by-default compression settings, with advanced raw values retained."""
         return {
+            "settings_mode": "Simple",
+            "image_quality_profile": "Medium",
+            "video_quality_profile": "Medium",
+            "audio_quality_profile": "Medium",
             "image_quality": 60,
             "image_max_dimension": 4000,
             "image_suffix": "_compressed",
@@ -7673,6 +7683,15 @@ class App(ctk.CTk):
         merged["image_max_dimension"] = _int_value("image_max_dimension", 0, 20000)
         merged["video_crf"] = _int_value("video_crf", 16, 38)
         merged["video_max_dimension"] = _int_value("video_max_dimension", 0, 20000)
+        mode = str(merged.get("settings_mode") or defaults["settings_mode"]).strip().title()
+        merged["settings_mode"] = mode if mode in {"Simple", "Advanced"} else "Simple"
+        for key, allowed in {
+            "image_quality_profile": {"Low", "Medium", "High"},
+            "video_quality_profile": {"Light", "Medium", "Strong"},
+            "audio_quality_profile": {"Small", "Medium", "High"},
+        }.items():
+            value = str(merged.get(key) or defaults[key]).strip().title()
+            merged[key] = value if value in allowed else defaults[key]
         suffix = str(merged.get("image_suffix") or defaults["image_suffix"]).strip()
         if not suffix:
             suffix = str(defaults["image_suffix"])
@@ -7715,10 +7734,43 @@ class App(ctk.CTk):
             compress_set.discard(path)
         self.session_file_compress_enabled = compress_set
         self._file_converter_sync_compress_button(path)
-        self._file_converter_set_status(f"Compression {'ON' if wanted else 'OFF'} for {os.path.basename(path)}.")
+
+    def _file_converter_apply_simple_compression_profiles(self, settings: dict[str, object]) -> dict[str, object]:
+        """Map user-facing simple levels onto the raw advanced values."""
+        next_settings = dict(settings)
+        image_profile = str(next_settings.get("image_quality_profile") or "Medium").strip().title()
+        if image_profile == "High":
+            next_settings["image_quality"] = 80
+            next_settings["image_max_dimension"] = 4000
+        elif image_profile == "Low":
+            next_settings["image_quality"] = 40
+            next_settings["image_max_dimension"] = 1920
+        else:
+            next_settings["image_quality"] = 60
+            next_settings["image_max_dimension"] = 4000
+
+        video_profile = str(next_settings.get("video_quality_profile") or "Medium").strip().title()
+        if video_profile == "Light":
+            next_settings["video_crf"] = 23
+            next_settings["video_max_dimension"] = 1920
+        elif video_profile == "Strong":
+            next_settings["video_crf"] = 32
+            next_settings["video_max_dimension"] = 720
+        else:
+            next_settings["video_crf"] = 28
+            next_settings["video_max_dimension"] = 1280
+
+        audio_profile = str(next_settings.get("audio_quality_profile") or "Medium").strip().title()
+        if audio_profile == "High":
+            next_settings["audio_bitrate"] = "192k"
+        elif audio_profile == "Small":
+            next_settings["audio_bitrate"] = "64k"
+        else:
+            next_settings["audio_bitrate"] = "128k"
+        return next_settings
 
     def _open_file_converter_compression_settings_window(self) -> None:
-        """R42EO: File Converter compression settings behind the converter cog."""
+        """R42EP: Local-ASR-style cog opens simple-first compression settings."""
         self._ensure_session_files_state()
         existing = getattr(self, "file_converter_compression_settings_window", None)
         try:
@@ -7732,7 +7784,7 @@ class App(ctk.CTk):
         window = ctk.CTkToplevel(self)
         self.file_converter_compression_settings_window = window
         window.title("File Converter compression settings")
-        window.geometry("430x420")
+        window.geometry("500x560")
         window.transient(self)
         try:
             window.lift()
@@ -7750,53 +7802,166 @@ class App(ctk.CTk):
         ).pack(fill="x", padx=12, pady=(12, 4))
         ctk.CTkLabel(
             frame,
-            text="Rows marked C use these simple local presets. Text compression is intentionally left out for now.",
+            text="Simple mode uses readable presets. Advanced exposes the raw values used by the local converter backend.",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_muted"],
             anchor="w",
             justify="left",
-            wraplength=370,
+            wraplength=440,
         ).pack(fill="x", padx=12, pady=(0, 10))
-        vars_by_key: dict[str, Any] = {}
-        def _row(label_text: str, key: str, hint: str) -> None:
-            row = ctk.CTkFrame(frame, fg_color="transparent")
-            row.pack(fill="x", padx=12, pady=5)
+
+        mode_var = ctk.StringVar(value=str(settings.get("settings_mode") or "Simple"))
+        mode_switch = ctk.CTkSegmentedButton(
+            frame,
+            values=["Simple", "Advanced"],
+            variable=mode_var,
+            height=30,
+        )
+        mode_switch.pack(fill="x", padx=12, pady=(0, 10))
+
+        body_holder = ctk.CTkFrame(frame, fg_color="transparent")
+        body_holder.pack(fill="both", expand=True, padx=12, pady=(0, 6))
+        simple_frame = ctk.CTkFrame(body_holder, fg_color="transparent")
+        advanced_frame = ctk.CTkFrame(body_holder, fg_color="transparent")
+
+        image_profile_var = ctk.StringVar(value=str(settings.get("image_quality_profile") or "Medium"))
+        video_profile_var = ctk.StringVar(value=str(settings.get("video_quality_profile") or "Medium"))
+        audio_profile_var = ctk.StringVar(value=str(settings.get("audio_quality_profile") or "Medium"))
+
+        def _simple_slider_row(label_text: str, var: Any, values: list[str], hint: str) -> None:
+            """Simple settings use low-to-high sliders; Advanced keeps raw values."""
+            row = ctk.CTkFrame(simple_frame, fg_color="transparent")
+            row.pack(fill="x", pady=8)
             row.grid_columnconfigure(1, weight=1)
+            normalised = str(var.get() or values[len(values) // 2]).strip().title()
+            if normalised not in values:
+                normalised = values[len(values) // 2]
+            var.set(normalised)
+            slider_var = ctk.DoubleVar(value=float(values.index(normalised)))
             ctk.CTkLabel(row, text=label_text, width=150, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
+            value_label = ctk.CTkLabel(row, text=normalised, width=82, anchor="e", text_color=COLORS["text_primary"], font=ctk.CTkFont(size=12, weight="bold"))
+            value_label.grid(row=0, column=2, sticky="e", padx=(8, 0))
+            def _set_from_slider(raw: object = None, *, value_list: list[str] = values, profile_var: Any = var, label: Any = value_label) -> None:
+                try:
+                    index = int(round(float(raw if raw is not None else slider_var.get())))
+                except Exception:
+                    index = len(value_list) // 2
+                index = max(0, min(len(value_list) - 1, index))
+                profile_var.set(value_list[index])
+                try:
+                    label.configure(text=value_list[index])
+                except Exception:
+                    pass
+            ctk.CTkSlider(
+                row,
+                from_=0,
+                to=max(1, len(values) - 1),
+                number_of_steps=max(1, len(values) - 1),
+                variable=slider_var,
+                command=_set_from_slider,
+            ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
+            ctk.CTkLabel(row, text="  •  ".join(values), text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w").grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
+            ctk.CTkLabel(row, text=hint, text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w", justify="left", wraplength=300).grid(row=2, column=1, columnspan=2, sticky="w", padx=(8, 0), pady=(1, 0))
+
+        _simple_slider_row("Image quality", image_profile_var, ["Low", "Medium", "High"], "High keeps more detail; Medium matches the simple image-compressor style; Low makes smaller images.")
+        _simple_slider_row("Video compression", video_profile_var, ["Light", "Medium", "Strong"], "Light keeps more quality; Medium is the default; Strong is smaller.")
+        _simple_slider_row("Audio compression", audio_profile_var, ["Small", "Medium", "High"], "High uses 192k; Medium 128k; Small 64k.")
+
+        vars_by_key: dict[str, Any] = {}
+        def _advanced_row(label_text: str, key: str, hint: str) -> None:
+            row = ctk.CTkFrame(advanced_frame, fg_color="transparent")
+            row.pack(fill="x", pady=5)
+            row.grid_columnconfigure(1, weight=1)
+            ctk.CTkLabel(row, text=label_text, width=165, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
             var = ctk.StringVar(value=str(settings.get(key, "")))
             vars_by_key[key] = var
             entry = ctk.CTkEntry(row, textvariable=var, height=28, fg_color=COLORS["bg_input"], text_color=COLORS["text_primary"])
             entry.grid(row=0, column=1, sticky="ew", padx=(8, 0))
-            ctk.CTkLabel(row, text=hint, text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w").grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
-        _row("Image quality", "image_quality", "1-100; default 60 like the simple image-compressor slider")
-        _row("Image max side", "image_max_dimension", "0 disables resize; default 4000 px")
-        _row("Image suffix", "image_suffix", "default _compressed")
-        _row("Video CRF", "video_crf", "16-38; higher is smaller; default 28")
-        _row("Video max side", "video_max_dimension", "0 disables resize; default 1280 px")
-        _row("Audio bitrate", "audio_bitrate", "for compressed audio, e.g. 64k, 96k, 128k")
+            ctk.CTkLabel(row, text=hint, text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w", wraplength=270).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
+
+        _advanced_row("Image quality number", "image_quality", "1-100; higher keeps more quality")
+        _advanced_row("Image max pixels", "image_max_dimension", "largest width/height in pixels; 0 disables resize")
+        _advanced_row("Image suffix", "image_suffix", "default _compressed")
+        _advanced_row("Video CRF number", "video_crf", "16-38; higher is smaller")
+        _advanced_row("Video max pixels", "video_max_dimension", "largest width/height in pixels; 0 disables resize")
+        _advanced_row("Audio bitrate", "audio_bitrate", "for compressed audio, e.g. 64k, 96k, 128k")
+
+        def _show_mode(_value: object = None) -> None:
+            try:
+                simple_frame.pack_forget()
+                advanced_frame.pack_forget()
+            except Exception:
+                pass
+            if str(mode_var.get() or "Simple") == "Advanced":
+                advanced_frame.pack(fill="both", expand=True)
+            else:
+                simple_frame.pack(fill="both", expand=True)
+        try:
+            mode_switch.configure(command=_show_mode)
+        except Exception:
+            pass
+        _show_mode()
+
         buttons = ctk.CTkFrame(frame, fg_color="transparent")
-        buttons.pack(fill="x", padx=12, pady=(16, 12))
-        def _save() -> None:
+        buttons.pack(fill="x", padx=12, pady=(12, 12))
+
+        def _collect_settings() -> dict[str, object]:
             next_settings = dict(settings)
-            for key, var in vars_by_key.items():
-                next_settings[key] = var.get()
-            self.file_converter_compression_settings = next_settings
+            next_settings["settings_mode"] = str(mode_var.get() or "Simple")
+            next_settings["image_quality_profile"] = str(image_profile_var.get() or "Medium")
+            next_settings["video_quality_profile"] = str(video_profile_var.get() or "Medium")
+            next_settings["audio_quality_profile"] = str(audio_profile_var.get() or "Medium")
+            if str(mode_var.get() or "Simple") == "Advanced":
+                for key, var in vars_by_key.items():
+                    next_settings[key] = var.get()
+            else:
+                next_settings = self._file_converter_apply_simple_compression_profiles(next_settings)
+            return next_settings
+
+        def _save() -> None:
+            self.file_converter_compression_settings = _collect_settings()
             self._file_converter_normalised_compression_settings()
             self._file_converter_set_status("Compression settings saved.")
             try:
                 window.destroy()
             except Exception:
                 pass
+
         def _reset() -> None:
             defaults = self._file_converter_default_compression_settings()
-            for key, value in defaults.items():
+            mode_var.set(str(defaults.get("settings_mode") or "Simple"))
+            image_profile_var.set(str(defaults.get("image_quality_profile") or "Medium"))
+            video_profile_var.set(str(defaults.get("video_quality_profile") or "Medium"))
+            audio_profile_var.set(str(defaults.get("audio_quality_profile") or "Medium"))
+            for key, var in vars_by_key.items():
                 try:
-                    vars_by_key[key].set(str(value))
+                    var.set(str(defaults.get(key, "")))
                 except Exception:
                     pass
+            _show_mode()
+
         ctk.CTkButton(buttons, text="Save", command=_save, width=90, fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"]).pack(side="right")
         ctk.CTkButton(buttons, text="Reset", command=_reset, width=90, fg_color=COLORS["bg_input"], hover_color=COLORS["border"]).pack(side="right", padx=(0, 8))
         ctk.CTkButton(buttons, text="Cancel", command=window.destroy, width=90, fg_color="transparent", hover_color=COLORS["border"]).pack(side="right", padx=(0, 8))
+
+    def _file_converter_toggle_compression_for_selected(self) -> None:
+        """R42EP: Compression button toggles C for selected held rows; cog opens settings."""
+        self._ensure_session_files_state()
+        selected_paths = self._file_converter_selected_held_paths()
+        if not selected_paths:
+            self._file_converter_set_status("Select held file(s) before toggling Compression.", error=True)
+            return
+        compress_set = set(getattr(self, "session_file_compress_enabled", set()) or set())
+        enable = not all(path in compress_set for path in selected_paths)
+        for path in selected_paths:
+            if enable:
+                compress_set.add(path)
+            else:
+                compress_set.discard(path)
+        self.session_file_compress_enabled = compress_set
+        for path in selected_paths:
+            self._file_converter_sync_compress_button(path)
+        self._file_converter_set_status(f"Compression {'ON' if enable else 'OFF'} for {len(selected_paths)} selected file(s).")
 
     def _file_converter_set_status(self, message: str, *, error: bool = False) -> None:
         label = getattr(self, "file_converter_status_label", None)
@@ -8035,7 +8200,7 @@ class App(ctk.CTk):
             self._file_converter_item_target_var_for_path(path).set(target)
         except Exception:
             pass
-        self._file_converter_set_status(f"{os.path.basename(path)} target set to {target}.")
+        # Target changes are visible in-row; avoid noisy status updates.
 
     def _file_converter_set_item_selected(self, normalized_path: str, selected: bool) -> None:
         """R42EN: child fillbox toggle mirrors Review DB source_review_selected_keys."""
@@ -8049,7 +8214,6 @@ class App(ctk.CTk):
         self.session_file_converter_selected_paths = selected_set
         self._file_converter_sync_fillbox_widgets()
         self._file_converter_refresh_format_menu()
-        self._file_converter_set_status(f"{len(self._file_converter_selected_held_paths())} File Converter item(s) selected.")
 
     def _file_converter_toggle_item_fillbox(self, normalized_path: str) -> None:
         path = self._normalise_session_file_path(normalized_path)
@@ -8070,7 +8234,6 @@ class App(ctk.CTk):
         self.session_file_converter_selected_paths = selected_set
         self._file_converter_sync_fillbox_widgets()
         self._file_converter_refresh_format_menu()
-        self._file_converter_set_status(f"{len(self._file_converter_selected_held_paths())} File Converter item(s) selected.")
 
     def _file_converter_sync_fillbox_widgets(self) -> None:
         """R42EO: sync Review-style bare glyph fillboxes in-place, without rebuilding rows."""
@@ -8082,6 +8245,12 @@ class App(ctk.CTk):
         if master is not None:
             try:
                 master.configure(text="⬛" if visible_paths and all(path in selected_set for path in visible_paths) else "⬜")
+            except Exception:
+                pass
+        count_label = getattr(self, "file_converter_selected_count_label", None)
+        if count_label is not None:
+            try:
+                count_label.configure(text=str(len(selected_set)))
             except Exception:
                 pass
         buttons = getattr(self, "file_converter_item_fillbox_buttons", {}) or {}
@@ -8199,6 +8368,7 @@ class App(ctk.CTk):
         self.file_converter_item_compress_buttons = {}
         self.file_converter_item_name_labels = {}
         self.file_converter_master_fillbox_button = None
+        self.file_converter_selected_count_label = None
         try:
             self._file_converter_refresh_format_menu()
         except Exception:
@@ -8214,21 +8384,23 @@ class App(ctk.CTk):
         master_button = ctk.CTkLabel(
             master_row,
             text="⬛" if self.file_converter_queued_paths and all(path in selected_set for path in self.file_converter_queued_paths) else "⬜",
-            width=24,
+            width=32,
             text_color="#f5f5f5",
-            font=ctk.CTkFont(family="Segoe UI Symbol", size=14, weight="bold"),
+            font=ctk.CTkFont(family="Segoe UI Symbol", size=20, weight="bold"),
             cursor="hand2",
         )
-        master_button.grid(row=0, column=0, sticky="w", padx=(8, 6), pady=2)
+        master_button.grid(row=0, column=0, sticky="w", padx=(2, 6), pady=2)
         master_button.bind("<Button-1>", lambda _event: self._file_converter_toggle_master_fillbox(), add="+")
         self.file_converter_master_fillbox_button = master_button
-        ctk.CTkLabel(
+        selected_count_label = ctk.CTkLabel(
             master_row,
-            text=f"All held files ({len(self.file_converter_queued_paths)})",
+            text=str(len(selected_set)),
             text_color=COLORS["text_secondary"],
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ctk.CTkFont(size=12, weight="bold"),
             anchor="w",
-        ).grid(row=0, column=1, sticky="ew", pady=2)
+        )
+        selected_count_label.grid(row=0, column=1, sticky="ew", pady=2)
+        self.file_converter_selected_count_label = selected_count_label
 
         for path in self.file_converter_queued_paths:
             kind, method, default_fmt = self._file_converter_detect_display(path)
@@ -8241,17 +8413,17 @@ class App(ctk.CTk):
                 pass
             selected = path in selected_set
             row = ctk.CTkFrame(frame, fg_color="transparent", corner_radius=0, border_width=0)
-            row.pack(fill="x", padx=(26, 4), pady=1)
+            row.pack(fill="x", padx=(2, 4), pady=2)
             row.grid_columnconfigure(1, weight=1)
             fillbox_button = ctk.CTkLabel(
                 row,
                 text="⬛" if selected else "⬜",
-                width=24,
+                width=32,
                 text_color="#f5f5f5",
-                font=ctk.CTkFont(family="Segoe UI Symbol", size=14, weight="bold"),
+                font=ctk.CTkFont(family="Segoe UI Symbol", size=20, weight="bold"),
                 cursor="hand2",
             )
-            fillbox_button.grid(row=0, column=0, rowspan=2, sticky="w", padx=(4, 8), pady=3)
+            fillbox_button.grid(row=0, column=0, sticky="w", padx=(2, 10), pady=4)
             fillbox_button.bind("<Button-1>", lambda _event, p=path: self._file_converter_toggle_item_fillbox(p), add="+")
             self.file_converter_item_fillbox_buttons[path] = fillbox_button
             name_label = ctk.CTkLabel(
@@ -8261,28 +8433,21 @@ class App(ctk.CTk):
                 font=ctk.CTkFont(size=12, weight="bold"),
                 anchor="w",
                 justify="left",
-                wraplength=760,
+                wraplength=620,
             )
-            name_label.grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(3, 0))
+            name_label.grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=4)
             self.file_converter_item_name_labels[path] = name_label
-            ctk.CTkLabel(
-                row,
-                text=f"{kind}/{method}  default -> .{default_fmt}",
-                text_color=COLORS["text_muted"],
-                font=ctk.CTkFont(size=10),
-                anchor="w",
-            ).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(0, 4))
             ctk.CTkOptionMenu(
                 row,
                 values=allowed,
                 variable=target_var,
                 command=lambda value, p=path: self._file_converter_set_item_target(p, value),
-                width=82,
+                width=68,
                 height=26,
                 fg_color=COLORS["bg_input"],
                 button_color=COLORS["accent_secondary"],
                 button_hover_color=COLORS["border"],
-            ).grid(row=0, column=2, rowspan=2, sticky="e", padx=(4, 6), pady=3)
+            ).grid(row=0, column=2, sticky="e", padx=(4, 6), pady=3)
             keep_enabled = self._session_file_keep_original_enabled(path) or bool(getattr(self, "file_converter_keep_batch_var", None) and self.file_converter_keep_batch_var.get())
             keep_button = ctk.CTkButton(
                 row,
@@ -8299,7 +8464,7 @@ class App(ctk.CTk):
                 border_color=COLORS["accent"] if keep_enabled else COLORS["border"],
                 corner_radius=6,
             )
-            keep_button.grid(row=0, column=3, rowspan=2, sticky="e", padx=(0, 4), pady=3)
+            keep_button.grid(row=0, column=3, sticky="e", padx=(0, 4), pady=3)
             self.file_converter_item_keep_buttons[path] = keep_button
             compress_enabled = self._session_file_compress_enabled(path)
             compress_button = ctk.CTkButton(
@@ -8317,7 +8482,7 @@ class App(ctk.CTk):
                 border_color=COLORS["accent"] if compress_enabled else COLORS["border"],
                 corner_radius=6,
             )
-            compress_button.grid(row=0, column=4, rowspan=2, sticky="e", padx=(0, 4), pady=3)
+            compress_button.grid(row=0, column=4, sticky="e", padx=(0, 4), pady=3)
             self.file_converter_item_compress_buttons[path] = compress_button
             self.file_converter_item_widgets[path] = row
         self._file_converter_sync_fillbox_widgets()
@@ -8559,11 +8724,33 @@ class App(ctk.CTk):
         self._refresh_session_files_list()
 
     def _normalise_session_file_conversion_group_state(self) -> None:
-        """R42EO: flatten old generated conversion groups; keep files at FILES root."""
+        """R42EP: flatten generated Converted: grouping; keep converted files at FILES root."""
         self._ensure_session_files_state()
         self.session_file_conversion_groups = {}
         self.session_file_conversion_group_order = []
         self.session_file_conversion_group_collapsed = {}
+
+        generated_folders = {
+            str(name)
+            for name in (getattr(self, "session_file_folder_names", []) or [])
+            if str(name).startswith("Converted:")
+        }
+        if generated_folders:
+            folders = dict(getattr(self, "session_file_folders", {}) or {})
+            self.session_file_folders = {
+                path: folder
+                for path, folder in folders.items()
+                if str(folder) not in generated_folders
+            }
+            self.session_file_folder_names = [
+                name
+                for name in (getattr(self, "session_file_folder_names", []) or [])
+                if str(name) not in generated_folders
+            ]
+            collapsed = dict(getattr(self, "session_file_folder_collapsed", {}) or {})
+            for name in generated_folders:
+                collapsed.pop(name, None)
+            self.session_file_folder_collapsed = collapsed
 
     def _open_file_converter_output_folder(self) -> None:
         folder = getattr(self, "file_converter_last_output_dir", "") or ""
@@ -18567,7 +18754,7 @@ class App(ctk.CTk):
 
         self.transcript_title_label = ctk.CTkLabel(
             header,
-            text="🗣 Transcript",
+            text="🗣 Transcript Editor",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS["text_primary"],
             cursor="hand2",
@@ -23598,7 +23785,7 @@ select {{ border:1px solid #40505f; border-radius:999px; background:#1f2933; col
 <button id="clearAll">Clear all</button>
 <button id="addFiles" class="neutral-file-intake">Add selected to FILES</button>
 <select id="convertTarget" title="Image conversion target"><option value="auto">auto</option><option value="webp">webp</option><option value="png">png</option><option value="jpg">jpg</option><option value="bmp">bmp</option><option value="tiff">tiff</option></select>
-<label class="meta"><input id="convertKeep" type="checkbox"> Keep original</label>
+<label class="meta"><input id="convertKeep" type="checkbox"> Keep original file</label>
 <button id="convertFiles" class="primary">Convert selected</button>
 <span class="meta" id="status">Native browser image loading · order preserved</span>
 </header>
@@ -25296,7 +25483,7 @@ select {{ border:1px solid #40505f; border-radius:999px; background:#1f2933; col
 <button id="clearAll">Clear all</button>
 <button id="addFiles" class="neutral-file-intake">Add selected to FILES</button>
 <select id="convertTarget" title="Video/audio conversion target"><option value="auto">auto</option><option value="mp4">mp4</option><option value="mkv">mkv</option><option value="webm">webm</option><option value="mov">mov</option><option value="mp3">mp3</option><option value="m4a">m4a</option><option value="aac">aac</option><option value="wav">wav</option><option value="flac">flac</option><option value="ogg">ogg</option><option value="opus">opus</option></select>
-<label class="meta"><input id="convertKeep" type="checkbox"> Keep original</label>
+<label class="meta"><input id="convertKeep" type="checkbox"> Keep original file</label>
 <button id="convertFiles" class="primary">Convert selected</button>
 <span class="meta" id="status">{html.escape(initial_status_text)}</span>
 </header>
