@@ -3864,6 +3864,7 @@ class App(ctk.CTk):
         self.files_drop_status_label.pack(fill="x", pady=(4, 0))
         self.session_file_row_widgets: dict[str, object] = {}
         self._bind_files_drop_targets()
+        self._bind_files_rectangle_selection_handlers()
 
     def _session_file_picker_filetypes(self) -> List[Tuple[str, str]]:
         return [
@@ -3887,6 +3888,108 @@ class App(ctk.CTk):
         if not files:
             return
         self._intake_session_files(files, select_first=True, source_label="selected")
+
+    def _bind_files_rectangle_selection_handlers(self) -> None:
+        """R42ER: File-Explorer-style blank-area drag selection for FILES rows."""
+        frame = getattr(self, "files_list_frame", None)
+        if frame is None:
+            return
+        targets = [frame]
+        for attr in ("_parent_canvas", "_parent_frame", "_canvas"):
+            widget = getattr(frame, attr, None)
+            if widget is not None and widget not in targets:
+                targets.append(widget)
+        for widget in targets:
+            try:
+                widget.bind("<ButtonPress-1>", self._files_rectangle_select_start, add="+")
+                widget.bind("<B1-Motion>", self._files_rectangle_select_motion, add="+")
+                widget.bind("<ButtonRelease-1>", self._files_rectangle_select_end, add="+")
+            except Exception:
+                logger.debug("Could not bind FILES rectangle selection target.", exc_info=True)
+
+    def _files_rectangle_select_start(self, event: Any) -> str | None:
+        self._ensure_session_files_state()
+        # Only begin a lasso from empty scroll-area space. Row controls keep their
+        # own clicks; dragging across rows after this point selects by contact.
+        self.files_rectangle_select_active = True
+        self.files_rectangle_select_start_y_root = int(getattr(event, "y_root", 0) or 0)
+        state = int(getattr(event, "state", 0) or 0)
+        additive = bool(state & 0x0004)  # Ctrl keeps the existing selection.
+        self.files_rectangle_select_base_paths = set(getattr(self, "session_file_selected_paths", set()) or set()) if additive else set()
+        if not additive:
+            old = set(getattr(self, "session_file_selected_paths", set()) or set())
+            self.session_file_selected_paths = set()
+            for path in old:
+                self._set_session_file_checkbox_state(path, False)
+                self._set_session_file_label_visual(path, drag_hover=False)
+        try:
+            self.files_drop_status_label.configure(text="Drag to select FILES rows", text_color=COLORS["text_muted"])
+        except Exception:
+            pass
+        return None
+
+    def _set_session_file_checkbox_state(self, normalized_path: str, selected: bool) -> None:
+        try:
+            path = self._normalise_session_file_path(normalized_path)
+        except Exception:
+            path = str(normalized_path or "")
+        var = getattr(self, "session_file_select_vars", {}).get(path)
+        if var is not None:
+            try:
+                var.set(bool(selected))
+            except Exception:
+                pass
+
+    def _files_rectangle_select_apply(self, event: Any) -> None:
+        if not bool(getattr(self, "files_rectangle_select_active", False)):
+            return
+        start_y = int(getattr(self, "files_rectangle_select_start_y_root", 0) or 0)
+        end_y = int(getattr(event, "y_root", start_y) or start_y)
+        top, bottom = sorted((start_y, end_y))
+        selected = set(getattr(self, "files_rectangle_select_base_paths", set()) or set())
+        row_widgets = getattr(self, "session_file_row_widgets", {}) or {}
+        ordered = list(getattr(self, "session_file_row_order", []) or row_widgets.keys())
+        for path in ordered:
+            row = row_widgets.get(path)
+            if row is None:
+                continue
+            try:
+                if not row.winfo_exists() or not row.winfo_ismapped():
+                    continue
+                row_top = int(row.winfo_rooty())
+                row_bottom = row_top + max(1, int(row.winfo_height()))
+            except Exception:
+                continue
+            if row_bottom >= top and row_top <= bottom:
+                selected.add(path)
+        old = set(getattr(self, "session_file_selected_paths", set()) or set())
+        if selected == old:
+            return
+        self.session_file_selected_paths = selected
+        changed = old.symmetric_difference(selected)
+        for path in changed:
+            self._set_session_file_checkbox_state(path, path in selected)
+            self._set_session_file_label_visual(path, drag_hover=False)
+        if selected:
+            self.selected_session_file_path = next(iter(selected))
+        try:
+            self.files_drop_status_label.configure(text=f"{len(selected)} FILES selected")
+        except Exception:
+            pass
+
+    def _files_rectangle_select_motion(self, event: Any) -> str | None:
+        self._files_rectangle_select_apply(event)
+        return None
+
+    def _files_rectangle_select_end(self, event: Any) -> str | None:
+        self._files_rectangle_select_apply(event)
+        self.files_rectangle_select_active = False
+        count = len(getattr(self, "session_file_selected_paths", set()) or set())
+        try:
+            self.files_drop_status_label.configure(text=(f"{count} FILES selected" if count else "Drop files here"), text_color=COLORS["text_muted"])
+        except Exception:
+            pass
+        return None
 
     def _bind_files_drop_targets(self) -> bool:
         """Bind TkDND file drops when initialization succeeded."""
@@ -5257,6 +5360,7 @@ class App(ctk.CTk):
         self.session_file_converter_select_widgets = {}
         self.session_file_select_widgets = {}
         self.session_file_select_vars = {}
+        self.session_file_row_order = []
 
         self._normalise_session_file_folder_state()
         self._normalise_session_file_conversion_group_state()
@@ -5456,6 +5560,10 @@ class App(ctk.CTk):
             self._bind_session_file_drag_handlers(label, entry.normalized_path)
             self._bind_session_file_drag_handlers(row_frame, entry.normalized_path)
             self.session_file_row_widgets[entry.normalized_path] = row_frame
+            try:
+                self.session_file_row_order.append(entry.normalized_path)
+            except Exception:
+                pass
             self.session_file_label_widgets[entry.normalized_path] = label
             action_column = 2
             # R42EL: restore the normal FILES multi-select tickbox for highlight/drag.
@@ -7340,7 +7448,7 @@ class App(ctk.CTk):
             normalized = "image"
         if normalized == "audio":
             # R42EQ: expanded from the Convertit reference model without copying Android/Kotlin code.
-            return ["auto", "mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma", "mka", "spx", "amr"]
+            return ["auto", "mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff", "wma", "mka", "spx", "amr"]
         if normalized == "video":
             return ["auto", "mp4", "mkv", "webm", "mov"]
         if normalized == "image":
@@ -7653,19 +7761,30 @@ class App(ctk.CTk):
         return [path] if path else []
 
     def _file_converter_default_compression_settings(self) -> dict[str, object]:
-        """R42EQ: simple-by-default compression/size-reduction settings."""
+        """R42ER: simple preset-first compression/size-reduction settings."""
         return {
             "settings_mode": "Simple",
+            "compression_preset": "Optimised",
+            "file_size_profile": "Medium",
             "image_quality_profile": "Optimised",
             "video_quality_profile": "Optimised",
             "audio_quality_profile": "Optimised",
-            "video_size_reduction_percent": 45,
             "image_quality": 72,
             "image_max_dimension": 4000,
             "image_suffix": "_compressed",
+            "image_webp_method": 4,
+            "image_png_compression_level": 9,
+            "image_jpeg_chroma_subsampling": "auto",
             "video_crf": 26,
             "video_max_dimension": 1280,
+            "video_encoder": "h264",
+            "video_preset": "medium",
+            "video_fps": "source",
             "audio_bitrate": "160k",
+            "audio_sample_rate": "source",
+            "audio_channels": "source",
+            "playback_speed": "1.0",
+            "cue_split_mode": "off",
         }
 
     def _file_converter_allowed_audio_bitrates(self) -> list[str]:
@@ -7673,23 +7792,79 @@ class App(ctk.CTk):
         return ["9k", "16k", "24k", "32k", "48k", "64k", "96k", "128k", "160k", "192k", "256k", "320k", "512k", "768k", "1024k"]
 
     def _file_converter_allowed_audio_sample_rates(self) -> list[str]:
-        """R42EQ: sample-rate set modelled on the Convertit reference options."""
-        return ["source", "8000", "12000", "16000", "22050", "24000", "32000", "44100", "48000", "88200", "96000", "192000"]
+        """R42ER: UI labels show kHz while backend stores Hz."""
+        return ["source", "8 kHz", "12 kHz", "16 kHz", "22.05 kHz", "24 kHz", "32 kHz", "44.1 kHz", "48 kHz", "88.2 kHz", "96 kHz", "192 kHz"]
+
+    def _file_converter_audio_sample_rate_to_hz(self, value: str) -> str:
+        raw = str(value or "source").strip().lower().replace("hz", "").strip()
+        if raw in {"", "source"}:
+            return "source"
+        if raw.endswith("k"):
+            raw = raw[:-1].strip()
+        try:
+            return str(int(round(float(raw) * 1000))) if "." in raw or float(raw) < 1000 else str(int(float(raw)))
+        except Exception:
+            return "source"
+
+    def _file_converter_hz_to_sample_rate_label(self, value: str) -> str:
+        hz = self._file_converter_audio_sample_rate_to_hz(value)
+        mapping = {
+            "8000": "8 kHz", "12000": "12 kHz", "16000": "16 kHz", "22050": "22.05 kHz",
+            "24000": "24 kHz", "32000": "32 kHz", "44100": "44.1 kHz", "48000": "48 kHz",
+            "88200": "88.2 kHz", "96000": "96 kHz", "192000": "192 kHz",
+        }
+        return mapping.get(hz, "source")
+
+    def _file_converter_allowed_audio_channels(self) -> list[str]:
+        return ["source", "mono", "stereo"]
+
+    def _file_converter_allowed_playback_speeds(self) -> list[str]:
+        return ["0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x"]
+
+    def _file_converter_playback_speed_to_value(self, value: str) -> str:
+        raw = str(value or "1.0x").strip().lower().rstrip("x")
+        try:
+            speed = max(0.5, min(2.0, float(raw)))
+        except Exception:
+            speed = 1.0
+        return f"{speed:.2f}".rstrip("0").rstrip(".") or "1"
+
+    def _file_converter_value_to_playback_speed_label(self, value: str) -> str:
+        return self._file_converter_playback_speed_to_value(value) + "x"
+
+    def _file_converter_allowed_video_encoders(self) -> list[str]:
+        return ["h264", "h265", "vp9", "av1"]
+
+    def _file_converter_allowed_video_presets(self) -> list[str]:
+        return ["veryfast", "fast", "medium", "slow"]
+
+    def _file_converter_allowed_video_fps(self) -> list[str]:
+        return ["source", "24", "25", "30", "50", "60"]
 
     def _file_converter_allowed_convert_formats_for_kind(self, kind: str) -> list[str]:
         values = [value for value in self._file_converter_target_formats_for_kind(kind) if value != "auto"]
         return values or ["auto"]
 
     def _file_converter_default_convert_settings(self) -> dict[str, object]:
-        """R42EQ: Convert cog stores normal conversion defaults separate from compression."""
+        """R42ER: Convert cog stores target-format plus handling defaults."""
         return {
             "settings_mode": "Simple",
             "image_output": "webp",
             "video_output": "mp4",
             "audio_output": "mp3",
             "text_output": "html",
+            "image_convert_profile": "Optimised",
+            "video_convert_profile": "Optimised",
+            "audio_convert_profile": "Optimised",
             "audio_bitrate": "256k",
-            "audio_sample_rate": "44100",
+            "audio_sample_rate": "44.1 kHz",
+            "audio_channels": "source",
+            "playback_speed": "1.0x",
+            "cue_split_mode": "off",
+            "video_encoder": "h264",
+            "video_preset": "medium",
+            "video_fps": "source",
+            "web_optimise": True,
             "preserve_metadata": True,
         }
 
@@ -7699,8 +7874,17 @@ class App(ctk.CTk):
         current = dict(getattr(self, "file_converter_convert_settings", {}) or {})
         merged = dict(defaults)
         merged.update({key: value for key, value in current.items() if key in defaults})
+
         mode = str(merged.get("settings_mode") or defaults["settings_mode"]).strip().title()
         merged["settings_mode"] = mode if mode in {"Simple", "Advanced"} else "Simple"
+
+        profile_allowed = {"Quality", "Optimised", "Lower Size"}
+        for key in ("image_convert_profile", "video_convert_profile", "audio_convert_profile"):
+            value = str(merged.get(key) or defaults[key]).strip().replace("_", " ").title()
+            if value == "Lower Size":
+                value = "Lower Size"
+            merged[key] = value if value in profile_allowed else str(defaults[key])
+
         format_keys = {
             "image_output": "image",
             "video_output": "video",
@@ -7711,10 +7895,30 @@ class App(ctk.CTk):
             value = str(merged.get(key) or defaults[key]).strip().lower().lstrip(".")
             allowed = self._file_converter_allowed_convert_formats_for_kind(kind)
             merged[key] = value if value in allowed else str(defaults[key])
+
         bitrate = str(merged.get("audio_bitrate") or defaults["audio_bitrate"]).strip().lower()
         merged["audio_bitrate"] = bitrate if bitrate in self._file_converter_allowed_audio_bitrates() else str(defaults["audio_bitrate"])
-        sample_rate = str(merged.get("audio_sample_rate") or defaults["audio_sample_rate"]).strip().lower()
-        merged["audio_sample_rate"] = sample_rate if sample_rate in self._file_converter_allowed_audio_sample_rates() else str(defaults["audio_sample_rate"])
+
+        sample_label = self._file_converter_hz_to_sample_rate_label(str(merged.get("audio_sample_rate") or defaults["audio_sample_rate"]))
+        merged["audio_sample_rate"] = sample_label if sample_label in self._file_converter_allowed_audio_sample_rates() else str(defaults["audio_sample_rate"])
+
+        channels = str(merged.get("audio_channels") or defaults["audio_channels"]).strip().lower()
+        merged["audio_channels"] = channels if channels in self._file_converter_allowed_audio_channels() else str(defaults["audio_channels"])
+
+        speed_label = self._file_converter_value_to_playback_speed_label(str(merged.get("playback_speed") or defaults["playback_speed"]))
+        merged["playback_speed"] = speed_label if speed_label in self._file_converter_allowed_playback_speeds() else str(defaults["playback_speed"])
+
+        cue_mode = str(merged.get("cue_split_mode") or defaults["cue_split_mode"]).strip().lower()
+        merged["cue_split_mode"] = cue_mode if cue_mode in {"off", "auto", "manual"} else str(defaults["cue_split_mode"])
+
+        video_encoder = str(merged.get("video_encoder") or defaults["video_encoder"]).strip().lower()
+        merged["video_encoder"] = video_encoder if video_encoder in self._file_converter_allowed_video_encoders() else str(defaults["video_encoder"])
+        video_preset = str(merged.get("video_preset") or defaults["video_preset"]).strip().lower()
+        merged["video_preset"] = video_preset if video_preset in self._file_converter_allowed_video_presets() else str(defaults["video_preset"])
+        video_fps = str(merged.get("video_fps") or defaults["video_fps"]).strip().lower()
+        merged["video_fps"] = video_fps if video_fps in self._file_converter_allowed_video_fps() else str(defaults["video_fps"])
+
+        merged["web_optimise"] = bool(merged.get("web_optimise", True))
         merged["preserve_metadata"] = bool(merged.get("preserve_metadata", True))
         self.file_converter_convert_settings = merged
         return merged
@@ -7725,31 +7929,58 @@ class App(ctk.CTk):
         current = dict(getattr(self, "file_converter_compression_settings", {}) or {})
         merged = dict(defaults)
         merged.update({key: value for key, value in current.items() if key in defaults})
+
         def _int_value(name: str, minimum: int, maximum: int) -> int:
             try:
                 return max(minimum, min(maximum, int(float(merged.get(name, defaults[name]) or defaults[name]))))
             except Exception:
                 return int(defaults[name])
+
         merged["image_quality"] = _int_value("image_quality", 1, 100)
         merged["image_max_dimension"] = _int_value("image_max_dimension", 0, 20000)
+        merged["image_webp_method"] = _int_value("image_webp_method", 0, 6)
+        merged["image_png_compression_level"] = _int_value("image_png_compression_level", 0, 9)
         merged["video_crf"] = _int_value("video_crf", 16, 38)
         merged["video_max_dimension"] = _int_value("video_max_dimension", 0, 20000)
-        merged["video_size_reduction_percent"] = _int_value("video_size_reduction_percent", 0, 90)
+
         mode = str(merged.get("settings_mode") or defaults["settings_mode"]).strip().title()
         merged["settings_mode"] = mode if mode in {"Simple", "Advanced"} else "Simple"
-        for key, allowed in {
-            "image_quality_profile": {"Small", "Medium", "High", "Optimised"},
-            "video_quality_profile": {"Small", "Medium", "High", "Optimised"},
-            "audio_quality_profile": {"Voice", "Small", "Medium", "High", "Optimised", "Maximum"},
-        }.items():
-            value = str(merged.get(key) or defaults[key]).strip().title()
-            merged[key] = value if value in allowed else defaults[key]
+
+        preset = str(merged.get("compression_preset") or defaults["compression_preset"]).strip().replace("_", " ").title()
+        merged["compression_preset"] = preset if preset in {"Optimised", "Quality", "Lower Size", "Custom"} else str(defaults["compression_preset"])
+        file_size = str(merged.get("file_size_profile") or defaults["file_size_profile"]).strip().title()
+        merged["file_size_profile"] = file_size if file_size in {"Small", "Medium", "Max"} else str(defaults["file_size_profile"])
+
+        for key in ("image_quality_profile", "video_quality_profile", "audio_quality_profile"):
+            value = str(merged.get(key) or defaults[key]).strip().replace("_", " ").title()
+            if value == "Lower Size":
+                value = "Lower Size"
+            merged[key] = value if value in {"Quality", "Optimised", "Lower Size"} else str(defaults[key])
+
         suffix = str(merged.get("image_suffix") or defaults["image_suffix"]).strip()
-        if not suffix:
-            suffix = str(defaults["image_suffix"])
-        merged["image_suffix"] = re.sub(r"[^A-Za-z0-9_.-]+", "_", suffix)[:64] or "_compressed"
+        merged["image_suffix"] = re.sub(r"[^A-Za-z0-9_.-]+", "_", suffix, flags=re.IGNORECASE)[:64] or "_compressed"
+
         bitrate = str(merged.get("audio_bitrate") or defaults["audio_bitrate"]).strip().lower()
         merged["audio_bitrate"] = bitrate if bitrate in self._file_converter_allowed_audio_bitrates() else str(defaults["audio_bitrate"])
+
+        sample_label = self._file_converter_hz_to_sample_rate_label(str(merged.get("audio_sample_rate") or defaults["audio_sample_rate"]))
+        merged["audio_sample_rate"] = sample_label if sample_label in self._file_converter_allowed_audio_sample_rates() else str(defaults["audio_sample_rate"])
+
+        channels = str(merged.get("audio_channels") or defaults["audio_channels"]).strip().lower()
+        merged["audio_channels"] = channels if channels in self._file_converter_allowed_audio_channels() else str(defaults["audio_channels"])
+        speed = self._file_converter_playback_speed_to_value(str(merged.get("playback_speed") or defaults["playback_speed"]))
+        merged["playback_speed"] = speed
+
+        video_encoder = str(merged.get("video_encoder") or defaults["video_encoder"]).strip().lower()
+        merged["video_encoder"] = video_encoder if video_encoder in self._file_converter_allowed_video_encoders() else str(defaults["video_encoder"])
+        video_preset = str(merged.get("video_preset") or defaults["video_preset"]).strip().lower()
+        merged["video_preset"] = video_preset if video_preset in self._file_converter_allowed_video_presets() else str(defaults["video_preset"])
+        video_fps = str(merged.get("video_fps") or defaults["video_fps"]).strip().lower()
+        merged["video_fps"] = video_fps if video_fps in self._file_converter_allowed_video_fps() else str(defaults["video_fps"])
+
+        jpeg_mode = str(merged.get("image_jpeg_chroma_subsampling") or defaults["image_jpeg_chroma_subsampling"]).strip().lower()
+        merged["image_jpeg_chroma_subsampling"] = jpeg_mode if jpeg_mode in {"auto", "4:4:4", "4:2:0"} else str(defaults["image_jpeg_chroma_subsampling"])
+
         self.file_converter_compression_settings = merged
         return merged
 
@@ -7773,24 +8004,68 @@ class App(ctk.CTk):
 
     def _file_converter_conversion_options_for_path(self, normalized_path: str, compress: bool) -> dict[str, object]:
         convert_settings = self._file_converter_normalised_convert_settings()
-        audio_bitrate = str(convert_settings.get("audio_bitrate") or "256k")
+        kind = self._file_converter_kind_for_path(normalized_path)
         options: dict[str, object] = {
             "compress": bool(compress),
-            "audio_bitrate": audio_bitrate,
-            "audio_sample_rate": str(convert_settings.get("audio_sample_rate") or "44100"),
+            "audio_bitrate": str(convert_settings.get("audio_bitrate") or "256k"),
+            "audio_sample_rate": self._file_converter_audio_sample_rate_to_hz(str(convert_settings.get("audio_sample_rate") or "source")),
+            "audio_channels": str(convert_settings.get("audio_channels") or "source"),
+            "playback_speed": self._file_converter_playback_speed_to_value(str(convert_settings.get("playback_speed") or "1.0x")),
+            "cue_split_mode": str(convert_settings.get("cue_split_mode") or "off"),
+            "video_encoder": str(convert_settings.get("video_encoder") or "h264"),
+            "video_preset": str(convert_settings.get("video_preset") or "medium"),
+            "video_fps": str(convert_settings.get("video_fps") or "source"),
+            "web_optimise": bool(convert_settings.get("web_optimise", True)),
             "preserve_metadata": bool(convert_settings.get("preserve_metadata", True)),
         }
+
+        # Simple Convert profiles tune handling defaults without mixing them into
+        # the Advanced output-format selectors.
+        profile_key = f"{kind}_convert_profile"
+        profile = str(convert_settings.get(profile_key) or "Optimised").strip().replace("_", " ").title()
+        if kind == "video":
+            if profile == "Quality":
+                options.update({"video_crf": 21, "video_max_dimension": 1920, "video_preset": "slow", "audio_bitrate": "256k"})
+            elif profile == "Lower Size":
+                options.update({"video_crf": 31, "video_max_dimension": 720, "video_preset": "fast", "video_fps": "30", "audio_bitrate": "96k"})
+            else:
+                options.update({"video_crf": 24, "video_max_dimension": 1280, "video_preset": "medium", "audio_bitrate": "160k"})
+        elif kind == "image":
+            if profile == "Quality":
+                options.update({"image_quality": 88, "image_max_dimension": 4000})
+            elif profile == "Lower Size":
+                options.update({"image_quality": 58, "image_max_dimension": 1920})
+            else:
+                options.update({"image_quality": 72, "image_max_dimension": 4000})
+        elif kind == "audio":
+            if profile == "Quality":
+                options.update({"audio_bitrate": "320k"})
+            elif profile == "Lower Size":
+                options.update({"audio_bitrate": "96k", "audio_channels": "mono"})
+            else:
+                options.update({"audio_bitrate": "256k"})
+
         if not compress:
             return options
+
         settings = self._file_converter_apply_simple_compression_profiles(self._file_converter_normalised_compression_settings())
         options.update({
             "compress": True,
             "image_quality": int(settings.get("image_quality") or 72),
             "image_max_dimension": int(settings.get("image_max_dimension") or 0),
+            "image_webp_method": int(settings.get("image_webp_method") or 4),
+            "image_png_compression_level": int(settings.get("image_png_compression_level") or 9),
+            "image_jpeg_chroma_subsampling": str(settings.get("image_jpeg_chroma_subsampling") or "auto"),
             "file_suffix": str(settings.get("image_suffix") or "_compressed"),
             "video_crf": int(settings.get("video_crf") or 26),
             "video_max_dimension": int(settings.get("video_max_dimension") or 0),
-            "audio_bitrate": str(settings.get("audio_bitrate") or "160k"),
+            "video_encoder": str(settings.get("video_encoder") or options.get("video_encoder") or "h264"),
+            "video_preset": str(settings.get("video_preset") or options.get("video_preset") or "medium"),
+            "video_fps": str(settings.get("video_fps") or options.get("video_fps") or "source"),
+            "audio_bitrate": str(settings.get("audio_bitrate") or options.get("audio_bitrate") or "160k"),
+            "audio_sample_rate": self._file_converter_audio_sample_rate_to_hz(str(settings.get("audio_sample_rate") or "source")),
+            "audio_channels": str(settings.get("audio_channels") or options.get("audio_channels") or "source"),
+            "playback_speed": self._file_converter_playback_speed_to_value(str(settings.get("playback_speed") or options.get("playback_speed") or "1.0")),
         })
         return options
 
@@ -7813,52 +8088,61 @@ class App(ctk.CTk):
         self._file_converter_sync_compress_button(path)
 
     def _file_converter_apply_simple_compression_profiles(self, settings: dict[str, object]) -> dict[str, object]:
-        """Map simple quality and video-size-reduction controls onto raw backend values."""
+        """Map preset-style Simple compression controls onto raw backend values.
+
+        R42ER: Optimised is a preset/profile, not a slider position.  The Simple
+        File Size slider controls only Small/Medium/Max output size pressure,
+        while Advanced exposes the actual FFmpeg/WebP/PNG values.
+        """
         next_settings = dict(settings)
+        preset = str(next_settings.get("compression_preset") or "Optimised").strip().replace("_", " ").title()
+        file_size = str(next_settings.get("file_size_profile") or "Medium").strip().title()
 
-        image_profile = str(next_settings.get("image_quality_profile") or "Optimised").strip().title()
-        image_map = {
-            "Small": (52, 2400),
-            "Medium": (64, 3200),
-            "Optimised": (72, 4000),
-            "High": (84, 4000),
+        preset_map = {
+            "Optimised": {
+                "image_quality_profile": "Optimised", "video_quality_profile": "Optimised", "audio_quality_profile": "Optimised",
+                "file_size_profile": "Medium", "image_quality": 72, "image_max_dimension": 4000,
+                "video_crf": 26, "video_max_dimension": 1280, "video_encoder": "h264", "video_preset": "medium",
+                "video_fps": "source", "audio_bitrate": "160k", "audio_sample_rate": "source", "audio_channels": "source", "playback_speed": "1.0",
+            },
+            "Quality": {
+                "image_quality_profile": "Quality", "video_quality_profile": "Quality", "audio_quality_profile": "Quality",
+                "file_size_profile": "Max", "image_quality": 84, "image_max_dimension": 4000,
+                "video_crf": 22, "video_max_dimension": 1920, "video_encoder": "h264", "video_preset": "slow",
+                "video_fps": "source", "audio_bitrate": "256k", "audio_sample_rate": "source", "audio_channels": "source", "playback_speed": "1.0",
+            },
+            "Lower Size": {
+                "image_quality_profile": "Lower Size", "video_quality_profile": "Lower Size", "audio_quality_profile": "Lower Size",
+                "file_size_profile": "Small", "image_quality": 58, "image_max_dimension": 1920,
+                "video_crf": 31, "video_max_dimension": 720, "video_encoder": "h264", "video_preset": "fast",
+                "video_fps": "30", "audio_bitrate": "96k", "audio_sample_rate": "source", "audio_channels": "source", "playback_speed": "1.0",
+            },
         }
-        next_settings["image_quality"], next_settings["image_max_dimension"] = image_map.get(image_profile, image_map["Optimised"])
+        if preset in preset_map:
+            next_settings.update(preset_map[preset])
+            next_settings["compression_preset"] = preset
+            return next_settings
 
-        try:
-            reduction = max(0, min(90, int(float(next_settings.get("video_size_reduction_percent") or 45))))
-        except Exception:
-            reduction = 45
-        video_profile = str(next_settings.get("video_quality_profile") or "Optimised").strip().title()
-        profile_adjust = {
-            "High": -3,
-            "Optimised": 0,
-            "Medium": 3,
-            "Small": 6,
-        }.get(video_profile, 0)
-        # Higher CRF is smaller; this keeps the Simple UI as "size reduction %"
-        # and hides raw CRF unless Advanced is selected.
-        crf = 18 + int(round(reduction * 0.18)) + profile_adjust
-        next_settings["video_crf"] = max(16, min(38, crf))
-        if reduction <= 20:
-            next_settings["video_max_dimension"] = 1920
-        elif reduction <= 55:
-            next_settings["video_max_dimension"] = 1280
-        elif reduction <= 75:
-            next_settings["video_max_dimension"] = 854
-        else:
-            next_settings["video_max_dimension"] = 720
-
-        audio_profile = str(next_settings.get("audio_quality_profile") or "Optimised").strip().title()
-        audio_map = {
-            "Voice": "48k",
-            "Small": "96k",
-            "Medium": "128k",
-            "Optimised": "160k",
-            "High": "256k",
-            "Maximum": "320k",
+        # Custom simple mode: dropdown profiles remain editable and map to raw values.
+        size_map = {
+            "Small": {"image_max_dimension": 1920, "video_max_dimension": 720, "base_crf": 31, "audio_bitrate": "96k"},
+            "Medium": {"image_max_dimension": 3200, "video_max_dimension": 1280, "base_crf": 26, "audio_bitrate": "160k"},
+            "Max": {"image_max_dimension": 4000, "video_max_dimension": 1920, "base_crf": 22, "audio_bitrate": "256k"},
         }
-        next_settings["audio_bitrate"] = audio_map.get(audio_profile, "160k")
+        size = size_map.get(file_size, size_map["Medium"])
+        image_quality_map = {"Lower Size": 58, "Optimised": 72, "Quality": 84}
+        video_adjust_map = {"Lower Size": 4, "Optimised": 0, "Quality": -3}
+        audio_bitrate_map = {"Lower Size": "96k", "Optimised": size["audio_bitrate"], "Quality": "256k"}
+        image_profile = str(next_settings.get("image_quality_profile") or "Optimised").strip().replace("_", " ").title()
+        video_profile = str(next_settings.get("video_quality_profile") or "Optimised").strip().replace("_", " ").title()
+        audio_profile = str(next_settings.get("audio_quality_profile") or "Optimised").strip().replace("_", " ").title()
+        next_settings["image_quality"] = image_quality_map.get(image_profile, 72)
+        next_settings["image_max_dimension"] = size["image_max_dimension"]
+        next_settings["video_crf"] = max(16, min(38, int(size["base_crf"]) + int(video_adjust_map.get(video_profile, 0))))
+        next_settings["video_max_dimension"] = size["video_max_dimension"]
+        next_settings["audio_bitrate"] = audio_bitrate_map.get(audio_profile, size["audio_bitrate"])
+        next_settings["compression_preset"] = "Custom"
+        next_settings["file_size_profile"] = file_size if file_size in size_map else "Medium"
         return next_settings
 
     def _file_converter_settings_window_shell(self, window_attr: str, title: str) -> tuple[Any, Any, Any, Any]:
@@ -7910,7 +8194,7 @@ class App(ctk.CTk):
         return header, mode_switch
 
     def _open_file_converter_convert_settings_window(self) -> None:
-        """R42EQ: Convert button cog uses the same cog-button pattern as ASR/Compression."""
+        """R42ER: Convert cog uses ASR-style preset dropdowns plus handling-only Advanced controls."""
         self._ensure_session_files_state()
         settings = self._file_converter_normalised_convert_settings()
         window, frame, _unused_a, _unused_b = self._file_converter_settings_window_shell("file_converter_convert_settings_window", "Convert settings")
@@ -7923,7 +8207,7 @@ class App(ctk.CTk):
         _header, mode_switch = self._file_converter_pack_settings_header(frame, "Convert settings", mode_var, lambda _value=None: None)
         ctk.CTkLabel(
             frame,
-            text="Choose the default target formats used when a held row is left on auto. Advanced exposes bitrate and sample-rate defaults.",
+            text="Simple uses preset-style conversion choices. Advanced only controls how converted media is handled, such as bitrate, channels, speed, metadata, and video encoder behaviour.",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_muted"],
             anchor="w",
@@ -7936,72 +8220,91 @@ class App(ctk.CTk):
         advanced_frame = ctk.CTkFrame(body_holder, fg_color="transparent")
 
         format_vars: dict[str, Any] = {}
-        def _format_row(parent: Any, label_text: str, key: str, values: list[str]) -> None:
+        profile_vars: dict[str, Any] = {}
+        advanced_vars: dict[str, Any] = {}
+        bool_vars: dict[str, Any] = {}
+
+        def _menu_row(parent: Any, label_text: str, key: str, values: list[str], *, width: int = 132, hint: str = "") -> None:
             row = ctk.CTkFrame(parent, fg_color="transparent")
             row.pack(fill="x", pady=6)
             row.grid_columnconfigure(1, weight=1)
-            ctk.CTkLabel(row, text=label_text, width=145, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
-            var = format_vars.get(key)
-            if var is None:
-                var = ctk.StringVar(value=str(settings.get(key) or values[0]))
-                if str(var.get()).lower() not in values:
-                    var.set(values[0])
+            ctk.CTkLabel(row, text=label_text, width=150, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
+            current = str(settings.get(key, values[0]))
+            if current not in values:
+                current = values[0]
+            var = ctk.StringVar(value=current)
+            if key.endswith("_output"):
                 format_vars[key] = var
+            else:
+                advanced_vars[key] = var
             ctk.CTkOptionMenu(
                 row,
                 values=values,
                 variable=var,
-                width=120,
+                width=width,
                 height=30,
                 fg_color=COLORS["bg_input"],
                 button_color=COLORS["accent_secondary"],
                 button_hover_color=COLORS["border"],
             ).grid(row=0, column=1, sticky="w", padx=(8, 0))
+            if hint:
+                ctk.CTkLabel(row, text=hint, text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w", justify="left", wraplength=290).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
 
-        _format_row(simple_frame, "Image output", "image_output", self._file_converter_allowed_convert_formats_for_kind("image"))
-        _format_row(simple_frame, "Video output", "video_output", self._file_converter_allowed_convert_formats_for_kind("video"))
-        _format_row(simple_frame, "Audio output", "audio_output", self._file_converter_allowed_convert_formats_for_kind("audio"))
-        _format_row(simple_frame, "Text output", "text_output", self._file_converter_allowed_convert_formats_for_kind("text"))
-
-        _format_row(advanced_frame, "Image output", "image_output", self._file_converter_allowed_convert_formats_for_kind("image"))
-        _format_row(advanced_frame, "Video output", "video_output", self._file_converter_allowed_convert_formats_for_kind("video"))
-        _format_row(advanced_frame, "Audio output", "audio_output", self._file_converter_allowed_convert_formats_for_kind("audio"))
-        _format_row(advanced_frame, "Text output", "text_output", self._file_converter_allowed_convert_formats_for_kind("text"))
-
-        bitrate_var = ctk.StringVar(value=str(settings.get("audio_bitrate") or "256k"))
-        sample_var = ctk.StringVar(value=str(settings.get("audio_sample_rate") or "44100"))
-        preserve_var = ctk.BooleanVar(value=bool(settings.get("preserve_metadata", True)))
-
-        def _advanced_menu_row(label_text: str, var: Any, values: list[str], hint: str) -> None:
-            row = ctk.CTkFrame(advanced_frame, fg_color="transparent")
-            row.pack(fill="x", pady=6)
+        def _profile_row(parent: Any, label_text: str, key: str, hint: str) -> None:
+            row = ctk.CTkFrame(parent, fg_color="transparent")
+            row.pack(fill="x", pady=7)
             row.grid_columnconfigure(1, weight=1)
-            ctk.CTkLabel(row, text=label_text, width=145, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
+            ctk.CTkLabel(row, text=label_text, width=150, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
+            current = str(settings.get(key) or "Optimised")
+            if current not in {"Quality", "Optimised", "Lower Size"}:
+                current = "Optimised"
+            var = ctk.StringVar(value=current)
+            profile_vars[key] = var
             ctk.CTkOptionMenu(
                 row,
-                values=values,
+                values=["Quality", "Optimised", "Lower Size"],
                 variable=var,
-                width=120,
+                width=150,
                 height=30,
                 fg_color=COLORS["bg_input"],
                 button_color=COLORS["accent_secondary"],
                 button_hover_color=COLORS["border"],
             ).grid(row=0, column=1, sticky="w", padx=(8, 0))
-            ctk.CTkLabel(row, text=hint, text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w", wraplength=270).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
+            ctk.CTkLabel(row, text=hint, text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w", justify="left", wraplength=290).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
 
-        _advanced_menu_row("Audio bitrate", bitrate_var, self._file_converter_allowed_audio_bitrates(), "Normal conversion default. Compression can still override this for rows marked C.")
-        _advanced_menu_row("Audio sample rate", sample_var, self._file_converter_allowed_audio_sample_rates(), "Use source to keep the original sample rate.")
-        ctk.CTkCheckBox(
-            advanced_frame,
-            text="Preserve metadata where possible",
-            variable=preserve_var,
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS["text_secondary"],
-            fg_color=COLORS["accent"],
-            hover_color=COLORS["accent_hover"],
-            border_color=COLORS["border"],
-            checkmark_color="#000000",
-        ).pack(anchor="w", pady=(8, 0))
+        # Simple: target formats + preset dropdowns, not raw numeric controls.
+        _menu_row(simple_frame, "Image output", "image_output", self._file_converter_allowed_convert_formats_for_kind("image"))
+        _menu_row(simple_frame, "Video output", "video_output", self._file_converter_allowed_convert_formats_for_kind("video"))
+        _menu_row(simple_frame, "Audio output", "audio_output", self._file_converter_allowed_convert_formats_for_kind("audio"))
+        _menu_row(simple_frame, "Text output", "text_output", self._file_converter_allowed_convert_formats_for_kind("text"))
+        _profile_row(simple_frame, "Image conversion", "image_convert_profile", "Quality keeps more detail; Lower Size applies stronger size pressure; Optimised balances both.")
+        _profile_row(simple_frame, "Video conversion", "video_convert_profile", "HandBrake-style quality/size presets map to CRF, resolution cap, frame-rate cap, and audio bitrate.")
+        _profile_row(simple_frame, "Audio conversion", "audio_convert_profile", "Convertit-style preset changes bitrate/channels while leaving exact handling in Advanced.")
+
+        # Advanced: handling-only controls.
+        _menu_row(advanced_frame, "Audio bitrate", "audio_bitrate", self._file_converter_allowed_audio_bitrates(), hint="Convertit-style bitrate range from 9k to 1024k.")
+        _menu_row(advanced_frame, "Audio sample rate", "audio_sample_rate", self._file_converter_allowed_audio_sample_rates(), hint="Shown in kHz; source keeps the original sample rate.")
+        _menu_row(advanced_frame, "Channel control", "audio_channels", self._file_converter_allowed_audio_channels(), hint="Source, mono, or stereo.")
+        _menu_row(advanced_frame, "Playback speed", "playback_speed", self._file_converter_allowed_playback_speeds(), hint="Uses FFmpeg atempo-style audio speed handling.")
+        _menu_row(advanced_frame, "CUE track splitting", "cue_split_mode", ["off", "auto", "manual"], hint="Stored now; full multi-output CUE split worker remains a separate implementation step.")
+        _menu_row(advanced_frame, "Video encoder", "video_encoder", self._file_converter_allowed_video_encoders(), hint="HandBrake-style exposed encoder choice for video outputs.")
+        _menu_row(advanced_frame, "Video preset", "video_preset", self._file_converter_allowed_video_presets(), hint="Speed/efficiency preset passed to compatible encoders.")
+        _menu_row(advanced_frame, "Video frame rate", "video_fps", self._file_converter_allowed_video_fps(), hint="Source keeps original; numeric values cap/rewrite frame rate.")
+
+        for key, text_label in (("web_optimise", "Web optimise / fast start"), ("preserve_metadata", "Preserve metadata where possible")):
+            var = ctk.BooleanVar(value=bool(settings.get(key, True)))
+            bool_vars[key] = var
+            ctk.CTkCheckBox(
+                advanced_frame,
+                text=text_label,
+                variable=var,
+                width=24,
+                height=24,
+                fg_color=COLORS["accent"],
+                hover_color=COLORS["accent_hover"],
+                border_color=COLORS["border"],
+                text_color=COLORS["text_secondary"],
+            ).pack(anchor="w", pady=(8, 2))
 
         def _show_mode(_value: object = None) -> None:
             try:
@@ -8013,11 +8316,6 @@ class App(ctk.CTk):
                 advanced_frame.pack(fill="both", expand=True)
             else:
                 simple_frame.pack(fill="both", expand=True)
-
-        try:
-            mode_switch.configure(command=_show_mode)
-        except Exception:
-            pass
         try:
             mode_switch.configure(command=_show_mode)
         except Exception:
@@ -8029,15 +8327,20 @@ class App(ctk.CTk):
             next_settings = dict(settings)
             next_settings["settings_mode"] = str(mode_var.get() or "Simple")
             for key, var in format_vars.items():
-                next_settings[key] = str(var.get() or "")
-            next_settings["audio_bitrate"] = str(bitrate_var.get() or "256k")
-            next_settings["audio_sample_rate"] = str(sample_var.get() or "44100")
-            next_settings["preserve_metadata"] = bool(preserve_var.get())
+                next_settings[key] = var.get()
+            for key, var in profile_vars.items():
+                next_settings[key] = var.get()
+            for key, var in advanced_vars.items():
+                next_settings[key] = var.get()
+            for key, var in bool_vars.items():
+                next_settings[key] = bool(var.get())
             return next_settings
 
         def _save() -> None:
             self.file_converter_convert_settings = _collect_settings()
             self._file_converter_normalised_convert_settings()
+            self._file_converter_refresh_format_menu()
+            self._file_converter_refresh_queue_label()
             self._file_converter_set_status("Convert settings saved.")
             try:
                 window.destroy()
@@ -8048,13 +8351,13 @@ class App(ctk.CTk):
             defaults = self._file_converter_default_convert_settings()
             mode_var.set(str(defaults.get("settings_mode") or "Simple"))
             for key, var in format_vars.items():
-                try:
-                    var.set(str(defaults.get(key, "")))
-                except Exception:
-                    pass
-            bitrate_var.set(str(defaults.get("audio_bitrate") or "256k"))
-            sample_var.set(str(defaults.get("audio_sample_rate") or "44100"))
-            preserve_var.set(bool(defaults.get("preserve_metadata", True)))
+                var.set(str(defaults.get(key, var.get())))
+            for key, var in profile_vars.items():
+                var.set(str(defaults.get(key, "Optimised")))
+            for key, var in advanced_vars.items():
+                var.set(str(defaults.get(key, var.get())))
+            for key, var in bool_vars.items():
+                var.set(bool(defaults.get(key, True)))
             _show_mode()
 
         ctk.CTkButton(buttons, text="Save", command=_save, width=90, fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"]).pack(side="right")
@@ -8062,7 +8365,7 @@ class App(ctk.CTk):
         ctk.CTkButton(buttons, text="Cancel", command=window.destroy, width=90, fg_color="transparent", hover_color=COLORS["border"]).pack(side="right", padx=(0, 8))
 
     def _open_file_converter_compression_settings_window(self) -> None:
-        """R42EQ: simple-first Compression settings with visible Simple/Advanced header switch."""
+        """R42ER: Compression settings with preset dropdowns and a real Advanced pane."""
         self._ensure_session_files_state()
         settings = self._file_converter_normalised_compression_settings()
         window, frame, _unused_a, _unused_b = self._file_converter_settings_window_shell("file_converter_compression_settings_window", "Compression settings")
@@ -8075,7 +8378,7 @@ class App(ctk.CTk):
         _header, mode_switch = self._file_converter_pack_settings_header(frame, "Compression settings", mode_var, lambda _value=None: None)
         ctk.CTkLabel(
             frame,
-            text="Rows marked C use these local presets. Simple names hide CRF and raw dimensions; Advanced exposes the exact backend values.",
+            text="Rows marked C use these local presets. Simple uses named presets; Advanced exposes exact image, video, and audio backend values.",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_muted"],
             anchor="w",
@@ -8087,115 +8390,100 @@ class App(ctk.CTk):
         simple_frame = ctk.CTkFrame(body_holder, fg_color="transparent")
         advanced_frame = ctk.CTkFrame(body_holder, fg_color="transparent")
 
-        image_profile_var = ctk.StringVar(value=str(settings.get("image_quality_profile") or "Optimised"))
-        video_profile_var = ctk.StringVar(value=str(settings.get("video_quality_profile") or "Optimised"))
-        audio_profile_var = ctk.StringVar(value=str(settings.get("audio_quality_profile") or "Optimised"))
-        video_reduction_var = ctk.DoubleVar(value=float(settings.get("video_size_reduction_percent") or 45))
+        simple_vars: dict[str, Any] = {}
+        advanced_vars: dict[str, Any] = {}
 
-        def _simple_slider_row(label_text: str, var: Any, values: list[str], hint: str) -> None:
+        def _simple_menu_row(label_text: str, key: str, values: list[str], hint: str) -> None:
             row = ctk.CTkFrame(simple_frame, fg_color="transparent")
             row.pack(fill="x", pady=8)
             row.grid_columnconfigure(1, weight=1)
-            normalised = str(var.get() or values[len(values) // 2]).strip().title()
-            if normalised not in values:
-                normalised = "Optimised" if "Optimised" in values else values[len(values) // 2]
-            var.set(normalised)
-            slider_var = ctk.DoubleVar(value=float(values.index(normalised)))
-            ctk.CTkLabel(row, text=label_text, width=135, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
-            value_label = ctk.CTkLabel(row, text=normalised, width=92, anchor="e", text_color=COLORS["text_primary"], font=ctk.CTkFont(size=12, weight="bold"))
-            value_label.grid(row=0, column=2, sticky="e", padx=(8, 0))
-            def _set_from_slider(raw: object = None, *, value_list: list[str] = values, profile_var: Any = var, label: Any = value_label) -> None:
-                try:
-                    index = int(round(float(raw if raw is not None else slider_var.get())))
-                except Exception:
-                    index = len(value_list) // 2
-                index = max(0, min(len(value_list) - 1, index))
-                profile_var.set(value_list[index])
-                try:
-                    label.configure(text=value_list[index])
-                except Exception:
-                    pass
-            ctk.CTkSlider(
+            ctk.CTkLabel(row, text=label_text, width=140, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
+            current = str(settings.get(key) or values[0])
+            if current not in values:
+                current = values[0]
+            var = ctk.StringVar(value=current)
+            simple_vars[key] = var
+            ctk.CTkOptionMenu(
                 row,
-                from_=0,
-                to=max(1, len(values) - 1),
-                number_of_steps=max(1, len(values) - 1),
-                variable=slider_var,
-                command=_set_from_slider,
-            ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
-            ctk.CTkLabel(row, text="  •  ".join(values), text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w").grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
-            ctk.CTkLabel(row, text=hint, text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w", justify="left", wraplength=300).grid(row=2, column=1, columnspan=2, sticky="w", padx=(8, 0), pady=(1, 0))
+                values=values,
+                variable=var,
+                width=150,
+                height=30,
+                fg_color=COLORS["bg_input"],
+                button_color=COLORS["accent_secondary"],
+                button_hover_color=COLORS["border"],
+            ).grid(row=0, column=1, sticky="w", padx=(8, 0))
+            ctk.CTkLabel(row, text=hint, text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w", justify="left", wraplength=295).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
 
-        _simple_slider_row("Image quality", image_profile_var, ["Small", "Medium", "Optimised", "High"], "Optimised aims for high visible quality with a lower file size.")
-        _simple_slider_row("Video quality", video_profile_var, ["Small", "Medium", "Optimised", "High"], "Quality guardrail used with the size-reduction slider below.")
-        _simple_slider_row("Audio quality", audio_profile_var, ["Voice", "Small", "Medium", "Optimised", "High", "Maximum"], "Maximum is above 192k; Optimised is the default size/quality balance.")
+        file_size_index = {"Small": 0, "Medium": 1, "Max": 2}.get(str(settings.get("file_size_profile") or "Medium"), 1)
+        file_size_var = ctk.DoubleVar(value=float(file_size_index))
+        file_size_label = ctk.CTkLabel(simple_frame, text="Medium", width=70, anchor="e", text_color=COLORS["text_primary"], font=ctk.CTkFont(size=12, weight="bold"))
 
-        reduction_row = ctk.CTkFrame(simple_frame, fg_color="transparent")
-        reduction_row.pack(fill="x", pady=8)
-        reduction_row.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(reduction_row, text="Video size reduction", width=135, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
-        reduction_value = ctk.CTkLabel(reduction_row, text=f"{int(video_reduction_var.get())}%", width=92, anchor="e", text_color=COLORS["text_primary"], font=ctk.CTkFont(size=12, weight="bold"))
-        reduction_value.grid(row=0, column=2, sticky="e", padx=(8, 0))
-        def _set_reduction(raw: object = None) -> None:
+        _simple_menu_row("Preset", "compression_preset", ["Optimised", "Quality", "Lower Size", "Custom"], "Optimised fixes a balanced local preset. Choose Custom to edit the simple profile dropdowns.")
+        _simple_menu_row("Image quality", "image_quality_profile", ["Quality", "Optimised", "Lower Size"], "Image preset used when Preset is Custom.")
+        _simple_menu_row("Video quality", "video_quality_profile", ["Quality", "Optimised", "Lower Size"], "Video preset used when Preset is Custom.")
+        _simple_menu_row("Audio quality", "audio_quality_profile", ["Quality", "Optimised", "Lower Size"], "Audio preset used when Preset is Custom.")
+
+        size_row = ctk.CTkFrame(simple_frame, fg_color="transparent")
+        size_row.pack(fill="x", pady=8)
+        size_row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(size_row, text="File Size", width=140, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
+        file_size_label.grid(row=0, column=2, sticky="e", padx=(8, 0))
+        def _set_file_size(raw: object = None) -> None:
             try:
-                value = int(round(float(raw if raw is not None else video_reduction_var.get())))
+                index = int(round(float(raw if raw is not None else file_size_var.get())))
             except Exception:
-                value = 45
-            value = max(0, min(90, value))
-            video_reduction_var.set(float(value))
+                index = 1
+            index = max(0, min(2, index))
+            value = ["Small", "Medium", "Max"][index]
+            file_size_var.set(float(index))
             try:
-                reduction_value.configure(text=f"{value}%")
+                file_size_label.configure(text=value)
             except Exception:
                 pass
-        ctk.CTkSlider(
-            reduction_row,
-            from_=0,
-            to=90,
-            number_of_steps=18,
-            variable=video_reduction_var,
-            command=_set_reduction,
-        ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
-        ctk.CTkLabel(reduction_row, text="Lower keeps more size; higher reduces more. Raw CRF is in Advanced.", text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w", wraplength=300).grid(row=1, column=1, columnspan=2, sticky="w", padx=(8, 0), pady=(2, 0))
+        _set_file_size(file_size_var.get())
+        ctk.CTkSlider(size_row, from_=0, to=2, number_of_steps=2, variable=file_size_var, command=_set_file_size).grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        ctk.CTkLabel(size_row, text="Small  •  Medium  •  Max", text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w").grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
+        ctk.CTkLabel(size_row, text="Smaller means stronger compression; Max keeps more size and quality.", text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w", wraplength=295).grid(row=2, column=1, columnspan=2, sticky="w", padx=(8, 0), pady=(1, 0))
 
-        vars_by_key: dict[str, Any] = {}
         def _advanced_entry_row(label_text: str, key: str, hint: str) -> None:
             row = ctk.CTkFrame(advanced_frame, fg_color="transparent")
             row.pack(fill="x", pady=5)
             row.grid_columnconfigure(1, weight=1)
-            ctk.CTkLabel(row, text=label_text, width=165, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
+            ctk.CTkLabel(row, text=label_text, width=170, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
             var = ctk.StringVar(value=str(settings.get(key, "")))
-            vars_by_key[key] = var
-            entry = ctk.CTkEntry(row, textvariable=var, height=28, fg_color=COLORS["bg_input"], text_color=COLORS["text_primary"])
-            entry.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+            advanced_vars[key] = var
+            ctk.CTkEntry(row, textvariable=var, height=28, fg_color=COLORS["bg_input"], text_color=COLORS["text_primary"]).grid(row=0, column=1, sticky="ew", padx=(8, 0))
             ctk.CTkLabel(row, text=hint, text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w", wraplength=270).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
 
         def _advanced_menu_row(label_text: str, key: str, values: list[str], hint: str) -> None:
             row = ctk.CTkFrame(advanced_frame, fg_color="transparent")
             row.pack(fill="x", pady=5)
             row.grid_columnconfigure(1, weight=1)
-            ctk.CTkLabel(row, text=label_text, width=165, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
-            var = ctk.StringVar(value=str(settings.get(key, values[0])))
-            if str(var.get()).lower() not in values:
-                var.set(values[0])
-            vars_by_key[key] = var
-            ctk.CTkOptionMenu(
-                row,
-                values=values,
-                variable=var,
-                width=120,
-                height=28,
-                fg_color=COLORS["bg_input"],
-                button_color=COLORS["accent_secondary"],
-                button_hover_color=COLORS["border"],
-            ).grid(row=0, column=1, sticky="w", padx=(8, 0))
+            ctk.CTkLabel(row, text=label_text, width=170, anchor="w", text_color=COLORS["text_secondary"]).grid(row=0, column=0, sticky="w")
+            current = str(settings.get(key, values[0]))
+            if current not in values:
+                current = values[0]
+            var = ctk.StringVar(value=current)
+            advanced_vars[key] = var
+            ctk.CTkOptionMenu(row, values=values, variable=var, width=130, height=28, fg_color=COLORS["bg_input"], button_color=COLORS["accent_secondary"], button_hover_color=COLORS["border"]).grid(row=0, column=1, sticky="w", padx=(8, 0))
             ctk.CTkLabel(row, text=hint, text_color=COLORS["text_muted"], font=ctk.CTkFont(size=10), anchor="w", wraplength=270).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
 
         _advanced_entry_row("Image quality number", "image_quality", "1-100; higher keeps more image quality")
         _advanced_entry_row("Image max pixels", "image_max_dimension", "largest width/height in pixels; 0 disables resize")
         _advanced_entry_row("Image suffix", "image_suffix", "default _compressed")
-        _advanced_entry_row("Video CRF number", "video_crf", "16-38; higher is smaller")
+        _advanced_entry_row("WebP method", "image_webp_method", "0-6; higher is usually slower/better")
+        _advanced_entry_row("PNG compression", "image_png_compression_level", "0-9; higher is stronger PNG compression")
+        _advanced_menu_row("JPG subsampling", "image_jpeg_chroma_subsampling", ["auto", "4:4:4", "4:2:0"], "4:4:4 can preserve colour detail; 4:2:0 is smaller.")
+        _advanced_entry_row("Video CRF number", "video_crf", "HandBrake-style RF/CRF: lower is higher quality, higher is smaller")
         _advanced_entry_row("Video max pixels", "video_max_dimension", "largest width/height in pixels; 0 disables resize")
-        _advanced_menu_row("Audio bitrate", "audio_bitrate", self._file_converter_allowed_audio_bitrates(), "9k-1024k options modelled on Convertit-style audio presets")
+        _advanced_menu_row("Video encoder", "video_encoder", self._file_converter_allowed_video_encoders(), "h264 default; h265/vp9/av1 can be smaller but slower or less compatible.")
+        _advanced_menu_row("Video preset", "video_preset", self._file_converter_allowed_video_presets(), "Speed/efficiency preset.")
+        _advanced_menu_row("Video frame rate", "video_fps", self._file_converter_allowed_video_fps(), "source keeps original; numeric values limit/rewrite FPS.")
+        _advanced_menu_row("Audio bitrate", "audio_bitrate", self._file_converter_allowed_audio_bitrates(), "9k-1024k Convertit-style range.")
+        _advanced_menu_row("Audio sample rate", "audio_sample_rate", self._file_converter_allowed_audio_sample_rates(), "Shown as kHz; source keeps original.")
+        _advanced_menu_row("Channel control", "audio_channels", self._file_converter_allowed_audio_channels(), "source, mono, or stereo.")
+        _advanced_menu_row("Playback speed", "playback_speed", self._file_converter_allowed_playback_speeds(), "Uses local FFmpeg audio filter.")
 
         def _show_mode(_value: object = None) -> None:
             try:
@@ -8207,18 +8495,22 @@ class App(ctk.CTk):
                 advanced_frame.pack(fill="both", expand=True)
             else:
                 simple_frame.pack(fill="both", expand=True)
+        try:
+            mode_switch.configure(command=_show_mode)
+        except Exception:
+            pass
         _show_mode()
 
         buttons.pack(fill="x", padx=12, pady=(12, 12))
         def _collect_settings() -> dict[str, object]:
             next_settings = dict(settings)
             next_settings["settings_mode"] = str(mode_var.get() or "Simple")
-            next_settings["image_quality_profile"] = str(image_profile_var.get() or "Optimised")
-            next_settings["video_quality_profile"] = str(video_profile_var.get() or "Optimised")
-            next_settings["audio_quality_profile"] = str(audio_profile_var.get() or "Optimised")
-            next_settings["video_size_reduction_percent"] = int(round(float(video_reduction_var.get() or 45)))
+            for key, var in simple_vars.items():
+                next_settings[key] = var.get()
+            next_settings["file_size_profile"] = ["Small", "Medium", "Max"][max(0, min(2, int(round(float(file_size_var.get() or 1)))))]
             if str(mode_var.get() or "Simple") == "Advanced":
-                for key, var in vars_by_key.items():
+                next_settings["compression_preset"] = "Custom"
+                for key, var in advanced_vars.items():
                     next_settings[key] = var.get()
             else:
                 next_settings = self._file_converter_apply_simple_compression_profiles(next_settings)
@@ -8227,6 +8519,7 @@ class App(ctk.CTk):
         def _save() -> None:
             self.file_converter_compression_settings = _collect_settings()
             self._file_converter_normalised_compression_settings()
+            self._file_converter_refresh_queue_label()
             self._file_converter_set_status("Compression settings saved.")
             try:
                 window.destroy()
@@ -8236,16 +8529,17 @@ class App(ctk.CTk):
         def _reset() -> None:
             defaults = self._file_converter_default_compression_settings()
             mode_var.set(str(defaults.get("settings_mode") or "Simple"))
-            image_profile_var.set(str(defaults.get("image_quality_profile") or "Optimised"))
-            video_profile_var.set(str(defaults.get("video_quality_profile") or "Optimised"))
-            audio_profile_var.set(str(defaults.get("audio_quality_profile") or "Optimised"))
-            video_reduction_var.set(float(defaults.get("video_size_reduction_percent") or 45))
-            _set_reduction(video_reduction_var.get())
-            for key, var in vars_by_key.items():
-                try:
-                    var.set(str(defaults.get(key, "")))
-                except Exception:
-                    pass
+            for key, var in simple_vars.items():
+                var.set(str(defaults.get(key, var.get())))
+            file_size_var.set({"Small": 0, "Medium": 1, "Max": 2}.get(str(defaults.get("file_size_profile") or "Medium"), 1))
+            _set_file_size(file_size_var.get())
+            for key, var in advanced_vars.items():
+                value = defaults.get(key, var.get())
+                if key == "audio_sample_rate":
+                    value = self._file_converter_hz_to_sample_rate_label(str(value))
+                elif key == "playback_speed":
+                    value = self._file_converter_value_to_playback_speed_label(str(value))
+                var.set(str(value))
             _show_mode()
 
         ctk.CTkButton(buttons, text="Save", command=_save, width=90, fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"]).pack(side="right")
@@ -8715,7 +9009,7 @@ class App(ctk.CTk):
                 pass
             selected = path in selected_set
             row = ctk.CTkFrame(frame, fg_color="transparent", corner_radius=0, border_width=0)
-            row.pack(fill="x", padx=(34, 4), pady=2)
+            row.pack(fill="x", padx=(54, 4), pady=2)
             row.grid_columnconfigure(1, weight=1)
             fillbox_button = ctk.CTkLabel(
                 row,
@@ -8865,7 +9159,7 @@ class App(ctk.CTk):
         failed = 0
         for input_path in usable:
             try:
-                plan = plan_conversion(input_path, target_format or "auto", keep_original=bool(keep_original))
+                plan = plan_conversion(input_path, target_format or "auto", keep_original=bool(keep_original), **self._file_converter_conversion_options_for_path(input_path, False))
                 result = run_conversion(plan)
             except Exception as conversion_error:
                 result = {"success": False, "input_path": input_path, "output_path": "", "target_format": target_format, "error": str(conversion_error), "original_deleted": False}

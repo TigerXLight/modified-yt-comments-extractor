@@ -1,8 +1,10 @@
-"""R42EH multipurpose local file converter backend.
+"""R42EH/R42ER multipurpose local file converter backend.
 
 Reference-backed desktop implementation for the YTCE File Converter.  The
-architecture follows the ConvertIt-style split between detection, planning, and
-execution, but uses local FFmpeg/FFprobe plus the Python standard library.
+architecture follows the ConvertIt-style split between detection, planning,
+execution, bitrate/sample-rate/playback-speed/channel controls, and optional
+CUE-style splitting metadata, but uses local FFmpeg/FFprobe plus the Python
+standard library.
 
 Policy boundary: local files only.  No network, browser, WebView2, archive.ph,
 account, channel, or device-adapter actions are performed here.
@@ -31,9 +33,15 @@ TEXT_INPUT_EXTENSIONS = {".txt", ".md", ".html", ".htm", ".json", ".csv", ".xml"
 
 AUDIO_BITRATE_OPTIONS = ("9k", "16k", "24k", "32k", "48k", "64k", "96k", "128k", "160k", "192k", "256k", "320k", "512k", "768k", "1024k")
 AUDIO_SAMPLE_RATE_OPTIONS = ("8000", "12000", "16000", "22050", "24000", "32000", "44100", "48000", "88200", "96000", "192000")
+AUDIO_CHANNEL_OPTIONS = ("source", "mono", "stereo")
+AUDIO_PLAYBACK_SPEED_OPTIONS = ("0.5", "0.75", "1.0", "1.25", "1.5", "2.0")
+CUE_SPLIT_OPTIONS = ("off", "auto", "manual")
+VIDEO_ENCODER_OPTIONS = ("h264", "h265", "vp9", "av1")
+VIDEO_PRESET_OPTIONS = ("veryfast", "fast", "medium", "slow")
+VIDEO_FPS_OPTIONS = ("source", "24", "25", "30", "50", "60")
 
 # R42EQ: expanded to match the Convertit-style audio option range where local FFmpeg supports it.
-AUDIO_OUTPUT_FORMATS = {"mp3", "m4a", "aac", "wav", "flac", "opus", "ogg", "wma", "mka", "spx", "amr"}
+AUDIO_OUTPUT_FORMATS = {"mp3", "m4a", "aac", "wav", "flac", "opus", "ogg", "wma", "mka", "spx", "amr", "aiff"}
 VIDEO_OUTPUT_FORMATS = {"mp4", "mkv", "webm", "mov"}
 IMAGE_OUTPUT_FORMATS = {"webp", "jpg", "jpeg", "png", "bmp", "tiff"}
 TEXT_OUTPUT_FORMATS = {"txt", "md", "html", "json", "csv"}
@@ -312,18 +320,84 @@ def _normalise_bitrate(value: str, default: str = "128k") -> str:
 
 def _normalise_sample_rate(value: str, default: str = "") -> str:
     sample_rate = str(value or "").strip().lower()
+    sample_rate = sample_rate.replace("khz", "").replace("hz", "").strip()
+    if sample_rate.endswith("k"):
+        try:
+            sample_rate = str(int(float(sample_rate[:-1]) * 1000))
+        except Exception:
+            sample_rate = ""
     if sample_rate in {"", "source"}:
         return ""
     return sample_rate if sample_rate in AUDIO_SAMPLE_RATE_OPTIONS else default
 
 
-def _audio_codec(fmt: str, *, compress: bool = False, audio_bitrate: str = "", audio_sample_rate: str = "") -> tuple[list[str], dict[str, Any]]:
+def _normalise_audio_channels(value: str) -> str:
+    mode = str(value or "source").strip().lower()
+    if mode in {"1", "mono"}:
+        return "mono"
+    if mode in {"2", "stereo"}:
+        return "stereo"
+    return "source"
+
+
+def _normalise_playback_speed(value: str) -> str:
+    raw = str(value or "1.0").strip().lower().rstrip("x")
+    try:
+        speed = max(0.5, min(2.0, float(raw)))
+    except Exception:
+        speed = 1.0
+    return f"{speed:.2f}".rstrip("0").rstrip(".") or "1"
+
+
+def _normalise_video_encoder(value: str, fmt: str) -> str:
+    encoder = str(value or "h264").strip().lower().replace(".", "")
+    aliases = {"x264": "h264", "avc": "h264", "x265": "h265", "hevc": "h265", "vp9": "vp9", "libvpx-vp9": "vp9", "aom-av1": "av1", "svt-av1": "av1"}
+    encoder = aliases.get(encoder, encoder)
+    if fmt == "webm" and encoder not in {"vp9", "av1"}:
+        return "vp9"
+    if encoder not in VIDEO_ENCODER_OPTIONS:
+        return "h264"
+    return encoder
+
+
+def _normalise_video_preset(value: str) -> str:
+    preset = str(value or "medium").strip().lower().replace(" ", "")
+    return preset if preset in VIDEO_PRESET_OPTIONS else "medium"
+
+
+def _normalise_video_fps(value: str) -> str:
+    fps = str(value or "source").strip().lower()
+    return fps if fps in VIDEO_FPS_OPTIONS else "source"
+
+
+def _append_audio_handling_args(args: list[str], *, fmt: str, bitrate: str, sample_rate: str, audio_channels: str, playback_speed: str) -> None:
+    channel_mode = _normalise_audio_channels(audio_channels)
+    speed = _normalise_playback_speed(playback_speed)
+    # Convertit reference behaviour: AMR-WB is speech-focused, 16 kHz mono.
+    if fmt == "amr":
+        args += ["-ar", "16000", "-ac", "1"]
+    else:
+        sample = _normalise_sample_rate(sample_rate)
+        if sample:
+            args += ["-ar", sample]
+        if channel_mode == "mono":
+            args += ["-ac", "1"]
+        elif channel_mode == "stereo":
+            args += ["-ac", "2"]
+    if fmt == "opus" and bitrate.replace("k", "").isdigit() and int(bitrate.replace("k", "")) <= 48:
+        args += ["-application", "voip"]
+    if speed not in {"1", "1.0"}:
+        args += ["-filter:a", f"atempo={speed}"]
+
+
+def _audio_codec(fmt: str, *, compress: bool = False, audio_bitrate: str = "", audio_sample_rate: str = "", audio_channels: str = "source", playback_speed: str = "1.0", cue_split_mode: str = "off") -> tuple[list[str], dict[str, Any]]:
     bitrate = _normalise_bitrate(audio_bitrate, "160k" if compress else "256k")
     mapping = {
         "mp3": ["-c:a", "libmp3lame", "-b:a", bitrate],
         "m4a": ["-c:a", "aac", "-b:a", bitrate],
         "aac": ["-c:a", "aac", "-b:a", bitrate],
         "wav": ["-c:a", "pcm_s16le"],
+        "aiff": ["-c:a", "pcm_s16be"],
         "flac": ["-c:a", "flac"],
         "opus": ["-c:a", "libopus", "-b:a", _normalise_bitrate(audio_bitrate, "96k") if compress else bitrate],
         "ogg": ["-c:a", "libvorbis", "-q:a", "3" if compress else "5"],
@@ -333,65 +407,87 @@ def _audio_codec(fmt: str, *, compress: bool = False, audio_bitrate: str = "", a
         "amr": ["-c:a", "amr_wb", "-b:a", _normalise_bitrate(audio_bitrate, "24k")],
     }
     args = list(mapping[fmt])
-    sample_rate = _normalise_sample_rate(audio_sample_rate)
-    if sample_rate:
-        args += ["-ar", sample_rate]
-    return args, {"family": "audio", "codec_args": args, "compress": bool(compress), "audio_bitrate": bitrate, "audio_sample_rate": sample_rate or "source"}
+    effective_bitrate = _normalise_bitrate(audio_bitrate, "24k") if fmt == "amr" else bitrate
+    _append_audio_handling_args(args, fmt=fmt, bitrate=effective_bitrate, sample_rate=audio_sample_rate, audio_channels=audio_channels, playback_speed=playback_speed)
+    return args, {
+        "family": "audio",
+        "codec_args": args,
+        "compress": bool(compress),
+        "audio_bitrate": effective_bitrate,
+        "audio_sample_rate": _normalise_sample_rate(audio_sample_rate) or ("16000" if fmt == "amr" else "source"),
+        "audio_channels": _normalise_audio_channels(audio_channels),
+        "playback_speed": _normalise_playback_speed(playback_speed),
+        "cue_split_mode": str(cue_split_mode or "off").strip().lower(),
+    }
 
 
-def _video_codecs(fmt: str, *, compress: bool = False, video_crf: int = 23, video_max_dimension: int = 0, audio_bitrate: str = "", audio_sample_rate: str = "") -> tuple[list[str], dict[str, Any]]:
+def _video_codecs(fmt: str, *, compress: bool = False, video_crf: int = 23, video_max_dimension: int = 0, audio_bitrate: str = "", audio_sample_rate: str = "", audio_channels: str = "source", playback_speed: str = "1.0", video_encoder: str = "h264", video_preset: str = "medium", video_fps: str = "source", web_optimise: bool = True) -> tuple[list[str], dict[str, Any]]:
     encoders = _available_ffmpeg_encoders()
-    crf = max(16, min(38, int(video_crf if compress else 23)))
-    audio_br = _normalise_bitrate(audio_bitrate, "128k") if compress else "192k"
+    # R42ER: Convert settings can also apply quality/size profiles;
+    # C/compress still controls suffix/destructive flow, not whether CRF is usable.
+    crf = max(16, min(38, int(video_crf or 23)))
+    audio_br = _normalise_bitrate(audio_bitrate, "128k") if compress else _normalise_bitrate(audio_bitrate, "192k")
+    encoder = _normalise_video_encoder(video_encoder, fmt)
+    preset = _normalise_video_preset(video_preset)
+    fps = _normalise_video_fps(video_fps)
     if fmt == "webm":
-        if "libvpx-vp9" in encoders:
+        if encoder == "av1" and "libaom-av1" in encoders:
+            args = ["-c:v", "libaom-av1", "-crf", str(max(28, crf + 6)), "-b:v", "0", "-c:a", "libopus", "-b:a", _normalise_bitrate(audio_bitrate, "96k") if compress else "128k"]
+        elif "libvpx-vp9" in encoders or encoder == "vp9":
             args = ["-c:v", "libvpx-vp9", "-crf", str(max(24, crf + 4)), "-b:v", "0", "-c:a", "libopus", "-b:a", _normalise_bitrate(audio_bitrate, "96k") if compress else "128k"]
-        elif "libvpx" in encoders:
-            args = ["-c:v", "libvpx", "-b:v", "900k" if compress else "1M", "-c:a", "libopus"]
-        elif "libaom-av1" in encoders:
-            args = ["-c:v", "libaom-av1", "-crf", str(max(28, crf + 6)), "-b:v", "0", "-c:a", "libopus"]
         else:
-            args = ["-c:v", "libvpx-vp9", "-crf", str(max(24, crf + 4)), "-b:v", "0", "-c:a", "libopus"]
-    elif fmt in {"mp4", "mov"}:
-        args = ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf), "-c:a", "aac", "-b:a", audio_br, "-movflags", "+faststart"]
-    else:  # mkv
-        args = ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf), "-c:a", "aac", "-b:a", audio_br]
+            args = ["-c:v", "libvpx", "-b:v", "900k" if compress else "1M", "-c:a", "libopus"]
+    else:
+        if encoder == "h265":
+            video_args = ["-c:v", "libx265", "-preset", preset, "-crf", str(max(20, crf + 2))]
+        elif encoder == "av1" and "libaom-av1" in encoders:
+            video_args = ["-c:v", "libaom-av1", "-crf", str(max(28, crf + 6)), "-b:v", "0"]
+        else:
+            video_args = ["-c:v", "libx264", "-preset", preset, "-crf", str(crf)]
+        args = video_args + ["-c:a", "aac", "-b:a", audio_br]
+        if fmt in {"mp4", "mov"} and bool(web_optimise):
+            args += ["-movflags", "+faststart"]
     max_side = 0
-    if compress:
-        try:
-            max_side = max(0, int(video_max_dimension or 0))
-        except Exception:
-            max_side = 0
-        if max_side:
-            scale = f"scale='if(gt(iw,ih),min({max_side},iw),-2)':'if(gt(ih,iw),min({max_side},ih),-2)'"
-            args = ["-vf", scale] + args
-    sample_rate = _normalise_sample_rate(audio_sample_rate)
-    if sample_rate:
-        args += ["-ar", sample_rate]
-    return args, {"family": "video", "codec_args": args, "ffmpeg_encoder_count": len(encoders), "compress": bool(compress), "crf": crf, "max_dimension": max_side, "audio_bitrate": audio_br, "audio_sample_rate": sample_rate or "source"}
+    try:
+        max_side = max(0, int(video_max_dimension or 0))
+    except Exception:
+        max_side = 0
+    if max_side:
+        scale = f"scale='if(gt(iw,ih),min({max_side},iw),-2)':'if(gt(ih,iw),min({max_side},ih),-2)'"
+        args = ["-vf", scale] + args
+    if fps != "source":
+        args += ["-r", fps]
+    _append_audio_handling_args(args, fmt="aac" if fmt != "webm" else "opus", bitrate=audio_br, sample_rate=audio_sample_rate, audio_channels=audio_channels, playback_speed=playback_speed)
+    return args, {"family": "video", "codec_args": args, "ffmpeg_encoder_count": len(encoders), "compress": bool(compress), "crf": crf, "max_dimension": max_side, "audio_bitrate": audio_br, "audio_sample_rate": _normalise_sample_rate(audio_sample_rate) or "source", "audio_channels": _normalise_audio_channels(audio_channels), "playback_speed": _normalise_playback_speed(playback_speed), "video_encoder": encoder, "video_preset": preset, "video_fps": fps, "web_optimise": bool(web_optimise)}
 
 
-def _image_codec(fmt: str, image_quality: int, *, compress: bool = False, image_max_dimension: int = 0) -> tuple[list[str], dict[str, Any]]:
+def _image_codec(fmt: str, image_quality: int, *, compress: bool = False, image_max_dimension: int = 0, webp_method: int = 4, png_compression_level: int = 9, jpeg_chroma_subsampling: str = "auto") -> tuple[list[str], dict[str, Any]]:
     q = max(1, min(100, int(image_quality)))
     args: list[str] = []
     max_side = 0
-    if compress:
-        try:
-            max_side = max(0, int(image_max_dimension or 0))
-        except Exception:
-            max_side = 0
-        if max_side:
-            args += ["-vf", f"scale='if(gt(iw,ih),min({max_side},iw),-2)':'if(gt(ih,iw),min({max_side},ih),-2)'"]
+    try:
+        max_side = max(0, int(image_max_dimension or 0))
+    except Exception:
+        max_side = 0
+    if max_side:
+        args += ["-vf", f"scale='if(gt(iw,ih),min({max_side},iw),-2)':'if(gt(ih,iw),min({max_side},ih),-2)'"]
     if fmt == "jpg":
         qscale = max(2, min(31, int(round((100 - q) / 3.25)) or 2))
         args += ["-frames:v", "1", "-q:v", str(qscale)]
+        chroma = str(jpeg_chroma_subsampling or "auto").strip().lower()
+        if chroma in {"4:4:4", "444"}:
+            args += ["-pix_fmt", "yuvj444p"]
+        elif chroma in {"4:2:0", "420"}:
+            args += ["-pix_fmt", "yuvj420p"]
     elif fmt == "webp":
-        args += ["-lossless", "0", "-quality", str(q)]
+        method = max(0, min(6, int(webp_method)))
+        args += ["-lossless", "0", "-quality", str(q), "-method", str(method)]
     elif fmt == "png":
-        args += ["-frames:v", "1", "-compression_level", "9" if compress else "6"]
+        level = max(0, min(9, int(png_compression_level)))
+        args += ["-frames:v", "1", "-compression_level", str(level)]
     elif fmt in {"bmp", "tiff"}:
         args += ["-frames:v", "1"]
-    return args, {"family": "image", "quality": q, "codec_args": args, "compress": bool(compress), "max_dimension": max_side}
+    return args, {"family": "image", "quality": q, "codec_args": args, "compress": bool(compress), "max_dimension": max_side, "webp_method": int(webp_method), "png_compression_level": int(png_compression_level), "jpeg_chroma_subsampling": str(jpeg_chroma_subsampling or "auto")}
 
 
 def _validate_route(input_kind: str, output_kind: str, target_format: str) -> None:
@@ -405,7 +501,7 @@ def _validate_route(input_kind: str, output_kind: str, target_format: str) -> No
     raise ValueError(f"Unsupported converter route: {input_kind} -> {target_format} ({output_kind})")
 
 
-def plan_conversion(input_path: str | os.PathLike[str], target_format: str = "auto", *, output_dir: str | os.PathLike[str] | None = None, keep_original: bool = False, overwrite: bool = False, image_quality: int = 92, compress: bool = False, image_max_dimension: int = 0, video_crf: int = 23, video_max_dimension: int = 0, audio_bitrate: str = "", audio_sample_rate: str = "", preserve_metadata: bool = True, file_suffix: str = "") -> dict[str, Any]:
+def plan_conversion(input_path: str | os.PathLike[str], target_format: str = "auto", *, output_dir: str | os.PathLike[str] | None = None, keep_original: bool = False, overwrite: bool = False, image_quality: int = 92, compress: bool = False, image_max_dimension: int = 0, image_webp_method: int = 4, image_png_compression_level: int = 9, image_jpeg_chroma_subsampling: str = "auto", video_crf: int = 23, video_max_dimension: int = 0, video_encoder: str = "h264", video_preset: str = "medium", video_fps: str = "source", web_optimise: bool = True, audio_bitrate: str = "", audio_sample_rate: str = "", audio_channels: str = "source", playback_speed: str = "1.0", cue_split_mode: str = "off", preserve_metadata: bool = True, file_suffix: str = "") -> dict[str, Any]:
     input_file = Path(input_path).expanduser().resolve()
     if not input_file.is_file():
         raise FileNotFoundError(str(input_file))
@@ -433,13 +529,13 @@ def plan_conversion(input_path: str | os.PathLike[str], target_format: str = "au
             command += ["-map_metadata", "0"]
         if output_kind == "audio":
             command += ["-vn"]
-            args, preset = _audio_codec(fmt, compress=bool(compress), audio_bitrate=audio_bitrate, audio_sample_rate=audio_sample_rate)
+            args, preset = _audio_codec(fmt, compress=bool(compress), audio_bitrate=audio_bitrate, audio_sample_rate=audio_sample_rate, audio_channels=audio_channels, playback_speed=playback_speed, cue_split_mode=cue_split_mode)
             command += args
         elif output_kind == "video":
-            args, preset = _video_codecs(fmt, compress=bool(compress), video_crf=video_crf, video_max_dimension=video_max_dimension, audio_bitrate=audio_bitrate, audio_sample_rate=audio_sample_rate)
+            args, preset = _video_codecs(fmt, compress=bool(compress), video_crf=video_crf, video_max_dimension=video_max_dimension, audio_bitrate=audio_bitrate, audio_sample_rate=audio_sample_rate, audio_channels=audio_channels, playback_speed=playback_speed, video_encoder=video_encoder, video_preset=video_preset, video_fps=video_fps, web_optimise=web_optimise)
             command += args
         elif output_kind == "image":
-            args, preset = _image_codec(fmt, image_quality, compress=bool(compress), image_max_dimension=image_max_dimension)
+            args, preset = _image_codec(fmt, image_quality, compress=bool(compress), image_max_dimension=image_max_dimension, webp_method=image_webp_method, png_compression_level=image_png_compression_level, jpeg_chroma_subsampling=image_jpeg_chroma_subsampling)
             command += args
         else:
             raise ValueError(f"Unsupported converter route: {input_kind} -> {fmt}")
@@ -571,5 +667,11 @@ def probe_environment() -> dict[str, Any]:
         "default_format_by_kind": dict(DEFAULT_FORMAT_BY_KIND),
         "audio_bitrate_options": list(AUDIO_BITRATE_OPTIONS),
         "audio_sample_rate_options": ["source", *AUDIO_SAMPLE_RATE_OPTIONS],
+        "audio_channel_options": list(AUDIO_CHANNEL_OPTIONS),
+        "audio_playback_speed_options": list(AUDIO_PLAYBACK_SPEED_OPTIONS),
+        "cue_split_options": list(CUE_SPLIT_OPTIONS),
+        "video_encoder_options": list(VIDEO_ENCODER_OPTIONS),
+        "video_preset_options": list(VIDEO_PRESET_OPTIONS),
+        "video_fps_options": list(VIDEO_FPS_OPTIONS),
         "side_effects": {"network_actions_performed": False, "archive_ph_hit": False, "native_webview2_started": False, "app_started": False},
     }
