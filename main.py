@@ -6136,7 +6136,7 @@ class App(ctk.CTk):
         button_attr: str,
         settings_attr: str,
     ) -> None:
-        """Create a Local-ASR-style action button with matching cog behavior."""
+        """Create a Local-ASR-style action button with a seamless cog overlay."""
         spec = ASR_ACTION_BUTTON_SPEC
         self._ensure_asr_cog_icons()
 
@@ -6153,22 +6153,15 @@ class App(ctk.CTk):
         )
         button_wrap.pack_propagate(False)
 
-        # R42EW: the previous raw tk.Label cog was placed on top of a full-width
-        # CTkButton.  CustomTkinter repaints the button lazily, so the cog could
-        # stay hidden until hover.  Use a real sibling CTkButton in a reserved
-        # right-side lane instead of an overlay.
-        try:
-            cog_w = int(spec["cog_width"]) + 10
-            action_w = max(80, int(spec["button_width"]) - cog_w)
-        except Exception:
-            cog_w = 34
-            action_w = 116
-
+        # R42FA: keep one full-width CTkButton so the File Converter controls
+        # have the same rounded button shape as the working ASR controls.  The
+        # R42EW/R42EZ sibling-CTkButton cog fixed launch but visually split the
+        # orange button and created the wedge/notch seen beside the cog.
         action_button = ctk.CTkButton(
             button_wrap,
             text=text,
             command=command,
-            width=action_w,
+            width=spec["button_width"],
             height=spec["button_height"],
             font=ctk.CTkFont(
                 size=spec["button_font_size"],
@@ -6180,45 +6173,74 @@ class App(ctk.CTk):
             corner_radius=spec["button_corner_radius"],
             anchor=spec["button_anchor"],
         )
-        action_button.place(x=0, y=0, width=action_w, height=spec["button_height"])
+        # CustomTkinter requires width/height on the constructor, not place().
+        action_button.place(x=0, y=0)
 
-        settings_button = ctk.CTkButton(
-            button_wrap,
-            text=spec["fallback_cog_text"],
-            command=settings_command,
-            width=cog_w,
-            height=spec["button_height"],
-            font=ctk.CTkFont(family="Segoe UI Symbol", size=15, weight="bold"),
-            fg_color=COLORS[spec["button_fg_color_key"]],
-            hover_color=COLORS[spec["button_hover_color_key"]],
-            text_color=spec["fallback_cog_hover_fg"],
-            corner_radius=spec["button_corner_radius"],
-        )
+        # R42FA: use a tk.Label overlay for the cog, matching the Local Web
+        # Archive cog pattern already present in this file.  Use the darker
+        # hover icon/colour as the normal paint as well, so the cog is visible
+        # immediately before any hover event.
+        normal_cog_image = self.asr_cog_icon_hover_image or self.asr_cog_icon_image
+        hover_cog_image = self.asr_cog_icon_hover_image or self.asr_cog_icon_image
+        if normal_cog_image is not None:
+            settings_button = tk.Label(
+                button_wrap,
+                image=normal_cog_image,
+                bg=COLORS["accent"],
+                activebackground=COLORS["accent"],
+                bd=0,
+                relief="flat",
+                highlightthickness=0,
+                padx=0,
+                pady=0,
+                cursor="hand2",
+            )
+        else:
+            settings_button = tk.Label(
+                button_wrap,
+                text=spec["fallback_cog_text"],
+                bg=COLORS["accent"],
+                fg=spec["fallback_cog_hover_fg"],
+                activebackground=COLORS["accent"],
+                activeforeground=spec["fallback_cog_hover_fg"],
+                bd=0,
+                relief="flat",
+                highlightthickness=0,
+                padx=0,
+                pady=0,
+                font=spec["fallback_cog_font"],
+                cursor="hand2",
+            )
+
         settings_button.place(
-            x=max(0, int(spec["button_width"]) - cog_w),
-            y=0,
-            width=cog_w,
-            height=spec["button_height"],
+            x=spec["cog_x"],
+            y=spec["cog_y"],
+            width=spec["cog_width"],
+            height=spec["cog_height"],
         )
 
         def _keep_cog_visible() -> None:
-            # R42EW: the cog is now a sibling CTkButton, not a raw-label overlay.
             try:
                 settings_button.lift()
+                settings_button.tkraise()
             except Exception:
                 pass
 
-        _keep_cog_visible()
-
-        def _configure_cog_button(bg_key: str, text_colour: str) -> None:
+        def _paint_cog(bg_colour: str, *, hover: bool = False) -> None:
             try:
-                settings_button.configure(
-                    fg_color=COLORS[bg_key],
-                    hover_color=COLORS["accent_hover"],
-                    text_color=text_colour,
-                )
+                settings_button.configure(bg=bg_colour, activebackground=bg_colour)
             except Exception:
                 pass
+            try:
+                if hover_cog_image is not None and hover:
+                    settings_button.configure(image=hover_cog_image)
+                elif normal_cog_image is not None:
+                    settings_button.configure(image=normal_cog_image)
+                else:
+                    settings_button.configure(fg=spec["fallback_cog_hover_fg"])
+            except Exception:
+                pass
+            _keep_cog_visible()
 
         def _set_button_normal() -> None:
             try:
@@ -6228,16 +6250,7 @@ class App(ctk.CTk):
                 )
             except Exception:
                 pass
-
-            try:
-                button_wrap.configure(bg=COLORS["accent"])
-            except Exception:
-                pass
-
-            # R42EX: use the darker cog colour even in the normal state so the
-            # settings gear is visible on first paint, not only after hover.
-            _configure_cog_button("accent", spec["fallback_cog_hover_fg"])
-            _keep_cog_visible()
+            _paint_cog(COLORS["accent"], hover=False)
 
         def _set_button_hover() -> None:
             try:
@@ -6247,14 +6260,7 @@ class App(ctk.CTk):
                 )
             except Exception:
                 pass
-
-            try:
-                button_wrap.configure(bg=COLORS["accent_hover"])
-            except Exception:
-                pass
-
-            _configure_cog_button("accent_hover", spec["fallback_cog_normal_fg"])
-            _keep_cog_visible()
+            _paint_cog(COLORS["accent_hover"], hover=False)
 
         def _set_cog_icon_hover() -> None:
             try:
@@ -6264,14 +6270,7 @@ class App(ctk.CTk):
                 )
             except Exception:
                 pass
-
-            try:
-                button_wrap.configure(bg=COLORS["accent"])
-            except Exception:
-                pass
-
-            _configure_cog_button("accent", spec["fallback_cog_hover_fg"])
-            _keep_cog_visible()
+            _paint_cog(COLORS["accent"], hover=True)
 
         def _sync_hover_from_pointer() -> None:
             try:
@@ -6308,19 +6307,29 @@ class App(ctk.CTk):
             self.after(40, _sync_hover_from_pointer)
             return "break"
 
+        def _cog_click(_event=None):
+            try:
+                settings_command()
+            except Exception:
+                logger.exception("File Converter/ASR settings cog command failed.")
+            return "break"
+
         action_button.bind("<Enter>", _button_enter, add="+")
         action_button.bind("<Leave>", _button_leave, add="+")
         settings_button.bind("<Enter>", _cog_enter)
         settings_button.bind("<Leave>", _cog_leave)
-        # CTkButton command handles cog clicks; do not bind Button-1 as well.
+        settings_button.bind("<Button-1>", _cog_click)
+
+        # Re-raise after the CTk canvas has finished its lazy first paint.  This
+        # preserves the old seamless shape but prevents the hover-only cog issue.
         try:
             action_button.bind("<Configure>", lambda _event: _keep_cog_visible(), add="+")
             button_wrap.bind("<Map>", lambda _event: _keep_cog_visible(), add="+")
-            settings_button.after_idle(lambda: _configure_cog_button("accent", spec["fallback_cog_hover_fg"]))
+            button_wrap.bind("<Configure>", lambda _event: _keep_cog_visible(), add="+")
+            settings_button.after_idle(_set_button_normal)
             settings_button.after_idle(_keep_cog_visible)
-            self.after(50, _keep_cog_visible)
-            self.after(250, _keep_cog_visible)
-            self.after(750, _keep_cog_visible)
+            for delay_ms in (50, 150, 300, 750, 1250):
+                self.after(delay_ms, _keep_cog_visible)
         except Exception:
             pass
 

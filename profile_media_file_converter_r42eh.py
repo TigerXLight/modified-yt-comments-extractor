@@ -122,7 +122,7 @@ def _mimetype_kind(path: Path) -> tuple[str, str]:
 
 
 def _run_ffprobe_kind(path: Path, *, timeout: int = 8) -> str:
-    ffprobe = shutil.which("ffprobe")
+    ffprobe = _ffprobe_path()
     if not ffprobe or not path.is_file():
         return ""
     cmd = [
@@ -293,8 +293,28 @@ def _make_output_path(input_path: Path, target_format: str, output_dir: str | os
     raise RuntimeError("Could not allocate a unique converter output path")
 
 
+def _ffmpeg_path() -> str:
+    bundled = Path(r"C:\Program Files\ffmpeg\bin\ffmpeg.EXE")
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    if os.name == "nt" and bundled.exists():
+        return str(bundled)
+    return "ffmpeg"
+
+
+def _ffprobe_path() -> str:
+    bundled = Path(r"C:\Program Files\ffmpeg\bin\ffprobe.EXE")
+    found = shutil.which("ffprobe")
+    if found:
+        return found
+    if os.name == "nt" and bundled.exists():
+        return str(bundled)
+    return "ffprobe"
+
+
 def _available_ffmpeg_encoders() -> set[str]:
-    ffmpeg = shutil.which("ffmpeg") or (r"C:\Program Files\ffmpeg\bin\ffmpeg.EXE" if os.name == "nt" and Path(r"C:\Program Files\ffmpeg\bin\ffmpeg.EXE").exists() else "")
+    ffmpeg = _ffmpeg_path()
     if not ffmpeg:
         return set()
     try:
@@ -425,7 +445,7 @@ def _ffprobe_media_metadata(path: Path, *, timeout: int = 8) -> dict[str, Any]:
         "format_bitrate_kbps": 0,
         "bits_per_pixel_frame": 0.0,
     }
-    ffprobe = shutil.which("ffprobe")
+    ffprobe = _ffprobe_path()
     if not ffprobe or not path.is_file():
         return metadata
     cmd = [
@@ -1045,7 +1065,7 @@ def plan_conversion(input_path: str | os.PathLike[str], target_format: str = "au
         preset = {"family": "text", "preserve_original_text": True, "compress": False}
     else:
         method = "ffmpeg"
-        ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+        ffmpeg = _ffmpeg_path()
         command = [ffmpeg, "-hide_banner", "-y", "-i", str(input_file)]
         if preserve_metadata:
             command += ["-map_metadata", "0"]
@@ -1181,8 +1201,8 @@ def run_conversion(plan: dict[str, Any], *, timeout: int = 1800) -> dict[str, An
 def probe_environment() -> dict[str, Any]:
     return {
         "schema": R42EH_SCHEMA + ".environment",
-        "ffmpeg_path": shutil.which("ffmpeg") or "",
-        "ffprobe_path": shutil.which("ffprobe") or "",
+        "ffmpeg_path": _ffmpeg_path(),
+        "ffprobe_path": _ffprobe_path(),
         "supported_inputs": {
             "audio": sorted(AUDIO_INPUT_EXTENSIONS),
             "video": sorted(VIDEO_INPUT_EXTENSIONS),

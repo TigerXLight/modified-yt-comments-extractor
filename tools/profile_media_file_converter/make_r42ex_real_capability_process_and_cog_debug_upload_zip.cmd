@@ -1,2 +1,0 @@
-@echo off
-py -3.11 tools\profile_media_file_converter\make_r42ex_real_capability_process_and_cog_debug_upload_zip.py
