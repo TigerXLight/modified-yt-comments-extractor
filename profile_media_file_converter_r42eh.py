@@ -294,7 +294,7 @@ def _make_output_path(input_path: Path, target_format: str, output_dir: str | os
 
 
 def _available_ffmpeg_encoders() -> set[str]:
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = shutil.which("ffmpeg") or (r"C:\Program Files\ffmpeg\bin\ffmpeg.EXE" if os.name == "nt" and Path(r"C:\Program Files\ffmpeg\bin\ffmpeg.EXE").exists() else "")
     if not ffmpeg:
         return set()
     try:
@@ -304,10 +304,16 @@ def _available_ffmpeg_encoders() -> set[str]:
     if proc.returncode != 0:
         return set()
     encoders: set[str] = set()
-    for line in proc.stdout.splitlines():
+    for line in (proc.stdout + "\n" + proc.stderr).splitlines():
+        line = line.strip()
+        if not line or line.startswith("--") or line.lower().startswith("encoders"):
+            continue
         parts = line.split()
         if len(parts) >= 2 and parts[0] and parts[0][0] in {"V", "A", "S"}:
             encoders.add(parts[1])
+    # Normalise common spelling aliases exposed by some Windows builds.
+    if "libsvt_av1" in encoders:
+        encoders.add("libsvtav1")
     return encoders
 
 
@@ -480,14 +486,20 @@ def _ffprobe_media_metadata(path: Path, *, timeout: int = 8) -> dict[str, Any]:
 
 def _system_capability_probe(encoders: set[str]) -> dict[str, Any]:
     cpu_count = os.cpu_count() or 0
+    hardware_suffixes = ("_amf", "_nvenc", "_qsv", "_mf")
+    software_known = {"libx264", "libx265", "libvpx-vp9", "libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"}
     return {
         "schema": R42EH_SCHEMA + ".capability_probe",
         "cpu_count": cpu_count,
-        "hardware_encoders": sorted(name for name in encoders if name.endswith(("_amf", "_nvenc", "_qsv"))),
-        "software_encoders": sorted(name for name in encoders if name in {"libx264", "libx265", "libvpx-vp9", "libsvtav1", "libaom-av1"}),
-        "has_h264_hw": any(name in encoders for name in {"h264_amf", "h264_nvenc", "h264_qsv"}),
-        "has_hevc_hw": any(name in encoders for name in {"hevc_amf", "hevc_nvenc", "hevc_qsv"}),
+        "hardware_encoders": sorted(name for name in encoders if name.endswith(hardware_suffixes)),
+        "software_encoders": sorted(name for name in encoders if name in software_known),
+        "has_h264_hw": any(name in encoders for name in {"h264_amf", "h264_nvenc", "h264_qsv", "h264_mf"}),
+        "has_hevc_hw": any(name in encoders for name in {"hevc_amf", "hevc_nvenc", "hevc_qsv", "hevc_mf"}),
         "has_av1_hw": any(name in encoders for name in {"av1_amf", "av1_nvenc", "av1_qsv"}),
+        "has_h264_sw": any(name in encoders for name in {"libx264", "h264"}),
+        "has_hevc_sw": any(name in encoders for name in {"libx265", "hevc"}),
+        "has_vp9_sw": "libvpx-vp9" in encoders,
+        "has_av1_sw": any(name in encoders for name in {"libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"}),
     }
 
 
@@ -565,6 +577,9 @@ def _build_video_encoder_args(encoder_impl: str, *, fmt: str, crf: int, bitrate_
             args += ["-b:v", bitrate, "-maxrate", maxrate, "-bufsize", bufsize]
         else:
             args += ["-quality", "balanced", "-rc", "cqp", "-qp_i", str(max(20, crf - 2)), "-qp_p", str(crf)]
+    elif encoder_impl in {"h264_mf", "hevc_mf"}:
+        # Windows Media Foundation encoders are generally bitrate-driven.
+        args = ["-c:v", encoder_impl, "-b:v", bitrate or ("2500k" if encoder_impl == "h264_mf" else "1800k")]
     elif encoder_impl == "libx265":
         args = ["-c:v", "libx265", "-preset", speed if speed in {"veryfast", "fast", "medium", "slow"} else "fast"]
         args += (["-b:v", bitrate, "-maxrate", maxrate, "-bufsize", bufsize] if bitrate_kbps else ["-crf", str(crf)])
@@ -577,6 +592,12 @@ def _build_video_encoder_args(encoder_impl: str, *, fmt: str, crf: int, bitrate_
     elif encoder_impl == "libaom-av1":
         args = ["-c:v", "libaom-av1", "-cpu-used", "6"]
         args += (["-b:v", bitrate] if bitrate_kbps else ["-crf", str(crf), "-b:v", "0"])
+    elif encoder_impl == "librav1e":
+        args = ["-c:v", "librav1e", "-speed", "8"]
+        args += (["-b:v", bitrate] if bitrate_kbps else ["-qp", str(max(80, crf * 4))])
+    elif encoder_impl in {"h264", "hevc"}:
+        args = ["-c:v", encoder_impl]
+        args += (["-b:v", bitrate, "-maxrate", maxrate, "-bufsize", bufsize] if bitrate_kbps else ["-q:v", "5"])
     else:
         args = ["-c:v", "libx264", "-preset", speed if speed in {"veryfast", "fast", "medium", "slow"} else "fast"]
         args += (["-b:v", bitrate, "-maxrate", maxrate, "-bufsize", bufsize] if bitrate_kbps else ["-crf", str(crf)])
@@ -620,7 +641,7 @@ def _select_optimised_video_strategy(path: Path, fmt: str, *, compress: bool, ta
     elif preset_key == "speed":
         chosen_family = "h264"
         reason.append("Speed preset prefers a fast, compatible encoder")
-    elif short_video and ("av1_amf" in encoders or "av1_nvenc" in encoders or "av1_qsv" in encoders or "libsvtav1" in encoders):
+    elif short_video and any(name in encoders for name in {"av1_amf", "av1_nvenc", "av1_qsv", "libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"}):
         chosen_family = "av1"
         reason.append("short video allows AV1 efficiency without an excessive default wait")
     elif fmt == "webm":
@@ -637,16 +658,16 @@ def _select_optimised_video_strategy(path: Path, fmt: str, *, compress: bool, ta
         reason.append("normal/unknown bitrate keeps H.264 for compatibility and practical runtime")
 
     if chosen_family == "av1":
-        encoder_impl = _choose_existing_encoder(encoders, ("av1_amf", "av1_nvenc", "av1_qsv", "libsvtav1", "libaom-av1"), "libsvtav1")
+        encoder_impl = _choose_existing_encoder(encoders, ("av1_amf", "av1_nvenc", "av1_qsv", "libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"), "libsvtav1")
         crf = 32 if source_class != "low" else 28
     elif chosen_family == "h265":
-        encoder_impl = _choose_existing_encoder(encoders, ("hevc_amf", "hevc_nvenc", "hevc_qsv", "libx265"), "libx265")
+        encoder_impl = _choose_existing_encoder(encoders, ("hevc_amf", "hevc_mf", "hevc_nvenc", "hevc_qsv", "libx265", "hevc"), "libx265")
         crf = 27 if source_class != "low" else 24
     elif chosen_family == "vp9":
         encoder_impl = _choose_existing_encoder(encoders, ("libvpx-vp9",), "libvpx-vp9")
         crf = 34 if source_class != "low" else 30
     else:
-        encoder_impl = _choose_existing_encoder(encoders, ("h264_amf", "h264_nvenc", "h264_qsv", "libx264"), "libx264")
+        encoder_impl = _choose_existing_encoder(encoders, ("h264_amf", "h264_mf", "h264_nvenc", "h264_qsv", "libx264", "h264"), "libx264")
         crf = 24 if source_class != "low" else 21
 
     if preset_key == "speed":
@@ -803,11 +824,11 @@ def _video_codecs(fmt: str, *, source_path: Path | None = None, compress: bool =
                 selected = "libvpx-vp9"
         else:
             if encoder == "h265":
-                selected = _choose_existing_encoder(encoders, ("hevc_amf", "hevc_nvenc", "hevc_qsv", "libx265"), "libx265")
+                selected = _choose_existing_encoder(encoders, ("hevc_amf", "hevc_mf", "hevc_nvenc", "hevc_qsv", "libx265", "hevc"), "libx265")
             elif encoder == "av1":
-                selected = _choose_existing_encoder(encoders, ("av1_amf", "av1_nvenc", "av1_qsv", "libsvtav1", "libaom-av1"), "libsvtav1")
+                selected = _choose_existing_encoder(encoders, ("av1_amf", "av1_nvenc", "av1_qsv", "libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"), "libsvtav1")
             else:
-                selected = _choose_existing_encoder(encoders, ("h264_amf", "h264_nvenc", "h264_qsv", "libx264"), "libx264")
+                selected = _choose_existing_encoder(encoders, ("h264_amf", "h264_mf", "h264_nvenc", "h264_qsv", "libx264", "h264"), "libx264")
             args = _build_video_encoder_args(selected, fmt=fmt, crf=crf, bitrate_kbps=0, speed=preset_speed, audio_br=audio_br, web_optimise=web_optimise)
         max_side = 0
         try:
