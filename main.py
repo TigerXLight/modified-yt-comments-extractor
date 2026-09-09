@@ -6191,7 +6191,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(family="Segoe UI Symbol", size=15, weight="bold"),
             fg_color=COLORS[spec["button_fg_color_key"]],
             hover_color=COLORS[spec["button_hover_color_key"]],
-            text_color=spec["fallback_cog_normal_fg"],
+            text_color=spec["fallback_cog_hover_fg"],
             corner_radius=spec["button_corner_radius"],
         )
         settings_button.place(
@@ -6234,7 +6234,9 @@ class App(ctk.CTk):
             except Exception:
                 pass
 
-            _configure_cog_button("accent", spec["fallback_cog_normal_fg"])
+            # R42EX: use the darker cog colour even in the normal state so the
+            # settings gear is visible on first paint, not only after hover.
+            _configure_cog_button("accent", spec["fallback_cog_hover_fg"])
             _keep_cog_visible()
 
         def _set_button_hover() -> None:
@@ -6314,8 +6316,11 @@ class App(ctk.CTk):
         try:
             action_button.bind("<Configure>", lambda _event: _keep_cog_visible(), add="+")
             button_wrap.bind("<Map>", lambda _event: _keep_cog_visible(), add="+")
+            settings_button.after_idle(lambda: _configure_cog_button("accent", spec["fallback_cog_hover_fg"]))
+            settings_button.after_idle(_keep_cog_visible)
             self.after(50, _keep_cog_visible)
             self.after(250, _keep_cog_visible)
+            self.after(750, _keep_cog_visible)
         except Exception:
             pass
 

@@ -484,22 +484,35 @@ def _ffprobe_media_metadata(path: Path, *, timeout: int = 8) -> dict[str, Any]:
     return metadata
 
 
-def _system_capability_probe(encoders: set[str]) -> dict[str, Any]:
+def _system_capability_probe(encoders: set[str], runnable_encoders: set[str] | None = None) -> dict[str, Any]:
+    """Return compiled and actually-runnable encoder capability.
+
+    R42EX: FFmpeg may list encoders that the current GPU cannot actually run
+    (for example av1_amf on a GPU without AV1 encode hardware).  Keep compiled
+    availability separate from runnable availability so Optimised does not make a
+    false hardware choice.
+    """
     cpu_count = os.cpu_count() or 0
-    hardware_suffixes = ("_amf", "_nvenc", "_qsv", "_mf")
+    hardware_suffixes = ("_amf", "_nvenc", "_qsv", "_mf", "_vulkan")
     software_known = {"libx264", "libx265", "libvpx-vp9", "libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"}
+    runnable = set(runnable_encoders or ())
+    selection = runnable if runnable else set(encoders)
     return {
         "schema": R42EH_SCHEMA + ".capability_probe",
         "cpu_count": cpu_count,
-        "hardware_encoders": sorted(name for name in encoders if name.endswith(hardware_suffixes)),
-        "software_encoders": sorted(name for name in encoders if name in software_known),
-        "has_h264_hw": any(name in encoders for name in {"h264_amf", "h264_nvenc", "h264_qsv", "h264_mf"}),
-        "has_hevc_hw": any(name in encoders for name in {"hevc_amf", "hevc_nvenc", "hevc_qsv", "hevc_mf"}),
-        "has_av1_hw": any(name in encoders for name in {"av1_amf", "av1_nvenc", "av1_qsv"}),
-        "has_h264_sw": any(name in encoders for name in {"libx264", "h264"}),
-        "has_hevc_sw": any(name in encoders for name in {"libx265", "hevc"}),
-        "has_vp9_sw": "libvpx-vp9" in encoders,
-        "has_av1_sw": any(name in encoders for name in {"libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"}),
+        "compiled_hardware_encoders": sorted(name for name in encoders if name.endswith(hardware_suffixes)),
+        "compiled_software_encoders": sorted(name for name in encoders if name in software_known),
+        "runnable_encoders": sorted(runnable),
+        "hardware_encoders": sorted(name for name in selection if name.endswith(hardware_suffixes)),
+        "software_encoders": sorted(name for name in selection if name in software_known),
+        "has_h264_hw": any(name in selection for name in {"h264_amf", "h264_nvenc", "h264_qsv", "h264_mf", "h264_vulkan"}),
+        "has_hevc_hw": any(name in selection for name in {"hevc_amf", "hevc_nvenc", "hevc_qsv", "hevc_mf", "hevc_vulkan"}),
+        "has_av1_hw": any(name in selection for name in {"av1_amf", "av1_nvenc", "av1_qsv", "av1_mf", "av1_vulkan"}),
+        "has_h264_sw": any(name in selection for name in {"libx264", "h264"}),
+        "has_hevc_sw": any(name in selection for name in {"libx265", "hevc"}),
+        "has_vp9_sw": "libvpx-vp9" in selection,
+        "has_av1_sw": any(name in selection for name in {"libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"}),
+        "compiled_only_warning": "compiled encoder list is not treated as GPU usability proof" if runnable else "runnable probe not yet run; compiled list used only as fallback",
     }
 
 
@@ -508,6 +521,111 @@ def _choose_existing_encoder(encoders: set[str], names: tuple[str, ...], fallbac
         if name in encoders:
             return name
     return fallback
+
+_RUNNABLE_ENCODER_CACHE: dict[str, Any] = {"encoders": set(), "results": [], "source_encoder_count": -1}
+
+def _quick_encoder_test_args(name: str) -> tuple[list[str], str]:
+    if name == "h264_amf":
+        return ["-c:v", "h264_amf", "-quality", "speed", "-b:v", "1800k"], ".mp4"
+    if name == "hevc_amf":
+        return ["-c:v", "hevc_amf", "-quality", "speed", "-b:v", "1200k"], ".mp4"
+    if name == "av1_amf":
+        return ["-c:v", "av1_amf", "-quality", "speed", "-b:v", "1000k"], ".mp4"
+    if name == "h264_mf":
+        return ["-c:v", "h264_mf", "-b:v", "1800k"], ".mp4"
+    if name == "hevc_mf":
+        return ["-c:v", "hevc_mf", "-b:v", "1200k"], ".mp4"
+    if name == "av1_mf":
+        return ["-c:v", "av1_mf", "-b:v", "1000k"], ".mp4"
+    if name == "h264_vulkan":
+        return ["-c:v", "h264_vulkan", "-b:v", "1800k"], ".mp4"
+    if name == "hevc_vulkan":
+        return ["-c:v", "hevc_vulkan", "-b:v", "1200k"], ".mp4"
+    if name == "av1_vulkan":
+        return ["-c:v", "av1_vulkan", "-b:v", "1000k"], ".mp4"
+    if name == "h264_nvenc":
+        return ["-c:v", "h264_nvenc", "-preset", "p4", "-b:v", "1800k"], ".mp4"
+    if name == "hevc_nvenc":
+        return ["-c:v", "hevc_nvenc", "-preset", "p4", "-b:v", "1200k"], ".mp4"
+    if name == "av1_nvenc":
+        return ["-c:v", "av1_nvenc", "-preset", "p4", "-b:v", "1000k"], ".mp4"
+    if name == "h264_qsv":
+        return ["-c:v", "h264_qsv", "-b:v", "1800k"], ".mp4"
+    if name == "hevc_qsv":
+        return ["-c:v", "hevc_qsv", "-b:v", "1200k"], ".mp4"
+    if name == "av1_qsv":
+        return ["-c:v", "av1_qsv", "-b:v", "1000k"], ".mp4"
+    if name == "libx264":
+        return ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "26"], ".mp4"
+    if name == "libx265":
+        return ["-c:v", "libx265", "-preset", "ultrafast", "-crf", "30"], ".mp4"
+    if name == "libvpx-vp9":
+        return ["-c:v", "libvpx-vp9", "-row-mt", "1", "-deadline", "realtime", "-cpu-used", "8", "-b:v", "0", "-crf", "36"], ".webm"
+    if name in {"libsvtav1", "libsvt_av1"}:
+        return ["-c:v", "libsvtav1", "-preset", "12", "-crf", "38"], ".mp4"
+    if name == "libaom-av1":
+        return ["-c:v", "libaom-av1", "-cpu-used", "8", "-crf", "38", "-b:v", "0"], ".mkv"
+    if name == "librav1e":
+        return ["-c:v", "librav1e", "-speed", "10", "-qp", "120"], ".mkv"
+    return ["-c:v", name, "-b:v", "1200k"], ".mp4"
+
+def _probe_runnable_video_encoders(encoders: set[str] | None = None, *, timeout: int = 5, include_slow: bool = False) -> dict[str, Any]:
+    """Test which compiled encoders actually run on this machine.
+
+    This is deliberately tiny and synthetic.  It prevents Optimised from
+    choosing e.g. av1_amf merely because the FFmpeg binary was compiled with
+    that encoder when the installed GPU cannot execute it.
+    """
+    ffmpeg = _ffmpeg_path()
+    compiled = set(encoders or _available_ffmpeg_encoders())
+    candidates = [
+        "h264_amf", "hevc_amf", "av1_amf", "h264_mf", "hevc_mf", "av1_mf",
+        "h264_vulkan", "hevc_vulkan", "av1_vulkan",
+        "h264_nvenc", "hevc_nvenc", "av1_nvenc", "h264_qsv", "hevc_qsv", "av1_qsv",
+        "libx264", "libx265", "libvpx-vp9", "libsvtav1",
+    ]
+    if include_slow:
+        candidates += ["libaom-av1", "librav1e"]
+    runnable: set[str] = set()
+    results: list[dict[str, Any]] = []
+    import tempfile, time
+    with tempfile.TemporaryDirectory(prefix="ytce_encoder_probe_") as tmp:
+        tmp_path = Path(tmp)
+        for name in candidates:
+            if name not in compiled:
+                continue
+            args, ext = _quick_encoder_test_args(name)
+            out_path = tmp_path / f"probe_{name}{ext}"
+            cmd = [ffmpeg, "-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=15", "-t", "0.6", "-an", *args, str(out_path)]
+            started = time.perf_counter()
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=max(2, int(timeout)), encoding="utf-8", errors="replace")
+                elapsed = round(time.perf_counter() - started, 3)
+                ok = proc.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0
+                if ok:
+                    runnable.add("libsvt_av1" if name == "libsvtav1" and "libsvt_av1" in compiled else name)
+                    runnable.add("libsvtav1" if name == "libsvt_av1" else name)
+                results.append({"encoder": name, "ok": bool(ok), "seconds": elapsed, "output_bytes": out_path.stat().st_size if out_path.exists() else 0, "stderr_tail": (proc.stderr or "")[-700:]})
+            except Exception as exc:
+                results.append({"encoder": name, "ok": False, "error": repr(exc)})
+    return {"schema": R42EH_SCHEMA + ".runnable_encoder_probe", "runnable_encoders": sorted(runnable), "results": results}
+
+def _runnable_video_encoders_cached(encoders: set[str] | None = None, *, timeout: int = 4) -> set[str]:
+    compiled = set(encoders or _available_ffmpeg_encoders())
+    cached_count = int(_RUNNABLE_ENCODER_CACHE.get("source_encoder_count") or -1)
+    if cached_count == len(compiled) and _RUNNABLE_ENCODER_CACHE.get("encoders"):
+        return set(_RUNNABLE_ENCODER_CACHE.get("encoders") or set())
+    probe = _probe_runnable_video_encoders(compiled, timeout=timeout, include_slow=False)
+    runnable = set(probe.get("runnable_encoders") or [])
+    # If the runtime probe fails completely, fall back to the compiled list rather
+    # than breaking conversion.  The capability report still says the runnable
+    # probe was not proof.
+    if not runnable:
+        runnable = set(compiled)
+    _RUNNABLE_ENCODER_CACHE["encoders"] = set(runnable)
+    _RUNNABLE_ENCODER_CACHE["results"] = list(probe.get("results") or [])
+    _RUNNABLE_ENCODER_CACHE["source_encoder_count"] = len(compiled)
+    return set(runnable)
 
 
 def _classify_source_bitrate(metadata: dict[str, Any]) -> str:
@@ -565,18 +683,25 @@ def _build_video_encoder_args(encoder_impl: str, *, fmt: str, crf: int, bitrate_
     bitrate = f"{bitrate_kbps}k" if bitrate_kbps else ""
     maxrate = f"{max(bitrate_kbps, int(bitrate_kbps * 1.35))}k" if bitrate_kbps else ""
     bufsize = f"{max(bitrate_kbps * 2, 500)}k" if bitrate_kbps else ""
-    if encoder_impl in {"h264_amf", "h264_nvenc", "h264_qsv"}:
+    if encoder_impl in {"h264_amf", "h264_nvenc", "h264_qsv", "h264_vulkan"}:
         args = ["-c:v", encoder_impl]
         if bitrate_kbps:
             args += ["-b:v", bitrate, "-maxrate", maxrate, "-bufsize", bufsize]
         else:
             args += ["-quality", "balanced", "-rc", "cqp", "-qp_i", str(max(18, crf - 2)), "-qp_p", str(crf)]
-    elif encoder_impl in {"hevc_amf", "hevc_nvenc", "hevc_qsv"}:
+    elif encoder_impl in {"hevc_amf", "hevc_nvenc", "hevc_qsv", "hevc_vulkan"}:
         args = ["-c:v", encoder_impl]
         if bitrate_kbps:
             args += ["-b:v", bitrate, "-maxrate", maxrate, "-bufsize", bufsize]
         else:
             args += ["-quality", "balanced", "-rc", "cqp", "-qp_i", str(max(20, crf - 2)), "-qp_p", str(crf)]
+    elif encoder_impl in {"av1_amf", "av1_nvenc", "av1_qsv", "av1_mf", "av1_vulkan"}:
+        # Hardware AV1 encoders are only used after a runnable probe.  Prefer
+        # bitrate-style settings because support for CRF-like controls differs
+        # across AMF/NVENC/QSV/MF/Vulkan implementations.
+        args = ["-c:v", encoder_impl, "-b:v", bitrate or "1400k"]
+        if bitrate_kbps:
+            args += ["-maxrate", maxrate, "-bufsize", bufsize]
     elif encoder_impl in {"h264_mf", "hevc_mf"}:
         # Windows Media Foundation encoders are generally bitrate-driven.
         args = ["-c:v", encoder_impl, "-b:v", bitrate or ("2500k" if encoder_impl == "h264_mf" else "1800k")]
@@ -613,8 +738,12 @@ def _build_video_encoder_args(encoder_impl: str, *, fmt: str, crf: int, bitrate_
 
 def _select_optimised_video_strategy(path: Path, fmt: str, *, compress: bool, target_file_size_mb: object, optimisation_preset: str, audio_bitrate: str, video_encoder: str, video_preset: str, video_crf: int, video_max_dimension: int, web_optimise: bool) -> tuple[list[str], dict[str, Any]]:
     encoders = _available_ffmpeg_encoders()
+    runnable_encoders = _runnable_video_encoders_cached(encoders)
+    # Selection must use actually-runnable encoders.  The compiled FFmpeg list is
+    # only a discovery list and can include encoders for hardware not present.
+    selection_encoders = runnable_encoders or encoders
     metadata = _ffprobe_media_metadata(path)
-    capability = _system_capability_probe(encoders)
+    capability = _system_capability_probe(encoders, runnable_encoders)
     preset_name = str(optimisation_preset or "Optimised").strip().replace("_", " ").title()
     preset_key = "speed" if preset_name == "Speed" else "optimised"
     source_class = _classify_source_bitrate(metadata)
@@ -641,7 +770,7 @@ def _select_optimised_video_strategy(path: Path, fmt: str, *, compress: bool, ta
     elif preset_key == "speed":
         chosen_family = "h264"
         reason.append("Speed preset prefers a fast, compatible encoder")
-    elif short_video and any(name in encoders for name in {"av1_amf", "av1_nvenc", "av1_qsv", "libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"}):
+    elif short_video and any(name in selection_encoders for name in {"av1_amf", "av1_nvenc", "av1_qsv", "av1_mf", "av1_vulkan", "libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"}):
         chosen_family = "av1"
         reason.append("short video allows AV1 efficiency without an excessive default wait")
     elif fmt == "webm":
@@ -658,16 +787,16 @@ def _select_optimised_video_strategy(path: Path, fmt: str, *, compress: bool, ta
         reason.append("normal/unknown bitrate keeps H.264 for compatibility and practical runtime")
 
     if chosen_family == "av1":
-        encoder_impl = _choose_existing_encoder(encoders, ("av1_amf", "av1_nvenc", "av1_qsv", "libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"), "libsvtav1")
+        encoder_impl = _choose_existing_encoder(selection_encoders, ("av1_amf", "av1_nvenc", "av1_qsv", "av1_mf", "av1_vulkan", "libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"), "libsvtav1")
         crf = 32 if source_class != "low" else 28
     elif chosen_family == "h265":
-        encoder_impl = _choose_existing_encoder(encoders, ("hevc_amf", "hevc_mf", "hevc_nvenc", "hevc_qsv", "libx265", "hevc"), "libx265")
+        encoder_impl = _choose_existing_encoder(selection_encoders, ("hevc_amf", "hevc_mf", "hevc_vulkan", "hevc_nvenc", "hevc_qsv", "libx265", "hevc"), "libx265")
         crf = 27 if source_class != "low" else 24
     elif chosen_family == "vp9":
-        encoder_impl = _choose_existing_encoder(encoders, ("libvpx-vp9",), "libvpx-vp9")
+        encoder_impl = _choose_existing_encoder(selection_encoders, ("libvpx-vp9",), "libvpx-vp9")
         crf = 34 if source_class != "low" else 30
     else:
-        encoder_impl = _choose_existing_encoder(encoders, ("h264_amf", "h264_mf", "h264_nvenc", "h264_qsv", "libx264", "h264"), "libx264")
+        encoder_impl = _choose_existing_encoder(selection_encoders, ("h264_amf", "h264_mf", "h264_vulkan", "h264_nvenc", "h264_qsv", "libx264", "h264"), "libx264")
         crf = 24 if source_class != "low" else 21
 
     if preset_key == "speed":
@@ -707,6 +836,8 @@ def _select_optimised_video_strategy(path: Path, fmt: str, *, compress: bool, ta
         "target_video_bitrate_kbps": target_kbps,
         "selected_encoder_family": chosen_family,
         "selected_encoder_impl": encoder_impl,
+        "command_encoder_impl": encoder_impl if encoder_impl in args else (args[args.index("-c:v") + 1] if "-c:v" in args and args.index("-c:v") + 1 < len(args) else ""),
+        "encoder_command_aligned": bool(encoder_impl in args),
         "crf_or_quality": crf,
         "source_bitrate_class": source_class,
         "metadata": metadata,
@@ -838,7 +969,7 @@ def _video_codecs(fmt: str, *, source_path: Path | None = None, compress: bool =
         if max_side:
             scale = f"scale='if(gt(iw,ih),min({max_side},iw),-2)':'if(gt(ih,iw),min({max_side},ih),-2)'"
             args = ["-vf", scale] + args
-        preset = {"family": "video", "codec_args": args, "ffmpeg_encoder_count": len(encoders), "compress": bool(compress), "optimisation_preset": str(optimisation_preset or "Optimised"), "optimisation_mode": "manual_advanced", "selected_encoder_family": encoder, "selected_encoder_impl": selected, "crf_or_quality": crf, "max_dimension": max_side, "audio_bitrate": audio_br, "web_optimise": bool(web_optimise)}
+        preset = {"family": "video", "codec_args": args, "ffmpeg_encoder_count": len(encoders), "compress": bool(compress), "optimisation_preset": str(optimisation_preset or "Optimised"), "optimisation_mode": "manual_advanced", "selected_encoder_family": encoder, "selected_encoder_impl": selected, "command_encoder_impl": selected if selected in args else (args[args.index("-c:v") + 1] if "-c:v" in args and args.index("-c:v") + 1 < len(args) else ""), "encoder_command_aligned": bool(selected in args), "crf_or_quality": crf, "max_dimension": max_side, "audio_bitrate": audio_br, "web_optimise": bool(web_optimise)}
 
     if fps != "source":
         args += ["-r", fps]
