@@ -38,6 +38,7 @@ MSN_URL = (
 )
 YOUTUBE_URL = "https://www.youtube.com/watch?v=aB3_dE-9xYz"
 TWITTER_URL = "https://x.com/example/status/12345"
+CHANNEL_URL = "slack://workspace/channel/message/123?thread=456"
 
 
 def test_msn_canonicalization_removes_tracking_and_preserves_article_id() -> None:
@@ -137,6 +138,29 @@ def test_url_token_parser_accepts_mixed_separators_and_encoded_commas() -> None:
     )
 
     assert tokens == (YOUTUBE_URL, MSN_URL, encoded)
+
+
+def test_r42dk_source_link_parser_accepts_account_channel_uri() -> None:
+    tokens = extract_source_url_tokens(
+        f"{CHANNEL_URL}; {YOUTUBE_URL} trailing words"
+    )
+
+    assert tokens == (CHANNEL_URL, YOUTUBE_URL)
+
+    row = build_source_resource_row(CHANNEL_URL)
+    assert row.adapter_id == "account_channel"
+    assert row.adapter_display_name == "Account / Channel"
+    assert row.canonical_url == CHANNEL_URL
+    assert row.archive_statuses == ()
+    assert row.comments_supported is False
+    assert row.livechat_supported is False
+    assert "two-sided adapter" in row.comments_status
+    assert "no unattended account polling" in row.provenance
+
+    result = parse_source_url_intake(f"{CHANNEL_URL} {MSN_URL} note")
+    assert [source_row.adapter_id for source_row in result.rows] == ["account_channel", "msn"]
+    assert CHANNEL_URL not in result.invalid_tokens
+    assert "note" in result.invalid_tokens
 
 
 def test_source_url_intake_preserves_order_dedupes_and_retains_invalid_text() -> None:

@@ -73,6 +73,7 @@ def test_database_panel_projects_workbench_payload_counts() -> None:
                     {"facet_type": "source_role", "value": "PRIMARY_SELF_AUTHORED_SCOPE", "count": 1},
                     {"facet_type": "source_role", "value": "SECONDARY_WITNESS_ACCOUNT", "count": 2},
                     {"facet_type": "source_role", "value": "TERTIARY_PROPAGATED_SOURCE", "count": 3},
+                    {"facet_type": "source_role", "value": "UNKNOWN_SOURCE_ROLE", "count": 2},
                 ],
             },
         },
@@ -90,14 +91,113 @@ def test_database_panel_projects_workbench_payload_counts() -> None:
     assert metrics["review_items"] == 4
     assert metrics["saved_views"] == 6
     display_metrics = {metric["key"]: metric["value"] for metric in payload["display_metrics"]}
+    display_labels = {metric["key"]: metric["label"] for metric in payload["display_metrics"]}
+    assert display_labels["primary_sources"] == "Primary"
+    assert display_labels["secondary_sources"] == "Secondary"
+    assert display_labels["tertiary_sources"] == "Tertiary"
+    assert display_labels["unknown_sources"] == "Unknown"
+    assert all("👤" not in label and "👥" not in label for label in display_labels.values())
     assert display_metrics["primary_sources"] == 1
     assert display_metrics["secondary_sources"] == 2
     assert display_metrics["tertiary_sources"] == 3
+    assert display_metrics["unknown_sources"] == 2
     assert display_metrics["persons"] == 5
     assert lanes["source_chain_gaps"] == 1
     assert lanes["disputed_framing"] == 2
     assert lanes["unknown_source_roles"] == 3
     assert lanes["parser_warnings"] == 4
+
+
+def test_database_panel_uses_source_package_breakdown_before_review_open() -> None:
+    state = build_profile_media_database_gui_panel_state(
+        mode="DATABASE",
+        database_root="Demo Database",
+        batch_json_files=("source-package.json",),
+        workbench_payload={
+            "dashboard": {
+                "facets": [
+                    {"facet_type": "source_role", "value": "PRIMARY_SELF_AUTHORED_SCOPE", "count": 0},
+                    {"facet_type": "source_role", "value": "SECONDARY_WITNESS_ACCOUNT", "count": 0},
+                    {"facet_type": "source_role", "value": "TERTIARY_PROPAGATED_SOURCE", "count": 0},
+                    {"facet_type": "source_role", "value": "UNKNOWN_SOURCE_ROLE", "count": 0},
+                ],
+            },
+        },
+        source_folder_preview={
+            # Match source_package_preview_payload(preview): Build stores the real
+            # preview section under batch_payload["source_package_preview"].
+            "batch_payload": {
+                "source_package_preview": {
+                    "person_review_candidate_count": 3,
+                    "source_record_count_breakdown": {
+                    "primary_media_sources": 1,
+                    "secondary_transcript_records": 1,
+                    "resolved_secondary_references": 0,
+                    "resolved_tertiary_references": 0,
+                    "unresolved_source_reference_candidates": 0,
+                    "youtube_comment_source_role_threads": 29,
+                        "youtube_comment_source_role_records": 58,
+                    },
+                },
+            },
+        },
+    )
+    payload = gui_panel_payload(state)
+    display_metrics = {metric["key"]: metric["value"] for metric in payload["display_metrics"]}
+    metrics = {metric["key"]: metric["value"] for metric in payload["metrics"]}
+    assert display_metrics["primary_sources"] == 1
+    assert display_metrics["secondary_sources"] == 1
+    assert display_metrics["tertiary_sources"] == 0
+    assert display_metrics["unknown_sources"] == 0
+    assert display_metrics["persons"] == 3
+    assert metrics["youtube_comment_source_roles"] == 29
+    assert metrics["youtube_comment_source_role_records"] == 58
+
+
+def test_database_panel_exposes_r41q_workflow_metadata_columns() -> None:
+    state = build_profile_media_database_gui_panel_state(
+        mode="DATABASE",
+        database_root="Demo Database",
+        batch_json_files=("source-package.json",),
+        source_folder_preview={
+            "batch_payload": {
+                "source_package_preview": {
+                    "person_review_candidate_count": 1,
+                    "source_record_count_breakdown": {
+                        "primary_media_sources": 0,
+                        "secondary_transcript_records": 1,
+                        "resolved_secondary_references": 0,
+                        "resolved_tertiary_references": 0,
+                        "unresolved_source_reference_candidates": 0,
+                    },
+                    "link_source_objects": [
+                        {
+                            "url": "https://example.test/a",
+                            "source_role_status": "SECONDARY",
+                            "visible_link_role": "SECONDARY",
+                            "browser_capture_reviews": [
+                                {
+                                    "attempted_url": "https://example.test/a",
+                                    "capture_status": "CAPTURED_USABLE",
+                                    "capture_method": "cdp_import",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+        },
+    )
+    payload = gui_panel_payload(state)
+    columns = {column["key"] for column in payload["workflow_columns"]}
+    assert {"url", "provenance_summary", "capture_status", "queue_status", "action_needed"}.issubset(columns)
+    assert payload["workflow_summary"]["workflow_row_count"] == 1
+    assert payload["workflow_summary"]["source_roles_changed"] is False
+    assert payload["workflow_summary"]["counters_changed"] is False
+    rendered = render_profile_media_database_gui_panel_text(state)
+    assert "R41Q visible workflow metadata" in rendered
+    display_metrics = {metric["key"]: metric["value"] for metric in payload["display_metrics"]}
+    assert display_metrics["secondary_sources"] == 1
 
 
 def test_database_panel_exposes_home_source_folder_add_import_preview_language() -> None:
@@ -137,6 +237,8 @@ def main() -> int:
     test_files_mode_panel_is_inert()
     test_database_mode_without_batch_json_is_visible_but_unconfigured()
     test_database_panel_projects_workbench_payload_counts()
+    test_database_panel_uses_source_package_breakdown_before_review_open()
+    test_database_panel_exposes_r41q_workflow_metadata_columns()
     test_database_panel_exposes_home_source_folder_add_import_preview_language()
     print("profile_media_database_workbench_panel v76k2 OK")
     return 0

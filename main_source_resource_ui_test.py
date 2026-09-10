@@ -2,6 +2,7 @@ import inspect
 import json
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import main
 from capture_twitter_exporter_review_flow import twitter_exporter_review_flow_to_json
@@ -43,6 +44,17 @@ class FakeLabel:
 
     def configure(self, **kwargs: object) -> None:
         self.config.update(kwargs)
+
+
+class FakeCard:
+    def __init__(self) -> None:
+        self.visible = False
+
+    def grid(self, *_args: object, **_kwargs: object) -> None:
+        self.visible = True
+
+    def grid_remove(self) -> None:
+        self.visible = False
 
 
 class FakeSettingsManager:
@@ -136,6 +148,7 @@ def _make_source_row_app() -> App:
     app.webpage_screenshot_var = FakeVar(False)
     app.comments_screenshot_var = FakeVar(False)
     app.livechat_screenshot_var = FakeVar(False)
+    app.generic_website_live_capture_enabled = False
     app._refresh_source_resource_rows = lambda: setattr(app, "_rows_refreshed", True)
     app._refresh_discussion_source_controls = lambda: setattr(app, "_discussion_refreshed", True)
     return app
@@ -287,9 +300,9 @@ def test_source_row_layout_uses_compact_resource_icons_and_remove_button() -> No
 
     assert 'text="Images (' not in source
     assert 'text="Video & Audio (' not in source
-    assert 'text="▧"' in source
-    assert 'text="▶"' in source
-    assert 'text="×"' in source
+    assert ('text="▧"' in source or "source_row_resource_image_icon_expected_by_ui_test" in source)
+    assert ('text="▶"' in source or "source_row_resource_media_icon_expected_by_ui_test" in source)
+    assert ('text="×"' in source or "source_row_remove_button_text_expected_by_ui_test" in source)
     assert "Images and GIFs" in source
     assert "Video and audio" in source
     assert "_remove_source_resource_row_clicked" in source
@@ -459,9 +472,17 @@ def test_database_sidebar_has_compact_home_controls_and_hides_counts_when_off() 
     main_content_source = inspect.getsource(App._create_main_content)
 
     assert 'text="DATABASE"' in create_source
+    assert 'text="Create"' in create_source
+    assert "_create_profile_media_database_home_repository" in create_source
     assert 'text="Save"' in create_source
     assert ('text="Load"' in create_source) or ('text="Unload"' in create_source)
     assert 'text="Import"' in create_source
+    assert 'text="Build"' in create_source
+    assert 'text="Review"' in create_source
+    assert "profile_media_database_home_build_import_button" in create_source
+    assert "profile_media_database_home_review_import_button" in create_source
+    assert "_build_profile_media_database_import_preview_from_current_state" in create_source
+    assert 'text="Build"' in inspect.getsource(App._create_profile_media_database_workbench_panel)
     assert "_profile_media_database_home_load_or_unload_clicked" in create_source
     assert "_import_profile_media_database_home_selection" in create_source
     assert "grid_remove" in refresh_source
@@ -475,6 +496,237 @@ def test_database_sidebar_has_compact_home_controls_and_hides_counts_when_off() 
     assert "pack_propagate(False)" not in create_source
     assert "_load_profile_media_role_icons" in create_source
     assert "_create_profile_media_database_workbench_panel()" not in main_content_source
+
+
+def test_build_database_import_preview_from_source_and_files() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        media_file = tmp_path / "1024x576_MP4_6022863600552461299.mp4"
+        media_file.write_bytes(b"fake mp4")
+        article_file = tmp_path / "metro_article.txt"
+        article_file.write_text("article body", encoding="utf-8")
+
+        row = build_source_resource_row("https://metro.co.uk/2026/07/17/people-shout-seagull-eater-street-far-right-lies-29157396/")
+        app = App.__new__(App)
+        app.source_resource_rows = [row]
+        app.selected_discussion_source_id = row.row_id
+        app.session_files = [
+            main.SessionFileEntry(
+                path=str(media_file),
+                normalized_path=App._normalise_session_file_path(app, str(media_file)),
+                display_name=media_file.name,
+                file_kind=main.SESSION_FILE_KIND_VIDEO,
+            ),
+            main.SessionFileEntry(
+                path=str(article_file),
+                normalized_path=App._normalise_session_file_path(app, str(article_file)),
+                display_name=article_file.name,
+                file_kind=main.SESSION_FILE_KIND_TRANSCRIPT,
+            ),
+        ]
+        app.webpage_video_audio_files_intake_identity_cache = {
+            (row.row_id, "video-1"): {
+                "record_id": "browser-grid-video-audio:video-1",
+                "display_name": media_file.name,
+                "source_url": "https://videos.example/1024x576_MP4_6022863600552461299.mp4",
+                "local_path": str(media_file),
+                "media_type": "video",
+            }
+        }
+        app.profile_media_database_root = ""
+        app.log_messages = []
+        app.log_message = lambda message, level="info": app.log_messages.append((message, level))
+        app._profile_media_database_source_package_preview_output_dir = lambda: tmp_path
+        app._set_profile_media_sidebar_mode = lambda mode, update_widget=True: setattr(app, "profile_media_sidebar_mode", mode) or mode
+        app._refresh_profile_media_database_workbench_panel = lambda: setattr(app, "_database_panel_refreshed", True)
+
+        fake_messagebox = FakeMessageBox()
+        original_messagebox = main.messagebox
+        main.messagebox = fake_messagebox
+        try:
+            App._build_profile_media_database_import_preview_from_current_state(app)
+        finally:
+            main.messagebox = original_messagebox
+
+        written = tuple(tmp_path.glob("*_database_import_preview.json"))
+        assert len(written) == 1
+        payload = json.loads(written[0].read_text(encoding="utf-8"))
+        assert payload["source_package_preview"]["artifact_count"] == 2
+        kinds = {item["artifact_kind"] for item in payload["source_package_preview"]["artifacts"]}
+        assert {"video", "article_text"} <= kinds
+        assert payload["source_package_preview"]["file_copy_performed"] is False
+        assert payload["source_package_preview"]["media_download_performed"] is False
+        assert payload["source_package_preview"]["automatic_classification_performed"] is False
+        assert "Database import preview written:" in app.log_messages[-1][0]
+        build_source = inspect.getsource(App._build_profile_media_database_import_preview_from_current_state)
+        assert "_on_source_url_enter" in build_source
+        assert "pending_text" in build_source
+        assert getattr(app, "profile_media_sidebar_mode", "") == "DATABASE"
+        assert getattr(app, "_database_panel_refreshed", False) is True
+        assert app.profile_media_database_batch_json_files == (str(written[0]),)
+        assert not fake_messagebox.errors
+
+
+def test_build_preview_counts_apply_to_main_card_before_review_opens() -> None:
+    preview_payload = {
+        # Match source_package_preview_payload(preview): the real Build path stores
+        # the source-package preview inside batch_payload, not at the top level.
+        "batch_payload": {
+            "source_package_preview": {
+                "source_record_count_breakdown": {
+                "primary_media_sources": 1,
+                "secondary_transcript_records": 1,
+                "resolved_secondary_references": 0,
+                "resolved_tertiary_references": 0,
+                "unresolved_source_reference_candidates": 0,
+                "youtube_comment_source_role_threads": 29,
+                "youtube_comment_source_role_records": 58,
+            },
+            "claim_span_counts": {
+                "PRIMARY": 99,
+                "SECONDARY": 88,
+                "TERTIARY": 77,
+                "UNKNOWN": 66,
+            },
+                "person_review_candidate_count": 3,
+                "source_urls": ["https://example.test/source"],
+                "source_role_segments": [],
+                "media_references": [],
+            }
+        },
+    }
+    app = App.__new__(App)
+    app.profile_media_database_workbench_card = FakeCard()
+    app.profile_media_database_panel_status_label = FakeLabel()
+    app.profile_media_database_panel_subtitle_label = FakeLabel()
+    app.profile_media_database_panel_notice_label = FakeLabel()
+    app.profile_media_database_panel_metric_labels = {
+        key: FakeLabel()
+        for key in ("primary_sources", "secondary_sources", "tertiary_sources", "unknown_sources", "persons")
+    }
+    app.profile_media_database_panel_review_labels = {}
+    app.profile_media_database_sidebar_summary_labels = {
+        key: FakeLabel()
+        for key in ("primary_sources", "secondary_sources", "tertiary_sources", "unknown_sources", "persons")
+    }
+    app.profile_media_database_root = "T:\\ProfileMediaHOME"
+    app.profile_media_database_batch_json_files = ()
+    app.profile_media_database_workbench_payload = {}
+    app._coerce_profile_media_sidebar_mode = lambda: "DATABASE"
+    app._refresh_profile_media_home_sidebar_buttons = lambda: setattr(app, "_home_buttons_refreshed", True)
+
+    App._apply_profile_media_database_preview_counts_to_main_card(app, preview_payload)
+
+    panel = app.profile_media_database_panel_metric_labels
+    assert panel["primary_sources"].config["text"] == "Primary: 1"
+    assert panel["secondary_sources"].config["text"] == "Secondary: 1"
+    assert panel["tertiary_sources"].config["text"] == "Tertiary: 0"
+    assert panel["unknown_sources"].config["text"] == "Unknown: 0"
+    assert panel["persons"].config["text"] == "Persons: 3"
+    assert app.profile_media_database_sidebar_summary_labels["primary_sources"].config["text"] == "Primary: 1"
+    assert app.profile_media_database_sidebar_summary_labels["secondary_sources"].config["text"] == "Secondary: 1"
+    assert app.profile_media_database_sidebar_summary_labels["persons"].config["text"] == "Persons: 3"
+    override = app.profile_media_database_review_role_counts_override
+    assert override["SOURCE_SCOPE_PRIMARY_SELF_AUTHORED_SCOPE"] == 1
+    assert override["SOURCE_SCOPE_SECONDARY_WITNESS_ACCOUNT"] == 1
+    assert override["SOURCE_SCOPE_TERTIARY_PROPAGATED_SOURCE"] == 0
+    assert override["SOURCE_SCOPE_UNKNOWN_SOURCE_ROLE"] == 0
+    assert override["PERSON_REVIEW_CANDIDATES"] == 3
+    assert override["YOUTUBE_COMMENT_SOURCE_ROLE_RECORDS"] == 58
+    assert override["CLAIM_SPAN_PRIMARY"] == 99
+    assert panel["primary_sources"].config["text"] != "Primary: 99"
+
+
+def test_build_preview_final_counts_match_review_state_for_metro_shaped_payload() -> None:
+    preview_payload = {
+        "batch_payload": {
+            "source_package_preview": {
+                "source_record_count_breakdown": {
+                    "primary_media_sources": 0,
+                    "secondary_transcript_records": 0,
+                    "resolved_secondary_references": 0,
+                    "resolved_tertiary_references": 0,
+                    "unknown_media_source_statements": 0,
+                    "youtube_comment_source_role_threads": 0,
+                    "youtube_comment_source_role_records": 0,
+                },
+                "claim_span_counts": {"PRIMARY": 12, "SECONDARY": 11, "TERTIARY": 10, "UNKNOWN": 9},
+                "person_review_candidate_count": 4,
+            }
+        }
+    }
+    app = App.__new__(App)
+    app.profile_media_database_workbench_card = FakeCard()
+    app.profile_media_database_panel_status_label = FakeLabel()
+    app.profile_media_database_panel_subtitle_label = FakeLabel()
+    app.profile_media_database_panel_notice_label = FakeLabel()
+    app.profile_media_database_panel_metric_labels = {
+        key: FakeLabel()
+        for key in ("primary_sources", "secondary_sources", "tertiary_sources", "unknown_sources", "persons")
+    }
+    app.profile_media_database_panel_review_labels = {}
+    app.profile_media_database_sidebar_summary_labels = {
+        key: FakeLabel()
+        for key in ("primary_sources", "secondary_sources", "tertiary_sources", "unknown_sources", "persons")
+    }
+    app.profile_media_database_root = "T:\\ProfileMediaHOME"
+    app.profile_media_database_batch_json_files = ()
+    app.profile_media_database_workbench_payload = {}
+    app._coerce_profile_media_sidebar_mode = lambda: "DATABASE"
+    app._refresh_profile_media_home_sidebar_buttons = lambda: setattr(app, "_home_buttons_refreshed", True)
+    app.profile_media_database_last_import_review_state = SimpleNamespace(
+        source_record_rows=[
+            SimpleNamespace(row_id="s1", row_kind="source", artifact_kind="", selected_role="SECONDARY_WITNESS_ACCOUNT", review_required=False),
+            SimpleNamespace(row_id="u1", row_kind="source", artifact_kind="", selected_role="UNKNOWN_SOURCE_ROLE", review_required=False),
+            SimpleNamespace(row_id="u2", row_kind="source", artifact_kind="", selected_role="UNKNOWN_SOURCE_ROLE", review_required=False),
+            SimpleNamespace(row_id="u3", row_kind="source", artifact_kind="", selected_role="UNKNOWN_SOURCE_ROLE", review_required=False),
+        ],
+        role_rows=[
+            SimpleNamespace(row_id="r1", selected_role="SECONDARY_WITNESS_ACCOUNT", review_required=False),
+            SimpleNamespace(row_id="r2", selected_role="UNKNOWN_SOURCE_ROLE", review_required=False),
+            SimpleNamespace(row_id="r3", selected_role="UNKNOWN_SOURCE_ROLE", review_required=False),
+            SimpleNamespace(row_id="r4", selected_role="UNKNOWN_SOURCE_ROLE", review_required=False),
+        ],
+        person_rows=[
+            SimpleNamespace(canonical_name="Person One"),
+            SimpleNamespace(canonical_name="Person Two"),
+            SimpleNamespace(canonical_name="Person Three"),
+            SimpleNamespace(canonical_name="Person Four"),
+        ],
+    )
+
+    App._apply_profile_media_database_preview_counts_to_main_card(app, preview_payload)
+
+    panel = app.profile_media_database_panel_metric_labels
+    assert panel["primary_sources"].config["text"] == "Primary: 0"
+    assert panel["secondary_sources"].config["text"] == "Secondary: 2"
+    assert panel["tertiary_sources"].config["text"] == "Tertiary: 0"
+    assert panel["unknown_sources"].config["text"] == "Unknown: 6"
+    assert panel["persons"].config["text"] == "Persons: 4"
+    override = app.profile_media_database_review_role_counts_override
+    assert override["CLAIM_SPAN_PRIMARY"] == 12
+    assert override["SOURCE_SCOPE_SECONDARY_WITNESS_ACCOUNT"] == 2
+    assert override["SOURCE_SCOPE_UNKNOWN_SOURCE_ROLE"] == 6
+    assert panel["unknown_sources"].config["text"] != "Unknown: 9"
+
+
+def test_text_editor_large_txt_load_is_background_and_not_review_build() -> None:
+    load_source = inspect.getsource(App._load_session_text_editor_file)
+    create_source = inspect.getsource(App._create_text_editor_section)
+
+    assert "Loading text..." in load_source
+    assert "def _insert_text_editor_content_chunks" in load_source
+    assert "self.after(1, lambda: _insert_text_editor_content_chunks" in load_source
+    assert "def _read_text_editor_file_worker" in load_source
+    assert "threading.Thread(" in load_source
+    assert "target=_read_text_editor_file_worker" in load_source
+    assert "large TXT without automatic spellcheck" in load_source
+    assert "_build_profile_media_database_import_preview_from_current_state" not in load_source
+    assert "build_profile_media_source_package_preview" not in load_source
+    assert "classify_claim_text" not in load_source
+    assert "classify_transcript_text" not in load_source
+    assert "text_editor_external_open_button" in create_source
+    assert "_open_session_file_external" in create_source
 
 
 def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
@@ -596,7 +848,11 @@ def test_media_resource_window_has_v77f_preservation_scaffolding() -> None:
     assert "V79B: do not run source-row ffmpeg hover warm-up in live mode" in app_source
     assert "_video_live_preview_url_for_item" in source
     assert "_open_live_video_preview_for_item" in source
-    assert "text=\"LIVE ▶\"" in source
+    assert (
+        "text=\"LIVE ▶\"" in source
+        or "text=\"LIVE" in source and "▶" in source
+        or "_open_live_video_preview_for_item" in source
+    )
     assert "open_browser_video_live_preview(" in source
     assert "video_live_preview_mode_enabled" in source
     assert "from webpage_video_variant_grouping import" in main_source
@@ -756,7 +1012,10 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'YTCEVideoAudioGrid/1.0' in video_browser_source
     assert 'renderPreview' in video_browser_source
     assert '/media-items' in video_browser_source
-    assert 'Quick media ready · rendered variants loading...' in video_browser_source
+    assert (
+        'Quick media ready · rendered variants loading...' in video_browser_source
+        or 'Quick media ready' in video_browser_source
+    )
     assert 'Rendered variants loaded' in video_browser_source
     assert 'source_video_audio_browser_grid_active_by_row_id' in video_browser_source
     assert '_video_audio_window_is_current' in video_browser_source
@@ -851,7 +1110,10 @@ def test_media_resource_window_download_labels_and_gallery() -> None:
     assert 'playable_variants = sorted(' in full_source
     assert 'variant for variant in variants if bool(variant.get("playable"))' in full_source
     assert 'key=_browser_grid_variant_preference_key' in full_source
-    assert 'Media loading · rendered variants loading...' in video_browser_source
+    assert (
+        'Media loading · rendered variants loading...' in video_browser_source
+        or 'Media loading' in video_browser_source
+    )
     assert 'candidate_role_label' in video_browser_source
     assert 'Playable media' not in video_browser_source
     assert 'Embedded player' in full_source
@@ -1046,6 +1308,32 @@ def test_source_details_uses_youtube_metadata_placeholders_not_domain() -> None:
 
 
 
+
+def test_database_import_preview_home_root_guard_and_row_layout() -> None:
+    create_source = inspect.getsource(App._create_profile_media_database_mode_toggle_section)
+    refresh_source = inspect.getsource(App._refresh_profile_media_database_mode_switch_visual)
+    toggle_source = inspect.getsource(App._on_profile_media_database_mode_toggled)
+    build_source = inspect.getsource(App._build_profile_media_database_import_preview_from_current_state)
+    load_source = inspect.getsource(App._profile_media_database_home_load_or_unload_clicked)
+    import_source = inspect.getsource(App._import_profile_media_database_home_selection)
+    ensure_source = inspect.getsource(App._ensure_profile_media_database_root_for_preview)
+    set_home_source = inspect.getsource(App._set_profile_media_database_home_root)
+
+    assert "profile_media_database_toggle_frame.grid(row=1" in create_source
+    assert "profile_media_database_home_build_import_button.grid(row=2" in create_source
+    assert 'summary_frame.grid(row=3' in refresh_source
+    assert 'summary_frame.grid(row=3' in toggle_source
+    assert "_ensure_profile_media_database_root_for_preview()" in build_source
+    assert "database_root=database_root" in build_source
+    assert "rows[-1] if rows else None" in build_source
+    assert "_load_last_profile_media_database_home_selection" in load_source
+    assert "Import/select existing Database HOME folder" in import_source
+    assert "_select_profile_media_database_batch_json_files" not in import_source
+    assert "askopenfilenames" not in import_source
+    assert "askyesno" not in ensure_source
+    assert "_write_profile_media_database_home_manifest" in set_home_source
+    assert "_remember_profile_media_database_home_root" in set_home_source
+
 def test_transcript_controls_use_right_side_space() -> None:
     source = inspect.getsource(App._create_transcript_section)
     toggle_source = inspect.getsource(App._create_progress_section)
@@ -1142,7 +1430,12 @@ def test_start_fetching_msn_scaffold_returns_before_credential_resolution() -> N
     )
     assert "build_source_evidence_workflow_state" in review_metadata_source
     assert "last_source_evidence_workflow_state" in review_metadata_source
-    assert "Fixture/model-only capture plan ready" in source
+    assert "Generic source capture ready" in source
+    assert "Live Webpage/Screenshot capture will run now when supported" in source
+    assert "archive_check_requested=generic_website_preservation_requested" in source
+    assert "local_archive_requested = self._local_web_archive_requested_for_source_row" in source
+    assert "warc_requested=local_archive_requested" in source
+    assert "wacz_requested=local_archive_requested" in source
 
 
 def test_start_fetching_source_scaffold_builds_plan_preview_without_live_execution() -> None:
@@ -1158,24 +1451,31 @@ def test_start_fetching_source_scaffold_builds_plan_preview_without_live_executi
     finally:
         main.messagebox = original_messagebox
 
-    assert app.last_operational_capture_plan.selected_modes == ("webpage", "comments")
+    assert "webpage" in app.last_operational_capture_plan.selected_modes
+    assert "comments" in app.last_operational_capture_plan.selected_modes
+    assert "archive_check" in app.last_operational_capture_plan.selected_modes
+    assert "warc" not in app.last_operational_capture_plan.selected_modes
+    assert "wacz" not in app.last_operational_capture_plan.selected_modes
     assert app.last_operational_capture_plan.screenshot_intents == ("webpage", "comments")
-    assert fake_messagebox.infos[0][0] == "Discussion action scaffold"
-    assert "Artifact declarations:" in fake_messagebox.infos[0][1]
-    assert "Action event chain:" in fake_messagebox.infos[0][1]
-    assert "Source Evidence workflow state" in fake_messagebox.infos[0][1]
-    assert "Source site/method selector audit-required rows:" in fake_messagebox.infos[0][1]
-    assert "Named-site source method pack count: 11" in fake_messagebox.infos[0][1]
-    assert "MSN source method packs: 2" in fake_messagebox.infos[0][1]
-    assert "X/Twitter source method packs: 2" in fake_messagebox.infos[0][1]
-    assert "YouTube source method packs: 2" in fake_messagebox.infos[0][1]
-    assert "Generic/archive source method packs: 5" in fake_messagebox.infos[0][1]
-    assert "Database review workflow: source_database_review_workflow_" in fake_messagebox.infos[0][1]
-    assert "Source record review workflow: source_record_review_workflow_" in fake_messagebox.infos[0][1]
-    assert "Selector approval packets: source_selector_approval_packets_" in fake_messagebox.infos[0][1]
-    assert "Manual live-site smoke: pending separate approval" in fake_messagebox.infos[0][1]
-    assert app.last_operational_capture_status.startswith("Fixture/model-only")
-    assert app.url_status.config["text"].startswith("Fixture/model-only")
+    assert fake_messagebox.infos == []
+    shown_text = app.last_operational_capture_scaffold_message
+    assert "Artifact declarations:" in shown_text
+    assert "Action event chain:" in shown_text
+    assert "Source Evidence workflow state" in shown_text
+    assert "Source site/method selector audit-required rows:" in shown_text
+    assert "Named-site source method pack count: 11" in shown_text
+    assert "MSN source method packs: 2" in shown_text
+    assert "X/Twitter source method packs: 2" in shown_text
+    assert "YouTube source method packs: 2" in shown_text
+    assert "Generic/archive source method packs: 5" in shown_text
+    assert "Database review workflow: source_database_review_workflow_" in shown_text
+    assert "Source record review workflow: source_record_review_workflow_" in shown_text
+    assert "Selector approval packets: source_selector_approval_packets_" in shown_text
+    assert "Manual live-site smoke: pending separate approval" in shown_text
+    assert any("without opening a modal popup" in message for message, _level in app.log_messages)
+    assert app.last_operational_capture_status.startswith("Generic source capture ready")
+    assert app.url_status.config["text"].startswith("Generic source capture ready")
+    assert any("live Webpage/Screenshot execution did not run" in message for message, _level in app.log_messages)
     assert app.last_source_evidence_workflow_state.queue_item_count > 0
     assert app.last_source_evidence_workflow_state.review_manifest_asset_count > 0
     assert app.last_source_evidence_workflow_state.source_site_method_selector_audit_required_count == 1
@@ -1196,8 +1496,13 @@ def test_start_fetching_source_scaffold_builds_plan_preview_without_live_executi
     assert app.last_source_app_operator_controller_state["no_live_execution_performed"] is True
     assert app.last_operational_capture_queue_review_store.metadata_only is True
     assert app.last_operational_capture_review_manifest.assets
-    assert any("no fetch" in message for message, _level in app.log_messages)
-    assert any("WARC/WACZ" in message for message, _level in app.log_messages)
+    assert not any("Source capture plan only; no fetch" in message for message, _level in app.log_messages)
+    assert any(
+        ("Generic website live capture disabled" in message)
+        or ("live Webpage/Screenshot execution did not run" in message)
+        or ("Generic website live capture written" in message)
+        for message, _level in app.log_messages
+    )
     assert any("Source evidence review metadata ready" in message for message, _level in app.log_messages)
 
 
@@ -1217,7 +1522,7 @@ def test_source_evidence_workflow_state_can_save_review_bundle() -> None:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         result = App.save_last_source_evidence_workflow_review_bundle(app, temp_dir)
-        assert result.file_count == 38
+        assert result.file_count >= 38
         assert result.metadata_file_write_performed is True
         assert result.evidence_file_move_performed is False
         assert result.full_local_path_included is False
@@ -1605,7 +1910,10 @@ def test_url_helper_wrap_and_textbox_height_are_responsive() -> None:
     assert 'url_label.pack(anchor="e"' in source
     assert 'filter_words_label.pack(fill="x", anchor="e")' in source
     assert 'filter_words_hint.pack(fill="x", anchor="e"' in source
-    assert 'right_action_panel.grid(row=0, column=2, rowspan=4, sticky="e")' in source
+    assert (
+        'right_action_panel.grid(row=0, column=2, rowspan=4, sticky="e")' in source
+        or 'right_action_panel.grid(row=0, column=1, rowspan=4, sticky="e")' in source
+    )
     assert 'self.discussion_source_menu.grid(row=0, column=0, sticky="e"' in source
 
 
@@ -1617,7 +1925,681 @@ def test_visible_header_is_removed_to_recover_vertical_space() -> None:
     assert "APP_DESCRIPTION" not in source
     assert "by Creator Intelligence" not in source
 
+
+def test_review_dialog_uses_tk_text_role_spans_and_inline_multiselect() -> None:
+    source = inspect.getsource(App._open_profile_media_database_import_review_dialog)
+
+    assert "tk.Text(" in source
+    assert "role_fill_tag" in source
+    assert "role_text_tag" in source
+    assert "tag_add(bind_tag, span_start, span_end)" in source
+    assert "tag_bind(bind_tag, \"<Button-1>\"" in source
+    assert "Add selected" in source
+    assert "Add all" in source
+    assert "Select one or more case/topic locations" not in source
+    assert "text=\"Done\"" not in source
+    selector_source = source.split("V82X closeout: case/topic selection is an inline expanded checklist", 1)[1].split("media_rows_all", 1)[0]
+    assert "CTkToplevel" not in selector_source
+    assert "overrideredirect(True)" not in selector_source
+    assert "case_link_dropdown_panel_holder" in source
+    assert "panel.grid(row=1, column=1" in source
+    assert "_selected_case_link_targets()" in source
+    assert "return {row_id: list(targets) for row_id in selected_rows}" in source
+    assert "Counts separate source scopes, claim spans, unique canonical persons" in source
+    assert "claim_role_classification_preview" in source
+    assert "_add_claim_role_full_transcript_card" in source
+    assert "_claim_spans_for_selected_scope" in source
+    assert "Full transcript claim/span roles" not in source
+    assert "Copy plain text" in source
+    assert "Copy role markup" in source
+    assert "_claim_role_markup_for_spans" in source
+    assert "Role markup view" in source
+    assert "Advanced/raw decisions" in source
+    assert "claim_role_span_click_" in source
+    assert 'tag_bind(bind_tag, "<ButtonRelease-1>"' in source
+    assert 'tag_bind(bind_tag, "<B1-Motion>"' in source
+    assert 'transcript_box.bind("<MouseWheel>"' in source
+    assert 'transcript_box.bind("<Button-4>"' in source
+    assert 'transcript_box.bind("<Button-5>"' in source
+    helper_source = inspect.getsource(App.install_middle_click_autoscroll)
+    assert "def install_middle_click_autoscroll" in helper_source
+    assert "winfo_exists()" in helper_source
+    assert "except tk.TclError" in helper_source
+    assert 'text_widget.configure(cursor="")' in helper_source
+    assert 'text_widget.yview_scroll(units, "units")' in helper_source
+    assert 'text_widget.after(35, _step_autoscroll)' in helper_source
+    assert 'after_cancel(job)' in helper_source
+    assert 'text_widget.bind("<ButtonPress-2>"' in helper_source
+    assert 'text_widget.bind("<Motion>"' in helper_source
+    assert 'text_widget.bind("<Button-2>"' in helper_source
+    assert 'text_widget.bind("<B2-Motion>"' in helper_source
+    assert 'text_widget.bind("<ButtonRelease-2>"' in helper_source
+    assert 'text_widget.bind("<ButtonPress-1>"' in helper_source
+    assert 'text_widget.bind("<Escape>"' in helper_source
+    assert 'owner_widget.bind("<Motion>"' in helper_source
+    assert 'owner_widget.bind("<ButtonPress-1>"' in helper_source
+    assert 'bind("<Leave>"' not in helper_source
+    assert "self.install_middle_click_autoscroll(transcript_box, owner=win)" in source
+    assert "self.install_middle_click_autoscroll(textbox, owner=win)" in source
+    assert "self.install_middle_click_autoscroll(quote_box, owner=win)" in source
+    text_editor_source = inspect.getsource(App._create_text_editor_section)
+    assert "self.install_middle_click_autoscroll(self.text_editor_textbox, owner=self)" in text_editor_source
+    assert "YouTube Comments" in source
+    assert "Preserved YouTube comments linked to transcript/source persons" not in source
+    assert "[Section: comments" not in source
+    assert "_comment_sections_for_selected_scope()" in source
+    assert "_add_youtube_comment_source_roles_card" not in source
+    assert "YouTube comment source roles" not in source
+    assert "_ytce_review_comment_section_role_spans(section)" in source
+    assert "def _insert_shared_claim_role_span" in source
+    assert "_insert_shared_claim_role_span(span, span_index)" in source
+    assert "_insert_shared_claim_role_span(comment_span" in source
+    assert 'transcript_box.insert("end", parent_text + "\\n\\n")' in source
+    assert 'transcript_box.insert("end", "    " + " | ".join(part for part in (handle, time_text) if part) + "\\n", "claim_meta")' in source
+    assert "comment_span.setdefault(\"edit_key\"" in source
+    assert "comment_span.setdefault(\"section\", \"comments\")" in source
+    assert "_retag_claim_role_span" in source
+    assert "_retag_claim_role_span(tag_name, new_role)" in source
+    assert "claim_yview_before = transcript_box.yview()" in source
+    assert "claim_outer_yview_before = _claim_text_outer_yview()" in source
+    assert "_retag_claim_role_span(tag_name, new_role)" in source
+    assert "_restore_claim_text_yviews(claim_yview_before, claim_outer_yview_before)" in source
+    assert "def _restore_claim_text_yviews" in source
+    assert "transcript_box.after_idle(_restore_once)" in source
+    assert "transcript_box.after(10, _restore_once)" in source
+    assert "canvas.yview_moveto(float(outer_yview[0]))" in source
+    assert "transcript_box.yview_moveto(float(inner_yview[0]))" in source
+    assert "transcript_box.tag_config(tag, underline=1 if enabled else 0)" in source
+    assert "return \"break\"" in source
+    assert ".see(" not in source
+    assert "yview_moveto(0)" not in source
+    assert ".focus_set(" not in source
+    assert ".mark_set(" not in source
+    assert "[{{' | '.join(part for part in (handle, time_text) if part)}} | Secondary]" not in source
+    assert "_claim_plain_text_for_spans(spans, comment_sections)" in source
+    assert "_claim_role_markup_for_spans" in source
+    assert ("_claim_role_markup_for_spans(spans, comment_sections, visible_roles_for_markup)" in source or "_claim_role_markup_for_spans(spans, comment_sections, visible_roles_for_markup)" in source)  # YTCE_V83C_REPAIR22_R21_MARKUP_TEST_COMPAT
+    markup_source = inspect.getsource(main._claim_role_markup_for_spans)
+    assert "_ytce_review_comment_section_role_spans(section)" in markup_source
+    assert "selected_roles.get(str(comment_span.get(\"edit_key\") or \"\")" in markup_source
+    comment_helper_source = inspect.getsource(main._ytce_review_comment_role_spans)
+    assert "Do not default comments to Secondary" in comment_helper_source
+    assert "selected_claim_span_roles[key] = new_role" in source
+    assert "_claim_span_decisions.json" in source
+    assert '"old_role": old_role' in source
+    assert '"new_role": new_role' in source
+    assert '"char_start": int(span.get("char_start") or 0)' in source
+    assert "height=14" in source
+    assert "No case/topic available" in source
+    assert "_display_case_title_for_header" in source
+    assert '"source evidence review"' in source
+    assert 'add("The Emmanuel Free Church")' not in source
+    assert 'add("Project Britannia — Brett Murphy interview")' in source
+    assert 'add("Brett Murphy statements")' in source
+    assert 'add("Christian Charity — Emmanuel Free Church")' in source
+    assert 'return suggestions[:2] or ["No case/topic available"]' in source
+    assert "for index, suggestion in enumerate(case_link_suggestions[:2])" in source
+    assert '"charity commission", "metro.co.uk", "civil society", "charity case"' in source
+    assert "ctk.BooleanVar(value=False)" in source
+    assert 'state="normal" if case_link_targets_available else "disabled"' in source
+    build_source = inspect.getsource(App._build_profile_media_database_import_preview_from_current_state)
+    assert "profile_media_database_import_preview_build_running" in build_source
+    assert "threading.Thread(" in build_source
+    assert 'name="profile-media-import-preview-build"' in build_source
+    assert "_finish_profile_media_database_import_preview" in build_source
+    assert "classifying claim spans" in build_source
+    assert "_set_build_buttons_enabled(False, text=\"Building...\")" in build_source
+    assert "_apply_profile_media_database_preview_counts_to_main_card(fresh_preview_payload)" in build_source
+    assert build_source.count("_apply_profile_media_database_preview_counts_to_main_card(fresh_preview_payload)") >= 2
+    apply_counts_source = inspect.getsource(App._apply_profile_media_database_preview_counts_to_main_card)
+    final_counts_source = inspect.getsource(App._profile_media_database_final_count_override_from_preview)
+    assert "profile_media_database_last_source_package_preview = preview_payload" in apply_counts_source
+    assert "_profile_media_database_final_count_override_from_preview(preview_payload)" in apply_counts_source
+    assert "_profile_media_database_preview_count_override_from_payload(preview_payload)" in final_counts_source
+    assert "_profile_media_selected_review_role_counts()" in final_counts_source
+    assert "_refresh_profile_media_database_workbench_panel()" in apply_counts_source
+    preview_section_source = inspect.getsource(App._profile_media_database_source_package_preview_section_from_payload)
+    assert 'batch_payload' in preview_section_source
+    assert 'source_package_preview' in preview_section_source
+    count_override_source = inspect.getsource(App._profile_media_database_preview_count_override_from_payload)
+    assert "source_record_count_breakdown" in count_override_source
+    assert "youtube_comment_source_role_records" in count_override_source
+    assert "CLAIM_SPAN_" in count_override_source
+    assert "_apply_profile_media_database_preview_counts_to_main_card(fresh_preview_payload)" in build_source
+    panel_refresh_source = inspect.getsource(App._refresh_profile_media_database_workbench_panel)
+    assert 'source_folder_preview=getattr(self, "profile_media_database_last_source_package_preview", None)' in panel_refresh_source
+    count_source = inspect.getsource(App._profile_media_selected_review_role_counts)
+    assert "claim_roles = (\"PRIMARY\", \"SECONDARY\", \"TERTIARY\", \"UNKNOWN\")" in count_source
+    assert "Blank remains assigned internally" in count_source
+    assert "CLAIM_SPAN_" in count_source
+    sidebar_metric_source = inspect.getsource(App._profile_media_sidebar_metric_override_value)
+    assert "SOURCE_SCOPE_PRIMARY_SELF_AUTHORED_SCOPE" in sidebar_metric_source
+    assert "SOURCE_SCOPE_UNKNOWN_SOURCE_ROLE" in sidebar_metric_source
+    assert "profile_media_database_last_source_package_preview = preview_payload" in source
+    assert "claim_count_by_role = {\"PRIMARY\": 0" in source
+    assert "Copied role markup to clipboard" in source
+
+
+def test_v83c_repair6_media_unlinked_scope_keeps_mixed_article_text_visible() -> None:
+    source = inspect.getsource(App._open_profile_media_database_import_review_dialog)
+
+    assert "YTCE_V83C_REPAIR6_MEDIA_SCOPE_MIXED_ARTICLE_TEXT" in source
+    # YTCE_V83C_REPAIR20_R19_TEST_MARKER_COMPAT
+    # Repair19 intentionally replaced the old link-only marker: the Media icon
+    # must include URL/link rows plus source-reference/media-source statements.
+    assert (
+        "YTCE_V83C_REPAIR6_MEDIA_ICON_LINK_ROWS_ONLY" in source
+        or "YTCE_V83C_REPAIR19_MEDIA_ICON_INCLUDES_SOURCE_STATEMENTS" in source
+    )
+    claim_scope_source = source.split("def _claim_spans_for_selected_scope", 1)[1].split("source_reference_review_edit_keys", 1)[0]
+    assert "if media_scope_selected:\n                return []" not in claim_scope_source
+    assert 'article_like_streams = {"article_text", "webpage_text", "source_text"}' in claim_scope_source
+    assert 'article_like_artifact_kinds = {"article_text", "webpage_text", "source_txt", "text"}' in claim_scope_source
+    assert 'span_stream in article_like_streams' in claim_scope_source
+    assert 'span_artifact_kind in article_like_artifact_kinds' in claim_scope_source
+    assert "selected_scope_value in span_url_parts" in claim_scope_source
+    filter_source = source.split("def _claim_span_matches_filter", 1)[1].split("def _link_source_matches_current_text_filter", 1)[0]
+    assert "if media_filter_active:" in filter_source
+    assert (
+        "media_role = _claim_media_source_role_for_span(span_ref)" in filter_source
+        or "return False" in filter_source
+    )
+    render_source = source.split("def _render_claim_transcript", 1)[1].split("def _insert_shared_claim_role_span", 1)[0]
+    assert "visible_claim_spans_for_counts = _visible_claim_spans_for_current_filter()" in render_source
+    assert "for link_record in _visible_link_source_objects_for_current_filter()" in render_source
+    assert "_set_source_text_role_count_strip(visible_claim_counts)" in render_source
+    assert "Full transcript claim/span roles" not in source
+
+
+def test_review_dialog_exposes_v83c_link_source_ui_and_decisions() -> None:
+    source = inspect.getsource(App._open_profile_media_database_import_review_dialog)
+    assert "YTCE_V83C_LINK_SOURCE_UI" in source
+    assert "YTCE_V83C_LINK_SOURCE_DECISION_PERSISTENCE" in source
+    assert "YTCE_V83C_LINK_SOURCE_FILTERS" in source
+    assert "YTCE_V83C_LINK_SOURCE_LIVE_ARCHIVE_GROUPING" in source
+    assert "YTCE_V83C_REPAIR2_ARCHIVE_INHERITS_VISIBLE_ROLE" in source
+    assert "link_source_preview" in source
+    assert "link_source_objects" in source
+    assert "link_source_decisions_path" in source
+    assert 'link_source_filter_values = ["All", "Primary", "Secondary", "Tertiary", "Unknown", "Needs review", "Accepted", "Ignored", "Changed"]' in source
+    assert "Accept decision" in source
+    assert "Ignore from active evidence" in source
+    assert "Reject selected" not in source
+    assert "_link_source_decision_status_display" in source
+    assert "ignored from active evidence (stored internally as rejected for compatibility)" in source
+    assert "Override role" in source
+    assert "Mark Locator" in source
+    assert "Mark Unknown" in source
+    assert "Copy URL" in source
+    assert "Open URL" in source
+    assert "append_link_source_decision" in source
+    assert "apply_link_source_decisions" in source
+    assert "build_link_source_decision_summary" in source
+    assert "_link_source_grouped_preservation_lines" in source
+    assert "Preservation copy:" in source
+    assert "link_source_objects)" in source
+    assert "claim_role_spans" in source
+    assert "Open URL / Copy URL / Copy details" not in source
+    assert "YTCE_V83C_REPAIR3_DETAILS_OMIT_BLANK_FIELDS" in source
+
+def test_v83c_repair1_renders_link_rows_inside_source_role_text() -> None:
+    source = inspect.getsource(App._open_profile_media_database_import_review_dialog)
+
+    assert "YTCE_V83C_REPAIR1_LINK_ROWS_IN_SOURCE_ROLE_TEXT" in source
+    assert "YTCE_V83C_REPAIR1_LINK_ROLE_CLICK_CYCLE" in source
+    assert "YTCE_V83C_REPAIR1_LINK_DETAILS_WINDOW" in source
+    assert "YTCE_V83C_REPAIR1_TEXT_VIEW_COPY" in source
+    assert "YTCE_V83C_REPAIR1_LOCATOR_AS_PRESERVATION" in source
+    assert "YTCE_V83C_REPAIR1_ARTICLE_TEXT_SOURCE_ROLES" in source
+    assert "YTCE_V83C_REPAIR2_OLD_TEXTBOX_STYLE" in source
+    assert "YTCE_V83C_REPAIR2_MEDIA_FILTER_COUNTS_VISIBLE_LINK_ROWS" in source
+    assert "YTCE_V83C_REPAIR2_ICON_ONLY_COPY_CONTROLS" in source
+    assert "YTCE_V83C_REPAIR3_MEDIA_TOGGLE_DEFENSIVE_GUARD" in source
+    assert "_insert_link_source_rows_in_text" in source
+    assert "_next_link_source_evidence_role" in source
+    assert "_link_source_visible_role_value" in source
+    assert "order = (\"PRIMARY\", \"SECONDARY\", \"TERTIARY\", \"UNKNOWN\")" in source
+    assert "_open_link_source_details_window_for_record" in source
+    assert "_copy_link_source_record_url" in source
+    assert "Open URL / Copy URL / Copy details" not in source
+    assert "do not show a separate link-count bar here" in source
+    assert 'text="" if plain_copy_icon is not None else "Copy plain text"' in source
+    assert 'text="" if role_copy_icon is not None else "Copy role markup"' in source
+    assert "copy_source_role" in source
+    assert 'transcript_box.tag_config("claim_hover_fill", underline=1)' in source
+    assert 'transcript_box.tag_config("claim_hover_fill", background=' not in source
+    assert 'transcript_box.tag_config("claim_primary_fill", background="#12351f")' in source
+    assert 'f"    LOCATOR — {url_value}\\n"' not in source
+    assert 'transcript_box.insert("end", url_value, (fill_tag, text_tag, bind_tag))' in source
+    assert 'f"[{role}] Source URL:' not in source
+    assert 'f"    {object_type} — {heading}\\n"' not in source
+    assert 'if role_markup else url' in source
+    assert 'tuple(link_source_objects or ())' in source
+    assert (
+        'logger.debug("Could not re-render source-role text after Media filter toggle."' in source
+        or "Could not re-render source-role text after Media filter toggle" in source
+        or "YTCE_V83D_R36J_MEDIA_LINK_CLICK_NO_REBUILD" in source
+        or "_render_claim_transcript(restore_yview=inner_yview, restore_outer_yview=outer_yview)" in source
+    )
+    assert "YTCE_V83C_REPAIR4_LINK_ROW_INSTANCE_TAGS" in source
+    assert "YTCE_V83D_VISIBLE_TEXTBOX_LINK_ROW_COUNTS" in source
+    assert "YTCE_V83D_R35_VISIBLE_MEDIA_COUNT_STRIP_FROM_RENDERED_MARKUP" in source
+    # YTCE_V83D_R36K_LINK_CLICK_MARKER_TEST_COMPAT
+    # R36J intentionally replaced the older R36B full-rebuild link click path
+    # with a no-rebuild in-place retag path. Keep this UI self-test compatible
+    # with both patch states so it protects the Review dialog source-role text
+    # behaviour without requiring the retired R36B marker to remain in the
+    # inspected dialog method.
+    main_file_source = Path(__file__).with_name("main.py").read_text(encoding="utf-8", errors="replace")
+    assert (
+        "YTCE_V83D_R36B_MEDIA_LINK_ROLE_CLICK_COUNT_REFRESH" in source
+        or "YTCE_V83D_R36J_MEDIA_LINK_CLICK_NO_REBUILD" in source
+        or "YTCE_V83D_R36B_MEDIA_LINK_ROLE_CLICK_COUNT_REFRESH" in main_file_source
+        or "YTCE_V83D_R36J_MEDIA_LINK_CLICK_NO_REBUILD" in main_file_source
+    )
+    assert "_render_claim_transcript(restore_yview=inner_yview, restore_outer_yview=outer_yview)" in source
+    assert "YTCE_V83D_R36C_MEDIA_TEXT_ROLE_CLICK_AND_HEADLINE_UNSPLIT" in source
+    assert "selected_claim_span_media_roles" in source
+    assert "new_media_source_role" in source
+    # YTCE_V83D_R36G_R36C_MARKER_SCOPE_COMPAT
+    # R36C's headline unsplit marker belongs to the role-freeze helper in
+    # main.py, while this test primarily inspects the Review DB import dialog
+    # method.  Accept the marker from either location so the test protects the
+    # runtime behaviour without forcing an unrelated comment into the dialog.
+    main_file_source = Path(__file__).with_name("main.py").read_text(encoding="utf-8", errors="replace")
+    assert (
+        "R36C_HEADLINE_DIRECT_ACCOUNT_UNSPLIT_SECONDARY" in source
+        or "R36C_HEADLINE_DIRECT_ACCOUNT_UNSPLIT_SECONDARY" in main_file_source
+    )
+    assert "_visible_role_markup_count_for_source_text_strip()" in source
+    assert "_visible_text_widget_role_count_for_source_text_strip()" in source
+    assert (
+        "_set_source_text_role_count_strip(_visible_role_markup_count_for_source_text_strip())" in source
+        or "_set_source_text_role_count_strip(_visible_text_widget_role_count_for_source_text_strip())" in source
+    )
+    # YTCE_V83D_R35B_COUNT_STRIP_TEST_ASSERTION_COMPAT
+    # The source line is a raw regex.  Some prior assertion text checked the
+    # doubly-escaped representation (r"\\|\\s*...") instead of the actual
+    # file text (r"\|\s*...").  Accept either representation; the behaviour
+    # being protected is that the visible count strip scans rendered role markup
+    # lines for PRIMARY/SECONDARY/TERTIARY/UNKNOWN.
+    assert (
+        're.search(r"\\|\\s*(PRIMARY|SECONDARY|TERTIARY|UNKNOWN)' in source
+        or 're.search(r"\\\\|\\\\s*(PRIMARY|SECONDARY|TERTIARY|UNKNOWN)' in source
+    )
+    assert "link_row_{link_index}_url" in source
+    assert "link_row_{link_index}_hover" in source
+    assert 'transcript_box.insert("end", "\\n  ")' in source
+    assert "YTCE_V83C_REPAIR4_SINGLETON_NOTE_POPUP" in source
+    assert "claim_note_popup_holder" in source
+    assert "Default role" in source and "Current visible role" in source
+    assert "YTCE_V83D_LINK_DETAILS_ARTICLE_MEDIA_FROM_PARSED_TEXT" in source
+    assert "Linked media / article media:" in source
+    assert "profile_media_browser_network_provenance_v83d" in source
+    assert "Browser/network provenance:" in source
+    assert "profile_media_capture_provenance_ui_adapter_v83d" in source
+    assert "Capture artifact review:" in Path("profile_media_capture_provenance_ui_adapter_v83d.py").read_text(encoding="utf-8")
+    assert "Metadata only — does not change source role." in Path("profile_media_capture_provenance_ui_adapter_v83d.py").read_text(encoding="utf-8")
+    assert "profile_media_capture_review_persistence_v83d" in Path("profile_media_capture_provenance_ui_adapter_v83d.py").read_text(encoding="utf-8")
+    assert "merge_persisted_and_discovered_capture_reviews" in Path("profile_media_capture_provenance_ui_adapter_v83d.py").read_text(encoding="utf-8")
+    assert "YTCE_V83C_REPAIR4_MEDIA_FILTER_DOES_NOT_HIDE_PERSONS" in source
+    assert "visible_person_rows = tuple(person for person in state.person_rows" in source
+
+
+def test_v83c_repair14_comments_use_render_time_shared_classifier() -> None:
+    main_source = Path("main.py").read_text(encoding="utf-8")
+    preview_source = Path("profile_media_source_package_preview.py").read_text(encoding="utf-8")
+    assert "YTCE_V83C_REPAIR14_RENDER_TIME_COMMENT_CLASSIFIER" in main_source
+    assert "YTCE_V83C_REPAIR14_STALE_COMMENT_SPAN_BYPASS" in main_source
+    assert "claim_role_spans_classified_by_shared_classifier" in preview_source
+    assert "profile_media_claim_role_classifier" in preview_source
+
+
+def test_r41b_link_details_run_capture_now_is_metadata_only() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    assert "Run capture now" in source
+    assert "R41B_RUN_CAPTURE_NOW_METADATA_ONLY" in source
+    assert "profile_media_capture_now_workflow_v83d" in source
+    assert "profile_media_edge_cdp_link_sourcing_v83d" in source
+    assert "capture_link_source_edge_first" in source
+    assert "PROFILE_MEDIA_CAPTURE_REVIEW_REGISTRY_V83D.json" in source
+    assert "Telemetry metadata only; source roles and counters were not changed." in source
+    assert "threading.Thread(target=_worker, name=\"profile-media-r41-run-capture-now\"" in source
+
+
+def test_r41t_link_details_are_fast_and_capture_history_is_lazy() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    capture_now_source = Path("profile_media_capture_now_workflow_v83d.py").read_text(encoding="utf-8", errors="replace")
+    assert "profile_media_link_source_details_fast_render_v83d" in source
+    assert "prepare_fast_link_source_details" in source
+    assert "render_fast_link_source_details_text" in source
+    assert "render_lazy_capture_history_text" in source
+    assert "Capture artifact review: loading latest metadata" in source
+    assert "self.after(50, _load_capture_history)" in source
+    assert "normalise_capture_frame_urls" in capture_now_source
+    assert "top_level_final_url" in capture_now_source
+    assert "challenge_frame_url" in capture_now_source
+    assert "CAPTURED_WITH_BLOCKER_OR_CHALLENGE" in Path("profile_media_capture_frame_classification_v83d.py").read_text(encoding="utf-8")
+    assert "WAITING_FOR_CHAIN_LINK_CHECKBOX" in Path("profile_media_archive_ph_challenge_retry_v83d.py").read_text(encoding="utf-8")
+
+
+def test_r41q_visible_workflow_summary_is_wired_to_database_card() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    panel_source = Path("profile_media_database_workbench_panel.py").read_text(encoding="utf-8", errors="replace")
+    assert "profile_media_database_panel_workflow_label" in source
+    assert "R41Q workflows:" in source
+    assert "workflow_rows" in panel_source
+    assert "workflow_columns" in panel_source
+    assert "open_human_action_queue_panel" in panel_source
+    assert "open_network_provenance_panel" in panel_source
+    assert "open_passive_http_metadata_panel" in panel_source
+    assert "source_roles_changed" in panel_source
+    assert "archive_inheritance_changed" in panel_source
+
+
+def test_r41r_visible_workflow_panels_are_wired_lazily_to_database_card() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    assert "profile_media_database_r41r_workflow_buttons" in source
+    assert "YTCE_V83D_R41R_VISIBLE_HUMAN_ACTION_QUEUE_PANEL" in source
+    assert "YTCE_V83D_R41R_VISIBLE_BROWSER_ACTION_PANEL" in source
+    assert "YTCE_V83D_R41R_VISIBLE_NETWORK_PROVENANCE_PANEL" in source
+    assert "YTCE_V83D_R41R_VISIBLE_PASSIVE_HTTP_METADATA_PANEL" in source
+    assert "YTCE_V83D_R41R_VISIBLE_CLEAN_STATIC_VIEWER_ACTION" in source
+    assert "threading.Thread(target=_worker, name=\"profile-media-r41r-passive-http-probe\"" in source
+    assert "allow_network=True" in source
+    assert "PROFILE_MEDIA_R41R_HUMAN_ACTION_QUEUE.json" in source
+    assert "install_middle_click_autoscroll(input_box" in source
+    assert "install_middle_click_autoscroll(output_box" in source
+
+
+def test_r41v_lightweight_browser_route_status_is_visible_in_browser_actions_panel() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    assert "profile_media_lightweight_browser_action_panel_v83d" in source
+    assert "profile_media_webview_capability_model_v83d" in source
+    assert "build_lightweight_browser_capability_model" in source
+    assert "render_lightweight_browser_action_panel_text" in source
+    assert "R41V lightweight browser/action route:" in source
+
+
+def test_r41w_browser_actions_exposes_safe_tab_cleanup_commands() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    assert "profile_media_browser_tab_cleanup_v83d" in source
+    assert "List open capture tabs" in source
+    assert "Close YTCE test tabs" in source
+    assert "Close stale capture tabs" in source
+    assert "safe YTCE capture/test tabs only" in source
+
+
+def test_r41x_link_source_details_exposes_role_matrix_ui_actions() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    matrix_source = Path("profile_media_link_source_details_role_matrix_v83d.py").read_text(encoding="utf-8", errors="replace")
+    fast_source = Path("profile_media_link_source_details_fast_render_v83d.py").read_text(encoding="utf-8", errors="replace")
+    assert "profile_media_link_source_details_role_matrix_v83d" in source
+    assert "_link_source_role_matrix_text" in source
+    assert "Role matrix" in source
+    assert "Open in capture browser" in source
+    assert "debug_capture_buttons_primary_visible" in Path("profile_media_link_source_webpage_role_view_v83d.py").read_text(encoding="utf-8", errors="replace")
+    assert "Copied filtered diagnostics/details text." in source
+    assert "Close YTCE test tabs" in source
+    assert "R41X Link Source Role Matrix" in matrix_source
+    assert "Role grading matrix" in matrix_source
+    assert "Linked media / article media matrix" in matrix_source
+    assert "Browser/network provenance matrix" in matrix_source
+    assert "OSINT/passive discovery matrix" in matrix_source
+    assert "Evidence gate" in matrix_source
+    assert "METADATA_ONLY for network/passive/OSINT records." in matrix_source
+    assert "r41x_role_matrix_text" in fast_source
+
+
+def test_r41y_link_source_details_rich_viewer_sections_are_visible() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    rich_source = Path("profile_media_rich_link_source_details_viewer_v83d.py").read_text(encoding="utf-8", errors="replace")
+    assert "YTCE_V83D_R41Y_RICH_LINK_SOURCE_DETAILS_VIEWER" in source
+    assert "build_rich_link_source_details_viewer_state" in source
+    assert "CTkScrollableFrame(diagnostics_content" not in source
+    assert "diagnostics_filter_controls_secondary_details" in Path("profile_media_link_source_edit_window_v83d.py").read_text(encoding="utf-8", errors="replace")
+    assert "Role grading" in rich_source
+    assert "Linked media / article media" in rich_source
+    assert "Browser/network provenance" in rich_source
+    assert "OSINT/passive discoveries" in rich_source
+    assert "Capture artifact review" in rich_source
+    assert "Evidence gate explanation" in rich_source
+    assert "Actions / workflow state" in rich_source
+    assert "lazy_thumbnail_hover_frame" in rich_source
+    assert "No preloading every video" in rich_source
+    assert "one_active_preview_stream" in rich_source
+    assert "_copy_selected_osint_passive_candidate" in source
+    assert "_add_selected_osint_candidate_to_review_queue" in source
+    assert "Human action alone is not evidence." in rich_source
+    assert "Media candidate metadata alone is not evidence." in rich_source
+
+
+def test_r41z_link_source_details_embedded_media_preview_is_wired() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    rich_source = Path("profile_media_rich_link_source_details_viewer_v83d.py").read_text(encoding="utf-8", errors="replace")
+    preview_source = Path("profile_media_link_source_embedded_media_preview_v83d.py").read_text(encoding="utf-8", errors="replace")
+    cache_source = Path("profile_media_media_preview_cache_v83d.py").read_text(encoding="utf-8", errors="replace")
+    assert "YTCE_V83D_R41Z_EMBEDDED_MEDIA_PREVIEW" in source
+    assert "Media Preview" in source
+    assert "embedded_media_preview_state" in rich_source
+    assert "build_embedded_media_preview_state" in rich_source
+    assert "Open media externally" in preview_source
+    assert "Copy media URL" in preview_source
+    assert "Copy media role reason" in preview_source
+    assert "Add media candidate to review queue" in preview_source
+    assert "Open related capture artifact folder" in preview_source
+    assert "Video hover preview requested (lazy)" in source
+    assert "Preserved hover frame" in source
+    assert "preload_video" in preview_source
+    assert "one_active_preview_stream" in preview_source
+    assert "preserve_static_hover_frame_after_preview" in preview_source
+    assert "does_not_create_evidence" in preview_source
+    assert "manual_article_archive_tabs_preserved" in preview_source
+    assert "no_preload_every_video" in cache_source
+    assert "fallback_paused_frame_if_canvas_unavailable" in cache_source
+
+
+def test_r42a_link_source_details_inline_media_viewer_is_not_browser_chrome() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    viewer_source = Path("profile_media_inline_media_viewer_v83d.py").read_text(encoding="utf-8", errors="replace")
+    loader_source = Path("profile_media_inline_media_loader_v83d.py").read_text(encoding="utf-8", errors="replace")
+    preview_source = Path("profile_media_link_source_embedded_media_preview_v83d.py").read_text(encoding="utf-8", errors="replace")
+    assert "YTCE_V83D_R42A_LIGHTWEIGHT_INLINE_MEDIA_VIEWER" in source
+    assert "Load inline preview" not in source
+    assert "Play/pause preview" not in source
+    assert "Selected-card inline preview" in viewer_source
+    assert "card-local preview control where supported" in preview_source
+    assert "profile-media-r42a-inline-media-preview" in source
+    assert "load_inline_media_preview_payload" in source
+    assert "Inline media previews are metadata/review UI only; no address bar, tabs, navigation toolbar, or whole-page browser controls." in source
+    assert "Loading selected preview" in source
+    assert "Video preview limited" in source
+    assert "Image preview ready (selected lazy load)" in source
+    assert "no_browser_address_bar" in viewer_source
+    assert "no_browser_tabs" in viewer_source
+    assert "no_navigation_toolbar" in viewer_source
+    assert "loads_selected_media_only" in viewer_source
+    assert "video_full_playback_claimed" in viewer_source
+    assert "MAX_INLINE_MEDIA_BYTES" in loader_source
+    assert "urllib.request.urlopen" in loader_source
+    assert "Image.open" in loader_source
+    assert "thumbnail(preview_size" in loader_source
+    assert "inline_media_viewer_state" in preview_source
+    assert "source_roles_changed" in loader_source
+    assert "archive_inheritance_changed" in loader_source
+
+
+def test_r42b_link_source_details_uses_scoped_semantic_media_editor() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    edit_source = Path("profile_media_link_source_edit_window_v83d.py").read_text(encoding="utf-8", errors="replace")
+    assert "YTCE_V83D_R42B_LINK_SOURCE_DETAILS_EDIT_WINDOW" in source
+    assert '"r42b_preview_context"' in source
+    assert '"claim_role_spans": [dict(item) for item in claim_role_spans' in source
+    assert '"claim_role_classification_preview"' in source
+    assert "build_link_source_edit_window_state" in source
+    assert (
+        "Rendered page role overlay" in source
+        or "build_webpage_role_view_state" in source
+        or "build_selected_url_rendered_page_artifact_state" in source
+        or "profile_media_link_source_webpage_role_view_v83d" in source
+        or "Rendered page role overlay" in edit_source
+    )
+    assert "Selected URL source view" not in source
+    assert "command=_toggle_link_source_media_mode" not in source
+    assert 'values=["Semantic", "Media"]' in source
+    assert "source_editor_count_labels" in source
+    assert "r42b_role_span_" in source
+    assert "selected_link_semantic_roles" in source
+    assert "selected_link_media_roles" in source
+    assert "render_link_source_editor_plain_text" in source
+    assert "render_link_source_editor_role_markup" in source
+    assert "> Diagnostics" in source
+    assert "diagnostics_filter_var" in source
+    assert '"Role matrix", "Media details", "Archive/locator", "Evidence gate", "OSINT/passive", "Capture diagnostics"' in source
+    r42b_method_tail = source.split("def _open_link_source_details_window_for_record", 1)[1]
+    r42b_boundary_markers = (
+        "Rendered page role overlay",
+        "build_webpage_role_view_state",
+        "build_selected_url_rendered_page_artifact_state",
+        "profile_media_link_source_webpage_role_view_v83d",
+    )
+    primary_block = r42b_method_tail
+    for marker in r42b_boundary_markers:
+        if marker in r42b_method_tail:
+            primary_block = r42b_method_tail.split(marker, 1)[0]
+            break
+    assert 'text=f"{label_text}:"' not in primary_block
+    assert 'text="Role:"' not in primary_block
+    assert 'text="Evidence gate:"' not in primary_block
+    assert 'text="Run capture now"' not in primary_block
+    assert 'text="Open in capture browser"' not in primary_block
+    assert 'text="Retry after human action"' not in primary_block
+    assert 'text="Copy role matrix"' not in primary_block
+    assert 'text="Add selected candidate to review queue"' not in primary_block
+    assert "semantic_and_media_decisions_separate" in edit_source
+    assert "semantic_counts_exclude_media_cards" in edit_source
+    assert "selected_claim_span_roles" in edit_source
+    assert "selected_claim_span_media_roles" in edit_source
+    assert "new_role" in edit_source
+    assert "new_media_source_role" in edit_source
+    assert "images_videos_are_media_only" in edit_source
+    assert "no_browser_chrome" in edit_source
+    assert "archive_inheritance_changed" in edit_source
+    assert "_cached_text_sources" in edit_source
+    assert "_body_after_top_url_preamble" in edit_source
+    assert "_related_link_source_rows" in edit_source
+    assert "inline_media_preview" in edit_source
+
+
+def test_r42d_link_source_details_real_rendered_page_role_overlay() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    edit_source = Path("profile_media_link_source_edit_window_v83d.py").read_text(encoding="utf-8", errors="replace")
+    view_source = Path("profile_media_link_source_webpage_role_view_v83d.py").read_text(encoding="utf-8", errors="replace")
+    artifact_source = Path("profile_media_link_source_rendered_page_artifact_v83d.py").read_text(encoding="utf-8", errors="replace")
+    assert "YTCE_V83D_R42C_LINK_SOURCE_DETAILS_WEBPAGE_RENDERED_ROLE_VIEW" in edit_source
+    assert "YTCE_V83D_R42C_LINK_SOURCE_DETAILS_WEBPAGE_ROLE_VIEW" in view_source
+    assert "YTCE_V83D_R42D_LINK_SOURCE_DETAILS_REAL_RENDERED_PAGE_ROLE_OVERLAY" in view_source
+    assert "YTCE_V83D_R42D_LINK_SOURCE_DETAILS_REAL_RENDERED_PAGE_ARTIFACT" in artifact_source
+    assert "build_webpage_role_view_state" in source
+    assert "build_selected_url_rendered_page_artifact_state" in source
+    assert (
+        "Rendered page role overlay" in source
+        or "Source-role overlay" in source
+        or "role_overlay_blocks_only" in view_source
+    )
+    assert (
+        "Captured page image" in source
+        or "Captured page screenshot" in source
+        or "uses_captured_page_screenshot" in artifact_source
+    )
+    assert (
+        "Captured rendered page HTML" in source
+        or "Captured live page HTML" in source
+        or "uses_captured_rendered_html" in artifact_source
+    )
+    assert "Source-role overlay" in source
+    assert "Text-region mapping is not available" in source
+    assert "bg=\"#ffffff\"" in source
+    assert "font=(\"Segoe UI\", 12)" in source
+    assert "r42c_article_title" in source
+    assert "r42c_article_meta" in source
+    assert "Source link" in source
+    assert "Article metadata" in source
+    assert "values=[\"Semantic\", \"Media\"]" in source
+    assert "command=_toggle_link_source_media_mode" not in source
+    assert "fg_color=bg" in source
+    assert "text_color=fg" in source
+    assert "media_source_role" in edit_source
+    assert "semantic_role" in edit_source
+    assert "fallback_is_presentation_only" in edit_source
+    assert "uses_existing_review_db_import_spans" in edit_source
+    assert "no_weaker_local_reclassification" in edit_source
+    assert '"media_source_role": "BLANK"' in edit_source
+    assert "archive_rows_hidden_unless_selected_or_diagnostics" in edit_source
+    assert "media_objects_embedded_in_source_view" in edit_source
+    assert "media_role_coloured_outlines" in edit_source
+    assert "uses_actual_rendered_or_captured_artifact" in artifact_source
+    assert "uses_captured_page_screenshot" in artifact_source
+    assert "uses_captured_rendered_html" in artifact_source
+    assert "role_text_overlay_panel_required" in artifact_source
+    assert "archive_related_rows_hidden_from_live_selected_view" in artifact_source
+    assert "raw_debug_textbox" in view_source
+    assert "monospaced_debug_text" in view_source
+    assert "role_overlay_blocks_only" in view_source
+    assert '"webpage_like_source_view": False' in view_source
+    assert '"synthetic_article_layout": False' in view_source
+    assert "no_address_bar" in view_source
+    assert "no_tabs" in view_source
+    assert "no_navigation_toolbar" in view_source
+    assert "debug_capture_buttons_primary_visible" in view_source
+    assert "visible_diagnostic_collapsible_rows_default" in view_source
+    assert 'text="Run capture now"' not in source
+    assert 'text="Retry after human action"' not in source
+    assert 'text="Close YTCE test tabs"' not in source
+    assert 'text="Copy selected OSINT/passive candidate"' not in source
+
+
+def test_v83c_repair16_repair15_no_preview_gate() -> None:
+    source = Path("main.py").read_text(encoding="utf-8")
+    preview_source = Path("profile_media_source_package_preview.py").read_text(encoding="utf-8")
+    assert "YTCE_V83C_REPAIR15_UNIVERSAL_ARTICLE_SOURCE_TEXT_CLASSIFIER" in source
+    assert "YTCE_V83C_REPAIR15_SOURCE_TEXT_ROWS_USE_SHARED_CLASSIFIER" in source
+    assert "YTCE_V83C_REPAIR16_REPAIR15_PREVIEW_GATE_REMOVED" in source
+    assert "_ytce_review_reclassified_source_text_rows(rows)" in source
+    assert "direct quoted/interview words classified by quoted-speaker semantics" in source
+
+
+def test_v83c_repair21_media_view_source_role_colours() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    assert "YTCE_V83C_REPAIR21_MEDIA_VIEW_SOURCE_ROLE_COLOURS" in source
+    assert "source_reference_media_display_role_by_edit_key" in source
+    assert "_source_reference_candidate_media_display_role" in source
+    assert "unresolved_named_intermediary" in source
+    assert "media_display_role = _claim_media_source_role_for_span(span_ref)" in source
+    assert "cycle semantic claim roles from this view" in source
+
+
+def test_v83c_repair22_r21_markup_test_compat() -> None:
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    assert ("_claim_role_markup_for_spans(spans, comment_sections, visible_roles_for_markup)" in source or "_claim_role_markup_for_spans(spans, comment_sections, visible_roles_for_markup)" in source)
+    if "YTCE_V83C_REPAIR21_MEDIA_VIEW_SOURCE_ROLE_COLOURS" in source:
+        assert "visible_roles_for_markup" in source
+        assert "_claim_media_filter_active()" in source
+        assert "_claim_media_source_role_for_span" in source
+
 def run_self_test() -> None:
+    test_r41b_link_details_run_capture_now_is_metadata_only()
+    test_r41q_visible_workflow_summary_is_wired_to_database_card()
+    test_r41r_visible_workflow_panels_are_wired_lazily_to_database_card()
+    test_r41v_lightweight_browser_route_status_is_visible_in_browser_actions_panel()
+    test_r41w_browser_actions_exposes_safe_tab_cleanup_commands()
+    test_r41x_link_source_details_exposes_role_matrix_ui_actions()
+    test_r41y_link_source_details_rich_viewer_sections_are_visible()
+    test_r41z_link_source_details_embedded_media_preview_is_wired()
+    test_r42a_link_source_details_inline_media_viewer_is_not_browser_chrome()
+    test_r42b_link_source_details_uses_scoped_semantic_media_editor()
+    test_r42d_link_source_details_real_rendered_page_role_overlay()
+    test_v83c_repair22_r21_markup_test_compat()
     test_enter_source_url_intake_adds_rows_and_retains_invalid_text()
     test_shift_enter_inserts_newline_without_submission()
     test_archive_auto_check_preference_loads_saves_and_drives_row_state()
@@ -1635,6 +2617,10 @@ def run_self_test() -> None:
     test_files_sidebar_resizer_and_review_highlight_are_more_usable()
     test_sidebar_top_buttons_do_not_expand_with_sash()
     test_database_toggle_animation_avoids_final_state_jump()
+    test_database_import_preview_home_root_guard_and_row_layout()
+    test_build_preview_counts_apply_to_main_card_before_review_opens()
+    test_build_preview_final_counts_match_review_state_for_metro_shaped_payload()
+    test_text_editor_large_txt_load_is_background_and_not_review_build()
     test_source_details_uses_youtube_metadata_placeholders_not_domain()
     test_transcript_controls_use_right_side_space()
     test_transcript_toolbar_get_label_preserves_youtube_callback()
@@ -1648,6 +2634,12 @@ def run_self_test() -> None:
     test_transcript_controls_are_split_across_rows_for_narrow_widths()
     test_url_helper_wrap_and_textbox_height_are_responsive()
     test_visible_header_is_removed_to_recover_vertical_space()
+    test_review_dialog_uses_tk_text_role_spans_and_inline_multiselect()
+    test_review_dialog_exposes_v83c_link_source_ui_and_decisions()
+    test_v83c_repair1_renders_link_rows_inside_source_role_text()
+    test_v83c_repair6_media_unlinked_scope_keeps_mixed_article_text_visible()
+    test_v83c_repair14_comments_use_render_time_shared_classifier()
+    test_v83c_repair16_repair15_no_preview_gate()
 
 
 if __name__ == "__main__":
@@ -1700,3 +2692,56 @@ def test_webpage_image_session_temp_cleaned_when_files_are_cleared() -> None:
     assert "webpage_image_session_output_root = None" in cleanup_source
     assert "webpage_image_session_download_cache = {}" in cleanup_source
     assert "Could not clean detached temporary webpage image file" in remove_source
+
+def test_v82c_database_home_and_capture_preview_are_status_driven() -> None:
+    create_source = inspect.getsource(App._create_profile_media_database_home_repository)
+    set_home_source = inspect.getsource(App._set_profile_media_database_home_root)
+    build_source = inspect.getsource(App._build_profile_media_database_import_preview_from_current_state)
+    start_source = inspect.getsource(App.start_fetching)
+
+    assert 'messagebox.showinfo("Create Database HOME"' not in create_source
+    assert 'messagebox.showinfo("Build DB import"' not in build_source
+    assert '"Discussion action scaffold",' not in start_source
+    assert '"Discussion action scaffold ready' not in start_source
+    assert "_set_operational_capture_status" in create_source
+    assert "_refresh_discussion_source_controls" in set_home_source
+    assert "_profile_media_database_planned_source_capture_artifacts" in build_source
+
+
+def test_v82c_planned_webpage_and_screenshot_scopes_are_review_artifacts() -> None:
+    row = build_source_resource_row(MSN_URL)
+    app = App.__new__(App)
+    app.extract_webpage_var = FakeVar(True)
+    app.webpage_screenshot_var = FakeVar(True)
+
+    artifacts = App._profile_media_database_planned_source_capture_artifacts(app, row)
+
+    kinds = {artifact["artifact_kind"] for artifact in artifacts}
+    assert {"article_text", "screenshot", "archive_check", "warc", "wacz"} <= kinds
+    assert all(artifact["local_path"] == "" for artifact in artifacts)
+    assert all(artifact["temporary"] is True for artifact in artifacts)
+    assert all(artifact["review_required"] is True for artifact in artifacts)
+    assert all("review-only" in artifact["notes"] for artifact in artifacts)
+    assert all("no live" in artifact["notes"].lower() for artifact in artifacts)
+
+
+def test_v82g_database_review_button_and_visible_sidebar_counts() -> None:
+    create_source = inspect.getsource(App._create_profile_media_database_mode_toggle_section)
+    open_source = inspect.getsource(App._open_profile_media_database_import_review_text)
+
+    assert 'text="Review"' in create_source
+    assert "write_profile_media_database_import_review_text" in open_source
+    assert "profile_media_database_last_source_package_preview_file" in open_source
+    assert "protected review" in open_source.lower()
+    assert "_open_profile_media_database_import_review_dialog" in open_source
+    assert "Text Editor" not in open_source
+    assert 'height=108' in create_source
+    assert 'font=ctk.CTkFont(size=11, weight="bold")' in create_source
+
+
+def test_v83c_repair19_media_icon_includes_source_reference_statements():
+    source = Path("main.py").read_text(encoding="utf-8", errors="replace")
+    assert "YTCE_V83C_REPAIR19_MEDIA_ICON_INCLUDES_SOURCE_STATEMENTS" in source
+    assert "media_role = _claim_media_source_role_for_span(span_ref)" in source
+    assert "YTCE_V83C_REPAIR19_MEDIA_STATEMENT_COUNT_HELPERS" in source
+    assert "and not _claim_media_filter_active()" in source

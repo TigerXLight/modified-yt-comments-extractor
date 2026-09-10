@@ -1,5 +1,6 @@
 from source_adapters import (
     AVAILABLE_SOURCE_ADAPTERS,
+    ACCOUNT_CHANNEL_SOURCE_ADAPTER,
     SOURCE_METHOD_PROFILES,
     MSN_SOURCE_ADAPTER,
     NEWS_WEBSITE_SOURCE_ADAPTER,
@@ -150,11 +151,26 @@ def run_self_test() -> None:
     assert twitter_metadata.supports_browser_capture
     assert "shared JDownloader media backend" in twitter_metadata.access_limitations
 
+    channel_url = "slack://workspace/channel/message/123?thread=456"
+    channel_adapter = ACCOUNT_CHANNEL_SOURCE_ADAPTER
+    assert channel_adapter.can_handle(channel_url)
+    assert find_source_adapter(channel_url) is channel_adapter
+    assert channel_adapter.normalize_url("SLACK://workspace/channel/message/123?thread=456") == channel_url
+    assert channel_adapter.extract_source_id(channel_url).startswith("slack:")
+    assert channel_adapter.metadata.display_name == "Account / Channel"
+    assert channel_adapter.metadata.platform_family == "account_channel"
+    assert channel_adapter.metadata.supports_manual_import
+    assert not channel_adapter.metadata.supports_browser_capture
+    assert "performs no polling" in channel_adapter.metadata.access_limitations
+    assert not channel_adapter.can_handle("ftp://workspace/channel/message/123")
+    assert not channel_adapter.can_handle("slack://")
+
     assert AVAILABLE_SOURCE_ADAPTERS == (
         YOUTUBE_SOURCE_ADAPTER,
         MSN_SOURCE_ADAPTER,
         TWITTER_X_SOURCE_ADAPTER,
         NEWS_WEBSITE_SOURCE_ADAPTER,
+        ACCOUNT_CHANNEL_SOURCE_ADAPTER,
     )
 
     assert source_method_profile_ids() == tuple(profile.profile_id for profile in SOURCE_METHOD_PROFILES)
@@ -191,6 +207,12 @@ def run_self_test() -> None:
     assert find_source_method_profile("generic_article_html").adapter_id == "news_website"
     assert find_source_method_profile("generic_article_comments").adapter_id == "news_website"
     assert find_source_method_profile("archive_only_import").adapter_id == "manual_local_import"
+    account_channel_profile = find_source_method_profile("account_channel_two_sided_source_link")
+    assert account_channel_profile.adapter_id == "account_channel"
+    assert "inbound_source_candidate" in account_channel_profile.supported_modes
+    assert "outbound_review_status" in account_channel_profile.supported_modes
+    assert "operator_approval_for_poll_or_send" in account_channel_profile.required_operator_fields
+    assert default_source_method_profile_for_adapter("account_channel").profile_id == "account_channel_two_sided_source_link"
     assert default_source_method_profile_for_adapter("manual_local_import").profile_id == "manual_local_file_import"
     assert default_source_method_profile_for_adapter("unknown").profile_id == "generic_article_comment_manual"
 

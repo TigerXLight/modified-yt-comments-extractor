@@ -54,6 +54,9 @@ class ProfileMediaDatabaseGuiPanelState:
     review_lanes: tuple[ProfileMediaDatabaseGuiPanelMetric, ...] = ()
     actions: tuple[ProfileMediaDatabaseGuiPanelAction, ...] = ()
     notices: tuple[str, ...] = ()
+    workflow_columns: tuple[Mapping[str, Any], ...] = ()
+    workflow_rows: tuple[Mapping[str, Any], ...] = ()
+    workflow_summary: Mapping[str, Any] = field(default_factory=dict)
     source_folder_preview: Mapping[str, Any] = field(default_factory=dict)
     schema_version: str = PROFILE_MEDIA_DATABASE_GUI_PANEL_SCHEMA_VERSION
     created_at_utc: str = field(default_factory=utc_now_iso)
@@ -187,6 +190,59 @@ def _person_count(payload: Mapping[str, Any] | None, fallback: int = 0) -> int:
     return fallback
 
 
+def _source_package_preview_section(preview_payload: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    if not isinstance(preview_payload, Mapping):
+        return {}
+    direct = preview_payload.get("source_package_preview")
+    if isinstance(direct, Mapping):
+        return direct
+    batch_payload = preview_payload.get("batch_payload")
+    if isinstance(batch_payload, Mapping):
+        nested = batch_payload.get("source_package_preview")
+        if isinstance(nested, Mapping):
+            return nested
+    return {}
+
+
+def _r41q_workflow_rows_from_preview(source_package_preview: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    """Build compact R41Q workflow rows from already-built preview payloads only."""
+
+    try:
+        from profile_media_reference_backed_workbench_v83d import (
+            build_reference_backed_workbench_rows,
+            workbench_column_definitions,
+        )
+    except Exception:
+        return ()
+    link_objects = source_package_preview.get("link_source_objects") if isinstance(source_package_preview, Mapping) else ()
+    if not isinstance(link_objects, list):
+        return ()
+    capture_records: list[Mapping[str, Any]] = []
+    for record in link_objects:
+        if not isinstance(record, Mapping):
+            continue
+        for key in ("browser_capture_reviews", "capture_review_records", "capture_reviews"):
+            rows = record.get(key)
+            if isinstance(rows, list):
+                capture_records.extend([dict(row) for row in rows if isinstance(row, Mapping)])
+    rows = build_reference_backed_workbench_rows(
+        [dict(record) for record in link_objects if isinstance(record, Mapping)],
+        provenance_records=capture_records,
+    )
+    # Ensure the column helper is importable here; the actual columns are stored
+    # separately by the caller so tests can assert the presenter bridge exists.
+    workbench_column_definitions()
+    return tuple(rows)
+
+
+def _r41q_workflow_columns() -> tuple[Mapping[str, Any], ...]:
+    try:
+        from profile_media_reference_backed_workbench_v83d import workbench_column_definitions
+
+        return tuple(workbench_column_definitions())
+    except Exception:
+        return ()
+
 def build_profile_media_database_gui_panel_state(
     *,
     mode: object = "FILES",
@@ -216,9 +272,10 @@ def build_profile_media_database_gui_panel_state(
                 _metric("review_items", "Review items", 0),
             ),
             display_metrics=(
-                _metric("primary_sources", "👤 Primary", 0),
-                _metric("secondary_sources", "👥 Secondary", 0),
-                _metric("tertiary_sources", "👥+ Tertiary", 0),
+                _metric("primary_sources", "Primary", 0),
+                _metric("secondary_sources", "Secondary", 0),
+                _metric("tertiary_sources", "Tertiary", 0),
+                _metric("unknown_sources", "Unknown", 0),
                 _metric("persons", "Persons", 0),
                 _metric("review_items", "Review", 0),
             ),
@@ -244,10 +301,35 @@ def build_profile_media_database_gui_panel_state(
     preview_sources = len(preview_payload.get("source_urls") or ())
     preview_segments = len(preview_payload.get("source_role_segments") or ())
     preview_media = len(preview_payload.get("media_references") or ())
+    source_package_preview = _source_package_preview_section(preview_payload)
+    source_package_breakdown = source_package_preview.get("source_record_count_breakdown") if isinstance(source_package_preview, Mapping) else {}
     primary_sources = _facet_count(workbench_payload, "source_role", "PRIMARY_SELF_AUTHORED_SCOPE")
     secondary_sources = _facet_count(workbench_payload, "source_role", "SECONDARY_WITNESS_ACCOUNT")
     tertiary_sources = _facet_count(workbench_payload, "source_role", "TERTIARY_PROPAGATED_SOURCE")
+    unknown_sources = _facet_count(workbench_payload, "source_role", "UNKNOWN_SOURCE_ROLE")
     persons = _person_count(workbench_payload, profile_rows)
+    comment_source_role_threads = 0
+    comment_source_role_records = 0
+    if isinstance(source_package_breakdown, Mapping):
+        primary_sources = int(source_package_breakdown.get("primary_media_sources") or 0)
+        secondary_sources = int(source_package_breakdown.get("secondary_transcript_records") or source_package_breakdown.get("transcript_secondary_records") or source_package_breakdown.get("transcript_provenance_records") or 0)
+        secondary_sources += int(source_package_breakdown.get("resolved_secondary_references") or 0)
+        tertiary_sources = int(source_package_breakdown.get("resolved_tertiary_references") or 0)
+        unknown_sources = int(source_package_breakdown.get("unresolved_source_reference_candidates") or 0)
+        persons = int(source_package_preview.get("person_review_candidate_count") or persons or 0)
+        comment_source_role_threads = int(source_package_breakdown.get("youtube_comment_source_role_threads") or 0)
+        comment_source_role_records = int(source_package_breakdown.get("youtube_comment_source_role_records") or 0)
+    workflow_columns = _r41q_workflow_columns()
+    workflow_rows = _r41q_workflow_rows_from_preview(source_package_preview) if isinstance(source_package_preview, Mapping) else ()
+    workflow_summary = {
+        "schema_version": "profile-media-database-workbench-r41q-visible-workflow-summary",
+        "workflow_row_count": len(workflow_rows),
+        "metadata_only": True,
+        "source_roles_changed": False,
+        "counters_changed": False,
+        "no_jump_changed": False,
+        "archive_inheritance_changed": False,
+    }
 
     configured = bool(batches or workbench_payload or preview_payload)
     status = "ready_for_import" if not configured else "success"
@@ -275,11 +357,14 @@ def build_profile_media_database_gui_panel_state(
             _metric("source_folder_sources", "Source folder URLs", preview_sources),
             _metric("source_folder_segments", "Source role segments", preview_segments, "high" if preview_segments else "info"),
             _metric("source_folder_media_references", "Media references", preview_media),
+            _metric("youtube_comment_source_roles", "YouTube comment source roles", comment_source_role_threads),
+            _metric("youtube_comment_source_role_records", "YouTube comment source-role records", comment_source_role_records),
         ),
         display_metrics=(
-            _metric("primary_sources", "👤 Primary", primary_sources),
-            _metric("secondary_sources", "👥 Secondary", secondary_sources),
-            _metric("tertiary_sources", "👥+ Tertiary", tertiary_sources),
+            _metric("primary_sources", "Primary", primary_sources),
+            _metric("secondary_sources", "Secondary", secondary_sources),
+            _metric("tertiary_sources", "Tertiary", tertiary_sources),
+            _metric("unknown_sources", "Unknown", unknown_sources),
             _metric("persons", "Persons", persons),
             _metric("review_items", "Review", review_items, "high" if review_items else "info"),
         ),
@@ -332,6 +417,9 @@ def build_profile_media_database_gui_panel_state(
             ),
         ),
         actions=(
+            _action("open_human_action_queue_panel", "Human Action Queue", "available_r41q", "Open URL/TXT queue rows grouped by host and wrapper; metadata-only."),
+            _action("open_network_provenance_panel", "Network Provenance", "available_r41q", "View request, response, header, status, and redirect metadata without evidence promotion."),
+            _action("open_passive_http_metadata_panel", "Passive HTTP Metadata", "available_r41q", "Probe explicit user-provided URLs only; no broad target enumeration."),
             _action("refresh_database_view", "Sync HOME", "available", "Refresh the current HOME view internally after imports or saves."),
             _action("add_import_source_folder_preview", "Add / Import source folder", "available_preview", "Select one source folder and generate a review preview; no HOME scan, media download, or classification."),
             _action("load_batch_json", "Add / Import", "available", "Add source files, pasted URLs, dragged media, or a saved import package."),
@@ -345,9 +433,13 @@ def build_profile_media_database_gui_panel_state(
         notices=(
             "HOME is a managed repository. The app saves reviewed folders/indexes; it does not require users to understand JSON.",
             "Add / Import can generate a selected source-folder preview from source.txt, local article files, and media references.",
+            "R41Q workflow panels expose queue, browser-action, network provenance, and passive HTTP metadata as metadata-only review helpers.",
             "No media download, automatic classification, or sensitive inference is performed.",
             "The left sidebar shows Primary, Secondary, Tertiary, Persons, and Review summary counts.",
         ),
+        workflow_columns=workflow_columns,
+        workflow_rows=workflow_rows,
+        workflow_summary=workflow_summary,
         source_folder_preview=preview_payload,
     )
 
@@ -389,6 +481,26 @@ def render_profile_media_database_gui_panel_text(state: ProfileMediaDatabaseGuiP
         lines.append(f"- Source URLs: {len(preview.get('source_urls') or [])}")
         lines.append(f"- Source role segments: {len(preview.get('source_role_segments') or [])}")
         lines.append(f"- Final source role decision: {preview.get('final_source_role_decision')}")
+    if state.workflow_columns or state.workflow_rows:
+        lines.append("")
+        lines.append("R41Q visible workflow metadata:")
+        lines.append(f"- Columns: {len(state.workflow_columns)}")
+        lines.append(f"- Rows: {len(state.workflow_rows)}")
+        for row in state.workflow_rows[:5]:
+            lines.append(
+                "- "
+                + " | ".join(
+                    part
+                    for part in (
+                        str(row.get("row_id") or ""),
+                        str(row.get("url") or ""),
+                        str(row.get("capture_status") or ""),
+                        str(row.get("queue_status") or ""),
+                        str(row.get("action_needed") or ""),
+                    )
+                    if part
+                )
+            )
     lines.append("")
     lines.append("Actions:")
     for action in state.actions:

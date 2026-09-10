@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Optional, Protocol, Sequence
 
@@ -62,9 +63,30 @@ PLATFORM_COMMUNITY_FORUM = "community_forum"
 PLATFORM_NEWS_WEBSITE = "news_website"
 PLATFORM_PROFESSIONAL = "professional"
 PLATFORM_WORKPLACE_CHAT = "workplace_chat"
+PLATFORM_ACCOUNT_CHANNEL = "account_channel"
 PLATFORM_ARCHIVE_SERVICE = "archive_service"
 PLATFORM_ASR_PROVIDER = "asr_provider"
 PLATFORM_OTHER = "other"
+
+CHANNEL_SOURCE_SCHEME_LABELS = {
+    "slack": "Slack",
+    "telegram": "Telegram",
+    "imap": "IMAP email",
+    "email": "Email",
+    "gmail": "Gmail",
+    "outlook": "Outlook",
+    "discord": "Discord",
+    "matrix": "Matrix",
+    "teams": "Microsoft Teams",
+    "msteams": "Microsoft Teams",
+    "whatsapp": "WhatsApp",
+    "webhook": "Webhook",
+    "workboard": "Workboard",
+    "logbook": "Logbook",
+    "device": "Device/logbook",
+}
+CHANNEL_SOURCE_SCHEMES = tuple(CHANNEL_SOURCE_SCHEME_LABELS.keys())
+
 
 
 @dataclass(frozen=True)
@@ -359,15 +381,96 @@ class TwitterXSourceAdapter:
         return f"{parsed.netloc}{parsed.path}"
 
 
+
+class AccountChannelSourceAdapter:
+    """Two-sided account/channel source-link adapter.
+
+    This adapter only recognizes and canonicalizes explicit channel/account URI
+    references. It does not poll accounts, read messages, send notifications,
+    access credentials, or call OpenClaw by itself.
+    """
+
+    source_name = "account_channel"
+    capabilities = SourceCapabilities(
+        supports_timestamps=True,
+    )
+    metadata = SourceAdapterMetadata(
+        display_name="Account / Channel",
+        platform_family=PLATFORM_ACCOUNT_CHANNEL,
+        credential_type=CREDENTIAL_MANUAL,
+        credentials_required=False,
+        credentials_optional=True,
+        supports_browser_capture=False,
+        supports_manual_import=True,
+        setup_hint=(
+            "Add a named adapter configuration before using Slack/Telegram/IMAP/"
+            "Discord/Matrix/Teams/WhatsApp/Webhook/device/logbook sources. Intake "
+            "of a channel URI records a source-link row only."
+        ),
+        test_connection_supported=False,
+        privacy_notes=(
+            "Channel/account adapters can expose private message metadata or send "
+            "outbound status updates only when a named adapter configuration and "
+            "explicit operator action exist. This metadata adapter performs no "
+            "account polling at URL intake."
+        ),
+        cost_or_rate_limit_notes=(
+            "Provider/service quotas are adapter-specific and are not consumed by "
+            "this URI-recognition adapter."
+        ),
+        access_limitations=(
+            "Two-sided source-link adapter skeleton: inbound channel/account items "
+            "can become source candidates and outbound review/status/export notices "
+            "can be routed later, but this class performs no polling, credential "
+            "lookup, network call, browser capture, or message send."
+        ),
+    )
+
+    def can_handle(self, url: str) -> bool:
+        try:
+            parsed = urlsplit((url or "").strip())
+        except ValueError:
+            return False
+        scheme = parsed.scheme.lower()
+        if scheme not in CHANNEL_SOURCE_SCHEMES:
+            return False
+        return bool(parsed.netloc or parsed.path)
+
+    def normalize_url(self, url: str) -> str:
+        parsed = urlsplit((url or "").strip())
+        scheme = parsed.scheme.lower()
+        if scheme not in CHANNEL_SOURCE_SCHEMES:
+            raise ValueError(f"unsupported account/channel source scheme: {parsed.scheme}")
+        if not (parsed.netloc or parsed.path):
+            raise ValueError("account/channel source URI must include an account, channel, message, or item reference")
+        return urlunsplit((scheme, parsed.netloc, parsed.path or "", parsed.query, parsed.fragment))
+
+    def extract_source_id(self, url: str) -> str:
+        canonical = self.normalize_url(url)
+        digest = hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:16]
+        parsed = urlsplit(canonical)
+        label = parsed.scheme or "channel"
+        return f"{label}:{digest}"
+
+    def channel_kind(self, url: str) -> str:
+        try:
+            return urlsplit(self.normalize_url(url)).scheme.lower()
+        except ValueError:
+            return ""
+
+
+
 YOUTUBE_SOURCE_ADAPTER = YouTubeSourceAdapter()
 MSN_SOURCE_ADAPTER = MsnSourceAdapter()
 TWITTER_X_SOURCE_ADAPTER = TwitterXSourceAdapter()
 NEWS_WEBSITE_SOURCE_ADAPTER = NewsWebsiteSourceAdapter()
+ACCOUNT_CHANNEL_SOURCE_ADAPTER = AccountChannelSourceAdapter()
 AVAILABLE_SOURCE_ADAPTERS: Sequence[SourceAdapter] = (
     YOUTUBE_SOURCE_ADAPTER,
     MSN_SOURCE_ADAPTER,
     TWITTER_X_SOURCE_ADAPTER,
     NEWS_WEBSITE_SOURCE_ADAPTER,
+    ACCOUNT_CHANNEL_SOURCE_ADAPTER,
 )
 
 
@@ -604,6 +707,50 @@ ARCHIVE_ONLY_IMPORT_PROFILE = SourceMethodProfile(
         "no live site, archive provider lookup, submission, or retrieval is performed."
     ),
 )
+
+ACCOUNT_CHANNEL_TWO_SIDED_PROFILE = SourceMethodProfile(
+    profile_id="account_channel_two_sided_source_link",
+    adapter_id="account_channel",
+    display_name="Account/channel two-sided source-link profile",
+    method_family="account_channel_inbound_outbound_source_adapter",
+    supported_modes=(
+        "inbound_source_candidate",
+        "outbound_review_status",
+        "outbound_export_notice",
+        "manual_import",
+        "named_adapter_configuration_required",
+    ),
+    expected_artifact_types=(
+        "channel_item_receipt",
+        "source_candidate_row",
+        "source_role_sidecar",
+        "outbound_status_receipt",
+        "adapter_configuration_receipt",
+    ),
+    required_operator_fields=(
+        "channel_uri",
+        "named_adapter_id",
+        "inbound_scope",
+        "outbound_scope",
+        "operator_approval_for_poll_or_send",
+    ),
+    approval_required=True,
+    manual_operator_only=False,
+    live_execution_default_enabled=False,
+    archive_fallback_supported=False,
+    manual_import_supported=True,
+    network_actions_performed=False,
+    browser_automation_performed=False,
+    provider_api_calls_performed=False,
+    notes=(
+        "Essential two-sided source-link adapter profile. Inbound account/channel "
+        "items can become source rows and outbound review/status/export notices can "
+        "return through the selected channel. No account polling or outbound send "
+        "happens from generic intake; named adapter configuration and action-specific "
+        "approval are required."
+    ),
+)
+
 SOURCE_METHOD_PROFILES: Sequence[SourceMethodProfile] = (
     MSN_ARTICLE_COMMENT_PROFILE,
     TWITTER_X_ARCHIVE_FALLBACK_PROFILE,
@@ -616,6 +763,7 @@ SOURCE_METHOD_PROFILES: Sequence[SourceMethodProfile] = (
     GENERIC_ARTICLE_COMMENTS_PROFILE,
     MANUAL_LOCAL_IMPORT_PROFILE,
     ARCHIVE_ONLY_IMPORT_PROFILE,
+    ACCOUNT_CHANNEL_TWO_SIDED_PROFILE,
 )
 
 

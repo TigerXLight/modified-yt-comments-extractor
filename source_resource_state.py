@@ -39,6 +39,31 @@ SOURCE_RESOURCE_SCOPE = (
 )
 
 _URL_START_RE = re.compile(r"https?://", re.IGNORECASE)
+_CHANNEL_URI_SCHEMES = (
+    "slack",
+    "telegram",
+    "imap",
+    "email",
+    "gmail",
+    "outlook",
+    "discord",
+    "matrix",
+    "teams",
+    "msteams",
+    "whatsapp",
+    "webhook",
+    "workboard",
+    "logbook",
+    "device",
+)
+_CHANNEL_START_RE = re.compile(
+    r"(?:" + "|".join(re.escape(scheme) for scheme in _CHANNEL_URI_SCHEMES) + r")://",
+    re.IGNORECASE,
+)
+_SOURCE_LINK_START_RE = re.compile(
+    r"(?:https?://|(?:" + "|".join(re.escape(scheme) for scheme in _CHANNEL_URI_SCHEMES) + r")://)",
+    re.IGNORECASE,
+)
 _TRACKING_QUERY_PREFIXES = ("utm_",)
 _TRACKING_QUERY_KEYS = {"ocid", "cid", "cvid", "pc", "ei", "form", "spm"}
 
@@ -278,9 +303,17 @@ def _trim_url_token(value: str) -> str:
 
 
 def extract_source_url_tokens(text: str) -> tuple[str, ...]:
-    """Extract http/https URL tokens while leaving arbitrary words alone."""
+    """Extract source-link tokens while leaving arbitrary words alone.
+
+    Historical name retained for the UI/tests. R42DK extends this from only
+    http/https URLs to explicit account/channel source URIs such as
+    slack://..., imap://..., matrix://..., webhook://..., and logbook://....
+    """
     source = text or ""
-    matches = list(_URL_START_RE.finditer(source))
+    matches = sorted(
+        list(_URL_START_RE.finditer(source)) + list(_CHANNEL_START_RE.finditer(source)),
+        key=lambda match: match.start(),
+    )
     if not matches:
         return ()
     tokens: list[str] = []
@@ -540,11 +573,28 @@ def build_source_resource_row(
         comments_status = "Generic webpage rows support image discovery/download only; discussion comments are not supported."
         livechat_status = "Generic webpage rows do not support livechat."
         provenance = "generic webpage adapter; media discovery is user-triggered"
+    elif adapter.source_name == "account_channel":
+        display_title = title.strip() or _fallback_title_from_url(canonical)
+        image_items, media_items = (), ()
+        comments_status = (
+            "Account/channel source rows are two-sided adapter references. Inbound item "
+            "import and outbound review/status/export actions require named adapter configuration."
+        )
+        livechat_status = "Account/channel live polling is not started by source-row intake."
+        provenance = "account/channel source-link adapter metadata; no unattended account polling"
+        warnings.append(
+            "Account/channel source adapter row recorded only as a source-link candidate; no polling, credential lookup, browser capture, or outbound send ran during intake."
+        )
     else:
         comments_status = "Discussion capture is not supported for this adapter."
         livechat_status = "Livechat is not supported for this adapter."
 
-    display_label = f"{display_title} - YouTube" if adapter.source_name == "youtube" else f"{display_title} - {parsed.netloc}"
+    if adapter.source_name == "youtube":
+        display_label = f"{display_title} - YouTube"
+    elif adapter.source_name == "account_channel":
+        display_label = f"{display_title} - {parsed.scheme or 'channel'}"
+    else:
+        display_label = f"{display_title} - {parsed.netloc}"
     capabilities = adapter.capabilities
     return SourceResourceRowState(
         row_id=row_id,
@@ -562,7 +612,7 @@ def build_source_resource_row(
         livechat_supported=capabilities.supports_livechat,
         comments_status=comments_status,
         livechat_status=livechat_status,
-        archive_statuses=() if adapter.source_name in {"youtube", "twitter_x"} else _default_archive_statuses(archive_auto_check_enabled),
+        archive_statuses=() if adapter.source_name in {"youtube", "twitter_x", "account_channel"} else _default_archive_statuses(archive_auto_check_enabled),
         image_resources=image_items,
         video_audio_resources=media_items,
         warnings=tuple(warnings),
@@ -612,7 +662,7 @@ def parse_source_url_intake(
         if part.strip(" ,;")
     ]
     invalid_tokens.extend(
-        part for part in non_url_words if not _URL_START_RE.match(part)
+        part for part in non_url_words if not _SOURCE_LINK_START_RE.match(part)
     )
     return SourceUrlIntakeResult(
         rows=tuple(rows),
@@ -628,10 +678,16 @@ def parse_source_url_intake(
 def eligible_discussion_options(
     rows: Sequence[SourceResourceRowState],
 ) -> tuple[tuple[str, str], ...]:
+    """Return rows usable by the Go/Webpage/Screenshot control.
+
+    The dropdown must include generic webpage rows such as Metro even when
+    they do not expose comments/livechat. Comments and livechat remain gated
+    separately by their per-row capability flags.
+    """
     return tuple(
         (row.row_id, row.display_label)
         for row in rows
-        if row.comments_supported or row.livechat_supported
+        if (row.canonical_url or row.raw_url)
     )
 
 
