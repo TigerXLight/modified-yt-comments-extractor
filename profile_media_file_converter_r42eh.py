@@ -444,7 +444,15 @@ def _ffprobe_media_metadata(path: Path, *, timeout: int = 8) -> dict[str, Any]:
         "audio_bitrate_kbps": 0,
         "format_bitrate_kbps": 0,
         "bits_per_pixel_frame": 0.0,
+        "input_size_bytes": 0,
+        "input_size_mib": 0.0,
     }
+    try:
+        if path.is_file():
+            metadata["input_size_bytes"] = int(path.stat().st_size)
+            metadata["input_size_mib"] = round(float(path.stat().st_size) / float(1024 ** 2), 4)
+    except Exception:
+        pass
     ffprobe = _ffprobe_path()
     if not ffprobe or not path.is_file():
         return metadata
@@ -671,11 +679,26 @@ def _target_video_kbps_from_size(metadata: dict[str, Any], target_file_size_mb: 
     duration = float(metadata.get("duration_seconds") or 0.0)
     if target_mb <= 0 or duration <= 0:
         return 0
-    # MB -> total kbit/sec.  Use 8192 kb per MiB for a conservative cap and
-    # reserve enough for audio/container overhead.
-    total_kbps = int((target_mb * 8192.0) / max(duration, 1.0))
+    input_bytes = int(metadata.get("input_size_bytes") or 0)
+    target_bytes = int(target_mb * float(1024 ** 2))
+    if input_bytes > 0 and target_bytes >= int(input_bytes * 0.98):
+        # A target-size field is a cap, not a request to inflate the file up to
+        # that size.  If the source already fits, stay in quality/no-inflate
+        # mode rather than creating a larger bitrate target.
+        return 0
+    # MB -> total kbit/sec.  Use 8192 kb per MiB, then apply a safety
+    # margin because real encoders, especially hardware/VBR paths, may overshoot
+    # their nominal target on short clips.  Target size is a cap, not a request
+    # to spend every available byte.
+    total_kbps = int(((target_mb * 8192.0) / max(duration, 1.0)) * 0.82)
     audio_kbps = _bitrate_to_kbps(audio_bitrate) or int(metadata.get("audio_bitrate_kbps") or 128) or 128
-    return max(120, total_kbps - audio_kbps - 64)
+    video_kbps = max(120, total_kbps - audio_kbps - 96)
+    source_video_kbps = int(metadata.get("video_bitrate_kbps") or 0)
+    if source_video_kbps and video_kbps >= int(source_video_kbps * 0.95):
+        # A cap only slightly below the source is better handled by CRF/quality
+        # optimisation; bitrate mode is for real size limits.
+        return 0
+    return video_kbps
 
 
 def _optimised_max_side(metadata: dict[str, Any], *, target_video_kbps: int, source_class: str, preset: str) -> int:
@@ -701,8 +724,11 @@ def _optimised_max_side(metadata: dict[str, Any], *, target_video_kbps: int, sou
 
 def _build_video_encoder_args(encoder_impl: str, *, fmt: str, crf: int, bitrate_kbps: int, speed: str, audio_br: str, web_optimise: bool) -> list[str]:
     bitrate = f"{bitrate_kbps}k" if bitrate_kbps else ""
-    maxrate = f"{max(bitrate_kbps, int(bitrate_kbps * 1.35))}k" if bitrate_kbps else ""
-    bufsize = f"{max(bitrate_kbps * 2, 500)}k" if bitrate_kbps else ""
+    # In target-size mode, maxrate must not float above the selected bitrate.
+    # Earlier code allowed a loose burst above the planned bitrate, which made
+    # a target-size cap pass planning but fail the actual size check on short clips.
+    maxrate = f"{bitrate_kbps}k" if bitrate_kbps else ""
+    bufsize = f"{max(bitrate_kbps, 500)}k" if bitrate_kbps else ""
     if encoder_impl in {"h264_amf", "h264_nvenc", "h264_qsv", "h264_vulkan"}:
         args = ["-c:v", encoder_impl]
         if bitrate_kbps:
@@ -784,21 +810,45 @@ def _select_optimised_video_strategy(path: Path, fmt: str, *, compress: bool, ta
     encoder_impl = ""
     chosen_family = "h264"
 
+    av1_hw_names = {"av1_amf", "av1_nvenc", "av1_qsv", "av1_mf", "av1_vulkan"}
+    av1_sw_names = {"libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"}
+    hevc_hw_names = {"hevc_amf", "hevc_nvenc", "hevc_qsv", "hevc_mf", "hevc_vulkan"}
+    has_av1_hw = any(name in selection_encoders for name in av1_hw_names)
+    has_av1_sw = any(name in selection_encoders for name in av1_sw_names)
+    has_hevc_hw = any(name in selection_encoders for name in hevc_hw_names)
+
     if requested_encoder != "auto":
         chosen_family = requested_encoder
         reason.append(f"manual encoder override: {requested_encoder}")
     elif preset_key == "speed":
         chosen_family = "h264"
         reason.append("Speed preset prefers a fast, compatible encoder")
-    elif short_video and any(name in selection_encoders for name in {"av1_amf", "av1_nvenc", "av1_qsv", "av1_mf", "av1_vulkan", "libsvtav1", "libsvt_av1", "libaom-av1", "librav1e"}):
-        chosen_family = "av1"
-        reason.append("short video allows AV1 efficiency without an excessive default wait")
     elif fmt == "webm":
-        chosen_family = "vp9"
-        reason.append("WebM/open output favours VP9 when AV1 is not selected")
-    elif target_kbps and target_kbps < 2600:
+        if short_video and has_av1_hw:
+            chosen_family = "av1"
+            reason.append("WebM short video can use hardware AV1 when actually runnable")
+        else:
+            chosen_family = "vp9"
+            reason.append("WebM/open output favours VP9 unless runnable hardware AV1 is available")
+    elif target_kbps and target_kbps < 2200:
+        if has_hevc_hw or any(name in selection_encoders for name in {"libx265", "hevc"}):
+            chosen_family = "h265"
+            reason.append("real target-size cap implies lower bitrate; HEVC/H.265 is preferred for smaller MP4")
+        elif short_video and (has_av1_hw or has_av1_sw):
+            chosen_family = "av1"
+            reason.append("low target bitrate and short duration allow AV1 when HEVC is not available")
+        else:
+            chosen_family = "h264"
+            reason.append("low target bitrate requested but no better practical encoder is available")
+    elif has_hevc_hw and fmt in {"mp4", "mov", "mkv"} and source_class in {"medium", "high", "unknown"}:
         chosen_family = "h265"
-        reason.append("target size implies lower target bitrate; HEVC/H.265 is preferred for smaller MP4")
+        reason.append("runnable hardware HEVC is available for MP4-style output; prefer it over software AV1 for practical size/time balance")
+    elif short_video and has_av1_hw:
+        chosen_family = "av1"
+        reason.append("short video allows hardware AV1 efficiency without an excessive default wait")
+    elif short_video and duration <= 30 and source_class == "high" and has_av1_sw and not has_hevc_hw:
+        chosen_family = "av1"
+        reason.append("very short high-bitrate clip can use software AV1 when no hardware HEVC path exists")
     elif source_class == "high":
         chosen_family = "h265"
         reason.append("source bitrate looks high/bloated; HEVC/H.265 should reduce size while preserving clarity")
@@ -1148,6 +1198,118 @@ def _delete_original_safely(input_path: Path, output_path: Path) -> tuple[bool, 
         return False, f"delete_failed: {exc}"
 
 
+
+def _extract_video_bitrate_kbps_from_command(command: list[str]) -> int:
+    try:
+        if "-b:v" not in command:
+            return 0
+        value = str(command[command.index("-b:v") + 1]).strip().lower()
+        if value.endswith("k"):
+            value = value[:-1]
+        return max(0, int(float(value)))
+    except Exception:
+        return 0
+
+
+def _set_video_bitrate_cap_args(command: list[str], kbps: int) -> list[str]:
+    updated = list(command)
+    kbps = max(120, int(kbps))
+    replacements = {
+        "-b:v": f"{kbps}k",
+        "-maxrate": f"{kbps}k",
+        "-bufsize": f"{max(kbps, 500)}k",
+    }
+    for key, value in replacements.items():
+        if key in updated:
+            idx = updated.index(key)
+            if idx + 1 < len(updated):
+                updated[idx + 1] = value
+        elif "-b:v" in updated and key != "-b:v":
+            insert_at = updated.index("-b:v") + 2
+            updated[insert_at:insert_at] = [key, value]
+    return updated
+
+
+def _retry_target_size_cap_if_needed(command: list[str], output_path: Path, target_mb: float, timeout: int) -> dict[str, Any]:
+    """Retry a target-size encode with lower bitrate if the first pass overshoots.
+
+    The retry is intentionally small and bounded.  It is not a visual-quality
+    oracle; it is a hard safety layer so Optimised/target-size mode never treats
+    a larger-than-cap result as acceptable merely because FFmpeg returned 0.
+    """
+    info: dict[str, Any] = {
+        "target_cap_retry_attempted": False,
+        "target_cap_met_after_retry": False,
+        "target_cap_retry_results": [],
+    }
+    try:
+        if target_mb <= 0 or not output_path.exists():
+            return info
+        cap_bytes = int(target_mb * float(1024 ** 2) * 1.02)
+        initial_bytes = int(output_path.stat().st_size)
+        info["target_cap_bytes"] = cap_bytes
+        info["target_cap_initial_bytes"] = initial_bytes
+        if initial_bytes <= cap_bytes:
+            info["target_cap_met_after_retry"] = True
+            return info
+        base_kbps = _extract_video_bitrate_kbps_from_command(command)
+        if base_kbps <= 0:
+            info["target_cap_retry_skip_reason"] = "no_video_bitrate_argument"
+            return info
+        best_path = output_path
+        best_bytes = initial_bytes
+        for scale in (0.78, 0.64, 0.52):
+            retry_kbps = max(120, int(base_kbps * scale))
+            retry_path = output_path.with_name(f"{output_path.stem}.target_cap_retry_{retry_kbps}k{output_path.suffix}")
+            retry_command = _set_video_bitrate_cap_args(command, retry_kbps)
+            if retry_command:
+                retry_command[-1] = str(retry_path)
+            if retry_path.exists():
+                try:
+                    retry_path.unlink()
+                except Exception:
+                    pass
+            started = time.perf_counter()
+            proc = subprocess.run(retry_command, capture_output=True, text=True, timeout=max(5, int(timeout)), encoding="utf-8", errors="replace")
+            elapsed = round(time.perf_counter() - started, 3)
+            retry_bytes = int(retry_path.stat().st_size) if retry_path.exists() else 0
+            retry_ok = bool(proc.returncode == 0 and retry_bytes > 0)
+            rec = {
+                "retry_kbps": retry_kbps,
+                "scale": scale,
+                "returncode": int(proc.returncode),
+                "elapsed_seconds": elapsed,
+                "output_bytes": retry_bytes,
+                "under_cap": bool(retry_ok and retry_bytes <= cap_bytes),
+                "stderr_tail": (proc.stderr or "")[-1200:],
+            }
+            info["target_cap_retry_results"].append(rec)
+            info["target_cap_retry_attempted"] = True
+            if retry_ok and retry_bytes < best_bytes:
+                best_path = retry_path
+                best_bytes = retry_bytes
+            if retry_ok and retry_bytes <= cap_bytes:
+                best_path = retry_path
+                best_bytes = retry_bytes
+                break
+        if best_path != output_path and best_path.exists():
+            try:
+                if output_path.exists():
+                    output_path.unlink()
+                shutil.move(str(best_path), str(output_path))
+            except Exception:
+                shutil.copy2(best_path, output_path)
+        info["target_cap_final_bytes"] = int(output_path.stat().st_size) if output_path.exists() else 0
+        info["target_cap_met_after_retry"] = bool(info["target_cap_final_bytes"] <= cap_bytes)
+        for candidate in output_path.parent.glob(f"{output_path.stem}.target_cap_retry_*{output_path.suffix}"):
+            try:
+                candidate.unlink()
+            except Exception:
+                pass
+    except Exception as exc:
+        info["target_cap_retry_error"] = repr(exc)
+    return info
+
 def run_conversion(plan: dict[str, Any], *, timeout: int = 1800) -> dict[str, Any]:
     input_path = Path(str(plan["input_path"]))
     output_path = Path(str(plan["output_path"]))
@@ -1189,6 +1351,32 @@ def run_conversion(plan: dict[str, Any], *, timeout: int = 1800) -> dict[str, An
         result["returncode"] = rc
         result["stderr_tail"] = stderr[-4000:]
         result["success"] = bool(rc == 0 and output_path.exists() and output_path.stat().st_size > 0)
+        if result["success"]:
+            try:
+                in_bytes = int(input_path.stat().st_size) if input_path.exists() else 0
+                out_bytes = int(output_path.stat().st_size) if output_path.exists() else 0
+                preset = plan.get("preset", {}) if isinstance(plan.get("preset"), dict) else {}
+                same_format_video = str(plan.get("input_kind")) == "video" and str(plan.get("output_kind")) == "video" and input_path.suffix.lower().lstrip(".") == str(plan.get("target_format", "")).lower()
+                target_cap_mb = _target_size_mb_to_float(preset.get("target_file_size_mb"))
+                if same_format_video and target_cap_mb > 0:
+                    retry_info = _retry_target_size_cap_if_needed(command, output_path, target_cap_mb, timeout)
+                    result.update(retry_info)
+                    out_bytes = int(output_path.stat().st_size) if output_path.exists() else out_bytes
+                if same_format_video and bool(preset.get("compress")) and in_bytes > 0 and out_bytes > int(in_bytes * 1.03):
+                    encoded_path = output_path.with_name(output_path.stem + ".encoded_larger" + output_path.suffix)
+                    try:
+                        if encoded_path.exists():
+                            encoded_path.unlink()
+                        output_path.replace(encoded_path)
+                    except Exception:
+                        encoded_path = None  # type: ignore[assignment]
+                    shutil.copy2(input_path, output_path)
+                    result["size_guard"] = "kept_original_streams_because_encoded_output_was_larger"
+                    result["encoded_output_bytes"] = out_bytes
+                    result["guarded_output_bytes"] = int(output_path.stat().st_size)
+                    result["encoded_larger_path"] = str(encoded_path) if encoded_path else ""
+            except Exception as guard_exc:
+                result["size_guard_error"] = repr(guard_exc)
         if result["success"] and bool(plan.get("destructive_after_success")):
             deleted, reason = _delete_original_safely(input_path, output_path)
             result["original_deleted"] = deleted
@@ -1199,7 +1387,7 @@ def run_conversion(plan: dict[str, Any], *, timeout: int = 1800) -> dict[str, An
 
 
 
-# R42FB: no-network cross-capability profile and local efficiency estimator.
+# R42FB/R42FE: no-network cross-capability profile and strict target-size estimator.
 def _windows_cim_json(class_name: str, properties: tuple[str, ...], *, timeout: int = 8) -> list[dict[str, Any]]:
     """Read Windows CIM data without adding a dependency.
 
@@ -1328,7 +1516,7 @@ def _benchmark_single_encoder(encoder: str, *, timeout: int = 25, duration_secon
             "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000",
             "-t", str(duration_seconds),
             *args,
-            "-c:a", "aac", "-b:a", "96k",
+            *( ["-c:a", "libopus", "-b:a", "96k"] if ext == ".webm" else ["-c:a", "aac", "-b:a", "96k"] ),
             str(out_path),
         ]
         start = time.perf_counter()
@@ -1386,11 +1574,20 @@ def build_converter_optimisation_capability_profile(*, benchmark: bool = False, 
         if not item.get("ok"):
             return -9999.0
         family = str(item.get("family") or "h264")
-        quality_size_score = {"av1": 4.0, "h265": 3.4, "vp9": 3.1, "h264": 2.4}.get(family, 2.0)
+        enc = str(item.get("encoder") or "")
+        out_mib = float(item.get("output_mib") or 99.0)
         speed = float(item.get("speed_multiple") or 0.0)
         runtime = float(item.get("estimated_3min_1080p_seconds") or 9999.0)
-        runtime_penalty = 0.0 if runtime <= 360 else min(4.0, (runtime - 360) / 180.0)
-        return round(quality_size_score + min(3.0, speed / 2.0) - runtime_penalty, 4)
+        # R42FD: benchmark ranking must not choose AV1 just because AV1 has a
+        # theoretical efficiency reputation.  On this user's RX 5700 run,
+        # hevc_amf was both smaller and faster than libsvtav1, so size/time data
+        # must dominate the recommendation.
+        size_score = min(4.0, 1.8 / max(0.15, out_mib))
+        speed_score = min(3.0, speed / 3.0)
+        family_bonus = {"h265": 0.65, "av1": 0.45, "vp9": 0.35, "h264": 0.1}.get(family, 0.0)
+        hardware_bonus = 0.45 if enc.endswith("_amf") or enc.endswith("_nvenc") or enc.endswith("_qsv") or enc.endswith("_mf") else 0.0
+        runtime_penalty = 0.0 if runtime <= 180 else min(4.0, (runtime - 180) / 120.0)
+        return round(size_score + speed_score + family_bonus + hardware_bonus - runtime_penalty, 4)
 
     ranked = sorted((dict(item, optimisation_score=_rank(item)) for item in benchmarks if item.get("ok")), key=lambda x: x.get("optimisation_score", -9999), reverse=True)
     fastest = sorted((item for item in benchmarks if item.get("ok")), key=lambda x: float(x.get("elapsed_seconds") or 9999))
@@ -1409,7 +1606,7 @@ def build_converter_optimisation_capability_profile(*, benchmark: bool = False, 
         default_reason = "no FFmpeg encoders detected"
 
     return {
-        "schema": R42EH_SCHEMA + ".optimisation_capability_profile.r42fb",
+        "schema": R42EH_SCHEMA + ".optimisation_capability_profile.r42fe",
         "mode": "NO_NETWORK_LOCAL_CAPABILITY_AND_OPTIONAL_SYNTHETIC_BENCHMARK",
         "system": _system_resource_profile(),
         "ffmpeg": {

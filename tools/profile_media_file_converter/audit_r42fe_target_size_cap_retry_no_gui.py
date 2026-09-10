@@ -51,7 +51,7 @@ def _run(cmd: list[str], *, timeout: int = 30, cwd: Path | None = None) -> dict[
 
 def _make_capture_dir() -> Path:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out = CAPTURE_ROOT / f"r42fc_converter_end_to_end_capability_{stamp}"
+    out = CAPTURE_ROOT / f"r42fe_target_size_cap_retry_{stamp}"
     out.mkdir(parents=True, exist_ok=True)
     return out
 
@@ -93,7 +93,11 @@ def _generate_sources(mod: Any, tmp: Path, timeout: int) -> dict[str, Any]:
             video_args += ["-q:v", "5"]
         else:
             video_args += ["-b:v", "1800k"]
-        video_cmd = [ffmpeg, "-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30", "-f", "lavfi", "-i", "sine=frequency=660:sample_rate=48000", "-t", "2.0", *video_args, "-c:a", "aac", "-b:a", "96k", str(video_path)]
+        # Generate a deliberately bloated-but-small local fixture so Optimised
+        # compression has something real to reduce.  The older audit used an
+        # already compact 640x360/2s sample, which allowed a "passing" audit even
+        # when compression made the file larger.
+        video_cmd = [ffmpeg, "-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30", "-f", "lavfi", "-i", "sine=frequency=660:sample_rate=48000", "-t", "3.0", *video_args, "-b:v", "6500k", "-c:a", "aac", "-b:a", "96k", str(video_path)]
         sources["video"] = _run(video_cmd, timeout=min(45, timeout))
         sources["video"].update({"path": str(video_path), "source_encoder": source_encoder, "ok": bool(video_path.exists() and video_path.stat().st_size > 0 and sources["video"].get("ok"))})
     else:
@@ -104,7 +108,9 @@ def _generate_sources(mod: Any, tmp: Path, timeout: int) -> dict[str, Any]:
 def _plan_and_run(mod: Any, label: str, input_path: Path, target: str, output_dir: Path, *, timeout: int, **kwargs: Any) -> dict[str, Any]:
     entry: dict[str, Any] = {"label": label, "input_path": str(input_path), "target": target, "kwargs": kwargs}
     try:
-        plan = mod.plan_conversion(input_path, target, output_dir=output_dir, keep_original=True, overwrite=True, **kwargs)
+        plan_kwargs = dict(kwargs)
+        plan_kwargs.pop("_expected_target_size_mb", None)
+        plan = mod.plan_conversion(input_path, target, output_dir=output_dir, keep_original=True, overwrite=True, **plan_kwargs)
         entry["plan"] = plan
         start = time.perf_counter()
         result = mod.run_conversion(plan, timeout=timeout)
@@ -127,7 +133,7 @@ def _plan_and_run(mod: Any, label: str, input_path: Path, target: str, output_di
 def _write_summary_md(path: Path, audit: dict[str, Any]) -> None:
     rec = audit.get("capability_profile", {}).get("recommendation", {}) if isinstance(audit.get("capability_profile"), dict) else {}
     lines = [
-        "# R42FB File Converter End-to-End Capability Audit",
+        "# R42FE File Converter Strict Optimised Efficiency Audit",
         "",
         f"Verdict: `{audit.get('verdict')}`",
         f"Generated: `{audit.get('generated_at')}`",
@@ -147,7 +153,7 @@ def _write_summary_md(path: Path, audit: dict[str, Any]) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="R42FB no-network File Converter end-to-end/capability audit")
+    parser = argparse.ArgumentParser(description="R42FE strict no-network File Converter capability and efficiency audit")
     parser.add_argument("--benchmark", action="store_true", help="run bounded synthetic encoder benchmarks")
     parser.add_argument("--include-slow", action="store_true", help="include very slow AV1 software encoders in probe/benchmark")
     parser.add_argument("--timeout", type=int, default=60)
@@ -158,7 +164,7 @@ def main() -> int:
     main_ok, main_err = _compile(MAIN)
     profile_ok, profile_err = _compile(PROFILE)
     audit: dict[str, Any] = {
-        "schema": "ytce.r42fb.converter_end_to_end_capability_audit.v1",
+        "schema": "ytce.r42fe.converter_target_size_cap_retry_audit.v1",
         "mode": "NO_NETWORK_LOCAL_PIPELINE_AND_CAPABILITY_AUDIT",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "root": str(ROOT),
@@ -184,7 +190,7 @@ def main() -> int:
     audit["environment"] = mod.probe_environment()
     audit["capability_profile"] = mod.build_converter_optimisation_capability_profile(benchmark=args.benchmark, timeout=args.timeout, include_slow=args.include_slow)
 
-    with tempfile.TemporaryDirectory(prefix="ytce_r42fb_pipeline_") as td:
+    with tempfile.TemporaryDirectory(prefix="ytce_r42fe_pipeline_") as td:
         tmp = Path(td)
         sources = _generate_sources(mod, tmp, args.timeout)
         audit["generated_sources"] = sources
@@ -201,7 +207,9 @@ def main() -> int:
             vpath = Path(sources["video"]["path"])
             pipeline.append(_plan_and_run(mod, "video_convert_remux_copy", vpath, "mp4", outputs, timeout=min(60, args.timeout), compress=False))
             pipeline.append(_plan_and_run(mod, "video_compress_optimised", vpath, "mp4", outputs, timeout=min(90, args.timeout), compress=True, optimisation_preset="Optimised", target_file_size_mb=""))
-            pipeline.append(_plan_and_run(mod, "video_compress_target_size", vpath, "mp4", outputs, timeout=min(90, args.timeout), compress=True, optimisation_preset="Optimised", target_file_size_mb="1"))
+            input_mb = vpath.stat().st_size / float(1024 ** 2)
+            cap_mb = max(0.05, round(input_mb * 0.55, 3))
+            pipeline.append(_plan_and_run(mod, "video_compress_target_size", vpath, "mp4", outputs, timeout=min(90, args.timeout), compress=True, optimisation_preset="Optimised", target_file_size_mb=str(cap_mb), _expected_target_size_mb=cap_mb))
         audit["pipeline"] = pipeline
 
     def _find(label: str) -> dict[str, Any]:
@@ -212,11 +220,35 @@ def main() -> int:
     remux = _find("video_convert_remux_copy")
     opt = _find("video_compress_optimised")
     cap = _find("video_compress_target_size")
+    def _ratio_ok(item: dict[str, Any], threshold: float = 1.03) -> bool | None:
+        if not item:
+            return None
+        ratio = item.get("size_ratio")
+        if ratio is None:
+            return False
+        return float(ratio) <= threshold
+
+    def _target_cap_ok(item: dict[str, Any]) -> bool | None:
+        if not item:
+            return None
+        try:
+            target_mb = float(item.get("kwargs", {}).get("_expected_target_size_mb") or 0.0)
+            if target_mb <= 0:
+                return False
+            return int(item.get("output_bytes") or 0) <= int(target_mb * 1024 * 1024 * 1.08)
+        except Exception:
+            return False
+
+    rec = audit.get("capability_profile", {}).get("recommendation", {}) if isinstance(audit.get("capability_profile"), dict) else {}
     audit["guideline_checks"] = {
         "convert_prefers_remux_copy": bool(remux.get("plan", {}).get("preset", {}).get("stream_copy") is True) if remux else None,
-        "compression_forces_transcode": bool(opt.get("plan", {}).get("preset", {}).get("stream_copy") is not True and "-c:v" in opt.get("plan", {}).get("command", [])) if opt else None,
-        "target_size_uses_bitrate_mode": bool(cap.get("plan", {}).get("preset", {}).get("optimisation_mode") == "target_size_bitrate") if cap else None,
+        "compression_forces_transcode_or_size_guard": bool(opt.get("plan", {}).get("preset", {}).get("stream_copy") is not True and ("-c:v" in opt.get("plan", {}).get("command", []) or opt.get("result", {}).get("size_guard"))) if opt else None,
+        "compression_does_not_inflate_output": _ratio_ok(opt),
+        "target_size_uses_bitrate_mode_when_cap_is_real": bool(cap.get("plan", {}).get("preset", {}).get("optimisation_mode") == "target_size_bitrate") if cap else None,
+        "target_size_respects_cap": _target_cap_ok(cap),
+        "target_size_does_not_inflate_output": _ratio_ok(cap),
         "encoder_command_aligned": all(bool(item.get("plan", {}).get("preset", {}).get("encoder_command_aligned", True)) for item in audit.get("pipeline", []) if item.get("plan", {}).get("output_kind") == "video"),
+        "capability_recommendation_present": bool(rec.get("optimised_default_encoder_impl")),
         "no_network_side_effects": audit["side_effects"]["network_actions_performed"] is False,
     }
     critical = [audit["checks"].get("main_compiles"), audit["checks"].get("profile_compiles"), audit["checks"].get("module_import_ok")]
@@ -228,8 +260,8 @@ def main() -> int:
             critical.append(bool(value))
     audit["verdict"] = all(bool(x) for x in critical)
 
-    json_path = out_dir / "r42fc_converter_end_to_end_capability_audit.json"
-    md_path = out_dir / "r42fc_converter_end_to_end_capability_audit.md"
+    json_path = out_dir / "r42fe_target_size_cap_retry_audit.json"
+    md_path = out_dir / "r42fe_target_size_cap_retry_audit.md"
     json_path.write_text(json.dumps(audit, indent=2), encoding="utf-8")
     _write_summary_md(md_path, audit)
     audit["written_json"] = str(json_path)
