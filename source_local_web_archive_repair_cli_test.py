@@ -1,4 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
+# R42FJ optional dependency guard: warcio
+import importlib.util as _r42fj_importlib_util
+import unittest as _r42fj_unittest
+if _r42fj_importlib_util.find_spec('warcio') is None:
+    raise _r42fj_unittest.SkipTest('optional WARC/archive dependency warcio is not installed')
+# R42FJ optional dependency guard end
 
 import gzip
 import hashlib
@@ -354,3 +360,5 @@ def run_self_test() -> None:
 if __name__ == "__main__":
     run_self_test()
     print("source_local_web_archive_repair_cli.py: OK")
+
+
