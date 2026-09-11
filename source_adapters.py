@@ -10,7 +10,7 @@ from youtube_url_utils import extract_youtube_video_id, normalize_youtube_url
 from urllib.parse import urlsplit, urlunsplit
 
 
-NEWS_WEBSITE_HOST_SUFFIXES = ("telegraph.co.uk",)
+NEWS_WEBSITE_HOST_SUFFIXES = ("telegraph.co.uk", "metro.co.uk")
 MSN_HOST_SUFFIXES = ("msn.com",)
 TWITTER_X_HOST_SUFFIXES = ("x.com", "twitter.com")
 
@@ -98,6 +98,14 @@ class SourceCapabilities:
     supports_timestamps: bool = False
     supports_author_channel_ids: bool = False
     supports_transcripts: bool = False
+    supports_article_text: bool = False
+    supports_images: bool = False
+    supports_video_audio: bool = False
+    supports_screenshots: bool = False
+    supports_warc: bool = False
+    supports_archive_lookup: bool = False
+    supports_jdownloader_api3128: bool = False
+    comments_tested: bool = False
 
 
 @dataclass(frozen=True)
@@ -181,6 +189,10 @@ class YouTubeSourceAdapter:
         supports_timestamps=True,
         supports_author_channel_ids=True,
         supports_transcripts=True,
+        supports_images=True,
+        supports_video_audio=True,
+        supports_jdownloader_api3128=True,
+        comments_tested=True,
     )
     metadata = SourceAdapterMetadata(
         display_name="YouTube",
@@ -219,6 +231,13 @@ class NewsWebsiteSourceAdapter:
     source_name = "news_website"
     capabilities = SourceCapabilities(
         supports_timestamps=True,
+        supports_article_text=True,
+        supports_images=True,
+        supports_video_audio=True,
+        supports_screenshots=True,
+        supports_warc=True,
+        supports_archive_lookup=True,
+        supports_jdownloader_api3128=True,
     )
     metadata = SourceAdapterMetadata(
         display_name="News Website",
@@ -275,6 +294,14 @@ class MsnSourceAdapter:
         supports_comments=True,
         supports_replies=True,
         supports_timestamps=True,
+        supports_article_text=True,
+        supports_images=True,
+        supports_video_audio=True,
+        supports_screenshots=True,
+        supports_warc=True,
+        supports_archive_lookup=True,
+        supports_jdownloader_api3128=True,
+        comments_tested=True,
     )
     metadata = SourceAdapterMetadata(
         display_name="MSN",
@@ -331,6 +358,12 @@ class TwitterXSourceAdapter:
         supports_replies=True,
         supports_likes=True,
         supports_timestamps=True,
+        supports_images=True,
+        supports_video_audio=True,
+        supports_screenshots=True,
+        supports_warc=True,
+        supports_archive_lookup=True,
+        supports_jdownloader_api3128=True,
     )
     metadata = SourceAdapterMetadata(
         display_name="X / Twitter",
@@ -675,6 +708,52 @@ GENERIC_ARTICLE_COMMENTS_PROFILE = SourceMethodProfile(
         "systems remain audit-required before live execution."
     ),
 )
+METRO_ARTICLE_WEBPAGE_PROFILE = SourceMethodProfile(
+    profile_id="metro_article_webpage_archive_scan",
+    adapter_id="news_website",
+    display_name="Metro article/webpage archive scan profile",
+    method_family="metro_article_webpage_universal_capture",
+    supported_modes=(
+        "webpage",
+        "readable_article_text",
+        "full_page_screenshot",
+        "visible_page_text",
+        "html_snapshot",
+        "warc_capture",
+        "archive_check",
+        "wayback_supplied_url",
+        "archive_today_supplied_url",
+        "video_audio_discovery",
+        "jdownloader_api3128",
+        "source_role_labels",
+    ),
+    expected_artifact_types=(
+        "raw_html",
+        "rendered_page_html",
+        "final_dom",
+        "article_text",
+        "article_screenshot",
+        "warc",
+        "archive_result",
+        "media_receipt",
+        "source_role_sidecar",
+    ),
+    required_operator_fields=(
+        "source_url",
+        "canonical_url",
+        "archive_url_or_lookup_receipt",
+        "text_extraction_receipt_reference",
+        "operator_review_note",
+    ),
+    archive_fallback_supported=True,
+    manual_import_supported=True,
+    notes=(
+        "Metro uses the existing universal news/webpage capture layers. Article text and screenshot are treated "
+        "as tested true from project runs; comments remain not_tested until a real comments capture run exercises them. "
+        "Selected public media candidates prefer the API3128-backed JDownloader internal bridge."
+    ),
+)
+
 MANUAL_LOCAL_IMPORT_PROFILE = SourceMethodProfile(
     profile_id="manual_local_file_import",
     adapter_id="manual_local_import",
@@ -758,6 +837,7 @@ SOURCE_METHOD_PROFILES: Sequence[SourceMethodProfile] = (
     TWITTER_X_REPLY_THREAD_ARCHIVE_PROFILE,
     TWITTER_X_MEDIA_SHARED_BACKEND_PROFILE,
     YOUTUBE_MEDIA_TRANSCRIPT_COMMENT_PROFILE,
+    METRO_ARTICLE_WEBPAGE_PROFILE,
     GENERIC_ARTICLE_COMMENT_PROFILE,
     GENERIC_ARTICLE_HTML_PROFILE,
     GENERIC_ARTICLE_COMMENTS_PROFILE,

@@ -373,6 +373,8 @@ def _canonicalize_for_adapter(url: str) -> tuple[Any, str, str]:
         adapter = _GENERIC_WEBPAGE_ADAPTER
     if adapter.source_name == "msn":
         canonical = canonicalize_msn_url(url)
+    elif adapter.source_name == "news_website":
+        canonical = adapter.normalize_url(url)
     elif adapter.source_name == "webpage":
         canonical = canonicalize_webpage_url(url)
     else:
@@ -492,8 +494,8 @@ def _youtube_media_selection_resources(
             bitrate_or_quality="thumbnail",
             status="queued",
             selectable=True,
-            warning="Resolved by yt-dlp when the media plan is executed.",
-            provenance="youtube media backend selection",
+            warning="Resolved by API3128-backed JDownloader route when the media plan is executed; yt-dlp remains fallback/reference only.",
+            provenance="youtube API3128/JDownloader media backend selection",
         ),
     )
     quality_presets = (
@@ -521,8 +523,8 @@ def _youtube_media_selection_resources(
             bitrate_or_quality=label,
             status="queued",
             selectable=True,
-            warning="Auto mux: yt-dlp selects bestvideo+bestaudio and FFmpeg merges when needed.",
-            provenance="youtube media backend selection",
+            warning="Auto mux: API3128-backed JDownloader route selects video+audio and FFmpeg merges when needed; yt-dlp remains fallback/reference only.",
+            provenance="youtube API3128/JDownloader media backend selection",
         )
         for label, height in quality_presets
     )
@@ -551,7 +553,7 @@ def build_source_resource_row(
     if adapter.source_name == "youtube":
         display_title = title.strip() or f"YouTube video {source_id}"
         image_items, media_items = (), ()
-        provenance = "adapter metadata; YouTube media uses row quality selector and settings"
+        provenance = "adapter metadata; YouTube media uses API3128-backed JDownloader route plus row quality selector/settings"
     elif adapter.source_name == "twitter_x":
         display_title = _twitter_title_from_url(canonical, title)
         image_items, media_items = (), ()
@@ -567,6 +569,17 @@ def build_source_resource_row(
         warnings.append(
             "MSN source row no longer injects fake fixture media. Use Images/GIFs or Video/Audio, then run discovery against rendered MSN HTML."
         )
+    elif adapter.source_name == "news_website":
+        display_title = title.strip() or _fallback_title_from_url(canonical)
+        image_items, media_items = (), ()
+        comments_status = "Generic news/Metro comment capture is NOT_TESTED until a site-specific comments run exercises it."
+        livechat_status = "News website rows do not support livechat."
+        provenance = "universal news/webpage adapter metadata; Edge/WebView text/screenshot/WARC/archive/media discovery is user-triggered; selected public media prefers API3128-backed JDownloader"
+        if parsed.netloc.lower().endswith("metro.co.uk"):
+            comments_status = "Metro article text and screenshot are tested true; Metro comments are NOT_TESTED until an explicit comment capture run exercises them."
+            warnings.append(
+                "Metro source row uses universal news/webpage capture layers. Article text and screenshot are tested true; comments remain NOT_TESTED."
+            )
     elif adapter.source_name == "webpage":
         display_title = title.strip() or _fallback_title_from_url(canonical)
         image_items, media_items = (), ()

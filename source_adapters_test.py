@@ -67,8 +67,10 @@ def run_self_test() -> None:
 
     news_adapter = NEWS_WEBSITE_SOURCE_ADAPTER
     telegraph_url = "HTTPS://www.telegraph.co.uk/news/2026/07/10/example-story/?utm_source=x#comments"
+    metro_url = "https://metro.co.uk/2026/07/17/people-shout-seagull-eater-street-far-right-lies-29157396/?ico=related-posts"
     msn_url = "https://www.msn.com/en-gb/news/world/example-story/ar-AA123456?ocid=feeds"
     assert news_adapter.can_handle(telegraph_url)
+    assert news_adapter.can_handle(metro_url)
     assert not news_adapter.can_handle(msn_url)
     assert find_source_adapter(telegraph_url) is news_adapter
     assert find_source_adapter(msn_url) is MSN_SOURCE_ADAPTER
@@ -77,6 +79,9 @@ def run_self_test() -> None:
     )
     assert news_adapter.extract_source_id(telegraph_url) == (
         "www.telegraph.co.uk/news/2026/07/10/example-story/"
+    )
+    assert news_adapter.normalize_url(metro_url) == (
+        "https://metro.co.uk/2026/07/17/people-shout-seagull-eater-street-far-right-lies-29157396/"
     )
 
     for value in [
@@ -97,6 +102,13 @@ def run_self_test() -> None:
     assert not news_capabilities.supports_author_channel_ids
     assert not news_capabilities.supports_transcripts
     assert news_capabilities.supports_timestamps
+    assert news_capabilities.supports_article_text
+    assert news_capabilities.supports_images
+    assert news_capabilities.supports_video_audio
+    assert news_capabilities.supports_screenshots
+    assert news_capabilities.supports_warc
+    assert news_capabilities.supports_archive_lookup
+    assert news_capabilities.supports_jdownloader_api3128
 
     news_metadata = news_adapter.metadata
     assert news_metadata.display_name == "News Website"
@@ -204,6 +216,10 @@ def run_self_test() -> None:
     assert twitter_media_profile.network_actions_performed is True
     assert twitter_media_profile.browser_automation_performed is True
     assert find_source_method_profile("youtube_media_transcript_comment").adapter_id == "youtube"
+    metro_profile = find_source_method_profile("metro_article_webpage_archive_scan")
+    assert metro_profile.adapter_id == "news_website"
+    assert "jdownloader_api3128" in metro_profile.supported_modes
+    assert "source_role_labels" in metro_profile.supported_modes
     assert find_source_method_profile("generic_article_html").adapter_id == "news_website"
     assert find_source_method_profile("generic_article_comments").adapter_id == "news_website"
     assert find_source_method_profile("archive_only_import").adapter_id == "manual_local_import"

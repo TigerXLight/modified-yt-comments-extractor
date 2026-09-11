@@ -38,6 +38,7 @@ MSN_URL = (
 )
 YOUTUBE_URL = "https://www.youtube.com/watch?v=aB3_dE-9xYz"
 TWITTER_URL = "https://x.com/example/status/12345"
+METRO_URL = "https://metro.co.uk/2026/07/17/people-shout-seagull-eater-street-far-right-lies-29157396/"
 CHANNEL_URL = "slack://workspace/channel/message/123?thread=456"
 
 
@@ -176,6 +177,19 @@ def test_source_url_intake_preserves_order_dedupes_and_retains_invalid_text() ->
     assert "network" in result.scope
 
 
+
+
+def test_metro_news_row_records_tested_article_screenshot_and_untested_comments() -> None:
+    row = build_source_resource_row(METRO_URL)
+
+    assert row.adapter_id == "news_website"
+    assert row.adapter_display_name == "News Website"
+    assert row.comments_supported is False
+    assert row.livechat_supported is False
+    assert "Metro article text and screenshot are tested true" in row.comments_status
+    assert "NOT_TESTED" in row.comments_status
+    assert "API3128-backed JDownloader" in row.provenance
+    assert any("comments remain NOT_TESTED" in warning for warning in row.warnings)
 
 
 def test_generic_webpage_row_accepts_localhost_for_image_discovery() -> None:
@@ -390,6 +404,7 @@ def run_self_test() -> None:
     test_archive_status_presentation_is_accessible_and_does_not_fabricate_dates()
     test_archive_auto_check_disabled_starts_gray_without_checks()
     test_twitter_row_uses_compact_settings_only_controls()
+    test_metro_news_row_records_tested_article_screenshot_and_untested_comments()
     test_url_token_parser_accepts_mixed_separators_and_encoded_commas()
     test_source_url_intake_preserves_order_dedupes_and_retains_invalid_text()
     test_discussion_selection_persists_and_falls_back_after_removal()

@@ -25365,8 +25365,42 @@ render();
             raise RuntimeError("No direct media URL is available for this candidate.")
         parsed = urllib.parse.urlsplit(media_url)
         lower_path = str(parsed.path or "").lower()
-        if lower_path.endswith((".m3u8", ".mpd")):
-            raise RuntimeError("Stream manifests need a later JDownloader/yt-dlp route; this direct FILES intake handles direct media files first.")
+        is_stream_manifest = lower_path.endswith((".m3u8", ".mpd", ".f4m", ".ism", ".ism/manifest"))
+        api3128_error = ""
+        try:
+            from webpage_video_api3128_route_r42fx import (
+                STATUS_SUCCESS as R42FX_API3128_STATUS_SUCCESS,
+                download_webpage_video_audio_item_via_api3128,
+                render_webpage_video_api3128_result_for_log,
+                should_attempt_webpage_video_api3128_first,
+            )
+
+            should_try_api3128 = should_attempt_webpage_video_api3128_first(
+                media_url,
+                extension=str(getattr(item, "extension", "") or ""),
+                mime_type=str(getattr(item, "mime_type", "") or ""),
+                kind=str(getattr(item, "resource_kind", "") or getattr(item, "media_type", "") or ""),
+                source_url=str(getattr(row, "canonical_url", "") or getattr(row, "raw_url", "") or ""),
+            )
+            if should_try_api3128:
+                route_result = download_webpage_video_audio_item_via_api3128(
+                    row=row,
+                    item=item,
+                    resource_id=resource_id,
+                    output_dir=output_dir,
+                )
+                logger.debug("%s", render_webpage_video_api3128_result_for_log(route_result))
+                if route_result.status == R42FX_API3128_STATUS_SUCCESS and route_result.local_file_paths:
+                    return str(route_result.local_file_paths[0])
+                api3128_error = route_result.message or "; ".join(route_result.errors)
+        except (KeyboardInterrupt, SystemExit, GeneratorExit):
+            raise
+        except Exception as exc:
+            api3128_error = str(exc)
+            logger.debug("R42FX API3128/JDownloader webpage media route unavailable: %s", exc)
+        if is_stream_manifest:
+            detail = f" Last API3128 detail: {api3128_error}" if api3128_error else ""
+            raise RuntimeError("Stream/embed media candidates require the API3128-backed JDownloader internal route; yt-dlp is fallback/reference only." + detail)
         title = str(getattr(row, "title", "") or getattr(row, "domain", "") or "webpage video audio")
         folder_name = self._safe_session_folder_name(title)
         target_dir = output_dir / folder_name / "Video and Audio"

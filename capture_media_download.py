@@ -23,6 +23,8 @@ MEDIA_DOWNLOAD_SCOPE = (
 
 MEDIA_MUX_PLAN_STATUS_PLAN_ONLY = "plan_only"
 MEDIA_MUX_PLAN_STATUS_READY = "mock_command_ready"
+MEDIA_DOWNLOAD_BACKEND_JDOWNLOADER_API3128 = "jdownloader_internal_api3128"
+MEDIA_DOWNLOAD_BACKEND_YTDLP_FALLBACK = "yt_dlp_fallback"
 
 
 @dataclass(frozen=True)
@@ -253,6 +255,39 @@ def build_separate_av_mux_plan(
         inputs=(video_component, audio_component),
         expected_output=output_path,
         safety_status="mock_command_plan_only_not_executed",
+        status=MEDIA_MUX_PLAN_STATUS_READY,
+    )
+
+
+def build_jdownloader_api3128_media_plan(
+    *,
+    resource: MediaResource,
+    output_path: str,
+    package_name: str = "",
+) -> MediaMuxPlan:
+    """Build a side-effect-free API3128/JDownloader media handoff plan.
+
+    The actual execution is handled by the shared JDownloader backend; this helper
+    records intent and keeps yt-dlp as fallback/reference only.
+    """
+    command = (
+        "jdownloader_internal_api3128",
+        "--route",
+        "api3128",
+        "--addlinks",
+        resource.url,
+        "--output",
+        output_path,
+    )
+    if package_name:
+        command = command + ("--package", package_name)
+    return MediaMuxPlan(
+        video_resource_id=resource.resource_id,
+        audio_resource_id="",
+        output_filename=Path(output_path).name,
+        executable_command=command,
+        expected_output=output_path,
+        safety_status="jdownloader_api3128_handoff_plan_only_not_executed",
         status=MEDIA_MUX_PLAN_STATUS_READY,
     )
 
