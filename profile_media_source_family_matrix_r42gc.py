@@ -20,6 +20,7 @@ STATUS_VALIDATED_PLAN = "validated_plan"
 STATUS_IMPLEMENTED = "implemented"
 STATUS_PROVEN_MANUAL_ROUTE = "proven_manual_route"
 STATUS_BASELINE_EXISTS_NOT_CLOSED = "baseline_exists_not_closed"
+STATUS_VALIDATED_CURRENT_METHOD = "validated_current_method"
 STATUS_NOT_TESTED = "not_tested"
 STATUS_SPECIALIST_REQUIRED = "specialist_required"
 STATUS_UNSUPPORTED = "unsupported"
@@ -281,19 +282,21 @@ SOURCE_FAMILY_CAPABILITIES: tuple[SourceFamilyCapability, ...] = (
         family_id="twitter_x",
         display_name="X / Twitter",
         adapter_hint="twitter_x",
-        route_preference="twitter_x_specialist_public_post_media_archive_profiles",
+        route_preference="twitter_x_specialist_public_post_thread_profile_media_archive_profiles",
         article_text=STATUS_UNSUPPORTED,
-        comments=STATUS_BASELINE_EXISTS_NOT_CLOSED,
-        images=STATUS_BASELINE_EXISTS_NOT_CLOSED,
-        video_audio=STATUS_BASELINE_EXISTS_NOT_CLOSED,
-        screenshots=STATUS_BASELINE_EXISTS_NOT_CLOSED,
+        comments=STATUS_VALIDATED_CURRENT_METHOD,
+        images=STATUS_VALIDATED_CURRENT_METHOD,
+        video_audio=STATUS_VALIDATED_CURRENT_METHOD,
+        screenshots=STATUS_VALIDATED_CURRENT_METHOD,
         warc=STATUS_IMPLEMENTED,
         archive_lookup=STATUS_IMPLEMENTED,
-        source_role_material="public_post_or_archive_material_receipt_required",
+        source_role_material="public_post_archive_or_local_export_material_receipt_required",
         specialist_layer_required=True,
         notes=(
-            "Twitter/X baseline exists but is not closed by R42GB.",
-            "Use specialist public-post/thread/archive/media profiles; do not pretend generic article extraction is enough.",
+            "R42GF closes Twitter/X as a specialist current-method lane, not a generic article lane.",
+            "Local exporter review flow stays USER_REVIEW_REQUIRED / USER_SUPPLIED_LOCAL_EXPORT and summary-only.",
+            "Public status media stays on shared media backend planning; browser/session, screenshot, archive, and source-role claims remain receipt-gated.",
+            "Protected/login-limited material remains requires_access or blocked; no API/cookie/token/CAPTCHA/rate-limit bypass.",
         ),
     ),
     SourceFamilyCapability(
@@ -618,7 +621,7 @@ def validate_source_family_matrix(source_root: str | Path = ".") -> R42GCMatrixR
     checks.append(_check("pass" if bbc_ok else "fail", "bbc_sounds_proven_manual_route", "BBC Sounds is source-specific: yt-dlp bestaudio plus ffmpeg audio-copy route, not a global yt-dlp replacement."))
 
     twitter = _capability("twitter_x")
-    checks.append(_check("pass" if twitter.video_audio == STATUS_BASELINE_EXISTS_NOT_CLOSED and twitter.comments == STATUS_BASELINE_EXISTS_NOT_CLOSED else "fail", "twitter_not_overclaimed", "Twitter/X remains baseline_exists_not_closed, not marked fully tested by R42GB/R42GC."))
+    checks.append(_check("pass" if twitter.video_audio == STATUS_VALIDATED_CURRENT_METHOD and twitter.comments == STATUS_VALIDATED_CURRENT_METHOD else "fail", "twitter_specialist_current_method", "Twitter/X is validated as a specialist current-method lane after R42GF; completed evidence remains receipt-gated."))
 
     instagram = _capability("instagram")
     checks.append(_check("pass" if instagram.specialist_layer_required and instagram.video_audio == STATUS_SPECIALIST_REQUIRED else "fail", "instagram_specialist_required", "Instagram remains a specialist visual/social lane with no bypass behaviour."))

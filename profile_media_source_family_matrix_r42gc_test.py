@@ -12,6 +12,7 @@ from profile_media_source_family_matrix_r42gc import (
     STATUS_PROVEN_MANUAL_ROUTE,
     STATUS_SPECIALIST_REQUIRED,
     STATUS_TESTED_TRUE,
+    STATUS_VALIDATED_CURRENT_METHOD,
     SOURCE_FAMILY_CAPABILITIES,
     classify_source_family,
     source_family_ids,
@@ -113,8 +114,8 @@ def run_self_test() -> None:
 
     twitter = classify_source_family("https://x.com/example/status/1234567890")
     assert twitter.family_id == "twitter_x"
-    assert twitter.capability.video_audio == STATUS_BASELINE_EXISTS_NOT_CLOSED
-    assert twitter.capability.comments == STATUS_BASELINE_EXISTS_NOT_CLOSED
+    assert twitter.capability.video_audio == STATUS_VALIDATED_CURRENT_METHOD
+    assert twitter.capability.comments == STATUS_VALIDATED_CURRENT_METHOD
 
     twitter2 = classify_source_family("https://twitter.com/example/status/1234567890")
     assert twitter2.family_id == "twitter_x"
@@ -149,7 +150,7 @@ def run_self_test() -> None:
 
     assert _capability("generic_webpage_media").route_preference == ROUTE_API3128_JDOWNLOADER_FIRST
     assert _capability("bbc_sounds").route_preference == ROUTE_BBC_SOUNDS_YTDLP_FFMPEG_COPY
-    assert _capability("twitter_x").comments == STATUS_BASELINE_EXISTS_NOT_CLOSED
+    assert _capability("twitter_x").comments == STATUS_VALIDATED_CURRENT_METHOD
     assert _capability("instagram").specialist_layer_required
 
     _assert_cli_accepts_repeated_url_arguments()

@@ -145,7 +145,11 @@ def test_operational_capture_plan_declares_livechat_artifacts_without_execution(
 
 def test_operational_capture_plan_declares_media_download_and_mux_artifacts_without_execution() -> None:
     row = build_source_resource_row(MSN_URL)
-    selected_ids = tuple(item.resource_id for item in row.video_audio_resources[:2])
+    assert row.video_audio_resources == ()
+    selected_ids = (
+        f"{row.row_id}:video_audio:user_selected_public_video_candidate",
+        f"{row.row_id}:video_audio:user_selected_public_audio_candidate",
+    )
     discussion = build_discussion_capture_options(
         (row,),
         selected_row_id=row.row_id,

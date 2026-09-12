@@ -3993,20 +3993,21 @@ class App(ctk.CTk):
 
     def _bind_files_drop_targets(self) -> bool:
         """Bind TkDND file drops when initialization succeeded."""
+        state = vars(self)
         bound = False
-        if not vars(self).get("file_drag_drop_ready", False):
+        if not state.get("file_drag_drop_ready", False):
             self.files_drag_drop_available = False
             return False
-        drop_type = vars(self).get("_file_drag_drop_type", "")
+        drop_type = state.get("_file_drag_drop_type", "")
         if not drop_type:
             self.files_drag_drop_available = False
             return False
         for widget in (
-            getattr(self, "files_header_frame", None),
-            getattr(self, "files_frame", None),
-            getattr(self, "files_list_frame", None),
-            getattr(self, "files_empty_label", None),
-            getattr(self, "files_drop_status_label", None),
+            state.get("files_header_frame"),
+            state.get("files_frame"),
+            state.get("files_list_frame"),
+            state.get("files_empty_label"),
+            state.get("files_drop_status_label"),
         ):
             if widget is None:
                 continue
@@ -4027,6 +4028,7 @@ class App(ctk.CTk):
 
     def _bind_final_file_drop_targets(self) -> bool:
         """Register drag/drop on the final live FILES, Converter, and Transcript widgets."""
+        state = vars(self)
         files_bound = self._bind_files_drop_targets()
         transcript_bound = self._bind_transcript_drop_targets()
         converter_bound = self._bind_file_converter_drop_targets()
@@ -4034,26 +4036,27 @@ class App(ctk.CTk):
         if bound:
             self.file_drag_drop_ready = True
             self.file_drag_drop_status = "ready"
-        elif getattr(self, "_file_drag_drop_type", ""):
+        elif state.get("_file_drag_drop_type", ""):
             self.file_drag_drop_ready = False
             self.file_drag_drop_status = "unavailable: no live drop targets"
         return bound
 
     def _bind_file_converter_drop_targets(self) -> bool:
         """Bind file drops for the main-app file converter panel."""
+        state = vars(self)
         bound = False
-        if not getattr(self, "file_drag_drop_ready", False):
+        if not state.get("file_drag_drop_ready", False):
             self.file_converter_drag_drop_available = False
             return False
-        drop_type = getattr(self, "_file_drag_drop_type", "")
+        drop_type = state.get("_file_drag_drop_type", "")
         if not drop_type:
             self.file_converter_drag_drop_available = False
             return False
         for widget in (
-            getattr(self, "file_converter_card", None),
-            getattr(self, "file_converter_drop_frame", None),
-            getattr(self, "file_converter_drop_list_frame", None),
-            getattr(self, "file_converter_queue_textbox", None),
+            state.get("file_converter_card"),
+            state.get("file_converter_drop_frame"),
+            state.get("file_converter_drop_list_frame"),
+            state.get("file_converter_queue_textbox"),
         ):
             if widget is None:
                 continue
@@ -4073,7 +4076,8 @@ class App(ctk.CTk):
         return bound
 
     def _set_file_converter_drop_highlight(self, active: bool, message: str = "") -> None:
-        frame = getattr(self, "file_converter_drop_frame", None)
+        state = vars(self)
+        frame = state.get("file_converter_drop_frame")
         if frame is not None:
             try:
                 frame.configure(
@@ -4082,16 +4086,16 @@ class App(ctk.CTk):
                 )
             except Exception:
                 pass
-        label = getattr(self, "file_converter_drop_label", None)
+        label = state.get("file_converter_drop_label")
         if label is not None:
             try:
-                has_held = bool(getattr(self, "file_converter_queued_paths", []) or [])
+                has_held = bool(state.get("file_converter_queued_paths", []) or [])
                 if has_held and not active and not message:
                     label.configure(text="")
                     label.pack_forget()
                     return
                 if not label.winfo_manager():
-                    frame_list = getattr(self, "file_converter_drop_list_frame", None)
+                    frame_list = state.get("file_converter_drop_list_frame")
                     kwargs = {"fill": "x", "padx": 10, "pady": (8, 2)}
                     if frame_list is not None:
                         kwargs["before"] = frame_list
@@ -4121,16 +4125,19 @@ class App(ctk.CTk):
         return "break"
 
     def _set_files_drop_highlight(self, active: bool) -> None:
-        if hasattr(self, "files_list_frame"):
+        state = vars(self)
+        files_list_frame = state.get("files_list_frame")
+        if files_list_frame is not None:
             try:
-                self.files_list_frame.configure(
+                files_list_frame.configure(
                     border_width=1 if active else 0,
                     border_color="#8a63d2" if active else COLORS["border"],
                 )
             except Exception:
                 pass
-        if hasattr(self, "files_drop_status_label"):
-            self.files_drop_status_label.configure(
+        files_drop_status_label = state.get("files_drop_status_label")
+        if files_drop_status_label is not None:
+            files_drop_status_label.configure(
                 text="Release to add files" if active else "Drop files here",
                 text_color="#c5a6ff" if active else COLORS["text_muted"],
             )
@@ -4154,11 +4161,12 @@ class App(ctk.CTk):
 
     def _bind_transcript_drop_targets(self) -> bool:
         """Bind transcript-specific drops without changing the FILES drop target."""
+        state = vars(self)
         bound = False
-        if not getattr(self, "file_drag_drop_ready", False):
+        if not state.get("file_drag_drop_ready", False):
             self.transcript_drag_drop_available = False
             return False
-        drop_type = getattr(self, "_file_drag_drop_type", "")
+        drop_type = state.get("_file_drag_drop_type", "")
         if not drop_type:
             self.transcript_drag_drop_available = False
             return False
@@ -4168,10 +4176,10 @@ class App(ctk.CTk):
         except Exception:
             transcript_text_widget = None
         for widget in (
-            getattr(self, "transcript_card", None),
-            getattr(self, "transcript_textbox", None),
+            state.get("transcript_card"),
+            state.get("transcript_textbox"),
             transcript_text_widget,
-            getattr(self, "transcript_timeline_canvas", None),
+            state.get("transcript_timeline_canvas"),
         ):
             if widget is None:
                 continue
@@ -4191,16 +4199,19 @@ class App(ctk.CTk):
         return bound
 
     def _set_transcript_drop_highlight(self, active: bool, text: str = "") -> None:
-        if hasattr(self, "transcript_card"):
+        state = getattr(self, "__dict__", {})
+        transcript_card = state.get("transcript_card")
+        if transcript_card is not None:
             try:
-                self.transcript_card.configure(
+                transcript_card.configure(
                     border_width=2 if active else 1,
                     border_color="#8a63d2" if active else COLORS["border"],
                 )
             except Exception:
                 pass
-        if hasattr(self, "transcript_cursor_status_label"):
-            self.transcript_cursor_status_label.configure(
+        status_label = state.get("transcript_cursor_status_label")
+        if status_label is not None:
+            status_label.configure(
                 text=text or (
                     "Release to load transcript here"
                     if active
@@ -4723,17 +4734,22 @@ class App(ctk.CTk):
     def _reset_editor_panels_after_file_intake(self) -> None:
         """Adding files to FILES should not force Transcript/Text Editor open."""
         self.active_text_editor_file_path = ""
-        if hasattr(self, "text_editor_status_label"):
-            self.text_editor_status_label.configure(text="No text file loaded")
-        if hasattr(self, "text_editor_textbox"):
-            self.text_editor_textbox.configure(state="normal")
-            self.text_editor_textbox.delete("1.0", "end")
-            self.text_editor_textbox.insert("1.0", "Open a .txt file from FILES with the TXT icon.")
-            self.text_editor_textbox.configure(state="disabled")
-        if hasattr(self, "text_editor_save_button"):
-            self.text_editor_save_button.configure(state="disabled")
-        if hasattr(self, "text_editor_external_open_button"):
-            self.text_editor_external_open_button.configure(state="disabled")
+        state = getattr(self, "__dict__", {})
+        status_label = state.get("text_editor_status_label")
+        if status_label is not None:
+            status_label.configure(text="No text file loaded")
+        textbox = state.get("text_editor_textbox")
+        if textbox is not None:
+            textbox.configure(state="normal")
+            textbox.delete("1.0", "end")
+            textbox.insert("1.0", "Open a .txt file from FILES with the TXT icon.")
+            textbox.configure(state="disabled")
+        save_button = state.get("text_editor_save_button")
+        if save_button is not None:
+            save_button.configure(state="disabled")
+        external_open_button = state.get("text_editor_external_open_button")
+        if external_open_button is not None:
+            external_open_button.configure(state="disabled")
         self._hide_text_editor_panel()
         self._hide_transcript_panel()
 
@@ -5120,12 +5136,14 @@ class App(ctk.CTk):
                 self._set_session_file_label_visual(target_path, drag_hover=True)
 
     def _session_file_drop_target_is_converter(self, widget: Any) -> bool:
+        state = vars(self)
         targets = {
-            getattr(self, "file_converter_card", None),
-            getattr(self, "file_converter_drop_frame", None),
-            getattr(self, "file_converter_drop_list_frame", None),
-            getattr(self, "file_converter_queue_textbox", None),
+            state.get("file_converter_card"),
+            state.get("file_converter_drop_frame"),
+            state.get("file_converter_drop_list_frame"),
+            state.get("file_converter_queue_textbox"),
         }
+        targets.discard(None)
         current = widget
         while current is not None:
             if current in targets:
@@ -7416,25 +7434,40 @@ class App(ctk.CTk):
 
 
     def _show_file_converter_panel(self) -> None:
-        if hasattr(self, "file_converter_card"):
-            self.file_converter_card.grid()
+        state = vars(self)
+        card = state.get("file_converter_card")
+        if card is None:
+            return
+        card.grid()
+        button = state.get("show_file_converter_panel_button")
+        if button is not None:
             try:
-                self.show_file_converter_panel_button.configure(fg_color=COLORS["accent"])
+                button.configure(fg_color=COLORS["accent"])
             except Exception:
                 pass
 
     def _hide_file_converter_panel(self) -> None:
-        if hasattr(self, "file_converter_card"):
-            self.file_converter_card.grid_remove()
+        state = vars(self)
+        card = state.get("file_converter_card")
+        if card is None:
+            return
+        card.grid_remove()
+        button = state.get("show_file_converter_panel_button")
+        if button is not None:
             try:
-                self.show_file_converter_panel_button.configure(fg_color=COLORS["accent_secondary"])
+                button.configure(fg_color=COLORS["accent_secondary"])
             except Exception:
                 pass
 
     def _toggle_file_converter_panel(self) -> None:
-        if not hasattr(self, "file_converter_card"):
+        card = vars(self).get("file_converter_card")
+        if card is None:
             return
-        if self.file_converter_card.winfo_ismapped():
+        try:
+            is_mapped = bool(card.winfo_ismapped())
+        except Exception:
+            is_mapped = False
+        if is_mapped:
             self._hide_file_converter_panel()
         else:
             self._show_file_converter_panel()
@@ -9296,54 +9329,78 @@ class App(ctk.CTk):
             self._file_converter_set_status(f"Could not open output folder: {open_error}", error=True)
 
     def _show_transcript_panel(self) -> None:
-        if hasattr(self, "transcript_card"):
-            self.transcript_card.grid()
-            try:
-                self.show_transcript_panel_button.configure(fg_color=COLORS["accent"])
-            except Exception:
-                pass
+        state = getattr(self, "__dict__", {})
+        transcript_card = state.get("transcript_card")
+        if transcript_card is None:
+            return
+        transcript_card.grid()
+        try:
+            show_button = state.get("show_transcript_panel_button")
+            if show_button is not None:
+                show_button.configure(fg_color=COLORS["accent"])
+        except Exception:
+            pass
 
     def _hide_transcript_panel(self) -> None:
-        if hasattr(self, "transcript_card"):
-            self.transcript_card.grid_remove()
-            try:
-                self.show_transcript_panel_button.configure(fg_color=COLORS["accent_secondary"])
-            except Exception:
-                pass
+        state = getattr(self, "__dict__", {})
+        transcript_card = state.get("transcript_card")
+        if transcript_card is None:
+            return
+        transcript_card.grid_remove()
+        try:
+            show_button = state.get("show_transcript_panel_button")
+            if show_button is not None:
+                show_button.configure(fg_color=COLORS["accent_secondary"])
+        except Exception:
+            pass
 
     def _toggle_transcript_panel(self) -> None:
-        if not hasattr(self, "transcript_card"):
+        state = getattr(self, "__dict__", {})
+        transcript_card = state.get("transcript_card")
+        if transcript_card is None:
             return
-        if self.transcript_card.winfo_ismapped():
+        if transcript_card.winfo_ismapped():
             self._hide_transcript_panel()
         else:
             self._show_transcript_panel()
 
     def _show_text_editor_panel(self) -> None:
-        if hasattr(self, "text_editor_card"):
-            self.text_editor_card.grid()
-            try:
-                self.text_editor_card.lift()
-            except Exception:
-                pass
-            try:
-                self.show_text_editor_panel_button.configure(fg_color=COLORS["accent"])
-            except Exception:
-                pass
+        state = getattr(self, "__dict__", {})
+        text_editor_card = state.get("text_editor_card")
+        if text_editor_card is None:
+            return
+        text_editor_card.grid()
+        try:
+            text_editor_card.lift()
+        except Exception:
+            pass
+        try:
+            show_button = state.get("show_text_editor_panel_button")
+            if show_button is not None:
+                show_button.configure(fg_color=COLORS["accent"])
+        except Exception:
+            pass
 
     def _hide_text_editor_panel(self) -> None:
-        if hasattr(self, "text_editor_card"):
-            self._hide_text_editor_spell_popup()
-            self.text_editor_card.grid_remove()
-            try:
-                self.show_text_editor_panel_button.configure(fg_color=COLORS["accent_secondary"])
-            except Exception:
-                pass
+        state = getattr(self, "__dict__", {})
+        text_editor_card = state.get("text_editor_card")
+        if text_editor_card is None:
+            return
+        self._hide_text_editor_spell_popup()
+        text_editor_card.grid_remove()
+        try:
+            show_button = state.get("show_text_editor_panel_button")
+            if show_button is not None:
+                show_button.configure(fg_color=COLORS["accent_secondary"])
+        except Exception:
+            pass
 
     def _toggle_text_editor_panel(self) -> None:
-        if not hasattr(self, "text_editor_card"):
+        state = getattr(self, "__dict__", {})
+        text_editor_card = state.get("text_editor_card")
+        if text_editor_card is None:
             return
-        if self.text_editor_card.winfo_ismapped():
+        if text_editor_card.winfo_ismapped():
             self._hide_text_editor_panel()
         else:
             self._show_text_editor_panel()

@@ -511,7 +511,7 @@ MSN_ARTICLE_COMMENT_PROFILE = SourceMethodProfile(
     profile_id="msn_article_comments_shadow_manual_import",
     adapter_id="msn",
     display_name="MSN article/comments source adapter profile",
-    method_family="article_comments_browser_and_local_import",
+    method_family="article_comments_manual_observation",
     supported_modes=(
         "posts",
         "comments",
