@@ -224,7 +224,7 @@ def test_detach_never_deletes_disk_file() -> None:
         assert os.path.exists(path)
 
 
-def test_shared_intake_adds_mixed_files_and_loads_first_transcript() -> None:
+def test_shared_intake_adds_mixed_files_without_auto_loading_transcript() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         media_path = os.path.join(tmpdir, "clip.mp4")
         transcript_path = os.path.join(tmpdir, "captions.srt")
@@ -244,15 +244,18 @@ def test_shared_intake_adds_mixed_files_and_loads_first_transcript() -> None:
 
         assert isinstance(result, SessionFileIntakeResult)
         assert result.added_paths == (media_path, transcript_path)
-        assert result.selected_path == transcript_path
+        assert result.selected_path == ""
         assert len(app.session_files) == 2
         assert [entry.display_name for entry in app.session_files] == [
             "clip.mp4",
             "captions.srt",
         ]
-        assert app.last_transcript_source == "Imported file: captions.srt"
+        assert app.last_transcript_source is None
         assert app.linked_transcript_media_path is None
-        assert app.active_transcript_file_path
+        assert app.active_media_file_path == ""
+        assert app.active_transcript_file_path == ""
+        assert app.selected_session_file_path == ""
+        assert app.transcript_segments == []
         assert app.transcribe_media_file_called is False
 
 
@@ -555,7 +558,9 @@ def test_add_session_files_button_uses_multi_select_picker_and_shared_intake() -
         assert any("*.mp4" in patterns for _label, patterns in filetypes)
         assert len(app.session_files) == 1
         assert app.session_files[0].display_name == "clip.webm"
-        assert app.linked_transcript_media_path == media_path
+        assert app.linked_transcript_media_path is None
+        assert app.active_media_file_path == ""
+        assert app.selected_session_file_path == ""
 
 
 def test_txt_export_preserves_timing_cues_without_same_speaker_merge() -> None:
@@ -703,7 +708,7 @@ def run_self_test() -> None:
     test_unsaved_transcript_guard_can_cancel_switch()
     test_parse_failure_preserves_current_transcript()
     test_detach_never_deletes_disk_file()
-    test_shared_intake_adds_mixed_files_and_loads_first_transcript()
+    test_shared_intake_adds_mixed_files_without_auto_loading_transcript()
     test_shared_intake_dedupes_and_reports_unsupported_without_blocking_valid()
     test_shared_intake_rejects_directories_and_missing_paths()
     test_drop_payload_parser_handles_quoted_paths_with_spaces()
