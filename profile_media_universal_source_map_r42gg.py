@@ -23,6 +23,10 @@ SIDE_EFFECT_BOUNDARY = (
 STATUS_IMPLEMENTED = "implemented"
 STATUS_CLOSED_GREEN = "closed_green"
 STATUS_PUBLIC_DOWNLOAD_CAPABLE_WHEN_PROVEN = "public_download_capable_when_rss_ytdlp_browser_or_receipt_works"
+STATUS_PUBLIC_DOWNLOAD_CAPABLE_WHEN_SOURCE_ROUTE_WORKS = "public_download_capable_when_source_route_works"
+STATUS_NOT_REQUIRED_FOR_GLOBAL_PLAYER_EPISODE = "not_required_for_global_player_episode"
+STATUS_FALLBACK_OR_REVIEW_REQUIRED = "fallback_or_review_required"
+STATUS_PROHIBITED_FOR_PRIVATE_OR_LOGIN_BLOCKED_AUDIO = "prohibited_no_bypass_for_drm_private_or_login_blocked_audio"
 STATUS_METADATA_ONLY_UNTIL_CAPTURED = "metadata_only_until_marker_gated_capture"
 STATUS_REVIEW_REQUIRED = "review_required"
 STATUS_MANUAL_RECEIPT_IMPORT = "manual_receipt_import_supported"
@@ -81,6 +85,7 @@ TRACKING_QUERY_NAMES = {
     "mc_cid",
     "mc_eid",
     "igshid",
+    "igsh",
     "spm",
     "ref_src",
     "ref_url",
@@ -111,6 +116,7 @@ class SourceMapFamily:
     platform_aliases: tuple[str, ...]
     route_hint: str
     method_statuses: Mapping[str, str]
+    method_metadata: Mapping[str, object] | None = None
     review_bridge: str = "produces_review_strings_for_existing_review_window"
     source_role_effect: str = "none_registry_only"
     notes: tuple[str, ...] = ()
@@ -120,6 +126,7 @@ class SourceMapFamily:
             "display_name": self.display_name,
             "family_id": self.family_id,
             "method_statuses": dict(self.method_statuses),
+            "method_metadata": dict(self.method_metadata or {}),
             "notes": list(self.notes),
             "platform_aliases": list(self.platform_aliases),
             "review_bridge": self.review_bridge,
@@ -525,6 +532,52 @@ SOURCE_MAP_FAMILIES: tuple[SourceMapFamily, ...] = (
         notes=("No DRM bypass, credential harvesting, or media materialization.",),
     ),
     SourceMapFamily(
+        "public_broadcast_catchup_audio",
+        "Public broadcast/catch-up audio source",
+        ("podcast_audio_platforms", "generic_web_article_media_pages"),
+        (
+            "public_broadcast_catchup_audio",
+            "global_player_audio",
+            "lbc_global_player",
+            "commercial_radio_catchup",
+            "podcast_audio_public_download",
+            "globalplayer.com/catchup",
+            "www.globalplayer.com/catchup",
+        ),
+        "yt_dlp_python_module_format_probe_native_m4a_preservation",
+        _methods(
+            metadata=STATUS_PUBLIC_DOWNLOAD_CAPABLE_WHEN_SOURCE_ROUTE_WORKS,
+            media_discovery=STATUS_PUBLIC_DOWNLOAD_CAPABLE_WHEN_SOURCE_ROUTE_WORKS,
+            media_download_materialization=STATUS_PUBLIC_DOWNLOAD_CAPABLE_WHEN_SOURCE_ROUTE_WORKS,
+            yt_dlp=STATUS_PUBLIC_DOWNLOAD_CAPABLE_WHEN_SOURCE_ROUTE_WORKS,
+            rss_enclosure=STATUS_NOT_REQUIRED_FOR_GLOBAL_PLAYER_EPISODE,
+            webview2_visible_browser=STATUS_FALLBACK_OR_REVIEW_REQUIRED,
+            local_exporter_import=STATUS_MANUAL_RECEIPT_IMPORT,
+            extension_manual_receipt_import=STATUS_MANUAL_RECEIPT_IMPORT,
+            unsupported_prohibited_no_bypass=STATUS_PROHIBITED_FOR_PRIVATE_OR_LOGIN_BLOCKED_AUDIO,
+        ),
+        method_metadata={
+            "backend_id": "yt_dlp_python_module",
+            "preferred_invocation": "py -m yt_dlp",
+            "avoid_plain_executable_when_path_stale": True,
+            "format_probe_required": True,
+            "format_probe_command_shape": "py -m yt_dlp -vU -F <url>",
+            "native_format_id_observed": "0",
+            "preserve_native_container": True,
+            "preserve_native_m4a": True,
+            "write_info_json": True,
+            "write_description": True,
+            "write_thumbnail": True,
+            "no_conversion_for_preservation": True,
+            "observed_stale_path_error": '[GlobalPlayerAudioEpisode] Missing "id" field in extractor result',
+            "observed_working_nightly_version": "2026.08.30.232658",
+        },
+        notes=(
+            "Global Player/LBC catch-up fixture uses Python module invocation, not stale PATH yt-dlp.",
+            "R42GH records the method and evidence contract only; it does not execute yt-dlp or download media.",
+        ),
+    ),
+    SourceMapFamily(
         "bbc_sounds",
         "BBC Sounds / BBC podcast source",
         ("podcast_audio_platforms", "news_websites_comment_systems"),
@@ -616,6 +669,7 @@ def _normalize_text_for_review(value: str) -> str:
 
 def _unwrap_markdown_or_angle(value: str) -> str:
     raw = str(value or "").strip()
+    raw = raw.replace("\\/", "/")
     markdown = re.search(r"\[[^\]]*]\(([^)]+)\)", raw)
     if markdown:
         raw = markdown.group(1).strip()
@@ -645,8 +699,6 @@ def sanitize_source_url(value: str) -> str:
     if host == "twitter.com":
         host = "x.com"
     path = re.sub(r"/+", "/", parsed.path or "/")
-    if path != "/":
-        path = path.rstrip("/")
     path = quote(path, safe="/:@%+-._~")
     kept_query = []
     for key, val in parse_qsl(parsed.query, keep_blank_values=True):
@@ -659,7 +711,7 @@ def sanitize_source_url(value: str) -> str:
 
 
 def sanitize_source_input(value: str, *, source_line: str = "") -> SanitizedSourceInput:
-    extracted = _unwrap_markdown_or_angle(value)
+    extracted = sanitize_source_url(_unwrap_markdown_or_angle(value))
     normalized = sanitize_source_url(extracted)
     return SanitizedSourceInput(
         raw_input=str(value or ""),
@@ -722,6 +774,8 @@ def detect_source_family(url: str) -> str:
         return "spotify_podcast"
     if "open.spotify.com" in host and ("/track" in path or "/album" in path):
         return "spotify_music_drm"
+    if "globalplayer.com" in host and "/catchup/" in path:
+        return "public_broadcast_catchup_audio"
     if "bbc.co.uk" in host and "/sounds" in path:
         return "bbc_sounds"
     if host in {"web.archive.org", "archive.org", "archive.ph", "archive.today", "archive.is", "perma.cc"}:
@@ -745,6 +799,7 @@ def build_capture_plan(value: str) -> CapturePlan:
         dimension
         for dimension, status in family.method_statuses.items()
         if status not in {STATUS_NOT_YET_IMPLEMENTED, STATUS_NOT_APPLICABLE, STATUS_UNSUPPORTED, STATUS_PROHIBITED_NO_BYPASS}
+        and not str(status).startswith("prohibited")
     )
     return CapturePlan(
         sanitized_input=sanitized,

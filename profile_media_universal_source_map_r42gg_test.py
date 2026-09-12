@@ -48,6 +48,7 @@ def test_universal_source_map_covers_required_source_groups_and_platforms() -> N
         "slack",
         "podcasts.apple.com",
         "open.spotify.com/episode",
+        "globalplayer.com/catchup",
         "web.archive.org",
         "archive.ph",
         "generic_article",
@@ -100,7 +101,7 @@ def test_url_sanitizer_handles_markdown_wrappers_tracking_and_twitter_normalizat
     _assert(escaped.normalized_url == "https://x.com/example_name/status/456", escaped.normalized_url)
     batch = sanitize_source_inputs("1. [a](https://metro.co.uk/story/?utm_campaign=x)\n<https://x.com/a/status/1>.\n")
     _assert(len(batch) == 2, "TXT line sanitizer should find two URLs")
-    _assert(batch[0].normalized_url == "https://metro.co.uk/story", batch[0].normalized_url)
+    _assert(batch[0].normalized_url == "https://metro.co.uk/story/", batch[0].normalized_url)
     _assert(batch[1].normalized_url == "https://x.com/a/status/1", batch[1].normalized_url)
 
 
@@ -109,6 +110,7 @@ def test_family_detection_and_capture_plan_preserve_existing_route_intent() -> N
     _assert(detect_source_family("https://podcasts.apple.com/gb/podcast/example/id1") == "apple_podcasts", "Apple family")
     _assert(detect_source_family("https://open.spotify.com/track/abc") == "spotify_music_drm", "Spotify DRM family")
     _assert(detect_source_family("https://web.archive.org/web/20260717224516/https://metro.co.uk/x") == "archive_preservation", "archive family")
+    _assert(detect_source_family("https://www.globalplayer.com/catchup/lbc/uk/episodes/2zGwFmzE7xNLAfiMVL5BMHmPeB/") == "public_broadcast_catchup_audio", "Global Player family")
     plan = build_capture_plan("https://x.com/examaddaorg?utm_medium=test")
     _assert(plan.family_id == "twitter_x", "capture plan family")
     _assert(plan.sanitized_input.normalized_url == "https://x.com/examaddaorg", "capture plan normalized URL")
