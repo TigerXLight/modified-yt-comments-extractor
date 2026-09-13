@@ -273,8 +273,12 @@ def test_twitter_source_row_uses_compact_post_thread_settings_model() -> None:
     assert state.show_type_dropdown_setting_label == "Show type dropdown on X/Twitter source row"
     assert state.icon_asset == "assets/ytce_x_icon.png"
     assert state.delete_treatment == "youtube_compact_corner_remove_x"
-    assert state.archive_controls_visible is False
-    assert row.archive_statuses == ()
+    assert state.archive_controls_visible is True
+    assert state.archive_controls_policy == "archive_ph_and_local_only_no_wayback_no_submission"
+    assert [status.service_id for status in row.archive_statuses] == [
+        "archive_today",
+        "local_web_archive",
+    ]
     assert row.image_resources == ()
     assert row.video_audio_resources == ()
     assert "twitter_state.dropdown_options" in refresh_source
@@ -286,9 +290,11 @@ def test_twitter_source_row_uses_compact_post_thread_settings_model() -> None:
     assert "self.twitter_x_icon_image" in refresh_source
     assert "Show type dropdown on X/Twitter source row" in inspect.getsource(App._open_twitter_source_settings)
     assert "Disable type dropdown" not in inspect.getsource(App._open_twitter_source_settings)
-    assert "row_height = 72 if row_is_youtube or row_is_twitter else 98" in refresh_source
+    assert "row_height = 72 if row_is_youtube else 98" in refresh_source
+    assert 'weight="normal" if row_is_twitter else "bold"' in refresh_source
     assert "remove_parent = row_frame if row_is_youtube or row_is_twitter else actions" in refresh_source
     assert "Media download stays inside X settings" in refresh_source
+    assert "if not row_is_youtube:" in refresh_source
     assert "Twitter/X Local Export" not in refresh_source
     assert "media stays inside X settings" in mode_message_source
     assert "row media controls" not in refresh_source

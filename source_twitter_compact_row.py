@@ -56,7 +56,9 @@ class TwitterCompactRowState:
     media_download_main_row_button_visible: bool = False
     settings_keys: tuple[str, ...] = TWITTER_COMPACT_SETTING_KEYS
     removed_buttons_hidden: tuple[str, ...] = REMOVED_TWITTER_BUTTON_LABELS
-    archive_controls_visible: bool = False
+    archive_controls_visible: bool = True
+    archive_controls_policy: str = "archive_ph_and_local_only_no_wayback_no_submission"
+    title_treatment: str = "compact_normal_weight_single_line"
     local_export_button_visible: bool = False
     add_review_draft_button_visible: bool = False
     review_flow_summary_button_visible: bool = False
@@ -112,6 +114,13 @@ def twitter_default_display_title(row: SourceResourceRowState) -> tuple[str, str
     return "Twitter/X source", ""
 
 
+def compact_twitter_row_title(title: str, *, limit: int = 72) -> str:
+    text = " ".join(str(title or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
 def build_twitter_compact_row_state(row: SourceResourceRowState) -> TwitterCompactRowState:
     if row.adapter_id != "twitter_x":
         raise ValueError("Twitter compact row state only applies to X/Twitter source rows")
@@ -124,7 +133,7 @@ def build_twitter_compact_row_state(row: SourceResourceRowState) -> TwitterCompa
         row_id=row.row_id,
         source_url=row.raw_url or row.canonical_url,
         adapter_id=row.adapter_id,
-        display_title=twitter_default_display_title(row)[0],
+        display_title=compact_twitter_row_title(twitter_default_display_title(row)[0]),
         preview_text=twitter_default_display_title(row)[1],
         account_thread_semantics=semantics,
     )

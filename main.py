@@ -22124,7 +22124,8 @@ class App(ctk.CTk):
         for row_index, row in enumerate(rows):
             row_is_youtube = self._source_row_is_youtube(row)
             row_is_twitter = self._source_row_is_twitter(row)
-            row_height = 72 if row_is_youtube or row_is_twitter else 98
+            twitter_state = build_twitter_compact_row_state(row) if row_is_twitter else None
+            row_height = 72 if row_is_youtube else 98
             row_frame = ctk.CTkFrame(frame, fg_color="transparent", height=row_height)
             row_frame.pack(fill="x", padx=8, pady=(8 if row_index == 0 else 4, 6))
             row_frame.grid_propagate(False)
@@ -22134,14 +22135,17 @@ class App(ctk.CTk):
 
             title_button = ctk.CTkButton(
                 row_frame,
-                text=row.title,
+                text=twitter_state.display_title if twitter_state is not None else row.title,
                 command=lambda row_id=row.row_id: self._show_source_row_details(row_id),
                 height=28,
                 anchor="w",
                 fg_color="transparent",
                 hover_color=COLORS["bg_card"],
                 text_color=COLORS["text_primary"],
-                font=ctk.CTkFont(size=12, weight="bold"),
+                font=ctk.CTkFont(
+                    size=11 if row_is_twitter else 12,
+                    weight="normal" if row_is_twitter else "bold",
+                ),
             )
             title_button.grid(row=0, column=0, sticky="ew")
             title_button.tooltip_text = row.canonical_url
@@ -22293,7 +22297,7 @@ class App(ctk.CTk):
                     youtube_button.tooltip_text = "YouTube media settings."
                 next_action_column = 1
             elif row_is_twitter:
-                twitter_state = build_twitter_compact_row_state(row)
+                twitter_state = twitter_state or build_twitter_compact_row_state(row)
                 self._ensure_twitter_x_icon()
                 twitter_header = ctk.CTkFrame(row_frame, fg_color="transparent")
                 twitter_header.grid(row=0, column=1, rowspan=2, sticky="ne", padx=(8, 4), pady=(0, 0))
@@ -22453,7 +22457,7 @@ class App(ctk.CTk):
                 media_button.grid(row=0, column=next_action_column, padx=(0, 6), sticky="n")
                 next_action_column += 1
 
-            if not row_is_youtube and not row_is_twitter:
+            if not row_is_youtube:
                 for archive_status in row.archive_statuses:
                     archive_text = self._archive_service_button_text(archive_status.service_id)
                     if archive_status.service_id == ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE:

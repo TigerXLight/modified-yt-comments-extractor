@@ -4,6 +4,7 @@ from source_resource_state import (
     ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
     ARCHIVE_SERVICE_WAYBACK,
     ARCHIVE_STATUS_AUTO_CHECK_DISABLED,
+    ARCHIVE_STATUS_APPROVAL_REQUIRED,
     ARCHIVE_STATUS_AVAILABLE,
     ARCHIVE_STATUS_NOT_AVAILABLE,
     DISCUSSION_MODE_COMMENTS,
@@ -110,7 +111,11 @@ def test_twitter_row_uses_compact_settings_only_controls() -> None:
     row = build_source_resource_row(TWITTER_URL)
 
     assert row.adapter_id == "twitter_x"
-    assert row.archive_statuses == ()
+    assert [status.service_id for status in row.archive_statuses] == [
+        ARCHIVE_SERVICE_ARCHIVE_TODAY,
+        ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
+    ]
+    assert row.archive_statuses[0].status == ARCHIVE_STATUS_APPROVAL_REQUIRED
     assert row.image_resources == ()
     assert row.video_audio_resources == ()
     assert "Post/Thread" in row.comments_status
@@ -120,6 +125,7 @@ def test_twitter_row_uses_compact_settings_only_controls() -> None:
     assert row.title in {"Twitter/X post", "This stuff is still happening. It hasn’t stopped."}
     assert row.display_title in {"Twitter/X post", "This stuff is still happening. It hasn’t stopped."}
     assert row.preview_text in {"", "This stuff is still happening. It hasn’t stopped."}
+    assert "archive.ph/local backup policy" in row.provenance
 
     preview = "This stuff is still happening. It hasn't stopped."
     preview_row = build_source_resource_row(
@@ -208,6 +214,22 @@ def test_generic_webpage_row_accepts_localhost_for_image_discovery() -> None:
     result = parse_source_url_intake(url)
     assert len(result.rows) == 1
     assert result.rows[0].adapter_id == "webpage"
+
+
+def test_global_player_catchup_audio_row_uses_cached_public_title_without_download() -> None:
+    row = build_source_resource_row(
+        "https://www.globalplayer.com/catchup/lbc/uk/episodes/2zGwFmzE7xNLAfiMVL5BMHmPeB/"
+    )
+
+    assert row.adapter_id == "webpage"
+    assert row.display_title == "Tuesday, 08 September - Nick Ferrari"
+    assert "2Zgwfmze7Xnlafimvl5Bmhmpeb" not in row.display_title
+    assert "public_broadcast_catchup_audio" in row.provenance
+    assert "yt_dlp_python_module" in row.provenance
+    assert "py -m yt_dlp" in row.provenance
+    assert "format 0" in row.provenance
+    assert "native m4a" in row.provenance
+    assert any("did not run" in warning for warning in row.warnings)
     assert result.invalid_tokens == ()
 
 def test_discussion_selection_persists_and_falls_back_after_removal() -> None:

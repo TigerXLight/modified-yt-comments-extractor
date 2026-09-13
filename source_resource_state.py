@@ -459,6 +459,11 @@ TWITTER_KNOWN_STATUS_PREVIEWS = {
     "1877644315867963403": "This stuff is still happening. It hasn’t stopped.",
 }
 
+GLOBAL_PLAYER_LBC_EPISODE_URL = "https://www.globalplayer.com/catchup/lbc/uk/episodes/2zGwFmzE7xNLAfiMVL5BMHmPeB/"
+GLOBAL_PLAYER_CACHED_EPISODE_TITLES = {
+    "2zgwfmze7xnlafimvl5bmhmpeb": ("Tuesday, 08 September", "Nick Ferrari"),
+}
+
 
 def _twitter_title_from_url(canonical_url: str, preview_text: str = "") -> str:
     preview = " ".join(str(preview_text or "").split())
@@ -474,6 +479,55 @@ def _twitter_title_from_url(canonical_url: str, preview_text: str = "") -> str:
     if len(parts) == 1:
         return "Twitter/X profile"
     return "Twitter/X source"
+
+
+def _twitter_archive_statuses(auto_check_enabled: bool) -> tuple[ArchiveServiceStatus, ...]:
+    status = ARCHIVE_STATUS_NOT_CHECKED if auto_check_enabled else ARCHIVE_STATUS_AUTO_CHECK_DISABLED
+    return (
+        archive_status_presentation(
+            ARCHIVE_SERVICE_ARCHIVE_TODAY,
+            ARCHIVE_STATUS_APPROVAL_REQUIRED if auto_check_enabled else status,
+        ),
+        archive_status_presentation(
+            ARCHIVE_SERVICE_LOCAL_WEB_ARCHIVE,
+            status,
+        ),
+    )
+
+
+def _global_player_episode_id_from_url(canonical_url: str) -> str:
+    parsed = urlsplit(canonical_url)
+    if "globalplayer.com" not in parsed.netloc.lower():
+        return ""
+    parts = [part for part in parsed.path.split("/") if part]
+    try:
+        marker_index = [part.lower() for part in parts].index("episodes")
+    except ValueError:
+        return ""
+    if marker_index + 1 >= len(parts):
+        return ""
+    return parts[marker_index + 1]
+
+
+def _is_global_player_catchup_audio_url(canonical_url: str) -> bool:
+    parsed = urlsplit(canonical_url)
+    path = parsed.path.lower()
+    return "globalplayer.com" in parsed.netloc.lower() and "/catchup/" in path and "/episodes/" in path
+
+
+def _global_player_catchup_title_from_url(canonical_url: str, title: str = "") -> str:
+    explicit = " ".join(str(title or "").split())
+    if explicit:
+        return explicit
+    episode_id = _global_player_episode_id_from_url(canonical_url)
+    cached = GLOBAL_PLAYER_CACHED_EPISODE_TITLES.get(episode_id.lower())
+    if cached:
+        date_label, show_title = cached
+        return f"{date_label} - {show_title}"
+    fallback = _fallback_title_from_url(canonical_url)
+    if fallback.lower() == episode_id.lower():
+        return "Global Player public audio episode"
+    return fallback
 
 
 def _youtube_media_selection_resources(
@@ -559,7 +613,7 @@ def build_source_resource_row(
         image_items, media_items = (), ()
         comments_status = "X/Twitter Post/Thread capture mode is selected in-row; settings and shared backend can route media when enabled."
         livechat_status = "X/Twitter livechat is not supported."
-        provenance = "adapter metadata; X/Twitter media controls use settings plus shared backend"
+        provenance = "adapter metadata; X/Twitter media controls use settings plus shared backend; archive.ph/local backup policy is metadata-only and human-chain guarded"
     elif adapter.source_name == "msn":
         display_title = title.strip() or _fallback_title_from_url(canonical)
         image_items, media_items = (), ()
@@ -581,11 +635,23 @@ def build_source_resource_row(
                 "Metro source row uses universal news/webpage capture layers. Article text and screenshot are tested true; comments remain NOT_TESTED."
             )
     elif adapter.source_name == "webpage":
-        display_title = title.strip() or _fallback_title_from_url(canonical)
+        display_title = (
+            _global_player_catchup_title_from_url(canonical, title)
+            if _is_global_player_catchup_audio_url(canonical)
+            else title.strip() or _fallback_title_from_url(canonical)
+        )
         image_items, media_items = (), ()
-        comments_status = "Generic webpage rows support image discovery/download only; discussion comments are not supported."
-        livechat_status = "Generic webpage rows do not support livechat."
-        provenance = "generic webpage adapter; media discovery is user-triggered"
+        if _is_global_player_catchup_audio_url(canonical):
+            comments_status = "Global Player/LBC public catch-up audio uses the R42GH planned yt_dlp_python_module route only; no audio download runs during row intake."
+            livechat_status = "Public catch-up audio rows do not support livechat."
+            provenance = "generic webpage adapter plus R42GH public_broadcast_catchup_audio metadata: yt_dlp_python_module, py -m yt_dlp, format 0, native m4a preservation, sidecars; plan only"
+            warnings.append(
+                "Global Player/LBC title is from cached/static metadata hints; yt-dlp, audio download, and live fetch did not run."
+            )
+        else:
+            comments_status = "Generic webpage rows support image discovery/download only; discussion comments are not supported."
+            livechat_status = "Generic webpage rows do not support livechat."
+            provenance = "generic webpage adapter; media discovery is user-triggered"
     elif adapter.source_name == "account_channel":
         display_title = title.strip() or _fallback_title_from_url(canonical)
         image_items, media_items = (), ()
@@ -625,7 +691,13 @@ def build_source_resource_row(
         livechat_supported=capabilities.supports_livechat,
         comments_status=comments_status,
         livechat_status=livechat_status,
-        archive_statuses=() if adapter.source_name in {"youtube", "twitter_x", "account_channel"} else _default_archive_statuses(archive_auto_check_enabled),
+        archive_statuses=(
+            ()
+            if adapter.source_name in {"youtube", "account_channel"}
+            else _twitter_archive_statuses(archive_auto_check_enabled)
+            if adapter.source_name == "twitter_x"
+            else _default_archive_statuses(archive_auto_check_enabled)
+        ),
         image_resources=image_items,
         video_audio_resources=media_items,
         warnings=tuple(warnings),
