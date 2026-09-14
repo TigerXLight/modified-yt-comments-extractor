@@ -301,14 +301,15 @@ def _plain_url(value: Any) -> str:
     text = _clean(value)
     if not text:
         return ""
-    # Defend against values pasted back from Markdown logs.
-    if "](" in text:
-        match = re.search(r"\]\((https?://[^)\s]+)\)", text)
+    # Defend against values pasted back from Markdown logs, including escaped
+    # markdown produced by chat/composer rendering.
+    text = text.replace("\_", "_").replace("\&", "&").replace("\/", "/").strip("<>").strip()
+    normalized = text.replace("]\(", "](").replace("\)", ")")
+    if "](" in normalized:
+        match = re.search(r"\]\((https?://[^)\s]+)\)", normalized)
         if match:
-            text = match.group(1)
-    text = text.replace("\\_", "_").replace("\\&", "&").strip("<>").strip()
-    return text
-
+            return match.group(1).replace("\_", "_").replace("\&", "&").replace("\/", "/").strip()
+    return normalized
 
 def _host_from_url(value: Any) -> str:
     url = _plain_url(value)
@@ -701,23 +702,26 @@ def build_unified_media_window_state_from_visible_browser_store(
     segment_rows = tuple(_observation_get(store, "segment_rows", ()) or ())
 
     children_with_keys: list[tuple[str, MediaWindowChildRow]] = []
-    seen_segment_urls: set[str] = set()
+    emitted_segment_urls: set[str] = set()
     for obs in observations:
         media_kind = _clean(_observation_get(obs, "media_kind"))
         if media_kind == MEDIA_CLASS_SEGMENT and segment_rows:
-            # Prefer the explicit segment table so segment rows are listed once.
-            seen_segment_urls.add(_plain_url(_observation_get(obs, "canonical_media_url") or _observation_get(obs, "media_url")))
+            # Prefer the explicit R42GV segment table, but do not mark those
+            # URLs as already emitted before the table has been projected.
+            # The previous guard suppressed all matching segment-table rows,
+            # which broke R42GY's background WebView2 observer refresh path.
             continue
         key = _visible_package_key_for_observation(source_row_id, source_url, obs)
         package_id = f"{source_row_id}:media_package:{_hash_text(key)}"
         children_with_keys.append((key, _child_from_visible_observation(obs, package_id, key, source_row_id=source_row_id)))
     for segment in segment_rows:
         segment_url = _plain_url(_observation_get(segment, "canonical_segment_url") or _observation_get(segment, "segment_url"))
-        if segment_url in seen_segment_urls:
+        if not segment_url or segment_url in emitted_segment_urls:
             continue
         key = _visible_package_key_for_observation(source_row_id, source_url, segment, force_segment=True)
         package_id = f"{source_row_id}:media_package:{_hash_text(key)}"
         children_with_keys.append((key, _child_from_visible_observation(segment, package_id, key, source_row_id=source_row_id, force_segment=True)))
+        emitted_segment_urls.add(segment_url)
 
     packages = _group_children_to_packages(source_row_id, source_url, children_with_keys)
     return UnifiedMediaWindowState(

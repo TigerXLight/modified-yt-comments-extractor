@@ -193,6 +193,53 @@ def test_jdownloader_like_filters_cover_extension_host_class_and_selectable() ->
     assert all(child.media_class != MEDIA_CLASS_SEGMENT for package in selectable_video_state.packages for child in package.children)
 
 
+
+def test_visible_store_with_both_segment_observations_and_segment_table_lists_segments_once() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = _sample_store(Path(td))
+        source_url = store["source_url"]
+        segment_rows = list(store["segment_rows"])
+        overlapping = dict(store)
+        overlapping["observations"] = list(store["observations"]) + [
+            {
+                "observation_id": "seg1-observation",
+                "media_kind": "segment",
+                "media_url": segment_rows[0]["canonical_segment_url"],
+                "canonical_media_url": segment_rows[0]["canonical_segment_url"],
+                "playlist_manifest_url": segment_rows[0]["playlist_manifest_url"],
+                "content_type": "video/mp2t",
+                "segment_index": 1,
+                "source_kind": "visible_browser_network_response",
+                "byte_status": BYTE_STATUS_REMOTE,
+                "canonical_post_url": source_url,
+            },
+            {
+                "observation_id": "seg2-observation",
+                "media_kind": "segment",
+                "media_url": segment_rows[1]["canonical_segment_url"],
+                "canonical_media_url": segment_rows[1]["canonical_segment_url"],
+                "playlist_manifest_url": segment_rows[1]["playlist_manifest_url"],
+                "content_type": "video/mp2t",
+                "segment_index": 2,
+                "source_kind": "visible_browser_network_response",
+                "byte_status": BYTE_STATUS_REMOTE,
+                "canonical_post_url": source_url,
+            },
+        ]
+        state = build_unified_media_window_state_from_visible_browser_store(
+            overlapping,
+            source_row_id="twitter_x:example:1234567890",
+        )
+
+    segment_children = [
+        row for row in flatten_media_window_tree(state, tab_id=TAB_ALL, include_children=True)
+        if row.get("media_class") == MEDIA_CLASS_SEGMENT
+    ]
+    assert state.segment_child_count >= 2
+    assert len(segment_children) == 2
+    assert {row.get("canonical_url") for row in segment_children} == {row["canonical_segment_url"] for row in segment_rows}
+    assert not any(row.get("selectable") for row in segment_children)
+
 def test_report_is_green_and_side_effect_free() -> None:
     with tempfile.TemporaryDirectory() as td:
         report = build_report(Path(td))
@@ -213,6 +260,7 @@ def run_self_test() -> None:
     test_image_and_video_tabs_are_filtered_views_of_same_model()
     test_segment_children_are_listed_but_not_top_level_or_selected_by_default()
     test_jdownloader_like_filters_cover_extension_host_class_and_selectable()
+    test_visible_store_with_both_segment_observations_and_segment_table_lists_segments_once()
     test_report_is_green_and_side_effect_free()
     print("profile_media_unified_media_window_tabs_r42gw_test: PASS")
 

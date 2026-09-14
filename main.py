@@ -26426,11 +26426,11 @@ render();
             return
 
         active_tab = normalize_tab_id(active_tab)
-        base_state = build_unified_media_window_state_from_source_row(row, active_tab=active_tab)
+        base_state_box = {"state": build_unified_media_window_state_from_source_row(row, active_tab=active_tab)}
         observer_policy = build_background_webview2_media_observer_policy_r42gx(row)
         selected_child_ids: set[str] = {
             str(getattr(child, "source_resource_id", "") or "")
-            for package in base_state.packages
+            for package in base_state_box["state"].packages
             for child in package.children
             if bool(getattr(child, "selected_by_default", False))
         }
@@ -26480,6 +26480,7 @@ render();
         host_var = ctk.StringVar(value="")
         extension_var = ctk.StringVar(value="")
         summary_var = ctk.StringVar(value="")
+        observer_status_var = ctk.StringVar(value="Background WebView2 observer idle")
 
         controls = ctk.CTkFrame(window, fg_color=COLORS["bg_input"], corner_radius=7)
         controls.pack(fill="x", padx=12, pady=(0, 8))
@@ -26517,6 +26518,7 @@ render();
         footer = ctk.CTkFrame(window, fg_color="transparent")
         footer.pack(fill="x", padx=12, pady=(0, 12))
         ctk.CTkLabel(footer, textvariable=summary_var, text_color=COLORS["text_secondary"], font=ctk.CTkFont(size=11)).pack(side="left")
+        ctk.CTkLabel(footer, textvariable=observer_status_var, text_color=COLORS["text_secondary"], font=ctk.CTkFont(size=11)).pack(side="right")
 
         def _current_filters() -> Any:
             return MediaWindowFilterState(
@@ -26535,7 +26537,7 @@ render();
             _refresh_summary()
 
         def _refresh_summary(filtered_state: Any | None = None) -> None:
-            state_now = filtered_state or filter_unified_media_window_state(base_state, _current_filters())
+            state_now = filtered_state or filter_unified_media_window_state(base_state_box["state"], _current_filters())
             summary_var.set(
                 f"{len(selected_child_ids)} selected · {state_now.package_count} package(s) · "
                 f"{state_now.child_count} child row(s) · {state_now.segment_child_count} segment child row(s)"
@@ -26557,7 +26559,7 @@ render();
         def render_media_tree() -> None:
             for child in list_frame.winfo_children():
                 child.destroy()
-            filtered_state = filter_unified_media_window_state(base_state, _current_filters())
+            filtered_state = filter_unified_media_window_state(base_state_box["state"], _current_filters())
             active = active_tab_var.get()
             for tab_id, button in tab_buttons.items():
                 try:
@@ -26624,6 +26626,85 @@ render();
 
             _refresh_summary(filtered_state)
 
+        def _run_background_webview2_media_observer_r42gy() -> None:
+            # R42GY_BACKGROUND_WEBVIEW2_FAST_MEDIA_OBSERVER_RUNTIME.
+            # Invoke the configured background WebView2 fast media observer for this source row.
+            # The observer feeds R42GV, then refreshes the R42GW All / Images / Videos tree.
+            # Review window stays separate; visible WebView2/Edge remains the escalation path.
+            # ESCALATE_R42GY_VISIBLE_WEBVIEW2_OR_EDGE_HUMAN_CONFIRMATION is the visible escalation receipt status.
+
+            try:
+                from profile_media_background_webview2_media_observer_r42gy import (
+                    R42GY_ESCALATE_VISIBLE_STATUS,
+                    R42GY_PASS_STATUS,
+                    run_background_webview2_media_observer_for_row_r42gy,
+                )
+            except Exception as error:
+                observer_status_var.set("Background WebView2 observer unavailable")
+                self.log_message(f"Background WebView2 observer unavailable: {error}", "warning")
+                return
+
+            backend = getattr(self, "background_webview2_media_observer_backend", None)
+            if backend is None:
+                observer_status_var.set("No background WebView2 observer backend configured")
+            try:
+                safe_row_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(row.row_id or "source")).strip("._-") or "source"
+                output_root = Path("profile_media_live_captures") / "r42gy_background_webview2_media_observer_runtime" / safe_row_id
+                receipt = run_background_webview2_media_observer_for_row_r42gy(
+                    row,
+                    backend=backend,
+                    output_root=output_root,
+                    active_tab=active_tab_var.get(),
+                )
+            except Exception as error:
+                observer_status_var.set("Background WebView2 observer failed")
+                self.log_message(f"Background WebView2 observer failed safely: {error}", "warning")
+                return
+
+            observer_status_var.set(
+                f"{receipt.status}: {receipt.observation_count} observation(s), {receipt.segment_count} segment(s)"
+            )
+            if receipt.status == R42GY_PASS_STATUS and getattr(receipt, "unified_media_window_state", None) is not None:
+                base_state_box["state"] = receipt.unified_media_window_state
+                selected_child_ids.clear()
+                for package in base_state_box["state"].packages:
+                    for child in package.children:
+                        if bool(getattr(child, "selected_by_default", False)):
+                            selected_child_ids.add(str(getattr(child, "source_resource_id", "") or ""))
+                render_media_tree()
+                self.log_message(
+                    (
+                        "R42GY background WebView2 media observer refreshed the unified Media window; "
+                        f"{receipt.observation_count} observation(s), {receipt.segment_count} segment(s); "
+                        "Review window stays separate."
+                    ),
+                    "success",
+                )
+            elif receipt.status == R42GY_ESCALATE_VISIBLE_STATUS:
+                reasons = "; ".join(getattr(receipt, "visible_escalation_reasons", ()) or ())
+                self.log_message(
+                    (
+                        "R42GY requires visible WebView2/Edge human confirmation; "
+                        f"{reasons or 'background WebView2 could not safely continue'}"
+                    ),
+                    "warning",
+                )
+            else:
+                self.log_message(
+                    (
+                        "R42GY background_webview2_backend_not_configured or no media observations returned; "
+                        "configure background_webview2_media_observer_backend or use visible WebView2/Edge."
+                    ),
+                    "info",
+                )
+
+        ctk.CTkButton(
+            filter_bar,
+            text="Run background WebView2",
+            width=170,
+            command=_run_background_webview2_media_observer_r42gy,
+        ).pack(side="left", padx=(0, 6))
+
         def _trace_refresh(*_args: object) -> None:
             render_media_tree()
 
@@ -26638,7 +26719,8 @@ render();
             (
                 "Opened unified Media window (All / Images / Videos); "
                 "Review window stays separate; Background WebView2 fast observer policy recorded; "
-                f"{R42GX_MARKER}; network/download/source-role actions performed: none."
+                "R42GY_BACKGROUND_WEBVIEW2_FAST_MEDIA_OBSERVER_RUNTIME button available; "
+                f"{R42GX_MARKER}; network/download/source-role actions performed: none until observer is explicitly run."
             ),
             "success",
         )
