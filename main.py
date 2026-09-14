@@ -1095,6 +1095,9 @@ from evidence_exporter import create_evidence_package
 from profile_media_youtube_export_surface_ui_options_r42gr import (
     collect_youtube_export_surface_options_from_vars,
 )
+from profile_media_youtube_comment_sort_spam_review_r42gs import (
+    collect_youtube_comment_sort_spam_settings_from_vars,
+)
 from transcript_tools import (
     TranscriptSegment,
     import_transcript,
@@ -1741,6 +1744,7 @@ class App(ctk.CTk):
         self.youtube_source_row_discovery_metadata: dict[str, dict[str, str]] = {}
         self.youtube_export_searchable_html_var = ctk.BooleanVar(value=False)
         self.youtube_export_author_profile_urls_var = ctk.BooleanVar(value=False)
+        self.youtube_spam_handling_var = ctk.StringVar(value="Review suspected spam separately")
         self.profile_media_runtime_state_path: Optional[Path] = None
         self.profile_media_sidebar_mode: str = self._load_profile_media_sidebar_mode_for_startup()
         self.profile_media_database_mode_var = None
@@ -6601,10 +6605,10 @@ class App(ctk.CTk):
         spam_row.pack(fill="x", pady=(0, 8))
 
         if not hasattr(self, "spam_filter_var"):
-            self.spam_filter_var = ctk.BooleanVar(value=False)
+            self.spam_filter_var = ctk.BooleanVar(value=True)
         self.spam_filter_checkbox = ctk.CTkSwitch(
             spam_row,
-            text="Separate flagged spam",
+            text="Review suspected spam separately",
             variable=self.spam_filter_var,
             font=ctk.CTkFont(size=12),
             text_color=COLORS["text_primary"],
@@ -6614,6 +6618,14 @@ class App(ctk.CTk):
             command=self._on_spam_filter_toggle
         )
         self.spam_filter_checkbox.pack(side="left")
+        ctk.CTkLabel(
+            filters_frame,
+            text="Spam handling: flagged items stay reviewable in spam_comments.csv/readable exports; nothing is silently discarded.",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS["text_muted"],
+            justify="left",
+            wraplength=260,
+        ).pack(anchor="w", pady=(0, 8))
 
         # Spam threshold
         threshold_frame = ctk.CTkFrame(filters_frame, fg_color="transparent")
@@ -20759,6 +20771,14 @@ class App(ctk.CTk):
     def _on_spam_filter_toggle(self) -> None:
         """Handle spam filter toggle - enable/disable threshold slider."""
         enabled = self.spam_filter_var.get()
+        spam_handling_var = self.__dict__.get("youtube_spam_handling_var")
+        if spam_handling_var is not None:
+            try:
+                spam_handling_var.set(
+                    "Review suspected spam separately" if enabled else "Include suspected spam inline"
+                )
+            except Exception:
+                pass
         state = "normal" if enabled else "disabled"
 
         self.spam_threshold_slider.configure(state=state)
@@ -30203,6 +30223,16 @@ render();
 
             sort_option = SortOption(settings.sort_by) if settings.sort_by else SortOption.DATE_NEWEST
             self.sort_var.set(sort_option.display_name)
+            youtube_comment_sort_spam_settings = collect_youtube_comment_sort_spam_settings_from_vars(
+                self.__dict__.get("sort_var"),
+                self.__dict__.get("spam_filter_var"),
+                spam_handling_value=getattr(settings, "youtube_spam_handling", ""),
+            )
+            youtube_spam_handling_var = self.__dict__.get("youtube_spam_handling_var")
+            if youtube_spam_handling_var is not None:
+                youtube_spam_handling_var.set(
+                    youtube_comment_sort_spam_settings.spam_handling_display_name
+                )
 
             # Load filter words
             if settings.filter_words:
@@ -30240,9 +30270,14 @@ render();
     def _save_settings(self) -> bool:
         """Save current settings."""
         try:
+            youtube_comment_sort_spam_settings = collect_youtube_comment_sort_spam_settings_from_vars(
+                self.__dict__.get("sort_var"),
+                self.__dict__.get("spam_filter_var"),
+            )
             settings = AppSettings(
                 api_key="",
-                filter_spam=self.spam_filter_var.get(),
+                filter_spam=youtube_comment_sort_spam_settings.filter_spam,
+                youtube_spam_handling=youtube_comment_sort_spam_settings.youtube_spam_handling,
                 spam_threshold=self.spam_threshold_var.get(),
                 exclude_creator=self.exclude_creator_var.get(),
                 min_likes=self._get_min_likes(),
@@ -30874,6 +30909,10 @@ render();
         # Get filter words
         filter_words = self._get_filter_words()
         max_comments = self._get_max_comments()
+        youtube_comment_sort_spam_settings = collect_youtube_comment_sort_spam_settings_from_vars(
+            self.__dict__.get("sort_var"),
+            self.__dict__.get("spam_filter_var"),
+        )
 
         # Log start
         self.log_message(f"Starting extraction for {len(valid_urls)} video(s)...", "info")
@@ -30885,14 +30924,22 @@ render();
             self.log_message(f"Filtering for words: {', '.join(filter_words)}", "muted")
         if max_comments:
             self.log_message(f"Max {max_comments} comments per video", "muted")
+        self.log_message(
+            f"YouTube comment sort order: {youtube_comment_sort_spam_settings.youtube_comment_sort_order}",
+            "muted",
+        )
+        self.log_message(
+            f"YouTube spam handling: {youtube_comment_sort_spam_settings.youtube_spam_handling}",
+            "muted",
+        )
 
         self._fetch_thread_ref = threading.Thread(
             target=self._fetch_thread,
             args=(
                 valid_urls,
-                self.spam_filter_var.get(),
+                youtube_comment_sort_spam_settings.filter_spam,
                 self._get_min_likes(),
-                SortOption.from_display_name(self.sort_var.get()).value,
+                youtube_comment_sort_spam_settings.sort_by_value_for_engine,
                 self.exclude_creator_var.get(),
                 date_from,
                 date_to,
@@ -31450,6 +31497,11 @@ render();
             "Transcript Segments": len(self.transcript_segments),
             "Transcript Source": self.last_transcript_source or "",
         }
+        youtube_comment_sort_spam_settings = collect_youtube_comment_sort_spam_settings_from_vars(
+            self.__dict__.get("sort_var"),
+            self.__dict__.get("spam_filter_var"),
+        )
+        settings.update(youtube_comment_sort_spam_settings.to_source_info_settings())
         youtube_export_surface_options = collect_youtube_export_surface_options_from_vars(
             self.__dict__.get("youtube_export_searchable_html_var"),
             self.__dict__.get("youtube_export_author_profile_urls_var"),

@@ -61,7 +61,8 @@ class AppSettings:
     api_key: str = ""
 
     # Filter settings
-    filter_spam: bool = False
+    filter_spam: bool = True
+    youtube_spam_handling: str = "review"
     spam_threshold: float = SpamFilterStrength.MODERATE.value
     exclude_creator: bool = False
     min_likes: int = 0

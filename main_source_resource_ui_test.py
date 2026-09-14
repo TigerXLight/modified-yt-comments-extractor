@@ -2608,6 +2608,38 @@ def test_v83c_repair22_r21_markup_test_compat() -> None:
         assert "_claim_media_filter_active()" in source
         assert "_claim_media_source_role_for_span" in source
 
+
+def test_youtube_comment_sort_spam_review_defaults_are_plumbed() -> None:
+    from profile_media_youtube_comment_sort_spam_review_r42gs import (
+        YouTubeCommentSortSpamSettings,
+        collect_youtube_comment_sort_spam_settings_from_vars,
+    )
+
+    init_source = inspect.getsource(App.__init__)
+    filter_source = inspect.getsource(App._create_filters_section)
+    fetch_source = inspect.getsource(App.start_fetching)
+    save_source = inspect.getsource(App._save_settings)
+    load_source = inspect.getsource(App._load_settings)
+    export_source = inspect.getsource(App.export_evidence_folder)
+
+    defaults = YouTubeCommentSortSpamSettings()
+    assert defaults.youtube_comment_sort_order == "newest"
+    assert defaults.youtube_spam_handling == "review"
+    assert defaults.filter_spam is True
+    assert collect_youtube_comment_sort_spam_settings_from_vars(None, None).youtube_spam_handling == "review"
+
+    assert "youtube_spam_handling_var = ctk.StringVar" in init_source
+    assert "ctk.BooleanVar(value=True)" in filter_source
+    assert "Review suspected spam separately" in filter_source
+    assert "spam_comments.csv/readable exports" in filter_source
+    assert "youtube_comment_sort_spam_settings.filter_spam" in fetch_source
+    assert "youtube_comment_sort_spam_settings.sort_by_value_for_engine" in fetch_source
+    assert "YouTube comment sort order" in fetch_source
+    assert "YouTube spam handling" in fetch_source
+    assert "youtube_spam_handling=" in save_source
+    assert "spam_handling_value=getattr(settings, \"youtube_spam_handling\", \"\")" in load_source
+    assert "settings.update(youtube_comment_sort_spam_settings.to_source_info_settings())" in export_source
+
 def run_self_test() -> None:
     test_r41b_link_details_run_capture_now_is_metadata_only()
     test_r41q_visible_workflow_summary_is_wired_to_database_card()
@@ -2633,6 +2665,7 @@ def run_self_test() -> None:
     test_sidebar_order_places_updates_above_keys_export_files()
     test_youtube_filters_live_in_combined_youtube_settings_window()
     test_youtube_export_surface_options_are_plumbed_to_evidence_export()
+    test_youtube_comment_sort_spam_review_defaults_are_plumbed()
     test_database_sidebar_has_compact_home_controls_and_hides_counts_when_off()
     test_media_resource_window_has_v77f_preservation_scaffolding()
     test_media_resource_window_download_labels_and_gallery()
