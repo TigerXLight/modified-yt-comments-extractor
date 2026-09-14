@@ -141,6 +141,13 @@ class TwitterBrowserCaptureRunResult:
     api_pages_path: str = ""
     cursor_boundaries_path: str = ""
     media_inventory_path: str = ""
+    visible_browser_media_observation_store_path: str = ""
+    visible_browser_media_observation_ndjson_path: str = ""
+    visible_browser_media_segment_table_path: str = ""
+    visible_browser_media_review_projection_path: str = ""
+    visible_browser_media_r42gt_package_manifest_path: str = ""
+    visible_browser_media_observation_count: int = 0
+    visible_browser_media_segment_count: int = 0
     manifest_path: str = ""
     rendered_dom_path: str = ""
     screenshot_path: str = ""
@@ -767,6 +774,46 @@ def _run_twitter_browser_capture_impl(
     if payload.screenshot_bytes_b64:
         screenshot_path.write_bytes(base64.b64decode(payload.screenshot_bytes_b64))
 
+    visible_media_store_path = ""
+    visible_media_ndjson_path = ""
+    visible_media_segment_table_path = ""
+    visible_media_review_projection_path = ""
+    visible_media_r42gt_package_manifest_path = ""
+    visible_media_observation_count = 0
+    visible_media_segment_count = 0
+    if payload.events or payload.final_dom or media_items:
+        try:
+            from profile_media_twitter_x_visible_browser_media_observation_r42gv import (
+                build_visible_browser_media_observation_store,
+                write_r42gt_package_from_visible_browser_observations,
+                write_visible_browser_media_observation_store,
+            )
+
+            visible_store = build_visible_browser_media_observation_store(
+                source_url=plan.canonical_url,
+                events=payload.events,
+                final_dom=payload.final_dom,
+                media_inventory=media_items,
+            )
+            if visible_store.observation_count:
+                visible_write = write_visible_browser_media_observation_store(
+                    visible_store,
+                    output / "visible_browser_media_observation_store",
+                )
+                visible_media_store_path = visible_write.observation_store_path
+                visible_media_ndjson_path = visible_write.observation_ndjson_path
+                visible_media_segment_table_path = visible_write.segment_table_path
+                visible_media_review_projection_path = visible_write.review_projection_path
+                visible_media_observation_count = visible_write.observation_count
+                visible_media_segment_count = visible_write.segment_count
+                visible_package = write_r42gt_package_from_visible_browser_observations(
+                    visible_store,
+                    output / "r42gt_visible_browser_media_package",
+                )
+                visible_media_r42gt_package_manifest_path = visible_package.manifest_path
+        except Exception as exc:
+            warnings.append(f"r42gv_visible_browser_media_observation_failed:{exc}")
+
     backend_paths: list[str] = []
     if download_media and media_items:
         try:
@@ -813,6 +860,13 @@ def _run_twitter_browser_capture_impl(
         api_pages_path=str(api_pages_path),
         cursor_boundaries_path=str(boundaries_path),
         media_inventory_path=str(media_path),
+        visible_browser_media_observation_store_path=visible_media_store_path,
+        visible_browser_media_observation_ndjson_path=visible_media_ndjson_path,
+        visible_browser_media_segment_table_path=visible_media_segment_table_path,
+        visible_browser_media_review_projection_path=visible_media_review_projection_path,
+        visible_browser_media_r42gt_package_manifest_path=visible_media_r42gt_package_manifest_path,
+        visible_browser_media_observation_count=visible_media_observation_count,
+        visible_browser_media_segment_count=visible_media_segment_count,
         manifest_path=str(manifest_path),
         rendered_dom_path=str(dom_path) if payload.final_dom else "",
         screenshot_path=str(screenshot_path) if payload.screenshot_bytes_b64 else "",
