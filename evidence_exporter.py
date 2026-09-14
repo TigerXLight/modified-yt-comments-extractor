@@ -142,6 +142,8 @@ def create_evidence_package(
     source_urls: List[str],
     app_version: str,
     settings: Dict[str, Any],
+    include_youtube_searchable_html: bool = False,
+    include_author_profile_urls: bool = False,
 ) -> str:
     """
     Creates a folder containing readable comments, CSV, source_info, and screenshots.
@@ -187,4 +189,24 @@ def create_evidence_package(
     if spam:
         _write_comments_csv(package_dir / "spam_comments.csv", spam)
 
+    if include_youtube_searchable_html and comments:
+        try:
+            from profile_media_youtube_export_surface_app_wiring_r42gq import (
+                write_youtube_optional_export_surface,
+            )
+
+            source_url = source_urls[0] if source_urls else ""
+            write_youtube_optional_export_surface(
+                comments,
+                package_dir,
+                source_video_url=source_url,
+                include_searchable_html=True,
+                include_author_profile_urls=include_author_profile_urls,
+                append_source_info=True,
+            )
+        except Exception as exc:
+            with (package_dir / "source_info.txt").open("a", encoding="utf-8", newline="\n") as f:
+                f.write("\nR42GQ YouTube Optional Export Surface\n")
+                f.write("=" * 80 + "\n")
+                f.write(f"Optional sibling artifact generation failed: {exc}\n")
     return str(package_dir)
