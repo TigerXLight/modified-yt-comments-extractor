@@ -22490,7 +22490,24 @@ class App(ctk.CTk):
                     )
                     twitter_settings_button.grid(row=0, column=0, padx=(0, 0), pady=(0, 0), sticky="ne")
                     twitter_settings_button.tooltip_text = "X/Twitter source settings."
-                next_action_column = 1
+                twitter_media_button = ctk.CTkButton(
+                    actions,
+                    text="Media",  # twitter_unified_media_window_button_expected_by_ui_test
+                    command=lambda row_id=row.row_id: self._open_unified_media_window_for_source_row(row_id, active_tab="all"),
+                    width=64,
+                    height=28,
+                    fg_color=COLORS["accent_secondary"],
+                    hover_color=COLORS["border"],
+                    text_color=COLORS["text_primary"],
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    corner_radius=6,
+                )
+                twitter_media_button.tooltip_text = (
+                    "Media window: All / Images / Videos. Uses the R42GW package tree; "
+                    "Background WebView2 fast observer can populate this row while the Review window stays separate."
+                )
+                twitter_media_button.grid(row=0, column=next_action_column, padx=(0, 6), sticky="n")
+                next_action_column += 1
             else:
                 images_button = ctk.CTkButton(
                     actions,
@@ -26379,9 +26396,261 @@ render();
         )
 
 
+
+    def _open_unified_media_window_for_source_row(self, row_id: str, *, active_tab: str = "all") -> None:
+        """R42GX_UNIFIED_MEDIA_WINDOW_UI_WEBVIEW2_WIRING.
+
+        Open one Media window for a source row with All / Images / Videos tabs.
+        The Review window stays separate. Background WebView2 fast observer policy
+        is displayed as the per-link population path; this method itself performs
+        no browser, network, download, source-role, or review-window actions.
+        """
+
+        row = self._source_row_by_id(row_id)
+        if row is None:
+            return
+        try:
+            from profile_media_unified_media_window_app_bridge_r42gx import (
+                R42GX_MARKER,
+                build_background_webview2_media_observer_policy_r42gx,
+            )
+            from profile_media_unified_media_window_tabs_r42gw import (
+                MediaWindowFilterState,
+                build_unified_media_window_state_from_source_row,
+                filter_unified_media_window_state,
+                flatten_media_window_tree,
+                normalize_tab_id,
+            )
+        except Exception as error:
+            self.log_message(f"Unified Media window unavailable: {error}", "warning")
+            return
+
+        active_tab = normalize_tab_id(active_tab)
+        base_state = build_unified_media_window_state_from_source_row(row, active_tab=active_tab)
+        observer_policy = build_background_webview2_media_observer_policy_r42gx(row)
+        selected_child_ids: set[str] = {
+            str(getattr(child, "source_resource_id", "") or "")
+            for package in base_state.packages
+            for child in package.children
+            if bool(getattr(child, "selected_by_default", False))
+        }
+
+        window = ctk.CTkToplevel(self)
+        window.title("Media - All / Images / Videos")
+        window.geometry("1040x760")
+        try:
+            window.minsize(920, 620)
+            window.transient(self)
+            window.focus_set()
+        except Exception:
+            pass
+
+        header = ctk.CTkFrame(window, fg_color=COLORS["bg_card"])
+        header.pack(fill="x", padx=12, pady=(12, 8))
+        ctk.CTkLabel(
+            header,
+            text=(
+                f"Media window: All / Images / Videos\n"
+                f"{row.title} — {row.domain}\n"
+                "Review window stays separate. Background WebView2 fast observer is the per-link media-observation path; "
+                "visible WebView2/Edge is used only for human confirmation, login/challenge/consent, or escalation."
+            ),
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=COLORS["text_primary"],
+            justify="left",
+            anchor="w",
+        ).pack(side="left", fill="x", expand=True, padx=10, pady=8)
+
+        policy_text = (
+            "Background WebView2 fast observer"
+            if bool(observer_policy.get("enabled_for_media_window_fast_path"))
+            else "Manual/visible observation may be needed"
+        )
+        ctk.CTkLabel(
+            header,
+            text=policy_text,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=COLORS["text_secondary"],
+            justify="right",
+            anchor="e",
+        ).pack(side="right", padx=10, pady=8)
+
+        active_tab_var = ctk.StringVar(value=active_tab)
+        search_var = ctk.StringVar(value="")
+        host_var = ctk.StringVar(value="")
+        extension_var = ctk.StringVar(value="")
+        summary_var = ctk.StringVar(value="")
+
+        controls = ctk.CTkFrame(window, fg_color=COLORS["bg_input"], corner_radius=7)
+        controls.pack(fill="x", padx=12, pady=(0, 8))
+        tab_bar = ctk.CTkFrame(controls, fg_color="transparent")
+        tab_bar.pack(fill="x", padx=8, pady=(8, 4))
+
+        tab_buttons: dict[str, Any] = {}
+
+        def _select_tab(tab_id: str) -> None:
+            active_tab_var.set(normalize_tab_id(tab_id))
+            render_media_tree()
+
+        for tab_id, label in (("all", "All"), ("images", "Images"), ("videos", "Videos")):
+            button = ctk.CTkButton(
+                tab_bar,
+                text=label,
+                width=86,
+                height=28,
+                command=lambda value=tab_id: _select_tab(value),
+                fg_color=COLORS["accent_secondary"],
+                hover_color=COLORS["border"],
+            )
+            button.pack(side="left", padx=(0, 6))
+            tab_buttons[tab_id] = button
+
+        filter_bar = ctk.CTkFrame(controls, fg_color="transparent")
+        filter_bar.pack(fill="x", padx=8, pady=(4, 8))
+        ctk.CTkEntry(filter_bar, textvariable=search_var, placeholder_text="Filter name/type/url", width=280).pack(side="left", padx=(0, 6))
+        ctk.CTkEntry(filter_bar, textvariable=host_var, placeholder_text="Host filter", width=180).pack(side="left", padx=(0, 6))
+        ctk.CTkEntry(filter_bar, textvariable=extension_var, placeholder_text="Extension filter, e.g. .ts", width=170).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(filter_bar, text="Refresh filters", width=120, command=lambda: render_media_tree()).pack(side="left", padx=(0, 6))
+
+        list_frame = ctk.CTkScrollableFrame(window, fg_color=COLORS["bg_input"])
+        list_frame.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        footer = ctk.CTkFrame(window, fg_color="transparent")
+        footer.pack(fill="x", padx=12, pady=(0, 12))
+        ctk.CTkLabel(footer, textvariable=summary_var, text_color=COLORS["text_secondary"], font=ctk.CTkFont(size=11)).pack(side="left")
+
+        def _current_filters() -> Any:
+            return MediaWindowFilterState(
+                tab_id=active_tab_var.get(),
+                search_text=search_var.get(),
+                host_filter=host_var.get(),
+                extension_filter=extension_var.get(),
+                include_segments=True,
+            )
+
+        def _toggle_child(child_id: str, enabled: bool) -> None:
+            if enabled:
+                selected_child_ids.add(child_id)
+            else:
+                selected_child_ids.discard(child_id)
+            _refresh_summary()
+
+        def _refresh_summary(filtered_state: Any | None = None) -> None:
+            state_now = filtered_state or filter_unified_media_window_state(base_state, _current_filters())
+            summary_var.set(
+                f"{len(selected_child_ids)} selected · {state_now.package_count} package(s) · "
+                f"{state_now.child_count} child row(s) · {state_now.segment_child_count} segment child row(s)"
+            )
+
+        def _row_text(payload: dict[str, Any]) -> str:
+            if payload.get("row_role") == "package":
+                return (
+                    f"{payload.get('package_name') or 'Media package'}   "
+                    f"children={payload.get('child_count', 0)} selectable={payload.get('selectable_child_count', 0)} "
+                    f"segments={payload.get('segment_child_count', 0)}"
+                )
+            return (
+                f"{payload.get('display_name') or payload.get('filename') or 'media'}   "
+                f"{payload.get('extension') or payload.get('media_class') or ''}   "
+                f"{payload.get('host') or ''}"
+            )
+
+        def render_media_tree() -> None:
+            for child in list_frame.winfo_children():
+                child.destroy()
+            filtered_state = filter_unified_media_window_state(base_state, _current_filters())
+            active = active_tab_var.get()
+            for tab_id, button in tab_buttons.items():
+                try:
+                    button.configure(fg_color=COLORS["accent"] if tab_id == active else COLORS["accent_secondary"])
+                except Exception:
+                    pass
+            rows = list(flatten_media_window_tree(filtered_state, tab_id=active, include_children=True))
+            if not rows:
+                ctk.CTkLabel(
+                    list_frame,
+                    text=(
+                        "No media rows match this tab/filter yet.\n"
+                        "Use the background WebView2 fast observer for this link, or escalate to visible WebView2/Edge "
+                        "when human confirmation/challenge/login/consent is required."
+                    ),
+                    text_color=COLORS["text_muted"],
+                    justify="left",
+                    anchor="w",
+                ).pack(fill="x", padx=10, pady=12)
+                _refresh_summary(filtered_state)
+                return
+
+            for payload in rows:
+                row_role = str(payload.get("row_role") or "")
+                is_package = row_role == "package"
+                frame = ctk.CTkFrame(list_frame, fg_color=COLORS["bg_card"] if is_package else COLORS["bg_input"], corner_radius=6)
+                frame.pack(fill="x", padx=8 if is_package else 28, pady=(8 if is_package else 2, 2))
+                frame.grid_columnconfigure(1, weight=1)
+
+                if is_package:
+                    ctk.CTkLabel(frame, text="▾", width=24, text_color=COLORS["text_primary"], font=ctk.CTkFont(size=13, weight="bold")).grid(row=0, column=0, padx=(8, 2), pady=6, sticky="w")
+                    ctk.CTkLabel(frame, text=_row_text(payload), text_color=COLORS["text_primary"], font=ctk.CTkFont(size=12, weight="bold"), anchor="w").grid(row=0, column=1, sticky="ew", padx=4, pady=(6, 2))
+                    ctk.CTkLabel(
+                        frame,
+                        text=payload.get("warning") or "JDownloader-style package/folder row",
+                        text_color=COLORS["text_secondary"],
+                        font=ctk.CTkFont(size=10),
+                        anchor="w",
+                    ).grid(row=1, column=1, sticky="ew", padx=4, pady=(0, 6))
+                    continue
+
+                child_id = str(payload.get("source_resource_id") or payload.get("row_id") or "")
+                selectable = bool(payload.get("selectable"))
+                child_var = ctk.BooleanVar(value=child_id in selected_child_ids)
+                if selectable:
+                    ctk.CTkCheckBox(
+                        frame,
+                        text="",
+                        width=24,
+                        variable=child_var,
+                        command=lambda rid=child_id, var=child_var: _toggle_child(rid, bool(var.get())),
+                    ).grid(row=0, column=0, padx=(8, 2), pady=6, sticky="w")
+                else:
+                    ctk.CTkLabel(frame, text="•", width=24, text_color=COLORS["text_muted"]).grid(row=0, column=0, padx=(8, 2), pady=6, sticky="w")
+                ctk.CTkLabel(frame, text=_row_text(payload), text_color=COLORS["text_primary"], font=ctk.CTkFont(size=11), anchor="w").grid(row=0, column=1, sticky="ew", padx=4, pady=(6, 2))
+                url_text = str(payload.get("canonical_url") or payload.get("media_url") or "")
+                if len(url_text) > 140:
+                    url_text = url_text[:137] + "..."
+                detail_text = (
+                    f"{payload.get('media_class') or ''} · selectable={selectable} · "
+                    f"default={bool(payload.get('selected_by_default'))} · {url_text}"
+                )
+                ctk.CTkLabel(frame, text=detail_text, text_color=COLORS["text_secondary"], font=ctk.CTkFont(size=10), anchor="w").grid(row=1, column=1, sticky="ew", padx=4, pady=(0, 6))
+
+            _refresh_summary(filtered_state)
+
+        def _trace_refresh(*_args: object) -> None:
+            render_media_tree()
+
+        for var in (search_var, host_var, extension_var):
+            try:
+                var.trace_add("write", _trace_refresh)
+            except Exception:
+                pass
+
+        render_media_tree()
+        self.log_message(
+            (
+                "Opened unified Media window (All / Images / Videos); "
+                "Review window stays separate; Background WebView2 fast observer policy recorded; "
+                f"{R42GX_MARKER}; network/download/source-role actions performed: none."
+            ),
+            "success",
+        )
+
+
     def _open_source_resource_window(self, row_id: str, resource_kind: str, *, force_tk_image_window: bool = False) -> None:
         row = self._source_row_by_id(row_id)
         if row is None:
+            return
+        if row.adapter_id == "twitter_x":
+            active_tab = "images" if resource_kind == RESOURCE_KIND_IMAGE else "videos" if resource_kind == RESOURCE_KIND_VIDEO_AUDIO else "all"
+            self._open_unified_media_window_for_source_row(row_id, active_tab=active_tab)
             return
         if (
             resource_kind == RESOURCE_KIND_IMAGE
