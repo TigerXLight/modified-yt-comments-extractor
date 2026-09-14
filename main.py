@@ -1759,6 +1759,23 @@ class App(ctk.CTk):
         self.profile_media_database_gui_state_path = None
         self.profile_media_database_gui_state_payload: dict[str, object] | None = None
 
+        # R42GZ_INDEPENDENT_FAST_MEDIA_WEBVIEW2_CAPTURE_LANE:
+        # Register the independent fast Media WebView2 lane for R42GY.
+        # This is separate from the review/source-role WebView2 lane and is not run at startup.
+        # It is media-only/per-link and avoids review-window/source-role back-and-forth slowdowns.
+        self.background_webview2_media_observer_backend = None
+        try:
+            from profile_media_independent_fast_media_webview2_lane_r42gz import (
+                build_independent_fast_media_webview2_lane_r42gz,
+            )
+
+            self.background_webview2_media_observer_backend = build_independent_fast_media_webview2_lane_r42gz()
+        except Exception:
+            logger.debug(
+                "Could not configure R42GZ independent fast Media WebView2 lane for the unified Media window.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
@@ -26644,6 +26661,9 @@ render();
                 self.log_message(f"Background WebView2 observer unavailable: {error}", "warning")
                 return
 
+            # R42GZ_INDEPENDENT_FAST_MEDIA_WEBVIEW2_CAPTURE_LANE.
+            # Use the configured independent/media-only fast lane, not the review/source-role WebView2 lane.
+            # This avoids source-role interface checks and review-window back-and-forth slowdowns.
             backend = getattr(self, "background_webview2_media_observer_backend", None)
             if backend is None:
                 observer_status_var.set("No background WebView2 observer backend configured")
