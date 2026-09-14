@@ -458,6 +458,9 @@ def test_youtube_filters_live_in_combined_youtube_settings_window() -> None:
     assert "YouTube-only filters are still shown below" not in inspect.getsource(App)
     assert "Media options, comment filters, date range, and custom filters" in window_source
     assert "YOUTUBE MEDIA" in window_source
+    assert "YOUTUBE EVIDENCE EXPORT" in window_source
+    assert "Create searchable comments HTML" in window_source
+    assert "Include author channel/profile URL sidecars" in window_source
     assert "_create_filters_section(body" in window_source
     assert "_create_date_section(body" in window_source
     assert "_create_custom_filters_section(body" in window_source
@@ -468,6 +471,18 @@ def test_youtube_filters_live_in_combined_youtube_settings_window() -> None:
     assert "previous_max_comments" in filter_source
     assert "previous_from_date" in date_source
     assert "previous_to_date" in date_source
+
+
+def test_youtube_export_surface_options_are_plumbed_to_evidence_export() -> None:
+    init_source = inspect.getsource(App.__init__)
+    export_source = inspect.getsource(App.export_evidence_folder)
+
+    assert "youtube_export_searchable_html_var = ctk.BooleanVar(value=False)" in init_source
+    assert "youtube_export_author_profile_urls_var = ctk.BooleanVar(value=False)" in init_source
+    assert "collect_youtube_export_surface_options_from_vars" in export_source
+    assert "settings.update(youtube_export_surface_options.to_settings_dict())" in export_source
+    assert "**youtube_export_surface_options.to_create_evidence_package_kwargs()" in export_source
+    assert "to_create_evidence_package_kwargs" in export_source
 
 
 def test_database_sidebar_has_compact_home_controls_and_hides_counts_when_off() -> None:
@@ -2617,6 +2632,7 @@ def run_self_test() -> None:
     test_sidebar_spacing_is_compact_between_updates_keys_and_export()
     test_sidebar_order_places_updates_above_keys_export_files()
     test_youtube_filters_live_in_combined_youtube_settings_window()
+    test_youtube_export_surface_options_are_plumbed_to_evidence_export()
     test_database_sidebar_has_compact_home_controls_and_hides_counts_when_off()
     test_media_resource_window_has_v77f_preservation_scaffolding()
     test_media_resource_window_download_labels_and_gallery()

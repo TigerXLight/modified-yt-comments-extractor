@@ -1092,6 +1092,9 @@ from extractor import (
 
 from updater import check_for_updates
 from evidence_exporter import create_evidence_package
+from profile_media_youtube_export_surface_ui_options_r42gr import (
+    collect_youtube_export_surface_options_from_vars,
+)
 from transcript_tools import (
     TranscriptSegment,
     import_transcript,
@@ -1736,6 +1739,8 @@ class App(ctk.CTk):
         self.youtube_source_row_available_quality_labels: dict[str, tuple[str, ...]] = {}
         self.youtube_source_row_discovery_status: dict[str, str] = {}
         self.youtube_source_row_discovery_metadata: dict[str, dict[str, str]] = {}
+        self.youtube_export_searchable_html_var = ctk.BooleanVar(value=False)
+        self.youtube_export_author_profile_urls_var = ctk.BooleanVar(value=False)
         self.profile_media_runtime_state_path: Optional[Path] = None
         self.profile_media_sidebar_mode: str = self._load_profile_media_sidebar_mode_for_startup()
         self.profile_media_database_mode_var = None
@@ -6524,6 +6529,46 @@ class App(ctk.CTk):
                 text_color=COLORS["text_secondary"],
                 justify="left",
             ).pack(anchor="w", padx=8, pady=(10, 12))
+
+        ctk.CTkLabel(
+            body,
+            text="YOUTUBE EVIDENCE EXPORT",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["text_secondary"],
+        ).pack(anchor="w", padx=8, pady=(12, 6))
+        ctk.CTkCheckBox(
+            body,
+            text="Create searchable comments HTML",
+            variable=self.youtube_export_searchable_html_var,
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_primary"],
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            border_color=COLORS["border"],
+            checkmark_color="#000000",
+        ).pack(anchor="w", padx=8, pady=5)
+        ctk.CTkCheckBox(
+            body,
+            text="Include author channel/profile URL sidecars",
+            variable=self.youtube_export_author_profile_urls_var,
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["text_primary"],
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            border_color=COLORS["border"],
+            checkmark_color="#000000",
+        ).pack(anchor="w", padx=8, pady=5)
+        ctk.CTkLabel(
+            body,
+            text=(
+                "Optional sibling artifacts for existing YouTube evidence exports. "
+                "Readable TXT and screenshots remain unchanged."
+            ),
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_muted"],
+            justify="left",
+            wraplength=500,
+        ).pack(anchor="w", padx=8, pady=(0, 10))
 
         self._create_filters_section(body, show_label=True)
         self._create_date_section(body, show_label=True)
@@ -31405,6 +31450,11 @@ render();
             "Transcript Segments": len(self.transcript_segments),
             "Transcript Source": self.last_transcript_source or "",
         }
+        youtube_export_surface_options = collect_youtube_export_surface_options_from_vars(
+            self.__dict__.get("youtube_export_searchable_html_var"),
+            self.__dict__.get("youtube_export_author_profile_urls_var"),
+        )
+        settings.update(youtube_export_surface_options.to_settings_dict())
         settings.update(self._get_transcript_playback_metadata())
 
         try:
@@ -31417,6 +31467,7 @@ render();
                 source_urls=self._get_current_source_urls(),
                 app_version=APP_VERSION,
                 settings=settings,
+                **youtube_export_surface_options.to_create_evidence_package_kwargs(),
             )
 
             if self.transcript_segments:

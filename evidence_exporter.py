@@ -189,7 +189,7 @@ def create_evidence_package(
     if spam:
         _write_comments_csv(package_dir / "spam_comments.csv", spam)
 
-    if include_youtube_searchable_html and comments:
+    if (include_youtube_searchable_html or include_author_profile_urls) and comments:
         try:
             from profile_media_youtube_export_surface_app_wiring_r42gq import (
                 write_youtube_optional_export_surface,
@@ -200,7 +200,7 @@ def create_evidence_package(
                 comments,
                 package_dir,
                 source_video_url=source_url,
-                include_searchable_html=True,
+                include_searchable_html=include_youtube_searchable_html,
                 include_author_profile_urls=include_author_profile_urls,
                 append_source_info=True,
             )
