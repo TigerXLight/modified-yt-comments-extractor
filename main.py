@@ -1794,6 +1794,27 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+
+        # R43B_TWITTER_X_ACCOUNT_TIMELINE_RUNNER_PROGRESS_PAUSE_RECOVERY:
+        # Register the Twitter/X whole-account timeline runner with progress/pause/recovery.
+        # It uses the independent fast Media WebView2 lane as an observation input only;
+        # it does not call source-role checks and does not use the review/source-role WebView2 lane.
+        self.twitter_x_account_timeline_runner_r43b = None
+        try:
+            from profile_media_twitter_x_account_timeline_runner_r43b import (
+                build_twitter_x_account_timeline_runner_r43b,
+            )
+
+            self.twitter_x_account_timeline_runner_r43b = build_twitter_x_account_timeline_runner_r43b(
+                media_lane_backend=getattr(self, "background_webview2_media_observer_backend", None),
+                ledger_exporter=getattr(self, "twitter_x_account_media_ledger_exporter", None),
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R43B Twitter/X account timeline runner progress/pause/recovery.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
