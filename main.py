@@ -1833,6 +1833,27 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+
+        # R43D_TWITTER_X_ACCOUNT_TRACKING_EXPORT_SURFACE:
+        # Register the Twitter/X account tracking export surface above R43B/R43A/R43C.
+        # WebView2 remains site rendering/observation only; tracking/dedupe/ledger/export local.
+        # This surface does not call source-role checks and does not use the review/source-role WebView2 lane.
+        self.twitter_x_account_tracking_export_surface_r43d = None
+        try:
+            from profile_media_twitter_x_account_tracking_export_surface_r43d import (
+                build_twitter_x_account_tracking_export_surface_r43d,
+            )
+
+            self.twitter_x_account_tracking_export_surface_r43d = build_twitter_x_account_tracking_export_surface_r43d(
+                timeline_runner=getattr(self, "twitter_x_account_timeline_runner_r43b", None),
+                screenshot_gate=getattr(self, "visual_screenshot_receipt_materialization_gate_r43c", None),
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R43D Twitter/X account tracking export surface.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
