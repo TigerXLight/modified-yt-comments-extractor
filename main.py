@@ -2010,6 +2010,31 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43L_UNIVERSAL_SOCIAL_BATCH_WORKBENCH_APP_SHELL_COMMANDS:
+        # Register the app-shell command/navigation surface for opening the
+        # universal social batch workbench, pasting/loading inputs, previewing,
+        # saving/restoring state, selecting rows, running/resuming/retrying/skipping,
+        # and exporting summaries/receipts. Commands delegate to R43J/R43K and do
+        # not call R43H/R43G/R43F/R43E/R43D directly. This layer does not start
+        # WebView2/CefSharp, copy browser internals, run source-role checks, invoke
+        # review-window loops, download remote media, or change YouTube capture
+        # engine behavior.
+        self.universal_social_batch_workbench_app_shell_commands_r43l = None
+        try:
+            from profile_media_universal_social_batch_workbench_app_shell_commands_r43l import (
+                build_universal_social_batch_workbench_app_shell_commands_r43l,
+            )
+
+            self.universal_social_batch_workbench_app_shell_commands_r43l = build_universal_social_batch_workbench_app_shell_commands_r43l(
+                panel=getattr(self, "universal_social_batch_queue_workbench_panel_r43j", None),
+                gui_state_bridge=getattr(self, "universal_social_batch_workbench_gui_state_bridge_r43k", None),
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R43L universal social batch workbench app-shell commands.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
