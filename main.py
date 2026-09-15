@@ -1918,6 +1918,30 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43H_UNIVERSAL_SOCIAL_BATCH_QUEUE_RESUME_DEDUPE_PROGRESS:
+        # Register the persistent universal queue above R43G/R43F/R43E so one URL,
+        # many URLs, TXT inputs, and mixed social platforms can be resumed, deduped,
+        # retried, and audited without reprocessing completed canonical records.
+        # Twitter/X remains the first concrete adapter only. Pending/future
+        # platforms share the mapped receipt contract. This layer does not start
+        # WebView2/CefSharp, copy browser internals, run source-role checks, invoke
+        # review-window loops, download remote media, or change YouTube capture engine
+        # behavior.
+        self.universal_social_batch_queue_router_r43h = None
+        try:
+            from profile_media_universal_social_batch_queue_resume_dedupe_progress_r43h import (
+                build_universal_social_batch_queue_router_r43h,
+            )
+
+            self.universal_social_batch_queue_router_r43h = build_universal_social_batch_queue_router_r43h(
+                intake_router=getattr(self, "universal_social_batch_account_intake_router_r43g", None),
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R43H universal social batch queue/resume/dedupe/progress router.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
