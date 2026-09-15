@@ -1965,6 +1965,29 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43J_UNIVERSAL_SOCIAL_BATCH_QUEUE_WORKBENCH_PANEL_UI_WIRING:
+        # Register the visible app/workbench panel model for paste/load, preview,
+        # row selection, run, resume, retry, skip, stop-after-current receipts, and
+        # summary/route-receipt export. Panel actions delegate to R43I, which delegates
+        # to R43H/R43G/R43F/R43E before concrete adapters. This panel does not start
+        # WebView2/CefSharp, copy browser internals, run source-role checks, invoke
+        # review-window loops, download remote media, or change YouTube capture engine
+        # behavior.
+        self.universal_social_batch_queue_workbench_panel_r43j = None
+        try:
+            from profile_media_universal_social_batch_queue_workbench_panel_r43j import (
+                build_universal_social_batch_queue_workbench_panel_r43j,
+            )
+
+            self.universal_social_batch_queue_workbench_panel_r43j = build_universal_social_batch_queue_workbench_panel_r43j(
+                workbench=getattr(self, "universal_social_batch_queue_workbench_r43i", None),
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R43J universal social batch queue workbench panel model.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
