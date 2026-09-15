@@ -1874,6 +1874,27 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43F_UNIVERSAL_SOCIAL_EXPORT_SURFACE_UI_ROUTING:
+        # Register the platform-neutral UI/export router above the R43E adapter map.
+        # Twitter/X dispatches through R43E to the R43D surface; other mapped platforms
+        # receive pending-adapter receipts. Browser engines remain observation-only;
+        # this router does not start WebView2, copy WebView2 internals, perform
+        # source-role checks, or depend on the review-window route.
+        self.universal_social_export_surface_router_r43f = None
+        try:
+            from profile_media_universal_social_export_surface_ui_routing_r43f import (
+                build_universal_social_export_surface_router_r43f,
+            )
+
+            self.universal_social_export_surface_router_r43f = build_universal_social_export_surface_router_r43f(
+                registry=getattr(self, "universal_social_account_tracking_registry_r43e", None),
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R43F universal social export surface UI router.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
