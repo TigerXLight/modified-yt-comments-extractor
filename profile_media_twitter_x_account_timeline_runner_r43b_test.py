@@ -45,6 +45,9 @@ def test_timeline_runner_writes_progress_pause_recovery_and_ledger() -> None:
         assert Path(result.timeline_records_path).is_file()
         assert Path(result.account_record_path).is_file()
         assert Path(result.media_index_path).is_file()
+        receipt_payload = json.loads(Path(result.runner_receipt_path).read_text(encoding="utf-8"))
+        assert receipt_payload["screenshot_gate_result"]["marker"] == "YTCE_R43C_VISUAL_SCREENSHOT_RECEIPT_MATERIALIZATION_GATE"
+        assert receipt_payload["screenshot_gate_result"]["receipt_count"] >= 1
         events = [json.loads(line) for line in Path(result.progress_events_path).read_text(encoding="utf-8").splitlines() if line.strip()]
         assert any(event["event_type"] == "paused_rate_limit" for event in events)
         assert any(event["event_type"] == "auto_recovery_resumed" for event in events)

@@ -1815,6 +1815,24 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+
+        # R43C_VISUAL_SCREENSHOT_RECEIPT_MATERIALIZATION_GATE:
+        # Register the local screenshot receipt materialization gate.
+        # Edge R18 screenshot-safe baseline is recorded here so screenshot files are not treated as complete evidence without a materialization receipt.
+        # This gate does not call source-role checks and does not use the review-window WebView2 lane.
+        self.visual_screenshot_receipt_materialization_gate_r43c = None
+        try:
+            from profile_media_visual_screenshot_receipt_materialization_gate_r43c import (
+                build_visual_screenshot_receipt_materialization_gate_r43c,
+            )
+
+            self.visual_screenshot_receipt_materialization_gate_r43c = build_visual_screenshot_receipt_materialization_gate_r43c()
+        except Exception:
+            logger.debug(
+                "Could not configure R43C visual screenshot receipt materialization gate.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 

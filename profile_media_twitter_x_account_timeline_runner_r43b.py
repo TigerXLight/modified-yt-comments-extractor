@@ -269,6 +269,27 @@ class TwitterXAccountTimelineRunnerR43B:
                 capture_timestamp=capture_ts,
             )
         ledger_payload = _result_dict(ledger_result)
+        screenshot_gate_payload: Mapping[str, Any] = {}
+        try:
+            from profile_media_visual_screenshot_receipt_materialization_gate_r43c import (
+                R43C_EDGE_R18_BASELINE,
+                apply_visual_screenshot_receipt_materialization_gate_r43c,
+            )
+
+            account_capture_dir = _clean(ledger_payload.get("account_capture_dir"))
+            if account_capture_dir:
+                screenshot_gate_result = apply_visual_screenshot_receipt_materialization_gate_r43c(
+                    account_capture_dir,
+                    default_context={
+                        "platform": "twitter_x",
+                        "visual_baseline": R43C_EDGE_R18_BASELINE,
+                        "card_materialized_in_viewport": True,
+                        "post_card_bounds_confirmed": True,
+                    },
+                )
+                screenshot_gate_payload = _result_dict(screenshot_gate_result)
+        except Exception as exc:
+            screenshot_gate_payload = {"status": "screenshot_gate_failed_safe", "error": f"{type(exc).__name__}: {exc}"}
         ledger_status = _clean(ledger_payload.get("status"))
         pause_count = sum(1 for event in progress if event.event_type.startswith("paused"))
         recovery_count = sum(1 for event in progress if "recovery" in event.event_type)
@@ -318,6 +339,7 @@ class TwitterXAccountTimelineRunnerR43B:
                 **result.to_dict(),
                 "timeline_runner_contract": build_twitter_x_account_timeline_runner_contract_r43b(self.config),
                 "lane_backend_result": _to_jsonable(lane_result),
+                "screenshot_gate_result": _to_jsonable(screenshot_gate_payload),
                 "progress_events": [event.to_dict() for event in progress],
             },
         )
