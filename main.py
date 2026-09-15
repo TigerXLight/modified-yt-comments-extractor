@@ -1942,6 +1942,29 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43I_UNIVERSAL_SOCIAL_BATCH_QUEUE_WORKBENCH_CONTROLS:
+        # Register the universal queue workbench/control surface for queue preview,
+        # load, run pending, resume, retry, skip, stop-after-current receipts, and
+        # summary/receipt export. The workbench delegates route/resume/retry work to
+        # R43H, which routes through R43G/R43F/R43E before concrete adapters. It does
+        # not start WebView2/CefSharp, copy browser internals, run source-role checks,
+        # invoke review-window loops, download remote media, or change YouTube capture
+        # engine behavior.
+        self.universal_social_batch_queue_workbench_r43i = None
+        try:
+            from profile_media_universal_social_batch_queue_workbench_controls_r43i import (
+                build_universal_social_batch_queue_workbench_r43i,
+            )
+
+            self.universal_social_batch_queue_workbench_r43i = build_universal_social_batch_queue_workbench_r43i(
+                queue_router=getattr(self, "universal_social_batch_queue_router_r43h", None),
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R43I universal social batch queue workbench controls.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
