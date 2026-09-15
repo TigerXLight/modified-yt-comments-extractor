@@ -1895,6 +1895,29 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43G_UNIVERSAL_SOCIAL_BATCH_ACCOUNT_INTAKE_PLATFORM_URL_DETECTION:
+        # Register universal batch intake for one URL, many URLs, TXT lists, and
+        # mixed social account/post URLs before routing through R43F and R43E.
+        # Twitter/X is the first adapter only; Bluesky, Instagram, Facebook,
+        # Threads, Mastodon, TikTok, Reddit, YouTube and news comments should
+        # share the same account/document/folder/receipt contract where possible.
+        # This layer does not start browser engines, perform source-role checks,
+        # depend on review windows, or download remote media.
+        self.universal_social_batch_account_intake_router_r43g = None
+        try:
+            from profile_media_universal_social_batch_account_intake_platform_url_detection_r43g import (
+                build_universal_social_batch_account_intake_router_r43g,
+            )
+
+            self.universal_social_batch_account_intake_router_r43g = build_universal_social_batch_account_intake_router_r43g(
+                export_router=getattr(self, "universal_social_export_surface_router_r43f", None),
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R43G universal social batch account intake/platform URL detection.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
