@@ -1854,6 +1854,26 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43E_UNIVERSAL_SOCIAL_ACCOUNT_TRACKING_CONTRACT_ADAPTER_MAP:
+        # Register the platform-neutral social account tracking registry and platform adapter map.
+        # Twitter/X is the first concrete adapter, not Twitter/X-specific architecture.
+        # Bluesky, Instagram, Facebook, Threads, Mastodon, TikTok, Reddit and future platforms should map into this contract.
+        # Browser engines remain observation-only; tracking/dedupe/ledger/export stay in the local app layer.
+        self.universal_social_account_tracking_registry_r43e = None
+        try:
+            from profile_media_universal_social_account_tracking_r43e import (
+                build_universal_social_account_tracking_registry_r43e,
+            )
+
+            self.universal_social_account_tracking_registry_r43e = build_universal_social_account_tracking_registry_r43e(
+                twitter_x_surface=getattr(self, "twitter_x_account_tracking_export_surface_r43d", None),
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R43E universal social account tracking platform adapter map.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
