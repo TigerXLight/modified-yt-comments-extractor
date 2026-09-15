@@ -1988,6 +1988,28 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43K_UNIVERSAL_SOCIAL_BATCH_WORKBENCH_GUI_STATE_BRIDGE:
+        # Register the restore-only GUI state bridge for recent universal-social
+        # queue sessions, panel rows, selections, counts, action history, and
+        # receipt paths. Save/restore never routes items; run/resume/retry remain
+        # delegated to R43J/R43I/R43H. This bridge does not start WebView2/CefSharp,
+        # copy browser internals, run source-role checks, invoke review-window loops,
+        # download remote media, or change YouTube capture engine behavior.
+        self.universal_social_batch_workbench_gui_state_bridge_r43k = None
+        try:
+            from profile_media_universal_social_batch_workbench_gui_state_bridge_r43k import (
+                build_universal_social_batch_workbench_gui_state_bridge_r43k,
+            )
+
+            self.universal_social_batch_workbench_gui_state_bridge_r43k = build_universal_social_batch_workbench_gui_state_bridge_r43k(
+                panel=getattr(self, "universal_social_batch_queue_workbench_panel_r43j", None),
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R43K universal social batch workbench GUI state bridge.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
