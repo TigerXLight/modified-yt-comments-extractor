@@ -1776,6 +1776,24 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+
+        # R43A_TWITTER_X_ACCOUNT_MEDIA_LEDGER_DATE_FOLDER_EXPORT_MAP:
+        # Register the Twitter/X whole-account media ledger/date-folder export map.
+        # This local ledger consumes observed post/repost/media records and local screenshot/media files;
+        # it does not run WebView2, does not call the source-role interface, and does not use the review-window lane.
+        self.twitter_x_account_media_ledger_exporter = None
+        try:
+            from profile_media_twitter_x_account_media_ledger_r43a import (
+                build_twitter_x_account_media_ledger_exporter_r43a,
+            )
+
+            self.twitter_x_account_media_ledger_exporter = build_twitter_x_account_media_ledger_exporter_r43a()
+        except Exception:
+            logger.debug(
+                "Could not configure R43A Twitter/X account media ledger/date-folder export map.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
