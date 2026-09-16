@@ -35,6 +35,8 @@ class TwitterXAccountTrackingExportRequestR43D:
     output_root: str = R43D_DEFAULT_OUTPUT_ROOT
     date_folder_rule: str = "visible post date first; fallback capture date; unknown_date if ambiguous"
     folder_contract: str = "account_record.md links date folders; each post/repost folder links static screenshot receipt and media folders"
+    live_capture_enabled: bool = False
+    capture_mode: str = "safe_local_records_or_fixture"
     fixture_mode: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -172,7 +174,19 @@ class TwitterXAccountTrackingExportSurfaceR43D:
             )
 
             ledger_root = surface_run_dir / "source_exports" / "twitter_x"
+            media_lane_backend = None
+            if req.live_capture_enabled and not req.fixture_mode:
+                from profile_media_independent_fast_media_webview2_lane_r42gz import (
+                    build_independent_fast_media_webview2_lane_r42gz,
+                )
+
+                media_lane_backend = build_independent_fast_media_webview2_lane_r42gz(
+                    live=True,
+                    headless=True,
+                    fixture_mode=False,
+                )
             runner = build_twitter_x_account_timeline_runner_r43b(
+                media_lane_backend=media_lane_backend,
                 ledger_exporter=build_twitter_x_account_media_ledger_exporter_r43a(ledger_root),
                 config=TwitterXAccountTimelineRunnerConfigR43B(
                     output_root=str(surface_run_dir / "timeline_runner"),
