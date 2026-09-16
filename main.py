@@ -2035,6 +2035,25 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43O_LIVE_TWITTER_X_VISIBLE_SESSION_BINDING:
+        # Bind the R43N smoke harness to the existing visible/session-backed
+        # Twitter/X browser media observation boundary. This records launcher,
+        # navigation, observer, store, and blocker diagnostics without hidden API
+        # scraping, cookie/token extraction, login automation, challenge bypass,
+        # source-role work, remote media downloads, or YouTube engine changes.
+        self.live_twitter_x_visible_session_binding_r43o = None
+        try:
+            from profile_media_live_twitter_x_visible_session_binding_r43o import (
+                build_live_twitter_x_visible_session_binding_r43o,
+            )
+
+            self.live_twitter_x_visible_session_binding_r43o = build_live_twitter_x_visible_session_binding_r43o()
+        except Exception:
+            logger.debug(
+                "Could not configure R43O live Twitter/X visible-session binding.",
+                exc_info=True,
+            )
+
         # R43N_LIVE_TWITTER_X_SINGLE_ACCOUNT_SMOKE_HARNESS_REAL_OBSERVATION_RECEIPT:
         # Register the explicit, user-runnable Twitter/X visible-session smoke
         # harness. Automated validation returns truthful blocked receipts instead
@@ -2046,7 +2065,9 @@ class App(ctk.CTk):
                 build_live_twitter_x_single_account_smoke_harness_r43n,
             )
 
-            self.live_twitter_x_single_account_smoke_harness_r43n = build_live_twitter_x_single_account_smoke_harness_r43n()
+            self.live_twitter_x_single_account_smoke_harness_r43n = build_live_twitter_x_single_account_smoke_harness_r43n(
+                visible_session_binding=getattr(self, "live_twitter_x_visible_session_binding_r43o", None),
+            )
         except Exception:
             logger.debug(
                 "Could not configure R43N live Twitter/X single-account smoke harness.",

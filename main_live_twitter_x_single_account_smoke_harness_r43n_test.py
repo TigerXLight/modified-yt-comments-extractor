@@ -8,7 +8,9 @@ def test_main_registers_r43n_smoke_harness_without_capture_side_effects() -> Non
 
     assert "R43N_LIVE_TWITTER_X_SINGLE_ACCOUNT_SMOKE_HARNESS_REAL_OBSERVATION_RECEIPT" in text
     assert "build_live_twitter_x_single_account_smoke_harness_r43n" in text
+    assert "build_live_twitter_x_visible_session_binding_r43o" in text
     assert "live_twitter_x_single_account_smoke_harness_r43n" in text
+    assert "live_twitter_x_visible_session_binding_r43o" in text
     assert "universal_social_batch_workbench_app_shell_commands_r43l" in text
 
 
@@ -27,6 +29,8 @@ def test_r43n_module_keeps_visible_session_and_no_fixture_pass_policy() -> None:
     assert "non_fixture_live_observation_required_for_pass" in text
     assert "pass_requires_existing_live_observation_paths" in text
     assert "build_independent_fast_media_webview2_lane_r42gz" in text
+    assert "LiveTwitterXVisibleSessionBindingRequestR43O" in text
+    assert "r43o_visible_session_binding_invoked" in text
     assert "headless=False" in text
 
 

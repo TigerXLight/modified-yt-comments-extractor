@@ -30,6 +30,16 @@ from profile_media_universal_social_batch_workbench_app_shell_commands_r43l impo
     UniversalSocialBatchWorkbenchAppShellCommandRequestR43L,
     build_universal_social_batch_workbench_app_shell_commands_r43l,
 )
+from profile_media_live_twitter_x_visible_session_binding_r43o import (
+    R43O_BLOCKED_NEEDS_VISIBLE_SESSION,
+    R43O_BLOCKED_NO_LIVE_OBSERVATIONS,
+    R43O_BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE,
+    R43O_LAUNCHER_BOUNDARY,
+    R43O_NEEDS_PATCH_STATUS,
+    R43O_PASS_STATUS,
+    LiveTwitterXVisibleSessionBindingRequestR43O,
+    build_live_twitter_x_visible_session_binding_r43o,
+)
 
 R43N_MARKER = "YTCE_R43N_LIVE_TWITTER_X_SINGLE_ACCOUNT_SMOKE_HARNESS_REAL_OBSERVATION_RECEIPT"
 R43N_PASS_STATUS = "PASS_R43N_LIVE_TWITTER_X_SINGLE_ACCOUNT_SMOKE_HARNESS_REAL_OBSERVATION_RECEIPT"
@@ -38,11 +48,13 @@ R43N_BLOCKED_NEEDS_VISIBLE_SESSION = "BLOCKED_NEEDS_VISIBLE_SESSION"
 R43N_BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE = "BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE"
 R43N_BLOCKED_NO_LIVE_OBSERVATIONS = "BLOCKED_NO_LIVE_OBSERVATIONS"
 R43N_NEEDS_PATCH_STATUS = "NEEDS_PATCH_R43N_LIVE_SMOKE_PATH_NOT_CONNECTED"
+R43N_NEEDS_PATCH_R43O_STATUS = "NEEDS_PATCH_R43O_VISIBLE_SESSION_BINDING_NOT_CONNECTED"
 R43N_SCHEMA_VERSION = "live_twitter_x_single_account_smoke_harness.r43n.v1"
 R43N_DEFAULT_OUTPUT_ROOT = "profile_media_live_captures/r43n_live_twitter_x_single_account_smoke_harness_real_observation_receipt"
 R43N_ROUTE_CHAIN = "R43L -> R43J/R43K -> R43I -> R43H -> R43G -> R43F -> R43E -> R43D -> R43B -> R42GZ -> R42GY/R42GV -> R43A/R43C"
 
 TwitterCaptureRunner = Callable[..., Any]
+VisibleSessionBindingRunner = Any
 
 
 @dataclass(frozen=True)
@@ -69,6 +81,7 @@ class LiveTwitterXSingleAccountSmokeRequestR43N:
     no_challenge_bypass: bool = True
     run_visible_live: bool = False
     automated_test_mode: bool = True
+    browser_user_data_dir: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -114,8 +127,14 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
     injected test runner the truthful status is BLOCKED_NEEDS_VISIBLE_SESSION.
     """
 
-    def __init__(self, *, output_root: str | Path = R43N_DEFAULT_OUTPUT_ROOT) -> None:
+    def __init__(
+        self,
+        *,
+        output_root: str | Path = R43N_DEFAULT_OUTPUT_ROOT,
+        visible_session_binding: VisibleSessionBindingRunner | None = None,
+    ) -> None:
         self.output_root = Path(output_root)
+        self.visible_session_binding = visible_session_binding
 
     def run_smoke(
         self,
@@ -155,6 +174,9 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
         materialization_receipt_count = 0
         non_fixture_evidence: list[Mapping[str, Any]] = []
         live_observation_paths: list[str] = []
+        r43o_binding_payload: Mapping[str, Any] = {}
+        r43o_receipt: Mapping[str, Any] = {}
+        r43o_files_written: list[str] = []
         side_effect_flags = _side_effect_flags(req, browser_started=False, network_access=False, remote_downloads=False)
 
         if placeholder_reason:
@@ -168,45 +190,107 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
             blocker = "A visible local Twitter/X session is required. Re-run with --run-visible-live after opening/logging in through the app/browser profile."
         else:
             try:
-                chain = _build_live_app_shell_chain(run_dir, req=req, live_runner=live_runner)
-                preview = chain["shell"].run_app_shell_command(
-                    UniversalSocialBatchWorkbenchAppShellCommandRequestR43L(
-                        command_name="create_queue_preview",
-                        session_id=smoke_run_id,
-                        inputs=(target_url,),
-                        capture_timestamp=capture_ts,
-                        output_root=str(run_dir / "app_shell"),
-                        fixture_mode=False,
+                runner_calls: list[Mapping[str, Any]] = []
+                if req.run_visible_live:
+                    binding = self.visible_session_binding or build_live_twitter_x_visible_session_binding_r43o(
+                        output_root=run_dir / "r43o_visible_session_binding"
                     )
-                )
-                run = chain["shell"].run_app_shell_command(
-                    UniversalSocialBatchWorkbenchAppShellCommandRequestR43L(
-                        command_name="run_pending",
-                        session_id=smoke_run_id,
-                        queue_path=preview.queue_path,
-                        capture_timestamp=f"{capture_ts}_run",
-                        output_root=str(run_dir / "app_shell"),
-                        fixture_mode=False,
+                    r43o_result = binding.run_binding(
+                        LiveTwitterXVisibleSessionBindingRequestR43O(
+                            target_url=target_url,
+                            account_handle=handle,
+                            capture_timestamp=capture_ts,
+                            output_root=str(run_dir / "r43o_visible_session_binding"),
+                            max_items=req.max_items,
+                            max_scrolls=req.max_scrolls,
+                            run_visible_live=req.run_visible_live,
+                            visible_session_required=req.visible_session_required,
+                            automated_test_mode=req.automated_test_mode,
+                            browser_user_data_dir=req.browser_user_data_dir,
+                        ),
+                        runner=live_runner,
                     )
-                )
-                app_shell_result = run.to_dict()
-                route_receipts = _read_ndjson(run.route_receipts_path)
+                    r43o_binding_payload = r43o_result.to_dict()
+                    r43o_receipt = dict(r43o_result.receipt or {})
+                    r43o_files_written = [_clean(path) for path in r43o_receipt.get("files_written") or () if _clean(path)]
+                    _append_ndjson(paths["progress"], {"event": "r43o_visible_session_binding_finished", "at": _now_iso(), "status": r43o_result.status, "receipt_path": r43o_result.receipt_path})
+
+                if live_runner is not None and not r43o_receipt:
+                    chain = _build_live_app_shell_chain(run_dir, req=req, live_runner=live_runner)
+                    runner_calls = list(chain["runner_calls"])
+                    preview = chain["shell"].run_app_shell_command(
+                        UniversalSocialBatchWorkbenchAppShellCommandRequestR43L(
+                            command_name="create_queue_preview",
+                            session_id=smoke_run_id,
+                            inputs=(target_url,),
+                            capture_timestamp=capture_ts,
+                            output_root=str(run_dir / "app_shell"),
+                            fixture_mode=False,
+                        )
+                    )
+                    run = chain["shell"].run_app_shell_command(
+                        UniversalSocialBatchWorkbenchAppShellCommandRequestR43L(
+                            command_name="run_pending",
+                            session_id=smoke_run_id,
+                            queue_path=preview.queue_path,
+                            capture_timestamp=f"{capture_ts}_run",
+                            output_root=str(run_dir / "app_shell"),
+                            fixture_mode=False,
+                        )
+                    )
+                    app_shell_result = run.to_dict()
+                    route_receipts = _read_ndjson(run.route_receipts_path)
+
                 lane_payloads = tuple(_find_mappings(route_receipts, "marker", R42GZ_MARKER)) + _find_r42gz_result_payloads(run_dir)
-                boundary_invoked = bool(lane_payloads) or bool(chain["runner_calls"])
+                boundary_invoked = bool(lane_payloads) or bool(runner_calls)
                 observed_post_count = _safe_int(_find_first_value(route_receipts, "record_count"))
                 observed_media_count = max(_safe_int(_find_first_value(route_receipts, "media_count")), _media_count_from_payloads(lane_payloads))
                 observed_screenshot_count = _safe_int(_find_first_value(route_receipts, "screenshot_count"))
                 materialization_receipt_count = observed_screenshot_count
                 observation_store_path = _clean(_find_first_value(route_receipts, "media_inventory_path") or _find_first_value(route_receipts, "media_index_path"))
                 non_fixture_evidence = _non_fixture_evidence(lane_payloads, route_receipts)
-                live_observation_paths = _existing_live_observation_paths(non_fixture_evidence, observation_store_path)
+                if r43o_receipt:
+                    boundary_invoked = bool(boundary_invoked or r43o_receipt.get("r42gz_boundary_invoked"))
+                    observed_post_count = max(observed_post_count, _safe_int(r43o_receipt.get("observed_post_count")))
+                    observed_media_count = max(observed_media_count, _safe_int(r43o_receipt.get("observed_media_count")))
+                    observed_screenshot_count = max(observed_screenshot_count, _safe_int(r43o_receipt.get("observed_screenshot_count")))
+                    materialization_receipt_count = max(materialization_receipt_count, _safe_int(r43o_receipt.get("materialization_receipt_count")))
+                    observation_store_path = observation_store_path or _clean(r43o_receipt.get("observation_store_path"))
+                    if r43o_receipt.get("status") == R43O_PASS_STATUS and r43o_files_written:
+                        non_fixture_evidence.append(
+                            {
+                                "marker": R43O_LAUNCHER_BOUNDARY,
+                                "status": _clean(r43o_receipt.get("status")),
+                                "source_url": target_url,
+                                "media_inventory_path": _clean(r43o_receipt.get("observation_store_path")),
+                                "manifest_path": _first_existing_path(r43o_files_written),
+                            }
+                        )
+                observed_total = observed_post_count + observed_media_count + observed_screenshot_count + materialization_receipt_count
+                if observed_total <= 0:
+                    # Diagnostic files from a browser/session attempt are useful R43O diagnostics,
+                    # but they are not R43N live-observation evidence when the observed counts are zero.
+                    non_fixture_evidence = []
+                    live_observation_paths = []
+                else:
+                    live_observation_paths = _existing_live_observation_paths(non_fixture_evidence, observation_store_path)
+                    live_observation_paths = sorted(set(live_observation_paths + [_clean(path) for path in r43o_files_written if _path_is_live_observation(_clean(path))]))
                 side_effect_flags = _side_effect_flags(
                     req,
-                    browser_started=bool(req.run_visible_live and live_runner is None),
-                    network_access=bool(req.run_visible_live and live_runner is None),
+                    browser_started=bool(req.run_visible_live and live_runner is None and not req.automated_test_mode),
+                    network_access=bool(req.run_visible_live and live_runner is None and not req.automated_test_mode),
                     remote_downloads=False,
                 )
-                if not boundary_invoked:
+                if r43o_receipt and r43o_receipt.get("status") == R43O_NEEDS_PATCH_STATUS:
+                    status = R43N_NEEDS_PATCH_R43O_STATUS
+                    blocker = _clean(r43o_receipt.get("blocker_reason")) or "R43O visible-session binding is not connected."
+                elif r43o_receipt and r43o_receipt.get("status") == R43O_BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE:
+                    status = R43N_BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE
+                    blocker = _clean(r43o_receipt.get("blocker_reason")) or "Visible browser runtime/session is unavailable."
+                elif r43o_receipt and r43o_receipt.get("status") == R43O_BLOCKED_NEEDS_VISIBLE_SESSION:
+                    status = R43N_BLOCKED_NEEDS_VISIBLE_SESSION
+                    blocker = _clean(r43o_receipt.get("blocker_reason")) or "A visible local Twitter/X session is required."
+                elif not boundary_invoked:
                     status = R43N_NEEDS_PATCH_STATUS
                     blocker = "Explicit live route did not invoke the R42GZ boundary."
                 elif _pass_gate_satisfied(
@@ -224,7 +308,7 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
                     blocker = ""
                 else:
                     status = R43N_BLOCKED_NO_LIVE_OBSERVATIONS
-                    blocker = "The explicit live route ran but produced no non-fixture observed post/media/screenshot material."
+                    blocker = _clean(r43o_receipt.get("blocker_reason")) or "The explicit live route ran but produced no non-fixture observed post/media/screenshot material."
             except Exception as exc:
                 message = f"{type(exc).__name__}: {exc}"
                 status = R43N_BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE if "webview2" in message.lower() else R43N_BLOCKED_NO_LIVE_OBSERVATIONS
@@ -256,6 +340,15 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
             "live_observation_paths": live_observation_paths,
             "placeholder_target_detected": bool(placeholder_reason),
             "placeholder_target_reason": placeholder_reason,
+            "r43o_visible_session_binding_invoked": bool(r43o_receipt),
+            "r43o_visible_session_binding_status": _clean(r43o_receipt.get("status")),
+            "visible_session_launched_or_attached": bool(r43o_receipt.get("visible_session_launched_or_attached")),
+            "visible_navigation_attempted": bool(r43o_receipt.get("visible_navigation_attempted")),
+            "observer_started": bool(r43o_receipt.get("observer_started")),
+            "observation_store_path": _clean(r43o_receipt.get("observation_store_path") or observation_store_path),
+            "visible_session_binding_receipt_path": _clean(r43o_binding_payload.get("receipt_path")),
+            "visible_session_binding_blocker_reason": _clean(r43o_receipt.get("blocker_reason")),
+            "visible_session_binding_files_written": r43o_files_written,
             "app_shell_result": app_shell_result,
             "route_receipts": route_receipts,
             "output_paths": {key: str(value) for key, value in paths.items()},
@@ -301,9 +394,11 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
 
 
 def build_live_twitter_x_single_account_smoke_harness_r43n(
-    *, output_root: str | Path = R43N_DEFAULT_OUTPUT_ROOT
+    *,
+    output_root: str | Path = R43N_DEFAULT_OUTPUT_ROOT,
+    visible_session_binding: VisibleSessionBindingRunner | None = None,
 ) -> LiveTwitterXSingleAccountSmokeHarnessR43N:
-    return LiveTwitterXSingleAccountSmokeHarnessR43N(output_root=output_root)
+    return LiveTwitterXSingleAccountSmokeHarnessR43N(output_root=output_root, visible_session_binding=visible_session_binding)
 
 
 def build_report(output_root: str | Path = R43N_DEFAULT_OUTPUT_ROOT) -> LiveTwitterXSingleAccountSmokeResultR43N:
@@ -369,6 +464,7 @@ def coerce_live_twitter_x_single_account_smoke_request_r43n(
         no_challenge_bypass=bool(data.get("no_challenge_bypass", True)),
         run_visible_live=bool(data.get("run_visible_live", False)),
         automated_test_mode=bool(data.get("automated_test_mode", True)),
+        browser_user_data_dir=_clean(data.get("browser_user_data_dir")),
     )
 
 
@@ -601,12 +697,21 @@ def _media_count_from_payloads(payloads: tuple[Mapping[str, Any], ...]) -> int:
     return count
 
 
+def _first_existing_path(paths: list[str]) -> str:
+    for path in paths:
+        if _path_is_live_observation(path):
+            return path
+    return ""
+
+
 def _placeholder_target_reason(*, req: LiveTwitterXSingleAccountSmokeRequestR43N, target_url: str) -> str:
     values = (_clean(req.account_url), _clean(req.post_url), _clean(target_url), _clean(req.account_handle))
     combined = " ".join(values).replace("\\_", "_").lower()
     placeholder_tokens = (
         "put_handle_here",
         "put_status_id_here",
+        "real_handle",
+        "real_status_id",
         "handle_here",
         "status_id_here",
         "replace_me",
@@ -622,7 +727,7 @@ def _placeholder_target_reason(*, req: LiveTwitterXSingleAccountSmokeRequestR43N
     if host in {"x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com"}:
         if parts and parts[0] in {"example", "test", "sample", "placeholder"}:
             return "Target URL uses an example/test-only Twitter/X account placeholder."
-        if len(parts) >= 3 and parts[1] == "status" and parts[2] in {"example", "test", "sample", "placeholder"}:
+        if len(parts) >= 3 and parts[1] == "status" and parts[2] in {"example", "test", "sample", "placeholder", "real_status_id"}:
             return "Target URL uses an example/test-only Twitter/X status placeholder."
     return ""
 
@@ -830,6 +935,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-items", type=int, default=3)
     parser.add_argument("--max-scrolls", type=int, default=2)
     parser.add_argument("--run-visible-live", action="store_true")
+    parser.add_argument("--browser-user-data-dir", default="")
     args = parser.parse_args(argv)
     harness = build_live_twitter_x_single_account_smoke_harness_r43n(output_root=args.output_root)
     result = harness.run_smoke(
@@ -842,6 +948,7 @@ def main(argv: list[str] | None = None) -> int:
         max_scrolls=args.max_scrolls,
         run_visible_live=args.run_visible_live,
         automated_test_mode=not args.run_visible_live,
+        browser_user_data_dir=args.browser_user_data_dir,
     )
     print(R43N_MARKER)
     print(result.status)
