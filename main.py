@@ -2035,6 +2035,24 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43N_LIVE_TWITTER_X_SINGLE_ACCOUNT_SMOKE_HARNESS_REAL_OBSERVATION_RECEIPT:
+        # Register the explicit, user-runnable Twitter/X visible-session smoke
+        # harness. Automated validation returns truthful blocked receipts instead
+        # of launching WebView2 or treating fixtures as live evidence. A real PASS
+        # requires explicit visible live mode and non-fixture local observations.
+        self.live_twitter_x_single_account_smoke_harness_r43n = None
+        try:
+            from profile_media_live_twitter_x_single_account_smoke_harness_r43n import (
+                build_live_twitter_x_single_account_smoke_harness_r43n,
+            )
+
+            self.live_twitter_x_single_account_smoke_harness_r43n = build_live_twitter_x_single_account_smoke_harness_r43n()
+        except Exception:
+            logger.debug(
+                "Could not configure R43N live Twitter/X single-account smoke harness.",
+                exc_info=True,
+            )
+
         self.transcript_show_speakers_var = ctk.BooleanVar(value=True)
         self.transcript_show_timestamps_var = ctk.BooleanVar(value=True)
 
