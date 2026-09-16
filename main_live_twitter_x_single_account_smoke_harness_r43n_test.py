@@ -19,9 +19,13 @@ def test_r43n_module_keeps_visible_session_and_no_fixture_pass_policy() -> None:
     )
 
     assert "BLOCKED_NEEDS_VISIBLE_SESSION" in text
+    assert "BLOCKED_PLACEHOLDER_TARGET_URL" in text
     assert "run_visible_live" in text
+    assert "placeholder_urls_blocked" in text
+    assert "run_visible_live_flag_alone_does_not_create_pass" in text
     assert "fixture_sample_probe_outputs_do_not_count_as_live_pass" in text
     assert "non_fixture_live_observation_required_for_pass" in text
+    assert "pass_requires_existing_live_observation_paths" in text
     assert "build_independent_fast_media_webview2_lane_r42gz" in text
     assert "headless=False" in text
 

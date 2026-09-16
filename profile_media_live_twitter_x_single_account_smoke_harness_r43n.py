@@ -33,6 +33,7 @@ from profile_media_universal_social_batch_workbench_app_shell_commands_r43l impo
 
 R43N_MARKER = "YTCE_R43N_LIVE_TWITTER_X_SINGLE_ACCOUNT_SMOKE_HARNESS_REAL_OBSERVATION_RECEIPT"
 R43N_PASS_STATUS = "PASS_R43N_LIVE_TWITTER_X_SINGLE_ACCOUNT_SMOKE_HARNESS_REAL_OBSERVATION_RECEIPT"
+R43N_BLOCKED_PLACEHOLDER_TARGET_URL = "BLOCKED_PLACEHOLDER_TARGET_URL"
 R43N_BLOCKED_NEEDS_VISIBLE_SESSION = "BLOCKED_NEEDS_VISIBLE_SESSION"
 R43N_BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE = "BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE"
 R43N_BLOCKED_NO_LIVE_OBSERVATIONS = "BLOCKED_NO_LIVE_OBSERVATIONS"
@@ -126,6 +127,7 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
         req = coerce_live_twitter_x_single_account_smoke_request_r43n(request, **overrides)
         capture_ts = _safe_ts(req.capture_timestamp) or _now_ts()
         target_url = _plain_url(req.post_url or req.account_url)
+        placeholder_reason = _placeholder_target_reason(req=req, target_url=target_url)
         handle = _safe_handle(req.account_handle or _handle_from_url(target_url) or "example")
         smoke_run_id = f"r43n_{capture_ts}_{_safe_part(handle)}"
         run_dir = Path(req.output_root or self.output_root) / smoke_run_id
@@ -152,10 +154,13 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
         observed_screenshot_count = 0
         materialization_receipt_count = 0
         non_fixture_evidence: list[Mapping[str, Any]] = []
+        live_observation_paths: list[str] = []
         side_effect_flags = _side_effect_flags(req, browser_started=False, network_access=False, remote_downloads=False)
 
-        chain = _build_live_app_shell_chain(run_dir, req=req, live_runner=live_runner)
-        if not req.explicit_live_mode:
+        if placeholder_reason:
+            status = R43N_BLOCKED_PLACEHOLDER_TARGET_URL
+            blocker = placeholder_reason
+        elif not req.explicit_live_mode:
             status = R43N_NEEDS_PATCH_STATUS
             blocker = "explicit_live_mode must be true for R43N live smoke."
         elif req.visible_session_required and not req.run_visible_live and live_runner is None:
@@ -163,6 +168,7 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
             blocker = "A visible local Twitter/X session is required. Re-run with --run-visible-live after opening/logging in through the app/browser profile."
         else:
             try:
+                chain = _build_live_app_shell_chain(run_dir, req=req, live_runner=live_runner)
                 preview = chain["shell"].run_app_shell_command(
                     UniversalSocialBatchWorkbenchAppShellCommandRequestR43L(
                         command_name="create_queue_preview",
@@ -185,7 +191,7 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
                 )
                 app_shell_result = run.to_dict()
                 route_receipts = _read_ndjson(run.route_receipts_path)
-                lane_payloads = _find_mappings(route_receipts, "marker", R42GZ_MARKER)
+                lane_payloads = tuple(_find_mappings(route_receipts, "marker", R42GZ_MARKER)) + _find_r42gz_result_payloads(run_dir)
                 boundary_invoked = bool(lane_payloads) or bool(chain["runner_calls"])
                 observed_post_count = _safe_int(_find_first_value(route_receipts, "record_count"))
                 observed_media_count = max(_safe_int(_find_first_value(route_receipts, "media_count")), _media_count_from_payloads(lane_payloads))
@@ -193,6 +199,7 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
                 materialization_receipt_count = observed_screenshot_count
                 observation_store_path = _clean(_find_first_value(route_receipts, "media_inventory_path") or _find_first_value(route_receipts, "media_index_path"))
                 non_fixture_evidence = _non_fixture_evidence(lane_payloads, route_receipts)
+                live_observation_paths = _existing_live_observation_paths(non_fixture_evidence, observation_store_path)
                 side_effect_flags = _side_effect_flags(
                     req,
                     browser_started=bool(req.run_visible_live and live_runner is None),
@@ -202,7 +209,17 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
                 if not boundary_invoked:
                     status = R43N_NEEDS_PATCH_STATUS
                     blocker = "Explicit live route did not invoke the R42GZ boundary."
-                elif non_fixture_evidence and (observed_post_count or observed_media_count or observed_screenshot_count or observation_store_path):
+                elif _pass_gate_satisfied(
+                    req=req,
+                    target_url=target_url,
+                    boundary_invoked=boundary_invoked,
+                    non_fixture_evidence=non_fixture_evidence,
+                    observed_post_count=observed_post_count,
+                    observed_media_count=observed_media_count,
+                    observed_screenshot_count=observed_screenshot_count,
+                    materialization_receipt_count=materialization_receipt_count,
+                    live_observation_paths=live_observation_paths,
+                ):
                     status = R43N_PASS_STATUS
                     blocker = ""
                 else:
@@ -236,6 +253,9 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
             "observed_screenshot_count": observed_screenshot_count,
             "materialization_receipt_count": materialization_receipt_count,
             "non_fixture_observation_evidence": non_fixture_evidence,
+            "live_observation_paths": live_observation_paths,
+            "placeholder_target_detected": bool(placeholder_reason),
+            "placeholder_target_reason": placeholder_reason,
             "app_shell_result": app_shell_result,
             "route_receipts": route_receipts,
             "output_paths": {key: str(value) for key, value in paths.items()},
@@ -398,9 +418,16 @@ def _build_live_app_shell_chain(run_dir: Path, *, req: LiveTwitterXSingleAccount
 def _build_checks(receipt: Mapping[str, Any], paths: Mapping[str, Path], req: LiveTwitterXSingleAccountSmokeRequestR43N) -> tuple[Mapping[str, Any], ...]:
     status = _clean(receipt.get("status"))
     pass_status = status == R43N_PASS_STATUS
-    blocked_status = status in {R43N_BLOCKED_NEEDS_VISIBLE_SESSION, R43N_BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE, R43N_BLOCKED_NO_LIVE_OBSERVATIONS}
+    blocked_status = status in {R43N_BLOCKED_PLACEHOLDER_TARGET_URL, R43N_BLOCKED_NEEDS_VISIBLE_SESSION, R43N_BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE, R43N_BLOCKED_NO_LIVE_OBSERVATIONS}
     side_effects = dict(receipt.get("side_effect_flags") or {})
     evidence = receipt.get("non_fixture_observation_evidence") or []
+    live_paths = tuple(_clean(path) for path in receipt.get("live_observation_paths") or () if _clean(path))
+    observed_total = (
+        _safe_int(receipt.get("observed_post_count"))
+        + _safe_int(receipt.get("observed_media_count"))
+        + _safe_int(receipt.get("observed_screenshot_count"))
+        + _safe_int(receipt.get("materialization_receipt_count"))
+    )
     checks = (
         _check("live_twitter_x_single_account_smoke_harness_invoked", True),
         _check("explicit_live_mode_required_for_live_smoke", receipt.get("explicit_live_mode") is True),
@@ -414,6 +441,13 @@ def _build_checks(receipt: Mapping[str, Any], paths: Mapping[str, Path], req: Li
         _check("live_smoke_runbook_written", paths["runbook"].is_file()),
         _check("live_smoke_progress_events_written", paths["progress"].is_file() and paths["progress"].stat().st_size > 0),
         _check("live_smoke_route_chain_written", paths["route_chain"].is_file()),
+        _check("placeholder_urls_blocked", not receipt.get("placeholder_target_detected") or status == R43N_BLOCKED_PLACEHOLDER_TARGET_URL),
+        _check("run_visible_live_flag_alone_does_not_create_pass", not (receipt.get("placeholder_target_detected") and pass_status)),
+        _check("pass_requires_non_fixture_observation_evidence", not pass_status or _evidence_is_non_fixture(evidence)),
+        _check("pass_requires_observed_counts_or_materialization_receipts", not pass_status or observed_total > 0),
+        _check("pass_requires_existing_live_observation_paths", not pass_status or bool(live_paths)),
+        _check("blocked_placeholder_target_url_receipt_written", status != R43N_BLOCKED_PLACEHOLDER_TARGET_URL or (paths["receipt"].is_file() and receipt.get("placeholder_target_detected") is True)),
+        _check("no_fixture_sample_probe_outputs_count_as_live_evidence", _evidence_is_non_fixture(evidence) if pass_status else True),
         _check("blocked_status_does_not_fake_success", not blocked_status or not evidence),
         _check("fixture_sample_probe_outputs_do_not_count_as_live_pass", not pass_status or _evidence_is_non_fixture(evidence)),
         _check("non_fixture_live_observation_required_for_pass", not pass_status or bool(evidence)),
@@ -530,6 +564,18 @@ def _find_mappings(value: Any, key: str, expected: str) -> tuple[Mapping[str, An
     return tuple(found)
 
 
+def _find_r42gz_result_payloads(run_dir: Path) -> tuple[Mapping[str, Any], ...]:
+    payloads: list[Mapping[str, Any]] = []
+    for path in run_dir.rglob("r42gz_independent_fast_media_webview2_lane_result.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(payload, Mapping) and payload.get("marker") == R42GZ_MARKER:
+            payloads.append(dict(payload))
+    return tuple(payloads)
+
+
 def _find_first_value(value: Any, key: str) -> Any:
     if isinstance(value, Mapping):
         if key in value and value.get(key) not in (None, ""):
@@ -555,24 +601,97 @@ def _media_count_from_payloads(payloads: tuple[Mapping[str, Any], ...]) -> int:
     return count
 
 
+def _placeholder_target_reason(*, req: LiveTwitterXSingleAccountSmokeRequestR43N, target_url: str) -> str:
+    values = (_clean(req.account_url), _clean(req.post_url), _clean(target_url), _clean(req.account_handle))
+    combined = " ".join(values).replace("\\_", "_").lower()
+    placeholder_tokens = (
+        "put_handle_here",
+        "put_status_id_here",
+        "handle_here",
+        "status_id_here",
+        "replace_me",
+        "your_handle",
+        "your_status_id",
+        "placeholder",
+    )
+    if any(token in combined for token in placeholder_tokens):
+        return "Target URL contains placeholder text; replace it with a real public Twitter/X account or post URL."
+    parsed = urlsplit(_plain_url(target_url))
+    host = parsed.netloc.lower()
+    parts = tuple(part.lower() for part in parsed.path.strip("/").split("/") if part)
+    if host in {"x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com"}:
+        if parts and parts[0] in {"example", "test", "sample", "placeholder"}:
+            return "Target URL uses an example/test-only Twitter/X account placeholder."
+        if len(parts) >= 3 and parts[1] == "status" and parts[2] in {"example", "test", "sample", "placeholder"}:
+            return "Target URL uses an example/test-only Twitter/X status placeholder."
+    return ""
+
+
+def _pass_gate_satisfied(
+    *,
+    req: LiveTwitterXSingleAccountSmokeRequestR43N,
+    target_url: str,
+    boundary_invoked: bool,
+    non_fixture_evidence: list[Mapping[str, Any]],
+    observed_post_count: int,
+    observed_media_count: int,
+    observed_screenshot_count: int,
+    materialization_receipt_count: int,
+    live_observation_paths: list[str],
+) -> bool:
+    if _placeholder_target_reason(req=req, target_url=target_url):
+        return False
+    if not (req.explicit_live_mode and req.visible_session_required and boundary_invoked):
+        return False
+    if not _evidence_is_non_fixture(non_fixture_evidence):
+        return False
+    if not (observed_post_count or observed_media_count or observed_screenshot_count or materialization_receipt_count):
+        return False
+    return bool(live_observation_paths)
+
+
+def _existing_live_observation_paths(evidence: Any, *extra_paths: Any) -> list[str]:
+    candidates: list[str] = []
+    for item in evidence if isinstance(evidence, list) else []:
+        if isinstance(item, Mapping):
+            for key in ("media_inventory_path", "rendered_dom_path", "network_events_path", "manifest_path"):
+                value = _clean(item.get(key))
+                if value:
+                    candidates.append(value)
+    candidates.extend(_clean(path) for path in extra_paths if _clean(path))
+    existing: list[str] = []
+    for candidate in candidates:
+        if _path_is_live_observation(candidate):
+            existing.append(candidate)
+    return sorted(set(existing))
+
+
+def _path_is_live_observation(path_value: str) -> bool:
+    lowered = path_value.replace("\\", "/").lower()
+    if any(token in lowered for token in ("/fixture", "_fixture", "/sample", "_sample", "/probe", "_probe", "/synthetic", "_synthetic")):
+        return False
+    return Path(path_value).is_file()
+
+
 def _non_fixture_evidence(lane_payloads: tuple[Mapping[str, Any], ...], route_receipts: tuple[Mapping[str, Any], ...]) -> list[Mapping[str, Any]]:
     evidence: list[Mapping[str, Any]] = []
     for payload in lane_payloads:
         status = _clean(payload.get("status") or payload.get("backend_status"))
-        if status and not _text_mentions_fixture(status):
+        paths = {
+            "media_inventory_path": _clean(payload.get("media_inventory_path")),
+            "rendered_dom_path": _clean(payload.get("rendered_dom_path")),
+            "network_events_path": _clean(payload.get("network_events_path")),
+            "manifest_path": _clean(payload.get("manifest_path")),
+        }
+        if status and not _text_mentions_fixture(status) and any(_path_is_live_observation(path) for path in paths.values() if path):
             evidence.append(
                 {
                     "marker": payload.get("marker", ""),
                     "status": status,
                     "source_url": _plain_url(payload.get("source_url")),
-                    "media_inventory_path": _clean(payload.get("media_inventory_path")),
-                    "rendered_dom_path": _clean(payload.get("rendered_dom_path")),
+                    **paths,
                 }
             )
-    if not evidence:
-        marker = _find_first_value(route_receipts, "marker")
-        if marker and marker != R42GZ_MARKER:
-            evidence.append({"marker": marker, "status": _clean(_find_first_value(route_receipts, "status"))})
     return evidence
 
 
@@ -738,6 +857,7 @@ if __name__ == "__main__":
 __all__ = [
     "R43N_BLOCKED_NEEDS_VISIBLE_SESSION",
     "R43N_BLOCKED_NO_LIVE_OBSERVATIONS",
+    "R43N_BLOCKED_PLACEHOLDER_TARGET_URL",
     "R43N_BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE",
     "R43N_DEFAULT_OUTPUT_ROOT",
     "R43N_MARKER",

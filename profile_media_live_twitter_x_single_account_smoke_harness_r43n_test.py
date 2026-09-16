@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from profile_media_live_twitter_x_single_account_smoke_harness_r43n import (
     R43N_BLOCKED_NEEDS_VISIBLE_SESSION,
+    R43N_BLOCKED_PLACEHOLDER_TARGET_URL,
     R43N_MARKER,
     R43N_PASS_STATUS,
     LiveTwitterXSingleAccountSmokeRequestR43N,
@@ -59,12 +60,13 @@ def test_safe_automated_report_blocks_for_visible_session_without_fake_pass() ->
     root_report = Path(output_root) / "R43N_LIVE_TWITTER_X_SINGLE_ACCOUNT_SMOKE_HARNESS_REAL_OBSERVATION_RECEIPT_REPORT.json"
     payload = json.loads(root_report.read_text(encoding="utf-8"))
 
-    assert result.status == R43N_BLOCKED_NEEDS_VISIBLE_SESSION
+    assert result.status == R43N_BLOCKED_PLACEHOLDER_TARGET_URL
     assert payload["marker"] == R43N_MARKER
-    assert payload["status"] == R43N_BLOCKED_NEEDS_VISIBLE_SESSION
+    assert payload["status"] == R43N_BLOCKED_PLACEHOLDER_TARGET_URL
     assert payload["bad_checks"] == []
     receipt = payload["sample_result"]["observation_receipt"]
     assert receipt["non_fixture_observation_evidence"] == []
+    assert receipt["placeholder_target_detected"] is True
     assert receipt["r43d_live_mode_requested"] is True
     assert receipt["r43b_media_lane_backend_present"] is True
     assert receipt["explicit_live_mode"] is True
@@ -80,7 +82,7 @@ def test_injected_visible_runner_can_produce_non_fixture_pass_without_browser_st
     harness = build_live_twitter_x_single_account_smoke_harness_r43n(output_root=output_root)
     result = harness.run_smoke(
         LiveTwitterXSingleAccountSmokeRequestR43N(
-            account_url="https://x.com/example",
+            account_url="https://x.com/realsmokeaccount",
             capture_timestamp="20260916T030000Z",
             output_root=output_root,
             run_visible_live=True,
@@ -97,13 +99,59 @@ def test_injected_visible_runner_can_produce_non_fixture_pass_without_browser_st
     assert receipt["r42gz_boundary_invoked"] is True
     assert receipt["observed_media_count"] >= 1
     assert receipt["non_fixture_observation_evidence"]
+    assert receipt["live_observation_paths"]
     assert receipt["side_effect_flags"]["browser_started_during_automated_tests"] is False
     assert receipt["side_effect_flags"]["network_access_during_automated_tests"] is False
     assert receipt["side_effect_flags"]["remote_media_downloads_performed"] is False
     assert "R43L -> R43J/R43K -> R43I -> R43H -> R43G -> R43F -> R43E -> R43D" in receipt["route_chain"]
 
 
+def test_placeholder_urls_are_blocked_even_when_visible_live_requested() -> None:
+    output_root = "profile_media_live_captures/r43n_live_twitter_x_single_account_smoke_harness_real_observation_receipt/test_placeholder_block"
+    harness = build_live_twitter_x_single_account_smoke_harness_r43n(output_root=output_root)
+    calls = []
+
+    def forbidden_runner(**kwargs):
+        calls.append(kwargs)
+        return _stub_visible_runner(**kwargs)
+
+    account_result = harness.run_smoke(
+        LiveTwitterXSingleAccountSmokeRequestR43N(
+            account_url="[https://x.com/PUT\\_HANDLE\\_HERE](https://x.com/PUT_HANDLE_HERE)",
+            capture_timestamp="20260916T031000Z",
+            output_root=output_root,
+            run_visible_live=True,
+            automated_test_mode=False,
+        ),
+        live_runner=forbidden_runner,
+    )
+    post_result = harness.run_smoke(
+        LiveTwitterXSingleAccountSmokeRequestR43N(
+            post_url="[https://x.com/PUT\\_HANDLE\\_HERE/status/PUT\\_STATUS\\_ID\\_HERE](https://x.com/PUT_HANDLE_HERE/status/PUT_STATUS_ID_HERE)",
+            capture_timestamp="20260916T031100Z",
+            output_root=output_root,
+            max_items=1,
+            max_scrolls=1,
+            run_visible_live=True,
+            automated_test_mode=False,
+        ),
+        live_runner=forbidden_runner,
+    )
+
+    assert account_result.status == R43N_BLOCKED_PLACEHOLDER_TARGET_URL
+    assert post_result.status == R43N_BLOCKED_PLACEHOLDER_TARGET_URL
+    assert calls == []
+    for result in (account_result, post_result):
+        assert result.bad_checks == ()
+        receipt = result.observation_receipt
+        assert receipt["placeholder_target_detected"] is True
+        assert receipt["r42gz_boundary_invoked"] is False
+        assert receipt["non_fixture_observation_evidence"] == []
+        assert receipt["live_observation_paths"] == []
+
+
 if __name__ == "__main__":
     test_safe_automated_report_blocks_for_visible_session_without_fake_pass()
     test_injected_visible_runner_can_produce_non_fixture_pass_without_browser_start()
+    test_placeholder_urls_are_blocked_even_when_visible_live_requested()
     print("PASS profile_media_live_twitter_x_single_account_smoke_harness_r43n_test")
