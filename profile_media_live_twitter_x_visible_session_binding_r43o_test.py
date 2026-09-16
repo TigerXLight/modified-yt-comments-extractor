@@ -117,6 +117,9 @@ def test_stubbed_visible_binding_can_record_real_boundary_without_browser_start(
     assert receipt["observer_started"] is True
     assert receipt["files_written"]
     assert receipt["observed_media_count"] >= 1
+    assert receipt["r43p_runner_output_promotion_invoked"] is True
+    assert "promoted_observed_media_count" in receipt
+    assert receipt["promoted_live_observation_paths"]
     assert receipt["side_effect_flags"]["browser_started_during_automated_tests"] is False
     assert receipt["side_effect_flags"]["network_access_during_automated_tests"] is False
 
@@ -143,6 +146,10 @@ def test_stubbed_visible_binding_reports_no_live_observations() -> None:
     assert receipt["observer_started"] is True
     assert receipt["observed_media_count"] == 0
     assert receipt["files_written"]
+    assert receipt["r43p_runner_output_promotion_invoked"] is True
+    assert receipt["promoted_observed_post_count"] == 0
+    assert receipt["promoted_observed_media_count"] == 0
+    assert receipt["promoted_observed_screenshot_count"] == 0
 
 
 if __name__ == "__main__":

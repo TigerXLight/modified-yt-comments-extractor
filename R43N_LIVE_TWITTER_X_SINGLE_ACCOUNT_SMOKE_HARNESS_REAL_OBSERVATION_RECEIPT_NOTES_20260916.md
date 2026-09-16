@@ -57,3 +57,4 @@ The R42GZ lane is configured for explicit live visible-session smoke use (`live=
 - Fixture/sample/probe output cannot count as a live PASS.
 - R43O diagnostic files must stay in R43O fields only; when observed counts are zero, R43N clears non-fixture evidence and live_observation_paths.
 - R43N forwards `--browser-user-data-dir` to R43O; diagnostic files from zero-observation attempts are recorded as diagnostics only and do not count as live evidence.
+- R43N now carries R43P promotion fields from the R43O visible-session receipt. A real PASS may use promoted post/media/screenshot/materialization evidence from local R42GZ runner files, but network-only files still cannot create PASS.

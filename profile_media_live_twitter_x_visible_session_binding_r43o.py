@@ -13,6 +13,10 @@ from profile_media_independent_fast_media_webview2_lane_r42gz import (
     R42GZ_MARKER,
     build_independent_fast_media_webview2_lane_r42gz,
 )
+from profile_media_live_twitter_x_runner_output_promotion_r43p import (
+    TwitterXRunnerOutputPromotionRequestR43P,
+    promote_twitter_x_runner_outputs_r43p,
+)
 
 R43O_MARKER = "YTCE_R43O_LIVE_TWITTER_X_VISIBLE_SESSION_BINDING"
 R43O_PASS_STATUS = "PASS_R43O_LIVE_TWITTER_X_VISIBLE_SESSION_BINDING"
@@ -113,6 +117,17 @@ class LiveTwitterXVisibleSessionBindingR43O:
         observed_media_count = 0
         observed_screenshot_count = 0
         materialization_receipt_count = 0
+        r43p_promotion_receipt: Mapping[str, Any] = {}
+        r43p_promotion_receipt_path = ""
+        promoted_live_observation_paths: list[str] = []
+        promoted_observed_post_count = 0
+        promoted_observed_media_count = 0
+        promoted_observed_screenshot_count = 0
+        promoted_network_event_count = 0
+        promoted_api_page_count = 0
+        promoted_response_body_count = 0
+        promoted_non_fixture_observation_evidence = False
+        why_observed_count_was_zero_before_promotion = ""
         side_effect_flags = _side_effect_flags(req, browser_started=False, network_access=False)
 
         if not req.run_visible_live and runner is None:
@@ -160,6 +175,45 @@ class LiveTwitterXVisibleSessionBindingR43O:
                 screenshot_path = _clean(r42gz_payload.get("screenshot_path"))
                 observed_screenshot_count = 1 if _path_is_live_observation(screenshot_path) else 0
                 materialization_receipt_count = observed_screenshot_count
+                observed_before_promotion = observed_post_count + observed_media_count + observed_screenshot_count + materialization_receipt_count
+                runner_output_dir = _clean(r42gz_payload.get("output_dir") or r42gz_payload.get("lane_output_dir"))
+                if runner_output_dir:
+                    promotion = promote_twitter_x_runner_outputs_r43p(
+                        TwitterXRunnerOutputPromotionRequestR43P(
+                            runner_output_dir=runner_output_dir,
+                            output_root=str(run_dir),
+                            source_url=target_url,
+                            account_handle=handle,
+                            capture_timestamp=capture_ts,
+                            production_live=bool(req.run_visible_live and not req.automated_test_mode),
+                            test_fixture=False,
+                        )
+                    )
+                    r43p_promotion_receipt = dict(promotion.receipt or {})
+                    r43p_promotion_receipt_path = promotion.receipt_path
+                    promoted_observed_post_count = _safe_int(r43p_promotion_receipt.get("promoted_observed_post_count"))
+                    promoted_observed_media_count = _safe_int(r43p_promotion_receipt.get("promoted_observed_media_count"))
+                    promoted_observed_screenshot_count = _safe_int(r43p_promotion_receipt.get("promoted_observed_screenshot_count"))
+                    promoted_network_event_count = _safe_int(r43p_promotion_receipt.get("promoted_network_event_count"))
+                    promoted_api_page_count = _safe_int(r43p_promotion_receipt.get("promoted_api_page_count"))
+                    promoted_response_body_count = _safe_int(r43p_promotion_receipt.get("promoted_response_body_count"))
+                    promoted_live_observation_paths = [
+                        _clean(path)
+                        for path in r43p_promotion_receipt.get("promoted_live_observation_paths") or ()
+                        if _path_is_live_observation(_clean(path))
+                    ]
+                    promoted_non_fixture_observation_evidence = bool(r43p_promotion_receipt.get("promoted_non_fixture_observation_evidence"))
+                    if observed_before_promotion == 0 and (
+                        promoted_observed_post_count or promoted_observed_media_count or promoted_observed_screenshot_count
+                    ):
+                        why_observed_count_was_zero_before_promotion = (
+                            "R42GZ returned zero direct counters, but the runner wrote real local DOM/screenshot/post/media files."
+                        )
+                    observed_post_count = max(observed_post_count, promoted_observed_post_count)
+                    observed_media_count = max(observed_media_count, promoted_observed_media_count)
+                    observed_screenshot_count = max(observed_screenshot_count, promoted_observed_screenshot_count)
+                    materialization_receipt_count = max(materialization_receipt_count, promoted_observed_screenshot_count)
+                    files_written = sorted(set(files_written + promoted_live_observation_paths))
                 side_effect_flags = _side_effect_flags(
                     req,
                     browser_started=bool(req.run_visible_live and not req.automated_test_mode and runner is None),
@@ -206,6 +260,18 @@ class LiveTwitterXVisibleSessionBindingR43O:
             "observed_media_count": observed_media_count,
             "observed_screenshot_count": observed_screenshot_count,
             "materialization_receipt_count": materialization_receipt_count,
+            "r43p_runner_output_promotion_invoked": bool(r43p_promotion_receipt),
+            "r43p_runner_output_promotion_status": _clean(r43p_promotion_receipt.get("status")),
+            "r43p_runner_output_promotion_receipt_path": r43p_promotion_receipt_path,
+            "promoted_observed_post_count": promoted_observed_post_count,
+            "promoted_observed_media_count": promoted_observed_media_count,
+            "promoted_observed_screenshot_count": promoted_observed_screenshot_count,
+            "promoted_network_event_count": promoted_network_event_count,
+            "promoted_api_page_count": promoted_api_page_count,
+            "promoted_response_body_count": promoted_response_body_count,
+            "promoted_live_observation_paths": promoted_live_observation_paths,
+            "promoted_non_fixture_observation_evidence": promoted_non_fixture_observation_evidence,
+            "why_observed_count_was_zero_before_promotion": why_observed_count_was_zero_before_promotion,
             "r42gz_boundary_invoked": r42gz_payload.get("marker") == R42GZ_MARKER,
             "r42gz_result": r42gz_payload,
             "side_effect_flags": side_effect_flags,
@@ -458,10 +524,14 @@ def _check(name: str, ok: bool) -> Mapping[str, Any]:
 
 
 def _plain_url(value: Any) -> str:
-    text = _clean(value).replace("\\_", "_").replace("\\", "")
-    match = re.search(r"\[[^\]]+\]\((https?://[^)\s]+)\)", text)
+    text = _clean(value).replace("\\_", "_")
+    match = re.search(r"\[[^\]]*?(https?://[^]\s]+)[^\]]*?\]\((https?://[^)\s]+)\)", text)
     if match:
-        text = match.group(1)
+        text = match.group(2)
+    else:
+        direct = re.search(r"https?://[^\s)\]>\"']+", text)
+        if direct:
+            text = direct.group(0)
     text = text.strip("[]()<>\"'")
     if text.startswith("twitter.com/") or text.startswith("x.com/"):
         text = "https://" + text

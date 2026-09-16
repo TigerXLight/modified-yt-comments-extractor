@@ -126,6 +126,9 @@ def test_injected_visible_runner_can_produce_non_fixture_pass_without_browser_st
     assert receipt["r43o_visible_session_binding_status"]
     assert receipt["visible_session_binding_receipt_path"]
     assert receipt["visible_session_binding_files_written"]
+    assert receipt["r43p_runner_output_promotion_invoked"] is True
+    assert "promoted_observed_media_count" in receipt
+    assert receipt["promoted_live_observation_paths"]
     assert receipt["side_effect_flags"]["browser_started_during_automated_tests"] is False
     assert receipt["side_effect_flags"]["network_access_during_automated_tests"] is False
     assert receipt["side_effect_flags"]["remote_media_downloads_performed"] is False
@@ -218,6 +221,10 @@ def test_visible_session_attempt_with_zero_counts_does_not_create_r43n_evidence(
     assert receipt["non_fixture_observation_evidence"] == []
     assert receipt["live_observation_paths"] == []
     assert receipt["visible_session_binding_files_written"]
+    assert receipt["r43p_runner_output_promotion_invoked"] is True
+    assert receipt["promoted_observed_post_count"] == 0
+    assert receipt["promoted_observed_media_count"] == 0
+    assert receipt["promoted_observed_screenshot_count"] == 0
 
 
 if __name__ == "__main__":

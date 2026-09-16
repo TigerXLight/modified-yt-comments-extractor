@@ -177,6 +177,17 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
         r43o_binding_payload: Mapping[str, Any] = {}
         r43o_receipt: Mapping[str, Any] = {}
         r43o_files_written: list[str] = []
+        r43p_runner_output_promotion_invoked = False
+        r43p_runner_output_promotion_status = ""
+        r43p_runner_output_promotion_receipt_path = ""
+        promoted_observed_post_count = 0
+        promoted_observed_media_count = 0
+        promoted_observed_screenshot_count = 0
+        promoted_network_event_count = 0
+        promoted_api_page_count = 0
+        promoted_response_body_count = 0
+        promoted_live_observation_paths: list[str] = []
+        promoted_non_fixture_observation_evidence = False
         side_effect_flags = _side_effect_flags(req, browser_started=False, network_access=False, remote_downloads=False)
 
         if placeholder_reason:
@@ -256,6 +267,21 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
                     observed_screenshot_count = max(observed_screenshot_count, _safe_int(r43o_receipt.get("observed_screenshot_count")))
                     materialization_receipt_count = max(materialization_receipt_count, _safe_int(r43o_receipt.get("materialization_receipt_count")))
                     observation_store_path = observation_store_path or _clean(r43o_receipt.get("observation_store_path"))
+                    r43p_runner_output_promotion_invoked = bool(r43o_receipt.get("r43p_runner_output_promotion_invoked"))
+                    r43p_runner_output_promotion_status = _clean(r43o_receipt.get("r43p_runner_output_promotion_status"))
+                    r43p_runner_output_promotion_receipt_path = _clean(r43o_receipt.get("r43p_runner_output_promotion_receipt_path"))
+                    promoted_observed_post_count = _safe_int(r43o_receipt.get("promoted_observed_post_count"))
+                    promoted_observed_media_count = _safe_int(r43o_receipt.get("promoted_observed_media_count"))
+                    promoted_observed_screenshot_count = _safe_int(r43o_receipt.get("promoted_observed_screenshot_count"))
+                    promoted_network_event_count = _safe_int(r43o_receipt.get("promoted_network_event_count"))
+                    promoted_api_page_count = _safe_int(r43o_receipt.get("promoted_api_page_count"))
+                    promoted_response_body_count = _safe_int(r43o_receipt.get("promoted_response_body_count"))
+                    promoted_live_observation_paths = [
+                        _clean(path)
+                        for path in r43o_receipt.get("promoted_live_observation_paths") or ()
+                        if _path_is_live_observation(_clean(path))
+                    ]
+                    promoted_non_fixture_observation_evidence = bool(r43o_receipt.get("promoted_non_fixture_observation_evidence"))
                     if r43o_receipt.get("status") == R43O_PASS_STATUS and r43o_files_written:
                         non_fixture_evidence.append(
                             {
@@ -275,6 +301,7 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
                 else:
                     live_observation_paths = _existing_live_observation_paths(non_fixture_evidence, observation_store_path)
                     live_observation_paths = sorted(set(live_observation_paths + [_clean(path) for path in r43o_files_written if _path_is_live_observation(_clean(path))]))
+                    live_observation_paths = sorted(set(live_observation_paths + promoted_live_observation_paths))
                 side_effect_flags = _side_effect_flags(
                     req,
                     browser_started=bool(req.run_visible_live and live_runner is None and not req.automated_test_mode),
@@ -338,6 +365,17 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
             "materialization_receipt_count": materialization_receipt_count,
             "non_fixture_observation_evidence": non_fixture_evidence,
             "live_observation_paths": live_observation_paths,
+            "r43p_runner_output_promotion_invoked": r43p_runner_output_promotion_invoked,
+            "r43p_runner_output_promotion_status": r43p_runner_output_promotion_status,
+            "r43p_runner_output_promotion_receipt_path": r43p_runner_output_promotion_receipt_path,
+            "promoted_observed_post_count": promoted_observed_post_count,
+            "promoted_observed_media_count": promoted_observed_media_count,
+            "promoted_observed_screenshot_count": promoted_observed_screenshot_count,
+            "promoted_network_event_count": promoted_network_event_count,
+            "promoted_api_page_count": promoted_api_page_count,
+            "promoted_response_body_count": promoted_response_body_count,
+            "promoted_live_observation_paths": promoted_live_observation_paths,
+            "promoted_non_fixture_observation_evidence": promoted_non_fixture_observation_evidence,
             "placeholder_target_detected": bool(placeholder_reason),
             "placeholder_target_reason": placeholder_reason,
             "r43o_visible_session_binding_invoked": bool(r43o_receipt),
@@ -849,10 +887,14 @@ def _check(name: str, ok: bool) -> Mapping[str, Any]:
 
 
 def _plain_url(value: Any) -> str:
-    text = _clean(value).replace("\\_", "_").replace("\\", "")
-    match = re.search(r"\[[^\]]+\]\((https?://[^)\s]+)\)", text)
+    text = _clean(value).replace("\\_", "_")
+    match = re.search(r"\[[^\]]*?(https?://[^]\s]+)[^\]]*?\]\((https?://[^)\s]+)\)", text)
     if match:
-        text = match.group(1)
+        text = match.group(2)
+    else:
+        direct = re.search(r"https?://[^\s)\]>\"']+", text)
+        if direct:
+            text = direct.group(0)
     text = text.strip("[]()<>\"'")
     if text.startswith("twitter.com/") or text.startswith("x.com/"):
         text = "https://" + text

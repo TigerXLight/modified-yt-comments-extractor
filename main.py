@@ -2035,6 +2035,24 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43P_LIVE_TWITTER_X_RUNNER_OUTPUT_PROMOTION:
+        # Promote existing R42GZ/twitter_browser_capture_runner outputs into
+        # R43O/R43N observation counts. This is read-only artifact accounting:
+        # it does not launch browsers, fetch media, scrape hidden APIs, touch
+        # cookies/tokens, or change YouTube capture behavior.
+        self.live_twitter_x_runner_output_promotion_r43p = None
+        try:
+            from profile_media_live_twitter_x_runner_output_promotion_r43p import (
+                promote_twitter_x_runner_outputs_r43p,
+            )
+
+            self.live_twitter_x_runner_output_promotion_r43p = promote_twitter_x_runner_outputs_r43p
+        except Exception:
+            logger.debug(
+                "Could not configure R43P live Twitter/X runner output promotion.",
+                exc_info=True,
+            )
+
         # R43O_LIVE_TWITTER_X_VISIBLE_SESSION_BINDING:
         # Bind the R43N smoke harness to the existing visible/session-backed
         # Twitter/X browser media observation boundary. This records launcher,
