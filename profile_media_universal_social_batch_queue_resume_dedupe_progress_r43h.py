@@ -71,6 +71,13 @@ class UniversalSocialBatchQueueRequestR43H:
     fixture_mode: bool = False
     force_retry_terminal: bool = False
     process_now: bool = True
+    explicit_live_mode: bool = False
+    run_visible_live: bool = False
+    live_mode: bool = False
+    browser_user_data_dir: str = ""
+    browser_executable_path: str = ""
+    max_items: int = 3
+    max_scrolls: int = 2
 
     def to_dict(self) -> dict[str, Any]:
         return _to_jsonable(asdict(self))
@@ -97,6 +104,13 @@ class UniversalSocialBatchQueueRecordR43H:
     route_receipt_path: str = ""
     run_dir: str = ""
     duplicate_of: str = ""
+    explicit_live_mode: bool = False
+    run_visible_live: bool = False
+    live_mode: bool = False
+    browser_user_data_dir: str = ""
+    browser_executable_path: str = ""
+    max_items: int = 3
+    max_scrolls: int = 2
 
     def to_dict(self) -> dict[str, Any]:
         return _to_jsonable(asdict(self))
@@ -233,6 +247,13 @@ class UniversalSocialBatchQueueRouterR43H:
                 updated_at=now,
                 last_error="",
                 duplicate_of=duplicate_of,
+                explicit_live_mode=req.explicit_live_mode,
+                run_visible_live=req.run_visible_live,
+                live_mode=req.live_mode,
+                browser_user_data_dir=req.browser_user_data_dir,
+                browser_executable_path=req.browser_executable_path,
+                max_items=req.max_items,
+                max_scrolls=req.max_scrolls,
             )
             records.append(record)
             if not duplicate_of:
@@ -420,6 +441,13 @@ class UniversalSocialBatchQueueRouterR43H:
                 capture_timestamp=f"{capture_ts}_{record.batch_index:05d}",
                 output_root=str(run_dir / "r43g_routes"),
                 fixture_mode=req.fixture_mode,
+                explicit_live_mode=record.explicit_live_mode or req.explicit_live_mode,
+                run_visible_live=record.run_visible_live or req.run_visible_live,
+                live_mode=record.live_mode or req.live_mode,
+                browser_user_data_dir=record.browser_user_data_dir or req.browser_user_data_dir,
+                browser_executable_path=record.browser_executable_path or req.browser_executable_path,
+                max_items=record.max_items or req.max_items,
+                max_scrolls=record.max_scrolls or req.max_scrolls,
             )
         )
         route_payload = route_result.to_dict()
@@ -493,9 +521,16 @@ def coerce_universal_social_batch_queue_request_r43h(
         require_screenshot_receipts=bool(data.get("require_screenshot_receipts", True)),
         capture_timestamp=_clean(data.get("capture_timestamp")),
         output_root=_clean(data.get("output_root") or R43H_DEFAULT_OUTPUT_ROOT),
-        fixture_mode=bool(data.get("fixture_mode", False)),
-        force_retry_terminal=bool(data.get("force_retry_terminal", False)),
-        process_now=bool(data.get("process_now", True)),
+        fixture_mode=_to_bool(data.get("fixture_mode"), False),
+        force_retry_terminal=_to_bool(data.get("force_retry_terminal"), False),
+        process_now=_to_bool(data.get("process_now"), True),
+        explicit_live_mode=_to_bool(data.get("explicit_live_mode"), False),
+        run_visible_live=_to_bool(data.get("run_visible_live"), False),
+        live_mode=_to_bool(data.get("live_mode"), False),
+        browser_user_data_dir=_clean(data.get("browser_user_data_dir")),
+        browser_executable_path=_clean(data.get("browser_executable_path")),
+        max_items=_safe_int(data.get("max_items"), 3),
+        max_scrolls=_safe_int(data.get("max_scrolls"), 2),
     )
 
 
@@ -773,6 +808,13 @@ def _record_from_mapping(item: Mapping[str, Any]) -> UniversalSocialBatchQueueRe
         route_receipt_path=_clean(item.get("route_receipt_path")),
         run_dir=_clean(item.get("run_dir")),
         duplicate_of=_clean(item.get("duplicate_of")),
+        explicit_live_mode=_to_bool(item.get("explicit_live_mode"), False),
+        run_visible_live=_to_bool(item.get("run_visible_live"), False),
+        live_mode=_to_bool(item.get("live_mode"), False),
+        browser_user_data_dir=_clean(item.get("browser_user_data_dir")),
+        browser_executable_path=_clean(item.get("browser_executable_path")),
+        max_items=_safe_int(item.get("max_items"), 3),
+        max_scrolls=_safe_int(item.get("max_scrolls"), 2),
     )
 
 
@@ -890,6 +932,21 @@ def _now_ts() -> str:
 
 def _clean(value: Any) -> str:
     return "" if value is None else str(value).strip()
+
+
+def _to_bool(value: Any, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _to_jsonable(value: Any) -> Any:

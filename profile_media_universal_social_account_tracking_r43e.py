@@ -79,6 +79,13 @@ class UniversalSocialAccountTrackingRequestR43E:
     require_screenshot_receipts: bool = True
     output_root: str = R43E_DEFAULT_OUTPUT_ROOT
     fixture_mode: bool = False
+    explicit_live_mode: bool = False
+    run_visible_live: bool = False
+    live_mode: bool = False
+    browser_user_data_dir: str = ""
+    browser_executable_path: str = ""
+    max_items: int = 3
+    max_scrolls: int = 2
 
     def to_dict(self) -> dict[str, Any]:
         return _to_jsonable(asdict(self))
@@ -318,6 +325,29 @@ class UniversalSocialAccountTrackingRegistryR43E:
         run_dir: Path,
     ) -> dict[str, Any]:
         surface = self.twitter_x_surface
+        twitter_request_payload = {
+            "account_url": account_url,
+            "account_handle": account_handle,
+            "capture_timestamp": capture_timestamp,
+            "include_posts": request.include_posts,
+            "include_reposts": request.include_reposts,
+            "include_quote_posts": request.include_quote_posts,
+            "include_replies": request.include_replies,
+            "include_media": request.include_media,
+            "include_static_screenshots": request.include_static_screenshots,
+            "require_screenshot_receipts": request.require_screenshot_receipts,
+            "output_root": str(run_dir / "twitter_x_surface"),
+            "fixture_mode": request.fixture_mode,
+            "explicit_live_mode": request.explicit_live_mode,
+            "run_visible_live": request.run_visible_live,
+            "live_mode": request.live_mode,
+            "live_capture_enabled": bool(request.explicit_live_mode or request.run_visible_live or request.live_mode),
+            "capture_mode": "visible_live" if bool(request.explicit_live_mode or request.run_visible_live or request.live_mode) else "safe_local_records_or_fixture",
+            "browser_user_data_dir": request.browser_user_data_dir,
+            "browser_executable_path": request.browser_executable_path,
+            "max_items": request.max_items,
+            "max_scrolls": request.max_scrolls,
+        }
         if surface is None:
             from profile_media_twitter_x_account_tracking_export_surface_r43d import (
                 TwitterXAccountTrackingExportRequestR43D,
@@ -325,26 +355,11 @@ class UniversalSocialAccountTrackingRegistryR43E:
             )
 
             surface = build_twitter_x_account_tracking_export_surface_r43d(output_root=run_dir / "twitter_x_surface")
-            twitter_request = TwitterXAccountTrackingExportRequestR43D(
-                account_url=account_url,
-                account_handle=account_handle,
-                capture_timestamp=capture_timestamp,
-                include_posts=request.include_posts,
-                include_reposts=request.include_reposts,
-                include_quote_posts=request.include_quote_posts,
-                include_replies=request.include_replies,
-                include_media=request.include_media,
-                include_static_screenshots=request.include_static_screenshots,
-                require_screenshot_receipts=request.require_screenshot_receipts,
-                output_root=str(run_dir / "twitter_x_surface"),
-                fixture_mode=request.fixture_mode,
-            )
+            twitter_request = TwitterXAccountTrackingExportRequestR43D(**twitter_request_payload)
             result = surface.run_account_export(twitter_request, initial_records=initial_records)
         else:
             result = surface.run_account_export(
-                account_url=account_url,
-                account_handle=account_handle,
-                capture_timestamp=capture_timestamp,
+                twitter_request_payload,
                 initial_records=initial_records,
             )
         return _result_dict(result)
@@ -515,7 +530,14 @@ def coerce_universal_social_account_tracking_request_r43e(
         include_static_screenshots=bool(base.get("include_static_screenshots", True)),
         require_screenshot_receipts=bool(base.get("require_screenshot_receipts", True)),
         output_root=_clean(base.get("output_root") or R43E_DEFAULT_OUTPUT_ROOT),
-        fixture_mode=bool(base.get("fixture_mode", False)),
+        fixture_mode=_to_bool(base.get("fixture_mode"), False),
+        explicit_live_mode=_to_bool(base.get("explicit_live_mode"), False),
+        run_visible_live=_to_bool(base.get("run_visible_live"), False),
+        live_mode=_to_bool(base.get("live_mode"), False),
+        browser_user_data_dir=_clean(base.get("browser_user_data_dir")),
+        browser_executable_path=_clean(base.get("browser_executable_path")),
+        max_items=_safe_int(base.get("max_items"), 3),
+        max_scrolls=_safe_int(base.get("max_scrolls"), 2),
     )
 
 
@@ -688,6 +710,14 @@ def _plain_url(value: Any) -> str:
     return text.replace("\\_", "_").replace("\\:", ":")
 
 
+def _to_bool(value: Any, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def _host_from_url(value: str) -> str:
     text = _plain_url(value).lower()
     match = re.match(r"https?://([^/]+)/?", text)
@@ -741,11 +771,11 @@ def _safe_ts(value: Any) -> str:
     return re.sub(r"[^0-9TZ]", "", text)
 
 
-def _safe_int(value: Any) -> int:
+def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(value or 0)
     except Exception:
-        return 0
+        return default
 
 
 def _clean(value: Any) -> str:

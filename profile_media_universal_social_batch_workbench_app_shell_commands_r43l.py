@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -101,6 +101,13 @@ class UniversalSocialBatchWorkbenchAppShellCommandRequestR43L:
     capture_timestamp: str = ""
     output_root: str = R43L_DEFAULT_OUTPUT_ROOT
     fixture_mode: bool = False
+    explicit_live_mode: bool = False
+    run_visible_live: bool = False
+    live_mode: bool = False
+    browser_user_data_dir: str = ""
+    browser_executable_path: str = ""
+    max_items: int = 3
+    max_scrolls: int = 2
 
     def to_dict(self) -> dict[str, Any]:
         return _to_jsonable(asdict(self))
@@ -146,6 +153,7 @@ class UniversalSocialBatchWorkbenchAppShellCommandResultR43L:
     report_json_path: str
     report_md_path: str
     side_effect_flags: Mapping[str, bool]
+    live_evidence_summary: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -290,7 +298,14 @@ def coerce_universal_social_batch_workbench_app_shell_command_request_r43l(
         status_filter=_clean(data.get("status_filter") or data.get("status")),
         capture_timestamp=_clean(data.get("capture_timestamp")),
         output_root=_clean(data.get("output_root") or R43L_DEFAULT_OUTPUT_ROOT),
-        fixture_mode=bool(data.get("fixture_mode", False)),
+        fixture_mode=_to_bool(data.get("fixture_mode"), False),
+        explicit_live_mode=_to_bool(data.get("explicit_live_mode"), False),
+        run_visible_live=_to_bool(data.get("run_visible_live"), False),
+        live_mode=_to_bool(data.get("live_mode"), False),
+        browser_user_data_dir=_clean(data.get("browser_user_data_dir")),
+        browser_executable_path=_clean(data.get("browser_executable_path")),
+        max_items=_safe_int(data.get("max_items"), 3),
+        max_scrolls=_safe_int(data.get("max_scrolls"), 2),
     )
 
 
@@ -452,6 +467,13 @@ def _to_panel_request(req: UniversalSocialBatchWorkbenchAppShellCommandRequestR4
         capture_timestamp=f"{_safe_ts(req.capture_timestamp) or _now_ts()}_r43j",
         output_root=str(run_dir / "r43j_panel"),
         fixture_mode=req.fixture_mode,
+        explicit_live_mode=req.explicit_live_mode,
+        run_visible_live=req.run_visible_live,
+        live_mode=req.live_mode,
+        browser_user_data_dir=req.browser_user_data_dir,
+        browser_executable_path=req.browser_executable_path,
+        max_items=req.max_items,
+        max_scrolls=req.max_scrolls,
     )
 
 
@@ -503,6 +525,7 @@ def _build_command_result(
     completed_count = int(status_counts.get("completed", 0) or _value(gui_result, "state_record", {}).get("completed_count", 0) or 0)
     failed_retryable_count = int(status_counts.get("failed_retryable", 0) or _value(gui_result, "state_record", {}).get("failed_retryable_count", 0) or 0)
     route_receipts_path = _value(panel_result, "route_receipts_path") or _value(gui_result, "state_record", {}).get("route_receipts_path", "")
+    live_evidence_summary = _extract_live_evidence_summary(_read_ndjson(route_receipts_path))
     paths = _output_paths(run_dir)
     return UniversalSocialBatchWorkbenchAppShellCommandResultR43L(
         marker=R43L_MARKER,
@@ -543,6 +566,7 @@ def _build_command_result(
         report_json_path=str(paths["report_json"]),
         report_md_path=str(paths["report_md"]),
         side_effect_flags=build_r43l_side_effect_flags(),
+        live_evidence_summary=live_evidence_summary,
     )
 
 
@@ -557,7 +581,17 @@ def _write_app_shell_outputs(run_dir: Path, req: UniversalSocialBatchWorkbenchAp
     _write_json(paths["recent"], {"recent_sessions": list(recent), "session_id": result.session_id})
     _write_json(paths["selection"], {"selected_queue_ids": list(result.selected_queue_ids)})
     _write_text(paths["summary"], _build_summary(result))
-    _write_json(paths["receipt"], {"marker": R43L_MARKER, "command_id": result.command_id, "command_name": result.command_name, "delegated_to": result.delegated_to, "status": result.status})
+    _write_json(
+        paths["receipt"],
+        {
+            "marker": R43L_MARKER,
+            "command_id": result.command_id,
+            "command_name": result.command_name,
+            "delegated_to": result.delegated_to,
+            "status": result.status,
+            "live_evidence_summary": dict(result.live_evidence_summary),
+        },
+    )
     _write_json(paths["delegated_panel"], panel_result.to_dict() if hasattr(panel_result, "to_dict") else {})
     _write_json(paths["delegated_gui"], gui_result.to_dict() if hasattr(gui_result, "to_dict") else {})
     route_receipts = _read_ndjson(result.route_receipts_path)
@@ -730,6 +764,32 @@ def _read_ndjson(path_value: str | Path) -> list[Mapping[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _extract_live_evidence_summary(value: Any) -> Mapping[str, Any]:
+    best: dict[str, Any] = {}
+
+    def score(summary: Mapping[str, Any]) -> int:
+        return (
+            _safe_int(summary.get("promoted_observed_post_count"))
+            + _safe_int(summary.get("promoted_observed_media_count"))
+            + _safe_int(summary.get("promoted_observed_screenshot_count"))
+        )
+
+    def visit(item: Any) -> None:
+        nonlocal best
+        if isinstance(item, Mapping):
+            summary = item.get("live_evidence_summary")
+            if isinstance(summary, Mapping) and score(summary) >= score(best):
+                best = dict(summary)
+            for child in item.values():
+                visit(child)
+        elif isinstance(item, (list, tuple)):
+            for child in item:
+                visit(child)
+
+    visit(value)
+    return best
+
+
 def _check(name: str, ok: bool, detail: str = "") -> Mapping[str, Any]:
     return {"detail": detail, "name": name, "status": "pass" if ok else "fail"}
 
@@ -752,6 +812,21 @@ def _now_ts() -> str:
 
 def _clean(value: Any) -> str:
     return "" if value is None else str(value).strip()
+
+
+def _to_bool(value: Any, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _to_jsonable(value: Any) -> Any:

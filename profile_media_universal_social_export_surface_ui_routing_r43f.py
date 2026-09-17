@@ -67,6 +67,13 @@ class UniversalSocialExportSurfaceRequestR43F:
     capture_timestamp: str = ""
     output_root: str = R43F_DEFAULT_OUTPUT_ROOT
     fixture_mode: bool = False
+    explicit_live_mode: bool = False
+    run_visible_live: bool = False
+    live_mode: bool = False
+    browser_user_data_dir: str = ""
+    browser_executable_path: str = ""
+    max_items: int = 3
+    max_scrolls: int = 2
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -237,6 +244,13 @@ class UniversalSocialExportSurfaceRouterR43F:
                 require_screenshot_receipts=req.require_screenshot_receipts,
                 output_root=str(run_dir / "r43e_dispatch"),
                 fixture_mode=req.fixture_mode,
+                explicit_live_mode=req.explicit_live_mode,
+                run_visible_live=req.run_visible_live,
+                live_mode=req.live_mode,
+                browser_user_data_dir=req.browser_user_data_dir,
+                browser_executable_path=req.browser_executable_path,
+                max_items=req.max_items,
+                max_scrolls=req.max_scrolls,
             )
             r43e_result = self.registry.run_account_export(r43e_request)
             downstream_payload = r43e_result.to_dict()
@@ -362,7 +376,14 @@ def coerce_universal_social_export_surface_request_r43f(
         require_screenshot_receipts=bool(data.get("require_screenshot_receipts", True)),
         capture_timestamp=_safe_ts(data.get("capture_timestamp") or ""),
         output_root=_clean(data.get("output_root") or R43F_DEFAULT_OUTPUT_ROOT),
-        fixture_mode=bool(data.get("fixture_mode", False)),
+        fixture_mode=_to_bool(data.get("fixture_mode"), False),
+        explicit_live_mode=_to_bool(data.get("explicit_live_mode"), False),
+        run_visible_live=_to_bool(data.get("run_visible_live"), False),
+        live_mode=_to_bool(data.get("live_mode"), False),
+        browser_user_data_dir=_clean(data.get("browser_user_data_dir")),
+        browser_executable_path=_clean(data.get("browser_executable_path")),
+        max_items=_safe_int(data.get("max_items"), 3),
+        max_scrolls=_safe_int(data.get("max_scrolls"), 2),
     )
 
 
@@ -646,6 +667,21 @@ def _to_jsonable(value: Any) -> Any:
 
 def _clean(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _to_bool(value: Any, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _safe_platform_id(value: Any) -> str:

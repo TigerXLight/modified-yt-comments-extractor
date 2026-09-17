@@ -38,6 +38,13 @@ class TwitterXAccountTrackingExportRequestR43D:
     live_capture_enabled: bool = False
     capture_mode: str = "safe_local_records_or_fixture"
     fixture_mode: bool = False
+    explicit_live_mode: bool = False
+    run_visible_live: bool = False
+    live_mode: bool = False
+    browser_user_data_dir: str = ""
+    browser_executable_path: str = ""
+    max_items: int = 3
+    max_scrolls: int = 2
 
     def to_dict(self) -> dict[str, Any]:
         return _to_jsonable(asdict(self))
@@ -71,6 +78,7 @@ class TwitterXAccountTrackingExportSurfaceResultR43D:
     date_folders: tuple[str, ...]
     side_effect_flags: Mapping[str, bool]
     warnings: tuple[str, ...] = ()
+    live_evidence_summary: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -127,10 +135,12 @@ class TwitterXAccountTrackingExportSurfaceR43D:
         *,
         timeline_runner: Any | None = None,
         screenshot_gate: Any | None = None,
+        live_smoke_harness: Any | None = None,
         output_root: str | Path = R43D_DEFAULT_OUTPUT_ROOT,
     ) -> None:
         self.timeline_runner = timeline_runner
         self.screenshot_gate = screenshot_gate
+        self.live_smoke_harness = live_smoke_harness
         self.output_root = Path(output_root)
 
     def run_account_export(
@@ -160,6 +170,18 @@ class TwitterXAccountTrackingExportSurfaceR43D:
         receipt_path = surface_run_dir / "account_tracking_surface_receipt.json"
 
         _write_json(request_path, {**req.to_dict(), "account_handle": handle, "account_url": account_url_plain, "marker": R43D_MARKER})
+
+        if _explicit_live_requested(req) and not req.fixture_mode:
+            return self._run_explicit_live_smoke_export(
+                req=req,
+                handle=handle,
+                account_url_plain=account_url_plain,
+                capture_ts=capture_ts,
+                surface_run_dir=surface_run_dir,
+                request_path=request_path,
+                runbook_path=runbook_path,
+                receipt_path=receipt_path,
+            )
 
         records = list(initial_records or ())
         if not records and req.fixture_mode:
@@ -253,6 +275,7 @@ class TwitterXAccountTrackingExportSurfaceR43D:
             date_folders=tuple(str(x) for x in timeline_payload.get("date_folders") or ()),
             side_effect_flags=side_effect_flags,
             warnings=tuple(warnings),
+            live_evidence_summary={},
         )
         _write_runbook(runbook_path, request=req, result=result)
         _write_json(
@@ -266,16 +289,118 @@ class TwitterXAccountTrackingExportSurfaceR43D:
         )
         return result
 
+    def _run_explicit_live_smoke_export(
+        self,
+        *,
+        req: TwitterXAccountTrackingExportRequestR43D,
+        handle: str,
+        account_url_plain: str,
+        capture_ts: str,
+        surface_run_dir: Path,
+        request_path: Path,
+        runbook_path: Path,
+        receipt_path: Path,
+    ) -> TwitterXAccountTrackingExportSurfaceResultR43D:
+        harness = self.live_smoke_harness
+        if harness is None:
+            from profile_media_live_twitter_x_single_account_smoke_harness_r43n import (
+                build_live_twitter_x_single_account_smoke_harness_r43n,
+            )
+
+            harness = build_live_twitter_x_single_account_smoke_harness_r43n(output_root=surface_run_dir / "r43n_live_smoke")
+
+        visible_live_requested = bool(req.run_visible_live or req.live_mode or req.explicit_live_mode or req.live_capture_enabled)
+        smoke_result = harness.run_smoke(
+            {
+                "account_url": account_url_plain,
+                "account_handle": handle,
+                "capture_timestamp": capture_ts,
+                "output_root": str(surface_run_dir / "r43n_live_smoke"),
+                "max_items": req.max_items,
+                "max_scrolls": req.max_scrolls,
+                "include_posts": req.include_posts,
+                "include_reposts_or_reshares": req.include_reposts,
+                "include_quotes": req.include_quote_posts,
+                "include_replies": req.include_replies,
+                "include_media": req.include_media,
+                "include_static_screenshots": req.include_static_screenshots,
+                "require_screenshot_receipts": req.require_screenshot_receipts,
+                "explicit_live_mode": True,
+                "visible_session_required": True,
+                "run_visible_live": visible_live_requested,
+                "automated_test_mode": not visible_live_requested,
+                "browser_user_data_dir": req.browser_user_data_dir,
+            }
+        )
+        smoke_payload = _result_dict(smoke_result)
+        receipt = dict(smoke_payload.get("observation_receipt") or {})
+        live_summary = _live_evidence_summary_from_r43n(smoke_payload, receipt)
+        promoted_posts = _safe_int(live_summary.get("promoted_observed_post_count"))
+        promoted_media = _safe_int(live_summary.get("promoted_observed_media_count"))
+        promoted_screenshots = _safe_int(live_summary.get("promoted_observed_screenshot_count"))
+        evidence_count = promoted_posts + promoted_media + promoted_screenshots
+        r43n_status = _clean(live_summary.get("r43n_status"))
+        status = R43D_PASS_STATUS if r43n_status.startswith("PASS_R43N_") and evidence_count > 0 and live_summary.get("promoted_non_fixture_observation_evidence") else R43D_BLOCKED_STATUS
+        warnings: list[str] = []
+        if status != R43D_PASS_STATUS:
+            blocker = _clean(live_summary.get("blocker_reason") or r43n_status or "R43N live smoke did not pass")
+            warnings.append(blocker)
+
+        result = TwitterXAccountTrackingExportSurfaceResultR43D(
+            marker=R43D_MARKER,
+            schema_version=R43D_SCHEMA_VERSION,
+            status=status,
+            account_handle=handle,
+            account_url=account_url_plain,
+            capture_timestamp=capture_ts,
+            surface_run_dir=str(surface_run_dir),
+            request_path=str(request_path),
+            runbook_path=str(runbook_path),
+            surface_receipt_path=str(receipt_path),
+            timeline_runner_receipt_path=_clean(smoke_payload.get("report_json_path")),
+            timeline_records_path="",
+            progress_events_path=_clean(smoke_payload.get("progress_events_path")),
+            account_capture_dir=_clean(smoke_payload.get("run_dir")),
+            account_record_path="",
+            manifest_path="",
+            media_index_path="",
+            screenshot_receipts_index_path=_clean(smoke_payload.get("materialization_receipts_index_path")),
+            record_count=promoted_posts,
+            post_count=promoted_posts,
+            repost_count=0,
+            media_count=promoted_media,
+            screenshot_count=promoted_screenshots,
+            date_folders=(),
+            side_effect_flags=build_r43d_side_effect_flags(),
+            warnings=tuple(warnings),
+            live_evidence_summary=live_summary,
+        )
+        _write_runbook(runbook_path, request=req, result=result)
+        _write_json(
+            receipt_path,
+            {
+                **result.to_dict(),
+                "request": req.to_dict(),
+                "timeline_result": {},
+                "r43n_result": smoke_payload,
+                "live_evidence_summary": live_summary,
+                "surface_contract": build_twitter_x_account_tracking_export_surface_contract_r43d(req),
+            },
+        )
+        return result
+
 
 def build_twitter_x_account_tracking_export_surface_r43d(
     *,
     timeline_runner: Any | None = None,
     screenshot_gate: Any | None = None,
+    live_smoke_harness: Any | None = None,
     output_root: str | Path = R43D_DEFAULT_OUTPUT_ROOT,
 ) -> TwitterXAccountTrackingExportSurfaceR43D:
     return TwitterXAccountTrackingExportSurfaceR43D(
         timeline_runner=timeline_runner,
         screenshot_gate=screenshot_gate,
+        live_smoke_harness=live_smoke_harness,
         output_root=output_root,
     )
 
@@ -303,7 +428,14 @@ def coerce_account_tracking_export_request_r43d(
     if not data.get("output_root"):
         data["output_root"] = output_root
     allowed = {field.name for field in TwitterXAccountTrackingExportRequestR43D.__dataclass_fields__.values()}
-    return TwitterXAccountTrackingExportRequestR43D(**{k: v for k, v in data.items() if k in allowed})
+    filtered = {k: v for k, v in data.items() if k in allowed}
+    for key in ("fixture_mode", "live_capture_enabled", "explicit_live_mode", "run_visible_live", "live_mode"):
+        if key in filtered:
+            filtered[key] = _to_bool(filtered[key], False)
+    for key in ("max_items", "max_scrolls"):
+        if key in filtered:
+            filtered[key] = _safe_int(filtered[key], 3 if key == "max_items" else 2)
+    return TwitterXAccountTrackingExportRequestR43D(**filtered)
 
 
 def build_twitter_x_account_tracking_export_surface_contract_r43d(
@@ -362,6 +494,31 @@ def build_r43d_side_effect_flags() -> dict[str, bool]:
         "review_window_dependency_invoked": False,
         "review_window_rewrite_performed": False,
         "youtube_capture_engine_changed": False,
+    }
+
+
+def _explicit_live_requested(req: TwitterXAccountTrackingExportRequestR43D) -> bool:
+    return bool(req.explicit_live_mode or req.live_mode or req.run_visible_live or req.live_capture_enabled or req.capture_mode in {"explicit_live", "visible_live", "live"})
+
+
+def _live_evidence_summary_from_r43n(smoke_payload: Mapping[str, Any], receipt: Mapping[str, Any]) -> dict[str, Any]:
+    r43o_status = _clean(receipt.get("r43o_visible_session_binding_status"))
+    return {
+        "blocker_reason": _clean(receipt.get("blocker_reason") or smoke_payload.get("blocker_reason")),
+        "promoted_api_page_count": _safe_int(receipt.get("promoted_api_page_count")),
+        "promoted_live_observation_paths": list(receipt.get("promoted_live_observation_paths") or ()),
+        "promoted_network_event_count": _safe_int(receipt.get("promoted_network_event_count")),
+        "promoted_non_fixture_observation_evidence": bool(receipt.get("promoted_non_fixture_observation_evidence")),
+        "promoted_observed_media_count": _safe_int(receipt.get("promoted_observed_media_count")),
+        "promoted_observed_post_count": _safe_int(receipt.get("promoted_observed_post_count")),
+        "promoted_observed_screenshot_count": _safe_int(receipt.get("promoted_observed_screenshot_count")),
+        "promoted_response_body_count": _safe_int(receipt.get("promoted_response_body_count")),
+        "r43n_receipt_path": _clean(smoke_payload.get("observation_receipt_path")),
+        "r43n_status": _clean(smoke_payload.get("status") or receipt.get("status")),
+        "r43o_receipt_path": _clean(receipt.get("visible_session_binding_receipt_path")),
+        "r43o_status": r43o_status,
+        "r43p_receipt_path": _clean(receipt.get("r43p_runner_output_promotion_receipt_path")),
+        "r43p_status": _clean(receipt.get("r43p_runner_output_promotion_status")),
     }
 
 
@@ -623,6 +780,14 @@ def _plain_url(value: Any) -> str:
     return text
 
 
+def _to_bool(value: Any, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def _handle_from_url(url: Any) -> str:
     text = _plain_url(url)
     m = re.search(r"(?:https?://)?(?:www\.)?(?:x|twitter)\.com/([^/?#]+)", text, re.I)
@@ -635,11 +800,11 @@ def _safe_handle(value: Any) -> str:
     return text[:80] or "unknown_account"
 
 
-def _safe_int(value: Any) -> int:
+def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
     except Exception:
-        return 0
+        return default
 
 
 def _clean(value: Any) -> Any:
