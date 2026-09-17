@@ -2053,6 +2053,24 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43R_TWITTER_X_LIVE_EVIDENCE_TO_ACCOUNT_LEDGER:
+        # Materialize already-captured live Twitter/X DOM, screenshot, and
+        # visible-browser observation artifacts into the R43A date-folder account
+        # ledger. This does not launch browsers, download remote media, scrape
+        # hidden APIs, extract cookies/tokens, or change YouTube capture behavior.
+        self.twitter_x_live_evidence_to_account_ledger_r43r = None
+        try:
+            from profile_media_twitter_x_live_evidence_to_account_ledger_r43r import (
+                materialize_live_twitter_x_evidence_to_account_ledger_r43r,
+            )
+
+            self.twitter_x_live_evidence_to_account_ledger_r43r = materialize_live_twitter_x_evidence_to_account_ledger_r43r
+        except Exception:
+            logger.debug(
+                "Could not configure R43R Twitter/X live evidence account ledger materializer.",
+                exc_info=True,
+            )
+
         # R43O_LIVE_TWITTER_X_VISIBLE_SESSION_BINDING:
         # Bind the R43N smoke harness to the existing visible/session-backed
         # Twitter/X browser media observation boundary. This records launcher,

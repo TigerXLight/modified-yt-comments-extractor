@@ -79,6 +79,7 @@ class TwitterXAccountTrackingExportSurfaceResultR43D:
     side_effect_flags: Mapping[str, bool]
     warnings: tuple[str, ...] = ()
     live_evidence_summary: Mapping[str, Any] = field(default_factory=dict)
+    account_ledger_summary: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -276,6 +277,7 @@ class TwitterXAccountTrackingExportSurfaceR43D:
             side_effect_flags=side_effect_flags,
             warnings=tuple(warnings),
             live_evidence_summary={},
+            account_ledger_summary={},
         )
         _write_runbook(runbook_path, request=req, result=result)
         _write_json(
@@ -330,6 +332,7 @@ class TwitterXAccountTrackingExportSurfaceR43D:
                 "run_visible_live": visible_live_requested,
                 "automated_test_mode": not visible_live_requested,
                 "browser_user_data_dir": req.browser_user_data_dir,
+                "browser_executable_path": req.browser_executable_path,
             }
         )
         smoke_payload = _result_dict(smoke_result)
@@ -340,11 +343,49 @@ class TwitterXAccountTrackingExportSurfaceR43D:
         promoted_screenshots = _safe_int(live_summary.get("promoted_observed_screenshot_count"))
         evidence_count = promoted_posts + promoted_media + promoted_screenshots
         r43n_status = _clean(live_summary.get("r43n_status"))
-        status = R43D_PASS_STATUS if r43n_status.startswith("PASS_R43N_") and evidence_count > 0 and live_summary.get("promoted_non_fixture_observation_evidence") else R43D_BLOCKED_STATUS
         warnings: list[str] = []
-        if status != R43D_PASS_STATUS:
+        account_ledger_summary: dict[str, Any] = {}
+        ledger_payload: Mapping[str, Any] = {}
+        ledger_status = ""
+        if r43n_status.startswith("PASS_R43N_") and evidence_count > 0 and live_summary.get("promoted_non_fixture_observation_evidence"):
+            try:
+                from profile_media_twitter_x_live_evidence_to_account_ledger_r43r import (
+                    R43R_PASS_STATUS,
+                    materialize_live_twitter_x_evidence_to_account_ledger_r43r,
+                )
+
+                ledger_result = materialize_live_twitter_x_evidence_to_account_ledger_r43r(
+                    {
+                        "source_url": account_url_plain,
+                        "account_handle": handle,
+                        "capture_timestamp": capture_ts,
+                        "ledger_output_root": str(surface_run_dir / "source_exports" / "twitter_x"),
+                        "r43n_receipt_path": live_summary.get("r43n_receipt_path"),
+                        "r43o_receipt_path": live_summary.get("r43o_receipt_path"),
+                        "r43p_receipt_path": live_summary.get("r43p_receipt_path"),
+                        "live_evidence_summary": live_summary,
+                    }
+                )
+                ledger_payload = ledger_result.to_dict()
+                account_ledger_summary = dict(ledger_payload.get("account_ledger_summary") or {})
+                ledger_status = _clean(ledger_payload.get("status"))
+                live_summary = {**live_summary, "account_ledger_summary": account_ledger_summary, **account_ledger_summary}
+            except Exception as exc:
+                ledger_status = "BLOCKED_R43R_TWITTER_X_LIVE_EVIDENCE_TO_ACCOUNT_LEDGER"
+                warnings.append(f"R43R ledger materialization failed safely: {type(exc).__name__}: {exc}")
+        else:
             blocker = _clean(live_summary.get("blocker_reason") or r43n_status or "R43N live smoke did not pass")
             warnings.append(blocker)
+        status = (
+            R43D_PASS_STATUS
+            if r43n_status.startswith("PASS_R43N_")
+            and evidence_count > 0
+            and live_summary.get("promoted_non_fixture_observation_evidence")
+            and ledger_status == "PASS_R43R_TWITTER_X_LIVE_EVIDENCE_TO_ACCOUNT_LEDGER"
+            else R43D_BLOCKED_STATUS
+        )
+        if status != R43D_PASS_STATUS and ledger_status and ledger_status != "PASS_R43R_TWITTER_X_LIVE_EVIDENCE_TO_ACCOUNT_LEDGER":
+            warnings.append(f"R43R ledger status was {ledger_status}.")
 
         result = TwitterXAccountTrackingExportSurfaceResultR43D(
             marker=R43D_MARKER,
@@ -358,22 +399,23 @@ class TwitterXAccountTrackingExportSurfaceR43D:
             runbook_path=str(runbook_path),
             surface_receipt_path=str(receipt_path),
             timeline_runner_receipt_path=_clean(smoke_payload.get("report_json_path")),
-            timeline_records_path="",
-            progress_events_path=_clean(smoke_payload.get("progress_events_path")),
-            account_capture_dir=_clean(smoke_payload.get("run_dir")),
-            account_record_path="",
-            manifest_path="",
-            media_index_path="",
+            timeline_records_path=_clean(account_ledger_summary.get("account_timeline_path")),
+            progress_events_path=_clean(account_ledger_summary.get("progress_events_path") or smoke_payload.get("progress_events_path")),
+            account_capture_dir=_clean(account_ledger_summary.get("account_capture_dir") or smoke_payload.get("run_dir")),
+            account_record_path=_clean(account_ledger_summary.get("account_record_path")),
+            manifest_path=_clean(account_ledger_summary.get("manifest_path")),
+            media_index_path=_clean(account_ledger_summary.get("media_index_path")),
             screenshot_receipts_index_path=_clean(smoke_payload.get("materialization_receipts_index_path")),
-            record_count=promoted_posts,
-            post_count=promoted_posts,
+            record_count=_safe_int(account_ledger_summary.get("ledger_post_count"), promoted_posts),
+            post_count=_safe_int(account_ledger_summary.get("ledger_post_count"), promoted_posts),
             repost_count=0,
-            media_count=promoted_media,
-            screenshot_count=promoted_screenshots,
-            date_folders=(),
+            media_count=_safe_int(account_ledger_summary.get("ledger_media_candidate_count"), promoted_media),
+            screenshot_count=_safe_int(account_ledger_summary.get("ledger_static_screenshot_count"), promoted_screenshots),
+            date_folders=tuple(str(x) for x in account_ledger_summary.get("date_folders") or ()),
             side_effect_flags=build_r43d_side_effect_flags(),
             warnings=tuple(warnings),
             live_evidence_summary=live_summary,
+            account_ledger_summary=account_ledger_summary,
         )
         _write_runbook(runbook_path, request=req, result=result)
         _write_json(
@@ -383,7 +425,9 @@ class TwitterXAccountTrackingExportSurfaceR43D:
                 "request": req.to_dict(),
                 "timeline_result": {},
                 "r43n_result": smoke_payload,
+                "r43r_result": _to_jsonable(ledger_payload),
                 "live_evidence_summary": live_summary,
+                "account_ledger_summary": account_ledger_summary,
                 "surface_contract": build_twitter_x_account_tracking_export_surface_contract_r43d(req),
             },
         )

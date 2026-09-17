@@ -47,6 +47,7 @@ class IndependentFastMediaWebView2LaneConfigR42GZ:
     stop_on_rate_limit: bool = True
     rate_limit_cooldown_ms: int = 0
     browser_user_data_dir: str = R42GZ_DEFAULT_PROFILE_DIR
+    browser_executable_path: str = ""
     reuse_existing_profile: bool = False
     capture_goal: str = R42GZ_CAPTURE_GOAL
     media_only: bool = True
@@ -154,6 +155,7 @@ class IndependentFastMediaWebView2LaneBackendR42GZ:
             "stop_on_rate_limit": self.config.stop_on_rate_limit,
             "rate_limit_cooldown_ms": self.config.rate_limit_cooldown_ms,
             "browser_user_data_dir": self.config.browser_user_data_dir,
+            "browser_executable_path": self.config.browser_executable_path,
             "reuse_existing_profile": self.config.reuse_existing_profile,
             "download_media": False,
             "media_backend_runner": None,
@@ -211,6 +213,7 @@ class IndependentFastMediaWebView2LaneBackendR42GZ:
             "output_dir": str(output_dir),
             "lane_output_dir": str(lane_output_dir),
             "browser_user_data_dir": self.config.browser_user_data_dir,
+            "browser_executable_path": self.config.browser_executable_path,
             "network_events_path": str(network_events_path or ""),
             "media_inventory_path": str(media_inventory_path or ""),
             "rendered_dom_path": str(rendered_dom_path or ""),
@@ -299,12 +302,14 @@ def build_independent_fast_media_webview2_lane_r42gz(
     live: bool | None = None,
     headless: bool | None = None,
     browser_user_data_dir: str = "",
+    browser_executable_path: str = "",
     fixture_mode: bool = False,
 ) -> IndependentFastMediaWebView2LaneBackendR42GZ:
     config = IndependentFastMediaWebView2LaneConfigR42GZ(
         live=_env_bool("YTCE_R42GZ_INDEPENDENT_MEDIA_WEBVIEW2_LIVE", True) if live is None else bool(live),
         headless=_env_bool("YTCE_R42GZ_INDEPENDENT_MEDIA_WEBVIEW2_HEADLESS", True) if headless is None else bool(headless),
         browser_user_data_dir=browser_user_data_dir or os.environ.get("YTCE_R42GZ_INDEPENDENT_MEDIA_WEBVIEW2_PROFILE", R42GZ_DEFAULT_PROFILE_DIR),
+        browser_executable_path=browser_executable_path,
         fixture_mode=fixture_mode,
     )
     return IndependentFastMediaWebView2LaneBackendR42GZ(runner=runner, config=config)
@@ -326,6 +331,7 @@ def build_independent_fast_media_webview2_lane_contract_r42gz(config: Independen
         "source_role_back_and_forth_enabled": False,
         "review_window_webview2_dependency": False,
         "separate_browser_user_data_dir": cfg.browser_user_data_dir,
+        "browser_executable_path": cfg.browser_executable_path,
         "separate_output_state_folder": R42GZ_DEFAULT_OUTPUT_ROOT,
         "uses_existing_lower_level_browser_capture_primitive_when_available": True,
         "does_not_use_slow_review_source_role_webview2_lane": True,

@@ -82,6 +82,7 @@ class LiveTwitterXSingleAccountSmokeRequestR43N:
     run_visible_live: bool = False
     automated_test_mode: bool = True
     browser_user_data_dir: str = ""
+    browser_executable_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -218,6 +219,7 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
                             visible_session_required=req.visible_session_required,
                             automated_test_mode=req.automated_test_mode,
                             browser_user_data_dir=req.browser_user_data_dir,
+                            browser_executable_path=req.browser_executable_path,
                         ),
                         runner=live_runner,
                     )
@@ -503,6 +505,7 @@ def coerce_live_twitter_x_single_account_smoke_request_r43n(
         run_visible_live=bool(data.get("run_visible_live", False)),
         automated_test_mode=bool(data.get("automated_test_mode", True)),
         browser_user_data_dir=_clean(data.get("browser_user_data_dir")),
+        browser_executable_path=_clean(data.get("browser_executable_path")),
     )
 
 
@@ -978,6 +981,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-scrolls", type=int, default=2)
     parser.add_argument("--run-visible-live", action="store_true")
     parser.add_argument("--browser-user-data-dir", default="")
+    parser.add_argument("--browser-executable-path", default="")
     args = parser.parse_args(argv)
     harness = build_live_twitter_x_single_account_smoke_harness_r43n(output_root=args.output_root)
     result = harness.run_smoke(
@@ -991,6 +995,7 @@ def main(argv: list[str] | None = None) -> int:
         run_visible_live=args.run_visible_live,
         automated_test_mode=not args.run_visible_live,
         browser_user_data_dir=args.browser_user_data_dir,
+        browser_executable_path=args.browser_executable_path,
     )
     print(R43N_MARKER)
     print(result.status)

@@ -546,6 +546,7 @@ def _playwright_browser_capture_executor(
     no_progress_scrolls: int = 3,
     stop_on_rate_limit: bool = True,
     rate_limit_cooldown_ms: int = 0,
+    browser_executable_path: str | Path = "",
 ) -> BrowserCapturePayload:
     from playwright.sync_api import sync_playwright
 
@@ -597,14 +598,16 @@ def _playwright_browser_capture_executor(
             warnings.append(f"capture_response_failed:{exc}")
 
     with sync_playwright() as playwright:
+        executable_path = str(browser_executable_path or "") or None
         if plan.browser_session.user_data_dir:
             context = playwright.chromium.launch_persistent_context(
                 user_data_dir=plan.browser_session.user_data_dir,
                 headless=headless,
+                executable_path=executable_path,
             )
             browser = None
         else:
-            browser = playwright.chromium.launch(headless=headless)
+            browser = playwright.chromium.launch(headless=headless, executable_path=executable_path)
             context = browser.new_context()
         try:
             page = context.new_page()
@@ -687,6 +690,7 @@ def _run_twitter_browser_capture_impl(
     stop_on_rate_limit: bool = True,
     rate_limit_cooldown_ms: int = 0,
     browser_user_data_dir: str | Path = "",
+    browser_executable_path: str | Path = "",
     reuse_existing_profile: bool = False,
     download_media: bool = False,
     media_backend_runner: Any | None = None,
@@ -724,6 +728,7 @@ def _run_twitter_browser_capture_impl(
                 no_progress_scrolls=no_progress_scrolls,
                 stop_on_rate_limit=stop_on_rate_limit,
                 rate_limit_cooldown_ms=rate_limit_cooldown_ms,
+                browser_executable_path=browser_executable_path,
             )
         except ModuleNotFoundError as exc:
             payload = BrowserCapturePayload(events=(), errors=(f"playwright_unavailable:{exc}",))

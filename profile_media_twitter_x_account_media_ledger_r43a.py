@@ -154,6 +154,8 @@ def write_twitter_x_account_media_ledger_r43a(
     account_root = Path(output_root) / handle
     capture_dir = account_root / f"account_capture_{capture_ts}"
     dates_dir = capture_dir / "dates"
+    if capture_dir.exists():
+        shutil.rmtree(capture_dir)
     capture_dir.mkdir(parents=True, exist_ok=True)
     dates_dir.mkdir(parents=True, exist_ok=True)
 
@@ -171,6 +173,7 @@ def write_twitter_x_account_media_ledger_r43a(
     sorted_rows = sorted(rows, key=lambda row: (_date_folder_for_record(row), row.observed_order or 0, row.record_id))
     for row in sorted_rows:
         date_folder = _date_folder_for_record(row)
+        date_source = _date_source_for_record(row)
         date_folders.add(date_folder)
         record_dir = dates_dir / date_folder / _record_folder_name(row)
         media_dir = record_dir / "media"
@@ -223,6 +226,7 @@ def write_twitter_x_account_media_ledger_r43a(
                 "account_handle": handle,
                 "capture_timestamp": capture_ts,
                 "visible_date_folder": date_folder,
+                "date_source": date_source,
                 "record_folder": _rel(capture_dir, record_dir),
                 "static_screenshot": screenshot_rel,
                 "media_folder": _rel(capture_dir, media_dir),
@@ -245,6 +249,7 @@ def write_twitter_x_account_media_ledger_r43a(
             "visible_timestamp": row.visible_timestamp,
             "capture_timestamp": row.capture_timestamp or capture_ts,
             "visible_date_folder": date_folder,
+            "date_source": date_source,
             "record_folder": _rel(capture_dir, record_dir),
             "post_markdown": _rel(capture_dir, record_dir / "post.md"),
             "post_json": _rel(capture_dir, record_dir / "post.json"),
@@ -262,6 +267,7 @@ def write_twitter_x_account_media_ledger_r43a(
                 "record_id": row.record_id,
                 "record_type": row.record_type,
                 "visible_date_folder": date_folder,
+                "date_source": date_source,
                 "record_folder": _rel(capture_dir, record_dir),
                 "media_count": len(row.media_items or ()),
                 "remote_download_performed_by_r43a": False,
@@ -446,6 +452,8 @@ def _date_from_text(value: Any) -> str:
     text = _clean(value)
     if not text:
         return ""
+    if text == "unknown_date":
+        return "unknown_date"
     match = re.search(r"(20\d{2})[-_/](\d{2})[-_/](\d{2})", text)
     if match:
         return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
@@ -453,6 +461,19 @@ def _date_from_text(value: Any) -> str:
     if match:
         return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
     return ""
+
+
+def _date_source_for_record(row: TwitterXAccountRecordR43A) -> str:
+    context_source = _clean((row.repost_context or {}).get("date_source") if isinstance(row.repost_context, Mapping) else "")
+    if context_source:
+        return context_source
+    for text in row.review_strings or ():
+        match = re.search(r"\bdate_source=([A-Za-z0-9_:-]+)", _clean(text))
+        if match:
+            return match.group(1)
+    if _clean(row.visible_timestamp) == "unknown_date":
+        return "unknown_date"
+    return "visible_timestamp_or_capture_timestamp"
 
 
 def _record_folder_name(row: TwitterXAccountRecordR43A) -> str:
@@ -467,7 +488,7 @@ def _record_folder_name(row: TwitterXAccountRecordR43A) -> str:
 
 
 def _write_post_markdown(path: Path, *, row: TwitterXAccountRecordR43A, handle: str, date_folder: str, capture_dir: Path, record_dir: Path, screenshot_rel: str, copied_media: list[dict[str, Any]]) -> None:
-    lines = [f"# Twitter/X {row.record_type.title()} {row.record_id}", "", f"- Account capture: `{handle}`", f"- Record type: `{row.record_type}`", f"- Author: `{row.author_handle or 'unknown'}` {row.author_display_name or ''}".rstrip(), f"- Visible timestamp: `{row.visible_timestamp or ''}`", f"- Date folder: `{date_folder}`", f"- Source URL: `{_plain_url(row.source_url)}`", f"- Static screenshot: [{Path(screenshot_rel).name}]({_quote_md_path(_rel(record_dir, capture_dir / screenshot_rel))})", "- Media folder: [media](media/)", "", "## Visible text", "", row.visible_text or "(No visible text captured.)", "", "## Media"]
+    lines = [f"# Twitter/X {row.record_type.title()} {row.record_id}", "", f"- Account capture: `{handle}`", f"- Record type: `{row.record_type}`", f"- Author: `{row.author_handle or 'unknown'}` {row.author_display_name or ''}".rstrip(), f"- Visible timestamp: `{row.visible_timestamp or ''}`", f"- Date folder: `{date_folder}`", f"- Date source: `{_date_source_for_record(row)}`", f"- Source URL: `{_plain_url(row.source_url)}`", f"- Static screenshot: [{Path(screenshot_rel).name}]({_quote_md_path(_rel(record_dir, capture_dir / screenshot_rel))})", "- Media folder: [media](media/)", "", "## Visible text", "", row.visible_text or "(No visible text captured.)", "", "## Media"]
     if copied_media:
         for item in copied_media:
             local = _rel(record_dir, capture_dir / str(item.get("local_export_path") or ""))

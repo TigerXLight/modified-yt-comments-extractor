@@ -47,6 +47,7 @@ class LiveTwitterXVisibleSessionBindingRequestR43O:
     visible_session_required: bool = True
     automated_test_mode: bool = True
     browser_user_data_dir: str = ""
+    browser_executable_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -140,6 +141,7 @@ class LiveTwitterXVisibleSessionBindingR43O:
                     headless=False,
                     fixture_mode=False,
                     browser_user_data_dir=req.browser_user_data_dir,
+                    browser_executable_path=req.browser_executable_path,
                 )
                 visible_navigation_attempted = True
                 observer_started = True
@@ -363,6 +365,7 @@ def coerce_visible_session_binding_request_r43o(
         visible_session_required=bool(data.get("visible_session_required", True)),
         automated_test_mode=bool(data.get("automated_test_mode", True)),
         browser_user_data_dir=_clean(data.get("browser_user_data_dir")),
+        browser_executable_path=_clean(data.get("browser_executable_path")),
     )
 
 
@@ -614,6 +617,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-scrolls", type=int, default=2)
     parser.add_argument("--run-visible-live", action="store_true")
     parser.add_argument("--browser-user-data-dir", default="")
+    parser.add_argument("--browser-executable-path", default="")
     args = parser.parse_args(argv)
     binding = build_live_twitter_x_visible_session_binding_r43o(output_root=args.output_root)
     result = binding.run_binding(
@@ -627,6 +631,7 @@ def main(argv: list[str] | None = None) -> int:
             run_visible_live=args.run_visible_live,
             automated_test_mode=not args.run_visible_live,
             browser_user_data_dir=args.browser_user_data_dir,
+            browser_executable_path=args.browser_executable_path,
         )
     )
     print(R43O_MARKER)
