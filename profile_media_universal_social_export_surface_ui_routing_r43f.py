@@ -38,7 +38,6 @@ UNIVERSAL_EXPORT_FILES_R43F: tuple[str, ...] = (
 )
 
 PENDING_CONTRACT_PLATFORMS_R43F = {
-    "bluesky",
     "instagram",
     "facebook",
     "threads",
@@ -229,7 +228,7 @@ class UniversalSocialExportSurfaceRouterR43F:
         route_status = ""
         adapter_status = _clean(adapter.get("adapter_status")) if adapter else "unsupported_platform"
 
-        if platform == "twitter_x" and adapter:
+        if platform in {"twitter_x", "bluesky"} and adapter:
             r43e_request = UniversalSocialAccountTrackingRequestR43E(
                 platform_id=platform,
                 account_url=account_url,
@@ -257,7 +256,7 @@ class UniversalSocialExportSurfaceRouterR43F:
             downstream_status = r43e_result.downstream_status
             downstream_marker = _clean(downstream_payload.get("marker"))
             downstream_receipt_path = r43e_result.receipt_path
-            route_status = "dispatched_to_r43d_surface_via_r43e_adapter_map"
+            route_status = "dispatched_to_r43d_surface_via_r43e_adapter_map" if platform == "twitter_x" else "dispatched_to_r43v_adapter_via_r43e_adapter_map"
             if r43e_result.status != R43E_PASS_STATUS:
                 warnings.append(f"R43E registry returned {r43e_result.status}.")
             _write_pointer_account_record(account_record_path, platform, handle, account_url, r43e_result.account_record_path)
@@ -422,6 +421,17 @@ def build_report(output_root: str | Path = R43F_DEFAULT_OUTPUT_ROOT) -> R43FRepo
             fixture_mode=True,
         )
     )
+    bluesky = router.route_account_tracking_export(
+        UniversalSocialExportSurfaceRequestR43F(
+            platform_id="bluesky",
+            account_url="https://bsky.app/profile/example.bsky.social",
+            account_handle="example.bsky.social",
+            capture_timestamp="20260915T050010Z",
+            output_root=str(root / "sample"),
+            fixture_mode=True,
+            max_items=5,
+        )
+    )
     pending_results = [
         router.route_account_tracking_export(
             UniversalSocialExportSurfaceRequestR43F(
@@ -432,7 +442,7 @@ def build_report(output_root: str | Path = R43F_DEFAULT_OUTPUT_ROOT) -> R43FRepo
                 output_root=str(root / "sample"),
             )
         )
-        for index, platform in enumerate(("bluesky", "instagram", "facebook", "threads", "mastodon", "tiktok", "reddit", "youtube", "news_comments"), start=1)
+        for index, platform in enumerate(("instagram", "facebook", "threads", "mastodon", "tiktok", "reddit", "youtube", "news_comments"), start=1)
     ]
     unknown = router.route_account_tracking_export(
         UniversalSocialExportSurfaceRequestR43F(
@@ -443,7 +453,7 @@ def build_report(output_root: str | Path = R43F_DEFAULT_OUTPUT_ROOT) -> R43FRepo
             output_root=str(root / "sample"),
         )
     )
-    sample_results = (twitter, *pending_results, unknown)
+    sample_results = (twitter, bluesky, *pending_results, unknown)
     adapter_map = router.adapter_map_dict()
     contract = build_universal_social_account_tracking_contract_r43e()
     side_effect_flags = build_r43f_side_effect_flags()
@@ -451,6 +461,7 @@ def build_report(output_root: str | Path = R43F_DEFAULT_OUTPUT_ROOT) -> R43FRepo
         _check("universal_social_export_surface_router_invoked", side_effect_flags["universal_social_export_surface_router_invoked"]),
         _check("routes_through_r43e_adapter_map_first", side_effect_flags["routes_through_r43e_adapter_map_first"] and "twitter_x" in adapter_map),
         _check("twitter_x_dispatches_to_r43d_surface", twitter.route_status == "dispatched_to_r43d_surface_via_r43e_adapter_map" and twitter.downstream_status.startswith("PASS_R43D_")),
+        _check("bluesky_dispatches_to_r43v_adapter", bluesky.route_status == "dispatched_to_r43v_adapter_via_r43e_adapter_map" and bluesky.downstream_status.startswith("PASS_R43V_")),
         _check("pending_platforms_return_mapped_receipts_not_crashes", all(result.route_status == "mapped_pending_adapter_receipt" and result.status == R43F_PASS_STATUS for result in pending_results)),
         _check("unknown_platform_returns_unsupported_receipt", unknown.route_status == "unsupported_platform_receipt" and unknown.downstream_status == "unsupported_platform"),
         _check("universal_record_contract_preserved", all(result.universal_record_contract_preserved for result in sample_results)),

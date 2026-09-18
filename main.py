@@ -1874,6 +1874,24 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43V_BLUESKY_VISIBLE_ACCOUNT_ADAPTER:
+        # First Bluesky adapter above the R43U universal ledger contract. It maps
+        # imported/visible/public app.bsky post-view style records into account/date/
+        # post/media folders without starting a browser, copying browser internals,
+        # reading cookies/tokens, bypassing challenges, or downloading remote media.
+        self.bluesky_visible_account_adapter_r43v = None
+        try:
+            from profile_media_bluesky_visible_account_adapter_r43v import (
+                build_bluesky_visible_account_adapter_r43v,
+            )
+
+            self.bluesky_visible_account_adapter_r43v = build_bluesky_visible_account_adapter_r43v()
+        except Exception:
+            logger.debug(
+                "Could not configure R43V Bluesky visible account adapter.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This

@@ -38,7 +38,8 @@ def test_adapter_map_contains_major_platforms_and_twitter_x_first_adapter() -> N
         assert "static_screenshot_receipt_gate" in adapters[platform_id].capabilities
     assert adapters["twitter_x"].implementation_module == "profile_media_twitter_x_account_tracking_export_surface_r43d"
     assert adapters["twitter_x"].planned_from_twitter_x_contract is False
-    assert adapters["bluesky"].planned_from_twitter_x_contract is True
+    assert adapters["bluesky"].implementation_module == "profile_media_bluesky_visible_account_adapter_r43v"
+    assert adapters["bluesky"].planned_from_twitter_x_contract is False
     assert adapters["instagram"].record_type_map["reel"] == "post"
     assert adapters["facebook"].record_type_map["share"] == "repost_or_reshare"
 
@@ -76,7 +77,7 @@ def test_registry_detects_platform_and_routes_twitter_x_to_r43d(tmp_path: Path) 
     assert "WebView2 or any later browser engine is only a rendering/observation input" in runbook
 
 
-def test_non_twitter_platform_is_mapped_but_not_claimed_implemented(tmp_path: Path) -> None:
+def test_bluesky_fixture_routes_to_r43v_adapter(tmp_path: Path) -> None:
     registry = build_universal_social_account_tracking_registry_r43e(output_root=tmp_path)
     result = registry.run_account_export(
         UniversalSocialAccountTrackingRequestR43E(
@@ -84,6 +85,29 @@ def test_non_twitter_platform_is_mapped_but_not_claimed_implemented(tmp_path: Pa
             account_url="https://bsky.app/profile/example.bsky.social",
             account_handle="example.bsky.social",
             capture_timestamp="20260915T040000Z",
+            output_root=str(tmp_path),
+            fixture_mode=True,
+            max_items=5,
+        )
+    )
+    assert result.status == R43E_PASS_STATUS
+    assert result.adapter_status == "implemented_fixture_import_adapter_r43v"
+    assert result.downstream_status.startswith("PASS_R43V_")
+    assert result.record_count == 2
+    assert result.media_count == 3
+    assert Path(result.account_record_path).is_file()
+    assert Path(result.media_index_path).is_file()
+    assert Path(result.adapter_map_path).is_file()
+
+
+def test_other_non_twitter_platforms_still_return_pending_receipts(tmp_path: Path) -> None:
+    registry = build_universal_social_account_tracking_registry_r43e(output_root=tmp_path)
+    result = registry.run_account_export(
+        UniversalSocialAccountTrackingRequestR43E(
+            platform_id="instagram",
+            account_url="https://www.instagram.com/example/",
+            account_handle="example",
+            capture_timestamp="20260915T040100Z",
             output_root=str(tmp_path),
             fixture_mode=True,
         )
@@ -112,7 +136,8 @@ def run_self_test() -> None:
     root = Path("profile_media_live_captures/r43e_universal_social_account_tracking_contract_adapter_map_test")
     shutil.rmtree(root, ignore_errors=True)
     test_registry_detects_platform_and_routes_twitter_x_to_r43d(root / "registry")
-    test_non_twitter_platform_is_mapped_but_not_claimed_implemented(root / "contract_only")
+    test_bluesky_fixture_routes_to_r43v_adapter(root / "bluesky")
+    test_other_non_twitter_platforms_still_return_pending_receipts(root / "contract_only")
     test_report_green(root / "report")
 
 

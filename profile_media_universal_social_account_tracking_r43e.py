@@ -276,13 +276,33 @@ class UniversalSocialAccountTrackingRegistryR43E:
             date_folders = tuple(str(x) for x in downstream_payload.get("date_folders") or ())
             if not downstream_status.startswith("PASS_"):
                 warnings.append(f"Twitter/X downstream adapter did not pass: {downstream_status!r}.")
+        elif detected_platform == "bluesky":
+            downstream_payload = self._run_bluesky_downstream(
+                account_url=account_url_plain,
+                account_handle=handle,
+                capture_timestamp=capture_ts,
+                request=req,
+                initial_records=initial_records,
+                run_dir=run_dir,
+            )
+            downstream_status = _clean(downstream_payload.get("status"))
+            account_record_path = _clean(downstream_payload.get("account_record_path"))
+            manifest_path = _clean(downstream_payload.get("manifest_path"))
+            media_index_path = _clean(downstream_payload.get("media_index_path"))
+            screenshot_receipts_index_path = _clean(downstream_payload.get("screenshot_receipts_index_path"))
+            record_count = _safe_int(downstream_payload.get("record_count"))
+            media_count = _safe_int(downstream_payload.get("media_count"))
+            screenshot_count = _safe_int(downstream_payload.get("screenshot_count"))
+            date_folders = tuple(str(x) for x in downstream_payload.get("date_folders") or ())
+            if not downstream_status.startswith("PASS_"):
+                warnings.append(f"Bluesky downstream adapter did not pass: {downstream_status!r}.")
         else:
             downstream_status = "contract_only_adapter_pending"
             warnings.append(f"{adapter.display_name} is mapped to the universal contract but does not yet have a live adapter implementation.")
 
         contract = build_universal_social_account_tracking_contract_r43e()
         side_effect_flags = build_r43e_side_effect_flags()
-        status = R43E_PASS_STATUS if detected_platform == "twitter_x" and not warnings and record_count > 0 else R43E_BLOCKED_STATUS
+        status = R43E_PASS_STATUS if downstream_status.startswith("PASS_") and not warnings and record_count > 0 else R43E_BLOCKED_STATUS
         result = UniversalSocialAccountTrackingResultR43E(
             marker=R43E_MARKER,
             schema_version=R43E_SCHEMA_VERSION,
@@ -364,6 +384,43 @@ class UniversalSocialAccountTrackingRegistryR43E:
             )
         return _result_dict(result)
 
+    def _run_bluesky_downstream(
+        self,
+        *,
+        account_url: str,
+        account_handle: str,
+        capture_timestamp: str,
+        request: UniversalSocialAccountTrackingRequestR43E,
+        initial_records: Iterable[Mapping[str, Any]] | None,
+        run_dir: Path,
+    ) -> dict[str, Any]:
+        from profile_media_bluesky_visible_account_adapter_r43v import (
+            BlueskyVisibleAccountAdapterRequestR43V,
+            build_bluesky_visible_account_adapter_r43v,
+        )
+
+        adapter = build_bluesky_visible_account_adapter_r43v(output_root=run_dir / "bluesky_adapter")
+        bluesky_request = BlueskyVisibleAccountAdapterRequestR43V(
+            account_url=account_url,
+            account_handle=account_handle,
+            capture_timestamp=capture_timestamp,
+            output_root=str(run_dir / "bluesky_adapter"),
+            fixture_mode=request.fixture_mode,
+            initial_records=tuple(initial_records or ()),
+            include_media=request.include_media,
+            include_static_screenshots=request.include_static_screenshots,
+            require_screenshot_receipts=request.require_screenshot_receipts,
+            explicit_live_mode=request.explicit_live_mode,
+            run_visible_live=request.run_visible_live,
+            live_mode=request.live_mode,
+            max_items=request.max_items,
+            max_scrolls=request.max_scrolls,
+        )
+        result = adapter.run_account_export(bluesky_request)
+        payload = _result_dict(result)
+        payload["screenshot_receipts_index_path"] = ""
+        return payload
+
 
 def build_universal_social_account_tracking_registry_r43e(
     *,
@@ -435,11 +492,14 @@ def build_default_platform_adapter_map_r43e() -> dict[str, UniversalSocialPlatfo
             platform_id="bluesky",
             display_name="Bluesky",
             url_hosts=("bsky.app", "staging.bsky.app"),
-            adapter_status="mapped_contract_adapter_pending",
+            adapter_status="implemented_fixture_import_adapter_r43v",
             account_url_examples=("https://bsky.app/profile/example.bsky.social",),
+            implementation_module="profile_media_bluesky_visible_account_adapter_r43v",
+            export_surface_attribute="bluesky_visible_account_adapter_r43v",
             record_type_map={"post": "post", "repost": "repost_or_reshare", "quote": "quote", "reply": "reply"},
-            capabilities=shared_capabilities,
-            notes="Map reposts/quotes/replies/media into the same folder and account_record.md model.",
+            capabilities=shared_capabilities + ("app_bsky_post_view_normalization", "bluesky_embed_media_mapping", "r43u_universal_ledger_writer"),
+            planned_from_twitter_x_contract=False,
+            notes="R43V maps imported/visible/public Bluesky post views into the universal account ledger. Live visible-browser capture remains the next step.",
         ),
         "instagram": UniversalSocialPlatformAdapterR43E(
             platform_id="instagram",

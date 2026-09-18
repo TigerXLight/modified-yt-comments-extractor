@@ -36,9 +36,30 @@ def test_twitter_routes_through_r43e_to_r43d_surface(tmp_path: Path) -> None:
     assert adapter_map["twitter_x"]["implementation_module"] == "profile_media_twitter_x_account_tracking_export_surface_r43d"
 
 
+def test_bluesky_routes_through_r43e_to_r43v_adapter(tmp_path: Path) -> None:
+    router = build_universal_social_export_surface_router_r43f(output_root=tmp_path)
+    result = router.route_account_tracking_export(
+        UniversalSocialExportSurfaceRequestR43F(
+            platform_id="bluesky",
+            account_url="https://bsky.app/profile/example.bsky.social",
+            account_handle="example.bsky.social",
+            capture_timestamp="20260915T050010Z",
+            output_root=str(tmp_path),
+            fixture_mode=True,
+            max_items=5,
+        )
+    )
+    assert result.status == R43F_PASS_STATUS
+    assert result.route_status == "dispatched_to_r43v_adapter_via_r43e_adapter_map"
+    assert result.downstream_status.startswith("PASS_R43V_")
+    assert result.universal_record_contract_preserved is True
+    assert result.downstream_result["record_count"] == 2
+    assert result.downstream_result["media_count"] == 3
+
+
 def test_pending_platforms_return_mapped_receipts_not_crashes(tmp_path: Path) -> None:
     router = build_universal_social_export_surface_router_r43f(output_root=tmp_path)
-    for platform in ("bluesky", "instagram", "facebook", "threads", "mastodon", "tiktok", "reddit", "youtube", "news_comments"):
+    for platform in ("instagram", "facebook", "threads", "mastodon", "tiktok", "reddit", "youtube", "news_comments"):
         result = router.route_account_tracking_export(
             UniversalSocialExportSurfaceRequestR43F(
                 platform_id=platform,
@@ -100,6 +121,7 @@ def test_cli_report_files_are_written(tmp_path: Path) -> None:
     assert "universal_social_export_surface_router_invoked" in names
     assert "routes_through_r43e_adapter_map_first" in names
     assert "twitter_x_dispatches_to_r43d_surface" in names
+    assert "bluesky_dispatches_to_r43v_adapter" in names
     assert "pending_platforms_return_mapped_receipts_not_crashes" in names
     assert "unknown_platform_returns_unsupported_receipt" in names
 
@@ -108,6 +130,7 @@ def run_self_test() -> None:
     root = Path("profile_media_live_captures/r43f_universal_social_export_surface_ui_routing_test")
     root.mkdir(parents=True, exist_ok=True)
     test_twitter_routes_through_r43e_to_r43d_surface(root / "twitter")
+    test_bluesky_routes_through_r43e_to_r43v_adapter(root / "bluesky")
     test_pending_platforms_return_mapped_receipts_not_crashes(root / "pending")
     test_unknown_platform_returns_unsupported_receipt(root / "unknown")
     test_browser_source_role_review_window_and_download_boundaries(root / "boundaries")
