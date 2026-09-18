@@ -1964,6 +1964,24 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R44A_BLUESKY_VISIBLE_LIVE_WORKBENCH_CAPTURE:
+        # Visible-live Bluesky browser/workbench caller above R43Z. It hands
+        # rendered DOM/screenshot evidence to R43Z -> R43V -> R43U without
+        # reading/copying browser profiles, cookies/tokens, cache, local storage,
+        # login databases, bypassing challenges, or downloading remote media.
+        self.bluesky_visible_live_workbench_capture_r44a = None
+        try:
+            from profile_media_bluesky_visible_live_workbench_capture_r44a import (
+                build_bluesky_visible_live_workbench_capture_r44a,
+            )
+
+            self.bluesky_visible_live_workbench_capture_r44a = build_bluesky_visible_live_workbench_capture_r44a()
+        except Exception:
+            logger.debug(
+                "Could not configure R44A Bluesky visible live workbench capture.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This

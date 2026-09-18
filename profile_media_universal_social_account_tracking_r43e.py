@@ -396,7 +396,38 @@ class UniversalSocialAccountTrackingRegistryR43E:
         run_dir: Path,
     ) -> dict[str, Any]:
         bluesky_public_appview_requested = bool(request.public_network_enabled and (request.explicit_live_mode or request.run_visible_live or request.live_mode))
+        bluesky_visible_live_requested = bool(request.run_visible_live and (request.explicit_live_mode or request.live_mode))
         initial_rows = tuple(initial_records or ())
+        if bluesky_visible_live_requested and not bluesky_public_appview_requested and not request.fixture_mode and not initial_rows:
+            from profile_media_bluesky_visible_live_workbench_capture_r44a import (
+                BlueskyVisibleLiveWorkbenchCaptureRequestR44A,
+                build_bluesky_visible_live_workbench_capture_r44a,
+            )
+
+            adapter = build_bluesky_visible_live_workbench_capture_r44a(output_root=run_dir / "bluesky_visible_live")
+            visible_live_request = BlueskyVisibleLiveWorkbenchCaptureRequestR44A(
+                account_url=account_url,
+                account_handle=account_handle,
+                capture_timestamp=capture_timestamp,
+                output_root=str(run_dir / "bluesky_visible_live"),
+                explicit_live_mode=True,
+                run_visible_live=True,
+                live_mode=bool(request.live_mode),
+                public_network_enabled=False,
+                allow_external_visible_browser_capture=True,
+                include_media=request.include_media,
+                include_static_screenshots=request.include_static_screenshots,
+                require_screenshot_receipts=request.require_screenshot_receipts,
+                browser_user_data_dir=request.browser_user_data_dir,
+                browser_executable_path=request.browser_executable_path,
+                max_items=request.max_items,
+                max_scrolls=request.max_scrolls,
+            )
+            result = adapter.run_account_export(visible_live_request)
+            payload = _result_dict(result)
+            payload["screenshot_receipts_index_path"] = payload.get("screenshot_receipts_index_path", "")
+            return payload
+
         if bluesky_public_appview_requested and not request.fixture_mode and not initial_rows:
             from profile_media_bluesky_public_appview_import_r43w import (
                 BlueskyPublicAppviewImportRequestR43W,
@@ -526,9 +557,9 @@ def build_default_platform_adapter_map_r43e() -> dict[str, UniversalSocialPlatfo
             implementation_module="profile_media_bluesky_visible_account_adapter_r43v",
             export_surface_attribute="bluesky_visible_account_adapter_r43v",
             record_type_map={"post": "post", "repost": "repost_or_reshare", "quote": "quote", "reply": "reply"},
-            capabilities=shared_capabilities + ("app_bsky_post_view_normalization", "bluesky_embed_media_mapping", "public_appview_import_r43w", "r43u_universal_ledger_writer"),
+            capabilities=shared_capabilities + ("app_bsky_post_view_normalization", "bluesky_embed_media_mapping", "public_appview_import_r43w", "visible_dom_capture_r43z", "visible_live_workbench_capture_r44a", "r43u_universal_ledger_writer"),
             planned_from_twitter_x_contract=False,
-            notes="R43V maps imported/visible/public Bluesky post views into the universal account ledger; R43W adds an explicit public appview feed import lane. Live visible-browser capture remains a later step.",
+            notes="R43V maps imported/visible/public Bluesky post views into the universal account ledger; R43W adds explicit public appview import; R43Z/R44A add visible DOM and visible-live workbench capture handoff.",
         ),
         "instagram": UniversalSocialPlatformAdapterR43E(
             platform_id="instagram",

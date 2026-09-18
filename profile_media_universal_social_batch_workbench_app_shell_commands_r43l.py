@@ -784,6 +784,10 @@ def _extract_live_evidence_summary(value: Any) -> Mapping[str, Any]:
             summary = item.get("live_evidence_summary")
             if isinstance(summary, Mapping) and score(summary) >= score(best):
                 best = dict(summary)
+            if _clean(item.get("marker")) == "YTCE_R44A_BLUESKY_VISIBLE_LIVE_WORKBENCH_CAPTURE" or _clean(item.get("status")).startswith("PASS_R44A_BLUESKY_VISIBLE_LIVE_WORKBENCH_CAPTURE"):
+                bluesky_summary = _r44a_bluesky_visible_live_summary(item)
+                if score(bluesky_summary) >= score(best):
+                    best = bluesky_summary
             for child in item.values():
                 visit(child)
         elif isinstance(item, (list, tuple)):
@@ -792,6 +796,46 @@ def _extract_live_evidence_summary(value: Any) -> Mapping[str, Any]:
 
     visit(value)
     return best
+
+
+def _r44a_bluesky_visible_live_summary(item: Mapping[str, Any]) -> Mapping[str, Any]:
+    return {
+        "bluesky_visible_live_summary": {
+            "r44a_status": _clean(item.get("status")),
+            "r43z_status": _clean(item.get("r43z_status")),
+            "adapter_status": _clean(item.get("adapter_status")),
+            "ledger_status": _clean(item.get("ledger_status")),
+            "record_count": _safe_int(item.get("record_count")),
+            "media_count": _safe_int(item.get("media_count")),
+            "screenshot_count": _safe_int(item.get("screenshot_count")),
+            "visible_record_count": _safe_int(item.get("visible_record_count")),
+            "bound_media_count": _safe_int(item.get("bound_media_count")),
+            "unbound_media_count": _safe_int(item.get("unbound_media_count")),
+            "injected_browser_runner_used": bool(item.get("injected_browser_runner_used")),
+            "browser_session_started": bool(item.get("browser_session_started")),
+            "network_actions_performed": bool(item.get("network_actions_performed")),
+            "browser_profile_files_read_or_copied": bool((item.get("side_effect_flags") or {}).get("browser_profile_files_read_or_copied")),
+            "cookie_or_token_extraction_performed": bool((item.get("side_effect_flags") or {}).get("cookie_or_token_extraction_performed")),
+            "remote_media_downloads_performed": bool((item.get("side_effect_flags") or {}).get("remote_media_downloads_performed")),
+            "r44a_receipt_path": _clean(item.get("receipt_path")),
+            "r43z_receipt_path": _clean(item.get("r43z_receipt_path")),
+            "account_record_path": _clean(item.get("account_record_path")),
+            "media_index_path": _clean(item.get("media_index_path")),
+        },
+        "r43n_status": "",
+        "promoted_non_fixture_observation_evidence": bool(item.get("browser_session_started") or item.get("injected_browser_runner_used")),
+        "promoted_observed_post_count": _safe_int(item.get("record_count")),
+        "promoted_observed_media_count": _safe_int(item.get("media_count")),
+        "promoted_observed_screenshot_count": _safe_int(item.get("screenshot_count")),
+        "promoted_live_observation_paths": [
+            p for p in (
+                _clean(item.get("visible_dom_html_path")),
+                _clean(item.get("visible_screenshot_path")),
+                _clean(item.get("browser_snapshot_path")),
+                _clean(item.get("receipt_path")),
+            ) if p
+        ],
+    }
 
 
 def _check(name: str, ok: bool, detail: str = "") -> Mapping[str, Any]:

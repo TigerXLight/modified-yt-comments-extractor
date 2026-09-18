@@ -40,6 +40,8 @@ def test_adapter_map_contains_major_platforms_and_twitter_x_first_adapter() -> N
     assert adapters["twitter_x"].planned_from_twitter_x_contract is False
     assert adapters["bluesky"].implementation_module == "profile_media_bluesky_visible_account_adapter_r43v"
     assert "public_appview_import_r43w" in adapters["bluesky"].capabilities
+    assert "visible_dom_capture_r43z" in adapters["bluesky"].capabilities
+    assert "visible_live_workbench_capture_r44a" in adapters["bluesky"].capabilities
     assert adapters["bluesky"].planned_from_twitter_x_contract is False
     assert adapters["instagram"].record_type_map["reel"] == "post"
     assert adapters["facebook"].record_type_map["share"] == "repost_or_reshare"
