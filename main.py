@@ -1911,6 +1911,25 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43X_BLUESKY_REAL_PUBLIC_APPVIEW_SMOKE:
+        # Explicit real-public smoke harness for Bluesky appview import. It
+        # delegates only to the public R43W getAuthorFeed lane when the operator
+        # passes an explicit public-network flag, then verifies R43W/R43V/R43U
+        # receipts without starting a browser, reading cookies/tokens, copying
+        # profile state, bypassing challenges, or downloading remote media.
+        self.bluesky_real_public_appview_smoke_r43x = None
+        try:
+            from profile_media_bluesky_real_public_appview_smoke_r43x import (
+                build_bluesky_real_public_appview_smoke_r43x,
+            )
+
+            self.bluesky_real_public_appview_smoke_r43x = build_bluesky_real_public_appview_smoke_r43x()
+        except Exception:
+            logger.debug(
+                "Could not configure R43X Bluesky real public appview smoke harness.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This
