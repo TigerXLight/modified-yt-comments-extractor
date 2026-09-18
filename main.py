@@ -1982,6 +1982,25 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R44B_BLUESKY_REAL_WINDOWS_VISIBLE_BROWSER_SMOKE:
+        # Final real Windows visible-browser smoke wrapper above R44A. It proves
+        # clean visible-browser DOM/screenshot capture reaches R44A -> R43Z ->
+        # R43V -> R43U without reading/copying browser profiles, cookies/tokens,
+        # cache, local storage, login databases, bypassing challenges, or
+        # downloading remote media.
+        self.bluesky_real_windows_visible_browser_smoke_r44b = None
+        try:
+            from profile_media_bluesky_real_windows_visible_browser_smoke_r44b import (
+                build_bluesky_real_windows_visible_browser_smoke_r44b,
+            )
+
+            self.bluesky_real_windows_visible_browser_smoke_r44b = build_bluesky_real_windows_visible_browser_smoke_r44b()
+        except Exception:
+            logger.debug(
+                "Could not configure R44B Bluesky real Windows visible-browser smoke.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This

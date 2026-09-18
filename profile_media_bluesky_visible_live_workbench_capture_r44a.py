@@ -400,7 +400,8 @@ def capture_visible_browser_snapshot_r44a(req: BlueskyVisibleLiveWorkbenchCaptur
 
     This deliberately does not pass storage_state, user_data_dir, cookies, tokens,
     local storage, cached profile paths, or download handlers. A missing Playwright
-    install returns a safe blocker payload.
+    install returns a safe blocker payload. R44B adds a rendered-post readiness wait
+    so real Bluesky pages have time to expose post links before R43Z parses HTML.
     """
     try:
         from playwright.sync_api import sync_playwright
@@ -414,6 +415,9 @@ def capture_visible_browser_snapshot_r44a(req: BlueskyVisibleLiveWorkbenchCaptur
             "status_code": 0,
             "browser_session_started": False,
             "network_actions_performed": False,
+            "render_wait_status": "not_started_dependency_missing_playwright",
+            "post_link_count": 0,
+            "media_url_count": 0,
             "warnings": [f"Playwright is not installed or importable: {type(exc).__name__}"],
         }
 
@@ -427,11 +431,21 @@ def capture_visible_browser_snapshot_r44a(req: BlueskyVisibleLiveWorkbenchCaptur
             context = browser.new_context(viewport={"width": req.viewport_width, "height": req.viewport_height})
             page = context.new_page()
             response = page.goto(req.account_url, wait_until="domcontentloaded", timeout=max(1, req.timeout_seconds) * 1000)
-            page.wait_for_timeout(1500)
+            render_wait_status = _wait_for_bluesky_rendered_post_links_r44a(page, req)
+            page.wait_for_timeout(1200)
             for _ in range(max(0, req.max_scrolls)):
                 page.evaluate("() => window.scrollBy(0, Math.max(600, window.innerHeight || 800))")
-                page.wait_for_timeout(700)
+                page.wait_for_timeout(900)
             html_text = page.content()
+            post_link_count = len(re.findall(r"/profile/[^\s\"'<>?#)]+/post/[^\s\"'<>?#)]+", html_text or "", re.I))
+            media_url_count = len(re.findall(r"https?://(?:cdn|video)\.bsky\.app/[^\s\"'<>]+", html_text or "", re.I))
+            if post_link_count <= 0:
+                retry_status = _wait_for_bluesky_rendered_post_links_r44a(page, req, retry=True)
+                page.wait_for_timeout(800)
+                html_text = page.content()
+                post_link_count = len(re.findall(r"/profile/[^\s\"'<>?#)]+/post/[^\s\"'<>?#)]+", html_text or "", re.I))
+                media_url_count = len(re.findall(r"https?://(?:cdn|video)\.bsky\.app/[^\s\"'<>]+", html_text or "", re.I))
+                render_wait_status = f"{render_wait_status};retry={retry_status}"
             screenshot = page.screenshot(full_page=req.screenshot_full_page)
             final_url = page.url
             status_code = int(response.status if response is not None else 0)
@@ -445,6 +459,10 @@ def capture_visible_browser_snapshot_r44a(req: BlueskyVisibleLiveWorkbenchCaptur
                 "status_code": status_code,
                 "browser_session_started": True,
                 "network_actions_performed": True,
+                "render_wait_status": render_wait_status,
+                "post_link_count": post_link_count,
+                "media_url_count": media_url_count,
+                "html_length": len(html_text or ""),
                 "warnings": [],
             }
     except Exception as exc:
@@ -457,6 +475,9 @@ def capture_visible_browser_snapshot_r44a(req: BlueskyVisibleLiveWorkbenchCaptur
             "status_code": 0,
             "browser_session_started": False,
             "network_actions_performed": False,
+            "render_wait_status": "failed_before_rendered_post_wait_completed",
+            "post_link_count": 0,
+            "media_url_count": 0,
             "warnings": [f"Visible browser capture failed safely: {type(exc).__name__}"],
         }
     finally:
@@ -465,6 +486,32 @@ def capture_visible_browser_snapshot_r44a(req: BlueskyVisibleLiveWorkbenchCaptur
                 browser.close()
         except Exception:
             pass
+
+
+def _wait_for_bluesky_rendered_post_links_r44a(page: Any, req: BlueskyVisibleLiveWorkbenchCaptureRequestR44A, *, retry: bool = False) -> str:
+    selectors = (
+        "a[href*='/post/']",
+        "[data-testid^='feedItem-by-']",
+        "[data-testid='postText']",
+        "article",
+    )
+    per_selector_timeout = max(500, min(4500, max(1, req.timeout_seconds) * 250))
+    for selector in selectors:
+        try:
+            page.wait_for_selector(selector, timeout=per_selector_timeout)
+            return f"selector:{selector}"
+        except Exception:
+            pass
+    deadline = time.time() + max(2, min(12 if not retry else 8, req.timeout_seconds))
+    while time.time() < deadline:
+        try:
+            html_text = page.content() or ""
+            if re.search(r"/profile/[^\s\"'<>?#)]+/post/[^\s\"'<>?#)]+", html_text, re.I):
+                return "html_post_link_detected"
+            page.wait_for_timeout(500)
+        except Exception:
+            break
+    return "no_rendered_post_link_detected"
 
 
 def fake_visible_browser_snapshot_r44a(req: BlueskyVisibleLiveWorkbenchCaptureRequestR44A | Mapping[str, Any]) -> Mapping[str, Any]:
