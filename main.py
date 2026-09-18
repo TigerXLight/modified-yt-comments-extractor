@@ -2037,6 +2037,25 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R44E_REDDIT_OLD_REDDIT_THREAD_BRANCH_EXPANSION:
+        # Prefer old/en Reddit limit=500 thread pages for full visible comment
+        # capture, then queue current-Reddit branch/comment pages when needed.
+        # This is Reddit-specific and does not imply old Twitter works without
+        # login. No browser profiles, cookies/tokens, login databases, challenge
+        # bypass, hidden APIs, or remote media downloads are used.
+        self.reddit_old_reddit_thread_expansion_r44e = None
+        try:
+            from profile_media_reddit_old_reddit_thread_expansion_r44e import (
+                build_reddit_old_reddit_thread_expansion_r44e,
+            )
+
+            self.reddit_old_reddit_thread_expansion_r44e = build_reddit_old_reddit_thread_expansion_r44e()
+        except Exception:
+            logger.debug(
+                "Could not configure R44E Reddit old Reddit thread branch expansion.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This

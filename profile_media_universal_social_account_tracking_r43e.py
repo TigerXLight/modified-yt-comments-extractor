@@ -521,6 +521,33 @@ class UniversalSocialAccountTrackingRegistryR43E:
         initial_records: Iterable[Mapping[str, Any]] | None,
         run_dir: Path,
     ) -> dict[str, Any]:
+        if _is_reddit_thread_url_r44e(account_url):
+            from profile_media_reddit_old_reddit_thread_expansion_r44e import (
+                RedditOldThreadExpansionRequestR44E,
+                build_reddit_old_reddit_thread_expansion_r44e,
+            )
+
+            adapter = build_reddit_old_reddit_thread_expansion_r44e(output_root=run_dir / "reddit_old_reddit_thread_expansion")
+            result = adapter.run_thread_expansion(
+                RedditOldThreadExpansionRequestR44E(
+                    thread_url=account_url,
+                    old_reddit_url="",
+                    branch_urls=(),
+                    account_handle=account_handle,
+                    capture_timestamp=capture_timestamp,
+                    output_root=str(run_dir / "reddit_old_reddit_thread_expansion"),
+                    fixture_mode=request.fixture_mode or not (request.run_visible_live or request.live_mode or request.explicit_live_mode),
+                    real_visible_smoke=bool(request.run_visible_live or request.live_mode or request.explicit_live_mode),
+                    explicit_live_mode=request.explicit_live_mode,
+                    public_network_enabled=request.public_network_enabled,
+                    max_items=request.max_items,
+                    timeout_seconds=45,
+                )
+            )
+            payload = _result_dict(result)
+            payload["screenshot_receipts_index_path"] = payload.get("screenshot_receipts_index_path", "")
+            return payload
+
         from profile_media_reddit_visible_dom_capture_r44d import (
             RedditVisibleDomCaptureRequestR44D,
             build_reddit_visible_dom_capture_r44d,
@@ -558,6 +585,11 @@ class UniversalSocialAccountTrackingRegistryR43E:
         payload["screenshot_receipts_index_path"] = payload.get("screenshot_receipts_index_path", "")
         return payload
 
+
+
+def _is_reddit_thread_url_r44e(url: str) -> bool:
+    text = _plain_url(url).lower()
+    return "reddit.com/r/" in text and "/comments/" in text
 
 
 def _bluesky_feed_mode_from_request_r44c(request: UniversalSocialAccountTrackingRequestR43E) -> str:
@@ -710,14 +742,14 @@ def build_default_platform_adapter_map_r43e() -> dict[str, UniversalSocialPlatfo
             platform_id="reddit",
             display_name="Reddit",
             url_hosts=("reddit.com", "www.reddit.com", "old.reddit.com"),
-            adapter_status="implemented_visible_dom_capture_r44d",
+            adapter_status="implemented_visible_dom_capture_r44d_old_thread_expansion_r44e",
             account_url_examples=("https://www.reddit.com/user/example/", "https://www.reddit.com/r/example/comments/abc123/title/"),
-            implementation_module="profile_media_reddit_visible_dom_capture_r44d",
+            implementation_module="profile_media_reddit_visible_dom_capture_r44d + profile_media_reddit_old_reddit_thread_expansion_r44e",
             export_surface_attribute="reddit_visible_dom_capture_r44d",
             record_type_map={"submission": "post", "crosspost": "repost_or_reshare", "comment": "reply"},
-            capabilities=shared_capabilities + ("reddit_visible_dom_capture_r44d", "reddit_submission_comment_crosspost_mapping", "reddit_media_metadata_receipts", "r43u_universal_ledger_writer"),
+            capabilities=shared_capabilities + ("reddit_visible_dom_capture_r44d", "reddit_old_reddit_thread_expansion_r44e", "reddit_submission_comment_crosspost_mapping", "reddit_media_metadata_receipts", "r43u_universal_ledger_writer"),
             planned_from_twitter_x_contract=False,
-            notes="R44D maps visible Reddit submissions, comments and crossposts into the universal account/date/post/media/screenshot ledger without profile/cookie/token copying or remote media downloads.",
+            notes="R44D maps visible Reddit submissions, comments and crossposts. R44E routes Reddit thread URLs through old/en Reddit limit=500 plus branch/continue pages before R43U ledger write, without profile/cookie/token copying or remote media downloads.",
         ),
     }
 

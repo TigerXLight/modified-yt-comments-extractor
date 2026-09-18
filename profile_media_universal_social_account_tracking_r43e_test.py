@@ -43,8 +43,10 @@ def test_adapter_map_contains_major_platforms_and_twitter_x_first_adapter() -> N
     assert "visible_dom_capture_r43z" in adapters["bluesky"].capabilities
     assert "visible_live_workbench_capture_r44a" in adapters["bluesky"].capabilities
     assert adapters["bluesky"].planned_from_twitter_x_contract is False
-    assert adapters["reddit"].implementation_module == "profile_media_reddit_visible_dom_capture_r44d"
+    assert "profile_media_reddit_visible_dom_capture_r44d" in adapters["reddit"].implementation_module
+    assert "profile_media_reddit_old_reddit_thread_expansion_r44e" in adapters["reddit"].implementation_module
     assert "reddit_visible_dom_capture_r44d" in adapters["reddit"].capabilities
+    assert "reddit_old_reddit_thread_expansion_r44e" in adapters["reddit"].capabilities
     assert adapters["reddit"].planned_from_twitter_x_contract is False
     assert adapters["instagram"].record_type_map["reel"] == "post"
     assert adapters["facebook"].record_type_map["share"] == "repost_or_reshare"

@@ -620,18 +620,38 @@ def coerce_reddit_visible_dom_capture_request_r44d(
 
 
 def _extract_reddit_blocks(html_text: str) -> list[str]:
+    text = html_text or ""
     pattern = re.compile(r"<(article|shreddit-post|shreddit-comment)\b[^>]*>.*?</\1>", re.I | re.S)
-    blocks = [m.group(0) for m in pattern.finditer(html_text or "")]
+    blocks = [m.group(0) for m in pattern.finditer(text)]
     if blocks:
         return blocks
+
+    # Old/legacy Reddit exposes records as div.thing blocks rather than
+    # shreddit-* web components. Slice at each thing boundary instead of trying
+    # to balance nested divs; this preserves the visible per-record proximity
+    # region without depending on browser internals or hidden APIs.
+    starts = [m.start() for m in re.finditer(
+        r"""<div\b(?=[^>]*(?:class=['"][^'"]*\bthing\b|data-fullname=['"]t[13]_|id=['"]thing_t[13]_))[^>]*>""",
+        text,
+        re.I | re.S,
+    )]
+    if starts:
+        sliced: list[str] = []
+        for idx, start in enumerate(starts):
+            end = starts[idx + 1] if idx + 1 < len(starts) else len(text)
+            block = text[start:end]
+            if "/comments/" in block.lower() or "data-fullname=" in block.lower() or "thing_t" in block.lower():
+                sliced.append(block)
+        return sliced[:1000]
+
     # Fallback: split around visible Reddit permalinks so pasted/simple HTML can still be ingested.
-    chunks = re.split(r"(?=<a\b[^>]+href=['\"]https?://(?:www\.)?reddit\.com/r/[^'\"]+/comments/)", html_text or "", flags=re.I)
-    return [chunk for chunk in chunks if "/comments/" in chunk.lower()][:25]
+    chunks = re.split(r"""(?=<a\b[^>]+href=['"](?:https?://(?:www\.|old\.|en\.)?reddit\.com|/r/)[^'"]*/comments/)""", text, flags=re.I)
+    return [chunk for chunk in chunks if "/comments/" in chunk.lower()][:1000]
 
 
 def _record_kind_from_block(block: str) -> str:
     text = block.lower()
-    match = re.search(r"data-reddit-record-kind=['\"]([^'\"]+)", block, re.I)
+    match = re.search(r"""data-reddit-record-kind=['"]([^'"]+)""", block, re.I)
     if match:
         value = match.group(1).lower()
         if "comment" in value:
@@ -639,7 +659,12 @@ def _record_kind_from_block(block: str) -> str:
         if "cross" in value:
             return "crosspost"
         return "submission"
-    if "shreddit-comment" in text or "data-testid=\"comment" in text or "/comment/" in text:
+    fullname = re.search(r"""(?:data-fullname|id)=['"](?:thing_)?(t[13]_[^'"]+)""", block, re.I)
+    if fullname and fullname.group(1).lower().startswith("t1_"):
+        return "comment"
+    if re.search(r"""data-type=['"]comment""", block, re.I) or "thing_t1_" in text or "id-t1_" in text:
+        return "comment"
+    if "shreddit-comment" in text or 'data-testid="comment' in text or "/comment/" in text:
         return "comment"
     if "crosspost" in text or "data-crosspost-parent" in text:
         return "crosspost"
@@ -648,9 +673,10 @@ def _record_kind_from_block(block: str) -> str:
 
 def _best_reddit_permalink(block: str, *, fallback: str) -> str:
     for url in _extract_urls(block):
-        lower = url.lower()
+        normalized = _normalize_reddit_url(url)
+        lower = normalized.lower()
         if "reddit.com/r/" in lower and "/comments/" in lower:
-            return _normalize_reddit_url(url)
+            return normalized
     return _plain_url(fallback)
 
 
@@ -686,10 +712,19 @@ def _timestamp_from_block(block: str) -> str:
 
 
 def _author_from_block(block: str, *, default: str) -> str:
-    for pattern in (r"data-author=['\"]/?u/?([^'\"]+)", r"author=['\"]/?u/?([^'\"]+)", r"/user/([^/?#'\"]+)"):
+    for pattern in (
+        r"""data-author=['"](?:/?u/?)?([^'"]+)""",
+        r"""author=['"](?:/?u/?)?([^'"]+)""",
+        r"""/user/([^/?#'"]+)""",
+    ):
         match = re.search(pattern, block, re.I)
         if match:
             return _safe_reddit_handle(match.group(1))
+    old_author = re.search(r"""<a[^>]*class=['"][^'"]*author[^'"]*['"][^>]*>(.*?)</a>""", block, re.I | re.S)
+    if old_author:
+        text = _clean(html_lib.unescape(re.sub(r"<[^>]+>", " ", old_author.group(1))))
+        if text and text.lower() not in {"[deleted]", "deleted"}:
+            return _safe_reddit_handle(text)
     return _safe_reddit_handle(default)
 
 
@@ -985,8 +1020,16 @@ def _post_id_from_url(url: str) -> str:
 
 
 def _comment_id_from_url(url: str) -> str:
-    match = re.search(r"/comment/([^/?#]+)", _plain_url(url), re.I)
-    return _safe_id(match.group(1)) if match else ""
+    text = _plain_url(url)
+    for pattern in (
+        r"/comment/([^/?#]+)",
+        r"/comments/[^/?#]+/(?:[^/?#]+/)?comment/([^/?#]+)",
+        r"/comments/[^/?#]+/[^/?#]+/([^/?#]+)(?:/|$)",
+    ):
+        match = re.search(pattern, text, re.I)
+        if match:
+            return _safe_id(match.group(1))
+    return ""
 
 
 def _subreddit_from_url(url: str) -> str:
