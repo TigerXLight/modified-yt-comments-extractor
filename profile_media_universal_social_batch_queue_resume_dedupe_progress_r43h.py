@@ -39,7 +39,6 @@ BATCH_QUEUE_OUTPUT_FILES_R43H: tuple[str, ...] = (
 RETRYABLE_QUEUE_STATUSES_R43H = {"pending", "failed_retryable"}
 NON_RETRYABLE_QUEUE_STATUSES_R43H = {"completed", "duplicate", "failed_terminal", "unsupported_platform"}
 PENDING_PLATFORM_IDS_R43H = {
-    "bluesky",
     "instagram",
     "facebook",
     "threads",
@@ -74,6 +73,7 @@ class UniversalSocialBatchQueueRequestR43H:
     explicit_live_mode: bool = False
     run_visible_live: bool = False
     live_mode: bool = False
+    public_network_enabled: bool = False
     browser_user_data_dir: str = ""
     browser_executable_path: str = ""
     max_items: int = 3
@@ -107,6 +107,7 @@ class UniversalSocialBatchQueueRecordR43H:
     explicit_live_mode: bool = False
     run_visible_live: bool = False
     live_mode: bool = False
+    public_network_enabled: bool = False
     browser_user_data_dir: str = ""
     browser_executable_path: str = ""
     max_items: int = 3
@@ -250,6 +251,7 @@ class UniversalSocialBatchQueueRouterR43H:
                 explicit_live_mode=req.explicit_live_mode,
                 run_visible_live=req.run_visible_live,
                 live_mode=req.live_mode,
+                public_network_enabled=req.public_network_enabled,
                 browser_user_data_dir=req.browser_user_data_dir,
                 browser_executable_path=req.browser_executable_path,
                 max_items=req.max_items,
@@ -444,6 +446,7 @@ class UniversalSocialBatchQueueRouterR43H:
                 explicit_live_mode=record.explicit_live_mode or req.explicit_live_mode,
                 run_visible_live=record.run_visible_live or req.run_visible_live,
                 live_mode=record.live_mode or req.live_mode,
+                public_network_enabled=record.public_network_enabled or req.public_network_enabled,
                 browser_user_data_dir=record.browser_user_data_dir or req.browser_user_data_dir,
                 browser_executable_path=record.browser_executable_path or req.browser_executable_path,
                 max_items=record.max_items or req.max_items,
@@ -527,6 +530,7 @@ def coerce_universal_social_batch_queue_request_r43h(
         explicit_live_mode=_to_bool(data.get("explicit_live_mode"), False),
         run_visible_live=_to_bool(data.get("run_visible_live"), False),
         live_mode=_to_bool(data.get("live_mode"), False),
+        public_network_enabled=_to_bool(data.get("public_network_enabled"), False),
         browser_user_data_dir=_clean(data.get("browser_user_data_dir")),
         browser_executable_path=_clean(data.get("browser_executable_path")),
         max_items=_safe_int(data.get("max_items"), 3),
@@ -811,6 +815,7 @@ def _record_from_mapping(item: Mapping[str, Any]) -> UniversalSocialBatchQueueRe
         explicit_live_mode=_to_bool(item.get("explicit_live_mode"), False),
         run_visible_live=_to_bool(item.get("run_visible_live"), False),
         live_mode=_to_bool(item.get("live_mode"), False),
+        public_network_enabled=_to_bool(item.get("public_network_enabled"), False),
         browser_user_data_dir=_clean(item.get("browser_user_data_dir")),
         browser_executable_path=_clean(item.get("browser_executable_path")),
         max_items=_safe_int(item.get("max_items"), 3),

@@ -82,6 +82,7 @@ class UniversalSocialAccountTrackingRequestR43E:
     explicit_live_mode: bool = False
     run_visible_live: bool = False
     live_mode: bool = False
+    public_network_enabled: bool = False
     browser_user_data_dir: str = ""
     browser_executable_path: str = ""
     max_items: int = 3
@@ -394,9 +395,9 @@ class UniversalSocialAccountTrackingRegistryR43E:
         initial_records: Iterable[Mapping[str, Any]] | None,
         run_dir: Path,
     ) -> dict[str, Any]:
-        bluesky_live_requested = bool(request.explicit_live_mode or request.run_visible_live or request.live_mode)
+        bluesky_public_appview_requested = bool(request.public_network_enabled and (request.explicit_live_mode or request.run_visible_live or request.live_mode))
         initial_rows = tuple(initial_records or ())
-        if bluesky_live_requested and not request.fixture_mode and not initial_rows:
+        if bluesky_public_appview_requested and not request.fixture_mode and not initial_rows:
             from profile_media_bluesky_public_appview_import_r43w import (
                 BlueskyPublicAppviewImportRequestR43W,
                 build_bluesky_public_appview_import_r43w,
@@ -622,6 +623,7 @@ def coerce_universal_social_account_tracking_request_r43e(
         explicit_live_mode=_to_bool(base.get("explicit_live_mode"), False),
         run_visible_live=_to_bool(base.get("run_visible_live"), False),
         live_mode=_to_bool(base.get("live_mode"), False),
+        public_network_enabled=_to_bool(base.get("public_network_enabled"), False),
         browser_user_data_dir=_clean(base.get("browser_user_data_dir")),
         browser_executable_path=_clean(base.get("browser_executable_path")),
         max_items=_safe_int(base.get("max_items"), 3),

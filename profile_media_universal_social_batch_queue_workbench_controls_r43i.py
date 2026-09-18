@@ -63,6 +63,7 @@ class UniversalSocialBatchQueueWorkbenchRequestR43I:
     explicit_live_mode: bool = False
     run_visible_live: bool = False
     live_mode: bool = False
+    public_network_enabled: bool = False
     browser_user_data_dir: str = ""
     browser_executable_path: str = ""
     max_items: int = 3
@@ -95,6 +96,7 @@ class UniversalSocialBatchQueueWorkbenchRowR43I:
     route_receipt_path: str
     run_dir: str
     updated_at: str
+    public_network_enabled: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return _to_jsonable(asdict(self))
@@ -230,6 +232,7 @@ class UniversalSocialBatchQueueWorkbenchR43I:
                     explicit_live_mode=req.explicit_live_mode,
                     run_visible_live=req.run_visible_live,
                     live_mode=req.live_mode,
+                    public_network_enabled=req.public_network_enabled,
                     browser_user_data_dir=req.browser_user_data_dir,
                     browser_executable_path=req.browser_executable_path,
                     max_items=req.max_items,
@@ -368,6 +371,7 @@ def coerce_universal_social_batch_queue_workbench_request_r43i(
         explicit_live_mode=_to_bool(data.get("explicit_live_mode"), False),
         run_visible_live=_to_bool(data.get("run_visible_live"), False),
         live_mode=_to_bool(data.get("live_mode"), False),
+        public_network_enabled=_to_bool(data.get("public_network_enabled"), False),
         browser_user_data_dir=_clean(data.get("browser_user_data_dir")),
         browser_executable_path=_clean(data.get("browser_executable_path")),
         max_items=_safe_int(data.get("max_items"), 3),
@@ -583,6 +587,7 @@ def _to_r43h_request(req: UniversalSocialBatchQueueWorkbenchRequestR43I, *, proc
         explicit_live_mode=req.explicit_live_mode,
         run_visible_live=req.run_visible_live,
         live_mode=req.live_mode,
+        public_network_enabled=req.public_network_enabled,
         browser_user_data_dir=req.browser_user_data_dir,
         browser_executable_path=req.browser_executable_path,
         max_items=req.max_items,
@@ -600,6 +605,7 @@ def _live_options_payload(req: UniversalSocialBatchQueueWorkbenchRequestR43I) ->
         "max_items": req.max_items,
         "max_scrolls": req.max_scrolls,
         "run_visible_live": req.run_visible_live,
+        "public_network_enabled": req.public_network_enabled,
     }
 
 
@@ -648,6 +654,7 @@ def _row_from_record(record: UniversalSocialBatchQueueRecordR43H, *, selected: b
         route_receipt_path=record.route_receipt_path,
         run_dir=record.run_dir,
         updated_at=record.updated_at,
+        public_network_enabled=record.public_network_enabled,
     )
 
 
@@ -672,6 +679,7 @@ def _record_from_mapping(item: Mapping[str, Any]) -> UniversalSocialBatchQueueRe
         route_receipt_path=_clean(item.get("route_receipt_path")),
         run_dir=_clean(item.get("run_dir")),
         duplicate_of=_clean(item.get("duplicate_of")),
+        public_network_enabled=_to_bool(item.get("public_network_enabled"), False),
     )
 
 

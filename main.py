@@ -1930,6 +1930,22 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43Y_BLUESKY_PUBLIC_APPVIEW_UNIVERSAL_ROUTE:
+        # Wires normal Bluesky profile URLs from the universal batch/workbench route
+        # into the explicit public appview import path R43W -> R43V -> R43U.
+        self.bluesky_public_appview_universal_route_r43y = None
+        try:
+            from profile_media_bluesky_public_appview_universal_route_r43y import (
+                build_bluesky_public_appview_universal_route_r43y,
+            )
+
+            self.bluesky_public_appview_universal_route_r43y = build_bluesky_public_appview_universal_route_r43y()
+        except Exception:
+            logger.debug(
+                "R43Y Bluesky public appview universal route unavailable",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This

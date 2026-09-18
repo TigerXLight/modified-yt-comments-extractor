@@ -77,6 +77,7 @@ class UniversalSocialBatchQueueWorkbenchPanelRequestR43J:
     explicit_live_mode: bool = False
     run_visible_live: bool = False
     live_mode: bool = False
+    public_network_enabled: bool = False
     browser_user_data_dir: str = ""
     browser_executable_path: str = ""
     max_items: int = 3
@@ -325,6 +326,7 @@ def coerce_universal_social_batch_queue_workbench_panel_request_r43j(
         explicit_live_mode=_to_bool(data.get("explicit_live_mode"), False),
         run_visible_live=_to_bool(data.get("run_visible_live"), False),
         live_mode=_to_bool(data.get("live_mode"), False),
+        public_network_enabled=_to_bool(data.get("public_network_enabled"), False),
         browser_user_data_dir=_clean(data.get("browser_user_data_dir")),
         browser_executable_path=_clean(data.get("browser_executable_path")),
         max_items=_safe_int(data.get("max_items"), 3),
@@ -524,6 +526,7 @@ def _to_workbench_request(req: UniversalSocialBatchQueueWorkbenchPanelRequestR43
         explicit_live_mode=req.explicit_live_mode,
         run_visible_live=req.run_visible_live,
         live_mode=req.live_mode,
+        public_network_enabled=req.public_network_enabled,
         browser_user_data_dir=req.browser_user_data_dir,
         browser_executable_path=req.browser_executable_path,
         max_items=req.max_items,
@@ -543,6 +546,10 @@ def _load_panel_source_rows(req: UniversalSocialBatchQueueWorkbenchPanelRequestR
                 existing_queue_path=req.existing_queue_path,
                 output_root=str(Path(req.output_root or R43J_DEFAULT_OUTPUT_ROOT) / "panel_load_source"),
                 fixture_mode=req.fixture_mode,
+                public_network_enabled=req.public_network_enabled,
+                explicit_live_mode=req.explicit_live_mode,
+                run_visible_live=req.run_visible_live,
+                live_mode=req.live_mode,
             )
         )
         return [dict(row) for row in loaded.rows]
@@ -573,6 +580,7 @@ def _panel_row(row: Mapping[str, Any], *, selected: bool) -> Mapping[str, Any]:
         "eligible_for_retry": bool(row.get("eligible_for_retry", row.get("status") == "failed_retryable")),
         "eligible_for_run": bool(row.get("eligible_for_run", row.get("status") in {"pending", "failed_retryable"})),
         "last_error": _clean(row.get("last_error")),
+        "public_network_enabled": bool(row.get("public_network_enabled")),
         "normalized_url": _clean(row.get("normalized_url")),
         "platform_display_name": PLATFORM_DISPLAY_NAMES_R43J.get(platform_id, platform_id.replace("_", " ").title()),
         "platform_id": platform_id,
@@ -624,6 +632,7 @@ def _record_payload_from_panel_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "downstream_status": row.get("downstream_status", ""),
         "duplicate_of": row.get("duplicate_of", ""),
         "last_error": row.get("last_error", ""),
+        "public_network_enabled": bool(row.get("public_network_enabled")),
         "normalized_url": row.get("normalized_url", ""),
         "platform_id": row.get("platform_id", ""),
         "queue_id": row.get("queue_id", ""),

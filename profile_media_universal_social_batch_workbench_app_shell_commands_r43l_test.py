@@ -29,7 +29,8 @@ def test_app_shell_delegates_panel_and_gui_state_commands(tmp_path: Path) -> Non
     assert preview.delegated_to == "R43J"
     assert Path(preview.panel_state_path).exists()
     assert Path(preview.queue_path).exists()
-    assert preview.pending_platform_count >= 1
+    assert preview.pending_platform_count >= 0
+    assert preview.platform_counts.get("bluesky", 0) >= 1
     assert preview.unsupported_count >= 1
 
     selected = (_first_queue_id(preview.panel_state_path),)
@@ -99,7 +100,7 @@ def test_report_checks_and_boundaries(tmp_path: Path) -> None:
         "duplicate_rows_visible_but_not_routed_twice",
         "completed_rows_skipped_on_resume",
         "failed_terminal_and_unsupported_not_retried_by_default",
-        "pending_platform_and_unknown_receipts_visible",
+        "implemented_bluesky_or_pending_platform_and_unknown_receipts_visible",
         "twitter_x_route_chain_preserved_through_r43l_r43j_r43i_r43h_r43g_r43f_r43e_r43d",
         "app_shell_state_commands_navigation_selection_and_summary_written",
         "platform_and_status_counts_visible",

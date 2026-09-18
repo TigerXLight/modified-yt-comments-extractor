@@ -104,6 +104,7 @@ class UniversalSocialBatchWorkbenchAppShellCommandRequestR43L:
     explicit_live_mode: bool = False
     run_visible_live: bool = False
     live_mode: bool = False
+    public_network_enabled: bool = False
     browser_user_data_dir: str = ""
     browser_executable_path: str = ""
     max_items: int = 3
@@ -302,6 +303,7 @@ def coerce_universal_social_batch_workbench_app_shell_command_request_r43l(
         explicit_live_mode=_to_bool(data.get("explicit_live_mode"), False),
         run_visible_live=_to_bool(data.get("run_visible_live"), False),
         live_mode=_to_bool(data.get("live_mode"), False),
+        public_network_enabled=_to_bool(data.get("public_network_enabled"), False),
         browser_user_data_dir=_clean(data.get("browser_user_data_dir")),
         browser_executable_path=_clean(data.get("browser_executable_path")),
         max_items=_safe_int(data.get("max_items"), 3),
@@ -396,7 +398,7 @@ def build_report(output_root: str | Path = R43L_DEFAULT_OUTPUT_ROOT) -> R43LRepo
         _check("duplicate_rows_visible_but_not_routed_twice", preview.duplicate_count >= 0),
         _check("completed_rows_skipped_on_resume", "completed" in run.status_counts or run.completed_count >= 0),
         _check("failed_terminal_and_unsupported_not_retried_by_default", run.unsupported_count >= 1),
-        _check("pending_platform_and_unknown_receipts_visible", run.pending_platform_count >= 1 and run.unsupported_count >= 1),
+        _check("implemented_bluesky_or_pending_platform_and_unknown_receipts_visible", run.unsupported_count >= 1 and (run.pending_platform_count >= 1 or int(run.platform_counts.get("bluesky", 0) or 0) >= 1)),
         _check("twitter_x_route_chain_preserved_through_r43l_r43j_r43i_r43h_r43g_r43f_r43e_r43d", "R43L -> R43J/R43K -> R43I -> R43H -> R43G -> R43F -> R43E -> R43D" == run.route_chain),
         _check("app_shell_state_commands_navigation_selection_and_summary_written", _app_shell_files_exist(run)),
         _check("platform_and_status_counts_visible", bool(run.platform_counts) and bool(run.status_counts)),
@@ -428,7 +430,7 @@ def build_report_from_result_r43l(result: UniversalSocialBatchWorkbenchAppShellC
         _check("duplicate_rows_visible_but_not_routed_twice", result.duplicate_count >= 0),
         _check("completed_rows_skipped_on_resume", result.completed_count >= 0),
         _check("failed_terminal_and_unsupported_not_retried_by_default", result.unsupported_count >= 0),
-        _check("pending_platform_and_unknown_receipts_visible", result.pending_platform_count >= 0),
+        _check("implemented_bluesky_or_pending_platform_and_unknown_receipts_visible", result.pending_platform_count >= 0),
         _check("twitter_x_route_chain_preserved_through_r43l_r43j_r43i_r43h_r43g_r43f_r43e_r43d", "R43D" in result.route_chain),
         _check("app_shell_state_commands_navigation_selection_and_summary_written", _app_shell_files_exist(result)),
         _check("platform_and_status_counts_visible", bool(result.platform_counts) or result.command_name == "open_universal_social_workbench"),
@@ -470,6 +472,7 @@ def _to_panel_request(req: UniversalSocialBatchWorkbenchAppShellCommandRequestR4
         explicit_live_mode=req.explicit_live_mode,
         run_visible_live=req.run_visible_live,
         live_mode=req.live_mode,
+        public_network_enabled=req.public_network_enabled,
         browser_user_data_dir=req.browser_user_data_dir,
         browser_executable_path=req.browser_executable_path,
         max_items=req.max_items,
@@ -639,6 +642,7 @@ def _record_payload_from_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "downstream_status": row.get("downstream_status", ""),
         "duplicate_of": row.get("duplicate_of", ""),
         "last_error": row.get("last_error", ""),
+        "public_network_enabled": bool(row.get("public_network_enabled")),
         "normalized_url": row.get("normalized_url", ""),
         "platform_id": row.get("platform_id", ""),
         "queue_id": row.get("queue_id", ""),
@@ -703,7 +707,7 @@ def _pending_platform_count(rows: Iterable[Mapping[str, Any]]) -> int:
     count = 0
     for row in rows:
         if _clean(row.get("route_status")) == "mapped_pending_adapter_receipt" or _clean(row.get("platform_id")) in {
-            "bluesky", "instagram", "facebook", "threads", "mastodon", "tiktok", "reddit", "youtube", "news_comments",
+            "instagram", "facebook", "threads", "mastodon", "tiktok", "reddit", "youtube", "news_comments",
         }:
             count += 1
     return count
