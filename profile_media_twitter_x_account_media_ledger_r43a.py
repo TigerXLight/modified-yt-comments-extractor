@@ -31,6 +31,15 @@ class TwitterXAccountMediaItemR43A:
     byte_status: str = "metadata_only_review_required"
     provenance: str = ""
     warning: str = ""
+    bound_to_record_id: str = ""
+    bound_to_source_url: str = ""
+    binding_status: str = ""
+    binding_reason: str = ""
+    source_observation_kind: str = ""
+    source_observation_marker: str = ""
+    source_observation_path: str = ""
+    metadata_only_remote_media_not_downloaded: bool = True
+    playlist_manifest_url: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -212,12 +221,18 @@ def write_twitter_x_account_media_ledger_r43a(
                     "local_export_path": _rel(capture_dir, media_target),
                     "copied_local_bytes": bool(copied),
                     "remote_download_performed_by_r43a": False,
+                    "bound_to_record_id": item.bound_to_record_id or row.record_id,
+                    "bound_to_source_url": _plain_url(item.bound_to_source_url or row.source_url),
+                    "binding_status": item.binding_status or "bound_to_post",
+                    "binding_reason": item.binding_reason or "record_media_item",
+                    "metadata_only_remote_media_not_downloaded": not bool(copied),
                 }
             )
             copied_media.append(media_payload)
             media_index.append(media_payload)
             media_count += 1
 
+        media_counts = _media_counts(copied_media)
         record_payload = row.to_dict()
         record_payload.update(
             {
@@ -231,6 +246,7 @@ def write_twitter_x_account_media_ledger_r43a(
                 "static_screenshot": screenshot_rel,
                 "media_folder": _rel(capture_dir, media_dir),
                 "media_items": copied_media,
+                **media_counts,
                 "side_effect_flags": build_r43a_side_effect_flags(),
             }
         )
@@ -256,6 +272,7 @@ def write_twitter_x_account_media_ledger_r43a(
             "static_screenshot": screenshot_rel,
             "media_folder": _rel(capture_dir, media_dir),
             "media_count": len(row.media_items or ()),
+            **media_counts,
             "review_string_count": len(row.review_strings or ()),
         }
         timeline_rows.append(timeline_row)
@@ -270,6 +287,7 @@ def write_twitter_x_account_media_ledger_r43a(
                 "date_source": date_source,
                 "record_folder": _rel(capture_dir, record_dir),
                 "media_count": len(row.media_items or ()),
+                **media_counts,
                 "remote_download_performed_by_r43a": False,
             }
         )
@@ -441,7 +459,30 @@ def _coerce_media_item(item: Mapping[str, Any] | TwitterXAccountMediaItemR43A, *
     if isinstance(item, TwitterXAccountMediaItemR43A):
         return item
     data = dict(item or {})
-    return TwitterXAccountMediaItemR43A(media_id=_clean(data.get("media_id") or data.get("source_resource_id") or f"media_{index:06d}"), media_class=_safe_media_class(data.get("media_class") or data.get("type") or data.get("kind") or "media"), source_url=_plain_url(data.get("source_url") or data.get("page_url") or ""), media_url=_plain_url(data.get("media_url") or data.get("url") or data.get("canonical_url") or ""), local_path=_clean(data.get("local_path") or data.get("path") or data.get("file_path") or ""), filename=_safe_filename(data.get("filename") or data.get("display_name") or ""), mime_type=_clean(data.get("mime_type") or data.get("content_type") or ""), width=_safe_int(data.get("width")), height=_safe_int(data.get("height")), duration_seconds=_safe_float(data.get("duration_seconds")), byte_status=_clean(data.get("byte_status") or "metadata_only_review_required"), provenance=_clean(data.get("provenance") or ""), warning=_clean(data.get("warning") or ""))
+    return TwitterXAccountMediaItemR43A(
+        media_id=_clean(data.get("media_id") or data.get("source_resource_id") or f"media_{index:06d}"),
+        media_class=_safe_media_class(data.get("media_class") or data.get("type") or data.get("kind") or "media"),
+        source_url=_plain_url(data.get("source_url") or data.get("page_url") or ""),
+        media_url=_plain_url(data.get("media_url") or data.get("url") or data.get("canonical_url") or ""),
+        local_path=_clean(data.get("local_path") or data.get("path") or data.get("file_path") or ""),
+        filename=_safe_filename(data.get("filename") or data.get("display_name") or ""),
+        mime_type=_clean(data.get("mime_type") or data.get("content_type") or ""),
+        width=_safe_int(data.get("width")),
+        height=_safe_int(data.get("height")),
+        duration_seconds=_safe_float(data.get("duration_seconds")),
+        byte_status=_clean(data.get("byte_status") or "metadata_only_review_required"),
+        provenance=_clean(data.get("provenance") or ""),
+        warning=_clean(data.get("warning") or ""),
+        bound_to_record_id=_clean(data.get("bound_to_record_id") or ""),
+        bound_to_source_url=_plain_url(data.get("bound_to_source_url") or ""),
+        binding_status=_clean(data.get("binding_status") or ""),
+        binding_reason=_clean(data.get("binding_reason") or ""),
+        source_observation_kind=_clean(data.get("source_observation_kind") or ""),
+        source_observation_marker=_clean(data.get("source_observation_marker") or ""),
+        source_observation_path=_clean(data.get("source_observation_path") or data.get("original_observation_path") or ""),
+        metadata_only_remote_media_not_downloaded=bool(data.get("metadata_only_remote_media_not_downloaded", True)),
+        playlist_manifest_url=_plain_url(data.get("playlist_manifest_url") or data.get("manifest_url") or ""),
+    )
 
 
 def _date_folder_for_record(row: TwitterXAccountRecordR43A) -> str:
@@ -488,11 +529,12 @@ def _record_folder_name(row: TwitterXAccountRecordR43A) -> str:
 
 
 def _write_post_markdown(path: Path, *, row: TwitterXAccountRecordR43A, handle: str, date_folder: str, capture_dir: Path, record_dir: Path, screenshot_rel: str, copied_media: list[dict[str, Any]]) -> None:
-    lines = [f"# Twitter/X {row.record_type.title()} {row.record_id}", "", f"- Account capture: `{handle}`", f"- Record type: `{row.record_type}`", f"- Author: `{row.author_handle or 'unknown'}` {row.author_display_name or ''}".rstrip(), f"- Visible timestamp: `{row.visible_timestamp or ''}`", f"- Date folder: `{date_folder}`", f"- Date source: `{_date_source_for_record(row)}`", f"- Source URL: `{_plain_url(row.source_url)}`", f"- Static screenshot: [{Path(screenshot_rel).name}]({_quote_md_path(_rel(record_dir, capture_dir / screenshot_rel))})", "- Media folder: [media](media/)", "", "## Visible text", "", row.visible_text or "(No visible text captured.)", "", "## Media"]
+    counts = _media_counts(copied_media)
+    lines = [f"# Twitter/X {row.record_type.title()} {row.record_id}", "", f"- Account capture: `{handle}`", f"- Record type: `{row.record_type}`", f"- Author: `{row.author_handle or 'unknown'}` {row.author_display_name or ''}".rstrip(), f"- Visible timestamp: `{row.visible_timestamp or ''}`", f"- Date folder: `{date_folder}`", f"- Date source: `{_date_source_for_record(row)}`", f"- Source URL: `{_plain_url(row.source_url)}`", f"- Static screenshot: [{Path(screenshot_rel).name}]({_quote_md_path(_rel(record_dir, capture_dir / screenshot_rel))})", "- Media folder: [media](media/)", f"- Media count: `{counts['media_count']}` images `{counts['image_count']}`, videos `{counts['video_count']}`, manifests `{counts['manifest_count']}`, segments `{counts['segment_count']}`", f"- Session-local media copied: `{counts['session_local_media_count']}`", f"- Metadata-only media receipts: `{counts['metadata_only_media_count']}`", "", "## Visible text", "", row.visible_text or "(No visible text captured.)", "", "## Media"]
     if copied_media:
         for item in copied_media:
             local = _rel(record_dir, capture_dir / str(item.get("local_export_path") or ""))
-            lines.append(f"- `{item.get('media_class')}` `{item.get('media_id')}`: [{Path(local).name}]({_quote_md_path(local)})")
+            lines.append(f"- `{item.get('media_class')}` `{item.get('media_id')}`: [{Path(local).name}]({_quote_md_path(local)}) binding `{item.get('binding_status') or 'bound_to_post'}` via `{item.get('binding_reason') or 'record_media_item'}`")
     else:
         lines.append("- No media item recorded for this post/repost.")
     if row.review_strings:
@@ -522,6 +564,8 @@ def _write_account_record_markdown(path: Path, *, manifest: Mapping[str, Any], t
             lines.append(f"  - Folder: [{folder}]({folder}/)")
             lines.append(f"  - Static screenshot: [{Path(screenshot).name}]({screenshot})")
             lines.append(f"  - Media folder: [{media_folder}]({media_folder}/)")
+            lines.append(f"  - Media counts: `{row.get('media_count', 0)}` total, `{row.get('image_count', 0)}` images, `{row.get('video_count', 0)}` videos, `{row.get('manifest_count', 0)}` manifests, `{row.get('segment_count', 0)}` segments")
+            lines.append(f"  - Local/metadata-only: `{row.get('session_local_media_count', 0)}` local, `{row.get('metadata_only_media_count', 0)}` metadata-only")
             lines.append(f"  - Source URL: `{_plain_url(row.get('source_url'))}`")
         lines.append("")
     lines.extend(["## Media index summary", ""])
@@ -559,6 +603,19 @@ def _copy_or_url_receipt(local_path: str, target: Path, item: TwitterXAccountMed
     receipt = target.with_suffix(target.suffix + ".url.txt" if target.suffix else ".url.txt")
     receipt.write_text("Remote/media candidate receipt only. R43A did not download remote media.\n" + f"media_id: {item.media_id}\nmedia_class: {item.media_class}\nmedia_url: {_plain_url(item.media_url)}\nsource_url: {_plain_url(item.source_url)}\nbyte_status: {item.byte_status}\nwarning: {item.warning}\n", encoding="utf-8")
     return receipt, False
+
+
+def _media_counts(items: Iterable[Mapping[str, Any]]) -> dict[str, int]:
+    rows = list(items or ())
+    return {
+        "media_count": len(rows),
+        "image_count": sum(1 for row in rows if _safe_media_class(row.get("media_class")) == "image"),
+        "video_count": sum(1 for row in rows if _safe_media_class(row.get("media_class")) == "video"),
+        "manifest_count": sum(1 for row in rows if _safe_media_class(row.get("media_class")) == "manifest"),
+        "segment_count": sum(1 for row in rows if _safe_media_class(row.get("media_class")) == "segment"),
+        "metadata_only_media_count": sum(1 for row in rows if not row.get("copied_local_bytes")),
+        "session_local_media_count": sum(1 for row in rows if row.get("copied_local_bytes")),
+    }
 
 
 def _media_target_dir(item: TwitterXAccountMediaItemR43A, *, image_dir: Path, video_dir: Path, manifest_dir: Path, segment_dir: Path) -> Path:

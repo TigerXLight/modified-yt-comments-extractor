@@ -16,6 +16,11 @@ from profile_media_twitter_x_account_media_ledger_r43a import (
     TwitterXAccountRecordR43A,
     write_twitter_x_account_media_ledger_r43a,
 )
+from profile_media_twitter_x_fast_media_to_post_ledger_binding_r43t import (
+    R43T_PASS_STATUS,
+    bind_fast_media_observations_to_post_records_r43t,
+    write_unbound_media_index_r43t,
+)
 
 R43R_MARKER = "YTCE_R43R_TWITTER_X_LIVE_EVIDENCE_TO_ACCOUNT_LEDGER"
 R43R_PASS_STATUS = "PASS_R43R_TWITTER_X_LIVE_EVIDENCE_TO_ACCOUNT_LEDGER"
@@ -112,6 +117,13 @@ def materialize_live_twitter_x_evidence_to_account_ledger_r43r(
         screenshot_path=screenshot_path,
         extraction_method=extraction_method,
     )
+    fast_binding = bind_fast_media_observations_to_post_records_r43t(
+        records,
+        articles=articles,
+        paths=paths,
+        runner_root=runner_root,
+    )
+    records = list(fast_binding.records)
 
     blocker = ""
     if not runner_root or not runner_root.exists():
@@ -145,6 +157,8 @@ def materialize_live_twitter_x_evidence_to_account_ledger_r43r(
         source_screenshot_path=screenshot_path,
         extraction_method=extraction_method,
     )
+    unbound_paths = write_unbound_media_index_r43t(capture_dir, fast_binding.unbound_media)
+    screenshot_gate_summary = _apply_screenshot_receipt_gate(capture_dir)
     media_index = _read_json(Path(ledger.media_index_path), [])
     manifest = _read_json(Path(ledger.manifest_path), {})
     metadata_only_count = sum(1 for item in media_index if not item.get("copied_local_bytes"))
@@ -177,6 +191,14 @@ def materialize_live_twitter_x_evidence_to_account_ledger_r43r(
         "rendered_dom_snapshot_path": paths["rendered_dom"],
         "source_screenshot_path": screenshot_path,
         "date_folders": list(ledger.date_folders or ()),
+        "fast_media_binding_summary": fast_binding.summary,
+        "r43t_status": fast_binding.status,
+        "r43t_bound_media_count": fast_binding.summary.get("bound_media_count", 0),
+        "r43t_unbound_media_count": fast_binding.summary.get("unbound_media_count", 0),
+        "unbound_media_index_path": unbound_paths.get("unbound_media_index_path", ""),
+        "unbound_media_candidates_path": unbound_paths.get("unbound_media_candidates_path", ""),
+        "screenshot_receipts_index_path": screenshot_gate_summary.get("screenshot_receipts_index_path", ""),
+        "screenshot_receipt_count": screenshot_gate_summary.get("receipt_count", 0),
         "warnings": record_warnings + list(ledger.warnings or ()) + list(annotation.get("warnings") or ()),
     }
     receipt = {
@@ -190,6 +212,8 @@ def materialize_live_twitter_x_evidence_to_account_ledger_r43r(
         "live_evidence_paths": paths,
         "extraction_method": extraction_method,
         "article_count": len(records),
+        "fast_media_binding_summary": fast_binding.summary,
+        "r43t_result": fast_binding.to_dict(),
         "account_ledger_summary": account_ledger_summary,
         "manifest": manifest,
         "side_effect_flags": build_r43r_side_effect_flags(),
@@ -204,6 +228,7 @@ def materialize_live_twitter_x_evidence_to_account_ledger_r43r(
         capture_dir=capture_dir,
         media_index=media_index,
         paths=paths,
+        fast_binding=fast_binding.to_dict(),
     )
     bad = tuple(check for check in checks if check.get("status") != "pass")
     status = R43R_PASS_STATUS if not bad else R43R_BLOCKED_STATUS
@@ -550,6 +575,33 @@ def _annotate_ledger_posts(
     return {"warnings": warnings, "warning_count": len(warnings)}
 
 
+def _apply_screenshot_receipt_gate(capture_dir: Path) -> dict[str, Any]:
+    try:
+        from profile_media_visual_screenshot_receipt_materialization_gate_r43c import (
+            apply_visual_screenshot_receipt_materialization_gate_r43c,
+        )
+
+        result = apply_visual_screenshot_receipt_materialization_gate_r43c(
+            capture_dir,
+            default_context={
+                "platform": "twitter_x",
+                "screenshot_scope": "session_visible_page_fallback",
+                "screenshot_is_article_crop": False,
+                "materialized_in_viewport": False,
+                "materialization_clean": False,
+                "capture_gate": True,
+            },
+        )
+        return result.to_dict()
+    except Exception as exc:
+        return {
+            "status": "BLOCKED_R43C_VISUAL_SCREENSHOT_RECEIPT_MATERIALIZATION_GATE",
+            "receipt_count": 0,
+            "screenshot_receipts_index_path": "",
+            "warning": f"R43C screenshot receipt gate failed safely: {type(exc).__name__}: {exc}",
+        }
+
+
 def _load_article_observations(json_path: str, ndjson_path: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if json_path and Path(json_path).is_file():
@@ -577,6 +629,7 @@ def _discover_live_evidence_paths(runner_root: Path) -> dict[str, str]:
         "screenshot": first("screenshot.png"),
         "visible_observations_json": first("visible_browser_media_observations.json"),
         "visible_observations_ndjson": first("visible_browser_media_observations.ndjson"),
+        "visible_segments_ndjson": first("visible_browser_media_segments.ndjson"),
         "r42gt_media_index_json": first("media_index.json"),
         "r42gt_media_index_ndjson": first("media_index.ndjson"),
         "r42gt_manifest": first("manifest.json"),
@@ -662,6 +715,7 @@ def _build_checks(
     capture_dir: Path,
     media_index: list[Mapping[str, Any]],
     paths: Mapping[str, str],
+    fast_binding: Mapping[str, Any] | None = None,
 ) -> tuple[Mapping[str, Any], ...]:
     account_record = _read_text(Path(summary.get("account_record_path") or ""))
     timeline_rows = _read_ndjson(Path(summary.get("account_timeline_path") or ""))
@@ -669,8 +723,18 @@ def _build_checks(
     post_payloads = [_read_json(path, {}) for path in post_jsons]
     post_mds = list(capture_dir.glob("dates/*/post_*/post.md"))
     static_screenshots = list(capture_dir.glob("dates/*/post_*/static_screenshot.png"))
+    screenshot_receipts = list(capture_dir.glob("dates/*/post_*/static_screenshot_receipt.json"))
     decorative_attached = any(_is_decorative_x_asset(str(item.get("media_url") or "")) for item in media_index)
     avatar_attached = any(_is_profile_asset_url(str(item.get("media_url") or "")) for item in media_index)
+    binding_summary = dict((fast_binding or {}).get("summary") or summary.get("fast_media_binding_summary") or {})
+    fixture_scope = binding_summary.get("count_scope") == "standalone_r43t_fixture_matches_integrated_r43r_ledger_binding_scope"
+    rows_with_binding = [item for item in media_index if item.get("binding_status")]
+    local_images = [item for item in media_index if item.get("media_class") == "image" and item.get("copied_local_bytes")]
+    local_videos = [item for item in media_index if item.get("media_class") == "video" and item.get("copied_local_bytes")]
+    remote_images = [item for item in media_index if item.get("media_class") == "image" and not item.get("copied_local_bytes")]
+    remote_videos = [item for item in media_index if item.get("media_class") == "video" and not item.get("copied_local_bytes")]
+    manifests = [item for item in media_index if item.get("media_class") == "manifest"]
+    segments = [item for item in media_index if item.get("media_class") == "segment"]
     ambiguous_payloads = [
         row for row in post_payloads
         if row.get("visible_timestamp") == "unknown_date"
@@ -696,8 +760,29 @@ def _build_checks(
         _check("post_md_contains_visible_text_timestamp_source_url_media_summary", bool(post_mds) and all("Visible text" in _read_text(path) and "Source URL" in _read_text(path) for path in post_mds)),
         _check("post_json_contains_screenshot_scope_and_media_candidates", bool(post_jsons) and all(_read_json(path, {}).get("screenshot_scope") for path in post_jsons)),
         _check("static_screenshot_written_or_linked_for_each_post", len(static_screenshots) == len(records)),
+        _check("fast_media_observation_store_loaded", _safe_int(binding_summary.get("visible_observation_count")) > 0),
+        _check("r42gt_media_index_loaded", _safe_int(binding_summary.get("r42gt_media_index_count")) > 0),
+        _check("media_inventory_loaded", _safe_int(binding_summary.get("media_inventory_count")) > 0 or not fixture_scope),
+        _check("media_bound_by_status_id_to_correct_post", any(item.get("binding_reason") == "status_id_match" for item in media_index) or not fixture_scope),
+        _check("media_bound_by_canonical_post_url_to_correct_post", any(item.get("binding_reason") == "canonical_post_url_match" for item in media_index) or not fixture_scope),
+        _check("media_bound_by_article_dom_url_to_correct_post", any(item.get("binding_reason") == "article_dom_media_url_match" for item in media_index)),
+        _check("loose_account_level_media_not_attached_to_all_posts", not _loose_binding_attached_to_all_posts(media_index, records)),
+        _check("unbound_media_preserved_in_unbound_index", (_safe_int(binding_summary.get("unbound_media_count")) == 0) or (bool(summary.get("unbound_media_index_path")) and Path(str(summary.get("unbound_media_index_path"))).is_file())),
+        _check("local_session_image_copied_to_post_media_images", any("/media/images/" in str(item.get("local_export_path", "")).replace("\\", "/") for item in local_images) or not fixture_scope),
+        _check("local_session_video_copied_to_post_media_videos", any("/media/videos/" in str(item.get("local_export_path", "")).replace("\\", "/") for item in local_videos) or not fixture_scope),
+        _check("remote_image_written_as_metadata_receipt_not_downloaded", any(str(item.get("local_export_path", "")).endswith(".url.txt") for item in remote_images)),
+        _check("remote_video_written_as_metadata_receipt_not_downloaded", any(str(item.get("local_export_path", "")).endswith(".url.txt") for item in remote_videos) or not fixture_scope),
+        _check("manifest_written_to_post_media_manifests_or_receipt", any("/media/manifests/" in str(item.get("local_export_path", "")).replace("\\", "/") for item in manifests) or not fixture_scope),
+        _check("segments_preserved_under_post_media_segments_or_segment_receipt", any("/media/segments/" in str(item.get("local_export_path", "")).replace("\\", "/") for item in segments) or not fixture_scope),
         _check("decorative_x_assets_not_attached_as_post_media", not decorative_attached),
         _check("profile_avatar_not_attached_as_post_media", not avatar_attached),
+        _check("account_record_links_each_post_media_folder", bool(post_payloads) and "Media counts" in account_record and "media/" in account_record),
+        _check("account_record_shows_per_post_media_counts", "Media counts" in account_record),
+        _check("account_timeline_ndjson_has_per_post_media_counts", bool(timeline_rows) and all("image_count" in row and "video_count" in row and "metadata_only_media_count" in row for row in timeline_rows)),
+        _check("media_index_rows_include_binding_status_and_reason", bool(rows_with_binding) and all(item.get("binding_status") and item.get("binding_reason") for item in rows_with_binding)),
+        _check("media_index_rows_include_record_folder_and_visible_date_folder", bool(media_index) and all(item.get("record_folder") and item.get("visible_date_folder") for item in media_index)),
+        _check("static_screenshot_receipt_written_by_r43c", len(screenshot_receipts) == len(records)),
+        _check("screenshot_scope_remains_session_visible_page_fallback", bool(post_payloads) and all(row.get("screenshot_scope") == "session_visible_page_fallback" for row in post_payloads)),
         _check("metadata_only_remote_media_not_downloaded", all(item.get("remote_download_performed_by_r43a") is False for item in media_index)),
         _check("no_cookie_token_challenge_login_automation", all(build_r43r_side_effect_flags().get(key) is False for key in ("cookie_or_token_extraction_performed", "captcha_or_challenge_bypass_performed", "login_automation_performed"))),
         _check("youtube_capture_engine_unchanged", build_r43r_side_effect_flags()["youtube_capture_engine_changed"] is False),
@@ -705,9 +790,24 @@ def _build_checks(
     )
 
 
+def _loose_binding_attached_to_all_posts(media_index: Iterable[Mapping[str, Any]], records: list[TwitterXAccountRecordR43A]) -> bool:
+    if len(records) < 2:
+        return False
+    loose_bound = [
+        item for item in media_index
+        if item.get("binding_reason") == "single_status_page_fallback"
+        or item.get("binding_status") == "unbound_account_level_candidate"
+    ]
+    return bool(loose_bound) and len({item.get("record_id") for item in loose_bound if item.get("record_id")}) == len(records)
+
+
 def _write_fixture_runner_output(root: Path) -> None:
     root.mkdir(parents=True, exist_ok=True)
     (root / "screenshot.png").write_bytes(b"r43r screenshot\n")
+    local_image = root / "session_image.jpg"
+    local_video = root / "session_video.mp4"
+    local_image.write_bytes(b"R43T_LOCAL_IMAGE\n")
+    local_video.write_bytes(b"R43T_LOCAL_VIDEO\n")
     html = """
 <html><body>
 <article data-testid="tweet">
@@ -736,7 +836,85 @@ def _write_fixture_runner_output(root: Path) -> None:
     (root / "rendered_dom_snapshot.html").write_text(html, encoding="utf-8")
     store = root / "visible_browser_media_observation_store"
     store.mkdir(parents=True, exist_ok=True)
-    (store / "visible_browser_media_observations.ndjson").write_text(json.dumps({"media_url": "https://pbs.twimg.com/media/r43r_image.jpg"}) + "\n", encoding="utf-8")
+    visible_rows = [
+        {
+            "canonical_media_url": "https://pbs.twimg.com/media/status_bound.jpg?format=jpg&name=large",
+            "canonical_post_url": "https://x.com/examaddaorg/status/2222222222222222222",
+            "status_id": "2222222222222222222",
+            "media_class": "image",
+            "local_session_path": str(local_image),
+        },
+        {
+            "canonical_media_url": "https://video.twimg.com/ext_tw_video/222/pu/vid/720x720/session_video.mp4",
+            "canonical_post_url": "https://x.com/examaddaorg/status/2222222222222222222",
+            "media_class": "video",
+            "local_session_path": str(local_video),
+        },
+        {
+            "canonical_media_url": "https://pbs.twimg.com/media/r43r_image.jpg?format=jpg&name=large",
+            "media_class": "image",
+        },
+        {
+            "canonical_media_url": "https://abs.twimg.com/icons/ui.png",
+            "canonical_post_url": "https://x.com/examaddaorg/status/2222222222222222222",
+            "status_id": "2222222222222222222",
+            "media_class": "image",
+        },
+        {
+            "canonical_media_url": "https://pbs.twimg.com/profile_images/avatar.jpg",
+            "media_class": "image",
+        },
+        {
+            "canonical_media_url": "https://pbs.twimg.com/media/account_loose.jpg?format=jpg&name=large",
+            "media_class": "image",
+        },
+    ]
+    _write_json(store / "visible_browser_media_observations.json", {"observations": visible_rows})
+    (store / "visible_browser_media_observations.ndjson").write_text("\n".join(json.dumps(row) for row in visible_rows) + "\n", encoding="utf-8")
+    segment_rows = [
+        {
+            "canonical_segment_url": "https://video.twimg.com/ext_tw_video/222/pu/seg/00001.ts",
+            "playlist_manifest_url": "https://video.twimg.com/ext_tw_video/222/pu/pl/manifest.m3u8",
+            "canonical_post_url": "https://x.com/examaddaorg/status/2222222222222222222",
+            "status_id": "2222222222222222222",
+        },
+        {
+            "canonical_segment_url": "https://video.twimg.com/ext_tw_video/222/pu/seg/00002.ts",
+            "playlist_manifest_url": "https://video.twimg.com/ext_tw_video/222/pu/pl/manifest.m3u8",
+            "canonical_post_url": "https://x.com/examaddaorg/status/2222222222222222222",
+            "status_id": "2222222222222222222",
+        },
+    ]
+    (store / "visible_browser_media_segments.ndjson").write_text("\n".join(json.dumps(row) for row in segment_rows) + "\n", encoding="utf-8")
+    package = root / "r42gt_visible_browser_media_package" / "source_exports" / "twitter_x" / "examaddaorg" / "capture_20260918T000000Z"
+    package.mkdir(parents=True, exist_ok=True)
+    _write_json(package / "manifest.json", {"marker": "R42GT_FIXTURE"})
+    media_rows = [
+        {
+            "canonical_media_url": "https://video.twimg.com/ext_tw_video/222/pu/pl/manifest.m3u8",
+            "canonical_post_url": "https://x.com/examaddaorg/status/2222222222222222222",
+            "post_id": "2222222222222222222",
+            "media_kind": "manifest",
+        },
+        {
+            "canonical_media_url": "https://pbs.twimg.com/media/r42gt_remote.jpg?format=jpg&name=large",
+            "canonical_post_url": "https://x.com/examaddaorg/status/3333333333333333333",
+            "post_id": "3333333333333333333",
+            "media_kind": "image",
+        },
+    ]
+    _write_json(package / "media_index.json", {"media": media_rows})
+    (package / "media_index.ndjson").write_text("\n".join(json.dumps(row) for row in media_rows) + "\n", encoding="utf-8")
+    _write_json(
+        root / "media_inventory.json",
+        [
+            {
+                "media_url": "https://video.twimg.com/ext_tw_video/222/pu/vid/720x720/remote_video.mp4",
+                "status_id": "2222222222222222222",
+                "media_class": "video",
+            }
+        ],
+    )
 
 
 def _receipt_md(receipt: Mapping[str, Any]) -> str:

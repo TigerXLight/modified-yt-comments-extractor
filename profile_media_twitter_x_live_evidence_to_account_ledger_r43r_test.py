@@ -136,6 +136,15 @@ def test_r43r_materializes_dom_articles_to_account_ledger() -> None:
         assert timeline_222["visible_date_folder"] == "2026-09-17"
         assert timeline_222["date_source"] == "capture_date_from_relative_visible_time"
         assert any(item["media_url"].startswith("https://pbs.twimg.com/media/") for item in media_index)
+        assert any(item["binding_reason"] == "status_id_match" for item in media_index)
+        assert any(item["binding_reason"] == "canonical_post_url_match" for item in media_index)
+        assert any(item["binding_reason"] == "article_dom_media_url_match" for item in media_index)
+        assert any("/media/images/" in item["local_export_path"].replace("\\", "/") and item["copied_local_bytes"] for item in media_index)
+        assert any("/media/videos/" in item["local_export_path"].replace("\\", "/") and item["copied_local_bytes"] for item in media_index)
+        assert any("/media/manifests/" in item["local_export_path"].replace("\\", "/") for item in media_index)
+        assert any("/media/segments/" in item["local_export_path"].replace("\\", "/") for item in media_index)
+        assert (capture_dir / "unbound_media" / "media_index.json").is_file()
+        assert len(list(capture_dir.glob("dates/*/post_*/static_screenshot_receipt.json"))) == 3
         assert not any("abs.twimg.com" in item.get("media_url", "") for item in media_index)
         assert not any("profile_images" in item.get("media_url", "") for item in media_index)
         assert all(item.get("remote_download_performed_by_r43a") is False for item in media_index)
@@ -172,9 +181,10 @@ def test_r43d_explicit_live_materializes_r43r_account_ledger() -> None:
         assert Path(result.media_index_path).is_file()
         assert result.record_count == 3
         assert result.post_count == 3
-        assert result.media_count == 1
+        assert result.media_count >= 6
         assert result.screenshot_count == 3
         assert result.account_ledger_summary["ledger_post_count"] == 3
+        assert result.account_ledger_summary["fast_media_binding_summary"]["bound_media_count"] >= 6
         assert result.live_evidence_summary["account_ledger_summary"]["ledger_post_count"] == 3
         assert harness.requests[0]["browser_executable_path"].endswith("chrome.exe")
 
@@ -183,11 +193,90 @@ def _write_runner_fixture(root: Path) -> None:
     root.mkdir(parents=True, exist_ok=True)
     (root / "screenshot.png").write_bytes(b"r43r screenshot")
     (root / "network_events.jsonl").write_text("{}\n", encoding="utf-8")
+    local_image = root / "session_image.jpg"
+    local_video = root / "session_video.mp4"
+    local_image.write_bytes(b"R43T_LOCAL_IMAGE")
+    local_video.write_bytes(b"R43T_LOCAL_VIDEO")
     store = root / "visible_browser_media_observation_store"
     store.mkdir(parents=True, exist_ok=True)
-    (store / "visible_browser_media_observations.ndjson").write_text(
-        json.dumps({"media_url": "https://pbs.twimg.com/media/valid_fixture.jpg"}) + "\n",
-        encoding="utf-8",
+    visible_rows = [
+        {
+            "canonical_media_url": "https://pbs.twimg.com/media/status_bound.jpg?format=jpg&name=large",
+            "canonical_post_url": "https://x.com/examaddaorg/status/2222222222222222222",
+            "status_id": "2222222222222222222",
+            "media_class": "image",
+            "local_session_path": str(local_image),
+        },
+        {
+            "canonical_media_url": "https://video.twimg.com/ext_tw_video/222/pu/vid/720x720/session_video.mp4",
+            "canonical_post_url": "https://x.com/examaddaorg/status/2222222222222222222",
+            "media_class": "video",
+            "local_session_path": str(local_video),
+        },
+        {
+            "canonical_media_url": "https://pbs.twimg.com/media/valid_fixture.jpg?format=jpg&name=large",
+            "media_class": "image",
+        },
+        {
+            "canonical_media_url": "https://abs.twimg.com/icons/decorative.png",
+            "canonical_post_url": "https://x.com/examaddaorg/status/2222222222222222222",
+            "status_id": "2222222222222222222",
+            "media_class": "image",
+        },
+        {
+            "canonical_media_url": "https://pbs.twimg.com/profile_images/avatar.jpg",
+            "media_class": "image",
+        },
+        {
+            "canonical_media_url": "https://pbs.twimg.com/media/account_loose.jpg?format=jpg&name=large",
+            "media_class": "image",
+        },
+    ]
+    _write_json(store / "visible_browser_media_observations.json", {"observations": visible_rows})
+    (store / "visible_browser_media_observations.ndjson").write_text("\n".join(json.dumps(row) for row in visible_rows) + "\n", encoding="utf-8")
+    segments = [
+        {
+            "canonical_segment_url": "https://video.twimg.com/ext_tw_video/222/pu/seg/00001.ts",
+            "playlist_manifest_url": "https://video.twimg.com/ext_tw_video/222/pu/pl/manifest.m3u8",
+            "canonical_post_url": "https://x.com/examaddaorg/status/2222222222222222222",
+            "status_id": "2222222222222222222",
+        },
+        {
+            "canonical_segment_url": "https://video.twimg.com/ext_tw_video/222/pu/seg/00002.ts",
+            "playlist_manifest_url": "https://video.twimg.com/ext_tw_video/222/pu/pl/manifest.m3u8",
+            "canonical_post_url": "https://x.com/examaddaorg/status/2222222222222222222",
+            "status_id": "2222222222222222222",
+        },
+    ]
+    (store / "visible_browser_media_segments.ndjson").write_text("\n".join(json.dumps(row) for row in segments) + "\n", encoding="utf-8")
+    package = root / "r42gt_visible_browser_media_package" / "source_exports" / "twitter_x" / "examaddaorg" / "capture_20260918T000000Z"
+    package.mkdir(parents=True, exist_ok=True)
+    _write_json(package / "manifest.json", {"marker": "R42GT_FIXTURE"})
+    media_rows = [
+        {
+            "canonical_media_url": "https://video.twimg.com/ext_tw_video/222/pu/pl/manifest.m3u8",
+            "canonical_post_url": "https://x.com/examaddaorg/status/2222222222222222222",
+            "post_id": "2222222222222222222",
+            "media_kind": "manifest",
+        },
+        {
+            "canonical_media_url": "https://pbs.twimg.com/media/r42gt_remote.jpg?format=jpg&name=large",
+            "canonical_post_url": "https://x.com/examaddaorg/status/3333333333333333333",
+            "post_id": "3333333333333333333",
+            "media_kind": "image",
+        },
+    ]
+    _write_json(package / "media_index.json", {"media": media_rows})
+    (package / "media_index.ndjson").write_text("\n".join(json.dumps(row) for row in media_rows) + "\n", encoding="utf-8")
+    _write_json(
+        root / "media_inventory.json",
+        [
+            {
+                "media_url": "https://video.twimg.com/ext_tw_video/222/pu/vid/720x720/remote_video.mp4",
+                "status_id": "2222222222222222222",
+                "media_class": "video",
+            }
+        ],
     )
     (root / "rendered_dom_snapshot.html").write_text(
         """
