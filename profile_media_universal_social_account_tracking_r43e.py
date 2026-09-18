@@ -83,6 +83,8 @@ class UniversalSocialAccountTrackingRequestR43E:
     run_visible_live: bool = False
     live_mode: bool = False
     public_network_enabled: bool = False
+    accounts_keys_reddit_logged_in: bool = False
+    accounts_keys_state: Mapping[str, Any] = field(default_factory=dict)
     browser_user_data_dir: str = ""
     browser_executable_path: str = ""
     max_items: int = 3
@@ -522,24 +524,27 @@ class UniversalSocialAccountTrackingRegistryR43E:
         run_dir: Path,
     ) -> dict[str, Any]:
         if _is_reddit_thread_url_r44e(account_url):
-            from profile_media_reddit_old_reddit_thread_expansion_r44e import (
-                RedditOldThreadExpansionRequestR44E,
-                build_reddit_old_reddit_thread_expansion_r44e,
+            from profile_media_reddit_no_login_complete_comments_r44f import (
+                RedditNoLoginCompleteCommentsRequestR44F,
+                build_reddit_no_login_complete_comments_r44f,
             )
 
-            adapter = build_reddit_old_reddit_thread_expansion_r44e(output_root=run_dir / "reddit_old_reddit_thread_expansion")
-            result = adapter.run_thread_expansion(
-                RedditOldThreadExpansionRequestR44E(
+            adapter = build_reddit_no_login_complete_comments_r44f(output_root=run_dir / "reddit_no_login_complete_comments")
+            result = adapter.run_complete_thread_capture(
+                RedditNoLoginCompleteCommentsRequestR44F(
                     thread_url=account_url,
                     old_reddit_url="",
                     branch_urls=(),
                     account_handle=account_handle,
                     capture_timestamp=capture_timestamp,
-                    output_root=str(run_dir / "reddit_old_reddit_thread_expansion"),
+                    output_root=str(run_dir / "reddit_no_login_complete_comments"),
                     fixture_mode=request.fixture_mode or not (request.run_visible_live or request.live_mode or request.explicit_live_mode),
                     real_visible_smoke=bool(request.run_visible_live or request.live_mode or request.explicit_live_mode),
                     explicit_live_mode=request.explicit_live_mode,
                     public_network_enabled=request.public_network_enabled,
+                    accounts_keys_reddit_logged_in=getattr(request, "accounts_keys_reddit_logged_in", False),
+                    accounts_keys_state=getattr(request, "accounts_keys_state", {}) or {},
+                    prefer_no_login_when_available=True,
                     max_items=request.max_items,
                     timeout_seconds=45,
                 )
@@ -742,14 +747,14 @@ def build_default_platform_adapter_map_r43e() -> dict[str, UniversalSocialPlatfo
             platform_id="reddit",
             display_name="Reddit",
             url_hosts=("reddit.com", "www.reddit.com", "old.reddit.com"),
-            adapter_status="implemented_visible_dom_capture_r44d_old_thread_expansion_r44e",
+            adapter_status="implemented_visible_dom_capture_r44d_old_thread_expansion_r44e_no_login_complete_ordering_r44f",
             account_url_examples=("https://www.reddit.com/user/example/", "https://www.reddit.com/r/example/comments/abc123/title/"),
-            implementation_module="profile_media_reddit_visible_dom_capture_r44d + profile_media_reddit_old_reddit_thread_expansion_r44e",
+            implementation_module="profile_media_reddit_visible_dom_capture_r44d + profile_media_reddit_old_reddit_thread_expansion_r44e + profile_media_reddit_no_login_complete_comments_r44f",
             export_surface_attribute="reddit_visible_dom_capture_r44d",
             record_type_map={"submission": "post", "crosspost": "repost_or_reshare", "comment": "reply"},
-            capabilities=shared_capabilities + ("reddit_visible_dom_capture_r44d", "reddit_old_reddit_thread_expansion_r44e", "reddit_submission_comment_crosspost_mapping", "reddit_media_metadata_receipts", "r43u_universal_ledger_writer"),
+            capabilities=shared_capabilities + ("reddit_visible_dom_capture_r44d", "reddit_old_reddit_thread_expansion_r44e", "reddit_no_login_complete_comments_r44f", "reddit_branch_queue_top_to_bottom", "reddit_displayed_net_score_capture", "reddit_submission_comment_crosspost_mapping", "reddit_media_metadata_receipts", "r43u_universal_ledger_writer"),
             planned_from_twitter_x_contract=False,
-            notes="R44D maps visible Reddit submissions, comments and crossposts. R44E routes Reddit thread URLs through old/en Reddit limit=500 plus branch/continue pages before R43U ledger write, without profile/cookie/token copying or remote media downloads.",
+            notes="R44D maps visible Reddit submissions, comments and crossposts. R44F routes Reddit thread URLs through no-login old/en Reddit limit=500 plus top-to-bottom branch/continue page ordering before R44D/R43U ledger write, without profile/cookie/token copying or remote media downloads.",
         ),
     }
 
@@ -785,6 +790,8 @@ def coerce_universal_social_account_tracking_request_r43e(
         run_visible_live=_to_bool(base.get("run_visible_live"), False),
         live_mode=_to_bool(base.get("live_mode"), False),
         public_network_enabled=_to_bool(base.get("public_network_enabled"), False),
+        accounts_keys_reddit_logged_in=_to_bool(base.get("accounts_keys_reddit_logged_in"), False),
+        accounts_keys_state=dict(base.get("accounts_keys_state") or {}),
         browser_user_data_dir=_clean(base.get("browser_user_data_dir")),
         browser_executable_path=_clean(base.get("browser_executable_path")),
         max_items=_safe_int(base.get("max_items"), 3),

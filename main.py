@@ -2056,6 +2056,27 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R44F_REDDIT_NO_LOGIN_COMPLETE_COMMENT_ORDERING:
+        # Reliable no-login Reddit thread capture planner: old/en Reddit limit=500
+        # primary page, top-to-bottom branch/comment page queue, displayed net
+        # score capture, duplicate anchor dedupe, indented comment tree index,
+        # then R44D -> R43U ledger. It reads only Accounts/Keys metadata needed
+        # to decide whether a Reddit login exists; it never reads/copies cookies,
+        # tokens, browser profiles, local storage, cache, Login Data, bypasses
+        # challenges, automates login, or downloads remote media.
+        self.reddit_no_login_complete_comments_r44f = None
+        try:
+            from profile_media_reddit_no_login_complete_comments_r44f import (
+                build_reddit_no_login_complete_comments_r44f,
+            )
+
+            self.reddit_no_login_complete_comments_r44f = build_reddit_no_login_complete_comments_r44f()
+        except Exception:
+            logger.debug(
+                "Could not configure R44F Reddit no-login complete comment ordering.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This

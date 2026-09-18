@@ -110,11 +110,23 @@ def test_report_passes(tmp_path: Path) -> None:
     assert report.passed
 
 
-def test_r43e_routes_reddit_thread_urls_to_r44e(tmp_path: Path) -> None:
+def test_r43e_routes_reddit_thread_urls_to_current_reliable_thread_adapter(tmp_path: Path) -> None:
     from profile_media_universal_social_account_tracking_r43e import (
         UniversalSocialAccountTrackingRequestR43E,
         build_universal_social_account_tracking_registry_r43e,
     )
+
+    expected_downstream_statuses = {R44E_PASS_STATUS}
+    try:
+        from profile_media_reddit_no_login_complete_comments_r44f import R44F_PASS_STATUS
+
+        # R44F is the newer reliability layer. Once installed, the R43E route
+        # intentionally prefers the no-login old-Reddit limit=500 + ordered
+        # branch queue path over routing directly to R44E. R44E remains the
+        # old/en Reddit page-expansion adapter used underneath the newer route.
+        expected_downstream_statuses.add(R44F_PASS_STATUS)
+    except Exception:
+        pass
 
     registry = build_universal_social_account_tracking_registry_r43e(output_root=tmp_path)
     result = registry.run_account_export(
@@ -131,7 +143,7 @@ def test_r43e_routes_reddit_thread_urls_to_r44e(tmp_path: Path) -> None:
     )
     payload = result.to_dict()
     assert payload["status"] == "PASS_R43E_UNIVERSAL_SOCIAL_ACCOUNT_TRACKING_CONTRACT_ADAPTER_MAP"
-    assert payload["downstream_status"] == R44E_PASS_STATUS
+    assert payload["downstream_status"] in expected_downstream_statuses
     assert payload["record_count"] >= 3
 
 
@@ -147,7 +159,7 @@ def run_self_test() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         test_report_passes(Path(tmp) / "report")
     with tempfile.TemporaryDirectory() as tmp:
-        test_r43e_routes_reddit_thread_urls_to_r44e(Path(tmp) / "route")
+        test_r43e_routes_reddit_thread_urls_to_current_reliable_thread_adapter(Path(tmp) / "route")
 
 
 if __name__ == "__main__":
