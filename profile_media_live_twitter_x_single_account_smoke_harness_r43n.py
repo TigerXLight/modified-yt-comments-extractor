@@ -313,6 +313,9 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
                 if r43o_receipt and r43o_receipt.get("status") == R43O_NEEDS_PATCH_STATUS:
                     status = R43N_NEEDS_PATCH_R43O_STATUS
                     blocker = _clean(r43o_receipt.get("blocker_reason")) or "R43O visible-session binding is not connected."
+                elif r43o_receipt and _clean(r43o_receipt.get("profile_preflight_status")).startswith("BLOCKED_PROFILE_"):
+                    status = _clean(r43o_receipt.get("profile_preflight_status"))
+                    blocker = _clean(r43o_receipt.get("blocker_reason")) or "Twitter/X browser profile preflight blocked launch."
                 elif r43o_receipt and r43o_receipt.get("status") == R43O_BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE:
                     status = R43N_BLOCKED_WEBVIEW2_RUNTIME_UNAVAILABLE
                     blocker = _clean(r43o_receipt.get("blocker_reason")) or "Visible browser runtime/session is unavailable."
@@ -389,6 +392,10 @@ class LiveTwitterXSingleAccountSmokeHarnessR43N:
             "visible_session_binding_receipt_path": _clean(r43o_binding_payload.get("receipt_path")),
             "visible_session_binding_blocker_reason": _clean(r43o_receipt.get("blocker_reason")),
             "visible_session_binding_files_written": r43o_files_written,
+            "profile_preflight_status": _clean(r43o_receipt.get("profile_preflight_status")),
+            "profile_preflight_summary": dict(r43o_receipt.get("profile_preflight_summary") or {}),
+            "profile_preflight_summary_path": _clean(r43o_receipt.get("profile_preflight_summary_path")),
+            "profile_preflight_summary_md_path": _clean(r43o_receipt.get("profile_preflight_summary_md_path")),
             "app_shell_result": app_shell_result,
             "route_receipts": route_receipts,
             "output_paths": {key: str(value) for key, value in paths.items()},

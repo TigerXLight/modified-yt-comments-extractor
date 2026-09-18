@@ -330,7 +330,7 @@ def build_r43a_folder_policy() -> dict[str, Any]:
         "schema_version": R43A_SCHEMA_VERSION,
         "account_layout": "source_exports/twitter_x/<handle>/account_capture_<timestamp>",
         "single_whole_record_document": "account_record.md",
-        "date_folder_rule": "visible post date first; fallback to capture date; unknown_date only when both are unavailable",
+        "date_folder_rule": "visible post date first; relative visible times fall back to capture date with warning; ambiguous/unknown dates use unknown_date",
         "post_folder_rule": "dates/<date>/post_<post_id> for posts and dates/<date>/repost_<repost_id>__original_<original_post_id> for reposts",
         "media_folder_rule": "media/images, media/videos, media/manifests, media/segments under each post/repost folder",
         "static_screenshot_rule": "static_screenshot.* inside each post/repost folder, linked from both post.md and account_record.md",

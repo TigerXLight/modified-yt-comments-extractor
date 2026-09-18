@@ -2090,6 +2090,24 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43S_TWITTER_X_LIVE_PROFILE_LOCK_PREFLIGHT:
+        # Preflight the requested visible Chromium profile before R43O constructs
+        # the live/session-backed browser lane. This records path/write/singleton
+        # and redacted process-lock diagnostics without reading cookies, tokens,
+        # browser databases, or profile secrets.
+        self.twitter_x_live_profile_lock_preflight_r43s = None
+        try:
+            from profile_media_twitter_x_live_profile_lock_preflight_r43s import (
+                run_twitter_x_live_profile_lock_preflight_r43s,
+            )
+
+            self.twitter_x_live_profile_lock_preflight_r43s = run_twitter_x_live_profile_lock_preflight_r43s
+        except Exception:
+            logger.debug(
+                "Could not configure R43S Twitter/X live profile lock preflight.",
+                exc_info=True,
+            )
+
         # R43N_LIVE_TWITTER_X_SINGLE_ACCOUNT_SMOKE_HARNESS_REAL_OBSERVATION_RECEIPT:
         # Register the explicit, user-runnable Twitter/X visible-session smoke
         # harness. Automated validation returns truthful blocked receipts instead

@@ -17,6 +17,11 @@ from profile_media_live_twitter_x_runner_output_promotion_r43p import (
     TwitterXRunnerOutputPromotionRequestR43P,
     promote_twitter_x_runner_outputs_r43p,
 )
+from profile_media_twitter_x_live_profile_lock_preflight_r43s import (
+    PASS_PROFILE_PREFLIGHT,
+    run_twitter_x_live_profile_lock_preflight_r43s,
+    write_profile_preflight_receipts_r43s,
+)
 
 R43O_MARKER = "YTCE_R43O_LIVE_TWITTER_X_VISIBLE_SESSION_BINDING"
 R43O_PASS_STATUS = "PASS_R43O_LIVE_TWITTER_X_VISIBLE_SESSION_BINDING"
@@ -130,98 +135,126 @@ class LiveTwitterXVisibleSessionBindingR43O:
         promoted_non_fixture_observation_evidence = False
         why_observed_count_was_zero_before_promotion = ""
         side_effect_flags = _side_effect_flags(req, browser_started=False, network_access=False)
+        profile_preflight_summary: Mapping[str, Any] = {}
+        profile_preflight_status = ""
+        profile_preflight_summary_path = ""
+        profile_preflight_summary_md_path = ""
 
         if not req.run_visible_live and runner is None:
             blocker = "Visible live mode was not requested; R43O did not start or attach to a session."
         else:
             try:
-                lane = build_independent_fast_media_webview2_lane_r42gz(
-                    runner=runner,
-                    live=True,
-                    headless=False,
-                    fixture_mode=False,
-                    browser_user_data_dir=req.browser_user_data_dir,
-                    browser_executable_path=req.browser_executable_path,
-                )
-                visible_navigation_attempted = True
-                observer_started = True
-                r42gz_payload = dict(
-                    lane.observe_media(
+                if req.run_visible_live and runner is None and _clean(req.browser_user_data_dir):
+                    preflight = run_twitter_x_live_profile_lock_preflight_r43s(req.browser_user_data_dir)
+                    profile_preflight_summary = preflight.to_dict()
+                    profile_preflight_status = preflight.profile_preflight_status
+                    preflight_json, preflight_md = write_profile_preflight_receipts_r43s(preflight, run_dir)
+                    profile_preflight_summary_path = str(preflight_json)
+                    profile_preflight_summary_md_path = str(preflight_md)
+                    _append_ndjson(
+                        paths["progress"],
                         {
-                            "adapter_id": "twitter_x",
-                            "source_row_id": f"twitter_x_visible_session:{handle}",
-                            "source_url": target_url,
-                            "capture_timestamp": capture_ts,
-                            "output_root": str(run_dir / "r42gz_visible_session_binding"),
-                            "account_handle": handle,
-                            "scope": "r43o_visible_session_binding_smoke",
-                        }
+                            "event": "profile_preflight_finished",
+                            "at": _now_iso(),
+                            "profile_preflight_status": profile_preflight_status,
+                            "safe_to_launch_persistent_context": preflight.safe_to_launch_persistent_context,
+                        },
                     )
-                    or {}
-                )
-                visible_session_launched_or_attached = bool(req.run_visible_live and not req.automated_test_mode)
-                if runner is not None:
-                    visible_session_launched_or_attached = True
-                observation_store_path = _clean(
-                    r42gz_payload.get("visible_browser_media_observation_store_path")
-                    or r42gz_payload.get("media_inventory_path")
-                    or r42gz_payload.get("network_events_path")
-                )
-                files_written = _existing_paths_from_payload(r42gz_payload)
-                observed_media_count = max(
-                    _safe_int(r42gz_payload.get("visible_browser_media_observation_count")),
-                    _safe_int(r42gz_payload.get("media_item_count")),
-                    _list_count(r42gz_payload.get("media_inventory")),
-                )
-                observed_post_count = _list_count(r42gz_payload.get("events"))
-                screenshot_path = _clean(r42gz_payload.get("screenshot_path"))
-                observed_screenshot_count = 1 if _path_is_live_observation(screenshot_path) else 0
-                materialization_receipt_count = observed_screenshot_count
-                observed_before_promotion = observed_post_count + observed_media_count + observed_screenshot_count + materialization_receipt_count
-                runner_output_dir = _clean(r42gz_payload.get("output_dir") or r42gz_payload.get("lane_output_dir"))
-                if runner_output_dir:
-                    promotion = promote_twitter_x_runner_outputs_r43p(
-                        TwitterXRunnerOutputPromotionRequestR43P(
-                            runner_output_dir=runner_output_dir,
-                            output_root=str(run_dir),
-                            source_url=target_url,
-                            account_handle=handle,
-                            capture_timestamp=capture_ts,
-                            production_live=bool(req.run_visible_live and not req.automated_test_mode),
-                            test_fixture=False,
-                        )
+                    if profile_preflight_status != PASS_PROFILE_PREFLIGHT:
+                        status = profile_preflight_status
+                        blocker = preflight.blocker_reason or profile_preflight_status
+                if not blocker:
+                    lane = build_independent_fast_media_webview2_lane_r42gz(
+                        runner=runner,
+                        live=True,
+                        headless=False,
+                        fixture_mode=False,
+                        browser_user_data_dir=req.browser_user_data_dir,
+                        browser_executable_path=req.browser_executable_path,
                     )
-                    r43p_promotion_receipt = dict(promotion.receipt or {})
-                    r43p_promotion_receipt_path = promotion.receipt_path
-                    promoted_observed_post_count = _safe_int(r43p_promotion_receipt.get("promoted_observed_post_count"))
-                    promoted_observed_media_count = _safe_int(r43p_promotion_receipt.get("promoted_observed_media_count"))
-                    promoted_observed_screenshot_count = _safe_int(r43p_promotion_receipt.get("promoted_observed_screenshot_count"))
-                    promoted_network_event_count = _safe_int(r43p_promotion_receipt.get("promoted_network_event_count"))
-                    promoted_api_page_count = _safe_int(r43p_promotion_receipt.get("promoted_api_page_count"))
-                    promoted_response_body_count = _safe_int(r43p_promotion_receipt.get("promoted_response_body_count"))
-                    promoted_live_observation_paths = [
-                        _clean(path)
-                        for path in r43p_promotion_receipt.get("promoted_live_observation_paths") or ()
-                        if _path_is_live_observation(_clean(path))
-                    ]
-                    promoted_non_fixture_observation_evidence = bool(r43p_promotion_receipt.get("promoted_non_fixture_observation_evidence"))
-                    if observed_before_promotion == 0 and (
-                        promoted_observed_post_count or promoted_observed_media_count or promoted_observed_screenshot_count
-                    ):
-                        why_observed_count_was_zero_before_promotion = (
-                            "R42GZ returned zero direct counters, but the runner wrote real local DOM/screenshot/post/media files."
+                    visible_navigation_attempted = True
+                    observer_started = True
+                    r42gz_payload = dict(
+                        lane.observe_media(
+                            {
+                                "adapter_id": "twitter_x",
+                                "source_row_id": f"twitter_x_visible_session:{handle}",
+                                "source_url": target_url,
+                                "capture_timestamp": capture_ts,
+                                "output_root": str(run_dir / "r42gz_visible_session_binding"),
+                                "account_handle": handle,
+                                "scope": "r43o_visible_session_binding_smoke",
+                                "profile_preflight_summary": profile_preflight_summary,
+                            }
                         )
-                    observed_post_count = max(observed_post_count, promoted_observed_post_count)
-                    observed_media_count = max(observed_media_count, promoted_observed_media_count)
-                    observed_screenshot_count = max(observed_screenshot_count, promoted_observed_screenshot_count)
-                    materialization_receipt_count = max(materialization_receipt_count, promoted_observed_screenshot_count)
-                    files_written = sorted(set(files_written + promoted_live_observation_paths))
-                side_effect_flags = _side_effect_flags(
-                    req,
-                    browser_started=bool(req.run_visible_live and not req.automated_test_mode and runner is None),
-                    network_access=bool(req.run_visible_live and not req.automated_test_mode and runner is None),
-                )
-                if r42gz_payload.get("marker") != R42GZ_MARKER:
+                        or {}
+                    )
+                if r42gz_payload:
+                    visible_session_launched_or_attached = bool(req.run_visible_live and not req.automated_test_mode)
+                    if runner is not None:
+                        visible_session_launched_or_attached = True
+                    observation_store_path = _clean(
+                        r42gz_payload.get("visible_browser_media_observation_store_path")
+                        or r42gz_payload.get("media_inventory_path")
+                        or r42gz_payload.get("network_events_path")
+                    )
+                    files_written = _existing_paths_from_payload(r42gz_payload)
+                    observed_media_count = max(
+                        _safe_int(r42gz_payload.get("visible_browser_media_observation_count")),
+                        _safe_int(r42gz_payload.get("media_item_count")),
+                        _list_count(r42gz_payload.get("media_inventory")),
+                    )
+                    observed_post_count = _list_count(r42gz_payload.get("events"))
+                    screenshot_path = _clean(r42gz_payload.get("screenshot_path"))
+                    observed_screenshot_count = 1 if _path_is_live_observation(screenshot_path) else 0
+                    materialization_receipt_count = observed_screenshot_count
+                    observed_before_promotion = observed_post_count + observed_media_count + observed_screenshot_count + materialization_receipt_count
+                    runner_output_dir = _clean(r42gz_payload.get("output_dir") or r42gz_payload.get("lane_output_dir"))
+                    if runner_output_dir:
+                        promotion = promote_twitter_x_runner_outputs_r43p(
+                            TwitterXRunnerOutputPromotionRequestR43P(
+                                runner_output_dir=runner_output_dir,
+                                output_root=str(run_dir),
+                                source_url=target_url,
+                                account_handle=handle,
+                                capture_timestamp=capture_ts,
+                                production_live=bool(req.run_visible_live and not req.automated_test_mode),
+                                test_fixture=False,
+                            )
+                        )
+                        r43p_promotion_receipt = dict(promotion.receipt or {})
+                        r43p_promotion_receipt_path = promotion.receipt_path
+                        promoted_observed_post_count = _safe_int(r43p_promotion_receipt.get("promoted_observed_post_count"))
+                        promoted_observed_media_count = _safe_int(r43p_promotion_receipt.get("promoted_observed_media_count"))
+                        promoted_observed_screenshot_count = _safe_int(r43p_promotion_receipt.get("promoted_observed_screenshot_count"))
+                        promoted_network_event_count = _safe_int(r43p_promotion_receipt.get("promoted_network_event_count"))
+                        promoted_api_page_count = _safe_int(r43p_promotion_receipt.get("promoted_api_page_count"))
+                        promoted_response_body_count = _safe_int(r43p_promotion_receipt.get("promoted_response_body_count"))
+                        promoted_live_observation_paths = [
+                            _clean(path)
+                            for path in r43p_promotion_receipt.get("promoted_live_observation_paths") or ()
+                            if _path_is_live_observation(_clean(path))
+                        ]
+                        promoted_non_fixture_observation_evidence = bool(r43p_promotion_receipt.get("promoted_non_fixture_observation_evidence"))
+                        if observed_before_promotion == 0 and (
+                            promoted_observed_post_count or promoted_observed_media_count or promoted_observed_screenshot_count
+                        ):
+                            why_observed_count_was_zero_before_promotion = (
+                                "R42GZ returned zero direct counters, but the runner wrote real local DOM/screenshot/post/media files."
+                            )
+                        observed_post_count = max(observed_post_count, promoted_observed_post_count)
+                        observed_media_count = max(observed_media_count, promoted_observed_media_count)
+                        observed_screenshot_count = max(observed_screenshot_count, promoted_observed_screenshot_count)
+                        materialization_receipt_count = max(materialization_receipt_count, promoted_observed_screenshot_count)
+                        files_written = sorted(set(files_written + promoted_live_observation_paths))
+                    side_effect_flags = _side_effect_flags(
+                        req,
+                        browser_started=bool(req.run_visible_live and not req.automated_test_mode and runner is None),
+                        network_access=bool(req.run_visible_live and not req.automated_test_mode and runner is None),
+                    )
+                if blocker and status == profile_preflight_status:
+                    pass
+                elif r42gz_payload.get("marker") != R42GZ_MARKER:
                     status = R43O_NEEDS_PATCH_STATUS
                     blocker = "R43O could not reach the R42GZ visible/session media observation boundary."
                 elif observed_post_count or observed_media_count or observed_screenshot_count or materialization_receipt_count:
@@ -276,6 +309,10 @@ class LiveTwitterXVisibleSessionBindingR43O:
             "why_observed_count_was_zero_before_promotion": why_observed_count_was_zero_before_promotion,
             "r42gz_boundary_invoked": r42gz_payload.get("marker") == R42GZ_MARKER,
             "r42gz_result": r42gz_payload,
+            "profile_preflight_status": profile_preflight_status,
+            "profile_preflight_summary": profile_preflight_summary,
+            "profile_preflight_summary_path": profile_preflight_summary_path,
+            "profile_preflight_summary_md_path": profile_preflight_summary_md_path,
             "side_effect_flags": side_effect_flags,
         }
         _write_json(paths["receipt"], receipt)

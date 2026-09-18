@@ -119,6 +119,7 @@ class IndependentFastMediaWebView2LaneBackendR42GZ:
             "capture_timestamp": capture_timestamp,
             "lane_output_dir": str(lane_output_dir),
             "lane_contract": lane_contract,
+            "profile_preflight_summary": _to_jsonable(request_payload.get("profile_preflight_summary") or {}),
             "r42gy_request": _to_jsonable(request_payload),
         }
         _write_json(lane_output_dir / "r42gz_independent_fast_media_webview2_lane_request.json", request_receipt)
@@ -214,6 +215,7 @@ class IndependentFastMediaWebView2LaneBackendR42GZ:
             "lane_output_dir": str(lane_output_dir),
             "browser_user_data_dir": self.config.browser_user_data_dir,
             "browser_executable_path": self.config.browser_executable_path,
+            "profile_preflight_summary": _to_jsonable(request_payload.get("profile_preflight_summary") or {}),
             "network_events_path": str(network_events_path or ""),
             "media_inventory_path": str(media_inventory_path or ""),
             "rendered_dom_path": str(rendered_dom_path or ""),
