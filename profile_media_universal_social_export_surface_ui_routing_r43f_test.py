@@ -50,7 +50,7 @@ def test_bluesky_routes_through_r43e_to_r43v_adapter(tmp_path: Path) -> None:
         )
     )
     assert result.status == R43F_PASS_STATUS
-    assert result.route_status == "dispatched_to_r43v_adapter_via_r43e_adapter_map"
+    assert result.route_status == "dispatched_to_bluesky_adapter_via_r43e_adapter_map"
     assert result.downstream_status.startswith("PASS_R43V_")
     assert result.universal_record_contract_preserved is True
     assert result.downstream_result["record_count"] == 2

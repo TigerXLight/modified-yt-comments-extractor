@@ -256,7 +256,7 @@ class UniversalSocialExportSurfaceRouterR43F:
             downstream_status = r43e_result.downstream_status
             downstream_marker = _clean(downstream_payload.get("marker"))
             downstream_receipt_path = r43e_result.receipt_path
-            route_status = "dispatched_to_r43d_surface_via_r43e_adapter_map" if platform == "twitter_x" else "dispatched_to_r43v_adapter_via_r43e_adapter_map"
+            route_status = "dispatched_to_r43d_surface_via_r43e_adapter_map" if platform == "twitter_x" else "dispatched_to_bluesky_adapter_via_r43e_adapter_map"
             if r43e_result.status != R43E_PASS_STATUS:
                 warnings.append(f"R43E registry returned {r43e_result.status}.")
             _write_pointer_account_record(account_record_path, platform, handle, account_url, r43e_result.account_record_path)
@@ -461,7 +461,7 @@ def build_report(output_root: str | Path = R43F_DEFAULT_OUTPUT_ROOT) -> R43FRepo
         _check("universal_social_export_surface_router_invoked", side_effect_flags["universal_social_export_surface_router_invoked"]),
         _check("routes_through_r43e_adapter_map_first", side_effect_flags["routes_through_r43e_adapter_map_first"] and "twitter_x" in adapter_map),
         _check("twitter_x_dispatches_to_r43d_surface", twitter.route_status == "dispatched_to_r43d_surface_via_r43e_adapter_map" and twitter.downstream_status.startswith("PASS_R43D_")),
-        _check("bluesky_dispatches_to_r43v_adapter", bluesky.route_status == "dispatched_to_r43v_adapter_via_r43e_adapter_map" and bluesky.downstream_status.startswith("PASS_R43V_")),
+        _check("bluesky_dispatches_to_r43v_adapter", bluesky.route_status in {"dispatched_to_r43v_adapter_via_r43e_adapter_map", "dispatched_to_bluesky_adapter_via_r43e_adapter_map"} and bluesky.downstream_status.startswith("PASS_R43V_")),
         _check("pending_platforms_return_mapped_receipts_not_crashes", all(result.route_status == "mapped_pending_adapter_receipt" and result.status == R43F_PASS_STATUS for result in pending_results)),
         _check("unknown_platform_returns_unsupported_receipt", unknown.route_status == "unsupported_platform_receipt" and unknown.downstream_status == "unsupported_platform"),
         _check("universal_record_contract_preserved", all(result.universal_record_contract_preserved for result in sample_results)),

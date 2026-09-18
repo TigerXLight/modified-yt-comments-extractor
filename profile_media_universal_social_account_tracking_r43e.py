@@ -394,6 +394,34 @@ class UniversalSocialAccountTrackingRegistryR43E:
         initial_records: Iterable[Mapping[str, Any]] | None,
         run_dir: Path,
     ) -> dict[str, Any]:
+        bluesky_live_requested = bool(request.explicit_live_mode or request.run_visible_live or request.live_mode)
+        initial_rows = tuple(initial_records or ())
+        if bluesky_live_requested and not request.fixture_mode and not initial_rows:
+            from profile_media_bluesky_public_appview_import_r43w import (
+                BlueskyPublicAppviewImportRequestR43W,
+                build_bluesky_public_appview_import_r43w,
+            )
+
+            adapter = build_bluesky_public_appview_import_r43w(output_root=run_dir / "bluesky_public_appview")
+            public_request = BlueskyPublicAppviewImportRequestR43W(
+                account_url=account_url,
+                account_handle=account_handle,
+                actor=account_handle,
+                capture_timestamp=capture_timestamp,
+                output_root=str(run_dir / "bluesky_public_appview"),
+                live_mode=True,
+                explicit_live_mode=True,
+                public_network_enabled=True,
+                include_media=request.include_media,
+                include_static_screenshots=request.include_static_screenshots,
+                require_screenshot_receipts=request.require_screenshot_receipts,
+                max_items=request.max_items,
+            )
+            result = adapter.run_account_export(public_request)
+            payload = _result_dict(result)
+            payload["screenshot_receipts_index_path"] = ""
+            return payload
+
         from profile_media_bluesky_visible_account_adapter_r43v import (
             BlueskyVisibleAccountAdapterRequestR43V,
             build_bluesky_visible_account_adapter_r43v,
@@ -406,7 +434,7 @@ class UniversalSocialAccountTrackingRegistryR43E:
             capture_timestamp=capture_timestamp,
             output_root=str(run_dir / "bluesky_adapter"),
             fixture_mode=request.fixture_mode,
-            initial_records=tuple(initial_records or ()),
+            initial_records=initial_rows,
             include_media=request.include_media,
             include_static_screenshots=request.include_static_screenshots,
             require_screenshot_receipts=request.require_screenshot_receipts,
@@ -492,14 +520,14 @@ def build_default_platform_adapter_map_r43e() -> dict[str, UniversalSocialPlatfo
             platform_id="bluesky",
             display_name="Bluesky",
             url_hosts=("bsky.app", "staging.bsky.app"),
-            adapter_status="implemented_fixture_import_adapter_r43v",
+            adapter_status="implemented_fixture_import_adapter_r43v_public_appview_lane_r43w",
             account_url_examples=("https://bsky.app/profile/example.bsky.social",),
             implementation_module="profile_media_bluesky_visible_account_adapter_r43v",
             export_surface_attribute="bluesky_visible_account_adapter_r43v",
             record_type_map={"post": "post", "repost": "repost_or_reshare", "quote": "quote", "reply": "reply"},
-            capabilities=shared_capabilities + ("app_bsky_post_view_normalization", "bluesky_embed_media_mapping", "r43u_universal_ledger_writer"),
+            capabilities=shared_capabilities + ("app_bsky_post_view_normalization", "bluesky_embed_media_mapping", "public_appview_import_r43w", "r43u_universal_ledger_writer"),
             planned_from_twitter_x_contract=False,
-            notes="R43V maps imported/visible/public Bluesky post views into the universal account ledger. Live visible-browser capture remains the next step.",
+            notes="R43V maps imported/visible/public Bluesky post views into the universal account ledger; R43W adds an explicit public appview feed import lane. Live visible-browser capture remains a later step.",
         ),
         "instagram": UniversalSocialPlatformAdapterR43E(
             platform_id="instagram",

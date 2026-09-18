@@ -39,6 +39,7 @@ def test_adapter_map_contains_major_platforms_and_twitter_x_first_adapter() -> N
     assert adapters["twitter_x"].implementation_module == "profile_media_twitter_x_account_tracking_export_surface_r43d"
     assert adapters["twitter_x"].planned_from_twitter_x_contract is False
     assert adapters["bluesky"].implementation_module == "profile_media_bluesky_visible_account_adapter_r43v"
+    assert "public_appview_import_r43w" in adapters["bluesky"].capabilities
     assert adapters["bluesky"].planned_from_twitter_x_contract is False
     assert adapters["instagram"].record_type_map["reel"] == "post"
     assert adapters["facebook"].record_type_map["share"] == "repost_or_reshare"
@@ -91,7 +92,7 @@ def test_bluesky_fixture_routes_to_r43v_adapter(tmp_path: Path) -> None:
         )
     )
     assert result.status == R43E_PASS_STATUS
-    assert result.adapter_status == "implemented_fixture_import_adapter_r43v"
+    assert result.adapter_status == "implemented_fixture_import_adapter_r43v_public_appview_lane_r43w"
     assert result.downstream_status.startswith("PASS_R43V_")
     assert result.record_count == 2
     assert result.media_count == 3

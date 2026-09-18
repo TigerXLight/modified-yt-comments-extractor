@@ -1892,6 +1892,25 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43W_BLUESKY_PUBLIC_APPVIEW_IMPORT:
+        # Explicit public-appview Bluesky import lane. It fetches public
+        # app.bsky.feed.getAuthorFeed JSON only when live/public network mode
+        # is explicitly requested, then feeds postView rows into R43V/R43U.
+        # It does not start browsers, copy browser internals, read cookies or
+        # tokens, automate login, bypass challenges, or download remote media.
+        self.bluesky_public_appview_import_r43w = None
+        try:
+            from profile_media_bluesky_public_appview_import_r43w import (
+                build_bluesky_public_appview_import_r43w,
+            )
+
+            self.bluesky_public_appview_import_r43w = build_bluesky_public_appview_import_r43w()
+        except Exception:
+            logger.debug(
+                "Could not configure R43W Bluesky public appview import lane.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This
