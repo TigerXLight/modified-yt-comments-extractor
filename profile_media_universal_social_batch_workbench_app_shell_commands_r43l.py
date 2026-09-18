@@ -719,7 +719,7 @@ def _pending_platform_count(rows: Iterable[Mapping[str, Any]]) -> int:
     count = 0
     for row in rows:
         if _clean(row.get("route_status")) == "mapped_pending_adapter_receipt" or _clean(row.get("platform_id")) in {
-            "instagram", "facebook", "threads", "mastodon", "tiktok", "reddit", "youtube", "news_comments",
+            "instagram", "facebook", "threads", "mastodon", "tiktok", "youtube", "news_comments",
         }:
             count += 1
     return count

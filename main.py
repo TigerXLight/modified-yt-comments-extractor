@@ -2018,6 +2018,25 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R44D_REDDIT_VISIBLE_DOM_CAPTURE_ADAPTER:
+        # Maps visible Reddit submissions, comments and crossposts into the same
+        # universal account/date/post/media/screenshot ledger used by Twitter/X
+        # and Bluesky. It accepts rendered DOM/screenshot receipts only and does
+        # not read/copy browser profiles, cookies/tokens, cache, local storage,
+        # login databases, bypass challenges, or download remote media.
+        self.reddit_visible_dom_capture_r44d = None
+        try:
+            from profile_media_reddit_visible_dom_capture_r44d import (
+                build_reddit_visible_dom_capture_r44d,
+            )
+
+            self.reddit_visible_dom_capture_r44d = build_reddit_visible_dom_capture_r44d()
+        except Exception:
+            logger.debug(
+                "Could not configure R44D Reddit visible DOM capture adapter.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This

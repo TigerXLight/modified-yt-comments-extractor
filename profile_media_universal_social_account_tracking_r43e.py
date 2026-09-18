@@ -297,6 +297,26 @@ class UniversalSocialAccountTrackingRegistryR43E:
             date_folders = tuple(str(x) for x in downstream_payload.get("date_folders") or ())
             if not downstream_status.startswith("PASS_"):
                 warnings.append(f"Bluesky downstream adapter did not pass: {downstream_status!r}.")
+        elif detected_platform == "reddit":
+            downstream_payload = self._run_reddit_downstream(
+                account_url=account_url_plain,
+                account_handle=handle,
+                capture_timestamp=capture_ts,
+                request=req,
+                initial_records=initial_records,
+                run_dir=run_dir,
+            )
+            downstream_status = _clean(downstream_payload.get("status"))
+            account_record_path = _clean(downstream_payload.get("account_record_path"))
+            manifest_path = _clean(downstream_payload.get("manifest_path"))
+            media_index_path = _clean(downstream_payload.get("media_index_path"))
+            screenshot_receipts_index_path = _clean(downstream_payload.get("screenshot_receipts_index_path"))
+            record_count = _safe_int(downstream_payload.get("record_count"))
+            media_count = _safe_int(downstream_payload.get("media_count"))
+            screenshot_count = _safe_int(downstream_payload.get("screenshot_count"))
+            date_folders = tuple(str(x) for x in downstream_payload.get("date_folders") or ())
+            if not downstream_status.startswith("PASS_"):
+                warnings.append(f"Reddit downstream adapter did not pass: {downstream_status!r}.")
         else:
             downstream_status = "contract_only_adapter_pending"
             warnings.append(f"{adapter.display_name} is mapped to the universal contract but does not yet have a live adapter implementation.")
@@ -491,6 +511,55 @@ class UniversalSocialAccountTrackingRegistryR43E:
 
 
 
+    def _run_reddit_downstream(
+        self,
+        *,
+        account_url: str,
+        account_handle: str,
+        capture_timestamp: str,
+        request: UniversalSocialAccountTrackingRequestR43E,
+        initial_records: Iterable[Mapping[str, Any]] | None,
+        run_dir: Path,
+    ) -> dict[str, Any]:
+        from profile_media_reddit_visible_dom_capture_r44d import (
+            RedditVisibleDomCaptureRequestR44D,
+            build_reddit_visible_dom_capture_r44d,
+            normalize_reddit_feed_mode_r44d,
+        )
+
+        adapter = build_reddit_visible_dom_capture_r44d(output_root=run_dir / "reddit_visible_dom")
+        feed_mode = normalize_reddit_feed_mode_r44d(
+            "posts_and_comments" if request.include_replies else "posts_and_crossposts",
+            include_comments=request.include_replies,
+            include_reposts_or_reshares=request.include_reposts,
+        )
+        reddit_request = RedditVisibleDomCaptureRequestR44D(
+            account_url=account_url,
+            account_handle=account_handle,
+            capture_timestamp=capture_timestamp,
+            output_root=str(run_dir / "reddit_visible_dom"),
+            fixture_mode=request.fixture_mode or not (request.run_visible_live or request.live_mode or request.explicit_live_mode),
+            explicit_live_mode=request.explicit_live_mode,
+            run_visible_live=request.run_visible_live,
+            live_mode=request.live_mode,
+            public_network_enabled=request.public_network_enabled,
+            include_posts=request.include_posts,
+            include_comments=request.include_replies,
+            include_reposts_or_reshares=request.include_reposts,
+            include_media=request.include_media,
+            include_static_screenshots=request.include_static_screenshots,
+            require_screenshot_receipts=request.require_screenshot_receipts,
+            feed_mode=feed_mode,
+            max_items=request.max_items,
+            max_scrolls=request.max_scrolls,
+        )
+        result = adapter.run_account_export(reddit_request)
+        payload = _result_dict(result)
+        payload["screenshot_receipts_index_path"] = payload.get("screenshot_receipts_index_path", "")
+        return payload
+
+
+
 def _bluesky_feed_mode_from_request_r44c(request: UniversalSocialAccountTrackingRequestR43E) -> str:
     if getattr(request, "include_replies", False):
         return "posts_and_replies"
@@ -505,6 +574,8 @@ def _bluesky_public_feed_filter_from_request_r44c(request: UniversalSocialAccoun
     if not getattr(request, "include_reposts", True):
         return "posts_no_replies"
     return "posts_and_author_threads"
+
+
 
 def build_universal_social_account_tracking_registry_r43e(
     *,
@@ -639,11 +710,14 @@ def build_default_platform_adapter_map_r43e() -> dict[str, UniversalSocialPlatfo
             platform_id="reddit",
             display_name="Reddit",
             url_hosts=("reddit.com", "www.reddit.com", "old.reddit.com"),
-            adapter_status="mapped_contract_adapter_pending",
-            account_url_examples=("https://www.reddit.com/user/example/",),
+            adapter_status="implemented_visible_dom_capture_r44d",
+            account_url_examples=("https://www.reddit.com/user/example/", "https://www.reddit.com/r/example/comments/abc123/title/"),
+            implementation_module="profile_media_reddit_visible_dom_capture_r44d",
+            export_surface_attribute="reddit_visible_dom_capture_r44d",
             record_type_map={"submission": "post", "crosspost": "repost_or_reshare", "comment": "reply"},
-            capabilities=shared_capabilities,
-            notes="Submissions/comments/crossposts map into universal record folders; comments can be enabled per request.",
+            capabilities=shared_capabilities + ("reddit_visible_dom_capture_r44d", "reddit_submission_comment_crosspost_mapping", "reddit_media_metadata_receipts", "r43u_universal_ledger_writer"),
+            planned_from_twitter_x_contract=False,
+            notes="R44D maps visible Reddit submissions, comments and crossposts into the universal account/date/post/media/screenshot ledger without profile/cookie/token copying or remote media downloads.",
         ),
     }
 

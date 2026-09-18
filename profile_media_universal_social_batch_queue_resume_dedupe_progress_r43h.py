@@ -44,7 +44,6 @@ PENDING_PLATFORM_IDS_R43H = {
     "threads",
     "mastodon",
     "tiktok",
-    "reddit",
     "youtube",
     "news_comments",
 }

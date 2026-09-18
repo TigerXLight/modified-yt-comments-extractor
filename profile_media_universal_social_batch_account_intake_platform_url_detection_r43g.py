@@ -477,10 +477,18 @@ def detect_social_url_r43g(url: str, *, platform_id_hint: str = "") -> tuple[str
     if platform == "reddit":
         lower = [p.lower() for p in parts]
         if "comments" in lower:
-            return platform, "comment_thread", _safe_handle(parts[1] if len(parts) > 1 and lower[0] == "user" else "unknown_account"), _safe_id(_after(lower, "comments") or (parts[-1] if parts else "")), ""
-        if len(parts) >= 2 and lower[0] == "user":
+            if len(parts) >= 2 and lower[0] == "r":
+                handle = "r_" + parts[1]
+            elif len(parts) >= 2 and lower[0] in {"user", "u"}:
+                handle = parts[1]
+            else:
+                handle = "unknown_reddit_account"
+            return platform, "comment_thread", _safe_handle(handle), _safe_id(_after(lower, "comments") or (parts[-1] if parts else "")), ""
+        if len(parts) >= 2 and lower[0] in {"user", "u"}:
             return platform, "account", _safe_handle(parts[1]), "", ""
-        return platform, "account", _safe_handle(parts[0] if parts else "unknown_account"), "", ""
+        if len(parts) >= 2 and lower[0] == "r":
+            return platform, "subreddit", _safe_handle("r_" + parts[1]), "", ""
+        return platform, "account", _safe_handle(parts[0] if parts else "unknown_reddit_account"), "", ""
 
     if platform == "youtube":
         lower = [p.lower() for p in parts]

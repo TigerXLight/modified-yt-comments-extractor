@@ -43,6 +43,9 @@ def test_adapter_map_contains_major_platforms_and_twitter_x_first_adapter() -> N
     assert "visible_dom_capture_r43z" in adapters["bluesky"].capabilities
     assert "visible_live_workbench_capture_r44a" in adapters["bluesky"].capabilities
     assert adapters["bluesky"].planned_from_twitter_x_contract is False
+    assert adapters["reddit"].implementation_module == "profile_media_reddit_visible_dom_capture_r44d"
+    assert "reddit_visible_dom_capture_r44d" in adapters["reddit"].capabilities
+    assert adapters["reddit"].planned_from_twitter_x_contract is False
     assert adapters["instagram"].record_type_map["reel"] == "post"
     assert adapters["facebook"].record_type_map["share"] == "repost_or_reshare"
 
@@ -52,6 +55,7 @@ def test_registry_detects_platform_and_routes_twitter_x_to_r43d(tmp_path: Path) 
     assert registry.detect_platform_id("https://x.com/example") == "twitter_x"
     assert registry.detect_platform_id("https://bsky.app/profile/example.bsky.social") == "bluesky"
     assert registry.detect_platform_id("https://www.instagram.com/example/") == "instagram"
+    assert registry.detect_platform_id("https://www.reddit.com/user/example_redditor/") == "reddit"
     result = registry.run_account_export(
         UniversalSocialAccountTrackingRequestR43E(
             platform_id="twitter_x",

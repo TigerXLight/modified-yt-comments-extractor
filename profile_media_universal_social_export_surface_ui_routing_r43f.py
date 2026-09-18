@@ -43,7 +43,6 @@ PENDING_CONTRACT_PLATFORMS_R43F = {
     "threads",
     "mastodon",
     "tiktok",
-    "reddit",
     "youtube",
     "news_comments",
 }
@@ -229,7 +228,7 @@ class UniversalSocialExportSurfaceRouterR43F:
         route_status = ""
         adapter_status = _clean(adapter.get("adapter_status")) if adapter else "unsupported_platform"
 
-        if platform in {"twitter_x", "bluesky"} and adapter:
+        if platform in {"twitter_x", "bluesky", "reddit"} and adapter:
             r43e_request = UniversalSocialAccountTrackingRequestR43E(
                 platform_id=platform,
                 account_url=account_url,
@@ -258,7 +257,12 @@ class UniversalSocialExportSurfaceRouterR43F:
             downstream_status = r43e_result.downstream_status
             downstream_marker = _clean(downstream_payload.get("marker"))
             downstream_receipt_path = r43e_result.receipt_path
-            route_status = "dispatched_to_r43d_surface_via_r43e_adapter_map" if platform == "twitter_x" else "dispatched_to_bluesky_adapter_via_r43e_adapter_map"
+            if platform == "twitter_x":
+                route_status = "dispatched_to_r43d_surface_via_r43e_adapter_map"
+            elif platform == "bluesky":
+                route_status = "dispatched_to_bluesky_adapter_via_r43e_adapter_map"
+            else:
+                route_status = "dispatched_to_reddit_adapter_via_r43e_adapter_map"
             if r43e_result.status != R43E_PASS_STATUS:
                 warnings.append(f"R43E registry returned {r43e_result.status}.")
             _write_pointer_account_record(account_record_path, platform, handle, account_url, r43e_result.account_record_path)
@@ -445,7 +449,7 @@ def build_report(output_root: str | Path = R43F_DEFAULT_OUTPUT_ROOT) -> R43FRepo
                 output_root=str(root / "sample"),
             )
         )
-        for index, platform in enumerate(("instagram", "facebook", "threads", "mastodon", "tiktok", "reddit", "youtube", "news_comments"), start=1)
+        for index, platform in enumerate(("instagram", "facebook", "threads", "mastodon", "tiktok", "youtube", "news_comments"), start=1)
     ]
     unknown = router.route_account_tracking_export(
         UniversalSocialExportSurfaceRequestR43F(

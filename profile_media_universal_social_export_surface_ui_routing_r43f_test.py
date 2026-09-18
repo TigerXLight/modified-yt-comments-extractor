@@ -57,9 +57,30 @@ def test_bluesky_routes_through_r43e_to_r43v_adapter(tmp_path: Path) -> None:
     assert result.downstream_result["media_count"] == 3
 
 
+def test_reddit_routes_through_r43e_to_r44d_adapter(tmp_path: Path) -> None:
+    router = build_universal_social_export_surface_router_r43f(output_root=tmp_path)
+    result = router.route_account_tracking_export(
+        UniversalSocialExportSurfaceRequestR43F(
+            platform_id="reddit",
+            account_url="https://www.reddit.com/user/example_redditor/",
+            account_handle="example_redditor",
+            capture_timestamp="20260918T103500Z",
+            output_root=str(tmp_path),
+            fixture_mode=True,
+            include_replies=True,
+            max_items=5,
+        )
+    )
+    assert result.status == R43F_PASS_STATUS
+    assert result.route_status == "dispatched_to_reddit_adapter_via_r43e_adapter_map"
+    assert result.downstream_status == "PASS_R44D_REDDIT_VISIBLE_DOM_CAPTURE_ADAPTER"
+    assert result.downstream_result["record_count"] >= 3
+    assert result.downstream_result["media_count"] >= 4
+
+
 def test_pending_platforms_return_mapped_receipts_not_crashes(tmp_path: Path) -> None:
     router = build_universal_social_export_surface_router_r43f(output_root=tmp_path)
-    for platform in ("instagram", "facebook", "threads", "mastodon", "tiktok", "reddit", "youtube", "news_comments"):
+    for platform in ("instagram", "facebook", "threads", "mastodon", "tiktok", "youtube", "news_comments"):
         result = router.route_account_tracking_export(
             UniversalSocialExportSurfaceRequestR43F(
                 platform_id=platform,
