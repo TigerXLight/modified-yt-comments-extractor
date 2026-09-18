@@ -5,7 +5,7 @@ import base64
 import json
 import re
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -60,6 +60,9 @@ class BlueskyVisibleLiveWorkbenchCaptureRequestR44A:
     headless: bool = False
     browser_user_data_dir: str = ""
     browser_executable_path: str = ""
+    feed_mode: str = "posts_and_reposts"
+    include_reposts: bool = True
+    include_replies: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return _to_jsonable(asdict(self))
@@ -110,6 +113,8 @@ class BlueskyVisibleLiveWorkbenchCaptureResultR44A:
     injected_browser_runner_used: bool = False
     browser_session_started: bool = False
     network_actions_performed: bool = False
+    feed_mode: str = ""
+    navigation_url: str = ""
     side_effect_flags: Mapping[str, bool] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
 
@@ -181,6 +186,10 @@ def build_bluesky_visible_live_workbench_capture_contract_r44a() -> dict[str, An
         "downstream_visible_dom_lane": "profile_media_bluesky_visible_dom_capture_r43z",
         "downstream_adapter": "profile_media_bluesky_visible_account_adapter_r43v",
         "downstream_ledger": "profile_media_universal_social_account_ledger_contract_r43u",
+        "timeline_modes_r44c": {
+            "posts_and_reposts": "navigate to the profile Posts/Reposts timeline and preserve text/media/repost evidence where visible",
+            "posts_and_replies": "navigate to the profile Replies timeline and preserve text/media/reply evidence where visible",
+        },
         "visible_capture_strategy": [
             "require operator live flags before launching an external visible browser session",
             "capture only rendered page HTML and caller/browser screenshot receipts",
@@ -196,6 +205,7 @@ def build_bluesky_visible_live_workbench_capture_contract_r44a() -> dict[str, An
         ],
         "browser_user_data_dir_policy": "accepted for compatibility but not read, copied, or used by R44A",
         "browser_executable_path_policy": "optional browser executable hint only; no profile state is read or copied",
+        "bluesky_timeline_mode_aliases": ["posts_and_reposts", "posts_and_retweets", "posts_and_replies", "posts_replies"],
         "browser_profile_files_read_or_copied": False,
         "webview2_internals_copied": False,
         "cookie_or_token_extraction_performed": False,
@@ -220,6 +230,8 @@ def run_bluesky_visible_live_workbench_capture_r44a(
     handle = _safe_handle(req.account_handle or parsed.get("handle") or "bsky.app")
     if not account_url:
         account_url = f"https://bsky.app/profile/{handle}"
+    feed_mode = normalize_bluesky_live_feed_mode_r44c(req.feed_mode, include_reposts=req.include_reposts, include_replies=req.include_replies)
+    navigation_url = build_bluesky_visible_navigation_url_r44c(account_url, handle, feed_mode)
     run_dir = root / handle / f"bluesky_visible_live_workbench_capture_{capture_ts}"
     evidence_dir = run_dir / "visible_browser_evidence"
     evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -383,8 +395,10 @@ def run_bluesky_visible_live_workbench_capture_r44a(
         date_folders=r43z_result.date_folders,
         browser_engine=_clean(snapshot.get("engine")),
         browser_snapshot_status=_clean(snapshot.get("status")),
-        browser_final_url=_plain_url(snapshot.get("final_url") or account_url),
+        browser_final_url=_plain_url(snapshot.get("final_url") or navigation_url),
         browser_status_code=_safe_int(snapshot.get("status_code"), 0),
+        feed_mode=feed_mode,
+        navigation_url=navigation_url,
         injected_browser_runner_used=injected_runner_used,
         browser_session_started=browser_session_started,
         network_actions_performed=network_actions,
@@ -394,6 +408,41 @@ def run_bluesky_visible_live_workbench_capture_r44a(
     _write_json(receipt_path, result.to_dict())
     return result
 
+
+
+
+def normalize_bluesky_live_feed_mode_r44c(value: Any = "", *, include_reposts: bool = True, include_replies: bool = False) -> str:
+    raw = _clean(value).lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "posts_reposts": "posts_and_reposts",
+        "posts_and_retweets": "posts_and_reposts",
+        "posts_retweets": "posts_and_reposts",
+        "with_reposts": "posts_and_reposts",
+        "profile_posts": "posts_and_reposts",
+        "posts_replies": "posts_and_replies",
+        "posts_and_replies": "posts_and_replies",
+        "with_replies": "posts_and_replies",
+        "replies": "posts_and_replies",
+        "posts_only": "posts_only",
+    }
+    if raw in aliases:
+        return aliases[raw]
+    if include_replies:
+        return "posts_and_replies"
+    if include_reposts:
+        return "posts_and_reposts"
+    return "posts_only"
+
+
+def build_bluesky_visible_navigation_url_r44c(account_url: str, account_handle: str, feed_mode: str = "posts_and_reposts") -> str:
+    url = _plain_url(account_url)
+    handle = _safe_handle(account_handle or parse_bluesky_app_url_r43v(url).get("handle") or "bsky.app")
+    if "/post/" in url:
+        return url
+    mode = normalize_bluesky_live_feed_mode_r44c(feed_mode)
+    if mode == "posts_and_replies":
+        return f"https://bsky.app/profile/{handle}/replies"
+    return f"https://bsky.app/profile/{handle}"
 
 def capture_visible_browser_snapshot_r44a(req: BlueskyVisibleLiveWorkbenchCaptureRequestR44A) -> Mapping[str, Any]:
     """Launch a clean Playwright browser and return rendered HTML/screenshot.
@@ -664,6 +713,9 @@ def coerce_bluesky_visible_live_workbench_capture_request_r44a(
         headless=_to_bool(data.get("headless"), False),
         browser_user_data_dir=_clean(data.get("browser_user_data_dir")),
         browser_executable_path=_clean(data.get("browser_executable_path")),
+        feed_mode=normalize_bluesky_live_feed_mode_r44c(data.get("feed_mode") or data.get("timeline_mode") or "", include_reposts=_to_bool(data.get("include_reposts"), True), include_replies=_to_bool(data.get("include_replies"), False)),
+        include_reposts=_to_bool(data.get("include_reposts"), True),
+        include_replies=_to_bool(data.get("include_replies"), False),
     )
 
 
@@ -851,6 +903,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--max-items", type=int, default=5)
     parser.add_argument("--max-scrolls", type=int, default=2)
     parser.add_argument("--timeout-seconds", type=int, default=30)
+    parser.add_argument("--feed-mode", default="posts_and_reposts", choices=("posts_and_reposts", "posts_and_retweets", "posts_retweets", "posts_and_replies", "posts_replies", "posts_only"))
+    parser.add_argument("--timeline-mode", default="")
+    parser.add_argument("--include-replies", action="store_true")
+    parser.add_argument("--exclude-reposts", action="store_true")
     args = parser.parse_args(argv)
     if args.fixture_mode or (not args.html_path and not args.allow_external_visible_browser_capture):
         report = build_report(args.output_root)
@@ -874,6 +930,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_items=args.max_items,
             max_scrolls=args.max_scrolls,
             timeout_seconds=args.timeout_seconds,
+            feed_mode=args.timeline_mode or args.feed_mode,
+            include_reposts=not bool(args.exclude_reposts),
+            include_replies=bool(args.include_replies) or (args.timeline_mode or args.feed_mode) in {"posts_and_replies", "posts_replies"},
         )
     )
     print(R44A_MARKER)

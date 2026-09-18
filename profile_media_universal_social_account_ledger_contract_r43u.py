@@ -1059,13 +1059,13 @@ def _safe_record_id(value: Any) -> str:
     text = _clean(value)
     if text.startswith("at://"):
         text = text.rstrip("/").rsplit("/", 1)[-1]
-    text = re.sub(r"[^A-Za-z0-9_.:-]+", "_", text).strip("._-")
+    text = re.sub(r"[^A-Za-z0-9_.-]+", "_", text).strip("._-")
     return text or "unknown_record"
 
 
 def _safe_record_type(value: Any) -> str:
     text = re.sub(r"[^a-z0-9_]+", "_", _clean(value).lower()).strip("_")
-    if text in {"repost", "reshare", "boost", "share"}:
+    if text in {"repost", "repost_or_reshare", "reshare", "boost", "share"}:
         return "repost_or_reshare"
     if text in {"post", "quote", "reply", "thread_context"}:
         return text
@@ -1092,7 +1092,7 @@ def _safe_filename(value: Any) -> str:
 
 
 def _safe_part(value: Any, default: str) -> str:
-    text = re.sub(r"[^A-Za-z0-9_.:-]+", "_", _clean(value)).strip("._-")
+    text = re.sub(r"[^A-Za-z0-9_.-]+", "_", _clean(value)).strip("._-")
     return text or default
 
 

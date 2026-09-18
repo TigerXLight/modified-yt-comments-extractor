@@ -105,6 +105,10 @@ class UniversalSocialBatchWorkbenchAppShellCommandRequestR43L:
     run_visible_live: bool = False
     live_mode: bool = False
     public_network_enabled: bool = False
+    include_posts: bool = True
+    include_reposts_or_reshares: bool = True
+    include_quote_posts: bool = True
+    include_replies: bool = False
     browser_user_data_dir: str = ""
     browser_executable_path: str = ""
     max_items: int = 3
@@ -304,6 +308,10 @@ def coerce_universal_social_batch_workbench_app_shell_command_request_r43l(
         run_visible_live=_to_bool(data.get("run_visible_live"), False),
         live_mode=_to_bool(data.get("live_mode"), False),
         public_network_enabled=_to_bool(data.get("public_network_enabled"), False),
+        include_posts=_to_bool(data.get("include_posts"), True),
+        include_reposts_or_reshares=_to_bool(data.get("include_reposts_or_reshares") if "include_reposts_or_reshares" in data else data.get("include_reposts"), True),
+        include_quote_posts=_to_bool(data.get("include_quote_posts"), True),
+        include_replies=_to_bool(data.get("include_replies"), False),
         browser_user_data_dir=_clean(data.get("browser_user_data_dir")),
         browser_executable_path=_clean(data.get("browser_executable_path")),
         max_items=_safe_int(data.get("max_items"), 3),
@@ -473,6 +481,10 @@ def _to_panel_request(req: UniversalSocialBatchWorkbenchAppShellCommandRequestR4
         run_visible_live=req.run_visible_live,
         live_mode=req.live_mode,
         public_network_enabled=req.public_network_enabled,
+        include_posts=req.include_posts,
+        include_reposts_or_reshares=req.include_reposts_or_reshares,
+        include_quotes=req.include_quote_posts,
+        include_replies=req.include_replies,
         browser_user_data_dir=req.browser_user_data_dir,
         browser_executable_path=req.browser_executable_path,
         max_items=req.max_items,

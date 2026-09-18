@@ -61,6 +61,9 @@ class BlueskyPublicAppviewImportRequestR43W:
     timeout_seconds: float = 20.0
     include_pins: bool = True
     feed_filter: str = "posts_and_author_threads"
+    feed_mode: str = "posts_and_reposts"
+    include_reposts: bool = True
+    include_replies: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return _to_jsonable(asdict(self))
@@ -85,6 +88,10 @@ class BlueskyPublicAppviewImportResultR43W:
     appview_statuses: tuple[str, ...] = ()
     appview_payload_paths: tuple[str, ...] = ()
     post_view_count: int = 0
+    feed_mode: str = ""
+    feed_filter: str = ""
+    repost_record_count: int = 0
+    reply_record_count: int = 0
     adapter_status: str = ""
     adapter_receipt_path: str = ""
     ledger_status: str = ""
@@ -235,7 +242,7 @@ def run_bluesky_public_appview_import_r43w(
             actor=actor,
             limit=max(_safe_int(req.max_items), 1),
             include_pins=req.include_pins,
-            feed_filter=req.feed_filter,
+            feed_filter=bluesky_public_feed_filter_for_mode_r44c(req.feed_mode, req.feed_filter, include_replies=req.include_replies),
         )
         request_urls.append(url)
         fetch_result = _fetch_json_r43w(url, fetcher=fetcher, timeout_seconds=req.timeout_seconds)
@@ -250,7 +257,11 @@ def run_bluesky_public_appview_import_r43w(
     else:
         warnings.append("No fixture/imported feed was supplied and public network access was not explicitly enabled.")
 
-    post_views = extract_post_views_from_author_feed_r43w(feed_response, max_items=max(_safe_int(req.max_items), 1))
+    post_views = extract_post_views_from_author_feed_r43w(
+        feed_response,
+        max_items=max(_safe_int(req.max_items), 1),
+        feed_mode=req.feed_mode,
+    )
     r43v_payload: dict[str, Any] = {}
     if post_views:
         from profile_media_bluesky_visible_account_adapter_r43v import R43V_PASS_STATUS as _R43V_PASS_STATUS
@@ -295,6 +306,10 @@ def run_bluesky_public_appview_import_r43w(
         appview_statuses=tuple(statuses),
         appview_payload_paths=tuple(payload_paths),
         post_view_count=len(post_views),
+        feed_mode=normalize_bluesky_feed_mode_r44c(req.feed_mode, include_reposts=req.include_reposts, include_replies=req.include_replies),
+        feed_filter=bluesky_public_feed_filter_for_mode_r44c(req.feed_mode, req.feed_filter, include_replies=req.include_replies),
+        repost_record_count=sum(1 for row in post_views if _is_repost_post_view_r44c(row)),
+        reply_record_count=sum(1 for row in post_views if _is_reply_post_view_r44c(row)),
         adapter_status=_clean(r43v_payload.get("status")),
         adapter_receipt_path=_clean(r43v_payload.get("receipt_path")),
         ledger_status=_clean(r43v_payload.get("ledger_status")),
@@ -336,7 +351,7 @@ def build_bluesky_get_author_feed_url_r43w(
     return f"{BLUESKY_PUBLIC_APPVIEW_BASE_R43W}/app.bsky.feed.getAuthorFeed?{urllib.parse.urlencode(params)}"
 
 
-def extract_post_views_from_author_feed_r43w(feed_response: Mapping[str, Any], *, max_items: int = 5) -> tuple[Mapping[str, Any], ...]:
+def extract_post_views_from_author_feed_r43w(feed_response: Mapping[str, Any], *, max_items: int = 5, feed_mode: str = "posts_and_reposts") -> tuple[Mapping[str, Any], ...]:
     payload = _mapping(feed_response)
     rows = _sequence(payload.get("feed"))
     post_views: list[Mapping[str, Any]] = []
@@ -345,7 +360,14 @@ def extract_post_views_from_author_feed_r43w(feed_response: Mapping[str, Any], *
         item = _mapping(row)
         post = _mapping(item.get("post") or item)
         if post.get("uri") and post.get("author"):
-            post_views.append(post)
+            enriched_post = dict(post)
+            if isinstance(row, Mapping):
+                if item.get("reason"):
+                    enriched_post["r43w_feed_reason"] = _mapping(item.get("reason"))
+                if item.get("reply"):
+                    enriched_post["r43w_feed_reply"] = _mapping(item.get("reply"))
+            enriched_post["r44c_feed_mode"] = normalize_bluesky_feed_mode_r44c(feed_mode)
+            post_views.append(enriched_post)
         if len(post_views) >= limit:
             break
     return tuple(post_views)
@@ -393,8 +415,58 @@ def coerce_bluesky_public_appview_import_request_r43w(
         timeout_seconds=float(data.get("timeout_seconds") or 20.0),
         include_pins=_to_bool(data.get("include_pins"), True),
         feed_filter=_clean(data.get("feed_filter") or "posts_and_author_threads"),
+        feed_mode=normalize_bluesky_feed_mode_r44c(data.get("feed_mode") or data.get("timeline_mode") or "", include_reposts=_to_bool(data.get("include_reposts"), True), include_replies=_to_bool(data.get("include_replies"), False)),
+        include_reposts=_to_bool(data.get("include_reposts"), True),
+        include_replies=_to_bool(data.get("include_replies"), False),
     )
 
+
+
+
+def normalize_bluesky_feed_mode_r44c(value: Any = "", *, include_reposts: bool = True, include_replies: bool = False) -> str:
+    raw = _clean(value).lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "posts_reposts": "posts_and_reposts",
+        "posts_and_retweets": "posts_and_reposts",
+        "posts_retweets": "posts_and_reposts",
+        "with_reposts": "posts_and_reposts",
+        "profile_posts": "posts_and_reposts",
+        "posts_replies": "posts_and_replies",
+        "posts_and_replies": "posts_and_replies",
+        "with_replies": "posts_and_replies",
+        "replies": "posts_and_replies",
+        "posts_only": "posts_only",
+    }
+    if raw in aliases:
+        return aliases[raw]
+    if include_replies:
+        return "posts_and_replies"
+    if include_reposts:
+        return "posts_and_reposts"
+    return "posts_only"
+
+
+def bluesky_public_feed_filter_for_mode_r44c(feed_mode: Any = "", explicit_feed_filter: str = "", *, include_replies: bool = False) -> str:
+    mode = normalize_bluesky_feed_mode_r44c(feed_mode, include_replies=include_replies)
+    explicit = _clean(explicit_feed_filter)
+    if mode == "posts_and_replies":
+        return "posts_with_replies"
+    if explicit and explicit != "posts_and_author_threads":
+        return explicit
+    if mode == "posts_only":
+        return "posts_no_replies"
+    return "posts_and_author_threads"
+
+
+def _is_repost_post_view_r44c(post_view: Mapping[str, Any]) -> bool:
+    reason = _mapping(post_view.get("r43w_feed_reason") or post_view.get("reason"))
+    reason_type = _clean(reason.get("$type") or reason.get("type"))
+    return "reasonRepost" in reason_type or reason_type.endswith("#reasonRepost")
+
+
+def _is_reply_post_view_r44c(post_view: Mapping[str, Any]) -> bool:
+    record = _mapping(post_view.get("record"))
+    return bool(_mapping(record.get("reply") or post_view.get("reply")))
 
 def build_r43w_side_effect_flags(*, network_actions_performed: bool = False) -> dict[str, bool]:
     return {

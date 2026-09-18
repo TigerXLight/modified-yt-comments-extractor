@@ -295,36 +295,127 @@ def normalize_bluesky_post_view_to_universal_record_r43v(
     rkey = _clean(parsed.get("rkey") or _rkey_from_url(_clean(post.get("source_url"))))
     author_handle = _safe_handle(author.get("handle") or account_handle)
     author_did = _clean(author.get("did") or parsed.get("did"))
-    record_id = _safe_record_id(rkey or cid or uri)
-    source_url = _plain_url(post.get("source_url") or build_bluesky_post_url_r43v(author_handle or author_did or account_handle, rkey or record_id))
+    native_record_id = _safe_record_id(rkey or cid or uri)
+    source_url = _plain_url(post.get("source_url") or build_bluesky_post_url_r43v(author_handle or author_did or account_handle, rkey or native_record_id))
+    classification = _classify_bluesky_post_view_record_kind_r44c(
+        post,
+        record=record,
+        native_record_id=native_record_id,
+        account_handle=account_handle,
+        author_handle=author_handle,
+    )
+    record_id = classification["record_id"]
     media_items = (
         _extract_bluesky_embed_media_r43v(_mapping(post.get("embed")), record_id=record_id, source_url=source_url, at_uri=uri)
         if include_media and post.get("embed") else ()
     )
+    bluesky_specific = {
+        "did": author_did,
+        "handle": author_handle,
+        "at_uri": uri,
+        "cid": cid,
+        "rkey": rkey,
+        "native_record_id": native_record_id,
+        "app_bsky_url": source_url,
+        "indexed_at": _clean(post.get("indexedAt")),
+        "reply_count": _safe_int(post.get("replyCount")),
+        "repost_count": _safe_int(post.get("repostCount")),
+        "like_count": _safe_int(post.get("likeCount")),
+        "quote_count": _safe_int(post.get("quoteCount")),
+        "embed_type": _embed_type(_mapping(post.get("embed"))),
+        "timeline_record_type_source": classification["record_type_source"],
+        "feed_mode": _clean(post.get("r44c_feed_mode") or post.get("feed_mode")),
+    }
+    if classification["reply_context"]:
+        bluesky_specific["reply_context"] = classification["reply_context"]
+    if classification["reshare_context"]:
+        bluesky_specific["repost_context"] = classification["reshare_context"]
     return UniversalSocialRecordR43U(
         platform_id="bluesky",
         account_handle=_safe_handle(account_handle or author_handle),
         record_id=record_id,
-        record_type="post",
+        record_type=classification["record_type"],
         source_url=source_url,
         visible_text=_clean(record.get("text") or post.get("text")),
         visible_timestamp=_clean(record.get("createdAt") or post.get("indexedAt")),
         capture_timestamp=_safe_ts(capture_timestamp),
         author_handle=author_handle,
         author_display_name=_clean(author.get("displayName")),
+        original_record_id=classification["original_record_id"],
+        reshared_by_handle=classification["reshared_by_handle"],
+        reshare_context=classification["reshare_context"],
         static_screenshot_path=_clean(static_screenshot_path),
         media_items=media_items,
-        review_strings=(f"bluesky|{author_handle}|{record_id}|{source_url}",),
+        review_strings=(f"bluesky_{classification['record_type']}|{author_handle}|{record_id}|{source_url}",),
         observed_order=observed_order,
-        platform_specific={"bluesky": {
-            "did": author_did, "handle": author_handle, "at_uri": uri, "cid": cid,
-            "rkey": rkey, "app_bsky_url": source_url, "indexed_at": _clean(post.get("indexedAt")),
-            "reply_count": _safe_int(post.get("replyCount")), "repost_count": _safe_int(post.get("repostCount")),
-            "like_count": _safe_int(post.get("likeCount")), "quote_count": _safe_int(post.get("quoteCount")),
-            "embed_type": _embed_type(_mapping(post.get("embed"))),
-        }},
+        platform_specific={"bluesky": bluesky_specific},
     )
 
+
+
+
+def _classify_bluesky_post_view_record_kind_r44c(
+    post: Mapping[str, Any],
+    *,
+    record: Mapping[str, Any],
+    native_record_id: str,
+    account_handle: str = "",
+    author_handle: str = "",
+) -> dict[str, Any]:
+    """Map Bluesky feed item metadata to universal post/repost/reply records.
+
+    Public appview getAuthorFeed returns rows with a ``reason`` object for reposts.
+    R43W preserves that reason under ``r43w_feed_reason`` before handing the postView
+    to R43V. Replies are indicated by app.bsky.feed.post ``record.reply``. This helper
+    keeps the universal fields compatible with the Twitter/X account ledger: reposts
+    become ``repost_or_reshare`` records with ``original_record_id`` and
+    ``reshared_by_handle`` populated; replies become ``reply`` records with the reply
+    root/parent details nested under ``platform_specific.bluesky.reply_context``.
+    """
+    reason = _mapping(post.get("r43w_feed_reason") or post.get("reason") or post.get("feed_reason"))
+    reason_type = _clean(reason.get("$type") or reason.get("type"))
+    by = _mapping(reason.get("by"))
+    reply = _mapping(record.get("reply") or post.get("reply"))
+    reply_root = _mapping(reply.get("root"))
+    reply_parent = _mapping(reply.get("parent"))
+    account = _safe_handle(account_handle)
+    author = _safe_handle(author_handle)
+    native_id = _safe_record_id(native_record_id)
+    if "reasonRepost" in reason_type or reason_type.endswith("#reasonRepost"):
+        reposted_at = _clean(reason.get("indexedAt") or post.get("indexedAt"))
+        reshared_by = _safe_handle(by.get("handle") or account)
+        stamp = _safe_ts(reposted_at) or _safe_record_id(reshared_by or "repost")
+        return {
+            "record_type": "repost_or_reshare",
+            "record_id": _safe_record_id(f"repost_{native_id}_{stamp}"),
+            "original_record_id": native_id,
+            "reshared_by_handle": reshared_by,
+            "reshare_context": _to_jsonable({"platform": "bluesky", "reason": reason, "reason_type": reason_type, "reposted_at": reposted_at}),
+            "reply_context": {},
+            "record_type_source": "appview_feed_reason_repost",
+        }
+    if reply:
+        parent_uri = _clean(reply_parent.get("uri"))
+        root_uri = _clean(reply_root.get("uri"))
+        original = _safe_record_id(parent_uri or root_uri or "reply_parent")
+        return {
+            "record_type": "reply",
+            "record_id": native_id,
+            "original_record_id": original,
+            "reshared_by_handle": "",
+            "reshare_context": {},
+            "reply_context": _to_jsonable({"root": reply_root, "parent": reply_parent}),
+            "record_type_source": "app_bsky_feed_post_reply_ref",
+        }
+    return {
+        "record_type": "post",
+        "record_id": native_id,
+        "original_record_id": "",
+        "reshared_by_handle": "",
+        "reshare_context": {},
+        "reply_context": {},
+        "record_type_source": "default_original_post",
+    }
 
 def _extract_bluesky_embed_media_r43v(embed: Mapping[str, Any], *, record_id: str, source_url: str, at_uri: str = "") -> tuple[UniversalSocialMediaItemR43U, ...]:
     embed_type = _embed_type(embed)
@@ -522,7 +613,7 @@ def _safe_record_id(value: Any) -> str:
     text = _clean(value)
     if text.startswith("at://"):
         text = parse_bluesky_at_uri_r43v(text).get("rkey") or text
-    return re.sub(r"[^A-Za-z0-9_.:-]+", "_", text).strip("._-") or "unknown_record"
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", text).strip("._-") or "unknown_record"
 
 
 def _safe_media_id(value: Any) -> str:

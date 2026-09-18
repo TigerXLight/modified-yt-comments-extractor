@@ -42,6 +42,9 @@ class BlueskyRealWindowsVisibleBrowserSmokeRequestR44B:
     min_media: int = 0
     allow_zero_media: bool = True
     browser_executable_path: str = ""
+    feed_mode: str = "posts_and_reposts"
+    include_reposts: bool = True
+    include_replies: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return _to_jsonable(asdict(self))
@@ -86,6 +89,8 @@ class BlueskyRealWindowsVisibleBrowserSmokeResultR44B:
     review_strings_path: str = ""
     live_media_binding_status: str = ""
     real_visible_smoke_requested: bool = False
+    feed_mode: str = ""
+    navigation_url: str = ""
     side_effect_flags: Mapping[str, bool] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
 
@@ -149,6 +154,10 @@ def build_bluesky_real_windows_visible_browser_smoke_contract_r44b() -> dict[str
         "downstream_visible_dom_lane": "profile_media_bluesky_visible_dom_capture_r43z",
         "downstream_adapter": "profile_media_bluesky_visible_account_adapter_r43v",
         "downstream_ledger": "profile_media_universal_social_account_ledger_contract_r43u",
+        "timeline_modes_r44c": {
+            "posts_and_reposts": "profile timeline smoke; intended to match Twitter/X posts+retweets mode",
+            "posts_and_replies": "profile replies timeline smoke; intended to match Twitter/X posts+replies mode",
+        },
         "real_visible_smoke_requirements": [
             "explicit --real-visible-smoke flag",
             "clean Playwright visible Chromium session launched by R44A",
@@ -209,6 +218,9 @@ def run_bluesky_real_windows_visible_browser_smoke_r44b(
             max_scrolls=req.max_scrolls,
             timeout_seconds=req.timeout_seconds,
             browser_executable_path=req.browser_executable_path,
+            feed_mode=req.feed_mode,
+            include_reposts=req.include_reposts,
+            include_replies=req.include_replies,
         )
     )
     payload = r44a_result.to_dict()
@@ -285,6 +297,8 @@ def run_bluesky_real_windows_visible_browser_smoke_r44b(
         review_strings_path=r44a_result.review_strings_path,
         live_media_binding_status=live_media_binding_status,
         real_visible_smoke_requested=bool(req.real_visible_smoke),
+        feed_mode=_clean(getattr(r44a_result, "feed_mode", "") or req.feed_mode),
+        navigation_url=_plain_url(getattr(r44a_result, "navigation_url", "")),
         side_effect_flags=flags,
         warnings=tuple(_dedupe(warnings)),
     )
@@ -410,6 +424,9 @@ def coerce_bluesky_real_windows_visible_browser_smoke_request_r44b(request: Blue
         min_media=_safe_int(data.get("min_media"), 0),
         allow_zero_media=_to_bool(data.get("allow_zero_media"), True),
         browser_executable_path=str(data.get("browser_executable_path") or ""),
+        feed_mode=_clean(data.get("feed_mode") or data.get("timeline_mode") or "posts_and_reposts"),
+        include_reposts=_to_bool(data.get("include_reposts"), True),
+        include_replies=_to_bool(data.get("include_replies"), False),
     )
 
 
@@ -515,6 +532,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--min-media", type=int, default=0)
     parser.add_argument("--strict-live-media", action="store_true")
     parser.add_argument("--browser-executable-path", default="")
+    parser.add_argument("--feed-mode", default="posts_and_reposts", choices=("posts_and_reposts", "posts_and_retweets", "posts_retweets", "posts_and_replies", "posts_replies", "posts_only"))
+    parser.add_argument("--timeline-mode", default="")
+    parser.add_argument("--include-replies", action="store_true")
+    parser.add_argument("--exclude-reposts", action="store_true")
     args = parser.parse_args(argv)
     if not args.real_visible_smoke:
         report = build_report(args.output_root)
@@ -539,6 +560,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             min_media=args.min_media,
             allow_zero_media=not args.strict_live_media,
             browser_executable_path=args.browser_executable_path,
+            feed_mode=args.timeline_mode or args.feed_mode,
+            include_reposts=not bool(args.exclude_reposts),
+            include_replies=bool(args.include_replies) or (args.timeline_mode or args.feed_mode) in {"posts_and_replies", "posts_replies"},
         )
     )
     print(R44B_MARKER)

@@ -415,6 +415,9 @@ class UniversalSocialAccountTrackingRegistryR43E:
                 live_mode=bool(request.live_mode),
                 public_network_enabled=False,
                 allow_external_visible_browser_capture=True,
+                feed_mode=_bluesky_feed_mode_from_request_r44c(request),
+                include_reposts=request.include_reposts,
+                include_replies=request.include_replies,
                 include_media=request.include_media,
                 include_static_screenshots=request.include_static_screenshots,
                 require_screenshot_receipts=request.require_screenshot_receipts,
@@ -448,6 +451,10 @@ class UniversalSocialAccountTrackingRegistryR43E:
                 include_static_screenshots=request.include_static_screenshots,
                 require_screenshot_receipts=request.require_screenshot_receipts,
                 max_items=request.max_items,
+                feed_filter=_bluesky_public_feed_filter_from_request_r44c(request),
+                feed_mode=_bluesky_feed_mode_from_request_r44c(request),
+                include_reposts=request.include_reposts,
+                include_replies=request.include_replies,
             )
             result = adapter.run_account_export(public_request)
             payload = _result_dict(result)
@@ -481,6 +488,23 @@ class UniversalSocialAccountTrackingRegistryR43E:
         payload["screenshot_receipts_index_path"] = ""
         return payload
 
+
+
+
+def _bluesky_feed_mode_from_request_r44c(request: UniversalSocialAccountTrackingRequestR43E) -> str:
+    if getattr(request, "include_replies", False):
+        return "posts_and_replies"
+    if getattr(request, "include_reposts", True):
+        return "posts_and_reposts"
+    return "posts_only"
+
+
+def _bluesky_public_feed_filter_from_request_r44c(request: UniversalSocialAccountTrackingRequestR43E) -> str:
+    if getattr(request, "include_replies", False):
+        return "posts_with_replies"
+    if not getattr(request, "include_reposts", True):
+        return "posts_no_replies"
+    return "posts_and_author_threads"
 
 def build_universal_social_account_tracking_registry_r43e(
     *,

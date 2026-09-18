@@ -105,6 +105,35 @@ def test_mapping_coercion_accepts_bluesky_like_dicts(tmp_path: Path) -> None:
     assert post["media_items"][0]["copied_local_bytes"] is True
 
 
+
+def test_universal_writer_uses_windows_safe_repost_or_reshare_folder(tmp_path: Path) -> None:
+    result = write_universal_social_account_ledger_r43u(
+        [
+            {
+                "platform": "bluesky",
+                "account_handle": "example.bsky.social",
+                "record_id": "repost_3abc_2026-09-18T05:05:02.000Z",
+                "record_type": "repost_or_reshare",
+                "original_record_id": "at://did:plc:origin/app.bsky.feed.post/3abc",
+                "url": "https://bsky.app/profile/example.bsky.social/post/3abc",
+                "text": "repost folder safety fixture",
+                "indexed_at": "2026-09-18T05:05:02.000Z",
+            }
+        ],
+        output_root=tmp_path / "out",
+        platform_id="bluesky",
+        account_handle="example.bsky.social",
+        capture_timestamp="20260918T050502Z",
+    )
+    assert result.status == R43U_PASS_STATUS
+    capture = Path(result.account_capture_dir)
+    day = capture / "dates" / "2026-09-18"
+    folders = [p.name for p in day.iterdir() if p.is_dir()]
+    assert folders, result.to_dict()
+    folder = folders[0]
+    assert folder.startswith("reshare_repost_3abc_2026-09-18T05_05_02.000Z__original_3abc") or folder.startswith("reshare_repost_3abc_2026-09-18T05_05_02.000Z__original_at_did.plc.origin_app.bsky.feed.post_3abc")
+    assert all(ch not in folder for ch in '<>:\"/\\|?*')
+
 def test_r43u_report_green(tmp_path: Path) -> None:
     report = build_report(tmp_path / "report")
     assert report.status == R43U_PASS_STATUS, [c for c in report.checks if c.get("status") != "pass"]
@@ -128,6 +157,7 @@ def run_self_test() -> None:
     test_universal_writer_writes_twitter_x_baseline_shape(root / "twitter")
     test_universal_writer_writes_bluesky_with_platform_specific_identity(root / "bluesky")
     test_mapping_coercion_accepts_bluesky_like_dicts(root / "coercion")
+    test_universal_writer_uses_windows_safe_repost_or_reshare_folder(root / "windows_safe_repost")
     test_r43u_report_green(root / "report")
     test_existing_twitter_x_r43a_baseline_constants_are_not_replaced()
 

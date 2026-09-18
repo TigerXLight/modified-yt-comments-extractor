@@ -2001,6 +2001,23 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R44C_BLUESKY_POSTS_REPOSTS_REPLIES_PARITY:
+        # Adds Twitter/X-style Bluesky feed modes: posts+reposts and posts+replies.
+        # It keeps visible text/media/screenshot evidence flowing through R44A/R43Z
+        # and public appview reason/reply metadata through R43W/R43V/R43U.
+        self.bluesky_feed_mode_parity_r44c = None
+        try:
+            from profile_media_bluesky_feed_mode_parity_r44c import (
+                build_bluesky_feed_mode_parity_r44c,
+            )
+
+            self.bluesky_feed_mode_parity_r44c = build_bluesky_feed_mode_parity_r44c()
+        except Exception:
+            logger.debug(
+                "Could not configure R44C Bluesky feed-mode parity.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This

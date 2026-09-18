@@ -50,6 +50,9 @@ class BlueskyVisibleDomCaptureRequestR43Z:
     require_screenshot_receipts: bool = True
     max_items: int = 5
     max_scrolls: int = 2
+    feed_mode: str = "posts_and_reposts"
+    include_reposts: bool = True
+    include_replies: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return _to_jsonable(asdict(self))
@@ -93,6 +96,7 @@ class BlueskyVisibleDomCaptureResultR43Z:
     post_folder_count: int = 0
     date_folders: tuple[str, ...] = ()
     normalized_records: tuple[Mapping[str, Any], ...] = ()
+    feed_mode: str = ""
     side_effect_flags: Mapping[str, bool] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
 
@@ -240,6 +244,9 @@ def run_bluesky_visible_dom_capture_r43z(
         max_items=req.max_items,
         include_media=req.include_media,
         include_static_screenshots=req.include_static_screenshots,
+        feed_mode=req.feed_mode,
+        include_reposts=req.include_reposts,
+        include_replies=req.include_replies,
     )
 
     _write_json(visible_posts_path, extracted_records)
@@ -312,6 +319,7 @@ def run_bluesky_visible_dom_capture_r43z(
         post_folder_count=adapter_result.post_folder_count,
         date_folders=adapter_result.date_folders,
         normalized_records=tuple(adapter_payload.get("normalized_records") or ()),
+        feed_mode=normalize_bluesky_visible_feed_mode_r44c(req.feed_mode, include_reposts=req.include_reposts, include_replies=req.include_replies),
         side_effect_flags=build_r43z_side_effect_flags(),
         warnings=tuple(warnings),
     )
@@ -331,6 +339,9 @@ def extract_visible_dom_records_r43z(
     max_items: int = 5,
     include_media: bool = True,
     include_static_screenshots: bool = True,
+    feed_mode: str = "posts_and_reposts",
+    include_reposts: bool = True,
+    include_replies: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     text = html_text or ""
     matches = list(_iter_post_matches(text))
@@ -348,7 +359,11 @@ def extract_visible_dom_records_r43z(
         seen.add(rkey)
         span = _article_span_for_match(text, int(match["start"]), int(match["end"]))
         segment = text[span[0]:span[1]]
-        source_url = build_bluesky_post_url_r43z(match.get("handle") or account_handle, rkey)
+        mode = normalize_bluesky_visible_feed_mode_r44c(feed_mode, include_reposts=include_reposts, include_replies=include_replies)
+        source_handle = _safe_handle(match.get("handle") or account_handle)
+        type_info = _infer_visible_dom_record_type_r44c(segment, account_handle=account_handle, source_handle=source_handle, rkey=rkey, feed_mode=mode)
+        record_id = type_info["record_id"]
+        source_url = build_bluesky_post_url_r43z(source_handle, rkey)
         visible_text = _extract_visible_text(segment) or f"Visible Bluesky post {rkey}"
         visible_timestamp = _extract_datetime(segment) or _iso_from_ts(capture_timestamp)
         media_items: list[dict[str, Any]] = []
@@ -356,7 +371,7 @@ def extract_visible_dom_records_r43z(
             for media_index, media_url in enumerate(_extract_media_urls(segment), start=1):
                 media_item = _media_item_from_visible_dom(
                     media_url,
-                    record_id=rkey,
+                    record_id=record_id,
                     source_url=source_url,
                     html_receipt_path=html_receipt_path,
                     index=media_index,
@@ -369,7 +384,7 @@ def extract_visible_dom_records_r43z(
                 if obs_url and (not obs_rkey or obs_rkey == rkey):
                     media_item = _media_item_from_visible_dom(
                         obs_url,
-                        record_id=rkey,
+                        record_id=record_id,
                         source_url=source_url,
                         html_receipt_path=html_receipt_path,
                         index=len(media_items) + 1,
@@ -381,23 +396,29 @@ def extract_visible_dom_records_r43z(
             {
                 "platform_id": "bluesky",
                 "account_handle": _safe_handle(account_handle),
-                "record_id": rkey,
-                "record_type": "post",
+                "record_id": record_id,
+                "record_type": type_info["record_type"],
                 "source_url": source_url,
                 "visible_text": visible_text,
                 "visible_timestamp": visible_timestamp,
                 "capture_timestamp": _safe_ts(capture_timestamp),
-                "author_handle": _safe_handle(match.get("handle") or account_handle),
+                "author_handle": source_handle,
+                "original_record_id": type_info["original_record_id"],
+                "reshared_by_handle": type_info["reshared_by_handle"],
+                "reshare_context": type_info["reshare_context"],
                 "author_display_name": _extract_display_name(segment),
                 "static_screenshot_path": screenshot_path if include_static_screenshots else "",
                 "media_items": media_items,
-                "review_strings": [f"bluesky_visible_dom|{account_handle}|{rkey}|{source_url}"],
+                "review_strings": [f"bluesky_visible_dom_{type_info['record_type']}|{account_handle}|{record_id}|{source_url}"],
                 "observed_order": len(records) + 1,
                 "platform_specific": {
                     "bluesky": {
                         "handle": _safe_handle(match.get("handle") or account_handle),
                         "rkey": rkey,
+                        "native_record_id": rkey,
                         "app_bsky_url": source_url,
+                        "visible_feed_mode": mode,
+                        "record_type_inference": type_info["record_type_source"],
                         "visible_dom_html_receipt_path": html_receipt_path,
                         "visible_dom_article_span": list(span),
                         "visible_capture_mode": "visible_dom_evidence_import",
@@ -562,8 +583,84 @@ def coerce_bluesky_visible_dom_capture_request_r43z(
         require_screenshot_receipts=_to_bool(data.get("require_screenshot_receipts"), True),
         max_items=_safe_int(data.get("max_items"), 5),
         max_scrolls=_safe_int(data.get("max_scrolls"), 2),
+        feed_mode=normalize_bluesky_visible_feed_mode_r44c(data.get("feed_mode") or data.get("timeline_mode") or "", include_reposts=_to_bool(data.get("include_reposts"), True), include_replies=_to_bool(data.get("include_replies"), False)),
+        include_reposts=_to_bool(data.get("include_reposts"), True),
+        include_replies=_to_bool(data.get("include_replies"), False),
     )
 
+
+
+
+def normalize_bluesky_visible_feed_mode_r44c(value: Any = "", *, include_reposts: bool = True, include_replies: bool = False) -> str:
+    raw = _clean(value).lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "posts_reposts": "posts_and_reposts",
+        "posts_and_retweets": "posts_and_reposts",
+        "posts_retweets": "posts_and_reposts",
+        "with_reposts": "posts_and_reposts",
+        "profile_posts": "posts_and_reposts",
+        "posts_replies": "posts_and_replies",
+        "posts_and_replies": "posts_and_replies",
+        "with_replies": "posts_and_replies",
+        "replies": "posts_and_replies",
+        "posts_only": "posts_only",
+    }
+    if raw in aliases:
+        return aliases[raw]
+    if include_replies:
+        return "posts_and_replies"
+    if include_reposts:
+        return "posts_and_reposts"
+    return "posts_only"
+
+
+def _infer_visible_dom_record_type_r44c(segment: str, *, account_handle: str, source_handle: str, rkey: str, feed_mode: str) -> dict[str, Any]:
+    lowered = (segment or "").lower()
+    attr_match = re.search(r"data-(?:r43z-)?record-type=[\"']([^\"']+)[\"']", segment or "", re.I)
+    hinted = _clean(attr_match.group(1)).lower().replace("-", "_") if attr_match else ""
+    account = _safe_handle(account_handle)
+    source = _safe_handle(source_handle)
+    if hinted in {"reply", "post", "repost_or_reshare"}:
+        record_type = hinted
+        source = f"visible_dom_attribute_{hinted}"
+    elif feed_mode == "posts_and_replies":
+        record_type = "reply"
+        source = "visible_replies_timeline_mode"
+    elif feed_mode == "posts_and_reposts" and account and source and source != account:
+        record_type = "repost_or_reshare"
+        source = "visible_posts_reposts_timeline_foreign_author_card"
+    elif "reposted" in lowered or " reposted " in lowered:
+        record_type = "repost_or_reshare"
+        source = "visible_dom_text_reposted_hint"
+    else:
+        record_type = "post"
+        source = "visible_dom_original_post_default"
+    if record_type == "repost_or_reshare":
+        return {
+            "record_type": record_type,
+            "record_id": _safe_record_id(f"repost_{rkey}_{account or 'account'}"),
+            "original_record_id": _safe_record_id(rkey),
+            "reshared_by_handle": account,
+            "reshare_context": {"platform": "bluesky", "visible_feed_mode": feed_mode, "record_type_source": source},
+            "record_type_source": source,
+        }
+    if record_type == "reply":
+        return {
+            "record_type": record_type,
+            "record_id": _safe_record_id(rkey),
+            "original_record_id": "",
+            "reshared_by_handle": "",
+            "reshare_context": {},
+            "record_type_source": source,
+        }
+    return {
+        "record_type": "post",
+        "record_id": _safe_record_id(rkey),
+        "original_record_id": "",
+        "reshared_by_handle": "",
+        "reshare_context": {},
+        "record_type_source": source,
+    }
 
 def _blocked_result(*, req: BlueskyVisibleDomCaptureRequestR43Z, root: Path, run_dir: Path, request_path: Path, receipt_path: Path, handle: str, account_url: str, capture_ts: str, html_path: Path, screenshot_path: Path | None, visible_posts_path: Path, visible_media_candidates_path: Path, visible_screenshot_receipts_path: Path, warnings: Sequence[str]) -> BlueskyVisibleDomCaptureResultR43Z:
     return BlueskyVisibleDomCaptureResultR43Z(
@@ -708,7 +805,7 @@ def _media_item_from_visible_dom(media_url: str, *, record_id: str, source_url: 
 
 
 def _safe_record_id(value: Any) -> str:
-    return re.sub(r"[^A-Za-z0-9_.:-]+", "_", _clean(value)).strip("._-") or "unknown_post"
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", _clean(value)).strip("._-") or "unknown_post"
 
 
 def _safe_media_id(value: Any) -> str:
