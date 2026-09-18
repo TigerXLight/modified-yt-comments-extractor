@@ -1946,6 +1946,24 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43Z_BLUESKY_VISIBLE_DOM_CAPTURE_LANE:
+        # Imports caller-supplied visible Bluesky DOM/screenshot evidence, binds
+        # visible media by post-card proximity, and delegates to R43V -> R43U.
+        # This does not start a browser, read/copy browser profiles, extract
+        # cookies/tokens, automate login, bypass challenges, or download media.
+        self.bluesky_visible_dom_capture_r43z = None
+        try:
+            from profile_media_bluesky_visible_dom_capture_r43z import (
+                build_bluesky_visible_dom_capture_r43z,
+            )
+
+            self.bluesky_visible_dom_capture_r43z = build_bluesky_visible_dom_capture_r43z()
+        except Exception:
+            logger.debug(
+                "Could not configure R43Z Bluesky visible DOM capture lane.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This
