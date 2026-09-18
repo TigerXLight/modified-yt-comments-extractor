@@ -1874,6 +1874,25 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
+        # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
+        # as a platform-neutral ledger contract before Bluesky is added. This
+        # does not replace the proven Twitter/X R43A/R43T/R43R path and does
+        # not start browsers, copy browser internals, read cookies/tokens,
+        # perform hidden API scraping, bypass challenges, or download remote media.
+        self.universal_social_account_ledger_contract_r43u = None
+        try:
+            from profile_media_universal_social_account_ledger_contract_r43u import (
+                build_universal_social_account_ledger_contract_r43u,
+            )
+
+            self.universal_social_account_ledger_contract_r43u = build_universal_social_account_ledger_contract_r43u()
+        except Exception:
+            logger.debug(
+                "Could not configure R43U universal social account ledger contract baseline.",
+                exc_info=True,
+            )
+
         # R43F_UNIVERSAL_SOCIAL_EXPORT_SURFACE_UI_ROUTING:
         # Register the platform-neutral UI/export router above the R43E adapter map.
         # Twitter/X dispatches through R43E to the R43D surface; other mapped platforms
