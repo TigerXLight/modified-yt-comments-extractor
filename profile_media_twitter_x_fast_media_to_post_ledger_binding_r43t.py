@@ -64,7 +64,7 @@ def bind_fast_media_observations_to_post_records_r43t(
         else:
             updated_records.append(row)
 
-    summary = _summary(candidates, bound_rows, unbound_rows, source_paths)
+    summary = _summary(candidates, bound_rows, unbound_rows, source_paths, records=updated_records)
     fixture_scope = summary.get("count_scope") == "standalone_r43t_fixture_matches_integrated_r43r_ledger_binding_scope"
     checks = (
         _check("fast_media_observation_store_loaded", summary["visible_observation_count"] > 0),
@@ -72,7 +72,7 @@ def bind_fast_media_observations_to_post_records_r43t(
         _check("media_inventory_loaded", summary["media_inventory_count"] > 0 or not fixture_scope),
         _check("media_bound_by_status_id_to_correct_post", any(row.get("binding_reason") == "status_id_match" for row in bound_rows) or not fixture_scope),
         _check("media_bound_by_canonical_post_url_to_correct_post", any(row.get("binding_reason") == "canonical_post_url_match" for row in bound_rows) or not fixture_scope),
-        _check("media_bound_by_article_dom_url_to_correct_post", any(row.get("binding_reason") == "article_dom_media_url_match" for row in bound_rows)),
+        _check("media_bound_by_article_dom_url_to_correct_post", any(row.get("binding_reason") == "article_dom_media_url_match" for row in bound_rows) or not fixture_scope),
         _check("loose_account_level_media_not_attached_to_all_posts", not _loose_media_attached_to_all_posts(row_list, bound_rows)),
         _check("unbound_media_preserved_in_unbound_index", bool(unbound_rows) or not fixture_scope),
         _check("decorative_x_assets_not_attached_as_post_media", not any(_is_decorative_x_asset(row.get("media_url")) for row in bound_rows)),
@@ -447,13 +447,39 @@ def _candidate_to_media_item(candidate: Mapping[str, Any], record: TwitterXAccou
     )
 
 
-def _summary(candidates: list[Mapping[str, Any]], bound: list[Mapping[str, Any]], unbound: list[Mapping[str, Any]], paths: Mapping[str, str]) -> dict[str, Any]:
+def _summary(
+    candidates: list[Mapping[str, Any]],
+    bound: list[Mapping[str, Any]],
+    unbound: list[Mapping[str, Any]],
+    paths: Mapping[str, str],
+    *,
+    records: Iterable[TwitterXAccountRecordR43A] = (),
+) -> dict[str, Any]:
+    record_rows = list(records or ())
+    ledger_items = [item for row in record_rows for item in (row.media_items or ())]
+    bound_unique_keys = {
+        (
+            _safe_media_class(row.get("media_class"), row.get("media_url")),
+            _normalize_url(row.get("media_url")),
+            _clean(row.get("local_path")),
+        )
+        for row in bound
+    }
     return {
         "r43t_status": R43T_PASS_STATUS,
         "visible_observation_count": sum(1 for row in candidates if row.get("source_observation_marker") == "R42GV" and row.get("source_observation_kind") != "visible_browser_media_segment"),
         "r42gt_media_index_count": sum(1 for row in candidates if row.get("source_observation_marker") == "R42GT"),
         "media_inventory_count": sum(1 for row in candidates if row.get("source_observation_marker") == "media_inventory"),
         "bound_media_count": len(bound),
+        "raw_bound_media_candidate_count": len(bound),
+        "deduped_bound_media_candidate_count": len(bound_unique_keys),
+        "duplicate_bound_media_candidate_count": max(0, len(bound) - len(bound_unique_keys)),
+        "ledger_media_item_count": len(ledger_items),
+        "ledger_image_count": sum(1 for item in ledger_items if item.media_class == "image"),
+        "ledger_video_count": sum(1 for item in ledger_items if item.media_class == "video"),
+        "ledger_manifest_count": sum(1 for item in ledger_items if item.media_class == "manifest"),
+        "ledger_segment_count": sum(1 for item in ledger_items if item.media_class == "segment"),
+        "count_semantics": "bound_media_count is the raw bound observation candidate count; ledger_media_item_count is the deduped record media item count written toward the account ledger.",
         "unbound_media_count": len(unbound),
         "bound_image_count": sum(1 for row in bound if row.get("media_class") == "image"),
         "bound_video_count": sum(1 for row in bound if row.get("media_class") == "video"),

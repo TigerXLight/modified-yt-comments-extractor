@@ -116,6 +116,11 @@ def test_r43r_materializes_dom_articles_to_account_ledger() -> None:
             if line.strip()
         ]
         media_index = json.loads((capture_dir / "media_index.json").read_text(encoding="utf-8"))
+        fast_summary = result.account_ledger_summary["fast_media_binding_summary"]
+        assert fast_summary["raw_bound_media_candidate_count"] == fast_summary["bound_media_count"]
+        assert fast_summary["ledger_media_item_count"] == len(media_index)
+        assert result.account_ledger_summary["r43t_ledger_media_item_count"] == len(media_index)
+        assert result.account_ledger_summary["r43t_raw_bound_media_candidate_count"] >= result.account_ledger_summary["r43t_ledger_media_item_count"]
         post_jsons = [json.loads(path.read_text(encoding="utf-8")) for path in capture_dir.glob("dates/*/post_*/post.json")]
         ambiguous_post_json = capture_dir / "dates" / "unknown_date" / "post_3333333333333333333" / "post.json"
         wrong_ambiguous_post_json = capture_dir / "dates" / "2026-09-17" / "post_3333333333333333333" / "post.json"

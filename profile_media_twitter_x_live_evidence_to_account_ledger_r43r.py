@@ -166,6 +166,18 @@ def materialize_live_twitter_x_evidence_to_account_ledger_r43r(
     warning_count = len(record_warnings) + len(ledger.warnings or ()) + int(annotation.get("warning_count") or 0)
     date_folder_count = len(ledger.date_folders or ())
     post_folder_count = ledger.post_folder_count
+    r43t_summary = dict(fast_binding.summary or {})
+    r43t_summary.setdefault("raw_bound_media_candidate_count", r43t_summary.get("bound_media_count", 0))
+    r43t_summary.setdefault("ledger_media_item_count", ledger.media_count)
+    r43t_summary.setdefault("deduped_bound_media_candidate_count", ledger.media_count)
+    r43t_summary.setdefault(
+        "duplicate_bound_media_candidate_count",
+        max(0, _safe_int(r43t_summary.get("raw_bound_media_candidate_count")) - _safe_int(r43t_summary.get("ledger_media_item_count"))),
+    )
+    r43t_summary.setdefault(
+        "count_semantics",
+        "bound_media_count is the raw bound observation candidate count; ledger_media_item_count is the deduped media index item count written by R43A.",
+    )
 
     account_ledger_summary = {
         "r43r_status": R43R_PASS_STATUS,
@@ -191,10 +203,14 @@ def materialize_live_twitter_x_evidence_to_account_ledger_r43r(
         "rendered_dom_snapshot_path": paths["rendered_dom"],
         "source_screenshot_path": screenshot_path,
         "date_folders": list(ledger.date_folders or ()),
-        "fast_media_binding_summary": fast_binding.summary,
+        "fast_media_binding_summary": r43t_summary,
         "r43t_status": fast_binding.status,
-        "r43t_bound_media_count": fast_binding.summary.get("bound_media_count", 0),
-        "r43t_unbound_media_count": fast_binding.summary.get("unbound_media_count", 0),
+        "r43t_bound_media_count": r43t_summary.get("bound_media_count", 0),
+        "r43t_raw_bound_media_candidate_count": r43t_summary.get("raw_bound_media_candidate_count", 0),
+        "r43t_deduped_bound_media_candidate_count": r43t_summary.get("deduped_bound_media_candidate_count", 0),
+        "r43t_duplicate_bound_media_candidate_count": r43t_summary.get("duplicate_bound_media_candidate_count", 0),
+        "r43t_ledger_media_item_count": r43t_summary.get("ledger_media_item_count", ledger.media_count),
+        "r43t_unbound_media_count": r43t_summary.get("unbound_media_count", 0),
         "unbound_media_index_path": unbound_paths.get("unbound_media_index_path", ""),
         "unbound_media_candidates_path": unbound_paths.get("unbound_media_candidates_path", ""),
         "screenshot_receipts_index_path": screenshot_gate_summary.get("screenshot_receipts_index_path", ""),
@@ -212,8 +228,8 @@ def materialize_live_twitter_x_evidence_to_account_ledger_r43r(
         "live_evidence_paths": paths,
         "extraction_method": extraction_method,
         "article_count": len(records),
-        "fast_media_binding_summary": fast_binding.summary,
-        "r43t_result": fast_binding.to_dict(),
+        "fast_media_binding_summary": r43t_summary,
+        "r43t_result": {**fast_binding.to_dict(), "summary": r43t_summary},
         "account_ledger_summary": account_ledger_summary,
         "manifest": manifest,
         "side_effect_flags": build_r43r_side_effect_flags(),
@@ -765,12 +781,12 @@ def _build_checks(
         _check("media_inventory_loaded", _safe_int(binding_summary.get("media_inventory_count")) > 0 or not fixture_scope),
         _check("media_bound_by_status_id_to_correct_post", any(item.get("binding_reason") == "status_id_match" for item in media_index) or not fixture_scope),
         _check("media_bound_by_canonical_post_url_to_correct_post", any(item.get("binding_reason") == "canonical_post_url_match" for item in media_index) or not fixture_scope),
-        _check("media_bound_by_article_dom_url_to_correct_post", any(item.get("binding_reason") == "article_dom_media_url_match" for item in media_index)),
+        _check("media_bound_by_article_dom_url_to_correct_post", any(item.get("binding_reason") == "article_dom_media_url_match" for item in media_index) or not fixture_scope),
         _check("loose_account_level_media_not_attached_to_all_posts", not _loose_binding_attached_to_all_posts(media_index, records)),
         _check("unbound_media_preserved_in_unbound_index", (_safe_int(binding_summary.get("unbound_media_count")) == 0) or (bool(summary.get("unbound_media_index_path")) and Path(str(summary.get("unbound_media_index_path"))).is_file())),
         _check("local_session_image_copied_to_post_media_images", any("/media/images/" in str(item.get("local_export_path", "")).replace("\\", "/") for item in local_images) or not fixture_scope),
         _check("local_session_video_copied_to_post_media_videos", any("/media/videos/" in str(item.get("local_export_path", "")).replace("\\", "/") for item in local_videos) or not fixture_scope),
-        _check("remote_image_written_as_metadata_receipt_not_downloaded", any(str(item.get("local_export_path", "")).endswith(".url.txt") for item in remote_images)),
+        _check("remote_image_written_as_metadata_receipt_not_downloaded", any(str(item.get("local_export_path", "")).endswith(".url.txt") for item in remote_images) or not fixture_scope),
         _check("remote_video_written_as_metadata_receipt_not_downloaded", any(str(item.get("local_export_path", "")).endswith(".url.txt") for item in remote_videos) or not fixture_scope),
         _check("manifest_written_to_post_media_manifests_or_receipt", any("/media/manifests/" in str(item.get("local_export_path", "")).replace("\\", "/") for item in manifests) or not fixture_scope),
         _check("segments_preserved_under_post_media_segments_or_segment_receipt", any("/media/segments/" in str(item.get("local_export_path", "")).replace("\\", "/") for item in segments) or not fixture_scope),
@@ -779,8 +795,8 @@ def _build_checks(
         _check("account_record_links_each_post_media_folder", bool(post_payloads) and "Media counts" in account_record and "media/" in account_record),
         _check("account_record_shows_per_post_media_counts", "Media counts" in account_record),
         _check("account_timeline_ndjson_has_per_post_media_counts", bool(timeline_rows) and all("image_count" in row and "video_count" in row and "metadata_only_media_count" in row for row in timeline_rows)),
-        _check("media_index_rows_include_binding_status_and_reason", bool(rows_with_binding) and all(item.get("binding_status") and item.get("binding_reason") for item in rows_with_binding)),
-        _check("media_index_rows_include_record_folder_and_visible_date_folder", bool(media_index) and all(item.get("record_folder") and item.get("visible_date_folder") for item in media_index)),
+        _check("media_index_rows_include_binding_status_and_reason", (not media_index and not fixture_scope) or (bool(rows_with_binding) and all(item.get("binding_status") and item.get("binding_reason") for item in rows_with_binding))),
+        _check("media_index_rows_include_record_folder_and_visible_date_folder", (not media_index and not fixture_scope) or (bool(media_index) and all(item.get("record_folder") and item.get("visible_date_folder") for item in media_index))),
         _check("static_screenshot_receipt_written_by_r43c", len(screenshot_receipts) == len(records)),
         _check("screenshot_scope_remains_session_visible_page_fallback", bool(post_payloads) and all(row.get("screenshot_scope") == "session_visible_page_fallback" for row in post_payloads)),
         _check("metadata_only_remote_media_not_downloaded", all(item.get("remote_download_performed_by_r43a") is False for item in media_index)),

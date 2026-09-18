@@ -41,6 +41,11 @@ def test_r43t_binds_fast_media_observations_to_posts() -> None:
         assert summary["bound_segment_count"] == 2
         assert summary["session_local_media_count"] == 2
         assert summary["metadata_only_media_count"] >= 5
+        assert summary["raw_bound_media_candidate_count"] == summary["bound_media_count"]
+        assert summary["ledger_media_item_count"] == sum(len(row.media_items or ()) for row in result.records)
+        assert summary["deduped_bound_media_candidate_count"] <= summary["raw_bound_media_candidate_count"]
+        assert summary["duplicate_bound_media_candidate_count"] >= 0
+        assert "raw bound observation candidate count" in summary["count_semantics"]
 
         media_222 = next(row for row in result.records if row.record_id == "2222222222222222222").media_items
         reasons = {item.binding_reason for item in media_222}
@@ -54,6 +59,42 @@ def test_r43t_binds_fast_media_observations_to_posts() -> None:
 
         paths = write_unbound_media_index_r43t(root / "capture", result.unbound_media)
         assert Path(paths["unbound_media_index_path"]).is_file()
+
+
+def test_r43t_live_scope_passes_when_observed_media_is_unbound_only() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        runner = root / "live_runner_output"
+        store = runner / "visible_browser_media_observation_store"
+        store.mkdir(parents=True, exist_ok=True)
+        visible_rows = [
+            {"canonical_media_url": "https://pbs.twimg.com/media/account_level_1.jpg?format=jpg&name=large", "media_class": "image"},
+            {"canonical_media_url": "https://pbs.twimg.com/media/account_level_2.jpg?format=jpg&name=large", "media_class": "image"},
+        ]
+        _write_json(store / "visible_browser_media_observations.json", {"observations": visible_rows})
+        (store / "visible_browser_media_observations.ndjson").write_text("\n".join(json.dumps(row) for row in visible_rows) + "\n", encoding="utf-8")
+        package = runner / "r42gt_visible_browser_media_package" / "source_exports" / "twitter_x" / "examaddaorg" / "capture_20260918T000000Z"
+        package.mkdir(parents=True, exist_ok=True)
+        _write_json(package / "manifest.json", {"marker": "R42GT_LIVE_LIKE"})
+        media_rows = [
+            {"canonical_media_url": "https://pbs.twimg.com/media/account_level_3.jpg?format=jpg&name=large", "media_kind": "image"},
+            {"canonical_media_url": "https://pbs.twimg.com/media/account_level_4.jpg?format=jpg&name=large", "media_kind": "image"},
+        ]
+        _write_json(package / "media_index.json", {"media": media_rows})
+        (package / "media_index.ndjson").write_text("\n".join(json.dumps(row) for row in media_rows) + "\n", encoding="utf-8")
+        records = (
+            TwitterXAccountRecordR43A(record_id="1111111111111111111", record_type="post", source_url="https://x.com/examaddaorg/status/1111111111111111111", visible_text="text only", observed_order=1),
+            TwitterXAccountRecordR43A(record_id="2222222222222222222", record_type="post", source_url="https://x.com/examaddaorg/status/2222222222222222222", visible_text="text only two", observed_order=2),
+        )
+        result = bind_fast_media_observations_to_post_records_r43t(records, runner_root=runner)
+        assert result.status == R43T_PASS_STATUS
+        assert result.summary["count_scope"] == "live_runner_observation_binding_scope"
+        assert result.summary["bound_media_count"] == 0
+        assert result.summary["raw_bound_media_candidate_count"] == 0
+        assert result.summary["ledger_media_item_count"] == 0
+        assert result.summary["unbound_media_count"] == 4
+        assert all(len(row.media_items or ()) == 0 for row in result.records)
+
 
 
 def test_r43t_report_fixture_passes() -> None:
@@ -104,5 +145,6 @@ def _write_json(path: Path, value: object) -> None:
 
 if __name__ == "__main__":
     test_r43t_binds_fast_media_observations_to_posts()
+    test_r43t_live_scope_passes_when_observed_media_is_unbound_only()
     test_r43t_report_fixture_passes()
     print("R43T tests passed")
