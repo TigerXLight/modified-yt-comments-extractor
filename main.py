@@ -41869,3 +41869,18 @@ R45F_FACEBOOK_MODAL_PROGRESS_HIDDEN_COMMENTS_RUNNER = {
     "reference_text_comparison_supported": True,
     "tile_screenshots_supported": True,
 }
+
+# R45G Facebook modal hidden replies runner registration
+R45G_FACEBOOK_MODAL_HIDDEN_REPLIES_RUNNER = {
+    "marker": "YTCE_R45G_FACEBOOK_MODAL_HIDDEN_REPLIES_RUNNER",
+    "mode_id": "facebook_modal_hidden_replies_runner",
+    "module": "profile_media_facebook_modal_hidden_replies_runner_r45g",
+    "modal_progress_detection_supported": True,
+    "visible_hidden_comments_clicks_supported": True,
+    "visible_hidden_replies_clicks_supported": True,
+    "view_one_reply_supported": True,
+    "comments_focus_mode_clickable": True,
+    "visible_page_auto_expand_clicks_supported": True,
+    "scroll_load_sweeps_supported": True,
+    "reference_text_comparison_supported": True,
+}
