@@ -2097,6 +2097,28 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R44I_REDDIT_LOGGED_IN_TARGET_ONLY_VISIBLE_SESSION:
+        # Logged-in, operator-controlled Reddit old/en target-only capture.
+        # Use direct browser launch or manual-current-page mode; after the
+        # operator pause the tool captures the visible page without reloading.
+        # It may use a supplied browser user-data-dir for rendering, but does
+        # not read, copy, parse, zip, or export cookies, tokens, Login Data,
+        # Local State, Local Storage, cache, or browser profile files.
+        self.reddit_logged_in_target_only_visible_session_r44i = None
+        try:
+            from profile_media_reddit_logged_in_target_only_visible_session_r44i import (
+                build_reddit_logged_in_target_only_visible_session_contract_r44i,
+            )
+
+            self.reddit_logged_in_target_only_visible_session_r44i = (
+                build_reddit_logged_in_target_only_visible_session_contract_r44i()
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R44I Reddit logged-in target-only visible session.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This
