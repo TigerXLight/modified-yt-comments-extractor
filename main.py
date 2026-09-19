@@ -2184,6 +2184,30 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+
+        # R44M_REDDIT_EN_REDDIT_PRIMARY_LINK_QUEUE:
+        # Correct Reddit route priority: normal/current Reddit links are converted
+        # to a signed-in en.reddit.com primary route. Open the main target and
+        # branch/comment links one at a time through an operator-controlled browser
+        # or WebView2/minimal-CSS surface; R44L current-www remains secondary fallback.
+        # This is planning/extraction support only: no hidden API scraping, no login
+        # automation, no cookies/tokens, no profile file reading/copying, and no
+        # remote media downloads.
+        self.reddit_en_reddit_primary_link_queue_r44m = None
+        try:
+            from profile_media_reddit_en_reddit_primary_link_queue_r44m import (
+                build_reddit_en_reddit_primary_link_queue_contract_r44m,
+            )
+
+            self.reddit_en_reddit_primary_link_queue_r44m = (
+                build_reddit_en_reddit_primary_link_queue_contract_r44m()
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R44M Reddit signed-in en.reddit.com primary route.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This
