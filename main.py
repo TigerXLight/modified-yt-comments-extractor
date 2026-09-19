@@ -2077,6 +2077,26 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R44G_REDDIT_NO_LOGIN_FULL_THREAD_RELIABILITY:
+        # Reliability harness above R44F: full EdSheeran branch manifest,
+        # old/en Reddit limit=500 primary no-login page, top-to-bottom branch
+        # queue labels including nested labels, score/indentation checks, and
+        # R44F -> R44D -> R43U downstream validation. No cookies, tokens,
+        # browser profile files, login automation, hidden APIs, challenge
+        # bypass, or remote media downloads are used.
+        self.reddit_no_login_full_thread_reliability_r44g = None
+        try:
+            from profile_media_reddit_no_login_full_thread_reliability_r44g import (
+                build_reddit_no_login_full_thread_reliability_r44g,
+            )
+
+            self.reddit_no_login_full_thread_reliability_r44g = build_reddit_no_login_full_thread_reliability_r44g()
+        except Exception:
+            logger.debug(
+                "Could not configure R44G Reddit no-login full thread reliability.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This
