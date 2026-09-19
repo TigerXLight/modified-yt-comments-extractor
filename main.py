@@ -41778,3 +41778,15 @@ if __name__ == "__main__":
 # R42EL_HELD_ITEM_PER_ROW_TARGET_DROPDOWNS
 # R42EL_DRAG_HOVER_CONVERTER_ANIMATION
 # R42EL_CONVERT_TO_APPLIES_TO_SELECTED_HELD_ROWS
+
+# R44N Reddit source adapter layer closeout registration
+R44N_REDDIT_SOURCE_ADAPTER_LAYER_CLOSEOUT = {
+    "marker": "YTCE_R44N_REDDIT_SOURCE_ADAPTER_LAYER_CLOSEOUT",
+    "mode_id": "reddit_source_adapter_layer_closeout",
+    "module": "profile_media_reddit_source_adapter_layer_closeout_r44n",
+    "primary_method": "signed_in_en_reddit_target_then_branch_link_queue",
+    "normal_links_converted_to_en_reddit": True,
+    "logged_in_account_required": True,
+    "r44l_current_www_route": "secondary_fallback_not_primary",
+    "webview2_minimal_css_supported": True,
+}
