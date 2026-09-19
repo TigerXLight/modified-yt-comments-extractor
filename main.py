@@ -41821,3 +41821,12 @@ R45B_FACEBOOK_LIVE_COMMENTS_FOCUS_CAPTURE_ROUTE = {
     "cookie_or_token_extraction_enabled": False,
 }
 # END R45B FACEBOOK LIVE COMMENTS FOCUS CAPTURE ROUTE
+
+# R45C_FACEBOOK_LIVE_COMMENTS_FOCUS_RUNNER registration
+R45C_FACEBOOK_LIVE_COMMENTS_FOCUS_RUNNER = {
+    "marker": "YTCE_R45C_FACEBOOK_LIVE_COMMENTS_FOCUS_RUNNER",
+    "module": "profile_media_facebook_live_comments_focus_runner_r45c",
+    "status": "facebook_live_comments_focus_runner_available",
+    "route": "logged_in_visible_facebook_comments_focus_text_and_screenshot_capture",
+    "notes": "CSS-only comments focus mode remains clickable before expansion; capture DOM/text/screenshots after operator expansion.",
+}
