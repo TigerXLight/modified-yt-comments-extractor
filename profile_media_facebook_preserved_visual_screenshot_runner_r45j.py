@@ -66,9 +66,18 @@ body {
   position: static !important;
 }
 [data-r45j-visual-hide="true"],
+[data-r45j-pre-comment-hide="true"],
 [data-r45j-remove="true"] {
   display: none !important;
   visibility: hidden !important;
+}
+/* R45L: cut the preserved visual surface down to the Facebook-rendered
+   comments column, like the manual original-view -> Print Edit WE crop. */
+[data-r45j-comment-column-crop="true"] {
+  width: min(720px, 96vw) !important;
+  max-width: 720px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
 /* Remove editor/composer surfaces after expansion; keep visible Like/Reply/reaction metadata. */
 [role="textbox"], textarea, input, form,
@@ -92,10 +101,12 @@ JS_MARK_AND_CLEAN_PRESERVED_COMMENTS = r'''
     return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
   };
 
-  for (const el of Array.from(document.querySelectorAll('[data-r45j-preserved-comments-root], [data-r45j-visual-keep-path], [data-r45j-visual-hide], [data-r45j-remove]'))) {
+  for (const el of Array.from(document.querySelectorAll('[data-r45j-preserved-comments-root], [data-r45j-comment-column-crop], [data-r45j-visual-keep-path], [data-r45j-visual-hide], [data-r45j-pre-comment-hide], [data-r45j-remove]'))) {
     el.removeAttribute('data-r45j-preserved-comments-root');
+    el.removeAttribute('data-r45j-comment-column-crop');
     el.removeAttribute('data-r45j-visual-keep-path');
     el.removeAttribute('data-r45j-visual-hide');
+    el.removeAttribute('data-r45j-pre-comment-hide');
     el.removeAttribute('data-r45j-remove');
   }
 
@@ -118,6 +129,7 @@ JS_MARK_AND_CLEAN_PRESERVED_COMMENTS = r'''
   // R45J blank-page fix: keep the original live Facebook DOM in place. The prior
   // clone-and-replace method preserved text but could render as a blank white page.
   chosen.setAttribute('data-r45j-preserved-comments-root', 'true');
+  chosen.setAttribute('data-r45j-comment-column-crop', 'true');
   chosen.setAttribute('data-r45j-source-role', chosen.getAttribute('role') || '');
 
   const keepPath = [];
@@ -171,6 +183,48 @@ JS_MARK_AND_CLEAN_PRESERVED_COMMENTS = r'''
   } catch (e) {}
 
   let hidden = 0;
+  let preCommentHidden = 0;
+
+  // R45L: keep the original Facebook-rendered comments, but crop away the
+  // post header/body/media/reaction bar above the first visible comment/reply.
+  // This matches the operator expectation: use the original Facebook view as
+  // the visual source, then cut it down to the comment column rather than
+  // screenshotting the full post modal.
+  const commentish = Array.from(chosen.querySelectorAll('*')).filter(visible).map(el => {
+    const r = el.getBoundingClientRect();
+    const t = textOf(el);
+    const lab = labelOf(el);
+    const role = (el.getAttribute('role') || '').toLowerCase();
+    return {el, r, t, lab, role};
+  }).filter(x => {
+    if (!x.t || x.role === 'textbox' || x.el.isContentEditable) return false;
+    if (/Reply to |Comment as |Write a comment/i.test(x.lab + ' ' + x.t)) return false;
+    if (/\bLike\s+Reply\b/i.test(x.t)) return true;
+    if (/\bView\s+(?:all|more)\s+\d*\s*repl/i.test(x.t)) return true;
+    if (/\bView\s+hidden\s+(?:comments|replies)\b/i.test(x.t)) return true;
+    return false;
+  }).sort((a,b) => (a.r.top - b.r.top) || (a.r.left - b.r.left));
+  const firstCommentish = commentish.length ? commentish[0] : null;
+  const firstCommentTop = firstCommentish ? firstCommentish.r.top : null;
+  if (firstCommentish && Number.isFinite(firstCommentTop)) {
+    chosen.setAttribute('data-r45j-first-comment-top', String(Math.round(firstCommentTop)));
+    for (const el of Array.from(chosen.querySelectorAll('*'))) {
+      if (el === firstCommentish.el || el.contains(firstCommentish.el) || firstCommentish.el.contains(el)) continue;
+      try {
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) continue;
+        const lab = labelOf(el);
+        const t = textOf(el);
+        const role = (el.getAttribute('role') || '').toLowerCase();
+        if (role === 'textbox' || el.isContentEditable || /Reply to |Comment as |Write a comment/i.test(lab + ' ' + t)) continue;
+        if (r.bottom <= firstCommentTop - 6) {
+          el.setAttribute('data-r45j-pre-comment-hide', 'true');
+          preCommentHidden++;
+        }
+      } catch (e) {}
+    }
+  }
+
   const smallAndVisible = (el, maxW = 420, maxH = 120) => {
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0 && r.width <= maxW && r.height <= maxH;
@@ -220,6 +274,10 @@ JS_MARK_AND_CLEAN_PRESERVED_COMMENTS = r'''
     chosen: chosenInfo,
     in_place_dom_preserved: true,
     clone_body_replacement_used: false,
+    r45l_comment_column_crop_used: true,
+    first_comment_top: firstCommentTop === null ? null : Math.round(firstCommentTop),
+    pre_comment_hidden_nodes: preCommentHidden,
+    commentish_anchor_count: commentish.length,
     hidden_nodes: hidden,
     body_text_chars: (document.body.innerText || '').length,
     scroll_height: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
@@ -243,6 +301,8 @@ def contract() -> Dict[str, Any]:
         'preserved_visual_rule': 'Do not re-render comments into custom cards for screenshot evidence; preserve Facebook-rendered comment bubbles, avatars, nesting, visible reactions, and Like/Reply metadata after expansion.',
         'visual_clean_rule': 'After expansion only, remove/hide Facebook chrome, modal header, close buttons, and comment composer/reply boxes so the screenshot contains comments only.',
         'r45j_blank_page_fix': 'Preserved visual cleanup is now in-place: it marks and crops the live Facebook comments surface rather than cloning/replacing document.body, because clone-and-replace could produce a blank white screenshot while text still existed.',
+        'r45l_comment_column_crop_fix': 'After the blank-page fix, real screenshots could still show the full original post modal/post media instead of the desired Print Edit WE-like comments column. R45L crops away pre-comment post/header/media surfaces while preserving the Facebook-rendered comment bubbles/replies.',
+        'comments_column_screenshot_rule': 'When screenshots are enabled, also capture facebook_preserved_visual_comments_column.png from the marked comments root so the operator gets the cropped original-view comments column rather than the full modal shell.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -386,6 +446,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
         visual_clean_summary: Optional[Dict[str, Any]] = None
         clean_html_path = None
         clean_text_path = None
+        column_screenshot_path = None
         full_screenshot_path = None
         tile_paths: List[str] = []
         try:
@@ -407,6 +468,12 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             time.sleep(args.wait_seconds)
 
         if not args.no_screenshots:
+            try:
+                column_screenshot_path = str(run_dir / 'facebook_preserved_visual_comments_column.png')
+                page.locator('[data-r45j-preserved-comments-root=\"true\"]').first.screenshot(path=column_screenshot_path)
+            except Exception as e:
+                warnings.append(f'preserved_visual_comments_column_screenshot_warning={e}')
+                column_screenshot_path = None
             try:
                 full_screenshot_path = str(run_dir / 'facebook_preserved_visual_full_page.png')
                 page.screenshot(path=full_screenshot_path, full_page=True)
@@ -433,6 +500,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             'pre_clean_inner_text_path': inner_text_path,
             'preserved_visual_clean_dom_path': clean_html_path,
             'preserved_visual_clean_text_path': clean_text_path,
+            'preserved_visual_comments_column_screenshot_path': column_screenshot_path,
             'preserved_visual_full_screenshot_path': full_screenshot_path,
             'preserved_visual_tile_screenshot_paths': tile_paths,
             'preserved_visual_tile_screenshot_count': len(tile_paths),
@@ -460,6 +528,8 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
     checks = [
         {'name': 'in_place_visual_clean_js_present', 'status': 'pass' if 'data-r45j-visual-keep-path' in JS_MARK_AND_CLEAN_PRESERVED_COMMENTS and 'document.body.innerHTML' not in JS_MARK_AND_CLEAN_PRESERVED_COMMENTS else 'fail'},
         {'name': 'preserved_visual_css_present', 'status': 'pass' if 'data-r45j-preserved-comments-root' in VISUAL_CLEAN_CSS and 'blank-page fix' in VISUAL_CLEAN_CSS else 'fail'},
+        {'name': 'r45l_comment_column_crop_present', 'status': 'pass' if 'data-r45j-pre-comment-hide' in VISUAL_CLEAN_CSS and 'r45l_comment_column_crop_used' in JS_MARK_AND_CLEAN_PRESERVED_COMMENTS else 'fail'},
+        {'name': 'comments_column_screenshot_path_present', 'status': 'pass' if 'facebook_preserved_visual_comments_column.png' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
         {'name': 'login_automation_disabled', 'status': 'pass' if contract().get('login_automation_enabled') is False else 'fail'},

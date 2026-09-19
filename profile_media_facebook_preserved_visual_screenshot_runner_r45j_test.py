@@ -14,6 +14,11 @@ def test_contract_and_static_assets():
     assert 'data-r45j-visual-keep-path' in r45j.JS_MARK_AND_CLEAN_PRESERVED_COMMENTS
     assert 'data-r45j-preserved-comments-root' in r45j.VISUAL_CLEAN_CSS
     assert 'blank-page fix' in r45j.VISUAL_CLEAN_CSS
+    assert 'data-r45j-pre-comment-hide' in r45j.VISUAL_CLEAN_CSS
+    assert 'data-r45j-comment-column-crop' in r45j.JS_MARK_AND_CLEAN_PRESERVED_COMMENTS
+    assert 'r45l_comment_column_crop_used' in r45j.JS_MARK_AND_CLEAN_PRESERVED_COMMENTS
+    assert 'facebook_preserved_visual_comments_column.png' in inspect.getsource(r45j.run_live)
+    assert 'comments column' in c['r45l_comment_column_crop_fix'].lower()
     assert 'preserve' in c['preserved_visual_rule'].lower()
     assert 'args.screenshot' not in inspect.getsource(r45j.run_live)
     assert 'clone_body_replacement_used' in r45j.JS_MARK_AND_CLEAN_PRESERVED_COMMENTS
