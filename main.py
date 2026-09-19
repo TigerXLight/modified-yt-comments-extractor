@@ -41790,3 +41790,20 @@ R44N_REDDIT_SOURCE_ADAPTER_LAYER_CLOSEOUT = {
     "r44l_current_www_route": "secondary_fallback_not_primary",
     "webview2_minimal_css_supported": True,
 }
+
+# === R45A Facebook visible print-clean comment capture adapter ===
+R45A_FACEBOOK_VISIBLE_PRINT_CLEAN_COMMENT_CAPTURE_REGISTRATION = {
+    "marker": "YTCE_R45A_FACEBOOK_VISIBLE_PRINT_CLEAN_COMMENT_CAPTURE",
+    "module": "profile_media_facebook_visible_print_clean_comment_capture_r45a",
+    "mode_id": "facebook_visible_print_clean_comment_capture",
+    "interactive_mode_id": "facebook_visible_interactive_preclean_capture",
+    "status": "PASS_R45A_FACEBOOK_VISIBLE_PRINT_CLEAN_COMMENT_CAPTURE",
+    "primary_route": "signed_in_facebook_visible_permalink_expand_then_print_clean_capture",
+    "evidence_lanes": ["text_only", "screenshots", "raw_dom", "sanitized_dom"],
+    "post_cleanup_interaction_rule": "after print-clean/static cleanup, do not expect Facebook elements to remain clickable; expand first, capture after",
+    "youtube_parity_rule": "same visible comment evidence split as YouTube: text extraction plus screenshot receipts",
+    "login_automation_enabled": False,
+    "cookie_or_token_extraction_enabled": False,
+    "hidden_platform_api_scraping_enabled": False,
+}
+# === End R45A Facebook visible print-clean comment capture adapter ===
