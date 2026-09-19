@@ -2161,6 +2161,29 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+
+        # R44L_REDDIT_NORMAL_SITE_LINK_QUEUE_FALLBACK:
+        # Current/normal Reddit fallback plan for users without a signed-in old/en
+        # Reddit profile. It opens the main current Reddit target and each branch
+        # link in operator top-to-bottom order, supports WebView2/minimal-CSS
+        # visible capture, and keeps a resumable queue. This is planning/extraction
+        # support only: no hidden API scraping, no login automation, no cookies or
+        # tokens, no browser profile file reading/copying, and no remote media downloads.
+        self.reddit_normal_site_link_queue_fallback_r44l = None
+        try:
+            from profile_media_reddit_normal_site_link_queue_r44l import (
+                build_reddit_normal_site_link_queue_contract_r44l,
+            )
+
+            self.reddit_normal_site_link_queue_fallback_r44l = (
+                build_reddit_normal_site_link_queue_contract_r44l()
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R44L Reddit normal-site link queue fallback.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This
