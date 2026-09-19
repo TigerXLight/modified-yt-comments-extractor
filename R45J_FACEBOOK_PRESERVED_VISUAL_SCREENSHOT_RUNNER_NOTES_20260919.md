@@ -12,3 +12,11 @@ Safety contract:
 - no browser-profile file reading/copying/parsing
 - no login automation
 - visible page expansion only, followed by screenshot cleanup
+
+
+## R45J screenshot default fix
+
+- Fixes live crash after operator pause caused by stale `args.screenshot` reference.
+- Full preserved-visual screenshot is now captured by default whenever screenshots are not disabled.
+- `--tile-screenshots` still adds tiled captures.
+- `--no-screenshots` remains the opt-out.

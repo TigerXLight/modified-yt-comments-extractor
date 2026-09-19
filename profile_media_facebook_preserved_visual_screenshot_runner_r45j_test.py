@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import inspect
 import profile_media_facebook_preserved_visual_screenshot_runner_r45j as r45j
 
 
@@ -12,6 +13,7 @@ def test_contract_and_static_assets():
     assert 'cloneNode(true)' in r45j.JS_MARK_AND_CLEAN_PRESERVED_COMMENTS
     assert 'data-r45j-preserved-comments-root' in r45j.VISUAL_CLEAN_CSS
     assert 'preserve' in c['preserved_visual_rule'].lower()
+    assert 'args.screenshot' not in inspect.getsource(r45j.run_live)
 
 
 if __name__ == '__main__':

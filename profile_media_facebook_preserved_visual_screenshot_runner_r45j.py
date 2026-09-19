@@ -333,13 +333,12 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             time.sleep(args.wait_seconds)
 
         if not args.no_screenshots:
-            if args.screenshot:
-                try:
-                    full_screenshot_path = str(run_dir / 'facebook_preserved_visual_full_page.png')
-                    page.screenshot(path=full_screenshot_path, full_page=True)
-                except Exception as e:
-                    warnings.append(f'preserved_visual_full_page_screenshot_warning={e}')
-                    full_screenshot_path = None
+            try:
+                full_screenshot_path = str(run_dir / 'facebook_preserved_visual_full_page.png')
+                page.screenshot(path=full_screenshot_path, full_page=True)
+            except Exception as e:
+                warnings.append(f'preserved_visual_full_page_screenshot_warning={e}')
+                full_screenshot_path = None
             if args.tile_screenshots:
                 try:
                     tile_paths = _capture_tiles(page, run_dir, 'facebook_preserved_visual_tile', args.tile_steps, args.tile_scroll_px, args.tile_wait_seconds)
