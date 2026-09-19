@@ -20,3 +20,8 @@ Safety contract:
 - Full preserved-visual screenshot is now captured by default whenever screenshots are not disabled.
 - `--tile-screenshots` still adds tiled captures.
 - `--no-screenshots` remains the opt-out.
+
+
+## R45J visual blank-page fix
+
+The first preserved-visual live run passed text comparison and wrote files, but the browser preview was blank. The receipt still showed the selected dialog had hundreds of thousands of text characters, so the failure was visual cleanup, not expansion. The fix keeps the original Facebook-rendered comments DOM in place and hides/crops surrounding chrome, instead of cloning the dialog and replacing `document.body`. This preserves the Facebook bubble/avatar/reaction layout for screenshots.

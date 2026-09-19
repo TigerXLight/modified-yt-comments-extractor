@@ -27,7 +27,18 @@ body {
   margin: 0 !important;
   padding: 24px 0 !important;
 }
-/* Preserve the Facebook-rendered comments DOM, but make it behave like a printable page. */
+/* R45J blank-page fix: keep the live Facebook-rendered comments DOM in place.
+   Do not clone the dialog or replace document.body; that can collapse/blank the visual page. */
+[data-r45j-visual-keep-path="true"] {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+  overflow: visible !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  height: auto !important;
+  background: transparent !important;
+}
 [data-r45j-preserved-comments-root="true"] {
   position: static !important;
   inset: auto !important;
@@ -54,6 +65,7 @@ body {
 [data-r45j-preserved-comments-root="true"] [style*="position:fixed"] {
   position: static !important;
 }
+[data-r45j-visual-hide="true"],
 [data-r45j-remove="true"] {
   display: none !important;
   visibility: hidden !important;
@@ -63,8 +75,7 @@ body {
 [contenteditable="true"],
 [aria-label^="Reply to"], [aria-label*="Reply to"],
 [aria-label^="Write a comment"], [aria-label*="Write a comment"],
-[aria-label^="Comment as"], [aria-label*="Comment as"],
-[aria-label="Close"], [aria-label^="Close"] {
+[aria-label^="Comment as"], [aria-label*="Comment as"] {
   display: none !important;
   visibility: hidden !important;
 }
@@ -80,6 +91,14 @@ JS_MARK_AND_CLEAN_PRESERVED_COMMENTS = r'''
     const s = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
   };
+
+  for (const el of Array.from(document.querySelectorAll('[data-r45j-preserved-comments-root], [data-r45j-visual-keep-path], [data-r45j-visual-hide], [data-r45j-remove]'))) {
+    el.removeAttribute('data-r45j-preserved-comments-root');
+    el.removeAttribute('data-r45j-visual-keep-path');
+    el.removeAttribute('data-r45j-visual-hide');
+    el.removeAttribute('data-r45j-remove');
+  }
+
   const candidates = Array.from(document.querySelectorAll('[role="dialog"], [role="main"], [role="article"], main, article'))
     .filter(visible)
     .map(el => {
@@ -94,60 +113,114 @@ JS_MARK_AND_CLEAN_PRESERVED_COMMENTS = r'''
     })
     .sort((a,b) => b.score - a.score);
   const chosen = candidates.length ? candidates[0].el : document.body;
-  const chosenInfo = candidates.length ? {...candidates[0], el: undefined} : {role: 'body', textLength: textOf(document.body).length, scrollHeight: document.body.scrollHeight};
+  const chosenInfo = candidates.length ? {...candidates[0], el: null} : {role: 'body', textLength: textOf(document.body).length, scrollHeight: document.body.scrollHeight};
 
-  const clone = chosen.cloneNode(true);
-  clone.setAttribute('data-r45j-preserved-comments-root', 'true');
-  clone.setAttribute('data-r45j-source-role', chosen.getAttribute('role') || '');
+  // R45J blank-page fix: keep the original live Facebook DOM in place. The prior
+  // clone-and-replace method preserved text but could render as a blank white page.
+  chosen.setAttribute('data-r45j-preserved-comments-root', 'true');
+  chosen.setAttribute('data-r45j-source-role', chosen.getAttribute('role') || '');
 
-  // Keep the loaded Facebook styles in <head>, but remove the surrounding app/chrome from <body>.
-  document.body.innerHTML = '';
-  document.body.appendChild(clone);
+  const keepPath = [];
+  let n = chosen;
+  while (n && n !== document.documentElement) {
+    keepPath.push(n);
+    n.setAttribute('data-r45j-visual-keep-path', 'true');
+    if (n === document.body) break;
+    n = n.parentElement;
+  }
 
-  const removeByLabel = /^(close|search|notifications|messenger)$/i;
-  const removeTextExact = /^(Restore Britain's post|Comment as .+|Write a comment\.\.\.)$/i;
-  const removeTextContains = /(Reply to .+|Comment as .+|Write a comment|Press Enter to post|Choose a GIF|Attach a photo|Sticker)$/i;
+  // Hide siblings outside the path to the selected comments surface, but do not
+  // rewrite body.innerHTML and do not hide descendants merely because their text
+  // contains composer phrases.
+  let childOnPath = chosen;
+  for (let ancestor = chosen.parentElement; ancestor && ancestor !== document.documentElement; ancestor = ancestor.parentElement) {
+    for (const child of Array.from(ancestor.children || [])) {
+      if (child !== childOnPath && !child.contains(chosen)) {
+        child.setAttribute('data-r45j-visual-hide', 'true');
+      }
+    }
+    childOnPath = ancestor;
+    if (ancestor === document.body) break;
+  }
 
-  const nodes = Array.from(document.body.querySelectorAll('*'));
-  for (const el of nodes) {
+  // Make the kept ancestor chain behave like a normal printable page.
+  for (const el of keepPath) {
+    try {
+      el.style.position = 'static';
+      el.style.inset = 'auto';
+      el.style.left = 'auto';
+      el.style.right = 'auto';
+      el.style.top = 'auto';
+      el.style.bottom = 'auto';
+      el.style.transform = 'none';
+      el.style.overflow = 'visible';
+      el.style.overflowY = 'visible';
+      el.style.maxHeight = 'none';
+      el.style.minHeight = '0';
+      el.style.height = 'auto';
+      el.style.background = el === chosen ? '#fff' : 'transparent';
+    } catch (e) {}
+  }
+
+  try {
+    chosen.style.width = 'min(720px, 96vw)';
+    chosen.style.maxWidth = '720px';
+    chosen.style.margin = '0 auto';
+    chosen.style.boxShadow = 'none';
+    chosen.style.borderRadius = '0';
+  } catch (e) {}
+
+  let hidden = 0;
+  const smallAndVisible = (el, maxW = 420, maxH = 120) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.width <= maxW && r.height <= maxH;
+  };
+  for (const el of Array.from(chosen.querySelectorAll('*'))) {
     const txt = textOf(el);
     const lab = labelOf(el);
     const role = (el.getAttribute('role') || '').toLowerCase();
-    if (removeByLabel.test(lab) || removeTextExact.test(txt) || removeTextContains.test(txt)) {
-      el.setAttribute('data-r45j-remove', 'true');
-      continue;
+    const tag = el.tagName;
+    if (role === 'textbox' || tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'FORM' || el.isContentEditable) {
+      el.setAttribute('data-r45j-remove', 'true'); hidden++; continue;
     }
-    if (role === 'textbox' || el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.tagName === 'FORM') {
-      el.setAttribute('data-r45j-remove', 'true');
-      continue;
+    if (/^(close|search|notifications|messenger)$/i.test(lab) && smallAndVisible(el, 140, 140)) {
+      el.setAttribute('data-r45j-remove', 'true'); hidden++; continue;
     }
-    if (el.isContentEditable) {
-      el.setAttribute('data-r45j-remove', 'true');
-      continue;
+    if (/^(Reply to .+|Comment as .+|Write a comment\.?\.?\.)$/i.test(lab) && smallAndVisible(el, 700, 120)) {
+      el.setAttribute('data-r45j-remove', 'true'); hidden++; continue;
     }
-  }
-
-  // Remove small top header rows that only contain the modal title / close control, without touching comment bubbles.
-  for (const el of Array.from(document.body.querySelectorAll('div, header'))) {
-    const txt = textOf(el);
-    const r = el.getBoundingClientRect();
-    if (/^Restore Britain's post$/i.test(txt) && r.height < 120) {
-      el.setAttribute('data-r45j-remove', 'true');
+    if (/^Restore Britain's post$/i.test(txt) && smallAndVisible(el, 800, 140)) {
+      el.setAttribute('data-r45j-remove', 'true'); hidden++; continue;
     }
   }
 
-  // Flatten every internal scroller so full-page and tiled screenshots see one continuous comments page.
-  for (const el of Array.from(document.body.querySelectorAll('*'))) {
+  // Flatten real scrollers in the selected comments surface without forcing every
+  // child node to height:auto, which can collapse Facebook's nested layout.
+  for (const el of Array.from(chosen.querySelectorAll('*'))) {
     try {
-      el.style.maxHeight = 'none';
-      el.style.height = 'auto';
-      el.style.overflow = 'visible';
-      el.style.overflowY = 'visible';
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      const scrollGap = el.scrollHeight - el.clientHeight;
+      const isScroller = scrollGap > 100 || /(auto|scroll)/i.test(cs.overflowY || cs.overflow || '');
+      if (isScroller && r.height > 0) {
+        el.style.maxHeight = 'none';
+        el.style.overflow = 'visible';
+        el.style.overflowY = 'visible';
+        if (el.clientHeight && el.scrollHeight > el.clientHeight + 100) {
+          el.style.height = 'auto';
+        }
+      }
     } catch (e) {}
   }
+
+  try { document.documentElement.style.overflow = 'visible'; } catch (e) {}
+  try { document.body.style.overflow = 'visible'; } catch (e) {}
   window.scrollTo(0, 0);
   return {
     chosen: chosenInfo,
+    in_place_dom_preserved: true,
+    clone_body_replacement_used: false,
+    hidden_nodes: hidden,
     body_text_chars: (document.body.innerText || '').length,
     scroll_height: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
   };
@@ -169,6 +242,7 @@ def contract() -> Dict[str, Any]:
         'primary_route': 'Open operator-controlled signed-in Facebook page, run R45H bounded expansion, then remove surrounding chrome/composer surfaces and screenshot the preserved Facebook-rendered comments DOM.',
         'preserved_visual_rule': 'Do not re-render comments into custom cards for screenshot evidence; preserve Facebook-rendered comment bubbles, avatars, nesting, visible reactions, and Like/Reply metadata after expansion.',
         'visual_clean_rule': 'After expansion only, remove/hide Facebook chrome, modal header, close buttons, and comment composer/reply boxes so the screenshot contains comments only.',
+        'r45j_blank_page_fix': 'Preserved visual cleanup is now in-place: it marks and crops the live Facebook comments surface rather than cloning/replacing document.body, because clone-and-replace could produce a blank white screenshot while text still existed.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -384,8 +458,8 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
 
 def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
     checks = [
-        {'name': 'preserved_visual_clean_js_present', 'status': 'pass' if 'cloneNode(true)' in JS_MARK_AND_CLEAN_PRESERVED_COMMENTS and 'data-r45j-preserved-comments-root' in JS_MARK_AND_CLEAN_PRESERVED_COMMENTS else 'fail'},
-        {'name': 'preserved_visual_css_present', 'status': 'pass' if 'data-r45j-preserved-comments-root' in VISUAL_CLEAN_CSS and 'Facebook-rendered comments DOM' in VISUAL_CLEAN_CSS else 'fail'},
+        {'name': 'in_place_visual_clean_js_present', 'status': 'pass' if 'data-r45j-visual-keep-path' in JS_MARK_AND_CLEAN_PRESERVED_COMMENTS and 'document.body.innerHTML' not in JS_MARK_AND_CLEAN_PRESERVED_COMMENTS else 'fail'},
+        {'name': 'preserved_visual_css_present', 'status': 'pass' if 'data-r45j-preserved-comments-root' in VISUAL_CLEAN_CSS and 'blank-page fix' in VISUAL_CLEAN_CSS else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
         {'name': 'login_automation_disabled', 'status': 'pass' if contract().get('login_automation_enabled') is False else 'fail'},
