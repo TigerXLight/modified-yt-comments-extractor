@@ -41830,3 +41830,12 @@ R45C_FACEBOOK_LIVE_COMMENTS_FOCUS_RUNNER = {
     "route": "logged_in_visible_facebook_comments_focus_text_and_screenshot_capture",
     "notes": "CSS-only comments focus mode remains clickable before expansion; capture DOM/text/screenshots after operator expansion.",
 }
+
+# R45D_FACEBOOK_AUTO_EXPAND_COMMENTS_RUNNER registration
+R45D_FACEBOOK_AUTO_EXPAND_COMMENTS_RUNNER = {
+    "marker": "YTCE_R45D_FACEBOOK_AUTO_EXPAND_COMMENTS_RUNNER",
+    "module": "profile_media_facebook_auto_expand_comments_runner_r45d",
+    "status": "facebook_auto_expand_comments_runner_available",
+    "route": "logged_in_visible_facebook_comments_focus_auto_expand_text_and_screenshot_capture",
+    "notes": "Visible-page auto-expand clicks for View more/View replies/See more; no hidden API/cookie/profile scraping.",
+}
