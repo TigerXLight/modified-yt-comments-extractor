@@ -41894,3 +41894,14 @@ R45H_FACEBOOK_BOUNDED_MODAL_CAPTURE_RUNNER = {
     "progress_heartbeat_supported": True,
     "visible_hidden_replies_clicks_supported": True,
 }
+
+# R45I Facebook print-clean evidence screenshot registration
+R45I_FACEBOOK_PRINT_CLEAN_EVIDENCE_SCREENSHOT = {
+    "marker": "YTCE_R45I_FACEBOOK_PRINT_CLEAN_EVIDENCE_SCREENSHOT",
+    "mode_id": "facebook_print_clean_evidence_screenshot",
+    "module": "profile_media_facebook_print_clean_evidence_screenshot_r45i",
+    "method": "post_expansion_comments_only_print_clean_evidence_page",
+    "requires_prior_expansion": True,
+    "uses_hidden_platform_api": False,
+    "browser_profile_files_copied_by_tool": False,
+}
