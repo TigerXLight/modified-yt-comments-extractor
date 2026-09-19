@@ -41853,3 +41853,19 @@ R45E_FACEBOOK_SCROLL_LOAD_AUTO_EXPAND_RUNNER = {
     "reference_text_comparison_supported": True,
     "tile_screenshots_supported": True,
 }
+
+# R45F Facebook modal progress hidden-comments runner registration
+R45F_FACEBOOK_MODAL_PROGRESS_HIDDEN_COMMENTS_RUNNER = {
+    "marker": "YTCE_R45F_FACEBOOK_MODAL_PROGRESS_HIDDEN_COMMENTS_RUNNER",
+    "mode_id": "facebook_modal_progress_hidden_comments_runner",
+    "module": "profile_media_facebook_modal_progress_hidden_comments_runner_r45f",
+    "primary_method": "live_comments_focus_modal_progress_hidden_comments_expand_text_and_screenshot_capture",
+    "modal_progress_detection_supported": True,
+    "view_hidden_comments_supported": True,
+    "comments_focus_mode_clickable": True,
+    "visible_page_auto_expand_clicks_supported": True,
+    "scroll_load_sweeps_supported": True,
+    "markdown_url_sanitizer_supported": True,
+    "reference_text_comparison_supported": True,
+    "tile_screenshots_supported": True,
+}
