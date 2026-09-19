@@ -2119,6 +2119,27 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R44J_REDDIT_COMMENT_TREE_EXTRACTION_INDENTATION:
+        # Reddit comment-tree extraction, displayed-score preservation,
+        # indentation output, large-thread queue policy, and no-login normal-site
+        # fallback contract. This layer is extraction/planning only: no hidden
+        # Reddit API scraping, no login automation, no browser profile file
+        # reading/copying, and no remote media downloads.
+        self.reddit_comment_tree_extraction_r44j = None
+        try:
+            from profile_media_reddit_comment_tree_extraction_r44j import (
+                build_reddit_comment_tree_extraction_contract_r44j,
+            )
+
+            self.reddit_comment_tree_extraction_r44j = (
+                build_reddit_comment_tree_extraction_contract_r44j()
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R44J Reddit comment tree extraction indentation.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This
