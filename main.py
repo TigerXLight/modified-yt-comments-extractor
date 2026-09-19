@@ -41807,3 +41807,17 @@ R45A_FACEBOOK_VISIBLE_PRINT_CLEAN_COMMENT_CAPTURE_REGISTRATION = {
     "hidden_platform_api_scraping_enabled": False,
 }
 # === End R45A Facebook visible print-clean comment capture adapter ===
+
+# BEGIN R45B FACEBOOK LIVE COMMENTS FOCUS CAPTURE ROUTE
+R45B_FACEBOOK_LIVE_COMMENTS_FOCUS_CAPTURE_ROUTE = {
+    "marker": "YTCE_R45B_FACEBOOK_LIVE_COMMENTS_FOCUS_CAPTURE",
+    "mode_id": "facebook_live_comments_focus_capture",
+    "primary_route": "signed_in_visible_facebook_comments_focus_then_text_and_screenshot_capture",
+    "interactive_focus_mode": True,
+    "static_print_clean_after_expansion": True,
+    "reference_text_comparison_supported": True,
+    "hidden_platform_api_scraping_enabled": False,
+    "login_automation_enabled": False,
+    "cookie_or_token_extraction_enabled": False,
+}
+# END R45B FACEBOOK LIVE COMMENTS FOCUS CAPTURE ROUTE
