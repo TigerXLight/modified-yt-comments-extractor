@@ -41905,3 +41905,15 @@ R45I_FACEBOOK_PRINT_CLEAN_EVIDENCE_SCREENSHOT = {
     "uses_hidden_platform_api": False,
     "browser_profile_files_copied_by_tool": False,
 }
+# R45J Facebook preserved visual screenshot runner registration
+R45J_FACEBOOK_PRESERVED_VISUAL_SCREENSHOT_RUNNER = {
+    "marker": "YTCE_R45J_FACEBOOK_PRESERVED_VISUAL_SCREENSHOT_RUNNER",
+    "mode_id": "facebook_preserved_visual_screenshot_runner",
+    "module": "profile_media_facebook_preserved_visual_screenshot_runner_r45j",
+    "method": "live_expansion_then_preserved_facebook_visual_cleanup_screenshot",
+    "preserves_facebook_rendered_comment_layout": True,
+    "requires_live_expansion": True,
+    "tile_screenshots_supported": True,
+    "uses_hidden_platform_api": False,
+    "browser_profile_files_copied_by_tool": False,
+}
