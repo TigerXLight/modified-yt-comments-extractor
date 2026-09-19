@@ -41839,3 +41839,17 @@ R45D_FACEBOOK_AUTO_EXPAND_COMMENTS_RUNNER = {
     "route": "logged_in_visible_facebook_comments_focus_auto_expand_text_and_screenshot_capture",
     "notes": "Visible-page auto-expand clicks for View more/View replies/See more; no hidden API/cookie/profile scraping.",
 }
+
+# R45E Facebook scroll-load auto-expand runner registration
+R45E_FACEBOOK_SCROLL_LOAD_AUTO_EXPAND_RUNNER = {
+    "marker": "YTCE_R45E_FACEBOOK_SCROLL_LOAD_AUTO_EXPAND_RUNNER",
+    "mode_id": "facebook_scroll_load_auto_expand_runner",
+    "module": "profile_media_facebook_scroll_load_auto_expand_runner_r45e",
+    "primary_method": "live_comments_focus_scroll_load_auto_expand_text_and_screenshot_capture",
+    "r45d_gap_fixed": "scroll-load lower comments before expansion attempts",
+    "comments_focus_mode_clickable": True,
+    "visible_page_auto_expand_clicks_supported": True,
+    "scroll_load_sweeps_supported": True,
+    "reference_text_comparison_supported": True,
+    "tile_screenshots_supported": True,
+}
