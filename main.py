@@ -41884,3 +41884,13 @@ R45G_FACEBOOK_MODAL_HIDDEN_REPLIES_RUNNER = {
     "scroll_load_sweeps_supported": True,
     "reference_text_comparison_supported": True,
 }
+
+# R45H Facebook bounded modal capture runner registration
+R45H_FACEBOOK_BOUNDED_MODAL_CAPTURE_RUNNER = {
+    "marker": "YTCE_R45H_FACEBOOK_BOUNDED_MODAL_CAPTURE_RUNNER",
+    "mode_id": "facebook_bounded_modal_capture_runner",
+    "module": "profile_media_facebook_bounded_modal_capture_runner_r45h",
+    "bounded_auto_expand_supported": True,
+    "progress_heartbeat_supported": True,
+    "visible_hidden_replies_clicks_supported": True,
+}
