@@ -2140,6 +2140,27 @@ class App(ctk.CTk):
                 exc_info=True,
             )
 
+        # R44K_REDDIT_R44I_R44J_REAL_CAPTURE_RECONCILIATION:
+        # Compare a real R44I logged-in target-only Reddit capture against
+        # the R44J comment-tree extraction output and known/reference counts.
+        # This is local receipt reconciliation only: no browser start, no
+        # network actions, no profile file reading/copying, no cookie/token
+        # parsing, no login automation, and no remote media downloads.
+        self.reddit_r44i_r44j_real_capture_reconciliation_r44k = None
+        try:
+            from profile_media_reddit_r44i_r44j_real_capture_reconciliation_r44k import (
+                build_reddit_r44i_r44j_real_capture_reconciliation_contract_r44k,
+            )
+
+            self.reddit_r44i_r44j_real_capture_reconciliation_r44k = (
+                build_reddit_r44i_r44j_real_capture_reconciliation_contract_r44k()
+            )
+        except Exception:
+            logger.debug(
+                "Could not configure R44K Reddit R44I/R44J real capture reconciliation.",
+                exc_info=True,
+            )
+
         # R43U_UNIVERSAL_SOCIAL_ACCOUNT_LEDGER_CONTRACT_BASELINE:
         # Freeze the R43T/R43A account/date/post/media/screenshot receipt method
         # as a platform-neutral ledger contract before Bluesky is added. This
