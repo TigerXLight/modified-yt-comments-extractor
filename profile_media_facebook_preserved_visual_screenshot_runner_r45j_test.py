@@ -55,6 +55,10 @@ def test_contract_and_static_assets():
     assert '_guard_or_reopen_target_page' in inspect.getsource(r45j)
     assert 'R45J_TARGET_PAGE_GUARD_BLOCKED' in inspect.getsource(r45j)
     assert 'r45u_target_page_guard_rule' in r45j.contract()
+    assert 'Playwright-side mouse clicks' in c['r45v_playwright_mouse_downward_rule']
+    assert '_playwright_mouse_downward_expand' in inspect.getsource(r45j)
+    assert 'R45V_MOUSE_CLICK' in inspect.getsource(r45j)
+    assert 'page.mouse.down()' in inspect.getsource(r45j)
     assert 'scrollTopForRescan' not in r45j.r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert '--progressive-top-down-sweeps' in inspect.getsource(r45j.build_arg_parser)
     assert 'clicking inert text' in r45j.JS_CLICK_REPLIED_REPLY_BUCKETS_R45N

@@ -462,6 +462,7 @@ def contract() -> Dict[str, Any]:
         'r45s_first_visible_click_rule': 'R45S clicks exactly one first visible expansion control, rescans the same viewport, and does not start the replied-bucket follow-up while visible expansion controls or incomplete comment progress remain.',
         'r45t_visible_click_heartbeat_rule': 'R45T keeps the operator-requested downward frontier but emits a heartbeat for each single first-visible click and uses a human-like pointer/mouse click sequence for visible Facebook expand controls.',
         'r45u_target_page_guard_rule': 'R45U refuses to expand a generic Facebook home/feed page when a specific target URL was requested; after the pre-expand pause it reopens the target URL and blocks if the browser is still not on that target.',
+        'r45v_playwright_mouse_downward_rule': 'R45V uses Playwright-side mouse clicks for the first visible Facebook expand control, then rescans the same viewport before scrolling downward; it avoids synthetic in-page click dispatch for Comet role=button controls.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -695,6 +696,288 @@ def _guard_or_reopen_target_page(page: Any, target_url: str, *, timeout_ms: int,
     return {'ok': ok, 'stage': stage, 'url': final, 'reopened': True, 'target_url': target_url}
 
 
+
+JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
+(opts) => {
+  const viewportMarginPx = Number((opts && opts.viewportMarginPx) || 90);
+  const skipKeys = new Set((opts && opts.skipKeys) || []);
+  const deny = /^(like|reply|share|send|comment|copy link|follow|message|all|most relevant|newest|top comments|edited)$/i;
+  const isVisible = (el) => {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0' && style.pointerEvents !== 'none';
+  };
+  const labelOf = (el) => {
+    const bits = [el.innerText || '', el.getAttribute('aria-label') || '', el.getAttribute('title') || '', el.textContent || ''];
+    return bits.join(' ').replace(/\s+/g, ' ').trim();
+  };
+  const clickTargetFor = (el) => {
+    let n = el;
+    for (let i = 0; n && i < 8; i++, n = n.parentElement) {
+      const role = (n.getAttribute('role') || '').toLowerCase();
+      const tag = (n.tagName || '').toLowerCase();
+      const style = window.getComputedStyle(n);
+      if (role === 'button' || tag === 'a' || tag === 'button' || tag === 'summary' || style.cursor === 'pointer') return n;
+    }
+    return el;
+  };
+  const expansionMatchText = (text) => {
+    const m = text.match(/\b(View\s+(?:hidden\s+(?:comments?|repl(?:y|ies))|all\s+\d+\s+repl(?:y|ies)|more\s+\d+\s+repl(?:y|ies)|\d+\s+repl(?:y|ies)|previous\s+repl(?:y|ies)|more\s+repl(?:y|ies)))\b/i);
+    if (m) return m[1].replace(/\s+/g, ' ').trim();
+    const r = text.match(/\b[\p{L}\p{M}' .-]{1,80}\s+replied\s*[·•\-–—]\s*\d+\s+repl(?:y|ies)\b/iu);
+    if (r) return r[0].replace(/\s+/g, ' ').trim();
+    const seeMore = text.match(/^\s*See\s+more\s*$/i);
+    return seeMore ? 'See more' : '';
+  };
+  const looksLikeBloatedCommentContainer = (text) => {
+    if (text.length <= 150) return false;
+    if (/^\s*(view|see)\b/i.test(text)) return false;
+    if (/\breplied\s*[·•\-–—]\s*\d+\s+repl/i.test(text) && text.length < 190) return false;
+    return /\bLike\b.*\bReply\b/i.test(text) || text.length > 240;
+  };
+  const targetKeyFor = (target, matched) => {
+    const r = target.getBoundingClientRect();
+    return [matched.toLowerCase(), Math.round((r.top + window.scrollY) / 8), Math.round(r.left / 8), Math.round(r.width / 8), Math.round(r.height / 8)].join('|');
+  };
+  const pageText = () => (document.body && document.body.innerText || '');
+  const parseProgress = () => {
+    const m = pageText().match(/\b(\d{1,5})\s+of\s+(\d{1,5})\b/);
+    if (!m) return null;
+    return {current: Number(m[1]), total: Number(m[2]), text: m[0]};
+  };
+  const nodes = Array.from(document.querySelectorAll('div[role="button"], span[role="button"], a[role="button"], button, a, [tabindex="0"], span, div'));
+  const candidates = [];
+  for (const el of nodes) {
+    if (!isVisible(el)) continue;
+    const text = labelOf(el);
+    if (!text || text.length > 340) continue;
+    if (deny.test(text)) continue;
+    const matched = expansionMatchText(text);
+    if (!matched) continue;
+    if (looksLikeBloatedCommentContainer(text)) continue;
+    const target = clickTargetFor(el);
+    if (!target || !isVisible(target)) continue;
+    const r = target.getBoundingClientRect();
+    if (r.bottom <= 0 || r.top > window.innerHeight + viewportMarginPx) continue;
+    const direct = el.getBoundingClientRect();
+    const centerX = Math.min(Math.max(direct.left + direct.width / 2, 2), Math.max(2, window.innerWidth - 2));
+    const centerY = Math.min(Math.max(direct.top + direct.height / 2, 2), Math.max(2, window.innerHeight - 2));
+    const hit = document.elementFromPoint(centerX, centerY);
+    const hitTarget = clickTargetFor(hit || target) || target;
+    const hitRect = hitTarget.getBoundingClientRect();
+    const x = Math.min(Math.max(hitRect.left + hitRect.width / 2, 2), Math.max(2, window.innerWidth - 2));
+    const y = Math.min(Math.max(hitRect.top + hitRect.height / 2, 2), Math.max(2, window.innerHeight - 2));
+    const key = targetKeyFor(hitTarget, matched);
+    if (skipKeys.has(key)) continue;
+    candidates.push({label: matched, full_label: text.slice(0, 220), x, y, top: Math.round(Math.min(r.top, direct.top)), left: Math.round(Math.min(r.left, direct.left)), key, role: hitTarget.getAttribute('role') || '', tag: (hitTarget.tagName || '').toLowerCase(), href: hitTarget.getAttribute('href') || '', progress: parseProgress()});
+  }
+  candidates.sort((a,b) => a.top - b.top || a.left - b.left || a.label.length - b.label.length);
+  const seen = new Set();
+  const compact = [];
+  for (const c of candidates) {
+    const k = c.label.toLowerCase() + '|' + Math.round(c.top / 8) + '|' + Math.round(c.left / 8);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    compact.push(c);
+  }
+  return {candidate: compact[0] || null, visible_count: compact.length, visible_labels: compact.slice(0, 12).map(c => c.label), progress: parseProgress(), text_chars: pageText().length, viewport: {width: window.innerWidth, height: window.innerHeight, scroll_y: window.scrollY}};
+}
+"""
+
+JS_SCROLL_DOWNWARD_FRONTIER_R45V = r"""
+(opts) => {
+  const px = Number((opts && opts.scrollPx) || 650);
+  const isVisible = (el) => {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+  };
+  const textOf = (el) => (el.innerText || '').slice(0, 1800).toLowerCase();
+  const targets = [];
+  for (const el of Array.from(document.querySelectorAll('[role="dialog"], div, section, main, article'))) {
+    if (!isVisible(el)) continue;
+    const scrollable = (el.scrollHeight || 0) - (el.clientHeight || 0);
+    if (scrollable < 120) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.height < 140 || rect.width < 260) continue;
+    const role = (el.getAttribute('role') || '').toLowerCase();
+    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+    const text = textOf(el);
+    let score = scrollable + rect.height;
+    if (role === 'dialog') score += 25000;
+    if (/restore britain|comment|reply|view hidden|write a comment|of\s+\d+/.test(text + ' ' + aria)) score += 10000;
+    targets.push({el, score, role, aria: aria.slice(0,80), scrollable, height: Math.round(rect.height), width: Math.round(rect.width)});
+  }
+  targets.sort((a,b) => b.score - a.score);
+  let changed = 0;
+  const summaries = [];
+  for (const item of targets.slice(0, 4)) {
+    try {
+      const before = item.el.scrollTop;
+      item.el.scrollTop = Math.min(item.el.scrollTop + px, item.el.scrollHeight);
+      item.el.dispatchEvent(new Event('scroll', {bubbles:true}));
+      if (item.el.scrollTop !== before) changed += 1;
+      summaries.push({role: item.role, aria: item.aria, scrollable: item.scrollable, height: item.height, width: item.width, before, after: item.el.scrollTop});
+    } catch(e) {}
+  }
+  const winBefore = window.scrollY;
+  window.scrollBy(0, Math.max(250, Math.floor(px * 0.75)));
+  if (window.scrollY !== winBefore) changed += 1;
+  return {changed, targets: summaries, window_before: winBefore, window_after: window.scrollY};
+}
+"""
+
+
+def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patterns: List[str]) -> Dict[str, Any]:
+    """R45V: click the first visible Facebook expand control with Playwright mouse.
+
+    This avoids in-page synthetic PointerEvent/MouseEvent dispatch on Facebook
+    Comet role=button controls. It clicks one visible control, waits, rescans the
+    same viewport, then scrolls downward only when no visible expand control remains.
+    """
+    started = time.monotonic()
+    max_seconds = max(15.0, float(getattr(args, 'expand_max_seconds', 180) or 180))
+    scroll_px = int(getattr(args, 'expand_scroll_px', 650) or 650)
+    scroll_delay = float(getattr(args, 'expand_scroll_delay_seconds', 0.8) or 0.8)
+    after_click_delay = float(getattr(args, 'expand_after_click_delay_seconds', 0.45) or 0.45)
+    click_delay = float(getattr(args, 'expand_click_delay_seconds', 0.08) or 0.08)
+    viewport_margin = int(getattr(args, 'expand_viewport_margin_px', 90) or 90)
+    rounds_limit = int(getattr(args, 'expand_rounds', 2000) or 2000)
+    skip_counts: Dict[str, int] = {}
+    clicked_total = 0
+    scroll_events = 0
+    stable_no_candidate_rounds = 0
+    last_probe: Dict[str, Any] = {}
+
+    def elapsed() -> int:
+        return int(round(time.monotonic() - started))
+
+    for step in range(1, rounds_limit + 1):
+        if time.monotonic() - started > max_seconds:
+            break
+        skip_keys = [k for k, v in skip_counts.items() if v >= 2]
+        try:
+            probe = page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
+                'patterns': patterns,
+                'viewportMarginPx': viewport_margin,
+                'skipKeys': skip_keys,
+            }) or {}
+        except Exception as e:
+            print('R45H_PROGRESS ' + json.dumps({'event': 'R45V_PROBE_FAILED', 'step': step, 'error': str(e)[:180], 'elapsed_seconds': elapsed()}, ensure_ascii=False))
+            break
+        last_probe = probe
+        candidate = probe.get('candidate') if isinstance(probe, dict) else None
+        if candidate:
+            label = str(candidate.get('label') or '')
+            key = str(candidate.get('key') or f'{label}:{step}')
+            before_chars = int(probe.get('text_chars') or 0)
+            before_progress = probe.get('progress')
+            x = float(candidate.get('x') or 0)
+            y = float(candidate.get('y') or 0)
+            time.sleep(max(0.0, click_delay))
+            click_error = ''
+            try:
+                page.mouse.move(x, y)
+                page.mouse.down()
+                time.sleep(0.03)
+                page.mouse.up()
+            except Exception as e:
+                click_error = str(e)[:180]
+            time.sleep(max(0.05, after_click_delay))
+            try:
+                after_probe = page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
+                    'patterns': patterns,
+                    'viewportMarginPx': viewport_margin,
+                    'skipKeys': [k for k, v in skip_counts.items() if v >= 2],
+                }) or {}
+            except Exception:
+                after_probe = {}
+            after_chars = int(after_probe.get('text_chars') or before_chars)
+            after_progress = after_probe.get('progress')
+            remaining_visible = int(after_probe.get('visible_count') or 0)
+            no_op = bool(click_error) or (after_chars == before_chars and after_progress == before_progress and remaining_visible == int(probe.get('visible_count') or 0))
+            if no_op:
+                skip_counts[key] = skip_counts.get(key, 0) + 1
+            else:
+                skip_counts.pop(key, None)
+            clicked_total += 0 if click_error else 1
+            print('R45H_PROGRESS ' + json.dumps({
+                'event': 'R45V_MOUSE_CLICK',
+                'step': step,
+                'label': label,
+                'x': round(x, 1),
+                'y': round(y, 1),
+                'click_error': click_error,
+                'no_op': no_op,
+                'no_op_count': skip_counts.get(key, 0),
+                'delta_text_chars': after_chars - before_chars,
+                'before_progress': before_progress,
+                'after_progress': after_progress,
+                'remaining_visible_candidates': remaining_visible,
+                'visible_labels': (after_probe.get('visible_labels') or [])[:8],
+                'elapsed_seconds': elapsed(),
+            }, ensure_ascii=False))
+            continue
+
+        try:
+            scroll_result = page.evaluate(JS_SCROLL_DOWNWARD_FRONTIER_R45V, {'scrollPx': scroll_px}) or {}
+        except Exception as e:
+            scroll_result = {'changed': 0, 'error': str(e)[:180]}
+        changed = int(scroll_result.get('changed') or 0)
+        if changed:
+            scroll_events += changed
+            stable_no_candidate_rounds = 0
+        else:
+            stable_no_candidate_rounds += 1
+        print('R45H_PROGRESS ' + json.dumps({
+            'event': 'R45V_DOWNWARD_SCROLL',
+            'step': step,
+            'changed': changed,
+            'visible_labels_before_scroll': (probe.get('visible_labels') or [])[:8],
+            'progress': probe.get('progress'),
+            'scroll_targets': scroll_result.get('targets') or [],
+            'elapsed_seconds': elapsed(),
+        }, ensure_ascii=False))
+        time.sleep(max(0.05, scroll_delay))
+        if stable_no_candidate_rounds >= int(getattr(args, 'expand_stop_after_stable_rounds', 4) or 4):
+            break
+
+    final_probe = last_probe
+    try:
+        final_probe = page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
+            'patterns': patterns,
+            'viewportMarginPx': viewport_margin,
+            'skipKeys': [k for k, v in skip_counts.items() if v >= 2],
+        }) or last_probe
+    except Exception:
+        pass
+    final_progress = final_probe.get('progress') if isinstance(final_probe, dict) else None
+    main_progress_incomplete = False
+    if isinstance(final_progress, dict):
+        try:
+            main_progress_incomplete = int(final_progress.get('current') or 0) < int(final_progress.get('total') or 0)
+        except Exception:
+            main_progress_incomplete = False
+    timed_out = (time.monotonic() - started) > max_seconds
+    return {
+        'marker': 'YTCE_R45V_PLAYWRIGHT_MOUSE_DOWNWARD_EXPAND',
+        'status': 'NEEDS_MORE_EXPANSION_R45V_PLAYWRIGHT_MOUSE_DOWNWARD_EXPAND' if timed_out or main_progress_incomplete else 'PASS_R45V_PLAYWRIGHT_MOUSE_DOWNWARD_EXPAND',
+        'clicked_total': clicked_total,
+        'scroll_events': scroll_events,
+        'timed_out': timed_out,
+        'elapsed_seconds': elapsed(),
+        'final_text_chars': int((final_probe or {}).get('text_chars') or 0) if isinstance(final_probe, dict) else 0,
+        'remaining_visible_candidates': int((final_probe or {}).get('visible_count') or 0) if isinstance(final_probe, dict) else 0,
+        'visible_unresolved_labels': ((final_probe or {}).get('visible_labels') or [])[:12] if isinstance(final_probe, dict) else [],
+        'final_progress': final_progress,
+        'main_progress_incomplete': main_progress_incomplete,
+        'downward_only': True,
+        'playwright_mouse_clicks': True,
+        'synthetic_in_page_click_dispatch': False,
+    }
+
 def _main_expand_still_incomplete(summary: Optional[Dict[str, Any]]) -> bool:
     if not summary:
         return False
@@ -815,7 +1098,9 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             }
             try:
                 print(f'R45J_AUTO_EXPAND_START max_seconds={args.expand_max_seconds}')
-                auto_expand_summary = page.evaluate(r45h.JS_BOUNDED_MODAL_AUTO_EXPAND, opts)
+                print('R45V_PLAYWRIGHT_MOUSE_DOWNWARD_EXPAND_START')
+                auto_expand_summary = _playwright_mouse_downward_expand(page, args, r45h.EXPAND_PATTERNS_R45H)
+                print('R45V_PLAYWRIGHT_MOUSE_DOWNWARD_EXPAND_DONE')
                 print('R45J_AUTO_EXPAND_DONE')
             except Exception as e:
                 warnings.append(f'auto_expand_warning={e}')
@@ -1010,6 +1295,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45q_downward_frontier_present', 'status': 'pass' if 'r45q_downward_frontier_rule' in contract() and 'clickVisibleUntilExhausted' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND and 'scrollTopForRescan' not in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND else 'fail'},
         {'name': 'r45r_local_exhaust_present', 'status': 'pass' if 'r45r_local_exhaust_rule' in contract() and 'requestedLocalPasses' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND and ('Math.max(12' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND or 'Math.max(500' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND) else 'fail'},
         {'name': 'r45u_target_page_guard_present', 'status': 'pass' if '_guard_or_reopen_target_page' in open(__file__, encoding='utf-8').read() and 'R45J_TARGET_PAGE_GUARD_BLOCKED' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45v_playwright_mouse_downward_expand_present', 'status': 'pass' if '_playwright_mouse_downward_expand' in open(__file__, encoding='utf-8').read() and 'R45V_MOUSE_CLICK' in open(__file__, encoding='utf-8').read() and 'page.mouse.down()' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
