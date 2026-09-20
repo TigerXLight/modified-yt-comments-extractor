@@ -39,6 +39,9 @@ def test_contract_and_static_assets():
     assert 'top-to-bottom' in c['r45o_progressive_top_down_rule']
     assert 'clickable ancestor' in c['r45p_replied_bucket_click_target_fix']
     assert 'viewport-relative' in c['r45p_max_band_viewport_clip_fix']
+    assert 'does not go back up' in c['r45q_downward_frontier_rule']
+    assert 'clickVisibleUntilExhausted' in r45j.r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
+    assert 'scrollTopForRescan' not in r45j.r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert '--progressive-top-down-sweeps' in inspect.getsource(r45j.build_arg_parser)
     assert 'clicking inert text' in r45j.JS_CLICK_REPLIED_REPLY_BUCKETS_R45N
     assert 'preserve' in c['preserved_visual_rule'].lower()

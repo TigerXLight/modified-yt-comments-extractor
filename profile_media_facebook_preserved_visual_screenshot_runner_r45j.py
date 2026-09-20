@@ -455,7 +455,8 @@ def contract() -> Dict[str, Any]:
         'r45o_progressive_top_down_rule': 'R45J asks the R45H expansion pass to click visible controls top-to-bottom while moving downward through the modal, reducing repeated jump-back behaviour on long threads.',
         'r45p_replied_bucket_click_target_fix': 'R45P clicks the nearest real clickable ancestor for Name replied · N replies buckets instead of clicking a non-interactive text span.',
         'r45p_max_band_viewport_clip_fix': 'R45P captures comments-column screenshot bands with viewport-relative clipping after resizing the viewport, avoiding empty/out-of-range clips on very tall Facebook pages.',
-        'r45p_top_down_rescan_rule': 'R45P keeps progressive downward ordering but allows a bounded second top-to-bottom sweep to catch View hidden replies and View all N replies controls exposed by earlier clicks.',
+        'r45p_top_down_rescan_rule': 'R45P allowed a bounded second top-to-bottom sweep, but that could jump back upward and waste time on long Facebook threads.',
+        'r45q_downward_frontier_rule': 'R45Q uses a single downward frontier: locally exhaust visible View hidden replies, View all N replies, View 1 reply, and View more replies controls before scrolling further down; it does not go back up for a global rescan.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -875,6 +876,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45o_max_height_screenshot_bands_present', 'status': 'pass' if '_capture_locator_bands' in open(__file__, encoding='utf-8').read() and 'max_screenshot_band_height' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45p_clickable_replied_bucket_target_present', 'status': 'pass' if 'clicking inert text' in JS_CLICK_REPLIED_REPLY_BUCKETS_R45N and "tag === 'summary'" in JS_CLICK_REPLIED_REPLY_BUCKETS_R45N else 'fail'},
         {'name': 'r45p_viewport_relative_bands_present', 'status': 'pass' if 'viewport-relative' in open(__file__, encoding='utf-8').read() and "'y': 0" in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45q_downward_frontier_present', 'status': 'pass' if 'r45q_downward_frontier_rule' in contract() and 'clickVisibleUntilExhausted' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND and 'scrollTopForRescan' not in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
@@ -917,7 +919,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument('--replied-bucket-rounds', type=int, default=80, help='Maximum rounds for the R45N replied-reply-bucket follow-up pass.')
     ap.add_argument('--no-progressive-top-down-expansion', action='store_true', help='Disable R45O viewport top-to-bottom expansion order and use legacy priority sorting.')
     ap.add_argument('--expand-viewport-margin-px', type=int, default=90, help='Viewport margin for R45O top-to-bottom visible-control expansion.')
-    ap.add_argument('--progressive-top-down-sweeps', type=int, default=2, help='R45P bounded top-to-bottom sweeps before declaring progressive expansion stable.')
+    ap.add_argument('--progressive-top-down-sweeps', type=int, default=3, help='R45Q local visible-control exhaustion passes per downward viewport; retained under the old name for CLI compatibility and does not trigger a scroll-back-to-top rescan.')
     ap.add_argument('--max-screenshot-band-height', type=int, default=14000, help='Maximum height of each R45O comments-column screenshot band.')
     ap.add_argument('--screenshot-band-overlap-px', type=int, default=160, help='Overlap between R45O maximum-height screenshot bands.')
     return ap

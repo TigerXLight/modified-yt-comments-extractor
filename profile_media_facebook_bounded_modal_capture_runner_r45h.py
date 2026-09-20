@@ -33,7 +33,10 @@ async (opts) => {
   const maxMillis = Math.max(15000, (opts.maxSeconds || 180) * 1000);
   const progressiveTopDown = !!opts.progressiveTopDown;
   const viewportMarginPx = Number(opts.viewportMarginPx || 90);
-  const maxTopDownSweeps = Math.max(1, Number(opts.maxTopDownSweeps || 2));
+  // R45Q: keep the fast single downward frontier. This option is retained for
+  // CLI compatibility, but it controls only local viewport exhaustion passes;
+  // it must not trigger a global scroll-to-top rescan.
+  const localExhaustPasses = Math.max(1, Number(opts.maxTopDownSweeps || 3));
   const patterns = opts.patterns.map(p => new RegExp(p, 'i'));
   const deny = /^(like|reply|share|send|comment|copy link|follow|message|all|most relevant|newest|top comments|edited)$/i;
   const log = (obj) => { try { console.log('R45H_PROGRESS ' + JSON.stringify(obj)); } catch(e) {} };
@@ -41,7 +44,7 @@ async (opts) => {
     if (!el) return false;
     const rect = el.getBoundingClientRect();
     const style = window.getComputedStyle(el);
-    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
+    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0' && style.pointerEvents !== 'none';
   };
   const labelOf = (el) => {
     const bits = [el.innerText || '', el.getAttribute('aria-label') || '', el.getAttribute('title') || '', el.textContent || ''];
@@ -64,40 +67,50 @@ async (opts) => {
     if (!m) return null;
     return {current: Number(m[1]), total: Number(m[2]), text: m[0]};
   };
+  const targetKeyFor = (target) => {
+    const r = target.getBoundingClientRect();
+    return [Math.round((r.top + window.scrollY) / 3), Math.round(r.left / 3), Math.round(r.width / 3), Math.round(r.height / 3)].join(':');
+  };
+  const canonicalLabel = (text) => {
+    const m = text.match(/\b(View\s+(?:hidden\s+(?:comments?|repl(?:y|ies))|all\s+\d+\s+repl(?:y|ies)|more\s+\d+\s+repl(?:y|ies)|\d+\s+repl(?:y|ies)|previous\s+repl(?:y|ies)|more\s+repl(?:y|ies)))\b/i);
+    if (m) return m[1].toLowerCase().replace(/\s+/g, ' ');
+    const r = text.match(/\breplied\s*[·•\-–—]\s*\d+\s+repl(?:y|ies)\b/i);
+    return (r ? r[0] : text.slice(0, 80)).toLowerCase().replace(/\s+/g, ' ');
+  };
   const findCandidates = () => {
-    // R45P: inspect text-bearing spans/divs too, then click the nearest real
-    // clickable ancestor. Facebook sometimes renders "View hidden replies" or
-    // "View all N replies" text inside a non-role span.
+    // R45Q: top-to-bottom, downward-only frontier. We click controls visible in
+    // the current viewport and locally exhaust newly exposed controls before
+    // scrolling down. We do not perform a global scroll-back-to-top rescan.
     const nodes = Array.from(document.querySelectorAll('div[role="button"], span[role="button"], a[role="button"], button, a, [tabindex="0"], span, div'));
-    const seen = new Set();
-    const out = [];
+    const byTarget = new Map();
     for (const el of nodes) {
       if (!isVisible(el)) continue;
       const text = labelOf(el);
-      if (!text || text.length > 220) continue;
+      if (!text || text.length > 260) continue;
       if (deny.test(text)) continue;
       if (!patterns.some(rx => rx.test(text))) continue;
       const target = clickTargetFor(el);
       if (!target || !isVisible(target)) continue;
       const rect = target.getBoundingClientRect();
-      if (progressiveTopDown && (rect.bottom < -viewportMarginPx || rect.top > window.innerHeight + viewportMarginPx)) continue;
-      const pageTop = Math.round(rect.top + window.scrollY);
-      const key = text.slice(0, 160) + '|' + pageTop + '|' + Math.round(rect.left) + '|' + Math.round(rect.width) + 'x' + Math.round(rect.height);
-      if (seen.has(key)) continue;
-      seen.add(key);
+      if (progressiveTopDown) {
+        // Strict forward sweep: do not reach back above the viewport for a
+        // missed button. Anything missed above is intentionally not revisited.
+        if (rect.bottom <= 0 || rect.top > window.innerHeight + viewportMarginPx) continue;
+      }
+      const key = targetKeyFor(target) + '|' + canonicalLabel(text);
       let priority = 0;
       if (/hidden\s+(?:comments?|repl(?:y|ies))/i.test(text)) priority += 20000;
       if (/view\s+(?:all|more)\s+\d+\s+repl/i.test(text)) priority += 12000;
       if (/view\s+\d+\s+repl/i.test(text)) priority += 9000;
       if (/replied\s*[·•\-–—]\s*\d+\s+repl/i.test(text)) priority += 8000;
       if (/view all|view more|see more/i.test(text)) priority += 4000;
-      out.push({el: target, text, top: rect.top, left: rect.left, priority});
+      const item = {el: target, text, top: rect.top, left: rect.left, priority};
+      const old = byTarget.get(key);
+      if (!old || text.length < old.text.length || priority > old.priority) byTarget.set(key, item);
     }
-    if (progressiveTopDown) {
-      out.sort((a,b) => a.top - b.top || a.left - b.left || b.priority - a.priority);
-    } else {
-      out.sort((a,b) => b.priority - a.priority || a.top - b.top || a.left - b.left);
-    }
+    const out = Array.from(byTarget.values());
+    if (progressiveTopDown) out.sort((a,b) => a.top - b.top || a.left - b.left || b.priority - a.priority);
+    else out.sort((a,b) => b.priority - a.priority || a.top - b.top || a.left - b.left);
     return out;
   };
   const findScrollTargets = () => {
@@ -141,39 +154,40 @@ async (opts) => {
     await sleep(opts.scrollDelayMs);
     return {changed, targets: targets.map(t => ({role: t.role, aria: t.aria, scrollable: t.scrollable, height: t.height, width: t.width})).slice(0, 4)};
   };
-  const scrollTopForRescan = async () => {
-    let changed = 0;
-    for (const item of findScrollTargets()) {
-      try {
-        const before = item.el.scrollTop;
-        item.el.scrollTop = 0;
-        item.el.dispatchEvent(new WheelEvent('wheel', {deltaY: -999999, bubbles: true, cancelable: true}));
-        if (Math.abs(item.el.scrollTop - before) > 2) changed += 1;
-      } catch(e) {}
-    }
-    const beforeY = window.scrollY;
-    window.scrollTo(0, 0);
-    window.dispatchEvent(new WheelEvent('wheel', {deltaY: -999999, bubbles: true, cancelable: true}));
-    if (Math.abs(window.scrollY - beforeY) > 2) changed += 1;
-    await sleep(Math.max(80, opts.scrollDelayMs || 80));
-    return changed;
+  const clickOne = async (item) => {
+    try {
+      const before = item.el.getBoundingClientRect();
+      if (before.top < 0 || before.bottom > window.innerHeight) item.el.scrollIntoView({block: 'nearest', inline: 'nearest'});
+      await sleep(opts.clickDelayMs);
+      const after = item.el.getBoundingClientRect();
+      if (progressiveTopDown && after.bottom <= 0) return false;
+      item.el.click();
+      await sleep(opts.afterClickDelayMs);
+      return true;
+    } catch(e) { return false; }
   };
-  const clickCandidates = async () => {
-    const candidates = findCandidates().slice(0, opts.maxClicksPerRound);
+  const clickVisibleUntilExhausted = async () => {
+    let candidateCount = 0;
     let clicked = 0;
     const labels = [];
-    for (const item of candidates) {
+    for (let pass = 0; pass < localExhaustPasses; pass++) {
       if (Date.now() - startedAt > maxMillis) break;
-      try {
-        item.el.scrollIntoView({block: 'center', inline: 'center'});
-        await sleep(opts.clickDelayMs);
-        item.el.click();
-        clicked += 1;
-        labels.push(item.text.slice(0, 160));
-        await sleep(opts.afterClickDelayMs);
-      } catch(e) {}
+      const candidates = findCandidates().slice(0, opts.maxClicksPerRound);
+      candidateCount += candidates.length;
+      if (!candidates.length) break;
+      let passClicked = 0;
+      for (const item of candidates) {
+        if (Date.now() - startedAt > maxMillis) break;
+        const ok = await clickOne(item);
+        if (ok) {
+          clicked += 1;
+          passClicked += 1;
+          labels.push(item.text.slice(0, 160));
+        }
+      }
+      if (!passClicked) break;
     }
-    return {candidate_count: candidates.length, clicked, clicked_labels: labels.slice(0, 30)};
+    return {candidate_count: candidateCount, clicked, clicked_labels: labels.slice(0, 40)};
   };
   const stats = [];
   let totalClicks = 0;
@@ -182,10 +196,10 @@ async (opts) => {
   let previousTextLength = pageTextLength();
   let previousProgress = parseProgress();
   let timedOut = false;
-  let topDownSweep = 1;
+  const topDownSweep = 1;
   for (let round = 1; round <= opts.rounds; round++) {
     if (Date.now() - startedAt > maxMillis) { timedOut = true; break; }
-    const c = await clickCandidates();
+    const c = await clickVisibleUntilExhausted();
     totalClicks += c.clicked;
     let scrollChanged = 0;
     let lastTargets = [];
@@ -195,7 +209,7 @@ async (opts) => {
       scrollChanged += sc.changed;
       totalScrollEvents += 1;
       lastTargets = sc.targets;
-      const c2 = await clickCandidates();
+      const c2 = await clickVisibleUntilExhausted();
       c.candidate_count += c2.candidate_count;
       c.clicked += c2.clicked;
       totalClicks += c2.clicked;
@@ -205,29 +219,21 @@ async (opts) => {
     const delta = currentTextLength - previousTextLength;
     const progress = parseProgress();
     const progressChanged = JSON.stringify(progress) !== JSON.stringify(previousProgress);
-    const row = {round, top_down_sweep: topDownSweep, candidate_count: c.candidate_count, clicked: c.clicked, delta_text_chars: delta, text_chars: currentTextLength, scroll_changed: scrollChanged, progress, progress_changed: progressChanged, elapsed_seconds: Math.round((Date.now()-startedAt)/1000), scroll_targets: lastTargets, clicked_labels: c.clicked_labels.slice(0, 25)};
+    const remainingVisibleCandidates = findCandidates().length;
+    const row = {round, top_down_sweep: topDownSweep, downward_only: true, candidate_count: c.candidate_count, clicked: c.clicked, remaining_visible_candidates: remainingVisibleCandidates, delta_text_chars: delta, text_chars: currentTextLength, scroll_changed: scrollChanged, progress, progress_changed: progressChanged, elapsed_seconds: Math.round((Date.now()-startedAt)/1000), scroll_targets: lastTargets, clicked_labels: c.clicked_labels.slice(0, 25)};
     stats.push(row);
     log(row);
-    if (c.clicked === 0 && Math.abs(delta) < opts.stableDeltaChars && scrollChanged === 0 && !progressChanged) stableRounds += 1;
+    if (c.clicked === 0 && remainingVisibleCandidates === 0 && Math.abs(delta) < opts.stableDeltaChars && scrollChanged === 0 && !progressChanged) stableRounds += 1;
     else stableRounds = 0;
     previousTextLength = currentTextLength;
     previousProgress = progress;
-    if (stableRounds >= opts.stopAfterStableRounds) {
-      if (progressiveTopDown && topDownSweep < maxTopDownSweeps && totalClicks > 0) {
-        const resetChanged = await scrollTopForRescan();
-        topDownSweep += 1;
-        stableRounds = 0;
-        previousTextLength = pageTextLength();
-        previousProgress = parseProgress();
-        log({round, top_down_sweep: topDownSweep, rescan_started: true, scroll_changed: resetChanged, text_chars: previousTextLength, elapsed_seconds: Math.round((Date.now()-startedAt)/1000)});
-        continue;
-      }
-      break;
-    }
+    if (stableRounds >= opts.stopAfterStableRounds) break;
   }
-  return {rounds_completed: stats.length, total_clicks: totalClicks, total_scroll_events: totalScrollEvents, final_text_chars: previousTextLength, final_progress: previousProgress, timed_out: timedOut, top_down_sweeps_completed: topDownSweep, elapsed_seconds: Math.round((Date.now()-startedAt)/1000), stats};
+  const remainingVisibleCandidates = findCandidates().length;
+  return {rounds_completed: stats.length, total_clicks: totalClicks, total_scroll_events: totalScrollEvents, final_text_chars: previousTextLength, final_progress: previousProgress, timed_out: timedOut, downward_only: true, global_rescan_used: false, remaining_visible_candidates: remainingVisibleCandidates, top_down_sweeps_completed: topDownSweep, elapsed_seconds: Math.round((Date.now()-startedAt)/1000), stats};
 }
 '''
+
 
 
 def contract() -> Dict[str, Any]:
@@ -240,7 +246,8 @@ def contract() -> Dict[str, Any]:
         'bounded_runtime_rule': 'auto-expand stops after --expand-max-seconds and still captures DOM/text/screenshots rather than appearing frozen indefinitely.',
         'progress_rule': 'emit R45H_PROGRESS browser console messages for each completed expansion round.',
         'r45o_progressive_top_down_rule': 'When requested by R45J, expansion clicks visible controls in viewport top-to-bottom order before continuing downward, reducing jump-back behaviour on long Facebook modal threads.',
-        'r45p_progressive_rescan_rule': 'After a downward pass reaches stability, R45P performs a bounded extra top-to-bottom rescan so newly exposed View hidden replies / View all N replies controls are not left behind.',
+        'r45p_progressive_rescan_rule': 'R45P previously allowed a bounded top-to-bottom rescan, but this could jump back upward on long threads.',
+        'r45q_downward_frontier_rule': 'R45Q keeps a single downward frontier: locally exhaust visible View hidden replies / View all N replies controls before scrolling further down, and never performs a global scroll-back-to-top rescan.',
     })
     return base
 
