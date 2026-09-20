@@ -8,6 +8,7 @@ import math
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import parse_qs, urlparse
 
 import profile_media_facebook_auto_expand_comments_runner_r45d as r45d
 import profile_media_facebook_bounded_modal_capture_runner_r45h as r45h
@@ -460,6 +461,7 @@ def contract() -> Dict[str, Any]:
         'r45r_local_exhaust_rule': 'R45R fixes the R45Q regression where --progressive-top-down-sweeps 1 limited local exhaustion: each visible area is repeatedly exhausted for newly exposed View all N replies / View hidden replies controls before scrolling downward.',
         'r45s_first_visible_click_rule': 'R45S clicks exactly one first visible expansion control, rescans the same viewport, and does not start the replied-bucket follow-up while visible expansion controls or incomplete comment progress remain.',
         'r45t_visible_click_heartbeat_rule': 'R45T keeps the operator-requested downward frontier but emits a heartbeat for each single first-visible click and uses a human-like pointer/mouse click sequence for visible Facebook expand controls.',
+        'r45u_target_page_guard_rule': 'R45U refuses to expand a generic Facebook home/feed page when a specific target URL was requested; after the pre-expand pause it reopens the target URL and blocks if the browser is still not on that target.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -626,6 +628,73 @@ def _capture_tiles(page: Any, run_dir: Path, prefix: str, steps: int, scroll_px:
 
 
 
+def _target_url_identity(target_url: str) -> Dict[str, str]:
+    try:
+        parsed = urlparse(target_url or '')
+        qs = parse_qs(parsed.query or '')
+        return {
+            'netloc': (parsed.netloc or '').lower(),
+            'path': parsed.path or '',
+            'story_fbid': (qs.get('story_fbid') or [''])[0],
+            'id': (qs.get('id') or [''])[0],
+        }
+    except Exception:
+        return {'netloc': '', 'path': '', 'story_fbid': '', 'id': ''}
+
+
+def _target_url_looks_loaded(current_url: str, target_url: str) -> bool:
+    if not target_url:
+        return True
+    current = (current_url or '').lower()
+    target = (target_url or '').lower()
+    if not current:
+        return False
+    if target and target in current:
+        return True
+    ident = _target_url_identity(target_url)
+    story = (ident.get('story_fbid') or '').lower()
+    page_id = (ident.get('id') or '').lower()
+    path = (ident.get('path') or '').lower()
+    if story and story in current:
+        return True
+    if 'permalink.php' in current and page_id and page_id in current:
+        return True
+    # Facebook may rewrite some direct post URLs to /posts/... or /videos/...
+    if path and path not in {'/', ''} and path in current:
+        return True
+    # Root facebook.com/feed is never a safe match for a specific target URL.
+    return False
+
+
+def _guard_or_reopen_target_page(page: Any, target_url: str, *, timeout_ms: int, warnings: List[str], stage: str) -> Dict[str, Any]:
+    if not target_url:
+        return {'ok': True, 'stage': stage, 'reason': 'no_target_url'}
+    try:
+        current = page.url
+    except Exception:
+        current = ''
+    if _target_url_looks_loaded(current, target_url):
+        print(f'R45J_TARGET_PAGE_GUARD_PASS stage={stage} url={current}')
+        return {'ok': True, 'stage': stage, 'url': current, 'reopened': False}
+    print(f'R45J_TARGET_PAGE_GUARD_REOPEN stage={stage} current_url={current} target_url={target_url}')
+    warnings.append(f'r45u_target_page_guard_reopen_stage={stage}_from={current}')
+    try:
+        page.goto(target_url, wait_until='domcontentloaded', timeout=timeout_ms)
+        try:
+            page.wait_for_load_state('networkidle', timeout=min(timeout_ms, 8000))
+        except Exception:
+            pass
+    except Exception as e:
+        warnings.append(f'r45u_target_page_guard_navigation_warning_stage={stage}={e}')
+    try:
+        final = page.url
+    except Exception:
+        final = ''
+    ok = _target_url_looks_loaded(final, target_url)
+    print(('R45J_TARGET_PAGE_GUARD_PASS' if ok else 'R45J_TARGET_PAGE_GUARD_BLOCKED') + f' stage={stage} url={final}')
+    return {'ok': ok, 'stage': stage, 'url': final, 'reopened': True, 'target_url': target_url}
+
+
 def _main_expand_still_incomplete(summary: Optional[Dict[str, Any]]) -> bool:
     if not summary:
         return False
@@ -691,6 +760,37 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             print('Check login/page, then press ENTER in this CMD window to start expansion.')
             try: input()
             except EOFError: pass
+
+        # R45U: never expand the generic Facebook home/feed when a specific
+        # permalink/target URL was requested. If login/profile reuse leaves the
+        # browser on facebook.com, reopen the target once, then block safely.
+        target_page_guard = None
+        if target_url and not args.manual_current_page:
+            target_page_guard = _guard_or_reopen_target_page(
+                page,
+                target_url,
+                timeout_ms=args.timeout_seconds * 1000,
+                warnings=warnings,
+                stage='before_auto_expand',
+            )
+            if not target_page_guard.get('ok'):
+                warnings.append('r45u_blocked_before_auto_expand_browser_not_on_requested_target')
+                receipt = {
+                    'marker': MARKER,
+                    'status': STATUS_BLOCKED,
+                    'schema_version': SCHEMA_VERSION,
+                    'generated_at': _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                    'run_dir': str(run_dir),
+                    'target_url': args.target_url,
+                    'sanitized_target_url': target_url,
+                    'target_page_guard': target_page_guard,
+                    'warnings': warnings,
+                    'contract': contract(),
+                    'side_effect_flags': side_effect_flags(True, True, False),
+                }
+                r45d.write_json(run_dir / 'r45j_facebook_preserved_visual_screenshot_receipt.json', receipt)
+                print('R45J_TARGET_PAGE_GUARD_STOPPED_BEFORE_EXPANSION')
+                return receipt
 
         auto_expand_summary = None
         replied_reply_bucket_summary = None
@@ -862,6 +962,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             'generated_at': _dt.datetime.now(_dt.timezone.utc).isoformat(),
             'target_url': args.target_url,
             'sanitized_target_url': target_url,
+            'target_page_guard': target_page_guard,
             'final_page_url': final_url,
             'run_dir': str(run_dir),
             'pre_clean_raw_dom_path': raw_dom_path,
@@ -908,6 +1009,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45p_viewport_relative_bands_present', 'status': 'pass' if 'viewport-relative' in open(__file__, encoding='utf-8').read() and "'y': 0" in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45q_downward_frontier_present', 'status': 'pass' if 'r45q_downward_frontier_rule' in contract() and 'clickVisibleUntilExhausted' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND and 'scrollTopForRescan' not in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND else 'fail'},
         {'name': 'r45r_local_exhaust_present', 'status': 'pass' if 'r45r_local_exhaust_rule' in contract() and 'requestedLocalPasses' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND and ('Math.max(12' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND or 'Math.max(500' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND) else 'fail'},
+        {'name': 'r45u_target_page_guard_present', 'status': 'pass' if '_guard_or_reopen_target_page' in open(__file__, encoding='utf-8').read() and 'R45J_TARGET_PAGE_GUARD_BLOCKED' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
