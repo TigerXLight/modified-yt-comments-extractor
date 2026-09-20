@@ -17,6 +17,8 @@ def test_js_has_bound_and_progress():
     assert 'candidates[0]' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'first_visible_click_mode' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'global_rescan_used: false' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
+    assert 'R45T_FIRST_VISIBLE_CLICK' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
+    assert 'dispatchHumanLikeClick' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'timedOut' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND or 'timed_out' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
 
 
@@ -55,6 +57,7 @@ def test_contract_documents_gap_fix():
     assert 'single downward frontier' in c['r45q_downward_frontier_rule']
     assert 'decouples local viewport exhaustion' in c['r45r_local_exhaust_rule']
     assert 'clicks exactly one first visible' in c['r45s_first_visible_click_rule']
+    assert 'heartbeat after each single first-visible' in c['r45t_visible_click_heartbeat_rule']
 
 
 if __name__ == '__main__':

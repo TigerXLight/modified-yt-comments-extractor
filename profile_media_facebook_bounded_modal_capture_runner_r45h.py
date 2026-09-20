@@ -193,19 +193,42 @@ async (opts) => {
     await sleep(opts.scrollDelayMs);
     return {changed, targets: targets.map(t => ({role: t.role, aria: t.aria, scrollable: t.scrollable, height: t.height, width: t.width})).slice(0, 4)};
   };
+  const noOpSkipCounts = new Map();
+  const viewportTextHash = () => {
+    try { return (document.body && document.body.innerText || '').slice(0, 200000).length + ':' + (parseProgress() ? parseProgress().text : ''); }
+    catch(e) { return ''; }
+  };
+  const dispatchHumanLikeClick = (target) => {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(Math.max(rect.left + Math.min(Math.max(rect.width / 2, 4), Math.max(4, rect.width - 4)), 2), Math.max(2, window.innerWidth - 2));
+    const y = Math.min(Math.max(rect.top + Math.min(Math.max(rect.height / 2, 4), Math.max(4, rect.height - 4)), 2), Math.max(2, window.innerHeight - 2));
+    const hit = document.elementFromPoint(x, y) || target;
+    const realTarget = clickTargetFor(hit) || target;
+    try { realTarget.focus && realTarget.focus({preventScroll:true}); } catch(e) {}
+    const common = {bubbles:true, cancelable:true, composed:true, view:window, clientX:x, clientY:y, screenX:x, screenY:y, button:0, buttons:1};
+    try { realTarget.dispatchEvent(new PointerEvent('pointerover', {pointerId:1, pointerType:'mouse', isPrimary:true, ...common})); } catch(e) {}
+    try { realTarget.dispatchEvent(new MouseEvent('mouseover', common)); } catch(e) {}
+    try { realTarget.dispatchEvent(new PointerEvent('pointerdown', {pointerId:1, pointerType:'mouse', isPrimary:true, ...common})); } catch(e) {}
+    try { realTarget.dispatchEvent(new MouseEvent('mousedown', common)); } catch(e) {}
+    try { realTarget.dispatchEvent(new PointerEvent('pointerup', {pointerId:1, pointerType:'mouse', isPrimary:true, ...common, buttons:0})); } catch(e) {}
+    try { realTarget.dispatchEvent(new MouseEvent('mouseup', {...common, buttons:0})); } catch(e) {}
+    try { realTarget.dispatchEvent(new MouseEvent('click', {...common, buttons:0})); } catch(e) {}
+    try { realTarget.click(); } catch(e) {}
+    return {x, y, hitText: labelOf(realTarget).slice(0, 160)};
+  };
   const clickOne = async (item) => {
     try {
       const before = item.el.getBoundingClientRect();
       if (before.top < 0 || before.bottom > window.innerHeight) item.el.scrollIntoView({block: 'nearest', inline: 'nearest'});
       await sleep(opts.clickDelayMs);
       const after = item.el.getBoundingClientRect();
-      if (progressiveTopDown && after.bottom <= 0) return false;
-      item.el.click();
+      if (progressiveTopDown && after.bottom <= 0) return {ok:false, mode:'above_viewport'};
+      const direct = dispatchHumanLikeClick(item.el);
       await sleep(opts.afterClickDelayMs);
-      return true;
-    } catch(e) { return false; }
+      return {ok:true, mode:'human_mouse_event', direct};
+    } catch(e) { return {ok:false, mode:'exception', error: String(e).slice(0, 120)}; }
   };
-  const clickVisibleUntilExhausted = async () => {
+  const clickVisibleUntilExhausted = async (round) => {
     let candidateCount = 0;
     let clicked = 0;
     const labels = [];
@@ -228,22 +251,33 @@ async (opts) => {
       // Do not batch-click the 100+ collected candidates; Facebook mutates the
       // thread after each click and batching skips newly exposed controls.
       const item = candidates[0];
+      const itemKey = targetKeyFor(item.el) + '|' + canonicalLabel(item.text);
       const beforeText = pageTextLength();
+      const beforeHash = viewportTextHash();
       const beforeHeight = Math.max(document.body ? document.body.scrollHeight : 0, ...findScrollTargets().map(t => t.el.scrollHeight || 0));
-      const ok = await clickOne(item);
-      if (ok) {
+      const clickResult = await clickOne(item);
+      if (clickResult.ok) {
         clicked += 1;
         labels.push(item.text.slice(0, 160));
         await sleep(Math.max(80, opts.afterClickDelayMs));
         const afterText = pageTextLength();
+        const afterHash = viewportTextHash();
         const afterHeight = Math.max(document.body ? document.body.scrollHeight : 0, ...findScrollTargets().map(t => t.el.scrollHeight || 0));
-        if (afterText === beforeText && afterHeight === beforeHeight) {
-          // A no-op click can still be Facebook latency. Give it one short
-          // breath, then the next loop rescans rather than assuming success.
-          await sleep(Math.max(120, opts.afterClickDelayMs));
+        const noOp = afterText === beforeText && afterHeight === beforeHeight && afterHash === beforeHash;
+        const noOpCount = noOp ? (noOpSkipCounts.get(itemKey) || 0) + 1 : 0;
+        if (noOp) noOpSkipCounts.set(itemKey, noOpCount); else noOpSkipCounts.delete(itemKey);
+        log({event:'R45T_FIRST_VISIBLE_CLICK', round, local_pass: pass + 1, label: item.text.slice(0, 180), no_op: noOp, no_op_count: noOpCount, delta_text_chars: afterText - beforeText, height_changed: afterHeight !== beforeHeight, click_mode: clickResult.mode, elapsed_seconds: Math.round((Date.now()-startedAt)/1000)});
+        if (noOp && noOpCount >= 2) {
+          // Do not freeze forever on an inert/covered Facebook surface. The next
+          // loop will rescan; if the control remains first-visible it will be
+          // reported as unresolved in the round heartbeat.
+          await sleep(Math.max(80, opts.afterClickDelayMs));
+          break;
         }
       } else {
+        log({event:'R45T_FIRST_VISIBLE_CLICK_FAILED', round, local_pass: pass + 1, label: item.text.slice(0, 180), click_mode: clickResult.mode, error: clickResult.error || '', elapsed_seconds: Math.round((Date.now()-startedAt)/1000)});
         await sleep(Math.max(80, opts.clickDelayMs));
+        break;
       }
     }
     return {candidate_count: candidateCount, clicked, clicked_labels: labels.slice(0, 40), visible_unresolved_labels: visibleUnresolvedLabels().slice(0, 12)};
@@ -270,7 +304,7 @@ async (opts) => {
   }
   for (let round = 1; round <= opts.rounds; round++) {
     if (Date.now() - startedAt > maxMillis) { timedOut = true; break; }
-    const c = await clickVisibleUntilExhausted();
+    const c = await clickVisibleUntilExhausted(round);
     totalClicks += c.clicked;
     let scrollChanged = 0;
     let lastTargets = [];
@@ -280,7 +314,7 @@ async (opts) => {
       scrollChanged += sc.changed;
       totalScrollEvents += 1;
       lastTargets = sc.targets;
-      const c2 = await clickVisibleUntilExhausted();
+      const c2 = await clickVisibleUntilExhausted(round);
       c.candidate_count += c2.candidate_count;
       c.clicked += c2.clicked;
       totalClicks += c2.clicked;
@@ -325,6 +359,7 @@ def contract() -> Dict[str, Any]:
         'r45q_downward_frontier_rule': 'R45Q keeps a single downward frontier: locally exhaust visible View hidden replies / View all N replies controls before scrolling further down, and never performs a global scroll-back-to-top rescan.',
         'r45r_local_exhaust_rule': 'R45R decouples local viewport exhaustion from global sweep count: even with --progressive-top-down-sweeps 1, newly exposed View all N replies / View hidden replies controls in the current area are exhausted before the frontier moves downward.',
         'r45s_first_visible_click_rule': 'R45S clicks exactly one first visible expansion control, rescans the same viewport, and only then moves to the next visible control or scrolls downward; it does not batch-click collected candidates.',
+        'r45t_visible_click_heartbeat_rule': 'R45T emits an R45T_FIRST_VISIBLE_CLICK heartbeat after each single first-visible visible-page click and uses a human-like pointer/mouse event sequence so the operator can see progress instead of a silent local loop.',
     })
     return base
 
@@ -516,7 +551,8 @@ Context is everything
         {'name': 'progress_console_supported', 'status': 'pass' if 'R45H_PROGRESS' in JS_BOUNDED_MODAL_AUTO_EXPAND else 'fail'},
         {'name': 'view_hidden_replies_pattern_supported', 'status': 'pass' if 'view\\s+hidden\\s+repl' in joined_patterns else 'fail'},
         {'name': 'modal_progress_parser_present', 'status': 'pass' if 'parseProgress' in JS_BOUNDED_MODAL_AUTO_EXPAND and 'of' in JS_BOUNDED_MODAL_AUTO_EXPAND else 'fail'},
-        {'name': 'r45r_local_exhaust_not_limited_by_global_sweeps', 'status': 'pass' if 'requestedLocalPasses' in JS_BOUNDED_MODAL_AUTO_EXPAND and 'Math.max(12' in JS_BOUNDED_MODAL_AUTO_EXPAND else 'fail'},
+        {'name': 'r45r_local_exhaust_not_limited_by_global_sweeps', 'status': 'pass' if 'requestedLocalPasses' in JS_BOUNDED_MODAL_AUTO_EXPAND and 'Math.max(500' in JS_BOUNDED_MODAL_AUTO_EXPAND else 'fail'},
+        {'name': 'r45t_first_visible_click_heartbeat_present', 'status': 'pass' if 'R45T_FIRST_VISIBLE_CLICK' in JS_BOUNDED_MODAL_AUTO_EXPAND and 'dispatchHumanLikeClick' in JS_BOUNDED_MODAL_AUTO_EXPAND else 'fail'},
         {'name': 'reference_comparison_matches_sentinels', 'status': 'pass' if result.get('comparison') and result['comparison']['coverage_ratio'] >= 0.99 and all(result['comparison']['sentinel_report'].values()) else 'fail'},
         {'name': 'side_effects_safe', 'status': 'pass' if not any(v for k, v in result['side_effect_flags'].items() if k not in {'facebook_bounded_modal_capture_runner_invoked','bounded_auto_expand_supported','visible_hidden_comments_clicks_supported','visible_hidden_replies_clicks_supported'}) else 'fail'},
     ]
