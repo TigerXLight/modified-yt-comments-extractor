@@ -17,6 +17,9 @@ def test_contract_and_static_assets():
     assert 'data-r45j-pre-comment-hide' in r45j.VISUAL_CLEAN_CSS
     assert 'data-r45j-comment-column-crop' in r45j.JS_MARK_AND_CLEAN_PRESERVED_COMMENTS
     assert 'r45l_comment_column_crop_used' in r45j.JS_MARK_AND_CLEAN_PRESERVED_COMMENTS
+    assert 'JS_CLICK_REPLIED_REPLY_BUCKETS_R45N' in inspect.getsource(r45j)
+    assert '--no-replied-reply-bucket-expand' in inspect.getsource(r45j.build_arg_parser)
+    assert 'Name replied' in r45j.contract()['r45n_replied_reply_bucket_expand_fix']
     run_live_src = inspect.getsource(r45j.run_live)
     assert 'facebook_preserved_visual_comments_column.png' in run_live_src
     assert 'p.chromium.launch(**launch_kwargs)' in run_live_src

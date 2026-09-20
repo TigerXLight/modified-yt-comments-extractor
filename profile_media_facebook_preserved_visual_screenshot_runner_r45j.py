@@ -286,6 +286,133 @@ JS_MARK_AND_CLEAN_PRESERVED_COMMENTS = r'''
 '''
 
 
+JS_CLICK_REPLIED_REPLY_BUCKETS_R45N = r'''
+(opts) => {
+  const started = Date.now();
+  const maxSeconds = Number(opts.maxSeconds || 240);
+  const rounds = Number(opts.rounds || 80);
+  const maxClicksPerRound = Number(opts.maxClicksPerRound || 25);
+  const clickDelayMs = Number(opts.clickDelayMs || 80);
+  const afterClickDelayMs = Number(opts.afterClickDelayMs || 250);
+  const scrollsPerRound = Number(opts.scrollsPerRound || 4);
+  const scrollPx = Number(opts.scrollPx || 950);
+  const scrollDelayMs = Number(opts.scrollDelayMs || 80);
+  const stopAfterStableRounds = Number(opts.stopAfterStableRounds || 5);
+  const repliedRe = /\breplied\s*[·•\-–—]\s*\d+\s+repl(?:y|ies)\b/i;
+  const clickedKeys = new Set();
+  const clickedLabels = [];
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const textOf = (el) => ((el && (el.innerText || el.textContent)) || '').replace(/\s+/g, ' ').trim();
+  const labelOf = (el) => [el.getAttribute('aria-label') || '', el.getAttribute('title') || '', textOf(el)].join(' ').replace(/\s+/g, ' ').trim();
+  const styleVisible = (el) => {
+    if (!el) return false;
+    const s = getComputedStyle(el);
+    return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
+  };
+  const rectKey = (el) => {
+    const r = el.getBoundingClientRect();
+    return [Math.round(r.left), Math.round(r.top + window.scrollY), Math.round(r.width), Math.round(r.height)].join(':');
+  };
+  const clickTargetFor = (el) => {
+    let n = el;
+    for (let i = 0; n && i < 5; i++, n = n.parentElement) {
+      const role = (n.getAttribute('role') || '').toLowerCase();
+      const tag = (n.tagName || '').toLowerCase();
+      const s = getComputedStyle(n);
+      const lab = labelOf(n);
+      if (role === 'button' || tag === 'a' || tag === 'button' || s.cursor === 'pointer' || repliedRe.test(lab)) return n;
+    }
+    return el;
+  };
+  const findReplyBuckets = () => {
+    const nodes = Array.from(document.querySelectorAll('[role="button"], a, button, span, div'));
+    const out = [];
+    for (const el of nodes) {
+      if (!styleVisible(el)) continue;
+      const own = textOf(el);
+      const lab = labelOf(el);
+      const combined = (lab + ' ' + own).replace(/\s+/g, ' ').trim();
+      if (!combined || combined.length > 220) continue;
+      if (!repliedRe.test(combined)) continue;
+      const target = clickTargetFor(el);
+      if (!target || !styleVisible(target)) continue;
+      const key = combined.slice(0, 160) + '|' + rectKey(target);
+      if (clickedKeys.has(key)) continue;
+      out.push({el, target, label: combined, key});
+    }
+    out.sort((a, b) => {
+      const ar = a.target.getBoundingClientRect();
+      const br = b.target.getBoundingClientRect();
+      return (ar.top - br.top) || (ar.left - br.left);
+    });
+    return out;
+  };
+  const scrollables = () => {
+    const arr = [];
+    if (document.scrollingElement) arr.push(document.scrollingElement);
+    for (const el of Array.from(document.querySelectorAll('*'))) {
+      try {
+        const r = el.getBoundingClientRect();
+        const gap = el.scrollHeight - el.clientHeight;
+        if (gap > 120 && r.width > 200 && r.height > 180) arr.push(el);
+      } catch (e) {}
+    }
+    const seen = new Set();
+    return arr.filter(el => {
+      if (!el || seen.has(el)) return false;
+      seen.add(el);
+      return true;
+    }).sort((a,b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight)).slice(0, 6);
+  };
+  let stable = 0;
+  let clickedTotal = 0;
+  let lastTextLen = (document.body && document.body.innerText || '').length;
+  for (let round = 1; round <= rounds; round++) {
+    if ((Date.now() - started) / 1000 > maxSeconds) break;
+    let clicked = 0;
+    const candidates = findReplyBuckets();
+    for (const item of candidates.slice(0, maxClicksPerRound)) {
+      try {
+        item.target.scrollIntoView({block: 'center', inline: 'center'});
+        await sleep(scrollDelayMs);
+        item.target.click();
+        clickedKeys.add(item.key);
+        clickedLabels.push(item.label);
+        clicked++;
+        clickedTotal++;
+        await sleep(clickDelayMs + afterClickDelayMs);
+      } catch (e) {}
+    }
+    let scrollChanged = 0;
+    for (const sc of scrollables().slice(0, scrollsPerRound)) {
+      try {
+        const before = sc.scrollTop;
+        sc.scrollTop = before + scrollPx;
+        if (sc.scrollTop !== before) scrollChanged++;
+      } catch (e) {}
+      await sleep(scrollDelayMs);
+    }
+    const textLen = (document.body && document.body.innerText || '').length;
+    const deltaTextChars = textLen - lastTextLen;
+    if (clicked === 0 && scrollChanged === 0 && Math.abs(deltaTextChars) < 20) stable++;
+    else stable = 0;
+    lastTextLen = textLen;
+    const payload = {round, candidate_count: candidates.length, clicked, clicked_total: clickedTotal, delta_text_chars: deltaTextChars, text_chars: textLen, scroll_changed: scrollChanged, elapsed_seconds: Math.round((Date.now() - started) / 1000), clicked_labels: clickedLabels.slice(-20)};
+    try { console.log('R45N_REPLIED_REPLY_BUCKET_PROGRESS ' + JSON.stringify(payload)); } catch (e) {}
+    if (stable >= stopAfterStableRounds) break;
+  }
+  return {
+    marker: 'YTCE_R45N_FACEBOOK_REPLIED_REPLY_BUCKET_EXPAND',
+    status: 'PASS_R45N_FACEBOOK_REPLIED_REPLY_BUCKET_EXPAND',
+    clicked_total: clickedTotal,
+    clicked_labels: clickedLabels,
+    elapsed_seconds: Math.round((Date.now() - started) / 1000),
+    body_text_chars: (document.body && document.body.innerText || '').length
+  };
+}
+'''
+
+
 def utc_stamp() -> str:
     return _dt.datetime.now(_dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
 
@@ -303,6 +430,7 @@ def contract() -> Dict[str, Any]:
         'r45j_blank_page_fix': 'Preserved visual cleanup is now in-place: it marks and crops the live Facebook comments surface rather than cloning/replacing document.body, because clone-and-replace could produce a blank white screenshot while text still existed.',
         'r45l_comment_column_crop_fix': 'After the blank-page fix, real screenshots could still show the full original post modal/post media instead of the desired Print Edit WE-like comments column. R45L crops away pre-comment post/header/media surfaces while preserving the Facebook-rendered comment bubbles/replies.',
         'comments_column_screenshot_rule': 'When screenshots are enabled, also capture facebook_preserved_visual_comments_column.png from the marked comments root so the operator gets the cropped original-view comments column rather than the full modal shell.',
+        'r45n_replied_reply_bucket_expand_fix': 'After the standard R45H/R45J expansion pass, R45N performs an additional visible-page click pass for collapsed Facebook labels such as Name replied · 14 replies, then reruns the normal bounded expansion to load controls exposed by those buckets.',
         'r45m_playwright_viewport_launch_fix': 'Playwright viewport=None is now passed to browser contexts only, not BrowserType.launch(), fixing the manual live-run TypeError while preserving maximized operator-controlled browser UI.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
@@ -394,6 +522,8 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             except EOFError: pass
 
         auto_expand_summary = None
+        replied_reply_bucket_summary = None
+        post_replied_auto_expand_summary = None
         if args.auto_expand:
             opts = {
                 'patterns': r45h.EXPAND_PATTERNS_R45H,
@@ -414,6 +544,29 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
                 print('R45J_AUTO_EXPAND_DONE')
             except Exception as e:
                 warnings.append(f'auto_expand_warning={e}')
+
+            if not args.no_replied_reply_bucket_expand:
+                try:
+                    replied_opts = {
+                        'rounds': args.replied_bucket_rounds,
+                        'maxSeconds': args.replied_bucket_max_seconds,
+                        'maxClicksPerRound': args.expand_max_clicks_per_round,
+                        'clickDelayMs': int(args.expand_click_delay_seconds * 1000),
+                        'afterClickDelayMs': int(args.expand_after_click_delay_seconds * 1000),
+                        'scrollsPerRound': args.expand_scrolls_per_round,
+                        'scrollPx': args.expand_scroll_px,
+                        'scrollDelayMs': int(args.expand_scroll_delay_seconds * 1000),
+                        'stopAfterStableRounds': args.expand_stop_after_stable_rounds,
+                    }
+                    print(f'R45N_REPLIED_REPLY_BUCKET_EXPAND_START max_seconds={args.replied_bucket_max_seconds}')
+                    replied_reply_bucket_summary = page.evaluate(JS_CLICK_REPLIED_REPLY_BUCKETS_R45N, replied_opts)
+                    print('R45N_REPLIED_REPLY_BUCKET_EXPAND_DONE')
+                    if (replied_reply_bucket_summary or {}).get('clicked_total'):
+                        print(f'R45N_POST_REPLIED_AUTO_EXPAND_START max_seconds={args.expand_max_seconds}')
+                        post_replied_auto_expand_summary = page.evaluate(r45h.JS_BOUNDED_MODAL_AUTO_EXPAND, opts)
+                        print('R45N_POST_REPLIED_AUTO_EXPAND_DONE')
+                except Exception as e:
+                    warnings.append(f'replied_reply_bucket_expand_warning={e}')
 
         final_url = ''
         try: final_url = page.url
@@ -512,6 +665,8 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             'preserved_visual_css_path': visual_css_path,
             'auto_expand_script_path': auto_expand_script_path,
             'auto_expand_summary': auto_expand_summary,
+            'replied_reply_bucket_summary': replied_reply_bucket_summary,
+            'post_replied_auto_expand_summary': post_replied_auto_expand_summary,
             'visual_clean_summary': visual_clean_summary,
             **exports,
             'comparison': comparison,
@@ -534,6 +689,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'preserved_visual_css_present', 'status': 'pass' if 'data-r45j-preserved-comments-root' in VISUAL_CLEAN_CSS and 'blank-page fix' in VISUAL_CLEAN_CSS else 'fail'},
         {'name': 'r45l_comment_column_crop_present', 'status': 'pass' if 'data-r45j-pre-comment-hide' in VISUAL_CLEAN_CSS and 'r45l_comment_column_crop_used' in JS_MARK_AND_CLEAN_PRESERVED_COMMENTS else 'fail'},
         {'name': 'comments_column_screenshot_path_present', 'status': 'pass' if 'facebook_preserved_visual_comments_column.png' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45n_replied_reply_bucket_expand_present', 'status': 'pass' if 'JS_CLICK_REPLIED_REPLY_BUCKETS_R45N' in open(__file__, encoding='utf-8').read() and 'replied_reply_bucket_summary' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
@@ -571,6 +727,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.set_defaults(tile_scroll_px=900)
     ap.add_argument('--expand-max-seconds', type=int, default=900)
     ap.add_argument('--visual-clean-wait-seconds', type=float, default=0.5)
+    ap.add_argument('--no-replied-reply-bucket-expand', action='store_true', help='Disable the R45N visible-page follow-up pass for labels like "Name replied · 14 replies".')
+    ap.add_argument('--replied-bucket-max-seconds', type=int, default=240, help='Maximum seconds for the R45N replied-reply-bucket follow-up pass.')
+    ap.add_argument('--replied-bucket-rounds', type=int, default=80, help='Maximum rounds for the R45N replied-reply-bucket follow-up pass.')
     return ap
 
 
