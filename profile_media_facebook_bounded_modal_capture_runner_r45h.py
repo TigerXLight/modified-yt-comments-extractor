@@ -40,7 +40,9 @@ async (opts) => {
   // passes --progressive-top-down-sweeps 1, so newly exposed View all /
   // View hidden replies controls are opened before the frontier moves down.
   const requestedLocalPasses = Number(opts.localExhaustPasses || 0);
-  const localExhaustPasses = Math.max(12, requestedLocalPasses || Math.max(12, Number(opts.maxTopDownSweeps || 1) * 12));
+  // R45S: strict first-visible-click mode needs a high local pass ceiling,
+  // because each pass intentionally clicks exactly one topmost visible control.
+  const localExhaustPasses = Math.max(500, requestedLocalPasses || Math.max(500, Number(opts.maxTopDownSweeps || 1) * 500));
   const patterns = opts.patterns.map(p => new RegExp(p, 'i'));
   const deny = /^(like|reply|share|send|comment|copy link|follow|message|all|most relevant|newest|top comments|edited)$/i;
   const log = (obj) => { try { console.log('R45H_PROGRESS ' + JSON.stringify(obj)); } catch(e) {} };
@@ -81,6 +83,32 @@ async (opts) => {
     const r = text.match(/\breplied\s*[·•\-–—]\s*\d+\s+repl(?:y|ies)\b/i);
     return (r ? r[0] : text.slice(0, 80)).toLowerCase().replace(/\s+/g, ' ');
   };
+  const expansionMatchText = (text) => {
+    const m = text.match(/\b(View\s+(?:hidden\s+(?:comments?|repl(?:y|ies))|all\s+\d+\s+repl(?:y|ies)|more\s+\d+\s+repl(?:y|ies)|\d+\s+repl(?:y|ies)|previous\s+repl(?:y|ies)|more\s+repl(?:y|ies)))\b/i);
+    if (m) return m[1].replace(/\s+/g, ' ').trim();
+    const r = text.match(/\b[\p{L}\p{M}' .-]{1,80}\s+replied\s*[·•\-–—]\s*\d+\s+repl(?:y|ies)\b/iu);
+    return r ? r[0].replace(/\s+/g, ' ').trim() : '';
+  };
+  const looksLikeBloatedCommentContainer = (text) => {
+    if (text.length <= 140) return false;
+    if (/^\s*(view|see)\b/i.test(text)) return false;
+    if (/\breplied\s*[·•\-–—]\s*\d+\s+repl/i.test(text) && text.length < 180) return false;
+    return /\bLike\b.*\bReply\b/i.test(text) || text.length > 220;
+  };
+  const visibleUnresolvedLabels = () => {
+    const out = [];
+    const nodes = Array.from(document.querySelectorAll('div[role="button"], span[role="button"], a[role="button"], button, a, [tabindex="0"], span, div'));
+    for (const el of nodes) {
+      if (!isVisible(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.bottom <= 0 || r.top > window.innerHeight + viewportMarginPx) continue;
+      const text = labelOf(el);
+      const m = expansionMatchText(text);
+      if (m) out.push(m);
+      if (out.length >= 12) break;
+    }
+    return Array.from(new Set(out));
+  };
   const findCandidates = () => {
     // R45Q: top-to-bottom, downward-only frontier. We click controls visible in
     // the current viewport and locally exhaust newly exposed controls before
@@ -90,9 +118,13 @@ async (opts) => {
     for (const el of nodes) {
       if (!isVisible(el)) continue;
       const text = labelOf(el);
-      if (!text || text.length > 260) continue;
+      if (!text || text.length > 320) continue;
       if (deny.test(text)) continue;
-      if (!patterns.some(rx => rx.test(text))) continue;
+      const matched = expansionMatchText(text);
+      if (!matched && !patterns.some(rx => rx.test(text))) continue;
+      // R45S: avoid treating a whole comment bubble containing "Like Reply ... View all"
+      // as the clickable control. Prefer the actual first visible expansion label.
+      if (looksLikeBloatedCommentContainer(text)) continue;
       const target = clickTargetFor(el);
       if (!target || !isVisible(target)) continue;
       const rect = target.getBoundingClientRect();
@@ -101,7 +133,8 @@ async (opts) => {
         // missed button. Anything missed above is intentionally not revisited.
         if (rect.bottom <= 0 || rect.top > window.innerHeight + viewportMarginPx) continue;
       }
-      const key = targetKeyFor(target) + '|' + canonicalLabel(text);
+      const directRect = el.getBoundingClientRect();
+      const key = canonicalLabel(text) + '|' + Math.round((directRect.top + window.scrollY) / 8) + ':' + Math.round(directRect.left / 8);
       let priority = 0;
       if (/hidden\s+(?:comments?|repl(?:y|ies))/i.test(text)) priority += 20000;
       if (/view\s+(?:all|more)\s+\d+\s+repl/i.test(text)) priority += 12000;
@@ -113,6 +146,8 @@ async (opts) => {
       if (!old || text.length < old.text.length || priority > old.priority) byTarget.set(key, item);
     }
     const out = Array.from(byTarget.values());
+    // R45S: strict user-requested order is first visible clickable, then next.
+    // Priority is only a tie-breaker for overlapping elements on the same row.
     if (progressiveTopDown) out.sort((a,b) => a.top - b.top || a.left - b.left || b.priority - a.priority);
     else out.sort((a,b) => b.priority - a.priority || a.top - b.top || a.left - b.left);
     return out;
@@ -174,24 +209,44 @@ async (opts) => {
     let candidateCount = 0;
     let clicked = 0;
     const labels = [];
+    let idleVisibleChecks = 0;
     for (let pass = 0; pass < localExhaustPasses; pass++) {
       if (Date.now() - startedAt > maxMillis) break;
-      const candidates = findCandidates().slice(0, opts.maxClicksPerRound);
+      const candidates = findCandidates();
       candidateCount += candidates.length;
-      if (!candidates.length) break;
-      let passClicked = 0;
-      for (const item of candidates) {
-        if (Date.now() - startedAt > maxMillis) break;
-        const ok = await clickOne(item);
-        if (ok) {
-          clicked += 1;
-          passClicked += 1;
-          labels.push(item.text.slice(0, 160));
+      if (!candidates.length) {
+        const unresolved = visibleUnresolvedLabels();
+        if (unresolved.length && idleVisibleChecks < 3) {
+          idleVisibleChecks += 1;
+          await sleep(Math.max(80, opts.afterClickDelayMs));
+          continue;
         }
+        break;
       }
-      if (!passClicked) break;
+      idleVisibleChecks = 0;
+      // R45S: click exactly one first visible expansion control, then rescan.
+      // Do not batch-click the 100+ collected candidates; Facebook mutates the
+      // thread after each click and batching skips newly exposed controls.
+      const item = candidates[0];
+      const beforeText = pageTextLength();
+      const beforeHeight = Math.max(document.body ? document.body.scrollHeight : 0, ...findScrollTargets().map(t => t.el.scrollHeight || 0));
+      const ok = await clickOne(item);
+      if (ok) {
+        clicked += 1;
+        labels.push(item.text.slice(0, 160));
+        await sleep(Math.max(80, opts.afterClickDelayMs));
+        const afterText = pageTextLength();
+        const afterHeight = Math.max(document.body ? document.body.scrollHeight : 0, ...findScrollTargets().map(t => t.el.scrollHeight || 0));
+        if (afterText === beforeText && afterHeight === beforeHeight) {
+          // A no-op click can still be Facebook latency. Give it one short
+          // breath, then the next loop rescans rather than assuming success.
+          await sleep(Math.max(120, opts.afterClickDelayMs));
+        }
+      } else {
+        await sleep(Math.max(80, opts.clickDelayMs));
+      }
     }
-    return {candidate_count: candidateCount, clicked, clicked_labels: labels.slice(0, 40)};
+    return {candidate_count: candidateCount, clicked, clicked_labels: labels.slice(0, 40), visible_unresolved_labels: visibleUnresolvedLabels().slice(0, 12)};
   };
   const stats = [];
   let totalClicks = 0;
@@ -236,17 +291,21 @@ async (opts) => {
     const progress = parseProgress();
     const progressChanged = JSON.stringify(progress) !== JSON.stringify(previousProgress);
     const remainingVisibleCandidates = findCandidates().length;
-    const row = {round, top_down_sweep: topDownSweep, downward_only: true, candidate_count: c.candidate_count, clicked: c.clicked, remaining_visible_candidates: remainingVisibleCandidates, delta_text_chars: delta, text_chars: currentTextLength, scroll_changed: scrollChanged, progress, progress_changed: progressChanged, elapsed_seconds: Math.round((Date.now()-startedAt)/1000), scroll_targets: lastTargets, clicked_labels: c.clicked_labels.slice(0, 25)};
+    const visibleUnresolved = visibleUnresolvedLabels();
+    const row = {round, top_down_sweep: topDownSweep, downward_only: true, first_visible_click_mode: true, candidate_count: c.candidate_count, clicked: c.clicked, remaining_visible_candidates: remainingVisibleCandidates, visible_unresolved_labels: visibleUnresolved.slice(0, 12), delta_text_chars: delta, text_chars: currentTextLength, scroll_changed: scrollChanged, progress, progress_changed: progressChanged, elapsed_seconds: Math.round((Date.now()-startedAt)/1000), scroll_targets: lastTargets, clicked_labels: c.clicked_labels.slice(0, 25)};
     stats.push(row);
     log(row);
-    if (c.clicked === 0 && remainingVisibleCandidates === 0 && Math.abs(delta) < opts.stableDeltaChars && scrollChanged === 0 && !progressChanged) stableRounds += 1;
+    const progressIncomplete = progress && progress.total && progress.current < progress.total;
+    if (c.clicked === 0 && remainingVisibleCandidates === 0 && visibleUnresolved.length === 0 && !progressIncomplete && Math.abs(delta) < opts.stableDeltaChars && scrollChanged === 0 && !progressChanged) stableRounds += 1;
     else stableRounds = 0;
     previousTextLength = currentTextLength;
     previousProgress = progress;
     if (stableRounds >= opts.stopAfterStableRounds) break;
   }
   const remainingVisibleCandidates = findCandidates().length;
-  return {rounds_completed: stats.length, total_clicks: totalClicks, total_scroll_events: totalScrollEvents, final_text_chars: previousTextLength, final_progress: previousProgress, timed_out: timedOut, downward_only: true, global_rescan_used: false, remaining_visible_candidates: remainingVisibleCandidates, top_down_sweeps_completed: topDownSweep, elapsed_seconds: Math.round((Date.now()-startedAt)/1000), stats};
+  const finalVisibleUnresolved = visibleUnresolvedLabels();
+  const mainProgressIncomplete = previousProgress && previousProgress.total && previousProgress.current < previousProgress.total;
+  return {rounds_completed: stats.length, total_clicks: totalClicks, total_scroll_events: totalScrollEvents, final_text_chars: previousTextLength, final_progress: previousProgress, timed_out: timedOut, downward_only: true, global_rescan_used: false, first_visible_click_mode: true, remaining_visible_candidates: remainingVisibleCandidates, visible_unresolved_labels: finalVisibleUnresolved.slice(0, 12), main_progress_incomplete: !!mainProgressIncomplete, top_down_sweeps_completed: topDownSweep, elapsed_seconds: Math.round((Date.now()-startedAt)/1000), stats};
 }
 '''
 
@@ -265,6 +324,7 @@ def contract() -> Dict[str, Any]:
         'r45p_progressive_rescan_rule': 'R45P previously allowed a bounded top-to-bottom rescan, but this could jump back upward on long threads.',
         'r45q_downward_frontier_rule': 'R45Q keeps a single downward frontier: locally exhaust visible View hidden replies / View all N replies controls before scrolling further down, and never performs a global scroll-back-to-top rescan.',
         'r45r_local_exhaust_rule': 'R45R decouples local viewport exhaustion from global sweep count: even with --progressive-top-down-sweeps 1, newly exposed View all N replies / View hidden replies controls in the current area are exhausted before the frontier moves downward.',
+        'r45s_first_visible_click_rule': 'R45S clicks exactly one first visible expansion control, rescans the same viewport, and only then moves to the next visible control or scrolls downward; it does not batch-click collected candidates.',
     })
     return base
 

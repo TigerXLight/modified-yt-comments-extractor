@@ -41,9 +41,14 @@ def test_contract_and_static_assets():
     assert 'viewport-relative' in c['r45p_max_band_viewport_clip_fix']
     assert 'does not go back up' in c['r45q_downward_frontier_rule']
     assert 'newly exposed' in c['r45r_local_exhaust_rule']
+    assert 'does not start the replied-bucket follow-up' in c['r45s_first_visible_click_rule']
+    assert '_main_expand_still_incomplete' in inspect.getsource(r45j)
+    assert '--local-exhaust-passes' in inspect.getsource(r45j.build_arg_parser)
     assert 'clickVisibleUntilExhausted' in r45j.r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'requestedLocalPasses' in r45j.r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
-    assert 'Math.max(12' in r45j.r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
+    assert 'Math.max(500' in r45j.r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
+    assert 'click exactly one first visible' in r45j.r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
+    assert 'candidates[0]' in r45j.r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'scrollTopForRescan' not in r45j.r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert '--progressive-top-down-sweeps' in inspect.getsource(r45j.build_arg_parser)
     assert 'clicking inert text' in r45j.JS_CLICK_REPLIED_REPLY_BUCKETS_R45N

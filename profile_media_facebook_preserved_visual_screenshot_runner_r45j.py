@@ -458,6 +458,7 @@ def contract() -> Dict[str, Any]:
         'r45p_top_down_rescan_rule': 'R45P allowed a bounded second top-to-bottom sweep, but that could jump back upward and waste time on long Facebook threads.',
         'r45q_downward_frontier_rule': 'R45Q uses a single downward frontier: locally exhaust visible View hidden replies, View all N replies, View 1 reply, and View more replies controls before scrolling further down; it does not go back up for a global rescan.',
         'r45r_local_exhaust_rule': 'R45R fixes the R45Q regression where --progressive-top-down-sweeps 1 limited local exhaustion: each visible area is repeatedly exhausted for newly exposed View all N replies / View hidden replies controls before scrolling downward.',
+        'r45s_first_visible_click_rule': 'R45S clicks exactly one first visible expansion control, rescans the same viewport, and does not start the replied-bucket follow-up while visible expansion controls or incomplete comment progress remain.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -623,6 +624,29 @@ def _capture_tiles(page: Any, run_dir: Path, prefix: str, steps: int, scroll_px:
     )
 
 
+
+def _main_expand_still_incomplete(summary: Optional[Dict[str, Any]]) -> bool:
+    if not summary:
+        return False
+    if summary.get('timed_out'):
+        return True
+    if int(summary.get('remaining_visible_candidates') or 0) > 0:
+        return True
+    if summary.get('visible_unresolved_labels'):
+        return True
+    progress = summary.get('final_progress')
+    if isinstance(progress, dict):
+        try:
+            current = int(progress.get('current') or 0)
+            total = int(progress.get('total') or 0)
+        except Exception:
+            current = total = 0
+        if total and current < total:
+            return True
+    if summary.get('main_progress_incomplete'):
+        return True
+    return False
+
 def run_live(args: argparse.Namespace) -> Dict[str, Any]:
     try:
         from playwright.sync_api import sync_playwright
@@ -686,6 +710,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
                 'progressiveTopDown': not args.no_progressive_top_down_expansion,
                 'viewportMarginPx': args.expand_viewport_margin_px,
                 'maxTopDownSweeps': args.progressive_top_down_sweeps,
+                'localExhaustPasses': args.local_exhaust_passes,
             }
             try:
                 print(f'R45J_AUTO_EXPAND_START max_seconds={args.expand_max_seconds}')
@@ -694,7 +719,9 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             except Exception as e:
                 warnings.append(f'auto_expand_warning={e}')
 
-            if not args.no_replied_reply_bucket_expand:
+            if not args.no_replied_reply_bucket_expand and _main_expand_still_incomplete(auto_expand_summary):
+                warnings.append('r45s_replied_bucket_followup_deferred_until_main_downward_expansion_complete')
+            elif not args.no_replied_reply_bucket_expand:
                 try:
                     replied_opts = {
                         'rounds': args.replied_bucket_rounds,
@@ -709,6 +736,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
                         'progressiveTopDown': not args.no_progressive_top_down_expansion,
                         'viewportMarginPx': args.expand_viewport_margin_px,
                         'maxTopDownSweeps': args.progressive_top_down_sweeps,
+                'localExhaustPasses': args.local_exhaust_passes,
                     }
                     print(f'R45N_REPLIED_REPLY_BUCKET_EXPAND_START max_seconds={args.replied_bucket_max_seconds}')
                     replied_reply_bucket_summary = page.evaluate(JS_CLICK_REPLIED_REPLY_BUCKETS_R45N, replied_opts)
@@ -922,6 +950,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument('--no-progressive-top-down-expansion', action='store_true', help='Disable R45O viewport top-to-bottom expansion order and use legacy priority sorting.')
     ap.add_argument('--expand-viewport-margin-px', type=int, default=90, help='Viewport margin for R45O top-to-bottom visible-control expansion.')
     ap.add_argument('--progressive-top-down-sweeps', type=int, default=3, help='R45Q local visible-control exhaustion passes per downward viewport; retained under the old name for CLI compatibility and does not trigger a scroll-back-to-top rescan.')
+    ap.add_argument('--local-exhaust-passes', type=int, default=500, help='R45S maximum first-visible single-click rescans before scrolling down from one visible area.')
     ap.add_argument('--max-screenshot-band-height', type=int, default=14000, help='Maximum height of each R45O comments-column screenshot band.')
     ap.add_argument('--screenshot-band-overlap-px', type=int, default=160, help='Overlap between R45O maximum-height screenshot bands.')
     return ap
