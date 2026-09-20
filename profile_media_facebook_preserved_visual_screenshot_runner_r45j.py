@@ -466,6 +466,7 @@ def contract() -> Dict[str, Any]:
         'r45w_no_file_chooser_rule': 'R45W restricts mouse-click coordinates to the exact visible expansion text and excludes comment composer/upload/photo/GIF/sticker controls so the run cannot open a native file chooser while expanding comments.',
         'r45x_expansion_only_rule': 'R45X treats the pass as expand-comments only: click the next explicit visible View all/View hidden/View more/Name replied control, rescan that local area, then continue downward without broad comment/feed scanning.',
         'r45y_pre_pause_target_rule': 'R45Y opens a fresh target tab for a requested permalink and runs the target-page guard before the operator pre-expand pause, so a restored facebook.com feed tab is not shown/expanded as the working page.',
+        'r45z_active_target_tab_rule': 'R45Z closes restored/crashed non-target tabs after opening the requested permalink and keeps the target page in front before expansion; it also waits for large expansion clicks to settle before scrolling downward.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -873,6 +874,43 @@ JS_SCROLL_DOWNWARD_FRONTIER_R45V = r"""
 """
 
 
+def _close_non_working_pages_r45z(context: Any, page: Any, warnings: List[str], stage: str) -> None:
+    """R45Z: keep the operator-visible browser on the requested target tab.
+
+    Persistent Chromium can restore a crashed facebook.com/feed tab in front of the
+    fresh permalink tab. That makes the visible browser look broken even while the
+    Playwright Page object points at the target URL. For a specific --target-url,
+    close every non-working tab after opening the target page. This only closes
+    browser tabs in the current Playwright-controlled session; it does not inspect
+    or parse browser profile files.
+    """
+    closed: List[str] = []
+    try:
+        pages = list(context.pages)
+    except Exception as e:
+        warnings.append(f'r45z_list_pages_warning_stage={stage}={e}')
+        return
+    for other in pages:
+        if other is page:
+            continue
+        try:
+            url = other.url
+        except Exception:
+            url = ''
+        try:
+            other.close(run_before_unload=False)
+            closed.append(url or 'about:blank')
+        except Exception as e:
+            warnings.append(f'r45z_close_non_target_tab_warning_stage={stage}_url={url}={e}')
+    if closed:
+        warnings.append(f'r45z_closed_non_target_tabs_stage={stage}_count={len(closed)}')
+        print('R45Z_CLOSED_NON_TARGET_TABS ' + json.dumps({'stage': stage, 'count': len(closed), 'urls': closed[:8]}, ensure_ascii=False))
+    try:
+        page.bring_to_front()
+    except Exception as e:
+        warnings.append(f'r45z_bring_target_to_front_warning_stage={stage}={e}')
+
+
 def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patterns: List[str]) -> Dict[str, Any]:
     """R45V: click the first visible Facebook expand control with Playwright mouse.
 
@@ -897,16 +935,69 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
     def elapsed() -> int:
         return int(round(time.monotonic() - started))
 
+    def _probe(skip_keys_local: List[str]) -> Dict[str, Any]:
+        try:
+            return page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
+                'patterns': patterns,
+                'viewportMarginPx': viewport_margin,
+                'skipKeys': skip_keys_local,
+            }) or {}
+        except Exception:
+            return {}
+
+    def _extra_settle_seconds_for_label(label: str) -> float:
+        parts = []
+        for raw in str(label or '').replace(',', ' ').split():
+            try:
+                parts.append(int(raw))
+            except Exception:
+                pass
+        n = max(parts or [0])
+        if n >= 100:
+            return 6.0
+        if n >= 25:
+            return 4.0
+        if n >= 5:
+            return 2.5
+        return 1.2
+
+    def _wait_for_click_settle(label: str, before_chars: int, before_progress: Any) -> Dict[str, Any]:
+        # R45Z: clicking a large opener such as "View all 302 replies" can make
+        # Facebook remove the button immediately and stream replies in over the
+        # next few seconds. Do not scroll away instantly after the first no-label
+        # rescan; give the local area time to expose newly loaded controls.
+        deadline = time.monotonic() + _extra_settle_seconds_for_label(label)
+        best: Dict[str, Any] = {}
+        last_sig = None
+        stable = 0
+        while time.monotonic() < deadline:
+            time.sleep(0.25)
+            p = _probe([k for k, v in skip_counts.items() if v >= 5])
+            if p:
+                best = p
+            sig = (
+                int((p or {}).get('text_chars') or 0),
+                int((p or {}).get('visible_count') or 0),
+                json.dumps((p or {}).get('progress'), sort_keys=True, ensure_ascii=False),
+                '|'.join(((p or {}).get('visible_labels') or [])[:4]),
+            )
+            if sig == last_sig:
+                stable += 1
+            else:
+                stable = 0
+                last_sig = sig
+            if int((p or {}).get('visible_count') or 0) > 0 and stable >= 1:
+                break
+            if int((p or {}).get('text_chars') or before_chars) != before_chars and stable >= 2:
+                break
+        return best
+
     for step in range(1, rounds_limit + 1):
         if time.monotonic() - started > max_seconds:
             break
         skip_keys = [k for k, v in skip_counts.items() if v >= 5]
         try:
-            probe = page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
-                'patterns': patterns,
-                'viewportMarginPx': viewport_margin,
-                'skipKeys': skip_keys,
-            }) or {}
+            probe = _probe(skip_keys)
         except Exception as e:
             print('R45H_PROGRESS ' + json.dumps({'event': 'R45V_PROBE_FAILED', 'step': step, 'error': str(e)[:180], 'elapsed_seconds': elapsed()}, ensure_ascii=False))
             break
@@ -929,14 +1020,9 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
             except Exception as e:
                 click_error = str(e)[:180]
             time.sleep(max(0.05, after_click_delay))
-            try:
-                after_probe = page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
-                    'patterns': patterns,
-                    'viewportMarginPx': viewport_margin,
-                    'skipKeys': [k for k, v in skip_counts.items() if v >= 5],
-                }) or {}
-            except Exception:
-                after_probe = {}
+            after_probe = _wait_for_click_settle(label, before_chars, before_progress)
+            if not after_probe:
+                after_probe = _probe([k for k, v in skip_counts.items() if v >= 5])
             after_chars = int(after_probe.get('text_chars') or before_chars)
             after_progress = after_probe.get('progress')
             remaining_visible = int(after_probe.get('visible_count') or 0)
@@ -960,6 +1046,7 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
                 'after_progress': after_progress,
                 'remaining_visible_candidates': remaining_visible,
                 'visible_labels': (after_probe.get('visible_labels') or [])[:8],
+                'settle_seconds': _extra_settle_seconds_for_label(label),
                 'elapsed_seconds': elapsed(),
             }, ensure_ascii=False))
             continue
@@ -989,11 +1076,7 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
 
     final_probe = last_probe
     try:
-        final_probe = page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
-            'patterns': patterns,
-            'viewportMarginPx': viewport_margin,
-            'skipKeys': [k for k, v in skip_counts.items() if v >= 5],
-        }) or last_probe
+        final_probe = _probe([k for k, v in skip_counts.items() if v >= 5]) or last_probe
     except Exception:
         pass
     final_progress = final_probe.get('progress') if isinstance(final_probe, dict) else None
@@ -1069,6 +1152,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             'args': [
                 '--start-maximized',
                 '--disable-session-crashed-bubble',
+                '--hide-crash-restore-bubble',
                 '--no-first-run',
                 '--no-default-browser-check',
             ],
@@ -1143,6 +1227,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
                 r45d.write_json(run_dir / 'r45j_facebook_preserved_visual_screenshot_receipt.json', receipt)
                 print('R45J_TARGET_PAGE_GUARD_STOPPED_BEFORE_PRE_EXPAND_PAUSE')
                 return receipt
+            _close_non_working_pages_r45z(context, page, warnings, 'before_pre_expand_pause')
         if args.pre_expand_pause:
             print('R45J_PRE_EXPAND_PAUSE')
             print('Check login/page, then press ENTER in this CMD window to start expansion.')
@@ -1177,6 +1262,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
                 r45d.write_json(run_dir / 'r45j_facebook_preserved_visual_screenshot_receipt.json', receipt)
                 print('R45J_TARGET_PAGE_GUARD_STOPPED_BEFORE_EXPANSION')
                 return receipt
+            _close_non_working_pages_r45z(context, page, warnings, 'before_auto_expand')
 
         auto_expand_summary = None
         replied_reply_bucket_summary = None
@@ -1404,6 +1490,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45w_no_file_chooser_guard_present', 'status': 'pass' if 'r45w_no_file_chooser_rule' in contract() and 'isComposerOrUploadSurface' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V and "page.on('filechooser'" in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45x_expand_comments_only_present', 'status': 'pass' if 'r45x_expansion_only_rule' in contract() and 'R45X_EXPAND_ONLY_PROBE' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V and 'broad_scan_used' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V and 'expansion_only: true' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V else 'fail'},
         {'name': 'r45y_pre_pause_target_guard_present', 'status': 'pass' if 'r45y_pre_pause_target_rule' in contract() and 'before_pre_expand_pause' in open(__file__, encoding='utf-8').read() and 'context.new_page()' in open(__file__, encoding='utf-8').read() and '--disable-session-crashed-bubble' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45z_active_target_tab_and_settle_present', 'status': 'pass' if 'r45z_active_target_tab_rule' in contract() and '_close_non_working_pages_r45z' in open(__file__, encoding='utf-8').read() and 'R45Z_CLOSED_NON_TARGET_TABS' in open(__file__, encoding='utf-8').read() and '_wait_for_click_settle' in open(__file__, encoding='utf-8').read() and '--hide-crash-restore-bubble' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},

@@ -67,6 +67,11 @@ def test_contract_and_static_assets():
     assert 'before_pre_expand_pause' in inspect.getsource(r45j.run_live)
     assert 'context.new_page()' in inspect.getsource(r45j.run_live)
     assert '--disable-session-crashed-bubble' in inspect.getsource(r45j.run_live)
+    assert 'r45z_active_target_tab_rule' in r45j.contract()
+    assert '_close_non_working_pages_r45z' in inspect.getsource(r45j)
+    assert 'R45Z_CLOSED_NON_TARGET_TABS' in inspect.getsource(r45j)
+    assert '_wait_for_click_settle' in inspect.getsource(r45j)
+    assert '--hide-crash-restore-bubble' in inspect.getsource(r45j.run_live)
     assert 'broad_scan_used' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert r'View\s+all' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert "page.on('filechooser'" in inspect.getsource(r45j.run_live)
