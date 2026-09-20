@@ -142,6 +142,15 @@ JS_MARK_AND_CLEAN_PRESERVED_COMMENTS = r'''
     n = n.parentElement;
   }
 
+  // R45P: the modal is often scrolled near the bottom after expansion. Reset the
+  // selected live scrollers before flattening, otherwise the preserved comments
+  // root can have a negative visual top and screenshot clipping only captures a
+  // viewport-sized tail instead of the full comment column.
+  try { chosen.scrollTop = 0; } catch (e) {}
+  for (const el of Array.from(chosen.querySelectorAll('*'))) {
+    try { if (el.scrollTop && el.scrollTop > 0) el.scrollTop = 0; } catch (e) {}
+  }
+
   // Hide siblings outside the path to the selected comments surface, but do not
   // rewrite body.innerHTML and do not hide descendants merely because their text
   // contains composer phrases.
@@ -317,13 +326,16 @@ async (opts) => {
     return [Math.round(r.left), Math.round(r.top + window.scrollY), Math.round(r.width), Math.round(r.height)].join(':');
   };
   const clickTargetFor = (el) => {
+    // R45P: do not treat the text span itself as clickable merely because it
+    // contains "replied · N replies". Walk to the actual button/link/cursor
+    // ancestor first; the R45O version could be clicking inert text and log success
+    // with zero text growth.
     let n = el;
-    for (let i = 0; n && i < 5; i++, n = n.parentElement) {
+    for (let i = 0; n && i < 8; i++, n = n.parentElement) {
       const role = (n.getAttribute('role') || '').toLowerCase();
       const tag = (n.tagName || '').toLowerCase();
       const s = getComputedStyle(n);
-      const lab = labelOf(n);
-      if (role === 'button' || tag === 'a' || tag === 'button' || s.cursor === 'pointer' || repliedRe.test(lab)) return n;
+      if (role === 'button' || tag === 'a' || tag === 'button' || tag === 'summary' || s.cursor === 'pointer') return n;
     }
     return el;
   };
@@ -343,6 +355,7 @@ async (opts) => {
       if (progressiveTopDown && (r.bottom < -viewportMarginPx || r.top > window.innerHeight + viewportMarginPx)) continue;
       const key = combined.slice(0, 160) + '|' + rectKey(target);
       if (clickedKeys.has(key)) continue;
+      if (out.some(item => item.label === combined && (item.target === target || item.target.contains(target) || target.contains(item.target)))) continue;
       out.push({el, target, label: combined, key});
     }
     out.sort((a, b) => {
@@ -440,6 +453,9 @@ def contract() -> Dict[str, Any]:
         'r45o_screenshot_band_rule': 'Very tall Facebook comment columns are captured as maximum-height screenshot bands, starting with facebook_preserved_visual_comments_column.png and continuing with numbered parts, instead of hundreds of small viewport tiles.',
         'r45o_replied_bucket_async_fix': 'The R45N replied-reply-bucket pass is async and logs R45N progress so labels such as Name replied · 14 replies can be clicked before the final visual cleanup.',
         'r45o_progressive_top_down_rule': 'R45J asks the R45H expansion pass to click visible controls top-to-bottom while moving downward through the modal, reducing repeated jump-back behaviour on long threads.',
+        'r45p_replied_bucket_click_target_fix': 'R45P clicks the nearest real clickable ancestor for Name replied · N replies buckets instead of clicking a non-interactive text span.',
+        'r45p_max_band_viewport_clip_fix': 'R45P captures comments-column screenshot bands with viewport-relative clipping after resizing the viewport, avoiding empty/out-of-range clips on very tall Facebook pages.',
+        'r45p_top_down_rescan_rule': 'R45P keeps progressive downward ordering but allows a bounded second top-to-bottom sweep to catch View hidden replies and View all N replies controls exposed by earlier clicks.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -528,39 +544,67 @@ def _capture_locator_bands(
     overlap_px: int,
     wait_s: float,
 ) -> List[str]:
+    """Capture a tall comments column as maximum-height viewport-relative bands.
+
+    R45O used page-coordinate clips with full_page=False. On tall Facebook pages,
+    Playwright treats that clip against the viewport image, so high-y bands fail
+    as "outside the resulting image" after the first/early band. R45P resizes the
+    viewport to the band height, scrolls to each page y, and clips at viewport
+    y=0, which matches the main-project maximum-band behaviour.
+    """
     paths: List[str] = []
     max_band_height = max(600, int(max_band_height))
     overlap_px = max(0, min(int(overlap_px), max_band_height - 1))
-    _prepare_preserved_visual_screenshot_surface(page)
+    surface = _prepare_preserved_visual_screenshot_surface(page)
     locator = page.locator(selector).first
     box = locator.bounding_box(timeout=15000)
     if not box:
         raise RuntimeError(f'locator not available for screenshot bands: {selector}')
     dims = _page_dimensions(page)
-    page_width = dims['width']
-    page_height = max(dims['height'], int(math.ceil(box.get('y', 0) + box.get('height', 0) + 96)))
     x = max(0, int(math.floor(box.get('x', 0))))
     y0 = max(0, int(math.floor(box.get('y', 0))))
     raw_width = max(1, int(math.ceil(box.get('width', 1))))
-    raw_height = max(1, int(math.ceil(box.get('height', 1))))
+    surface_height = 0
+    if isinstance(surface, dict):
+        try:
+            surface_height = int(surface.get('root_height') or 0)
+        except Exception:
+            surface_height = 0
+    raw_height = max(1, int(math.ceil(max(box.get('height', 1), surface_height))))
+    page_width = max(dims.get('width', 1), dims.get('innerWidth', 1), x + raw_width + 16)
     width = max(1, min(raw_width, max(1, page_width - x)))
-    end_y = max(y0 + 1, min(page_height, y0 + raw_height))
-    total_height = max(1, end_y - y0)
+    total_height = raw_height
     positions = _axis_positions(total_height, max_band_height, overlap_px)
+    # Ensure the viewport is tall enough for the largest band; this is the
+    # critical difference from the broken page-coordinate clip approach.
+    viewport_width = max(int(page_width), x + width + 16, 900)
     for idx, offset in enumerate(positions, start=1):
-        band_y = y0 + offset
-        band_h = min(max_band_height, max(1, end_y - band_y))
+        band_doc_y = y0 + offset
+        band_h = min(max_band_height, max(1, total_height - offset))
         name = first_filename if idx == 1 and first_filename else f'{prefix}_{idx:03d}.png'
         path = run_dir / name
         try:
-            page.evaluate('(y) => window.scrollTo(0, y)', max(0, band_y - 40))
+            page.set_viewport_size({'width': int(viewport_width), 'height': int(max(600, band_h))})
+        except Exception:
+            pass
+        try:
+            page.evaluate('(y) => window.scrollTo(0, y)', max(0, band_doc_y))
         except Exception:
             pass
         time.sleep(max(0.05, wait_s))
-        page.screenshot(path=str(path), full_page=False, clip={'x': x, 'y': band_y, 'width': width, 'height': band_h})
-        paths.append(str(path))
+        try:
+            # full_page=False clip is viewport-relative, so y is zero after scroll.
+            page.screenshot(path=str(path), full_page=False, clip={'x': x, 'y': 0, 'width': width, 'height': band_h})
+            paths.append(str(path))
+        except Exception:
+            if not paths:
+                raise
+            break
+    try:
+        page.evaluate('() => window.scrollTo(0, 0)')
+    except Exception:
+        pass
     return paths
-
 
 def _capture_tiles(page: Any, run_dir: Path, prefix: str, steps: int, scroll_px: int, wait_s: float, *, max_band_height: int = 14000, overlap_px: int = 160) -> List[str]:
     # R45O: keep the old receipt field name for compatibility, but use maximum-height
@@ -639,6 +683,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
                 'stopAfterStableRounds': args.expand_stop_after_stable_rounds,
                 'progressiveTopDown': not args.no_progressive_top_down_expansion,
                 'viewportMarginPx': args.expand_viewport_margin_px,
+                'maxTopDownSweeps': args.progressive_top_down_sweeps,
             }
             try:
                 print(f'R45J_AUTO_EXPAND_START max_seconds={args.expand_max_seconds}')
@@ -661,6 +706,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
                         'stopAfterStableRounds': args.expand_stop_after_stable_rounds,
                         'progressiveTopDown': not args.no_progressive_top_down_expansion,
                         'viewportMarginPx': args.expand_viewport_margin_px,
+                        'maxTopDownSweeps': args.progressive_top_down_sweeps,
                     }
                     print(f'R45N_REPLIED_REPLY_BUCKET_EXPAND_START max_seconds={args.replied_bucket_max_seconds}')
                     replied_reply_bucket_summary = page.evaluate(JS_CLICK_REPLIED_REPLY_BUCKETS_R45N, replied_opts)
@@ -827,6 +873,8 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45n_replied_reply_bucket_expand_present', 'status': 'pass' if 'JS_CLICK_REPLIED_REPLY_BUCKETS_R45N' in open(__file__, encoding='utf-8').read() and 'replied_reply_bucket_summary' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45o_replied_reply_bucket_async_present', 'status': 'pass' if 'async (opts) =>' in JS_CLICK_REPLIED_REPLY_BUCKETS_R45N and 'R45N_REPLIED_REPLY_BUCKET_PROGRESS' in JS_CLICK_REPLIED_REPLY_BUCKETS_R45N else 'fail'},
         {'name': 'r45o_max_height_screenshot_bands_present', 'status': 'pass' if '_capture_locator_bands' in open(__file__, encoding='utf-8').read() and 'max_screenshot_band_height' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45p_clickable_replied_bucket_target_present', 'status': 'pass' if 'clicking inert text' in JS_CLICK_REPLIED_REPLY_BUCKETS_R45N and "tag === 'summary'" in JS_CLICK_REPLIED_REPLY_BUCKETS_R45N else 'fail'},
+        {'name': 'r45p_viewport_relative_bands_present', 'status': 'pass' if 'viewport-relative' in open(__file__, encoding='utf-8').read() and "'y': 0" in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
@@ -869,6 +917,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument('--replied-bucket-rounds', type=int, default=80, help='Maximum rounds for the R45N replied-reply-bucket follow-up pass.')
     ap.add_argument('--no-progressive-top-down-expansion', action='store_true', help='Disable R45O viewport top-to-bottom expansion order and use legacy priority sorting.')
     ap.add_argument('--expand-viewport-margin-px', type=int, default=90, help='Viewport margin for R45O top-to-bottom visible-control expansion.')
+    ap.add_argument('--progressive-top-down-sweeps', type=int, default=2, help='R45P bounded top-to-bottom sweeps before declaring progressive expansion stable.')
     ap.add_argument('--max-screenshot-band-height', type=int, default=14000, help='Maximum height of each R45O comments-column screenshot band.')
     ap.add_argument('--screenshot-band-overlap-px', type=int, default=160, help='Overlap between R45O maximum-height screenshot bands.')
     return ap

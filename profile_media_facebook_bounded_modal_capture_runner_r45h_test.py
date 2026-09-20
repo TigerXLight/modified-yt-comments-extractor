@@ -8,6 +8,8 @@ def test_js_has_bound_and_progress():
     assert 'maxSeconds' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'R45H_PROGRESS' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'progressiveTopDown' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
+    assert 'maxTopDownSweeps' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
+    assert 'scrollTopForRescan' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'timedOut' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND or 'timed_out' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
 
 
@@ -15,6 +17,7 @@ def test_hidden_replies_supported():
     joined = '\n'.join(r45h.EXPAND_PATTERNS_R45H).lower()
     assert 'view\\s+hidden\\s+repl' in joined
     assert 'hidden\\s+repl' in joined
+    assert 'view\\s+(?:all|more)\\s+\\d+\\s+repl' in joined
 
 
 def test_static_comparison_passes():
@@ -41,6 +44,7 @@ def test_contract_documents_gap_fix():
     assert 'R45G could appear stuck' in c['r45g_gap_fixed']
     assert c['hidden_platform_api_scraping_enabled'] is False
     assert 'top-to-bottom' in c['r45o_progressive_top_down_rule']
+    assert 'extra top-to-bottom rescan' in c['r45p_progressive_rescan_rule']
 
 
 if __name__ == '__main__':

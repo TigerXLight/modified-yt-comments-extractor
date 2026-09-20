@@ -37,9 +37,15 @@ def test_contract_and_static_assets():
     assert 'maximum-height' in c['r45o_screenshot_band_rule']
     assert 'async' in c['r45o_replied_bucket_async_fix']
     assert 'top-to-bottom' in c['r45o_progressive_top_down_rule']
+    assert 'clickable ancestor' in c['r45p_replied_bucket_click_target_fix']
+    assert 'viewport-relative' in c['r45p_max_band_viewport_clip_fix']
+    assert '--progressive-top-down-sweeps' in inspect.getsource(r45j.build_arg_parser)
+    assert 'clicking inert text' in r45j.JS_CLICK_REPLIED_REPLY_BUCKETS_R45N
     assert 'preserve' in c['preserved_visual_rule'].lower()
     assert 'args.screenshot' not in inspect.getsource(r45j.run_live)
     assert 'clone_body_replacement_used' in r45j.JS_MARK_AND_CLEAN_PRESERVED_COMMENTS
+    assert 'window.scrollTo(0, y)' in inspect.getsource(r45j._capture_locator_bands)
+    assert "'y': 0" in inspect.getsource(r45j._capture_locator_bands)
 
 
 if __name__ == '__main__':
