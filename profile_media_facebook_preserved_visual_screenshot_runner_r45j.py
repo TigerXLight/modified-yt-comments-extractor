@@ -303,6 +303,7 @@ def contract() -> Dict[str, Any]:
         'r45j_blank_page_fix': 'Preserved visual cleanup is now in-place: it marks and crops the live Facebook comments surface rather than cloning/replacing document.body, because clone-and-replace could produce a blank white screenshot while text still existed.',
         'r45l_comment_column_crop_fix': 'After the blank-page fix, real screenshots could still show the full original post modal/post media instead of the desired Print Edit WE-like comments column. R45L crops away pre-comment post/header/media surfaces while preserving the Facebook-rendered comment bubbles/replies.',
         'comments_column_screenshot_rule': 'When screenshots are enabled, also capture facebook_preserved_visual_comments_column.png from the marked comments root so the operator gets the cropped original-view comments column rather than the full modal shell.',
+        'r45m_playwright_viewport_launch_fix': 'Playwright viewport=None is now passed to browser contexts only, not BrowserType.launch(), fixing the manual live-run TypeError while preserving maximized operator-controlled browser UI.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -364,14 +365,17 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
         warnings.append('target_url_was_sanitized_from_markdown_or_escaped_form')
 
     with sync_playwright() as p:
-        chromium_kwargs: Dict[str, Any] = {'headless': False, 'viewport': None, 'args': ['--start-maximized']}
+        # R45M: BrowserType.launch() does not accept viewport. Keep viewport
+        # on contexts only, while preserving maximized operator-controlled browser UI.
+        launch_kwargs: Dict[str, Any] = {'headless': False, 'args': ['--start-maximized']}
+        context_kwargs: Dict[str, Any] = {'viewport': None}
         if args.chromium_executable:
-            chromium_kwargs['executable_path'] = args.chromium_executable
+            launch_kwargs['executable_path'] = args.chromium_executable
         if args.user_data_dir:
-            context = p.chromium.launch_persistent_context(args.user_data_dir, **chromium_kwargs)
+            context = p.chromium.launch_persistent_context(args.user_data_dir, **launch_kwargs, **context_kwargs)
         else:
-            browser = p.chromium.launch(**chromium_kwargs)
-            context = browser.new_context(viewport=None)
+            browser = p.chromium.launch(**launch_kwargs)
+            context = browser.new_context(**context_kwargs)
         page = context.pages[0] if context.pages else context.new_page()
         page.on('console', lambda msg: print(msg.text) if msg.text.startswith('R45H_PROGRESS') else None)
         if target_url and not args.manual_current_page:
@@ -530,6 +534,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'preserved_visual_css_present', 'status': 'pass' if 'data-r45j-preserved-comments-root' in VISUAL_CLEAN_CSS and 'blank-page fix' in VISUAL_CLEAN_CSS else 'fail'},
         {'name': 'r45l_comment_column_crop_present', 'status': 'pass' if 'data-r45j-pre-comment-hide' in VISUAL_CLEAN_CSS and 'r45l_comment_column_crop_used' in JS_MARK_AND_CLEAN_PRESERVED_COMMENTS else 'fail'},
         {'name': 'comments_column_screenshot_path_present', 'status': 'pass' if 'facebook_preserved_visual_comments_column.png' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
         {'name': 'login_automation_disabled', 'status': 'pass' if contract().get('login_automation_enabled') is False else 'fail'},
