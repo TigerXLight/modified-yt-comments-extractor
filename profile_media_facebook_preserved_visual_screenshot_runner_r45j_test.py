@@ -57,11 +57,15 @@ def test_contract_and_static_assets():
     assert 'r45u_target_page_guard_rule' in r45j.contract()
     assert 'Playwright-side mouse clicks' in c['r45v_playwright_mouse_downward_rule']
     assert 'cannot open a native file chooser' in c['r45w_no_file_chooser_rule']
+    assert 'expand-comments only' in c['r45x_expansion_only_rule']
     assert '_playwright_mouse_downward_expand' in inspect.getsource(r45j)
-    assert 'R45V_MOUSE_CLICK' in inspect.getsource(r45j)
+    assert 'R45X_EXPAND_CLICK' in inspect.getsource(r45j)
     assert 'page.mouse.down()' in inspect.getsource(r45j)
     assert 'isComposerOrUploadSurface' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert 'input[type="file"]' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
+    assert 'R45X_EXPAND_ONLY_PROBE' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
+    assert 'broad_scan_used' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
+    assert r'View\s+all' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert "page.on('filechooser'" in inspect.getsource(r45j.run_live)
     assert 'scrollTopForRescan' not in r45j.r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert '--progressive-top-down-sweeps' in inspect.getsource(r45j.build_arg_parser)

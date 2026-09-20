@@ -464,6 +464,7 @@ def contract() -> Dict[str, Any]:
         'r45u_target_page_guard_rule': 'R45U refuses to expand a generic Facebook home/feed page when a specific target URL was requested; after the pre-expand pause it reopens the target URL and blocks if the browser is still not on that target.',
         'r45v_playwright_mouse_downward_rule': 'R45V uses Playwright-side mouse clicks for the first visible Facebook expand control, then rescans the same viewport before scrolling downward; it avoids synthetic in-page click dispatch for Comet role=button controls.',
         'r45w_no_file_chooser_rule': 'R45W restricts mouse-click coordinates to the exact visible expansion text and excludes comment composer/upload/photo/GIF/sticker controls so the run cannot open a native file chooser while expanding comments.',
+        'r45x_expansion_only_rule': 'R45X treats the pass as expand-comments only: click the next explicit visible View all/View hidden/View more/Name replied control, rescan that local area, then continue downward without broad comment/feed scanning.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -702,29 +703,29 @@ JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
 (opts) => {
   const viewportMarginPx = Number((opts && opts.viewportMarginPx) || 90);
   const skipKeys = new Set((opts && opts.skipKeys) || []);
-  const deny = /^(like|reply|share|send|comment|copy link|follow|message|all|most relevant|newest|top comments|edited)$/i;
-  const composerOrUploadDeny = /\b(comment as|write a comment|comment composer|add photo|photo\/video|photo or video|camera|gif|sticker|avatar|open sticker|choose file|upload|attach|send|emoji|emoticon)\b/i;
   const normalize = (text) => String(text || '').replace(/\s+/g, ' ').trim();
+  const composerOrUploadDeny = /\b(comment as|write a comment|comment composer|add photo|photo\/video|photo or video|camera|gif|sticker|avatar|open sticker|choose file|upload|attach|send|emoji|emoticon)\b/i;
   const isVisible = (el) => {
     if (!el) return false;
     const rect = el.getBoundingClientRect();
     const style = window.getComputedStyle(el);
     return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0' && style.pointerEvents !== 'none';
   };
-  const labelOf = (el) => {
-    if (!el) return '';
-    const bits = [el.innerText || '', el.getAttribute('aria-label') || '', el.getAttribute('title') || '', el.textContent || ''];
-    return normalize(bits.join(' '));
+  const textOf = (el) => normalize((el && (el.innerText || el.textContent)) || '');
+  const ariaOf = (el) => normalize([el && el.getAttribute && el.getAttribute('aria-label'), el && el.getAttribute && el.getAttribute('title')].join(' '));
+  const pageText = () => (document.body && document.body.innerText || '');
+  const parseProgress = () => {
+    const m = pageText().match(/\b(\d{1,5})\s+of\s+(\d{1,5})\b/);
+    if (!m) return null;
+    return {current: Number(m[1]), total: Number(m[2]), text: m[0]};
   };
   const isComposerOrUploadSurface = (el) => {
     let n = el;
     for (let i = 0; n && i < 10; i++, n = n.parentElement) {
       const tag = (n.tagName || '').toLowerCase();
       const role = (n.getAttribute('role') || '').toLowerCase();
-      const aria = n.getAttribute('aria-label') || '';
-      const title = n.getAttribute('title') || '';
       const type = n.getAttribute('type') || '';
-      const txt = normalize([aria, title, (n.innerText || n.textContent || '').slice(0, 220)].join(' '));
+      const txt = normalize([ariaOf(n), (n.innerText || n.textContent || '').slice(0, 220)].join(' '));
       if (tag === 'input' && /file/i.test(type)) return true;
       if (tag === 'textarea' || role === 'textbox' || n.isContentEditable) return true;
       if (tag === 'form' && /comment|photo|video|upload|file/i.test(txt)) return true;
@@ -733,137 +734,96 @@ JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
     }
     return false;
   };
-  const clickTargetFor = (el) => {
+  const expansionLabel = (text) => {
+    text = normalize(text);
+    if (!text) return '';
+    let m = text.match(/^(View\s+hidden\s+(?:comments?|repl(?:y|ies)))$/i); if (m) return normalize(m[1]);
+    m = text.match(/^(View\s+all\s+\d+\s+repl(?:y|ies))$/i); if (m) return normalize(m[1]);
+    m = text.match(/^(View\s+\d+\s+repl(?:y|ies))$/i); if (m) return normalize(m[1]);
+    m = text.match(/^(View\s+more\s+(?:\d+\s+)?repl(?:y|ies))$/i); if (m) return normalize(m[1]);
+    m = text.match(/^(View\s+previous\s+repl(?:y|ies))$/i); if (m) return normalize(m[1]);
+    m = text.match(/^([\p{L}\p{M}' .-]{1,80}\s+replied\s*[·•\-–—]\s*\d+\s+repl(?:y|ies))$/iu); if (m) return normalize(m[1]);
+    // Some Facebook Comet buttons expose repeated text in their aria/text. Extract
+    // the first explicit expansion control but do not accept broad comment bodies.
+    m = text.match(/\b(View\s+(?:hidden\s+(?:comments?|repl(?:y|ies))|all\s+\d+\s+repl(?:y|ies)|\d+\s+repl(?:y|ies)|more\s+(?:\d+\s+)?repl(?:y|ies)|previous\s+repl(?:y|ies)))\b/i);
+    if (m && text.length <= 180) return normalize(m[1]);
+    m = text.match(/\b([\p{L}\p{M}' .-]{1,80}\s+replied\s*[·•\-–—]\s*\d+\s+repl(?:y|ies))\b/iu);
+    if (m && text.length <= 220) return normalize(m[1]);
+    return '';
+  };
+  const clickableAncestor = (el) => {
     let n = el;
     for (let i = 0; n && i < 8; i++, n = n.parentElement) {
-      if (isComposerOrUploadSurface(n)) continue;
+      if (isComposerOrUploadSurface(n)) return null;
       const role = (n.getAttribute('role') || '').toLowerCase();
       const tag = (n.tagName || '').toLowerCase();
       const style = window.getComputedStyle(n);
-      if (role === 'button' || tag === 'a' || tag === 'button' || tag === 'summary' || style.cursor === 'pointer') return n;
+      if (role === 'button' || tag === 'button' || tag === 'a' || tag === 'summary' || style.cursor === 'pointer') return n;
     }
     return null;
   };
-  const expansionMatchText = (text) => {
-    text = normalize(text);
-    const m = text.match(/\b(View\s+(?:hidden\s+(?:comments?|repl(?:y|ies))|all\s+\d+\s+repl(?:y|ies)|more\s+\d+\s+repl(?:y|ies)|\d+\s+repl(?:y|ies)|previous\s+repl(?:y|ies)|more\s+repl(?:y|ies)))\b/i);
-    if (m) return normalize(m[1]);
-    const r = text.match(/\b[\p{L}\p{M}' .-]{1,80}\s+replied\s*[·•\-–—]\s*\d+\s+repl(?:y|ies)\b/iu);
-    if (r) return normalize(r[0]);
-    const seeMore = text.match(/^\s*See\s+more\s*$/i);
-    return seeMore ? 'See more' : '';
-  };
-  const visibleRect = (el) => {
-    if (!el || !isVisible(el)) return null;
-    const rects = Array.from(el.getClientRects ? el.getClientRects() : [el.getBoundingClientRect()]);
-    const useful = rects.filter(r => r && r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight + viewportMarginPx && r.right > 0 && r.left < window.innerWidth);
-    if (!useful.length) return null;
-    useful.sort((a,b) => (a.top - b.top) || (a.left - b.left) || ((a.width*a.height) - (b.width*b.height)));
-    return useful[0];
-  };
-  const smallestTextElementForMatch = (root, matched) => {
-    const wanted = normalize(matched).toLowerCase();
-    if (!wanted || !root) return null;
-    const all = [root, ...Array.from(root.querySelectorAll ? root.querySelectorAll('*') : [])];
-    const hits = [];
-    for (const el of all) {
-      if (!isVisible(el) || isComposerOrUploadSurface(el)) continue;
-      const text = normalize(el.innerText || el.textContent || '');
-      if (!text || text.length > 520) continue;
-      if (!text.toLowerCase().includes(wanted)) continue;
-      const r = visibleRect(el);
-      if (!r) continue;
-      hits.push({el, rect: r, score: text.length + ((r.width * r.height) / 1000)});
-    }
-    hits.sort((a,b) => a.score - b.score || a.rect.top - b.rect.top || a.rect.left - b.rect.left);
-    return hits[0] || null;
-  };
-  const rangeRectForMatch = (root, matched) => {
-    const wanted = normalize(matched).toLowerCase();
-    if (!wanted || !root) return null;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        const val = normalize(node.nodeValue || '');
-        if (!val || !val.toLowerCase().includes(wanted)) return NodeFilter.FILTER_REJECT;
-        const parent = node.parentElement;
-        if (!parent || !isVisible(parent) || isComposerOrUploadSurface(parent)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    });
-    let node;
-    while ((node = walker.nextNode())) {
-      const raw = node.nodeValue || '';
-      const idx = raw.toLowerCase().indexOf(matched.toLowerCase());
-      try {
-        const range = document.createRange();
-        range.setStart(node, Math.max(0, idx));
-        range.setEnd(node, idx >= 0 ? Math.min(raw.length, idx + matched.length) : raw.length);
-        const rects = Array.from(range.getClientRects()).filter(r => r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight + viewportMarginPx);
-        if (rects.length) return {el: node.parentElement, rect: rects[0]};
-      } catch(e) {}
-    }
+  const visibleTextRect = (textNode, label) => {
+    const raw = textNode.nodeValue || '';
+    const idx = raw.toLowerCase().indexOf(label.toLowerCase());
+    try {
+      const range = document.createRange();
+      if (idx >= 0) { range.setStart(textNode, idx); range.setEnd(textNode, Math.min(raw.length, idx + label.length)); }
+      else { range.selectNodeContents(textNode); }
+      const rects = Array.from(range.getClientRects()).filter(r => r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight + viewportMarginPx && r.right > 0 && r.left < window.innerWidth);
+      if (rects.length) return rects[0];
+    } catch(e) {}
+    const parent = textNode.parentElement;
+    if (!parent) return null;
+    const r = parent.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight + viewportMarginPx) return r;
     return null;
   };
-  const textHitFor = (root, matched) => {
-    return smallestTextElementForMatch(root, matched) || rangeRectForMatch(root, matched);
-  };
-  const looksLikeBloatedCommentContainer = (text) => {
-    text = normalize(text);
-    if (text.length <= 180) return false;
-    if (/^\s*(view|see)\b/i.test(text)) return false;
-    if (/\breplied\s*[·•\-–—]\s*\d+\s+repl/i.test(text) && text.length < 220) return false;
-    return /\bLike\b.*\bReply\b/i.test(text) || text.length > 280;
-  };
-  const targetKeyFor = (target, matched, rect) => {
-    const r = rect || target.getBoundingClientRect();
-    return [matched.toLowerCase(), Math.round((r.top + window.scrollY) / 8), Math.round(r.left / 8), Math.round(r.width / 8), Math.round(r.height / 8)].join('|');
-  };
-  const pageText = () => (document.body && document.body.innerText || '');
-  const parseProgress = () => {
-    const m = pageText().match(/\b(\d{1,5})\s+of\s+(\d{1,5})\b/);
-    if (!m) return null;
-    return {current: Number(m[1]), total: Number(m[2]), text: m[0]};
-  };
-  // R45W: only inspect intrinsically clickable controls. Do not scan every div/span,
-  // because broad comment/composer containers can put the click center on the
-  // camera/upload icon and open a native file chooser.
-  const nodes = Array.from(document.querySelectorAll('div[role="button"], span[role="button"], a[role="button"], button, a, [tabindex="0"]'));
-  const candidates = [];
-  for (const el of nodes) {
-    if (!isVisible(el) || isComposerOrUploadSurface(el)) continue;
-    const text = labelOf(el);
-    if (!text || text.length > 1200) continue;
-    if (deny.test(text)) continue;
-    const matched = expansionMatchText(text);
-    if (!matched) continue;
-    const hit = textHitFor(el, matched);
-    if (!hit || !hit.el || !hit.rect) continue;
-    if (looksLikeBloatedCommentContainer(text) && hit.el === el) continue;
-    if (isComposerOrUploadSurface(hit.el)) continue;
-    const target = clickTargetFor(hit.el) || clickTargetFor(el);
+  const keyFor = (label, rect) => [label.toLowerCase(), Math.round((rect.top + window.scrollY) / 8), Math.round(rect.left / 8)].join('|');
+
+  // R45X: expansion-only rail. Walk visible text nodes and accept only explicit
+  // Facebook expansion controls: View all replies, View hidden comments/replies,
+  // View more/previous replies, or Name replied · N replies. Do not inspect broad
+  // comment text, composer controls, reactions, Like/Reply, or upload widgets.
+  const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent || !isVisible(parent) || isComposerOrUploadSurface(parent)) return NodeFilter.FILTER_REJECT;
+      const val = normalize(node.nodeValue || '');
+      if (!val || val.length > 220) return NodeFilter.FILTER_REJECT;
+      return expansionLabel(val) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    }
+  });
+  const controls = [];
+  let node;
+  while ((node = walker.nextNode())) {
+    const parent = node.parentElement;
+    const label = expansionLabel(node.nodeValue || '') || expansionLabel(textOf(parent)) || expansionLabel(ariaOf(parent));
+    if (!label) continue;
+    const rect = visibleTextRect(node, label);
+    if (!rect) continue;
+    const target = clickableAncestor(parent);
     if (!target || !isVisible(target) || isComposerOrUploadSurface(target)) continue;
-    const r = target.getBoundingClientRect();
-    if (r.bottom <= 0 || r.top > window.innerHeight + viewportMarginPx) continue;
-    const centerX = Math.min(Math.max(hit.rect.left + hit.rect.width / 2, 2), Math.max(2, window.innerWidth - 2));
-    const centerY = Math.min(Math.max(hit.rect.top + hit.rect.height / 2, 2), Math.max(2, window.innerHeight - 2));
-    const hitNode = document.elementFromPoint(centerX, centerY);
-    if (isComposerOrUploadSurface(hitNode)) continue;
-    const finalTarget = clickTargetFor(hitNode || hit.el) || target;
-    if (!finalTarget || isComposerOrUploadSurface(finalTarget)) continue;
-    const key = targetKeyFor(finalTarget, matched, hit.rect);
+    const key = keyFor(label, rect);
     if (skipKeys.has(key)) continue;
-    candidates.push({label: matched, full_label: text.slice(0, 220), x: centerX, y: centerY, top: Math.round(Math.min(r.top, hit.rect.top)), left: Math.round(Math.min(r.left, hit.rect.left)), key, role: finalTarget.getAttribute('role') || '', tag: (finalTarget.tagName || '').toLowerCase(), href: finalTarget.getAttribute('href') || '', text_hit_tag: (hit.el.tagName || '').toLowerCase(), progress: parseProgress()});
+    const x = Math.min(Math.max(rect.left + rect.width / 2, 3), Math.max(3, window.innerWidth - 3));
+    const y = Math.min(Math.max(rect.top + rect.height / 2, 3), Math.max(3, window.innerHeight - 3));
+    const hit = document.elementFromPoint(x, y);
+    if (!hit || isComposerOrUploadSurface(hit)) continue;
+    controls.push({label, key, x, y, top: rect.top, left: rect.left, width: rect.width, height: rect.height, targetRole: target.getAttribute('role') || '', targetTag: (target.tagName || '').toLowerCase()});
   }
-  candidates.sort((a,b) => a.top - b.top || a.left - b.left || a.label.length - b.label.length);
-  const seen = new Set();
-  const compact = [];
-  for (const c of candidates) {
-    const k = c.label.toLowerCase() + '|' + Math.round(c.top / 8) + '|' + Math.round(c.left / 8);
-    if (seen.has(k)) continue;
-    seen.add(k);
-    compact.push(c);
-  }
-  return {candidate: compact[0] || null, visible_count: compact.length, visible_labels: compact.slice(0, 12).map(c => c.label), progress: parseProgress(), text_chars: pageText().length, viewport: {width: window.innerWidth, height: window.innerHeight, scroll_y: window.scrollY}};
+  controls.sort((a,b) => (a.top - b.top) || (a.left - b.left));
+  const first = controls[0] || null;
+  return {
+    marker: 'R45X_EXPAND_ONLY_PROBE',
+    candidate: first,
+    visible_count: controls.length,
+    visible_labels: controls.slice(0, 12).map(c => c.label),
+    text_chars: pageText().length,
+    progress: parseProgress(),
+    expansion_only: true,
+    broad_scan_used: false,
+    composer_upload_controls_excluded: true,
+  };
 }
 """
 
@@ -939,7 +899,7 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
     for step in range(1, rounds_limit + 1):
         if time.monotonic() - started > max_seconds:
             break
-        skip_keys = [k for k, v in skip_counts.items() if v >= 2]
+        skip_keys = [k for k, v in skip_counts.items() if v >= 5]
         try:
             probe = page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
                 'patterns': patterns,
@@ -972,7 +932,7 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
                 after_probe = page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
                     'patterns': patterns,
                     'viewportMarginPx': viewport_margin,
-                    'skipKeys': [k for k, v in skip_counts.items() if v >= 2],
+                    'skipKeys': [k for k, v in skip_counts.items() if v >= 5],
                 }) or {}
             except Exception:
                 after_probe = {}
@@ -986,7 +946,7 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
                 skip_counts.pop(key, None)
             clicked_total += 0 if click_error else 1
             print('R45H_PROGRESS ' + json.dumps({
-                'event': 'R45V_MOUSE_CLICK',
+                'event': 'R45X_EXPAND_CLICK',
                 'step': step,
                 'label': label,
                 'x': round(x, 1),
@@ -1031,7 +991,7 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
         final_probe = page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
             'patterns': patterns,
             'viewportMarginPx': viewport_margin,
-            'skipKeys': [k for k, v in skip_counts.items() if v >= 2],
+            'skipKeys': [k for k, v in skip_counts.items() if v >= 5],
         }) or last_probe
     except Exception:
         pass
@@ -1058,6 +1018,9 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
         'downward_only': True,
         'playwright_mouse_clicks': True,
         'synthetic_in_page_click_dispatch': False,
+        'expansion_only': True,
+        'broad_scan_used': False,
+        'r45x_expand_comments_only': True,
     }
 
 def _main_expand_still_incomplete(summary: Optional[Dict[str, Any]]) -> bool:
@@ -1191,7 +1154,9 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             try:
                 print(f'R45J_AUTO_EXPAND_START max_seconds={args.expand_max_seconds}')
                 print('R45V_PLAYWRIGHT_MOUSE_DOWNWARD_EXPAND_START')
+                print('R45X_EXPAND_COMMENTS_ONLY_START')
                 auto_expand_summary = _playwright_mouse_downward_expand(page, args, r45h.EXPAND_PATTERNS_R45H)
+                print('R45X_EXPAND_COMMENTS_ONLY_DONE')
                 print('R45V_PLAYWRIGHT_MOUSE_DOWNWARD_EXPAND_DONE')
                 print('R45J_AUTO_EXPAND_DONE')
             except Exception as e:
@@ -1387,8 +1352,9 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45q_downward_frontier_present', 'status': 'pass' if 'r45q_downward_frontier_rule' in contract() and 'clickVisibleUntilExhausted' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND and 'scrollTopForRescan' not in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND else 'fail'},
         {'name': 'r45r_local_exhaust_present', 'status': 'pass' if 'r45r_local_exhaust_rule' in contract() and 'requestedLocalPasses' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND and ('Math.max(12' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND or 'Math.max(500' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND) else 'fail'},
         {'name': 'r45u_target_page_guard_present', 'status': 'pass' if '_guard_or_reopen_target_page' in open(__file__, encoding='utf-8').read() and 'R45J_TARGET_PAGE_GUARD_BLOCKED' in open(__file__, encoding='utf-8').read() else 'fail'},
-        {'name': 'r45v_playwright_mouse_downward_expand_present', 'status': 'pass' if '_playwright_mouse_downward_expand' in open(__file__, encoding='utf-8').read() and 'R45V_MOUSE_CLICK' in open(__file__, encoding='utf-8').read() and 'page.mouse.down()' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45v_playwright_mouse_downward_expand_present', 'status': 'pass' if '_playwright_mouse_downward_expand' in open(__file__, encoding='utf-8').read() and ('R45V_MOUSE_CLICK' in open(__file__, encoding='utf-8').read() or 'R45X_EXPAND_CLICK' in open(__file__, encoding='utf-8').read()) and 'page.mouse.down()' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45w_no_file_chooser_guard_present', 'status': 'pass' if 'r45w_no_file_chooser_rule' in contract() and 'isComposerOrUploadSurface' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V and "page.on('filechooser'" in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45x_expand_comments_only_present', 'status': 'pass' if 'r45x_expansion_only_rule' in contract() and 'R45X_EXPAND_ONLY_PROBE' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V and 'broad_scan_used' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V and 'expansion_only: true' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
