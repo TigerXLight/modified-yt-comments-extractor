@@ -20,14 +20,23 @@ def test_contract_and_static_assets():
     assert 'JS_CLICK_REPLIED_REPLY_BUCKETS_R45N' in inspect.getsource(r45j)
     assert '--no-replied-reply-bucket-expand' in inspect.getsource(r45j.build_arg_parser)
     assert 'Name replied' in r45j.contract()['r45n_replied_reply_bucket_expand_fix']
+    assert 'async (opts) =>' in r45j.JS_CLICK_REPLIED_REPLY_BUCKETS_R45N
+    assert 'R45N_REPLIED_REPLY_BUCKET_PROGRESS' in r45j.JS_CLICK_REPLIED_REPLY_BUCKETS_R45N
+    assert 'progressiveTopDown' in r45j.JS_CLICK_REPLIED_REPLY_BUCKETS_R45N
     run_live_src = inspect.getsource(r45j.run_live)
     assert 'facebook_preserved_visual_comments_column.png' in run_live_src
+    assert '_capture_locator_bands' in inspect.getsource(r45j)
+    assert 'preserved_visual_comments_column_screenshot_paths' in run_live_src
+    assert '--max-screenshot-band-height' in inspect.getsource(r45j.build_arg_parser)
     assert 'p.chromium.launch(**launch_kwargs)' in run_live_src
     assert 'browser.new_context(**context_kwargs)' in run_live_src
     assert 'launch_persistent_context(args.user_data_dir, **launch_kwargs, **context_kwargs)' in run_live_src
     assert "chromium_kwargs: Dict[str, Any] = {'headless': False, 'viewport': None" not in run_live_src
     assert 'comments column' in c['r45l_comment_column_crop_fix'].lower()
     assert 'viewport' in c['r45m_playwright_viewport_launch_fix'].lower()
+    assert 'maximum-height' in c['r45o_screenshot_band_rule']
+    assert 'async' in c['r45o_replied_bucket_async_fix']
+    assert 'top-to-bottom' in c['r45o_progressive_top_down_rule']
     assert 'preserve' in c['preserved_visual_rule'].lower()
     assert 'args.screenshot' not in inspect.getsource(r45j.run_live)
     assert 'clone_body_replacement_used' in r45j.JS_MARK_AND_CLEAN_PRESERVED_COMMENTS

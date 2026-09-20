@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import math
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -287,7 +288,7 @@ JS_MARK_AND_CLEAN_PRESERVED_COMMENTS = r'''
 
 
 JS_CLICK_REPLIED_REPLY_BUCKETS_R45N = r'''
-(opts) => {
+async (opts) => {
   const started = Date.now();
   const maxSeconds = Number(opts.maxSeconds || 240);
   const rounds = Number(opts.rounds || 80);
@@ -298,6 +299,8 @@ JS_CLICK_REPLIED_REPLY_BUCKETS_R45N = r'''
   const scrollPx = Number(opts.scrollPx || 950);
   const scrollDelayMs = Number(opts.scrollDelayMs || 80);
   const stopAfterStableRounds = Number(opts.stopAfterStableRounds || 5);
+  const progressiveTopDown = opts.progressiveTopDown !== false;
+  const viewportMarginPx = Number(opts.viewportMarginPx || 90);
   const repliedRe = /\breplied\s*[·•\-–—]\s*\d+\s+repl(?:y|ies)\b/i;
   const clickedKeys = new Set();
   const clickedLabels = [];
@@ -336,6 +339,8 @@ JS_CLICK_REPLIED_REPLY_BUCKETS_R45N = r'''
       if (!repliedRe.test(combined)) continue;
       const target = clickTargetFor(el);
       if (!target || !styleVisible(target)) continue;
+      const r = target.getBoundingClientRect();
+      if (progressiveTopDown && (r.bottom < -viewportMarginPx || r.top > window.innerHeight + viewportMarginPx)) continue;
       const key = combined.slice(0, 160) + '|' + rectKey(target);
       if (clickedKeys.has(key)) continue;
       out.push({el, target, label: combined, key});
@@ -432,6 +437,9 @@ def contract() -> Dict[str, Any]:
         'comments_column_screenshot_rule': 'When screenshots are enabled, also capture facebook_preserved_visual_comments_column.png from the marked comments root so the operator gets the cropped original-view comments column rather than the full modal shell.',
         'r45n_replied_reply_bucket_expand_fix': 'After the standard R45H/R45J expansion pass, R45N performs an additional visible-page click pass for collapsed Facebook labels such as Name replied · 14 replies, then reruns the normal bounded expansion to load controls exposed by those buckets.',
         'r45m_playwright_viewport_launch_fix': 'Playwright viewport=None is now passed to browser contexts only, not BrowserType.launch(), fixing the manual live-run TypeError while preserving maximized operator-controlled browser UI.',
+        'r45o_screenshot_band_rule': 'Very tall Facebook comment columns are captured as maximum-height screenshot bands, starting with facebook_preserved_visual_comments_column.png and continuing with numbered parts, instead of hundreds of small viewport tiles.',
+        'r45o_replied_bucket_async_fix': 'The R45N replied-reply-bucket pass is async and logs R45N progress so labels such as Name replied · 14 replies can be clicked before the final visual cleanup.',
+        'r45o_progressive_top_down_rule': 'R45J asks the R45H expansion pass to click visible controls top-to-bottom while moving downward through the modal, reducing repeated jump-back behaviour on long threads.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -458,23 +466,115 @@ def _safe_read(path: Optional[str]) -> Optional[str]:
     return Path(path).read_text(encoding='utf-8', errors='replace')
 
 
-def _capture_tiles(page: Any, run_dir: Path, prefix: str, steps: int, scroll_px: int, wait_s: float) -> List[str]:
-    paths: List[str] = []
+def _axis_positions(total: int, viewport: int, overlap_px: int) -> List[int]:
+    total = max(1, int(total))
+    viewport = max(1, int(viewport))
+    overlap = max(0, min(int(overlap_px), viewport - 1))
+    if total <= viewport:
+        return [0]
+    step = max(1, viewport - overlap)
+    last = max(0, total - viewport)
+    positions: List[int] = []
+    pos = 0
+    while pos < last:
+        positions.append(pos)
+        pos += step
+    positions.append(last)
+    out: List[int] = []
+    seen = set()
+    for item in positions:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def _page_dimensions(page: Any) -> Dict[str, int]:
     try:
-        total_height = int(page.evaluate('() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)'))
+        dims = page.evaluate("""() => ({
+          width: Math.ceil(Math.max(document.body.scrollWidth || 0, document.documentElement.scrollWidth || 0, window.innerWidth || 0)),
+          height: Math.ceil(Math.max(document.body.scrollHeight || 0, document.documentElement.scrollHeight || 0, window.innerHeight || 0)),
+          innerWidth: Math.ceil(window.innerWidth || 0),
+          innerHeight: Math.ceil(window.innerHeight || 0)
+        })""")
+        return {k: max(1, int(dims.get(k) or 1)) for k in ('width', 'height', 'innerWidth', 'innerHeight')}
     except Exception:
-        total_height = steps * scroll_px
-    y = 0
-    for i in range(max(1, steps)):
-        if i > 0 and y > total_height + 1200:
-            break
-        tile_path = run_dir / f'{prefix}_{i+1:03d}.png'
-        page.evaluate('(y) => window.scrollTo(0, y)', y)
-        time.sleep(max(0.08, wait_s))
-        page.screenshot(path=str(tile_path), full_page=False)
-        paths.append(str(tile_path))
-        y += scroll_px
+        return {'width': 1280, 'height': 720, 'innerWidth': 1280, 'innerHeight': 720}
+
+
+def _prepare_preserved_visual_screenshot_surface(page: Any) -> Dict[str, Any]:
+    return page.evaluate("""() => {
+      const root = document.querySelector('[data-r45j-preserved-comments-root="true"]');
+      if (!root) return {root_found: false};
+      const rect = root.getBoundingClientRect();
+      const rootHeight = Math.ceil(Math.max(root.scrollHeight || 0, rect.height || 0));
+      const rootWidth = Math.ceil(Math.max(root.scrollWidth || 0, rect.width || 0));
+      const minHeight = Math.max(rootHeight + 96, window.innerHeight || 0, document.body.scrollHeight || 0, document.documentElement.scrollHeight || 0);
+      try { document.documentElement.style.minHeight = minHeight + 'px'; } catch (e) {}
+      try { document.body.style.minHeight = minHeight + 'px'; } catch (e) {}
+      try { document.documentElement.style.overflow = 'visible'; document.body.style.overflow = 'visible'; } catch (e) {}
+      return {root_found: true, root_height: rootHeight, root_width: rootWidth, min_height: Math.ceil(minHeight)};
+    }""")
+
+
+def _capture_locator_bands(
+    page: Any,
+    run_dir: Path,
+    selector: str,
+    *,
+    first_filename: Optional[str],
+    prefix: str,
+    max_band_height: int,
+    overlap_px: int,
+    wait_s: float,
+) -> List[str]:
+    paths: List[str] = []
+    max_band_height = max(600, int(max_band_height))
+    overlap_px = max(0, min(int(overlap_px), max_band_height - 1))
+    _prepare_preserved_visual_screenshot_surface(page)
+    locator = page.locator(selector).first
+    box = locator.bounding_box(timeout=15000)
+    if not box:
+        raise RuntimeError(f'locator not available for screenshot bands: {selector}')
+    dims = _page_dimensions(page)
+    page_width = dims['width']
+    page_height = max(dims['height'], int(math.ceil(box.get('y', 0) + box.get('height', 0) + 96)))
+    x = max(0, int(math.floor(box.get('x', 0))))
+    y0 = max(0, int(math.floor(box.get('y', 0))))
+    raw_width = max(1, int(math.ceil(box.get('width', 1))))
+    raw_height = max(1, int(math.ceil(box.get('height', 1))))
+    width = max(1, min(raw_width, max(1, page_width - x)))
+    end_y = max(y0 + 1, min(page_height, y0 + raw_height))
+    total_height = max(1, end_y - y0)
+    positions = _axis_positions(total_height, max_band_height, overlap_px)
+    for idx, offset in enumerate(positions, start=1):
+        band_y = y0 + offset
+        band_h = min(max_band_height, max(1, end_y - band_y))
+        name = first_filename if idx == 1 and first_filename else f'{prefix}_{idx:03d}.png'
+        path = run_dir / name
+        try:
+            page.evaluate('(y) => window.scrollTo(0, y)', max(0, band_y - 40))
+        except Exception:
+            pass
+        time.sleep(max(0.05, wait_s))
+        page.screenshot(path=str(path), full_page=False, clip={'x': x, 'y': band_y, 'width': width, 'height': band_h})
+        paths.append(str(path))
     return paths
+
+
+def _capture_tiles(page: Any, run_dir: Path, prefix: str, steps: int, scroll_px: int, wait_s: float, *, max_band_height: int = 14000, overlap_px: int = 160) -> List[str]:
+    # R45O: keep the old receipt field name for compatibility, but use maximum-height
+    # screenshot bands rather than hundreds of 900px viewport tiles.
+    return _capture_locator_bands(
+        page,
+        run_dir,
+        '[data-r45j-preserved-comments-root="true"]',
+        first_filename=None,
+        prefix=prefix,
+        max_band_height=max_band_height,
+        overlap_px=overlap_px,
+        wait_s=wait_s,
+    )
 
 
 def run_live(args: argparse.Namespace) -> Dict[str, Any]:
@@ -505,7 +605,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             browser = p.chromium.launch(**launch_kwargs)
             context = browser.new_context(**context_kwargs)
         page = context.pages[0] if context.pages else context.new_page()
-        page.on('console', lambda msg: print(msg.text) if msg.text.startswith('R45H_PROGRESS') else None)
+        page.on('console', lambda msg: print(msg.text) if (msg.text.startswith('R45H_PROGRESS') or msg.text.startswith('R45N_REPLIED_REPLY_BUCKET_PROGRESS')) else None)
         if target_url and not args.manual_current_page:
             try:
                 page.goto(target_url, wait_until='domcontentloaded', timeout=args.timeout_seconds * 1000)
@@ -537,6 +637,8 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
                 'scrollDelayMs': int(args.expand_scroll_delay_seconds * 1000),
                 'stableDeltaChars': args.expand_stable_delta_chars,
                 'stopAfterStableRounds': args.expand_stop_after_stable_rounds,
+                'progressiveTopDown': not args.no_progressive_top_down_expansion,
+                'viewportMarginPx': args.expand_viewport_margin_px,
             }
             try:
                 print(f'R45J_AUTO_EXPAND_START max_seconds={args.expand_max_seconds}')
@@ -557,6 +659,8 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
                         'scrollPx': args.expand_scroll_px,
                         'scrollDelayMs': int(args.expand_scroll_delay_seconds * 1000),
                         'stopAfterStableRounds': args.expand_stop_after_stable_rounds,
+                        'progressiveTopDown': not args.no_progressive_top_down_expansion,
+                        'viewportMarginPx': args.expand_viewport_margin_px,
                     }
                     print(f'R45N_REPLIED_REPLY_BUCKET_EXPAND_START max_seconds={args.replied_bucket_max_seconds}')
                     replied_reply_bucket_summary = page.evaluate(JS_CLICK_REPLIED_REPLY_BUCKETS_R45N, replied_opts)
@@ -611,6 +715,12 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             page.add_style_tag(content=VISUAL_CLEAN_CSS)
             page.evaluate('() => window.scrollTo(0, 0)')
             time.sleep(max(0.2, args.visual_clean_wait_seconds))
+            try:
+                surface_summary = _prepare_preserved_visual_screenshot_surface(page)
+                if isinstance(visual_clean_summary, dict):
+                    visual_clean_summary['screenshot_surface'] = surface_summary
+            except Exception as e:
+                warnings.append(f'visual_screenshot_surface_prepare_warning={e}')
             clean_html_path = r45d.write_text(run_dir / 'facebook_preserved_visual_clean_dom.html', page.content())
             clean_text_path = r45d.write_text(run_dir / 'facebook_preserved_visual_clean_visible_text.txt', page.locator('body').inner_text(timeout=15000))
         except Exception as e:
@@ -624,10 +734,20 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
         elif args.wait_seconds:
             time.sleep(args.wait_seconds)
 
+        column_screenshot_paths: List[str] = []
         if not args.no_screenshots:
             try:
-                column_screenshot_path = str(run_dir / 'facebook_preserved_visual_comments_column.png')
-                page.locator('[data-r45j-preserved-comments-root=\"true\"]').first.screenshot(path=column_screenshot_path)
+                column_screenshot_paths = _capture_locator_bands(
+                    page,
+                    run_dir,
+                    '[data-r45j-preserved-comments-root="true"]',
+                    first_filename='facebook_preserved_visual_comments_column.png',
+                    prefix='facebook_preserved_visual_comments_column_part',
+                    max_band_height=args.max_screenshot_band_height,
+                    overlap_px=getattr(args, 'screenshot_band_overlap_px', 160),
+                    wait_s=args.tile_wait_seconds,
+                )
+                column_screenshot_path = column_screenshot_paths[0] if column_screenshot_paths else None
             except Exception as e:
                 warnings.append(f'preserved_visual_comments_column_screenshot_warning={e}')
                 column_screenshot_path = None
@@ -639,7 +759,21 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
                 full_screenshot_path = None
             if args.tile_screenshots:
                 try:
-                    tile_paths = _capture_tiles(page, run_dir, 'facebook_preserved_visual_tile', args.tile_steps, args.tile_scroll_px, args.tile_wait_seconds)
+                    # R45O: keep tile receipt compatibility but capture maximum-size bands.
+                    # If the column bands were already captured, reuse their paths instead
+                    # of creating hundreds of small viewport captures.
+                    tile_paths = list(column_screenshot_paths)
+                    if not tile_paths:
+                        tile_paths = _capture_tiles(
+                            page,
+                            run_dir,
+                            'facebook_preserved_visual_tile',
+                            args.tile_steps,
+                            args.tile_scroll_px,
+                            args.tile_wait_seconds,
+                            max_band_height=args.max_screenshot_band_height,
+                            overlap_px=getattr(args, 'screenshot_band_overlap_px', 160),
+                        )
                 except Exception as e:
                     warnings.append(f'preserved_visual_tile_screenshot_warning={e}')
 
@@ -658,6 +792,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             'preserved_visual_clean_dom_path': clean_html_path,
             'preserved_visual_clean_text_path': clean_text_path,
             'preserved_visual_comments_column_screenshot_path': column_screenshot_path,
+            'preserved_visual_comments_column_screenshot_paths': column_screenshot_paths,
             'preserved_visual_full_screenshot_path': full_screenshot_path,
             'preserved_visual_tile_screenshot_paths': tile_paths,
             'preserved_visual_tile_screenshot_count': len(tile_paths),
@@ -690,6 +825,8 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45l_comment_column_crop_present', 'status': 'pass' if 'data-r45j-pre-comment-hide' in VISUAL_CLEAN_CSS and 'r45l_comment_column_crop_used' in JS_MARK_AND_CLEAN_PRESERVED_COMMENTS else 'fail'},
         {'name': 'comments_column_screenshot_path_present', 'status': 'pass' if 'facebook_preserved_visual_comments_column.png' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45n_replied_reply_bucket_expand_present', 'status': 'pass' if 'JS_CLICK_REPLIED_REPLY_BUCKETS_R45N' in open(__file__, encoding='utf-8').read() and 'replied_reply_bucket_summary' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45o_replied_reply_bucket_async_present', 'status': 'pass' if 'async (opts) =>' in JS_CLICK_REPLIED_REPLY_BUCKETS_R45N and 'R45N_REPLIED_REPLY_BUCKET_PROGRESS' in JS_CLICK_REPLIED_REPLY_BUCKETS_R45N else 'fail'},
+        {'name': 'r45o_max_height_screenshot_bands_present', 'status': 'pass' if '_capture_locator_bands' in open(__file__, encoding='utf-8').read() and 'max_screenshot_band_height' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
@@ -730,6 +867,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument('--no-replied-reply-bucket-expand', action='store_true', help='Disable the R45N visible-page follow-up pass for labels like "Name replied · 14 replies".')
     ap.add_argument('--replied-bucket-max-seconds', type=int, default=240, help='Maximum seconds for the R45N replied-reply-bucket follow-up pass.')
     ap.add_argument('--replied-bucket-rounds', type=int, default=80, help='Maximum rounds for the R45N replied-reply-bucket follow-up pass.')
+    ap.add_argument('--no-progressive-top-down-expansion', action='store_true', help='Disable R45O viewport top-to-bottom expansion order and use legacy priority sorting.')
+    ap.add_argument('--expand-viewport-margin-px', type=int, default=90, help='Viewport margin for R45O top-to-bottom visible-control expansion.')
+    ap.add_argument('--max-screenshot-band-height', type=int, default=14000, help='Maximum height of each R45O comments-column screenshot band.')
+    ap.add_argument('--screenshot-band-overlap-px', type=int, default=160, help='Overlap between R45O maximum-height screenshot bands.')
     return ap
 
 

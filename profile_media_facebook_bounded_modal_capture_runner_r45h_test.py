@@ -7,6 +7,7 @@ import profile_media_facebook_bounded_modal_capture_runner_r45h as r45h
 def test_js_has_bound_and_progress():
     assert 'maxSeconds' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'R45H_PROGRESS' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
+    assert 'progressiveTopDown' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'timedOut' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND or 'timed_out' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
 
 
@@ -39,6 +40,7 @@ def test_contract_documents_gap_fix():
     assert c['mode_id'] == 'facebook_bounded_modal_capture_runner'
     assert 'R45G could appear stuck' in c['r45g_gap_fixed']
     assert c['hidden_platform_api_scraping_enabled'] is False
+    assert 'top-to-bottom' in c['r45o_progressive_top_down_rule']
 
 
 if __name__ == '__main__':

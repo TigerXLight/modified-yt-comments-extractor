@@ -24,6 +24,8 @@ async (opts) => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const startedAt = Date.now();
   const maxMillis = Math.max(15000, (opts.maxSeconds || 180) * 1000);
+  const progressiveTopDown = !!opts.progressiveTopDown;
+  const viewportMarginPx = Number(opts.viewportMarginPx || 90);
   const patterns = opts.patterns.map(p => new RegExp(p, 'i'));
   const deny = /^(like|reply|share|send|comment|copy link|follow|message|all|most relevant|newest|top comments|edited)$/i;
   const log = (obj) => { try { console.log('R45H_PROGRESS ' + JSON.stringify(obj)); } catch(e) {} };
@@ -55,6 +57,7 @@ async (opts) => {
       if (deny.test(text)) continue;
       if (!patterns.some(rx => rx.test(text))) continue;
       const rect = el.getBoundingClientRect();
+      if (progressiveTopDown && (rect.bottom < -viewportMarginPx || rect.top > window.innerHeight + viewportMarginPx)) continue;
       const key = text + '|' + Math.round(rect.top) + '|' + Math.round(rect.left);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -64,7 +67,11 @@ async (opts) => {
       if (/view all|view more|see more/i.test(text)) priority += 4000;
       out.push({el, text, top: rect.top, left: rect.left, priority});
     }
-    out.sort((a,b) => b.priority - a.priority || a.top - b.top || a.left - b.left);
+    if (progressiveTopDown) {
+      out.sort((a,b) => a.top - b.top || a.left - b.left || b.priority - a.priority);
+    } else {
+      out.sort((a,b) => b.priority - a.priority || a.top - b.top || a.left - b.left);
+    }
     return out;
   };
   const findScrollTargets = () => {
@@ -177,6 +184,7 @@ def contract() -> Dict[str, Any]:
         'r45g_gap_fixed': 'R45G could appear stuck because auto-expand ran silently inside page.evaluate for many modal-scroll stability rounds. R45H adds bounded runtime, browser-console progress heartbeats, shorter defaults, and capture-after-timeout receipts.',
         'bounded_runtime_rule': 'auto-expand stops after --expand-max-seconds and still captures DOM/text/screenshots rather than appearing frozen indefinitely.',
         'progress_rule': 'emit R45H_PROGRESS browser console messages for each completed expansion round.',
+        'r45o_progressive_top_down_rule': 'When requested by R45J, expansion clicks visible controls in viewport top-to-bottom order before continuing downward, reducing jump-back behaviour on long Facebook modal threads.',
     })
     return base
 
