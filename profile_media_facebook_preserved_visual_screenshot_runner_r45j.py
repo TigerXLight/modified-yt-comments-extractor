@@ -465,6 +465,7 @@ def contract() -> Dict[str, Any]:
         'r45v_playwright_mouse_downward_rule': 'R45V uses Playwright-side mouse clicks for the first visible Facebook expand control, then rescans the same viewport before scrolling downward; it avoids synthetic in-page click dispatch for Comet role=button controls.',
         'r45w_no_file_chooser_rule': 'R45W restricts mouse-click coordinates to the exact visible expansion text and excludes comment composer/upload/photo/GIF/sticker controls so the run cannot open a native file chooser while expanding comments.',
         'r45x_expansion_only_rule': 'R45X treats the pass as expand-comments only: click the next explicit visible View all/View hidden/View more/Name replied control, rescan that local area, then continue downward without broad comment/feed scanning.',
+        'r45y_pre_pause_target_rule': 'R45Y opens a fresh target tab for a requested permalink and runs the target-page guard before the operator pre-expand pause, so a restored facebook.com feed tab is not shown/expanded as the working page.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -1063,7 +1064,15 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
     with sync_playwright() as p:
         # R45M: BrowserType.launch() does not accept viewport. Keep viewport
         # on contexts only, while preserving maximized operator-controlled browser UI.
-        launch_kwargs: Dict[str, Any] = {'headless': False, 'args': ['--start-maximized']}
+        launch_kwargs: Dict[str, Any] = {
+            'headless': False,
+            'args': [
+                '--start-maximized',
+                '--disable-session-crashed-bubble',
+                '--no-first-run',
+                '--no-default-browser-check',
+            ],
+        }
         context_kwargs: Dict[str, Any] = {'viewport': None}
         if args.chromium_executable:
             launch_kwargs['executable_path'] = args.chromium_executable
@@ -1072,7 +1081,17 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
         else:
             browser = p.chromium.launch(**launch_kwargs)
             context = browser.new_context(**context_kwargs)
-        page = context.pages[0] if context.pages else context.new_page()
+        # R45Y: do not reuse a restored/crashed facebook.com feed tab as the
+        # working page for a specific permalink. Open a fresh tab for the target
+        # and bring it to front; old restored tabs are left alone but ignored.
+        if target_url and not args.manual_current_page:
+            page = context.new_page()
+        else:
+            page = context.pages[0] if context.pages else context.new_page()
+        try:
+            page.bring_to_front()
+        except Exception:
+            pass
         page.on('console', lambda msg: print(msg.text) if (msg.text.startswith('R45H_PROGRESS') or msg.text.startswith('R45N_REPLIED_REPLY_BUCKET_PROGRESS')) else None)
         def _r45w_block_filechooser(chooser: Any) -> None:
             try:
@@ -1093,16 +1112,45 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
             page.add_style_tag(content=r45d.FOCUS_CSS)
         except Exception as e:
             warnings.append(f'focus_css_injection_warning={e}')
+
+        # R45Y: run the target guard before the operator pause. Previously the
+        # pause could show a restored facebook.com feed tab even though a specific
+        # permalink was requested, which made the run look broken before expansion.
+        target_page_guard = None
+        if target_url and not args.manual_current_page:
+            target_page_guard = _guard_or_reopen_target_page(
+                page,
+                target_url,
+                timeout_ms=args.timeout_seconds * 1000,
+                warnings=warnings,
+                stage='before_pre_expand_pause',
+            )
+            if not target_page_guard.get('ok'):
+                warnings.append('r45y_blocked_before_pre_expand_pause_browser_not_on_requested_target')
+                receipt = {
+                    'marker': MARKER,
+                    'status': STATUS_BLOCKED,
+                    'schema_version': SCHEMA_VERSION,
+                    'generated_at': _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                    'run_dir': str(run_dir),
+                    'target_url': args.target_url,
+                    'sanitized_target_url': target_url,
+                    'target_page_guard': target_page_guard,
+                    'warnings': warnings,
+                    'contract': contract(),
+                    'side_effect_flags': side_effect_flags(True, True, False),
+                }
+                r45d.write_json(run_dir / 'r45j_facebook_preserved_visual_screenshot_receipt.json', receipt)
+                print('R45J_TARGET_PAGE_GUARD_STOPPED_BEFORE_PRE_EXPAND_PAUSE')
+                return receipt
         if args.pre_expand_pause:
             print('R45J_PRE_EXPAND_PAUSE')
             print('Check login/page, then press ENTER in this CMD window to start expansion.')
             try: input()
             except EOFError: pass
 
-        # R45U: never expand the generic Facebook home/feed when a specific
-        # permalink/target URL was requested. If login/profile reuse leaves the
-        # browser on facebook.com, reopen the target once, then block safely.
-        target_page_guard = None
+        # R45U/R45Y: re-check after the operator pause in case the operator or a
+        # restore-session prompt changed the active target page before expansion.
         if target_url and not args.manual_current_page:
             target_page_guard = _guard_or_reopen_target_page(
                 page,
@@ -1355,6 +1403,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45v_playwright_mouse_downward_expand_present', 'status': 'pass' if '_playwright_mouse_downward_expand' in open(__file__, encoding='utf-8').read() and ('R45V_MOUSE_CLICK' in open(__file__, encoding='utf-8').read() or 'R45X_EXPAND_CLICK' in open(__file__, encoding='utf-8').read()) and 'page.mouse.down()' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45w_no_file_chooser_guard_present', 'status': 'pass' if 'r45w_no_file_chooser_rule' in contract() and 'isComposerOrUploadSurface' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V and "page.on('filechooser'" in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45x_expand_comments_only_present', 'status': 'pass' if 'r45x_expansion_only_rule' in contract() and 'R45X_EXPAND_ONLY_PROBE' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V and 'broad_scan_used' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V and 'expansion_only: true' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V else 'fail'},
+        {'name': 'r45y_pre_pause_target_guard_present', 'status': 'pass' if 'r45y_pre_pause_target_rule' in contract() and 'before_pre_expand_pause' in open(__file__, encoding='utf-8').read() and 'context.new_page()' in open(__file__, encoding='utf-8').read() and '--disable-session-crashed-bubble' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},

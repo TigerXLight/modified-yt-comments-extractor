@@ -64,6 +64,9 @@ def test_contract_and_static_assets():
     assert 'isComposerOrUploadSurface' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert 'input[type="file"]' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert 'R45X_EXPAND_ONLY_PROBE' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
+    assert 'before_pre_expand_pause' in inspect.getsource(r45j.run_live)
+    assert 'context.new_page()' in inspect.getsource(r45j.run_live)
+    assert '--disable-session-crashed-bubble' in inspect.getsource(r45j.run_live)
     assert 'broad_scan_used' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert r'View\s+all' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert "page.on('filechooser'" in inspect.getsource(r45j.run_live)
