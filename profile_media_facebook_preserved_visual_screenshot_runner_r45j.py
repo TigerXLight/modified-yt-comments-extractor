@@ -467,6 +467,7 @@ def contract() -> Dict[str, Any]:
         'r45x_expansion_only_rule': 'R45X treats the pass as expand-comments only: click the next explicit visible View all/View hidden/View more/Name replied control, rescan that local area, then continue downward without broad comment/feed scanning.',
         'r45y_pre_pause_target_rule': 'R45Y opens a fresh target tab for a requested permalink and runs the target-page guard before the operator pre-expand pause, so a restored facebook.com feed tab is not shown/expanded as the working page.',
         'r45z_active_target_tab_rule': 'R45Z closes restored/crashed non-target tabs after opening the requested permalink and keeps the target page in front before expansion; it also waits for large expansion clicks to settle before scrolling downward.',
+        'r45aa_large_bucket_settle_rule': 'R45AA enforces a real minimum hold after large reply openers such as View all 302 replies; the runner must not scroll away until the opened bucket has had time to stream newly inserted replies and expose their expansion controls.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -945,28 +946,53 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
         except Exception:
             return {}
 
-    def _extra_settle_seconds_for_label(label: str) -> float:
+    def _reply_count_from_label(label: str) -> int:
         parts = []
-        for raw in str(label or '').replace(',', ' ').split():
+        for raw in str(label or '').replace(',', ' ').replace('·', ' ').split():
             try:
                 parts.append(int(raw))
             except Exception:
                 pass
-        n = max(parts or [0])
+        return max(parts or [0])
+
+    def _extra_settle_seconds_for_label(label: str) -> float:
+        # R45AA: max settle window. Large buckets need real time to stream
+        # replies after Facebook removes the clicked "View all N replies" text.
+        n = _reply_count_from_label(label)
+        if n >= 250:
+            return 16.0
         if n >= 100:
-            return 6.0
+            return 12.0
+        if n >= 25:
+            return 7.0
+        if n >= 5:
+            return 3.5
+        return 1.4
+
+    def _minimum_settle_seconds_for_label(label: str) -> float:
+        # R45AA: do not let the old "text changed and looks stable" shortcut
+        # exit after ~1-2s for huge reply buckets. That was why the runner
+        # clicked "View all 302 replies" and immediately scrolled away.
+        n = _reply_count_from_label(label)
+        if n >= 250:
+            return 9.0
+        if n >= 100:
+            return 7.0
         if n >= 25:
             return 4.0
         if n >= 5:
-            return 2.5
-        return 1.2
+            return 2.0
+        return 0.6
 
     def _wait_for_click_settle(label: str, before_chars: int, before_progress: Any) -> Dict[str, Any]:
-        # R45Z: clicking a large opener such as "View all 302 replies" can make
-        # Facebook remove the button immediately and stream replies in over the
-        # next few seconds. Do not scroll away instantly after the first no-label
-        # rescan; give the local area time to expose newly loaded controls.
-        deadline = time.monotonic() + _extra_settle_seconds_for_label(label)
+        # R45AA: clicking a large opener such as "View all 302 replies" can
+        # remove that visible label immediately while Facebook streams the 302
+        # replies in later. Enforce a minimum local hold before any scroll.
+        max_secs = _extra_settle_seconds_for_label(label)
+        min_secs = _minimum_settle_seconds_for_label(label)
+        started_settle = time.monotonic()
+        deadline = started_settle + max_secs
+        min_deadline = started_settle + min_secs
         best: Dict[str, Any] = {}
         last_sig = None
         stable = 0
@@ -975,9 +1001,11 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
             p = _probe([k for k, v in skip_counts.items() if v >= 5])
             if p:
                 best = p
+            visible_count = int((p or {}).get('visible_count') or 0)
+            text_chars = int((p or {}).get('text_chars') or before_chars)
             sig = (
-                int((p or {}).get('text_chars') or 0),
-                int((p or {}).get('visible_count') or 0),
+                text_chars,
+                visible_count,
                 json.dumps((p or {}).get('progress'), sort_keys=True, ensure_ascii=False),
                 '|'.join(((p or {}).get('visible_labels') or [])[:4]),
             )
@@ -986,10 +1014,28 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
             else:
                 stable = 0
                 last_sig = sig
-            if int((p or {}).get('visible_count') or 0) > 0 and stable >= 1:
+
+            past_min = time.monotonic() >= min_deadline
+
+            # It is safe to continue only after the minimum wait has elapsed.
+            # If new expansion labels are visible, the next main loop will click
+            # the first one in the same local area.
+            if past_min and visible_count > 0 and stable >= 1:
                 break
-            if int((p or {}).get('text_chars') or before_chars) != before_chars and stable >= 2:
+
+            # Old R45Z exited here too early after text changed. R45AA permits
+            # this only after the minimum hold, and only with a stronger stable
+            # signal, so large buckets do not get abandoned.
+            if past_min and text_chars != before_chars and stable >= 6:
                 break
+
+        if best:
+            try:
+                best['r45aa_settle_elapsed_seconds'] = round(time.monotonic() - started_settle, 2)
+                best['r45aa_minimum_settle_seconds'] = min_secs
+                best['r45aa_max_settle_seconds'] = max_secs
+            except Exception:
+                pass
         return best
 
     for step in range(1, rounds_limit + 1):
@@ -1047,6 +1093,8 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
                 'remaining_visible_candidates': remaining_visible,
                 'visible_labels': (after_probe.get('visible_labels') or [])[:8],
                 'settle_seconds': _extra_settle_seconds_for_label(label),
+                'minimum_settle_seconds': _minimum_settle_seconds_for_label(label),
+                'actual_settle_elapsed_seconds': after_probe.get('r45aa_settle_elapsed_seconds'),
                 'elapsed_seconds': elapsed(),
             }, ensure_ascii=False))
             continue
@@ -1491,6 +1539,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45x_expand_comments_only_present', 'status': 'pass' if 'r45x_expansion_only_rule' in contract() and 'R45X_EXPAND_ONLY_PROBE' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V and 'broad_scan_used' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V and 'expansion_only: true' in JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V else 'fail'},
         {'name': 'r45y_pre_pause_target_guard_present', 'status': 'pass' if 'r45y_pre_pause_target_rule' in contract() and 'before_pre_expand_pause' in open(__file__, encoding='utf-8').read() and 'context.new_page()' in open(__file__, encoding='utf-8').read() and '--disable-session-crashed-bubble' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45z_active_target_tab_and_settle_present', 'status': 'pass' if 'r45z_active_target_tab_rule' in contract() and '_close_non_working_pages_r45z' in open(__file__, encoding='utf-8').read() and 'R45Z_CLOSED_NON_TARGET_TABS' in open(__file__, encoding='utf-8').read() and '_wait_for_click_settle' in open(__file__, encoding='utf-8').read() and '--hide-crash-restore-bubble' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45aa_large_bucket_settle_hold_present', 'status': 'pass' if 'r45aa_large_bucket_settle_rule' in contract() and '_minimum_settle_seconds_for_label' in open(__file__, encoding='utf-8').read() and 'past_min' in open(__file__, encoding='utf-8').read() and 'actual_settle_elapsed_seconds' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},

@@ -72,6 +72,9 @@ def test_contract_and_static_assets():
     assert 'R45Z_CLOSED_NON_TARGET_TABS' in inspect.getsource(r45j)
     assert '_wait_for_click_settle' in inspect.getsource(r45j)
     assert '--hide-crash-restore-bubble' in inspect.getsource(r45j.run_live)
+    assert 'r45aa_large_bucket_settle_rule' in r45j.contract()
+    assert '_minimum_settle_seconds_for_label' in inspect.getsource(r45j)
+    assert 'actual_settle_elapsed_seconds' in inspect.getsource(r45j)
     assert 'broad_scan_used' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert r'View\s+all' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert "page.on('filechooser'" in inspect.getsource(r45j.run_live)
