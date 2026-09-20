@@ -33,10 +33,14 @@ async (opts) => {
   const maxMillis = Math.max(15000, (opts.maxSeconds || 180) * 1000);
   const progressiveTopDown = !!opts.progressiveTopDown;
   const viewportMarginPx = Number(opts.viewportMarginPx || 90);
-  // R45Q: keep the fast single downward frontier. This option is retained for
-  // CLI compatibility, but it controls only local viewport exhaustion passes;
-  // it must not trigger a global scroll-to-top rescan.
-  const localExhaustPasses = Math.max(1, Number(opts.maxTopDownSweeps || 3));
+  // R45Q/R45R: keep the fast single downward frontier. maxTopDownSweeps
+  // is retained for CLI compatibility only; it must not trigger a global
+  // scroll-to-top rescan and must not limit local viewport exhaustion.
+  // R45R locally exhausts the current visible area even when the operator
+  // passes --progressive-top-down-sweeps 1, so newly exposed View all /
+  // View hidden replies controls are opened before the frontier moves down.
+  const requestedLocalPasses = Number(opts.localExhaustPasses || 0);
+  const localExhaustPasses = Math.max(12, requestedLocalPasses || Math.max(12, Number(opts.maxTopDownSweeps || 1) * 12));
   const patterns = opts.patterns.map(p => new RegExp(p, 'i'));
   const deny = /^(like|reply|share|send|comment|copy link|follow|message|all|most relevant|newest|top comments|edited)$/i;
   const log = (obj) => { try { console.log('R45H_PROGRESS ' + JSON.stringify(obj)); } catch(e) {} };
@@ -197,6 +201,18 @@ async (opts) => {
   let previousProgress = parseProgress();
   let timedOut = false;
   const topDownSweep = 1;
+  if (progressiveTopDown) {
+    // R45R: a downward-only frontier must start from the earliest loaded
+    // position. Otherwise a reused/manual browser state can begin mid-thread
+    // and permanently skip controls above the initial viewport. This is not a
+    // later global rescan; it is the initial frontier placement.
+    try {
+      for (const item of findScrollTargets()) item.el.scrollTop = 0;
+      window.scrollTo(0, 0);
+      window.dispatchEvent(new WheelEvent('wheel', {deltaY: -1200, bubbles: true, cancelable: true}));
+      await sleep(opts.scrollDelayMs);
+    } catch(e) {}
+  }
   for (let round = 1; round <= opts.rounds; round++) {
     if (Date.now() - startedAt > maxMillis) { timedOut = true; break; }
     const c = await clickVisibleUntilExhausted();
@@ -248,6 +264,7 @@ def contract() -> Dict[str, Any]:
         'r45o_progressive_top_down_rule': 'When requested by R45J, expansion clicks visible controls in viewport top-to-bottom order before continuing downward, reducing jump-back behaviour on long Facebook modal threads.',
         'r45p_progressive_rescan_rule': 'R45P previously allowed a bounded top-to-bottom rescan, but this could jump back upward on long threads.',
         'r45q_downward_frontier_rule': 'R45Q keeps a single downward frontier: locally exhaust visible View hidden replies / View all N replies controls before scrolling further down, and never performs a global scroll-back-to-top rescan.',
+        'r45r_local_exhaust_rule': 'R45R decouples local viewport exhaustion from global sweep count: even with --progressive-top-down-sweeps 1, newly exposed View all N replies / View hidden replies controls in the current area are exhausted before the frontier moves downward.',
     })
     return base
 
@@ -439,6 +456,7 @@ Context is everything
         {'name': 'progress_console_supported', 'status': 'pass' if 'R45H_PROGRESS' in JS_BOUNDED_MODAL_AUTO_EXPAND else 'fail'},
         {'name': 'view_hidden_replies_pattern_supported', 'status': 'pass' if 'view\\s+hidden\\s+repl' in joined_patterns else 'fail'},
         {'name': 'modal_progress_parser_present', 'status': 'pass' if 'parseProgress' in JS_BOUNDED_MODAL_AUTO_EXPAND and 'of' in JS_BOUNDED_MODAL_AUTO_EXPAND else 'fail'},
+        {'name': 'r45r_local_exhaust_not_limited_by_global_sweeps', 'status': 'pass' if 'requestedLocalPasses' in JS_BOUNDED_MODAL_AUTO_EXPAND and 'Math.max(12' in JS_BOUNDED_MODAL_AUTO_EXPAND else 'fail'},
         {'name': 'reference_comparison_matches_sentinels', 'status': 'pass' if result.get('comparison') and result['comparison']['coverage_ratio'] >= 0.99 and all(result['comparison']['sentinel_report'].values()) else 'fail'},
         {'name': 'side_effects_safe', 'status': 'pass' if not any(v for k, v in result['side_effect_flags'].items() if k not in {'facebook_bounded_modal_capture_runner_invoked','bounded_auto_expand_supported','visible_hidden_comments_clicks_supported','visible_hidden_replies_clicks_supported'}) else 'fail'},
     ]

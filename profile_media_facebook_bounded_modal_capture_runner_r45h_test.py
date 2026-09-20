@@ -11,6 +11,8 @@ def test_js_has_bound_and_progress():
     assert 'maxTopDownSweeps' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'scrollTopForRescan' not in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'clickVisibleUntilExhausted' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
+    assert 'requestedLocalPasses' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
+    assert 'Math.max(12' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'global_rescan_used: false' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
     assert 'timedOut' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND or 'timed_out' in r45h.JS_BOUNDED_MODAL_AUTO_EXPAND
 
@@ -48,6 +50,7 @@ def test_contract_documents_gap_fix():
     assert 'top-to-bottom' in c['r45o_progressive_top_down_rule']
     assert 'jump back upward' in c['r45p_progressive_rescan_rule']
     assert 'single downward frontier' in c['r45q_downward_frontier_rule']
+    assert 'decouples local viewport exhaustion' in c['r45r_local_exhaust_rule']
 
 
 if __name__ == '__main__':
