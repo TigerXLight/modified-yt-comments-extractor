@@ -41,6 +41,7 @@ CONTRACT = {
     "r45bg_hover_guard_rule": "R45BG parks the Playwright mouse at a neutral viewport corner immediately after clicks and scrolls, closes profile/name hover cards, and logs hover-card closures so account-name previews do not cover the comments modal or slow the visible-page pass.",
     "r45bi_expected_total_gate_rule": "R45BI fixes the failed R45BH anchor patch and adds --expected-total-comments so a known Facebook total such as 715 is a hard gate. When set, unrelated counters such as 20 of 100 are logged and ignored; completion requires N of the expected total to reach that total.",
     "r45bj_no_random_overlay_close_rule": "R45BJ removes guessed coordinate clicks used to close Messenger/profile overlays. It only uses explicit close controls for Messenger, parks the mouse for profile hover cards, and writes page/text/screenshot artifacts before blocking if an overlay remains open.",
+    "r45bk_strict_overlay_detection_rule": "R45BK prevents normal comment bubbles inside the active comments scroller from being misclassified as Messenger/profile overlays. It removes loose Aa matching, ignores scroller descendants, and requires strong chat/profile chrome before treating an overlay as blocking.",
 }
 
 EXPAND_PATTERNS_JS = r"""
@@ -303,21 +304,56 @@ function r45axPageProgress(){
 }
 
 function r45axMessengerOverlayState(){
+  // R45BK: strict Messenger/DM overlay detector.
+  //
+  // R45BJ correctly stopped instead of wandering off-page, but its detector was
+  // still too broad: it scanned every visible div and treated comment-body nodes
+  // inside the active comments scroller as Messenger overlays. The culprit was
+  // especially the loose "Aa" branch, which can match ordinary words/names inside
+  // comments. This function now ignores anything inside the active comments
+  // scroller and requires a strong chat-specific signature.
   const overlays = [];
   const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
   const vh = window.innerHeight || document.documentElement.clientHeight || 720;
-  const nodes = Array.from(document.querySelectorAll('[role="dialog"], [aria-label], div')).slice(0, 12000);
+  let scroller = null;
+  try { scroller = r45axGetScroller && r45axGetScroller(); } catch(e) { scroller = null; }
+
+  const nodes = Array.from(document.querySelectorAll('[role="dialog"], [aria-label], [data-pagelet], div')).slice(0, 14000);
   for (const el of nodes){
     if (r45axElementHidden(el)) continue;
+    if (scroller && (el === scroller || scroller.contains(el))) continue;
     const r = el.getBoundingClientRect();
-    if (r.width < 240 || r.width > 560 || r.height < 180 || r.height > 720) continue;
-    if (r.right < vw * 0.55 || r.bottom < vh * 0.45) continue;
-    const text = r45axNorm([el.innerText || '', el.textContent || '', el.getAttribute && (el.getAttribute('aria-label') || '')].join(' '));
-    if (!/(Messages and calls are secured|end-to-end encrypted|Type a message|Write a message|Messenger|Minimize chat|Close chat|Start a call|Aa\s*(?:Like|Send)?)/i.test(text)) continue;
-    overlays.push({tag:el.tagName, role:el.getAttribute('role') || '', aria:el.getAttribute('aria-label') || '', text:text.slice(0,220), rect:{left:Math.round(r.left), top:Math.round(r.top), right:Math.round(r.right), bottom:Math.round(r.bottom), width:Math.round(r.width), height:Math.round(r.height)}});
+    if (r.width < 240 || r.width > 580 || r.height < 160 || r.height > 760) continue;
+    // Real chat popups are normally right-side/bottom-side overlays, not nested
+    // comment bubbles in the centre of the post modal.
+    if (r.right < vw * 0.58 || r.bottom < vh * 0.42) continue;
+
+    const aria = r45axNorm((el.getAttribute && (el.getAttribute('aria-label') || '')) || '');
+    const role = (el.getAttribute && (el.getAttribute('role') || '')) || '';
+    const text = r45axNorm([el.innerText || '', el.textContent || '', aria].join(' '));
+
+    const strongChatText =
+      /(Messages and calls are secured|end-to-end encrypted|Only people in this chat|Type a message|Write a message|Message request|New message|Chat settings|Active now|Start a call|Start voice call|Start video call|Close chat|Minimize chat|Open Messenger|Messenger)/i.test(text);
+
+    const hasChatInput = !!el.querySelector && !!el.querySelector(
+      '[contenteditable="true"][role="textbox"], textarea, input, [aria-label="Aa"], [aria-placeholder="Aa"], [placeholder="Aa"]'
+    );
+    const hasChatChrome = !!el.querySelector && !!el.querySelector(
+      '[aria-label*="Close chat" i], [aria-label*="Minimize chat" i], [aria-label*="Start a call" i], [aria-label*="Start voice call" i], [aria-label*="Start video call" i]'
+    );
+
+    // "Aa" alone is not evidence. It must appear as an actual input control
+    // together with chat chrome, never merely inside comment text.
+    if (!(strongChatText || (hasChatInput && hasChatChrome))) continue;
+
+    // Exclude ordinary Facebook post/comment modal material even if a comment
+    // happens to contain words like "message" or "messenger".
+    if (/Restore Britain's post|Comment as |Reply to |View hidden replies|View all \d+ replies|Like\s+Reply/i.test(text) && !/Messages and calls are secured|end-to-end encrypted|Only people in this chat/i.test(text)) continue;
+
+    overlays.push({tag:el.tagName, role:role, aria:aria, text:text.slice(0,220), rect:{left:Math.round(r.left), top:Math.round(r.top), right:Math.round(r.right), bottom:Math.round(r.bottom), width:Math.round(r.width), height:Math.round(r.height)}});
   }
   overlays.sort((a,b)=>(b.rect.right-a.rect.right)||(b.rect.bottom-a.rect.bottom));
-  return {count:overlays.length, overlays:overlays.slice(0,5)};
+  return {count:overlays.length, overlays:overlays.slice(0,5), strict:true, ignoredScrollerDescendants:true};
 }
 function r45axCloseMessengerOverlays(){
   let closed = 0;
@@ -349,22 +385,35 @@ function r45axCloseMessengerOverlays(){
 function r45axSideEffectState(){ return {messenger:r45axMessengerOverlayState(), profileHover:r45axProfileHoverOverlayState(), href:location.href, title:document.title}; }
 
 function r45axProfileHoverOverlayState(){
+  // R45BK: ignore comment-body descendants of the active comments scroller.
+  // This prevents normal expanded comment bubbles from being mislabelled as
+  // profile hover cards merely because they contain words like "Message",
+  // "Friends", school/work names, etc.
   const overlays = [];
   const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
   const vh = window.innerHeight || document.documentElement.clientHeight || 720;
+  let scroller = null;
+  try { scroller = r45axGetScroller && r45axGetScroller(); } catch(e) { scroller = null; }
+
   const nodes = Array.from(document.querySelectorAll('[role="dialog"], [aria-label], div')).slice(0, 14000);
   for (const el of nodes){
     if (r45axElementHidden(el)) continue;
+    if (scroller && (el === scroller || scroller.contains(el))) continue;
     const r = el.getBoundingClientRect();
     if (r.width < 240 || r.width > 620 || r.height < 110 || r.height > 470) continue;
     if (r.bottom < 90 || r.top > vh - 60 || r.right < 180 || r.left > vw - 160) continue;
-    const text = r45axNorm([el.innerText || '', el.textContent || '', el.getAttribute && (el.getAttribute('aria-label') || '')].join(' '));
-    if (!/(\bMessage\b|Add friend|Follow|Works at|Went to|Lives in|Friends|Mutual friends|Cashier|Academy)/i.test(text)) continue;
+    const aria = r45axNorm((el.getAttribute && (el.getAttribute('aria-label') || '')) || '');
+    const text = r45axNorm([el.innerText || '', el.textContent || '', aria].join(' '));
+
+    const profileSignals = /(\bMessage\b|Add friend|Follow|Works at|Went to|Lives in|Friends|Mutual friends|Cashier|Academy)/i.test(text);
+    const hasProfileButtons = !!el.querySelector && !!el.querySelector('[aria-label*="Add friend" i], [aria-label*="Message" i], [aria-label*="Follow" i]');
+    if (!(profileSignals && hasProfileButtons)) continue;
+
     if (/Restore Britain's post|Comment as|Reply to|View hidden|View all \d+|Like\s+Reply/i.test(text) && r.width > 520 && r.height > 300) continue;
-    overlays.push({tag:el.tagName, role:el.getAttribute('role') || '', aria:el.getAttribute('aria-label') || '', text:text.slice(0,220), rect:{left:Math.round(r.left), top:Math.round(r.top), right:Math.round(r.right), bottom:Math.round(r.bottom), width:Math.round(r.width), height:Math.round(r.height)}});
+    overlays.push({tag:el.tagName, role:el.getAttribute('role') || '', aria:aria, text:text.slice(0,220), rect:{left:Math.round(r.left), top:Math.round(r.top), right:Math.round(r.right), bottom:Math.round(r.bottom), width:Math.round(r.width), height:Math.round(r.height)}});
   }
   overlays.sort((a,b)=>a.rect.top-b.rect.top || b.rect.right-a.rect.right);
-  return {count:overlays.length, overlays:overlays.slice(0,5)};
+  return {count:overlays.length, overlays:overlays.slice(0,5), strict:true, ignoredScrollerDescendants:true};
 }
 function r45axCloseProfileHoverCards(){
   let closed = 0;
