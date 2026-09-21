@@ -473,6 +473,7 @@ def contract() -> Dict[str, Any]:
         'r45ad_dialog_body_band_anti_hover_rule': 'R45AD restricts expansion clicks to the comments dialog body band, moves the mouse to a neutral gutter after each click to dismiss hover cards, and stops immediately if the target comments dialog disappears.',
         'r45ae_rolebutton_expand_fallback_rule': 'R45AE adds an exact-label role=button/link fallback for visible View all N replies / View hidden replies controls that the text-node probe can miss; it remains locked to the comments dialog and clicks in visible top-to-bottom order.',
         'r45af_textrect_fallback_first_rule': 'R45AF runs the clickable role=button/link expansion probe before the older text-node probe and clicks the actual visible label text rectangle, preventing View all N replies controls from being left behind or clicked at the centre of a wide Facebook row.',
+        'r45ag_restore_r45h_modal_engine_rule': 'R45AG restores the earlier R45H bounded modal auto-expansion engine as the default live --auto-expand path, because the newer mouse/text-rect fallback path still left visible View all N replies controls behind.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -1218,6 +1219,33 @@ def _move_mouse_to_neutral_page_gutter_r45ad(page: Any) -> None:
         pass
 
 
+def _r45ag_restored_r45h_modal_auto_expand(page: Any, args: argparse.Namespace) -> Dict[str, Any]:
+    """R45AG: restore the earlier R45H bounded modal expander as the default.
+
+    The newer R45V/R45AF mouse/text-rect path still left visible "View all N
+    replies" controls behind. The uploaded 2026-09-19 R45J working state used
+    R45H's page-side bounded modal auto-expander, so R45AG returns to that engine
+    while keeping the newer target-page guards and screenshot pipeline.
+    """
+    opts = {
+        'patterns': r45h.EXPAND_PATTERNS_R45H,
+        'rounds': args.expand_rounds,
+        'maxSeconds': args.expand_max_seconds,
+        'maxClicksPerRound': args.expand_max_clicks_per_round,
+        'clickDelayMs': int(args.expand_click_delay_seconds * 1000),
+        'afterClickDelayMs': int(args.expand_after_click_delay_seconds * 1000),
+        'scrollsPerRound': args.expand_scrolls_per_round,
+        'scrollPx': args.expand_scroll_px,
+        'scrollDelayMs': int(args.expand_scroll_delay_seconds * 1000),
+        'stableDeltaChars': args.expand_stable_delta_chars,
+        'stopAfterStableRounds': args.expand_stop_after_stable_rounds,
+    }
+    print(f'R45AG_RESTORED_R45H_MODAL_AUTO_EXPAND_START max_seconds={args.expand_max_seconds}')
+    result = page.evaluate(r45h.JS_BOUNDED_MODAL_AUTO_EXPAND, opts)
+    print('R45AG_RESTORED_R45H_MODAL_AUTO_EXPAND_DONE')
+    return result
+
+
 def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patterns: List[str]) -> Dict[str, Any]:
     """R45V: click the first visible Facebook expand control with Playwright mouse.
 
@@ -1728,7 +1756,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
                 print(f'R45J_AUTO_EXPAND_START max_seconds={args.expand_max_seconds}')
                 print('R45V_PLAYWRIGHT_MOUSE_DOWNWARD_EXPAND_START')
                 print('R45X_EXPAND_COMMENTS_ONLY_START')
-                auto_expand_summary = _playwright_mouse_downward_expand(page, args, r45h.EXPAND_PATTERNS_R45H)
+                auto_expand_summary = _r45ag_restored_r45h_modal_auto_expand(page, args)
                 print('R45X_EXPAND_COMMENTS_ONLY_DONE')
                 print('R45V_PLAYWRIGHT_MOUSE_DOWNWARD_EXPAND_DONE')
                 print('R45J_AUTO_EXPAND_DONE')
@@ -1935,6 +1963,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45ad_dialog_body_band_anti_hover_present', 'status': 'pass' if 'r45ad_dialog_body_band_anti_hover_rule' in contract() and 'R45AD_DIALOG_BODY_BAND_ANTI_HOVER' in open(__file__, encoding='utf-8').read() and '_move_mouse_to_neutral_page_gutter_r45ad' in open(__file__, encoding='utf-8').read() and 'R45AD_TARGET_SURFACE_LOST_AFTER_CLICK_STOP' in open(__file__, encoding='utf-8').read() and 'dialog_body_band_only: true' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45ae_rolebutton_expand_fallback_present', 'status': 'pass' if 'r45ae_rolebutton_expand_fallback_rule' in contract() and 'JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE' in open(__file__, encoding='utf-8').read() and 'R45AE_ROLEBUTTON_EXPAND_FALLBACK' in open(__file__, encoding='utf-8').read() and 'rolebutton_fallback' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45af_textrect_fallback_first_present', 'status': 'pass' if 'r45af_textrect_fallback_first_rule' in contract() and 'R45AF_TEXTRECT_FALLBACK_FIRST' in open(__file__, encoding='utf-8').read() and 'textRectForLabel' in open(__file__, encoding='utf-8').read() and 'rolebutton_fallback_first' in open(__file__, encoding='utf-8').read() and 'text_rect_click' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45ag_restore_r45h_modal_engine_present', 'status': 'pass' if 'r45ag_restore_r45h_modal_engine_rule' in contract() and '_r45ag_restored_r45h_modal_auto_expand' in open(__file__, encoding='utf-8').read() and 'R45AG_RESTORED_R45H_MODAL_AUTO_EXPAND_START' in open(__file__, encoding='utf-8').read() and 'JS_BOUNDED_MODAL_AUTO_EXPAND' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
