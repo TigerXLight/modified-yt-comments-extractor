@@ -64,3 +64,12 @@ assert 'BLOCKED_MESSENGER_OVERLAY_STILL_OPEN' in src
 assert 'r45ax_write_failure_artifacts' in src
 assert 'no coordinate fallback' in src
 assert 'mouse_park_only' in src
+assert 'r45bl_replied_bucket_fast_path_rule' in src
+assert 'reply_count_right' in src
+assert "clickLabel:n + (n === '1' ? ' reply' : ' replies')" in src
+assert 'R45AX_REPLIED_BUCKET_NO_PROGRESS_SKIPPED' in src
+assert 'replied_bucket_fast_skipped' in src
+assert 'r45ax_click_wait_ms' in src
+assert 'r45axMessengerSideEffectState' in src
+assert 'r45bl_replied_bucket_right_biased_present' in src
+assert 'rowRank' in src and 'sourceRank(a.source)-sourceRank(b.source)' in src

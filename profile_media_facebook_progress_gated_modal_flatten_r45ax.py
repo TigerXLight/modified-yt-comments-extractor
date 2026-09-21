@@ -42,6 +42,7 @@ CONTRACT = {
     "r45bi_expected_total_gate_rule": "R45BI fixes the failed R45BH anchor patch and adds --expected-total-comments so a known Facebook total such as 715 is a hard gate. When set, unrelated counters such as 20 of 100 are logged and ignored; completion requires N of the expected total to reach that total.",
     "r45bj_no_random_overlay_close_rule": "R45BJ removes guessed coordinate clicks used to close Messenger/profile overlays. It only uses explicit close controls for Messenger, parks the mouse for profile hover cards, and writes page/text/screenshot artifacts before blocking if an overlay remains open.",
     "r45bk_strict_overlay_detection_rule": "R45BK prevents normal comment bubbles inside the active comments scroller from being misclassified as Messenger/profile overlays. It removes loose Aa matching, ignores scroller descendants, and requires strong chat/profile chrome before treating an overlay as blocking.",
+    "r45bl_replied_bucket_fast_path_rule": "R45BL treats labels such as 'replied · 14 replies' as reply-count controls: it ranges/clicks the numeric replies segment, prefers right-biased safe points, uses shorter per-click waits, and skips a replied bucket after one no-progress click so the runner does not waste minutes on duplicate visible controls.",
 }
 
 EXPAND_PATTERNS_JS = r"""
@@ -58,17 +59,22 @@ function r45axCategory(label){
 }
 function r45axExpansionLabelInfo(text){
   const t = r45axNorm(text);
+  const replied = t.match(/\breplied\s*(?:[·•.\-]\s*)?(\d+)\s+repl(?:y|ies)\b/i);
+  if (replied) {
+    const n = replied[1];
+    return {label:r45axNorm(replied[0]), clickLabel:n + (n === '1' ? ' reply' : ' replies'), category:'replied_bucket', preferredPoint:'reply_count_right'};
+  }
   const patterns = [
     {category:'view_hidden', rx:/\bView hidden (?:replies|comments)\b/i},
     {category:'view_all_replies', rx:/\bView all \d+ replies?\b/i},
     {category:'view_more_replies', rx:/\bView \d+ more replies?\b/i},
     {category:'view_n_replies', rx:/\bView \d+ replies?\b/i},
     {category:'view_more', rx:/\bView more (?:replies|comments)\b/i},
-    {category:'replied_bucket', rx:/\breplied\s*(?:[·•.\-]\s*)?\d+\s+repl(?:y|ies)\b/i}
+    {category:'replied_bucket', rx:/\breplied\s*(?:[·•.\-]\s*)?\d+\s+repl(?:y|ies)\b/i, preferredPoint:'reply_count_right'}
   ];
   for (const p of patterns){
     const m = t.match(p.rx);
-    if (m) return {label:r45axNorm(m[0]), category:p.category};
+    if (m) return {label:r45axNorm(m[0]), category:p.category, preferredPoint:p.preferredPoint || ''};
   }
   return null;
 }
@@ -205,21 +211,20 @@ function r45axBadCandidateElement(el){
 function r45axTextCandidates(scroller){
   const band = r45axBand(scroller);
   const out = [];
-  function addCandidate(label, category, rect, source){
+  function addCandidate(info, rect, source){
+    const label = info.label;
+    const category = info.category;
     if (!r45axRectVisible(rect, band)) return;
     if (rect.width < 4 || rect.height < 4) return;
-    const points = [
-      {x: rect.left + rect.width/2, y: rect.top + rect.height/2},
-      {x: rect.left + Math.min(rect.width-2, Math.max(2, rect.width*0.18)), y: rect.top + rect.height/2},
-      {x: rect.left + Math.min(rect.width-2, Math.max(2, rect.width*0.82)), y: rect.top + rect.height/2},
-    ];
+    const fractions = category === 'replied_bucket' ? [0.84, 0.94, 0.68, 0.50] : [0.50, 0.18, 0.82];
+    const points = fractions.map(f => ({x: rect.left + Math.min(rect.width-2, Math.max(2, rect.width*f)), y: rect.top + rect.height/2}));
     let chosen = null, safety = null;
     for (const p of points){
       const s = r45axClickSafetyAt(p.x, p.y);
       if (s.ok){ chosen = p; safety = s; break; }
       if (!safety) safety = s;
     }
-    out.push({label, category, x:Math.round((chosen||points[0]).x), y:Math.round((chosen||points[0]).y), top:Math.round(rect.top), bottom:Math.round(rect.bottom), left:Math.round(rect.left), right:Math.round(rect.right), safe:!!chosen, safety, source});
+    out.push({label, category, clickLabel:info.clickLabel || '', preferredPoint:info.preferredPoint || '', x:Math.round((chosen||points[0]).x), y:Math.round((chosen||points[0]).y), top:Math.round(rect.top), bottom:Math.round(rect.bottom), left:Math.round(rect.left), right:Math.round(rect.right), safe:!!chosen, safety, source});
   }
   const walker = document.createTreeWalker(scroller || document.body, NodeFilter.SHOW_TEXT);
   let n;
@@ -231,17 +236,19 @@ function r45axTextCandidates(scroller){
     if (!parent || r45axElementHidden(parent) || r45axBadCandidateElement(parent)) continue;
     const range = document.createRange();
     try {
-      const lowerRaw = raw.toLowerCase(), lowerLabel = info.label.toLowerCase();
-      let start = lowerRaw.indexOf(lowerLabel);
+      const lowerRaw = raw.toLowerCase(), lowerLabel = info.label.toLowerCase(), lowerClickLabel = String(info.clickLabel || info.label).toLowerCase();
+      let start = lowerRaw.indexOf(lowerClickLabel);
+      let endLength = lowerClickLabel.length;
+      if (start < 0) { start = lowerRaw.indexOf(lowerLabel); endLength = lowerLabel.length; }
       if (start < 0) start = 0;
       range.setStart(n, start);
-      range.setEnd(n, Math.min(raw.length, start + info.label.length));
+      range.setEnd(n, Math.min(raw.length, start + endLength));
     } catch(e) {
       try { range.selectNodeContents(n); } catch(e2) { continue; }
     }
     const rects = Array.from(range.getClientRects()).filter(rect => r45axRectVisible(rect, band));
     range.detach && range.detach();
-    for (const rect of rects) addCandidate(info.label, info.category, rect, 'text');
+    for (const rect of rects) addCandidate(info, rect, 'text');
   }
   const elementSelector = 'a, [role="button"], [tabindex], span, div';
   for (const el of Array.from((scroller || document.body).querySelectorAll(elementSelector))){
@@ -252,12 +259,14 @@ function r45axTextCandidates(scroller){
     if (!info) continue;
     const rect = el.getBoundingClientRect();
     if (rect.height > 90 || rect.width > 460) continue;
-    addCandidate(info.label, info.category, rect, 'element');
+    addCandidate(info, rect, 'element');
   }
   const seen = new Set();
   const skip = new Set(Array.isArray(window.__R45AX_SKIP_KEYS__) ? window.__R45AX_SKIP_KEYS__ : []);
   const dedup = [];
-  for (const item of out.sort((a,b)=>a.top-b.top || a.left-b.left || (a.source || '').localeCompare(b.source || ''))){
+  const sourceRank = (s) => s === 'text' ? 0 : 1;
+  const rowRank = (item) => Math.round(item.top/6);
+  for (const item of out.sort((a,b)=>rowRank(a)-rowRank(b) || sourceRank(a.source)-sourceRank(b.source) || a.top-b.top || a.left-b.left || (a.source || '').localeCompare(b.source || ''))){
     const key = item.category+'|'+item.label+'|'+Math.round(item.top/3)+'|'+Math.round(item.left/8);
     item.key = key;
     if (seen.has(key) || skip.has(key)) continue;
@@ -383,6 +392,7 @@ function r45axCloseMessengerOverlays(){
   return {before, closed, after:r45axMessengerOverlayState()};
 }
 function r45axSideEffectState(){ return {messenger:r45axMessengerOverlayState(), profileHover:r45axProfileHoverOverlayState(), href:location.href, title:document.title}; }
+function r45axMessengerSideEffectState(){ return {messenger:r45axMessengerOverlayState(), href:location.href, title:document.title}; }
 
 function r45axProfileHoverOverlayState(){
   // R45BK: ignore comment-body descendants of the active comments scroller.
@@ -535,6 +545,9 @@ async def self_test(output_root: Path) -> int:
             {'name':'r45bi_expected_total_gate_present','status':'pass' if '--expected-total-comments' in Path(__file__).read_text(encoding='utf-8') and 'R45AX_PROGRESS_IGNORED_EXPECTED_TOTAL_MISMATCH' in Path(__file__).read_text(encoding='utf-8') and 'r45ax_filter_expected_progress' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'r45bj_no_coordinate_overlay_close_present','status':'pass' if 'no coordinate fallback' in EXPAND_PATTERNS_JS and 'BLOCKED_MESSENGER_OVERLAY_STILL_OPEN' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'r45bj_failure_artifacts_present','status':'pass' if 'r45ax_write_failure_artifacts' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45bl_replied_bucket_right_biased_present','status':'pass' if 'reply_count_right' in EXPAND_PATTERNS_JS and "clickLabel:n + (n === '1' ? ' reply' : ' replies')" in EXPAND_PATTERNS_JS else 'fail'},
+            {'name':'r45bl_replied_bucket_no_progress_skip_present','status':'pass' if 'R45AX_REPLIED_BUCKET_NO_PROGRESS_SKIPPED' in Path(__file__).read_text(encoding='utf-8') and 'replied_bucket_fast_skipped' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45bl_click_fast_path_present','status':'pass' if 'r45ax_click_wait_ms' in Path(__file__).read_text(encoding='utf-8') and 'r45axMessengerSideEffectState' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'no_hidden_platform_api','status':'pass'},
             {'name':'no_profile_parsing','status':'pass'},
         ],
@@ -615,6 +628,13 @@ def r45ax_progress_gate_status(best_progress: Optional[Dict[str, Any]], expected
         'progress_ok': r45ax_progress_gate_ok(best_progress, expected_total_comments),
     }
 
+def r45ax_click_wait_ms(label: str, category: str) -> int:
+    m = re.search(r'\d+', label or '')
+    n = int(m.group(0)) if m else 0
+    if category == 'replied_bucket':
+        return 1500 if n >= 100 else (900 if n >= 30 else 650)
+    return 3000 if n >= 100 else (1800 if n >= 30 else 1200)
+
 async def r45ax_write_failure_artifacts(page, run_dir: Path, prefix: str) -> Dict[str, str]:
     """Write current visible-page evidence on blocked states."""
     out: Dict[str, str] = {}
@@ -684,7 +704,7 @@ return window.r45axInstallNavBlocker();
             receipt['status'] = 'BLOCKED_NO_REAL_SCROLLABLE_COMMENTS_SCROLLER'; (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8'); await context.close(); return 3
         await page.evaluate('r45axScroll("top")')
         await r45ax_park_mouse(page)
-        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; stalled_scroll_cycles = 0; unsafe_skipped = 0; dead_click_skipped = 0; messenger_blocked = 0; new_pages_closed = 0; target_drift_blocked = 0; profile_hover_closed = 0; pass_had_click = False; dead_click_counts: Dict[str, int] = {}
+        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; stalled_scroll_cycles = 0; unsafe_skipped = 0; dead_click_skipped = 0; replied_bucket_fast_skipped = 0; messenger_blocked = 0; new_pages_closed = 0; target_drift_blocked = 0; profile_hover_closed = 0; pass_had_click = False; dead_click_counts: Dict[str, int] = {}
         log('R45AX_PROGRESS_GATED_START', {'max_seconds':args.expand_max_seconds, 'max_steps':args.max_steps, 'progress_gate_required': True, 'expected_total_comments': expected_total_comments, 'target_url': target_url})
         known_pages = set(context.pages)
         pre_existing_chat = await page.evaluate('r45axMessengerOverlayState()')
@@ -722,18 +742,22 @@ return window.r45axInstallNavBlocker();
                     before_key = str(item.get('key') or '')
                     before_progress_for_sig = best_progress
                     before_sig = (int(before_scan.get('scrollHeight') or 0), int(before_scan.get('scrollTop') or 0), int(before_scan.get('total') or 0), json.dumps(before_scan.get('counts') or {}, sort_keys=True), json.dumps(before_progress_for_sig or {}, sort_keys=True))
-                    before_side = await page.evaluate('r45axSideEffectState()')
+                    before_side = await page.evaluate('r45axMessengerSideEffectState()')
                     click_t0 = time.monotonic()
                     await page.mouse.click(float(item.get('x')), float(item.get('y')))
                     await r45ax_park_mouse(page)
                     clicked += 1; pass_had_click = True
-                    label = item.get('label',''); m = re.search(r'\d+', label); n = int(m.group(0)) if m else 0
-                    wait_ms = 3000 if n >= 100 else (1800 if n >= 30 else 1200)
+                    label = item.get('label','')
+                    category = item.get('category') or ''
+                    wait_ms = r45ax_click_wait_ms(label, category)
                     await page.wait_for_timeout(wait_ms)
-                    profile_hover_result = await r45ax_close_profile_hover_cards(page)
-                    if int((profile_hover_result or {}).get('closed') or 0) > 0 or int(((profile_hover_result or {}).get('before') or {}).get('count') or 0) > 0:
-                        profile_hover_closed += int((profile_hover_result or {}).get('closed') or 0)
-                        log('R45AX_PROFILE_HOVER_CARD_CLOSED', {'step': step, 'key': before_key, 'label': label, 'profile_hover_closed': profile_hover_closed, 'hover_result': profile_hover_result})
+                    if category == 'replied_bucket' and clicked % 4 != 0:
+                        profile_hover_result = {'skipped': True, 'reason': 'r45bl_replied_bucket_fast_path'}
+                    else:
+                        profile_hover_result = await r45ax_close_profile_hover_cards(page)
+                        if int((profile_hover_result or {}).get('closed') or 0) > 0 or int(((profile_hover_result or {}).get('before') or {}).get('count') or 0) > 0:
+                            profile_hover_closed += int((profile_hover_result or {}).get('closed') or 0)
+                            log('R45AX_PROFILE_HOVER_CARD_CLOSED', {'step': step, 'key': before_key, 'label': label, 'profile_hover_closed': profile_hover_closed, 'hover_result': profile_hover_result})
                     closed_new_pages = []
                     for pg in list(context.pages):
                         if pg is page or pg in known_pages:
@@ -759,7 +783,7 @@ return window.r45axInstallNavBlocker();
                         (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8')
                         await context.close()
                         return 5
-                    after_side = await page.evaluate('r45axSideEffectState()')
+                    after_side = await page.evaluate('r45axMessengerSideEffectState()')
                     messenger_opened = int((after_side.get('messenger') or {}).get('count') or 0) > int((before_side.get('messenger') or {}).get('count') or 0) or int((after_side.get('messenger') or {}).get('count') or 0) > 0
                     messenger_close_result = None
                     if messenger_opened:
@@ -807,8 +831,12 @@ return window.r45axInstallNavBlocker();
                         'progress_before': before_progress_for_sig,
                         'progress_after': best_progress,
                     }
-                    log('R45AX_CLICK', {'step':step, 'clicked':clicked, 'label':label, 'category':item.get('category'), 'key':before_key, 'x':item.get('x'), 'y':item.get('y'), 'wait_ms':wait_ms, 'click_elapsed_ms':click_elapsed_ms, 'timing_delta':timing_delta, 'post_visible_total': after_scan.get('total'), 'no_progress': no_progress, 'messenger_opened': messenger_opened, 'profile_hover_closed': profile_hover_closed, 'new_pages_closed': closed_new_pages, 'dead_key_count': dead_click_counts.get(before_key,0)})
-                    if no_progress and dead_click_counts.get(before_key, 0) >= 2:
+                    log('R45AX_CLICK', {'step':step, 'clicked':clicked, 'label':label, 'category':item.get('category'), 'click_label': item.get('clickLabel'), 'preferred_point': item.get('preferredPoint'), 'key':before_key, 'x':item.get('x'), 'y':item.get('y'), 'wait_ms':wait_ms, 'click_elapsed_ms':click_elapsed_ms, 'timing_delta':timing_delta, 'post_visible_total': after_scan.get('total'), 'no_progress': no_progress, 'messenger_opened': messenger_opened, 'profile_hover_closed': profile_hover_closed, 'profile_hover_check': profile_hover_result, 'new_pages_closed': closed_new_pages, 'dead_key_count': dead_click_counts.get(before_key,0)})
+                    if no_progress and category == 'replied_bucket':
+                        replied_bucket_fast_skipped += 1
+                        skip_result = await page.evaluate('(key) => r45axAddSkipKey(key)', before_key)
+                        log('R45AX_REPLIED_BUCKET_NO_PROGRESS_SKIPPED', {'step':step, 'key':before_key, 'label':label, 'replied_bucket_fast_skipped': replied_bucket_fast_skipped, 'skip_result':skip_result})
+                    elif no_progress and dead_click_counts.get(before_key, 0) >= 2:
                         dead_click_skipped += 1
                         skip_result = await page.evaluate('(key) => r45axAddSkipKey(key)', before_key)
                         log('R45AX_DEAD_CLICK_KEY_SKIPPED', {'step':step, 'key':before_key, 'label':label, 'dead_click_skipped':dead_click_skipped, 'skip_result':skip_result})
@@ -850,7 +878,7 @@ return window.r45axInstallNavBlocker();
                     await r45ax_park_mouse(page)
                     await page.wait_for_timeout(650)
                     continue
-                receipt['auto_expand_summary'] = {'status':'pass', 'clicked':clicked, 'scrolls':scrolls, 'audit_passes':audit_pass, 'unsafe_skipped':unsafe_skipped, 'dead_click_skipped':dead_click_skipped, 'messenger_blocked':messenger_blocked, 'new_pages_closed':new_pages_closed, 'target_drift_blocked':target_drift_blocked, 'profile_hover_closed':profile_hover_closed, 'expected_total_comments': expected_total_comments, 'best_progress':best_progress, 'progress_ok':progress_ok, 'progress_gate_status': r45ax_progress_gate_status(best_progress, expected_total_comments), 'completed_by_full_zero_control_audit': True}; log('R45AX_EXPANSION_COMPLETE', receipt['auto_expand_summary']); break
+                receipt['auto_expand_summary'] = {'status':'pass', 'clicked':clicked, 'scrolls':scrolls, 'audit_passes':audit_pass, 'unsafe_skipped':unsafe_skipped, 'dead_click_skipped':dead_click_skipped, 'replied_bucket_fast_skipped': replied_bucket_fast_skipped, 'messenger_blocked':messenger_blocked, 'new_pages_closed':new_pages_closed, 'target_drift_blocked':target_drift_blocked, 'profile_hover_closed':profile_hover_closed, 'expected_total_comments': expected_total_comments, 'best_progress':best_progress, 'progress_ok':progress_ok, 'progress_gate_status': r45ax_progress_gate_status(best_progress, expected_total_comments), 'completed_by_full_zero_control_audit': True}; log('R45AX_EXPANSION_COMPLETE', receipt['auto_expand_summary']); break
         if 'auto_expand_summary' not in receipt:
             final_scan = await page.evaluate('r45axScanVisible()'); final_progress_raw = await page.evaluate('r45axPageProgress()')
             final_progress = r45ax_filter_expected_progress(final_progress_raw, expected_total_comments)
