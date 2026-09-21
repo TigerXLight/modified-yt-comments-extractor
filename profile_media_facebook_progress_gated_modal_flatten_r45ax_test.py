@@ -52,3 +52,11 @@ assert 'R45AX_PROFILE_HOVER_CARD_CLOSED' in src
 assert 'r45axProfileHoverOverlayState' in src
 assert 'r45axCloseProfileHoverCards' in src
 assert 'profile_hover_closed' in src
+
+assert '--expected-total-comments' in src
+assert 'expected_total_comments' in src
+assert 'r45ax_filter_expected_progress' in src
+assert 'R45AX_PROGRESS_IGNORED_EXPECTED_TOTAL_MISMATCH' in src
+assert 'R45BI_EXPECTED_TOTAL_GATE' in src
+assert 'r45bi_expected_total_gate_rule' in src
+assert 'r45bi_expected_total_gate_present' in src
