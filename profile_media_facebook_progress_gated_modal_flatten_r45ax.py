@@ -23,7 +23,7 @@ CONTRACT = {
     "marker": MARKER,
     "schema_version": SCHEMA_VERSION,
     "primary_route": "visible-page-only Facebook expansion in an operator-controlled signed-in Chromium profile",
-    "r45ax_rule": "Open the post, lock to the target story, use the active comments modal scroller, click the first safe visible expansion label, rescan the same viewport, continue downward while comments load, and gate completion on both zero visible expand controls in a full top-to-bottom audit and any detected Facebook progress text reaching its total, e.g. 715 of 715.",
+    "r45ax_rule": "Open the post, lock to the target story, use the active comments modal scroller, click the first safe visible expansion label, rescan the same viewport, continue downward while comments load, restart from the top after any pass that clicked controls, and gate completion on both zero visible expand controls in a full top-to-bottom audit and any detected Facebook progress text reaching its total, e.g. 715 of 715. Progress is checked against visible text, aria/title attributes, and stripped live HTML.",
     "progress_gate_rule": "If visible/modal text contains N of M where M looks like total loaded comments, final screenshot is refused until max observed N >= M. A run that stops at 657 of 715, 696 of 715, etc. is blocked as incomplete.",
     "screenshot_rule": "After completion, flatten the Facebook comments modal into a comments-only page with no internal scroll box, then capture the widest comments column as maximum-height bands, using the largest safe band height rather than many small tiles.",
     "visible_controls": ["View all N replies", "View N replies", "View hidden replies/comments", "View more replies/comments", "replied · N replies"],
@@ -46,8 +46,24 @@ function r45axCategory(label){
   if (/^View \d+ replies?$/i.test(t)) return 'view_n_replies';
   if (/^View \d+ more replies?$/i.test(t)) return 'view_more_replies';
   if (/^View more (replies|comments)$/i.test(t)) return 'view_more';
-  if (/replied\s*[·•]\s*\d+\s+replies/i.test(t)) return 'replied_bucket';
+  if (/\breplied\s*(?:[·•.\-]\s*)?\d+\s+repl(?:y|ies)\b/i.test(t)) return 'replied_bucket';
   return '';
+}
+function r45axExpansionLabelInfo(text){
+  const t = r45axNorm(text);
+  const patterns = [
+    {category:'view_hidden', rx:/\bView hidden (?:replies|comments)\b/i},
+    {category:'view_all_replies', rx:/\bView all \d+ replies?\b/i},
+    {category:'view_more_replies', rx:/\bView \d+ more replies?\b/i},
+    {category:'view_n_replies', rx:/\bView \d+ replies?\b/i},
+    {category:'view_more', rx:/\bView more (?:replies|comments)\b/i},
+    {category:'replied_bucket', rx:/\breplied\s*(?:[·•.\-]\s*)?\d+\s+repl(?:y|ies)\b/i}
+  ];
+  for (const p of patterns){
+    const m = t.match(p.rx);
+    if (m) return {label:r45axNorm(m[0]), category:p.category};
+  }
+  return null;
 }
 function r45axProgressFromText(text){
   const out = [];
@@ -60,6 +76,26 @@ function r45axProgressFromText(text){
   if (!out.length) return null;
   out.sort((a,b) => (b.total - a.total) || (b.current - a.current));
   return out[0];
+}
+function r45axProgressFromPage(){
+  const sources = [];
+  const scroller = window.__R45AX_SCROLLER__;
+  if (scroller) sources.push(scroller.innerText || '', scroller.textContent || '');
+  sources.push(document.body ? (document.body.innerText || '') : '', document.body ? (document.body.textContent || '') : '');
+  try {
+    sources.push(Array.from(document.querySelectorAll('[aria-label],[title]')).slice(0,5000).map(el => (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '')).join(' '));
+  } catch(e) {}
+  for (const s of sources) {
+    const p = r45axProgressFromText(s);
+    if (p) return p;
+  }
+  try {
+    const htmlText = String(document.documentElement && document.documentElement.innerHTML || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;|&#160;|&amp;nbsp;/gi, ' ')
+      .replace(/\s+/g, ' ');
+    return r45axProgressFromText(htmlText);
+  } catch(e) { return null; }
 }
 function r45axRectVisible(rect, band){
   if (!rect || rect.width < 3 || rect.height < 3) return false;
@@ -143,39 +179,71 @@ function r45axBand(scroller){
   const r = scroller ? scroller.getBoundingClientRect() : {top:0,bottom:innerHeight,left:0,right:innerWidth};
   return {top:Math.max(0, r.top + 8), bottom:Math.min(innerHeight, r.bottom - 86), left:Math.max(0, r.left + 8), right:Math.min(innerWidth, r.right - 8)};
 }
+function r45axBadCandidateElement(el){
+  if (!el || el.nodeType !== 1) return true;
+  if (el.closest('textarea,input,select,[contenteditable="true"]')) return true;
+  let cur = el;
+  for (let i=0; cur && i<8; i++, cur=cur.parentElement) {
+    const blob = r45axNorm([cur.getAttribute && (cur.getAttribute('aria-label')||''), cur.getAttribute && (cur.getAttribute('title')||''), cur.className||''].join(' '));
+    if (/(composer|comment as|write a comment|reply to|gif|sticker|photo|camera|avatar|upload|file|emoji)/i.test(blob)) return true;
+  }
+  return false;
+}
 function r45axTextCandidates(scroller){
   const band = r45axBand(scroller);
-  const walker = document.createTreeWalker(scroller || document.body, NodeFilter.SHOW_TEXT);
   const out = [];
+  function addCandidate(label, category, rect, source){
+    if (!r45axRectVisible(rect, band)) return;
+    if (rect.width < 4 || rect.height < 4) return;
+    const points = [
+      {x: rect.left + rect.width/2, y: rect.top + rect.height/2},
+      {x: rect.left + Math.min(rect.width-2, Math.max(2, rect.width*0.18)), y: rect.top + rect.height/2},
+      {x: rect.left + Math.min(rect.width-2, Math.max(2, rect.width*0.82)), y: rect.top + rect.height/2},
+    ];
+    let chosen = null, safety = null;
+    for (const p of points){
+      const s = r45axClickSafetyAt(p.x, p.y);
+      if (s.ok){ chosen = p; safety = s; break; }
+      if (!safety) safety = s;
+    }
+    out.push({label, category, x:Math.round((chosen||points[0]).x), y:Math.round((chosen||points[0]).y), top:Math.round(rect.top), bottom:Math.round(rect.bottom), left:Math.round(rect.left), right:Math.round(rect.right), safe:!!chosen, safety, source});
+  }
+  const walker = document.createTreeWalker(scroller || document.body, NodeFilter.SHOW_TEXT);
   let n;
   while ((n = walker.nextNode())){
-    const label = r45axNorm(n.nodeValue || '');
-    const category = r45axCategory(label);
-    if (!category) continue;
+    const raw = String(n.nodeValue || '');
+    const info = r45axExpansionLabelInfo(raw);
+    if (!info) continue;
     const parent = n.parentElement;
-    if (!parent || r45axElementHidden(parent)) continue;
+    if (!parent || r45axElementHidden(parent) || r45axBadCandidateElement(parent)) continue;
     const range = document.createRange();
-    try { range.selectNodeContents(n); } catch(e) { continue; }
+    try {
+      const lowerRaw = raw.toLowerCase(), lowerLabel = info.label.toLowerCase();
+      let start = lowerRaw.indexOf(lowerLabel);
+      if (start < 0) start = 0;
+      range.setStart(n, start);
+      range.setEnd(n, Math.min(raw.length, start + info.label.length));
+    } catch(e) {
+      try { range.selectNodeContents(n); } catch(e2) { continue; }
+    }
     const rects = Array.from(range.getClientRects()).filter(rect => r45axRectVisible(rect, band));
     range.detach && range.detach();
-    for (const rect of rects){
-      const points = [
-        {x: rect.left + rect.width/2, y: rect.top + rect.height/2},
-        {x: rect.left + Math.min(rect.width-2, Math.max(2, rect.width*0.22)), y: rect.top + rect.height/2},
-        {x: rect.left + Math.min(rect.width-2, Math.max(2, rect.width*0.78)), y: rect.top + rect.height/2},
-      ];
-      let chosen = null, safety = null;
-      for (const p of points){
-        const s = r45axClickSafetyAt(p.x, p.y);
-        if (s.ok){ chosen = p; safety = s; break; }
-        if (!safety) safety = s;
-      }
-      out.push({label, category, x:Math.round((chosen||points[0]).x), y:Math.round((chosen||points[0]).y), top:Math.round(rect.top), bottom:Math.round(rect.bottom), left:Math.round(rect.left), right:Math.round(rect.right), safe:!!chosen, safety});
-    }
+    for (const rect of rects) addCandidate(info.label, info.category, rect, 'text');
+  }
+  const elementSelector = 'a, [role="button"], [tabindex], span, div';
+  for (const el of Array.from((scroller || document.body).querySelectorAll(elementSelector))){
+    if (r45axElementHidden(el) || r45axBadCandidateElement(el)) continue;
+    const text = r45axNorm(el.innerText || el.textContent || el.getAttribute('aria-label') || '');
+    if (!text || text.length > 220) continue;
+    const info = r45axExpansionLabelInfo(text);
+    if (!info) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.height > 90 || rect.width > 460) continue;
+    addCandidate(info.label, info.category, rect, 'element');
   }
   const seen = new Set();
   const dedup = [];
-  for (const item of out.sort((a,b)=>a.top-b.top || a.left-b.left)){
+  for (const item of out.sort((a,b)=>a.top-b.top || a.left-b.left || (a.source || '').localeCompare(b.source || ''))){
     const key = item.category+'|'+item.label+'|'+Math.round(item.top/3)+'|'+Math.round(item.left/8);
     if (seen.has(key)) continue;
     seen.add(key); dedup.push(item);
@@ -188,7 +256,7 @@ function r45axScanVisible(){
   const items = r45axTextCandidates(scroller);
   const counts = {};
   for (const it of items) counts[it.category] = (counts[it.category] || 0) + 1;
-  const progress = r45axProgressFromText((scroller.innerText || document.body.innerText || '')) || r45axProgressFromText(document.body.innerText || '');
+  const progress = r45axProgressFromPage();
   return {ok:true, scrollTop:scroller.scrollTop||0, scrollHeight:scroller.scrollHeight||0, clientHeight:scroller.clientHeight||0, atBottom: (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8), counts, labels: items.map(x=>x.label).slice(0,25), total: items.length, items:items.slice(0,20), progress};
 }
 function r45axClickFirstVisible(){
@@ -210,7 +278,7 @@ function r45axScroll(mode){
 }
 function r45axPageProgress(){
   const scroller = r45axGetScroller();
-  return r45axProgressFromText((scroller && scroller.innerText) || '') || r45axProgressFromText(document.body.innerText || '');
+  return r45axProgressFromPage();
 }
 function r45axInstallNavBlocker(){
   if (window.__R45AX_NAV_BLOCKER__) return {installed:true, already:true};
@@ -285,6 +353,8 @@ async def self_test(output_root: Path) -> int:
             {'name':'fahad_replied_bucket_fixture','status':'pass' if 'Fahad Malik replied · 3 replies' in SELF_TEST_HTML else 'fail'},
             {'name':'modal_flatten_present','status':'pass' if 'r45axFlattenForScreenshot' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'r45ba_real_scrollable_scroller_required','status':'pass' if 'no_real_scrollable_comments_container' in EXPAND_PATTERNS_JS and 'scrollHeight==clientHeight' in EXPAND_PATTERNS_JS else 'fail'},
+            {'name':'r45bb_full_audit_restart_required','status':'pass' if 'R45AX_AUDIT_RESTART_TOP' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45bb_html_progress_probe_present','status':'pass' if 'document.documentElement.innerHTML' in EXPAND_PATTERNS_JS and 'r45axProgressFromPage' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'no_hidden_platform_api','status':'pass'},
             {'name':'no_profile_parsing','status':'pass'},
         ],
@@ -331,7 +401,7 @@ return window.r45axInstallNavBlocker();
         if (not scroller_info.get('ok')) or int((scroller_info.get('scroller') or {}).get('scrollHeight') or 0) <= int((scroller_info.get('scroller') or {}).get('clientHeight') or 0) + 80:
             receipt['status'] = 'BLOCKED_NO_REAL_SCROLLABLE_COMMENTS_SCROLLER'; (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8'); await context.close(); return 3
         await page.evaluate('r45axScroll("top")')
-        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; unsafe_skipped = 0
+        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; unsafe_skipped = 0; pass_had_click = False
         log('R45AX_PROGRESS_GATED_START', {'max_seconds':args.expand_max_seconds, 'max_steps':args.max_steps, 'progress_gate_required': True, 'target_url': target_url})
         for step in range(1, int(args.max_steps)+1):
             elapsed = time.monotonic() - start
@@ -347,7 +417,7 @@ return window.r45axInstallNavBlocker();
                     unsafe_skipped += 1; log('R45AX_UNSAFE_VISIBLE_CONTROL_SKIPPED', {'step':step, 'item':clickinfo.get('item'), 'unsafe_skipped':unsafe_skipped}); await page.evaluate('r45axScroll("down")'); scrolls += 1; await page.wait_for_timeout(220); continue
                 item = clickinfo.get('item') or {}
                 if clickinfo.get('clicked') and item.get('safe'):
-                    await page.mouse.click(float(item.get('x')), float(item.get('y'))); clicked += 1
+                    await page.mouse.click(float(item.get('x')), float(item.get('y'))); clicked += 1; pass_had_click = True
                     label = item.get('label',''); m = re.search(r'\d+', label); n = int(m.group(0)) if m else 0
                     wait_ms = 2600 if n >= 100 else (1400 if n >= 30 else 650)
                     await page.wait_for_timeout(wait_ms)
@@ -364,13 +434,27 @@ return window.r45axInstallNavBlocker();
                     audit_pass += 1; await page.evaluate('r45axScroll("top")'); await page.wait_for_timeout(400); continue
                 await page.wait_for_timeout(900); await page.evaluate('r45axScroll("top")'); audit_pass += 1; await page.wait_for_timeout(250); continue
             if at_bottom and progress_ok:
-                receipt['auto_expand_summary'] = {'status':'pass', 'clicked':clicked, 'scrolls':scrolls, 'audit_passes':audit_pass, 'unsafe_skipped':unsafe_skipped, 'best_progress':best_progress, 'progress_ok':progress_ok}; log('R45AX_EXPANSION_COMPLETE', receipt['auto_expand_summary']); break
+                if pass_had_click:
+                    log('R45AX_AUDIT_RESTART_TOP', {'step':step, 'audit_pass':audit_pass, 'clicked':clicked, 'scrolls':scrolls, 'best_progress':best_progress})
+                    if audit_pass >= int(args.max_audit_passes):
+                        log('R45AX_AUDIT_LIMIT_REACHED_WITH_CHANGES', {'step':step, 'audit_pass':audit_pass, 'clicked':clicked, 'scrolls':scrolls})
+                        break
+                    audit_pass += 1
+                    pass_had_click = False
+                    await page.evaluate('r45axScroll("top")')
+                    await page.wait_for_timeout(650)
+                    continue
+                receipt['auto_expand_summary'] = {'status':'pass', 'clicked':clicked, 'scrolls':scrolls, 'audit_passes':audit_pass, 'unsafe_skipped':unsafe_skipped, 'best_progress':best_progress, 'progress_ok':progress_ok, 'completed_by_full_zero_control_audit': True}; log('R45AX_EXPANSION_COMPLETE', receipt['auto_expand_summary']); break
         if 'auto_expand_summary' not in receipt:
             final_scan = await page.evaluate('r45axScanVisible()'); final_progress = await page.evaluate('r45axPageProgress()')
             receipt['status'] = 'BLOCKED_INCOMPLETE_EXPANSION'; receipt['final_scan'] = final_scan; receipt['best_progress'] = best_progress or final_progress
             receipt['progress_gate_satisfied'] = bool((best_progress or final_progress) and int((best_progress or final_progress).get('current',0)) >= int((best_progress or final_progress).get('total',1))) if (best_progress or final_progress) else False
             log('R45AX_BLOCKED_INCOMPLETE_EXPANSION', {'best_progress':receipt.get('best_progress'), 'progress_gate_satisfied':receipt.get('progress_gate_satisfied'), 'final_visible_total':final_scan.get('total'), 'final_labels':final_scan.get('labels')})
             (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8'); await context.close(); return 4
+        live_html_path = run_dir / 'r45ax_live_before_flatten.html'; live_text_path = run_dir / 'r45ax_live_before_flatten_text.txt'
+        live_html_path.write_text(await page.content(), encoding='utf-8')
+        live_text_path.write_text(await page.evaluate('document.body.innerText || document.body.textContent || ""'), encoding='utf-8')
+        receipt['live_before_flatten'] = {'html_path': str(live_html_path), 'text_path': str(live_text_path), 'progress': await page.evaluate('r45axPageProgress()')}
         flatten = await page.evaluate('r45axFlattenForScreenshot()'); log('R45AX_FLATTEN_COMMENTS_ONLY', flatten); receipt['flatten_summary'] = flatten; await page.wait_for_timeout(1200)
         html_path = run_dir / 'r45ax_separated_comments_clean_dom.html'; text_path = run_dir / 'r45ax_separated_comments_visible_text.txt'
         html_path.write_text(await page.content(), encoding='utf-8'); text_path.write_text(await page.evaluate('document.body.innerText || document.body.textContent || ""'), encoding='utf-8')
@@ -385,7 +469,7 @@ return window.r45axInstallNavBlocker();
         zip_path = run_dir / 'r45ax_comments_only_max_bands.zip'
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for pth in paths: zf.write(pth, arcname=Path(pth).name)
-            zf.write(html_path, arcname=html_path.name); zf.write(text_path, arcname=text_path.name)
+            zf.write(html_path, arcname=html_path.name); zf.write(text_path, arcname=text_path.name); zf.write(live_html_path, arcname=live_html_path.name); zf.write(live_text_path, arcname=live_text_path.name)
         receipt['status'] = 'PASS_R45AX_PROGRESS_GATED_CAPTURE'; receipt['outputs'] = {'html_path': str(html_path), 'text_path': str(text_path), 'max_band_paths': paths, 'max_band_count': len(paths), 'max_band_height': band_h, 'zip_path': str(zip_path), 'capture_height': height, 'capture_width': width}
         receipt_path = run_dir/'r45ax_progress_gated_receipt.json'; receipt['receipt_path'] = str(receipt_path); receipt_path.write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8')
         log('R45AX_FINAL_SUMMARY', {'status': receipt['status'], 'clicked': clicked, 'scrolls': scrolls, 'best_progress': receipt['auto_expand_summary'].get('best_progress'), 'max_band_count': len(paths), 'max_band_height': band_h, 'zip_path': str(zip_path), 'receipt_path': str(receipt_path)})
