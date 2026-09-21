@@ -470,6 +470,7 @@ def contract() -> Dict[str, Any]:
         'r45aa_large_bucket_settle_rule': 'R45AA enforces a real minimum hold after large reply openers such as View all 302 replies; the runner must not scroll away until the opened bucket has had time to stream newly inserted replies and expose their expansion controls.',
         'r45ab_target_surface_lock_rule': 'R45AB locks expansion and downward scrolling to the active Facebook comments dialog; if the dialog disappears, the runner stops instead of scrolling the outer facebook.com feed.',
         'r45ac_ordered_readonly_probe_rule': 'R45AC makes the expansion probe read-only and enforces a safe visible work band plus small dialog-only scroll steps, so controls are handled in visible top-to-bottom order instead of being reordered by probe-time scrollIntoView jumps.',
+        'r45ad_dialog_body_band_anti_hover_rule': 'R45AD restricts expansion clicks to the comments dialog body band, moves the mouse to a neutral gutter after each click to dismiss hover cards, and stops immediately if the target comments dialog disappears.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -858,9 +859,16 @@ JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
     // mid-scan and breaks strict top-to-bottom ordering. Only click controls
     // already inside the safe visible work band; otherwise the normal scroll step
     // will bring the next control into the band.
-    const safeBottom = window.innerHeight - clickGuardBottomPx;
+    // R45AD: click only inside the comments dialog body band. This excludes
+    // the dialog header/close-button zone and the sticky composer/footer zone.
+    const surfaceRect = surface.getBoundingClientRect();
+    const safeTop = Math.max(clickGuardTopPx, surfaceRect.top + 92);
+    const safeBottom = Math.min(window.innerHeight - clickGuardBottomPx, surfaceRect.bottom - 78);
+    const safeLeft = Math.max(0, surfaceRect.left + 18);
+    const safeRight = Math.min(window.innerWidth, surfaceRect.right - 18);
+    const centerX = rect.left + (rect.width / 2);
     const centerY = rect.top + (rect.height / 2);
-    if (rect.top < clickGuardTopPx || rect.bottom > safeBottom || centerY < clickGuardTopPx || centerY > safeBottom) continue;
+    if (rect.top < safeTop || rect.bottom > safeBottom || centerY < safeTop || centerY > safeBottom || centerX < safeLeft || centerX > safeRight) continue;
     if (rect.top < 8 || rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
     const key = keyFor(label, rect);
     if (skipKeys.has(key)) continue;
@@ -890,6 +898,9 @@ JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
     safe_click_band_top_px: clickGuardTopPx,
     safe_click_band_bottom_px: clickGuardBottomPx,
     marker_r45ac: 'R45AC_ORDERED_READONLY_PROBE',
+    marker_r45ad: 'R45AD_DIALOG_BODY_BAND_ANTI_HOVER',
+    dialog_body_band_only: true,
+    hover_neutralization_expected: true,
     surface_width: surfaceInfo.width,
     surface_height: surfaceInfo.height,
   };
@@ -988,6 +999,15 @@ def _close_non_working_pages_r45z(context: Any, page: Any, warnings: List[str], 
         page.bring_to_front()
     except Exception as e:
         warnings.append(f'r45z_bring_target_to_front_warning_stage={stage}={e}')
+
+
+def _move_mouse_to_neutral_page_gutter_r45ad(page: Any) -> None:
+    # Move pointer away from names/buttons so Facebook hover cards disappear.
+    try:
+        point = page.evaluate("() => ({x: 12, y: Math.max(12, Math.min(window.innerHeight - 18, Math.round(window.innerHeight * 0.86)))})") or {}
+        page.mouse.move(float(point.get('x') or 12), float(point.get('y') or 12))
+    except Exception:
+        pass
 
 
 def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patterns: List[str]) -> Dict[str, Any]:
@@ -1117,6 +1137,7 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
         return best
 
     for step in range(1, rounds_limit + 1):
+        _move_mouse_to_neutral_page_gutter_r45ad(page)
         if time.monotonic() - started > max_seconds:
             break
         skip_keys = [k for k, v in skip_counts.items() if v >= 5]
@@ -1141,12 +1162,23 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
                 page.mouse.down()
                 time.sleep(0.03)
                 page.mouse.up()
+                _move_mouse_to_neutral_page_gutter_r45ad(page)
             except Exception as e:
                 click_error = str(e)[:180]
             time.sleep(max(0.05, after_click_delay))
             after_probe = _wait_for_click_settle(label, before_chars, before_progress)
             if not after_probe:
                 after_probe = _probe([k for k, v in skip_counts.items() if v >= 5])
+            if isinstance(after_probe, dict) and after_probe.get('surface_required') and not after_probe.get('surface_found'):
+                print('R45H_PROGRESS ' + json.dumps({
+                    'event': 'R45AD_TARGET_SURFACE_LOST_AFTER_CLICK_STOP',
+                    'step': step,
+                    'label': label,
+                    'stop_reason': after_probe.get('stop_reason') or 'target_comments_dialog_missing',
+                    'current_url': after_probe.get('current_url'),
+                    'elapsed_seconds': elapsed(),
+                }, ensure_ascii=False))
+                break
             after_chars = int(after_probe.get('text_chars') or before_chars)
             after_progress = after_probe.get('progress')
             remaining_visible = int(after_probe.get('visible_count') or 0)
@@ -1188,10 +1220,29 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
             stable_no_candidate_rounds = int(getattr(args, 'expand_stop_after_stable_rounds', 4) or 4)
             break
 
+        if isinstance(probe, dict) and probe.get('surface_required') and not probe.get('surface_found'):
+            print('R45H_PROGRESS ' + json.dumps({
+                'event': 'R45AD_TARGET_SURFACE_MISSING_BEFORE_SCROLL_STOP',
+                'step': step,
+                'stop_reason': probe.get('stop_reason') or 'target_comments_dialog_missing',
+                'current_url': probe.get('current_url'),
+                'elapsed_seconds': elapsed(),
+            }, ensure_ascii=False))
+            break
+
         try:
             scroll_result = page.evaluate(JS_SCROLL_DOWNWARD_FRONTIER_R45V, {'scrollPx': scroll_px}) or {}
         except Exception as e:
             scroll_result = {'changed': 0, 'error': str(e)[:180]}
+        if isinstance(scroll_result, dict) and scroll_result.get('surface_required') and not scroll_result.get('surface_found'):
+            print('R45H_PROGRESS ' + json.dumps({
+                'event': 'R45AD_TARGET_SURFACE_LOST_DURING_SCROLL_STOP',
+                'step': step,
+                'stop_reason': scroll_result.get('stop_reason') or 'target_comments_dialog_missing',
+                'current_url': scroll_result.get('current_url'),
+                'elapsed_seconds': elapsed(),
+            }, ensure_ascii=False))
+            break
         changed = int(scroll_result.get('changed') or 0)
         if changed:
             scroll_events += changed
@@ -1632,6 +1683,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45z_active_target_tab_and_settle_present', 'status': 'pass' if 'r45z_active_target_tab_rule' in contract() and '_close_non_working_pages_r45z' in open(__file__, encoding='utf-8').read() and 'R45Z_CLOSED_NON_TARGET_TABS' in open(__file__, encoding='utf-8').read() and '_wait_for_click_settle' in open(__file__, encoding='utf-8').read() and '--hide-crash-restore-bubble' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45aa_large_bucket_settle_hold_present', 'status': 'pass' if 'r45aa_large_bucket_settle_rule' in contract() and '_minimum_settle_seconds_for_label' in open(__file__, encoding='utf-8').read() and 'past_min' in open(__file__, encoding='utf-8').read() and 'actual_settle_elapsed_seconds' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45ac_ordered_readonly_probe_present', 'status': 'pass' if 'r45ac_ordered_readonly_probe_rule' in contract() and 'R45AC_ORDERED_READONLY_PROBE' in open(__file__, encoding='utf-8').read() and 'ordered_probe_read_only: true' in open(__file__, encoding='utf-8').read() and 'small bounded scroll increments' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45ad_dialog_body_band_anti_hover_present', 'status': 'pass' if 'r45ad_dialog_body_band_anti_hover_rule' in contract() and 'R45AD_DIALOG_BODY_BAND_ANTI_HOVER' in open(__file__, encoding='utf-8').read() and '_move_mouse_to_neutral_page_gutter_r45ad' in open(__file__, encoding='utf-8').read() and 'R45AD_TARGET_SURFACE_LOST_AFTER_CLICK_STOP' in open(__file__, encoding='utf-8').read() and 'dialog_body_band_only: true' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},

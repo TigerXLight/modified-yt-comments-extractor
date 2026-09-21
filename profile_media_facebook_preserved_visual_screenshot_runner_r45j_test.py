@@ -75,6 +75,11 @@ def test_contract_and_static_assets():
     assert 'r45aa_large_bucket_settle_rule' in r45j.contract()
     assert 'r45ab_target_surface_lock_rule' in r45j.contract()
     assert 'r45ac_ordered_readonly_probe_rule' in r45j.contract()
+    assert 'r45ad_dialog_body_band_anti_hover_rule' in r45j.contract()
+    assert 'R45AD_DIALOG_BODY_BAND_ANTI_HOVER' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
+    assert 'dialog_body_band_only: true' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
+    assert '_move_mouse_to_neutral_page_gutter_r45ad' in inspect.getsource(r45j)
+    assert 'R45AD_TARGET_SURFACE_LOST_AFTER_CLICK_STOP' in inspect.getsource(r45j._playwright_mouse_downward_expand)
     assert 'R45AC_ORDERED_READONLY_PROBE' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert 'ordered_probe_read_only: true' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert 'scrollIntoView({block' not in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
