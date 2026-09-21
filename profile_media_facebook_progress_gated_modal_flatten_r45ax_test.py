@@ -11,6 +11,10 @@ assert 'R45AX_PROGRESS_GATE_NOT_SATISFIED' in src
 assert 'r45axFlattenForScreenshot' in src
 assert 'add_script_tag' not in src
 assert 'R45AX_SCRIPT_INSTALL' in src
+assert 'r45ba_scroll_container_rule' in src
+assert 'no_real_scrollable_comments_container' in src
+assert 'BLOCKED_NO_REAL_SCROLLABLE_COMMENTS_SCROLLER' in src
+assert 'scrollHeight==clientHeight' in src
 assert 'hidden_platform_api_scraping_enabled' in src and 'False' in src
 assert 'browser_profile_file_parsing_enabled' in src and 'False' in src
 assert re.search(r'View all \\d\+ replies', src)

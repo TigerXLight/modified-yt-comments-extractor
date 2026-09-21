@@ -34,6 +34,7 @@ CONTRACT = {
     "browser_profile_file_parsing_enabled": False,
     "webview2_storage_or_cookie_inspection_enabled": False,
     "remote_media_downloads_enabled": False,
+    "r45ba_scroll_container_rule": "The active comments scroller must be a real scrollable comments container, not the outer role=dialog shell with scrollHeight equal to clientHeight. R45BA scores only scrollable candidates first and blocks rather than falsely passing on a 720px outer dialog.",
 }
 
 EXPAND_PATTERNS_JS = r"""
@@ -99,22 +100,38 @@ function r45axFindScroller(){
   const vh = window.innerHeight || document.documentElement.clientHeight || 720;
   const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
   const nodes = Array.from(document.querySelectorAll('div, [role="dialog"], [aria-modal="true"]'));
-  let best = null;
+  const candidates = [];
   for (const el of nodes){
     if (r45axElementHidden(el)) continue;
     const r = el.getBoundingClientRect();
-    if (r.width < 360 || r.height < 240) continue;
+    if (r.width < 360 || r.height < 220) continue;
     if (r.bottom < 80 || r.top > vh - 80) continue;
     const sh = el.scrollHeight || 0, ch = el.clientHeight || 0;
+    const scrollable = sh > ch + 80;
     const text = r45axNorm(el.innerText || el.textContent || '');
-    const hasComments = /\bLike\b\s+\bReply\b|View all \d+ replies|View hidden|\bof\s+\d{2,5}\b/i.test(text);
+    const hasComments = /\bLike\b\s+\bReply\b|View all \d+ replies|View \d+ replies|View hidden|View more|replied\s*[·•]\s*\d+\s+replies|\bof\s+\d{2,5}\b/i.test(text);
     if (!hasComments) continue;
-    const score = (el.getAttribute('role') === 'dialog' ? 30000 : 0) + Math.max(0, sh - ch) + Math.min(text.length, 50000) + r.height;
-    if (!best || score > best.score) best = {el, score, rect: r, textLength: text.length, role: el.getAttribute('role') || '', tag: el.tagName};
+    const progress = r45axProgressFromText(text);
+    /*
+      R45BA: the outer Facebook dialog can have role=dialog, lots of text,
+      and scrollHeight==clientHeight (for example 720/720). That is NOT the
+      comments scroller. Prefer real scrollable descendants; otherwise block
+      instead of falsely declaring completion after one 720px scan.
+    */
+    if (!scrollable) continue;
+    const centerBonus = (r.left > 80 && r.right < vw - 40) ? 1500 : 0;
+    const progressBonus = progress ? 12000 : 0;
+    const commentTextBonus = Math.min(text.length, 50000);
+    const scrollBonus = Math.max(0, sh - ch) * 8;
+    const rolePenalty = el.getAttribute('role') === 'dialog' ? -8000 : 0;
+    const score = progressBonus + scrollBonus + commentTextBonus + centerBonus + rolePenalty + r.height;
+    candidates.push({el, score, rect:r, textLength:text.length, progress, role:el.getAttribute('role') || '', tag:el.tagName, scrollable, sh, ch});
   }
-  if (!best) return {ok:false};
+  candidates.sort((a,b) => b.score - a.score);
+  const best = candidates[0];
+  if (!best) return {ok:false, reason:'no_real_scrollable_comments_container'};
   window.__R45AX_SCROLLER__ = best.el;
-  return {ok:true, scroller:{tag:best.tag, role:best.role, score:Math.round(best.score), textLength:best.textLength, scrollTop:best.el.scrollTop||0, scrollHeight:best.el.scrollHeight||0, clientHeight:best.el.clientHeight||0, rect:{top:Math.round(best.rect.top), bottom:Math.round(best.rect.bottom), left:Math.round(best.rect.left), right:Math.round(best.rect.right), width:Math.round(best.rect.width), height:Math.round(best.rect.height)}}};
+  return {ok:true, reason:'real_scrollable_comments_container', scroller:{tag:best.tag, role:best.role, score:Math.round(best.score), textLength:best.textLength, progress:best.progress, scrollTop:best.el.scrollTop||0, scrollHeight:best.el.scrollHeight||0, clientHeight:best.el.clientHeight||0, scrollable:true, rect:{top:Math.round(best.rect.top), bottom:Math.round(best.rect.bottom), left:Math.round(best.rect.left), right:Math.round(best.rect.right), width:Math.round(best.rect.width), height:Math.round(best.rect.height)}}};
 }
 function r45axGetScroller(){
   const s = window.__R45AX_SCROLLER__;
@@ -267,6 +284,7 @@ async def self_test(output_root: Path) -> int:
             {'name':'progress_fixture_657_of_715','status':'pass' if re.search(r'\b(\d+)\s+of\s+(\d+)\b', SELF_TEST_HTML) else 'fail'},
             {'name':'fahad_replied_bucket_fixture','status':'pass' if 'Fahad Malik replied · 3 replies' in SELF_TEST_HTML else 'fail'},
             {'name':'modal_flatten_present','status':'pass' if 'r45axFlattenForScreenshot' in EXPAND_PATTERNS_JS else 'fail'},
+            {'name':'r45ba_real_scrollable_scroller_required','status':'pass' if 'no_real_scrollable_comments_container' in EXPAND_PATTERNS_JS and 'scrollHeight==clientHeight' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'no_hidden_platform_api','status':'pass'},
             {'name':'no_profile_parsing','status':'pass'},
         ],
@@ -310,8 +328,8 @@ return window.r45axInstallNavBlocker();
             receipt['status'] = 'BLOCKED_TARGET_GUARD'; (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8'); await context.close(); return 2
         scroller_info = await page.evaluate('r45axFindScroller();')
         log('R45AX_ACTIVE_SCROLL_CONTAINER', scroller_info)
-        if not scroller_info.get('ok'):
-            receipt['status'] = 'BLOCKED_NO_COMMENTS_SCROLLER'; (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8'); await context.close(); return 3
+        if (not scroller_info.get('ok')) or int((scroller_info.get('scroller') or {}).get('scrollHeight') or 0) <= int((scroller_info.get('scroller') or {}).get('clientHeight') or 0) + 80:
+            receipt['status'] = 'BLOCKED_NO_REAL_SCROLLABLE_COMMENTS_SCROLLER'; (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8'); await context.close(); return 3
         await page.evaluate('r45axScroll("top")')
         start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; unsafe_skipped = 0
         log('R45AX_PROGRESS_GATED_START', {'max_seconds':args.expand_max_seconds, 'max_steps':args.max_steps, 'progress_gate_required': True, 'target_url': target_url})
