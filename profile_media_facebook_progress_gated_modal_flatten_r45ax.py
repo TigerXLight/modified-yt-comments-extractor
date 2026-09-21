@@ -35,6 +35,7 @@ CONTRACT = {
     "webview2_storage_or_cookie_inspection_enabled": False,
     "remote_media_downloads_enabled": False,
     "r45ba_scroll_container_rule": "The active comments scroller must be a real scrollable comments container, not the outer role=dialog shell with scrollHeight equal to clientHeight. R45BA scores only scrollable candidates first and blocks rather than falsely passing on a 720px outer dialog.",
+    "r45bc_dead_click_rule": "If an expansion control remains visible after repeated clicks at the same coordinate/key without increasing scrollHeight, text length, or progress, R45BC marks that exact candidate as inert and skips it so the run can continue downward instead of looping forever.",
 }
 
 EXPAND_PATTERNS_JS = r"""
@@ -242,10 +243,12 @@ function r45axTextCandidates(scroller){
     addCandidate(info.label, info.category, rect, 'element');
   }
   const seen = new Set();
+  const skip = new Set(Array.isArray(window.__R45AX_SKIP_KEYS__) ? window.__R45AX_SKIP_KEYS__ : []);
   const dedup = [];
   for (const item of out.sort((a,b)=>a.top-b.top || a.left-b.left || (a.source || '').localeCompare(b.source || ''))){
     const key = item.category+'|'+item.label+'|'+Math.round(item.top/3)+'|'+Math.round(item.left/8);
-    if (seen.has(key)) continue;
+    item.key = key;
+    if (seen.has(key) || skip.has(key)) continue;
     seen.add(key); dedup.push(item);
   }
   return dedup;
@@ -266,6 +269,13 @@ function r45axClickFirstVisible(){
   if (!item.safe) return {clicked:false, blocked:true, item, scan};
   return {clicked:true, item, scan};
 }
+function r45axAddSkipKey(key){
+  if (!key) return {ok:false, reason:'missing_key'};
+  if (!Array.isArray(window.__R45AX_SKIP_KEYS__)) window.__R45AX_SKIP_KEYS__ = [];
+  if (!window.__R45AX_SKIP_KEYS__.includes(key)) window.__R45AX_SKIP_KEYS__.push(key);
+  return {ok:true, key, count: window.__R45AX_SKIP_KEYS__.length};
+}
+function r45axClearSkipKeys(){ window.__R45AX_SKIP_KEYS__ = []; return {ok:true}; }
 function r45axScroll(mode){
   const scroller = r45axGetScroller();
   if (!scroller) return {ok:false, reason:'no_scroller'};
@@ -355,6 +365,7 @@ async def self_test(output_root: Path) -> int:
             {'name':'r45ba_real_scrollable_scroller_required','status':'pass' if 'no_real_scrollable_comments_container' in EXPAND_PATTERNS_JS and 'scrollHeight==clientHeight' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'r45bb_full_audit_restart_required','status':'pass' if 'R45AX_AUDIT_RESTART_TOP' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'r45bb_html_progress_probe_present','status':'pass' if 'document.documentElement.innerHTML' in EXPAND_PATTERNS_JS and 'r45axProgressFromPage' in EXPAND_PATTERNS_JS else 'fail'},
+            {'name':'r45bc_dead_click_skip_present','status':'pass' if 'R45AX_DEAD_CLICK_KEY_SKIPPED' in Path(__file__).read_text(encoding='utf-8') and 'r45axAddSkipKey' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'no_hidden_platform_api','status':'pass'},
             {'name':'no_profile_parsing','status':'pass'},
         ],
@@ -384,6 +395,8 @@ window.r45axGetScroller = r45axGetScroller;
 window.r45axScroll = r45axScroll;
 window.r45axScanVisible = r45axScanVisible;
 window.r45axClickFirstVisible = r45axClickFirstVisible;
+window.r45axAddSkipKey = r45axAddSkipKey;
+window.r45axClearSkipKeys = r45axClearSkipKeys;
 window.r45axPageProgress = r45axPageProgress;
 window.r45axFlattenForScreenshot = r45axFlattenForScreenshot;
 window.r45axInstallNavBlocker = r45axInstallNavBlocker;
@@ -401,7 +414,7 @@ return window.r45axInstallNavBlocker();
         if (not scroller_info.get('ok')) or int((scroller_info.get('scroller') or {}).get('scrollHeight') or 0) <= int((scroller_info.get('scroller') or {}).get('clientHeight') or 0) + 80:
             receipt['status'] = 'BLOCKED_NO_REAL_SCROLLABLE_COMMENTS_SCROLLER'; (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8'); await context.close(); return 3
         await page.evaluate('r45axScroll("top")')
-        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; unsafe_skipped = 0; pass_had_click = False
+        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; unsafe_skipped = 0; dead_click_skipped = 0; pass_had_click = False; dead_click_counts: Dict[str, int] = {}
         log('R45AX_PROGRESS_GATED_START', {'max_seconds':args.expand_max_seconds, 'max_steps':args.max_steps, 'progress_gate_required': True, 'target_url': target_url})
         for step in range(1, int(args.max_steps)+1):
             elapsed = time.monotonic() - start
@@ -417,11 +430,28 @@ return window.r45axInstallNavBlocker();
                     unsafe_skipped += 1; log('R45AX_UNSAFE_VISIBLE_CONTROL_SKIPPED', {'step':step, 'item':clickinfo.get('item'), 'unsafe_skipped':unsafe_skipped}); await page.evaluate('r45axScroll("down")'); scrolls += 1; await page.wait_for_timeout(220); continue
                 item = clickinfo.get('item') or {}
                 if clickinfo.get('clicked') and item.get('safe'):
+                    before_scan = clickinfo.get('scan') or scan
+                    before_key = str(item.get('key') or '')
+                    before_sig = (int(before_scan.get('scrollHeight') or 0), int(before_scan.get('scrollTop') or 0), int(before_scan.get('total') or 0), json.dumps(before_scan.get('counts') or {}, sort_keys=True), json.dumps(best_progress or {}, sort_keys=True))
                     await page.mouse.click(float(item.get('x')), float(item.get('y'))); clicked += 1; pass_had_click = True
                     label = item.get('label',''); m = re.search(r'\d+', label); n = int(m.group(0)) if m else 0
-                    wait_ms = 2600 if n >= 100 else (1400 if n >= 30 else 650)
+                    wait_ms = 2600 if n >= 100 else (1400 if n >= 30 else 900)
                     await page.wait_for_timeout(wait_ms)
-                    log('R45AX_CLICK', {'step':step, 'clicked':clicked, 'label':label, 'category':item.get('category'), 'x':item.get('x'), 'y':item.get('y'), 'wait_ms':wait_ms})
+                    after_scan = await page.evaluate('r45axScanVisible()')
+                    after_prog = after_scan.get('progress')
+                    if after_prog and (not best_progress or (after_prog.get('total',0), after_prog.get('current',0)) >= (best_progress.get('total',0), best_progress.get('current',0))): best_progress = after_prog
+                    after_sig = (int(after_scan.get('scrollHeight') or 0), int(after_scan.get('scrollTop') or 0), int(after_scan.get('total') or 0), json.dumps(after_scan.get('counts') or {}, sort_keys=True), json.dumps(best_progress or {}, sort_keys=True))
+                    still_same_key = bool(before_key and any(str(x.get('key') or '') == before_key for x in after_scan.get('items', [])))
+                    no_progress = still_same_key and after_sig == before_sig
+                    if no_progress:
+                        dead_click_counts[before_key] = dead_click_counts.get(before_key, 0) + 1
+                    else:
+                        dead_click_counts.pop(before_key, None)
+                    log('R45AX_CLICK', {'step':step, 'clicked':clicked, 'label':label, 'category':item.get('category'), 'key':before_key, 'x':item.get('x'), 'y':item.get('y'), 'wait_ms':wait_ms, 'post_visible_total': after_scan.get('total'), 'no_progress': no_progress, 'dead_key_count': dead_click_counts.get(before_key,0)})
+                    if no_progress and dead_click_counts.get(before_key, 0) >= 2:
+                        dead_click_skipped += 1
+                        skip_result = await page.evaluate('(key) => r45axAddSkipKey(key)', before_key)
+                        log('R45AX_DEAD_CLICK_KEY_SKIPPED', {'step':step, 'key':before_key, 'label':label, 'dead_click_skipped':dead_click_skipped, 'skip_result':skip_result})
                     continue
             at_bottom = bool(scan.get('atBottom')); sh = int(scan.get('scrollHeight') or 0)
             if not at_bottom:
@@ -444,7 +474,7 @@ return window.r45axInstallNavBlocker();
                     await page.evaluate('r45axScroll("top")')
                     await page.wait_for_timeout(650)
                     continue
-                receipt['auto_expand_summary'] = {'status':'pass', 'clicked':clicked, 'scrolls':scrolls, 'audit_passes':audit_pass, 'unsafe_skipped':unsafe_skipped, 'best_progress':best_progress, 'progress_ok':progress_ok, 'completed_by_full_zero_control_audit': True}; log('R45AX_EXPANSION_COMPLETE', receipt['auto_expand_summary']); break
+                receipt['auto_expand_summary'] = {'status':'pass', 'clicked':clicked, 'scrolls':scrolls, 'audit_passes':audit_pass, 'unsafe_skipped':unsafe_skipped, 'dead_click_skipped':dead_click_skipped, 'best_progress':best_progress, 'progress_ok':progress_ok, 'completed_by_full_zero_control_audit': True}; log('R45AX_EXPANSION_COMPLETE', receipt['auto_expand_summary']); break
         if 'auto_expand_summary' not in receipt:
             final_scan = await page.evaluate('r45axScanVisible()'); final_progress = await page.evaluate('r45axPageProgress()')
             receipt['status'] = 'BLOCKED_INCOMPLETE_EXPANSION'; receipt['final_scan'] = final_scan; receipt['best_progress'] = best_progress or final_progress

@@ -23,6 +23,11 @@ assert 'scrollHeight==clientHeight' in src
 assert 'r45axExpansionLabelInfo' in src
 assert 'replied\\s*(?:[·•.\\-]\\s*)?\\d+\\s+repl' in src
 assert re.search(r'View all \\d\+ replies', src)
+assert 'r45bc_dead_click_rule' in src
+assert 'r45axAddSkipKey' in src
+assert 'R45AX_DEAD_CLICK_KEY_SKIPPED' in src
+assert 'dead_click_skipped' in src
+assert 'no_progress' in src
 assert 'hidden_platform_api_scraping_enabled' in src and 'False' in src
 assert 'browser_profile_file_parsing_enabled' in src and 'False' in src
 print('profile_media_facebook_progress_gated_modal_flatten_r45ax_test: PASS')
