@@ -471,6 +471,7 @@ def contract() -> Dict[str, Any]:
         'r45ab_target_surface_lock_rule': 'R45AB locks expansion and downward scrolling to the active Facebook comments dialog; if the dialog disappears, the runner stops instead of scrolling the outer facebook.com feed.',
         'r45ac_ordered_readonly_probe_rule': 'R45AC makes the expansion probe read-only and enforces a safe visible work band plus small dialog-only scroll steps, so controls are handled in visible top-to-bottom order instead of being reordered by probe-time scrollIntoView jumps.',
         'r45ad_dialog_body_band_anti_hover_rule': 'R45AD restricts expansion clicks to the comments dialog body band, moves the mouse to a neutral gutter after each click to dismiss hover cards, and stops immediately if the target comments dialog disappears.',
+        'r45ae_rolebutton_expand_fallback_rule': 'R45AE adds an exact-label role=button/link fallback for visible View all N replies / View hidden replies controls that the text-node probe can miss; it remains locked to the comments dialog and clicks in visible top-to-bottom order.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -907,6 +908,155 @@ JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
 }
 """
 
+JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE = r"""
+(opts) => {
+  const patterns = (opts && opts.patterns) || [];
+  const skip = new Set((opts && opts.skipKeys) || []);
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+  const rxFallback = [
+    /^View\s+all\s+\d+\s+repl(?:y|ies)$/i,
+    /^View\s+\d+\s+repl(?:y|ies)$/i,
+    /^View\s+\d+\s+more\s+repl(?:y|ies)$/i,
+    /^View\s+more\s+repl(?:y|ies)$/i,
+    /^View\s+previous\s+repl(?:y|ies)$/i,
+    /^View\s+hidden\s+repl(?:y|ies)$/i,
+    /^View\s+hidden\s+comments?$/i,
+    /^[\p{L}\p{M} .,'’`-]+\s+replied\s*·\s*\d+\s+repl(?:y|ies)$/iu
+  ];
+
+  function isMatch(label) {
+    const s = norm(label);
+    if (!s) return false;
+    for (const p of rxFallback) {
+      if (p.test(s)) return true;
+    }
+    for (const raw of patterns) {
+      try {
+        if (new RegExp(raw, 'i').test(s)) return true;
+      } catch(e) {}
+    }
+    return false;
+  }
+
+  function visibleRect(el) {
+    if (!el || !el.isConnected) return null;
+    const st = window.getComputedStyle(el);
+    if (!st || st.visibility === 'hidden' || st.display === 'none' || Number(st.opacity || 1) === 0) return null;
+    const rects = Array.from(el.getClientRects()).filter(r => r.width > 2 && r.height > 2);
+    if (!rects.length) return null;
+    const r = rects[0];
+    if (r.bottom <= 0 || r.right <= 0 || r.top >= window.innerHeight || r.left >= window.innerWidth) return null;
+    return r;
+  }
+
+  function surfaceDialog() {
+    const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
+    const visible = dialogs
+      .map(d => ({el: d, r: visibleRect(d), txt: norm(d.innerText || d.textContent || '')}))
+      .filter(x => x.r && x.r.width > 260 && x.r.height > 240);
+    if (!visible.length) return null;
+    visible.sort((a,b) => {
+      const as = /(comment|reply|replies|post)/i.test(a.txt) ? 1 : 0;
+      const bs = /(comment|reply|replies|post)/i.test(b.txt) ? 1 : 0;
+      if (as !== bs) return bs - as;
+      return (b.r.width*b.r.height) - (a.r.width*a.r.height);
+    });
+    return visible[0];
+  }
+
+  const surfaceInfo = surfaceDialog();
+  if (!surfaceInfo) {
+    return {
+      marker_r45ae: 'R45AE_ROLEBUTTON_EXPAND_FALLBACK',
+      surface_required: true,
+      surface_found: false,
+      stop_reason: 'target_comments_dialog_missing',
+      current_url: location.href,
+      candidate: null,
+      visible_count: 0,
+      visible_labels: [],
+      text_chars: norm(document.body ? document.body.innerText : '').length,
+      progress: null
+    };
+  }
+
+  const surface = surfaceInfo.el;
+  const sr = surfaceInfo.r;
+
+  const safeTop = Math.max(0, sr.top + 64);
+  const safeBottom = Math.min(window.innerHeight, sr.bottom - 34);
+  const safeLeft = Math.max(0, sr.left + 12);
+  const safeRight = Math.min(window.innerWidth, sr.right - 12);
+
+  const nodes = Array.from(surface.querySelectorAll('[role="button"], [role="link"], a, div[tabindex="0"], span[tabindex="0"]'));
+  const candidates = [];
+  const skipped = [];
+  const seen = new Set();
+
+  for (const el of nodes) {
+    let label = norm(el.innerText || el.textContent || el.getAttribute('aria-label') || '');
+    if (!label || label.length > 96 || !isMatch(label)) continue;
+    if (/^(Like|Reply|Share|Send|React|Comment|Leave a comment|Close|GIF|Sticker)$/i.test(label)) continue;
+
+    const r = visibleRect(el);
+    if (!r) continue;
+
+    const cx = r.left + (r.width / 2);
+    const cy = r.top + (r.height / 2);
+    const dedupe = `${label}|${Math.round(r.top)}|${Math.round(r.left)}|${Math.round(r.width)}|${Math.round(r.height)}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+
+    const key = `${label}|${Math.round(cx)}|${Math.round(cy)}`;
+    if (skip.has(key)) continue;
+
+    const inBand = cy >= safeTop && cy <= safeBottom && cx >= safeLeft && cx <= safeRight;
+    const item = {
+      label,
+      x: cx,
+      y: cy,
+      key,
+      top: r.top,
+      left: r.left,
+      width: r.width,
+      height: r.height,
+      inBand
+    };
+    if (inBand) candidates.push(item);
+    else skipped.push(item);
+  }
+
+  candidates.sort((a,b) => (a.top - b.top) || (a.left - b.left));
+  skipped.sort((a,b) => (a.top - b.top) || (a.left - b.left));
+
+  const c = candidates[0] || null;
+  return {
+    marker_r45ae: 'R45AE_ROLEBUTTON_EXPAND_FALLBACK',
+    surface_required: true,
+    surface_found: true,
+    candidate: c,
+    visible_count: candidates.length,
+    visible_labels: candidates.slice(0, 12).map(x => x.label),
+    skipped_visible_expand_count: skipped.length,
+    skipped_visible_labels: skipped.slice(0, 12).map(x => x.label),
+    skipped_visible_reasons: skipped.slice(0, 8).map(x => ({
+      label: x.label,
+      y: Math.round(x.y),
+      safeTop: Math.round(safeTop),
+      safeBottom: Math.round(safeBottom)
+    })),
+    text_chars: norm(surface.innerText || surface.textContent || '').length,
+    progress: null,
+    ordered_probe_read_only: true,
+    rolebutton_fallback: true,
+    top_to_bottom_ordered: true,
+    dialog_body_band_only: true,
+    current_url: location.href
+  };
+}
+"""
+
+
 JS_SCROLL_DOWNWARD_FRONTIER_R45V = r"""
 (opts) => {
   // R45AC: small bounded scroll increments preserve visible top-to-bottom ordering.
@@ -1035,14 +1185,42 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
         return int(round(time.monotonic() - started))
 
     def _probe(skip_keys_local: List[str]) -> Dict[str, Any]:
+        primary: Dict[str, Any] = {}
         try:
-            return page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
+            primary = page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
                 'patterns': patterns,
                 'viewportMarginPx': viewport_margin,
                 'skipKeys': skip_keys_local,
             }) or {}
         except Exception:
-            return {}
+            primary = {}
+
+        # R45AE: if the text-node probe misses a visible Facebook role=button
+        # expansion label such as "View all 2 replies", fall back to scanning
+        # the actual clickable role=button/link nodes in the active comments
+        # dialog. The fallback is still exact-label, dialog-locked, and
+        # top-to-bottom ordered.
+        try:
+            if not (isinstance(primary, dict) and primary.get('candidate')):
+                fallback = page.evaluate(JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE, {
+                    'patterns': patterns,
+                    'viewportMarginPx': viewport_margin,
+                    'skipKeys': skip_keys_local,
+                }) or {}
+                if isinstance(fallback, dict) and fallback.get('candidate'):
+                    return fallback
+                if isinstance(fallback, dict) and fallback.get('skipped_visible_expand_count'):
+                    merged = dict(primary or {})
+                    merged['marker_r45ae'] = fallback.get('marker_r45ae')
+                    merged['r45ae_skipped_visible_expand_count'] = fallback.get('skipped_visible_expand_count')
+                    merged['r45ae_skipped_visible_labels'] = fallback.get('skipped_visible_labels')
+                    merged['r45ae_skipped_visible_reasons'] = fallback.get('skipped_visible_reasons')
+                    merged.setdefault('visible_labels', fallback.get('skipped_visible_labels') or [])
+                    return merged
+        except Exception:
+            pass
+
+        return primary
 
     def _reply_count_from_label(label: str) -> int:
         parts = []
@@ -1202,6 +1380,8 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
                 'after_progress': after_progress,
                 'remaining_visible_candidates': remaining_visible,
                 'visible_labels': (after_probe.get('visible_labels') or [])[:8],
+                'probe_marker': probe.get('marker_r45ae'),
+                'rolebutton_fallback': bool(probe.get('rolebutton_fallback')),
                 'settle_seconds': _extra_settle_seconds_for_label(label),
                 'minimum_settle_seconds': _minimum_settle_seconds_for_label(label),
                 'actual_settle_elapsed_seconds': after_probe.get('r45aa_settle_elapsed_seconds'),
@@ -1684,6 +1864,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45aa_large_bucket_settle_hold_present', 'status': 'pass' if 'r45aa_large_bucket_settle_rule' in contract() and '_minimum_settle_seconds_for_label' in open(__file__, encoding='utf-8').read() and 'past_min' in open(__file__, encoding='utf-8').read() and 'actual_settle_elapsed_seconds' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45ac_ordered_readonly_probe_present', 'status': 'pass' if 'r45ac_ordered_readonly_probe_rule' in contract() and 'R45AC_ORDERED_READONLY_PROBE' in open(__file__, encoding='utf-8').read() and 'ordered_probe_read_only: true' in open(__file__, encoding='utf-8').read() and 'small bounded scroll increments' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45ad_dialog_body_band_anti_hover_present', 'status': 'pass' if 'r45ad_dialog_body_band_anti_hover_rule' in contract() and 'R45AD_DIALOG_BODY_BAND_ANTI_HOVER' in open(__file__, encoding='utf-8').read() and '_move_mouse_to_neutral_page_gutter_r45ad' in open(__file__, encoding='utf-8').read() and 'R45AD_TARGET_SURFACE_LOST_AFTER_CLICK_STOP' in open(__file__, encoding='utf-8').read() and 'dialog_body_band_only: true' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45ae_rolebutton_expand_fallback_present', 'status': 'pass' if 'r45ae_rolebutton_expand_fallback_rule' in contract() and 'JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE' in open(__file__, encoding='utf-8').read() and 'R45AE_ROLEBUTTON_EXPAND_FALLBACK' in open(__file__, encoding='utf-8').read() and 'rolebutton_fallback' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},

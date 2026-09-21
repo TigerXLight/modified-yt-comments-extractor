@@ -76,6 +76,10 @@ def test_contract_and_static_assets():
     assert 'r45ab_target_surface_lock_rule' in r45j.contract()
     assert 'r45ac_ordered_readonly_probe_rule' in r45j.contract()
     assert 'r45ad_dialog_body_band_anti_hover_rule' in r45j.contract()
+    assert 'r45ae_rolebutton_expand_fallback_rule' in r45j.contract()
+    assert 'JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE' in inspect.getsource(r45j)
+    assert 'R45AE_ROLEBUTTON_EXPAND_FALLBACK' in inspect.getsource(r45j)
+    assert 'rolebutton_fallback' in inspect.getsource(r45j._playwright_mouse_downward_expand)
     assert 'R45AD_DIALOG_BODY_BAND_ANTI_HOVER' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert 'dialog_body_band_only: true' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert '_move_mouse_to_neutral_page_gutter_r45ad' in inspect.getsource(r45j)
