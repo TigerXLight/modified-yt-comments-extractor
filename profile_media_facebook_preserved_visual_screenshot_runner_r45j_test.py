@@ -74,6 +74,10 @@ def test_contract_and_static_assets():
     assert '--hide-crash-restore-bubble' in inspect.getsource(r45j.run_live)
     assert 'r45aa_large_bucket_settle_rule' in r45j.contract()
     assert 'r45ab_target_surface_lock_rule' in r45j.contract()
+    assert 'r45ac_ordered_readonly_probe_rule' in r45j.contract()
+    assert 'R45AC_ORDERED_READONLY_PROBE' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
+    assert 'ordered_probe_read_only: true' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
+    assert 'scrollIntoView({block' not in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert '_minimum_settle_seconds_for_label' in inspect.getsource(r45j)
     assert 'R45AB_SURFACE_LOCKED_PROBE' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert 'dialog_surface_required' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V

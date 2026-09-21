@@ -469,6 +469,7 @@ def contract() -> Dict[str, Any]:
         'r45z_active_target_tab_rule': 'R45Z closes restored/crashed non-target tabs after opening the requested permalink and keeps the target page in front before expansion; it also waits for large expansion clicks to settle before scrolling downward.',
         'r45aa_large_bucket_settle_rule': 'R45AA enforces a real minimum hold after large reply openers such as View all 302 replies; the runner must not scroll away until the opened bucket has had time to stream newly inserted replies and expose their expansion controls.',
         'r45ab_target_surface_lock_rule': 'R45AB locks expansion and downward scrolling to the active Facebook comments dialog; if the dialog disappears, the runner stops instead of scrolling the outer facebook.com feed.',
+        'r45ac_ordered_readonly_probe_rule': 'R45AC makes the expansion probe read-only and enforces a safe visible work band plus small dialog-only scroll steps, so controls are handled in visible top-to-bottom order instead of being reordered by probe-time scrollIntoView jumps.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -852,10 +853,14 @@ JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
     if (!rect) continue;
     const target = clickableAncestor(parent);
     if (!target || !isVisible(target) || isComposerOrUploadSurface(target)) continue;
-    if (rect.top < clickGuardTopPx || rect.bottom > (window.innerHeight - clickGuardBottomPx)) {
-      try { target.scrollIntoView({block: 'center', inline: 'nearest'}); } catch(e) {}
-      rect = visibleTextRect(node, label) || rect;
-    }
+    // R45AC: probe must be read-only. Do not call scrollIntoView while
+    // discovering candidates, because that moves the Facebook comments surface
+    // mid-scan and breaks strict top-to-bottom ordering. Only click controls
+    // already inside the safe visible work band; otherwise the normal scroll step
+    // will bring the next control into the band.
+    const safeBottom = window.innerHeight - clickGuardBottomPx;
+    const centerY = rect.top + (rect.height / 2);
+    if (rect.top < clickGuardTopPx || rect.bottom > safeBottom || centerY < clickGuardTopPx || centerY > safeBottom) continue;
     if (rect.top < 8 || rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
     const key = keyFor(label, rect);
     if (skipKeys.has(key)) continue;
@@ -880,6 +885,11 @@ JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
     surface_required: true,
     surface_found: true,
     dialog_surface_required: true,
+    ordered_probe_read_only: true,
+    top_to_bottom_ordered: true,
+    safe_click_band_top_px: clickGuardTopPx,
+    safe_click_band_bottom_px: clickGuardBottomPx,
+    marker_r45ac: 'R45AC_ORDERED_READONLY_PROBE',
     surface_width: surfaceInfo.width,
     surface_height: surfaceInfo.height,
   };
@@ -888,7 +898,8 @@ JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
 
 JS_SCROLL_DOWNWARD_FRONTIER_R45V = r"""
 (opts) => {
-  const px = Number((opts && opts.scrollPx) || 650);
+  // R45AC: small bounded scroll increments preserve visible top-to-bottom ordering.
+  const px = Math.min(Number((opts && opts.scrollPx) || 280), 320);
   const isVisible = (el) => {
     if (!el) return false;
     const rect = el.getBoundingClientRect();
@@ -1620,6 +1631,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45y_pre_pause_target_guard_present', 'status': 'pass' if 'r45y_pre_pause_target_rule' in contract() and 'before_pre_expand_pause' in open(__file__, encoding='utf-8').read() and 'context.new_page()' in open(__file__, encoding='utf-8').read() and '--disable-session-crashed-bubble' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45z_active_target_tab_and_settle_present', 'status': 'pass' if 'r45z_active_target_tab_rule' in contract() and '_close_non_working_pages_r45z' in open(__file__, encoding='utf-8').read() and 'R45Z_CLOSED_NON_TARGET_TABS' in open(__file__, encoding='utf-8').read() and '_wait_for_click_settle' in open(__file__, encoding='utf-8').read() and '--hide-crash-restore-bubble' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45aa_large_bucket_settle_hold_present', 'status': 'pass' if 'r45aa_large_bucket_settle_rule' in contract() and '_minimum_settle_seconds_for_label' in open(__file__, encoding='utf-8').read() and 'past_min' in open(__file__, encoding='utf-8').read() and 'actual_settle_elapsed_seconds' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45ac_ordered_readonly_probe_present', 'status': 'pass' if 'r45ac_ordered_readonly_probe_rule' in contract() and 'R45AC_ORDERED_READONLY_PROBE' in open(__file__, encoding='utf-8').read() and 'ordered_probe_read_only: true' in open(__file__, encoding='utf-8').read() and 'small bounded scroll increments' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
