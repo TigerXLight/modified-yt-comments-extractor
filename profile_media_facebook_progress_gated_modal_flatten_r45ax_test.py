@@ -60,3 +60,7 @@ assert 'R45AX_PROGRESS_IGNORED_EXPECTED_TOTAL_MISMATCH' in src
 assert 'R45BI_EXPECTED_TOTAL_GATE' in src
 assert 'r45bi_expected_total_gate_rule' in src
 assert 'r45bi_expected_total_gate_present' in src
+assert 'BLOCKED_MESSENGER_OVERLAY_STILL_OPEN' in src
+assert 'r45ax_write_failure_artifacts' in src
+assert 'no coordinate fallback' in src
+assert 'mouse_park_only' in src

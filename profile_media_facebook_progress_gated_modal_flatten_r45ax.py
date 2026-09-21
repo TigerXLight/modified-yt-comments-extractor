@@ -40,6 +40,7 @@ CONTRACT = {
     "r45be_target_drift_rule": "R45BE refuses any current-tab navigation away from the expected story, broadens same-tab Facebook href blocking (including /pages/ profile/page links), and stops on repeated no-movement scrolls instead of looping on the wrong page.",
     "r45bg_hover_guard_rule": "R45BG parks the Playwright mouse at a neutral viewport corner immediately after clicks and scrolls, closes profile/name hover cards, and logs hover-card closures so account-name previews do not cover the comments modal or slow the visible-page pass.",
     "r45bi_expected_total_gate_rule": "R45BI fixes the failed R45BH anchor patch and adds --expected-total-comments so a known Facebook total such as 715 is a hard gate. When set, unrelated counters such as 20 of 100 are logged and ignored; completion requires N of the expected total to reach that total.",
+    "r45bj_no_random_overlay_close_rule": "R45BJ removes guessed coordinate clicks used to close Messenger/profile overlays. It only uses explicit close controls for Messenger, parks the mouse for profile hover cards, and writes page/text/screenshot artifacts before blocking if an overlay remains open.",
 }
 
 EXPAND_PATTERNS_JS = r"""
@@ -338,10 +339,9 @@ function r45axCloseMessengerOverlays(){
     const btn = candidates[0];
     try {
       if (btn) { btn.click(); closed += 1; continue; }
-      const x = Math.max(info.rect.left + 10, info.rect.right - 22);
-      const y = Math.max(info.rect.top + 10, info.rect.top + 24);
-      const el = document.elementFromPoint(x, y);
-      if (el) { el.click(); closed += 1; }
+      // R45BJ: no coordinate fallback. A guessed top-right click can hit Facebook chrome,
+      // profile cards, or page links and navigate the active tab away from the target story.
+      // Only explicit Close/Minimize controls above are allowed.
     } catch(e) {}
   }
   return {before, closed, after:r45axMessengerOverlayState()};
@@ -484,6 +484,8 @@ async def self_test(output_root: Path) -> int:
             {'name':'r45bg_no_hover_mouse_parking_present','status':'pass' if 'r45ax_park_mouse' in Path(__file__).read_text(encoding='utf-8') and 'R45AX_PROFILE_HOVER_CARD_CLOSED' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'r45bg_profile_hover_guard_present','status':'pass' if 'r45axProfileHoverOverlayState' in EXPAND_PATTERNS_JS and 'r45axCloseProfileHoverCards' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'r45bi_expected_total_gate_present','status':'pass' if '--expected-total-comments' in Path(__file__).read_text(encoding='utf-8') and 'R45AX_PROGRESS_IGNORED_EXPECTED_TOTAL_MISMATCH' in Path(__file__).read_text(encoding='utf-8') and 'r45ax_filter_expected_progress' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45bj_no_coordinate_overlay_close_present','status':'pass' if 'no coordinate fallback' in EXPAND_PATTERNS_JS and 'BLOCKED_MESSENGER_OVERLAY_STILL_OPEN' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45bj_failure_artifacts_present','status':'pass' if 'r45ax_write_failure_artifacts' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'no_hidden_platform_api','status':'pass'},
             {'name':'no_profile_parsing','status':'pass'},
         ],
@@ -510,16 +512,24 @@ async def r45ax_park_mouse(page) -> None:
         pass
 
 async def r45ax_close_profile_hover_cards(page) -> Dict[str, Any]:
+    """R45BJ: never click inside a suspected profile hover card.
+
+    Earlier versions tried to close hover/profile preview cards by clicking guessed
+    close buttons inside rectangles. On Facebook those rectangles can also be
+    nested comment/content containers; guessed clicks can navigate the active tab
+    away from the target permalink. We only park the mouse and wait briefly.
+    """
     try:
-        state = await page.evaluate('r45axProfileHoverOverlayState()')
-        if int((state or {}).get('count') or 0) <= 0:
-            return {'closed': 0, 'before': state, 'after': state}
-        await r45ax_park_mouse(page)
-        result = await page.evaluate('r45axCloseProfileHoverCards()')
-        await page.wait_for_timeout(180)
-        return result if isinstance(result, dict) else {'closed': 0, 'result': result}
-    except Exception as e:
-        return {'closed': 0, 'error': repr(e)}
+        before = await page.evaluate('r45axProfileHoverOverlayState()')
+    except Exception:
+        before = {'count': 0, 'overlays': []}
+    await r45ax_park_mouse(page)
+    try:
+        await page.wait_for_timeout(420)
+        after = await page.evaluate('r45axProfileHoverOverlayState()')
+    except Exception:
+        after = before
+    return {'closed': 0, 'before': before, 'after': after, 'mouse_park_only': True}
 
 
 
@@ -555,6 +565,30 @@ def r45ax_progress_gate_status(best_progress: Optional[Dict[str, Any]], expected
         'filtered_progress': filtered,
         'progress_ok': r45ax_progress_gate_ok(best_progress, expected_total_comments),
     }
+
+async def r45ax_write_failure_artifacts(page, run_dir: Path, prefix: str) -> Dict[str, str]:
+    """Write current visible-page evidence on blocked states."""
+    out: Dict[str, str] = {}
+    safe = re.sub(r'[^A-Za-z0-9_.-]+', '_', prefix).strip('_') or 'failure'
+    try:
+        html_path = run_dir / f'{safe}_page.html'
+        html_path.write_text(await page.content(), encoding='utf-8')
+        out['html_path'] = str(html_path)
+    except Exception as e:
+        out['html_error'] = repr(e)
+    try:
+        text_path = run_dir / f'{safe}_text.txt'
+        text_path.write_text(await page.evaluate('document.body.innerText || document.body.textContent || ""'), encoding='utf-8')
+        out['text_path'] = str(text_path)
+    except Exception as e:
+        out['text_error'] = repr(e)
+    try:
+        png_path = run_dir / f'{safe}_viewport.png'
+        await page.screenshot(path=str(png_path), full_page=False, timeout=45000)
+        out['screenshot_path'] = str(png_path)
+    except Exception as e:
+        out['screenshot_error'] = repr(e)
+    return out
 
 async def run_live(args: argparse.Namespace) -> int:
     async_playwright = await import_playwright()
@@ -685,7 +719,19 @@ return window.r45axInstallNavBlocker();
                         await page.wait_for_timeout(450)
                         if before_key:
                             skip_result = await page.evaluate('(key) => r45axAddSkipKey(key)', before_key)
-                            log('R45AX_MESSENGER_OVERLAY_BLOCKED', {'step':step, 'key':before_key, 'label':label, 'messenger_blocked':messenger_blocked, 'before_side':before_side, 'after_side':after_side, 'close_result':messenger_close_result, 'skip_result':skip_result})
+                        else:
+                            skip_result = {'ok': False, 'reason': 'missing_key'}
+                        log('R45AX_MESSENGER_OVERLAY_BLOCKED', {'step':step, 'key':before_key, 'label':label, 'messenger_blocked':messenger_blocked, 'before_side':before_side, 'after_side':after_side, 'close_result':messenger_close_result, 'skip_result':skip_result})
+                        after_close_count = int(((messenger_close_result or {}).get('after') or {}).get('count') or 0)
+                        if after_close_count > 0:
+                            receipt['status'] = 'BLOCKED_MESSENGER_OVERLAY_STILL_OPEN'
+                            receipt['last_click'] = {'step': step, 'key': before_key, 'label': label, 'x': item.get('x'), 'y': item.get('y')}
+                            receipt['messenger_overlay'] = {'before_side': before_side, 'after_side': after_side, 'close_result': messenger_close_result}
+                            receipt['failure_artifacts'] = await r45ax_write_failure_artifacts(page, run_dir, 'blocked_messenger_overlay_still_open')
+                            log('R45AX_MESSENGER_OVERLAY_STILL_OPEN_BLOCKED', {'step': step, 'last_click': receipt['last_click'], 'after_close_count': after_close_count, 'failure_artifacts': receipt['failure_artifacts']})
+                            (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8')
+                            await context.close()
+                            return 7
                     if closed_new_pages and before_key:
                         skip_result = await page.evaluate('(key) => r45axAddSkipKey(key)', before_key)
                         log('R45AX_UNEXPECTED_PAGE_CLOSED', {'step':step, 'key':before_key, 'label':label, 'closed_pages':closed_new_pages, 'new_pages_closed':new_pages_closed, 'skip_result':skip_result})
