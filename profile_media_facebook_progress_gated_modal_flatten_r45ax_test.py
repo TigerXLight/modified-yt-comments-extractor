@@ -28,6 +28,14 @@ assert 'r45axAddSkipKey' in src
 assert 'R45AX_DEAD_CLICK_KEY_SKIPPED' in src
 assert 'dead_click_skipped' in src
 assert 'no_progress' in src
+assert 'r45bd_messenger_guard_rule' in src
+assert 'r45axMessengerOverlayState' in src
+assert 'r45axCloseMessengerOverlays' in src
+assert 'R45AX_MESSENGER_OVERLAY_BLOCKED' in src
+assert 'R45AX_UNEXPECTED_PAGE_CLOSED' in src
+assert 'click_elapsed_ms' in src
+assert 'timing_delta' in src
+assert 'messenger_opened' in src
 assert 'hidden_platform_api_scraping_enabled' in src and 'False' in src
 assert 'browser_profile_file_parsing_enabled' in src and 'False' in src
 print('profile_media_facebook_progress_gated_modal_flatten_r45ax_test: PASS')

@@ -36,6 +36,7 @@ CONTRACT = {
     "remote_media_downloads_enabled": False,
     "r45ba_scroll_container_rule": "The active comments scroller must be a real scrollable comments container, not the outer role=dialog shell with scrollHeight equal to clientHeight. R45BA scores only scrollable candidates first and blocks rather than falsely passing on a 720px outer dialog.",
     "r45bc_dead_click_rule": "If an expansion control remains visible after repeated clicks at the same coordinate/key without increasing scrollHeight, text length, or progress, R45BC marks that exact candidate as inert and skips it so the run can continue downward instead of looping forever.",
+    "r45bd_messenger_guard_rule": "If any click opens a Messenger/DM chat overlay or a new tab/page, R45BD closes the side effect, marks the candidate inert, and logs timing/delta evidence for that click instead of continuing with the overlay covering the comments modal.",
 }
 
 EXPAND_PATTERNS_JS = r"""
@@ -290,14 +291,65 @@ function r45axPageProgress(){
   const scroller = r45axGetScroller();
   return r45axProgressFromPage();
 }
+
+function r45axMessengerOverlayState(){
+  const overlays = [];
+  const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
+  const vh = window.innerHeight || document.documentElement.clientHeight || 720;
+  const nodes = Array.from(document.querySelectorAll('[role="dialog"], [aria-label], div')).slice(0, 12000);
+  for (const el of nodes){
+    if (r45axElementHidden(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 240 || r.width > 560 || r.height < 180 || r.height > 720) continue;
+    if (r.right < vw * 0.55 || r.bottom < vh * 0.45) continue;
+    const text = r45axNorm([el.innerText || '', el.textContent || '', el.getAttribute && (el.getAttribute('aria-label') || '')].join(' '));
+    if (!/(Messages and calls are secured|end-to-end encrypted|Type a message|Write a message|Messenger|Minimize chat|Close chat|Start a call|Aa\s*(?:Like|Send)?)/i.test(text)) continue;
+    overlays.push({tag:el.tagName, role:el.getAttribute('role') || '', aria:el.getAttribute('aria-label') || '', text:text.slice(0,220), rect:{left:Math.round(r.left), top:Math.round(r.top), right:Math.round(r.right), bottom:Math.round(r.bottom), width:Math.round(r.width), height:Math.round(r.height)}});
+  }
+  overlays.sort((a,b)=>(b.rect.right-a.rect.right)||(b.rect.bottom-a.rect.bottom));
+  return {count:overlays.length, overlays:overlays.slice(0,5)};
+}
+function r45axCloseMessengerOverlays(){
+  let closed = 0;
+  const before = r45axMessengerOverlayState();
+  for (const info of before.overlays || []){
+    let candidates = Array.from(document.querySelectorAll('[aria-label], [role="button"], button, div, span')).filter(el => {
+      if (r45axElementHidden(el)) return false;
+      const r = el.getBoundingClientRect();
+      if (r.left < info.rect.left || r.right > info.rect.right + 5 || r.top < info.rect.top || r.bottom > info.rect.bottom + 5) return false;
+      const blob = r45axNorm([(el.getAttribute && (el.getAttribute('aria-label') || '')), (el.getAttribute && (el.getAttribute('title') || '')), (el.innerText || el.textContent || '')].join(' '));
+      if (/(Close chat|Close conversation|Close tab|Close$|Minimize chat)/i.test(blob)) return true;
+      if (/^[×xX✕-]$/.test(blob) && r.top < info.rect.top + 80 && r.right > info.rect.right - 90) return true;
+      return false;
+    });
+    candidates.sort((a,b)=>{
+      const ar=a.getBoundingClientRect(), br=b.getBoundingClientRect();
+      return (br.right-ar.right) || (ar.top-br.top);
+    });
+    const btn = candidates[0];
+    try {
+      if (btn) { btn.click(); closed += 1; continue; }
+      const x = Math.max(info.rect.left + 10, info.rect.right - 22);
+      const y = Math.max(info.rect.top + 10, info.rect.top + 24);
+      const el = document.elementFromPoint(x, y);
+      if (el) { el.click(); closed += 1; }
+    } catch(e) {}
+  }
+  return {before, closed, after:r45axMessengerOverlayState()};
+}
+function r45axSideEffectState(){ return {messenger:r45axMessengerOverlayState(), href:location.href, title:document.title}; }
+
 function r45axInstallNavBlocker(){
   if (window.__R45AX_NAV_BLOCKER__) return {installed:true, already:true};
   window.__R45AX_NAV_BLOCKER__ = true;
   document.addEventListener('click', function(ev){
+    const target = ev.target && ev.target.closest ? ev.target.closest('a[href], [role=\"button\"], button, [aria-label]') : null;
     const a = ev.target && ev.target.closest && ev.target.closest('a[href]');
-    if (!a) return;
-    const href = a.href || a.getAttribute('href') || '';
-    if (r45axUnsafeHref(href)) { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); console.warn('R45AX_NAV_BLOCKED '+href); }
+    const href = a ? (a.href || a.getAttribute('href') || '') : '';
+    const blob = target ? r45axNorm([(target.getAttribute && (target.getAttribute('aria-label') || '')), (target.getAttribute && (target.getAttribute('title') || '')), (target.innerText || target.textContent || '')].join(' ')) : '';
+    if (r45axUnsafeHref(href) || /\b(Message|Messenger|Send message|Open Messenger|Start call|Start video call|Audio call|Video call)\b/i.test(blob)) {
+      ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); console.warn('R45AX_NAV_OR_DM_BLOCKED '+(href || blob));
+    }
   }, true);
   return {installed:true, already:false};
 }
@@ -366,6 +418,8 @@ async def self_test(output_root: Path) -> int:
             {'name':'r45bb_full_audit_restart_required','status':'pass' if 'R45AX_AUDIT_RESTART_TOP' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'r45bb_html_progress_probe_present','status':'pass' if 'document.documentElement.innerHTML' in EXPAND_PATTERNS_JS and 'r45axProgressFromPage' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'r45bc_dead_click_skip_present','status':'pass' if 'R45AX_DEAD_CLICK_KEY_SKIPPED' in Path(__file__).read_text(encoding='utf-8') and 'r45axAddSkipKey' in EXPAND_PATTERNS_JS else 'fail'},
+            {'name':'r45bd_messenger_overlay_guard_present','status':'pass' if 'R45AX_MESSENGER_OVERLAY_BLOCKED' in Path(__file__).read_text(encoding='utf-8') and 'r45axMessengerOverlayState' in EXPAND_PATTERNS_JS else 'fail'},
+            {'name':'r45bd_click_timing_delta_present','status':'pass' if 'click_elapsed_ms' in Path(__file__).read_text(encoding='utf-8') and 'timing_delta' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'no_hidden_platform_api','status':'pass'},
             {'name':'no_profile_parsing','status':'pass'},
         ],
@@ -398,6 +452,9 @@ window.r45axClickFirstVisible = r45axClickFirstVisible;
 window.r45axAddSkipKey = r45axAddSkipKey;
 window.r45axClearSkipKeys = r45axClearSkipKeys;
 window.r45axPageProgress = r45axPageProgress;
+window.r45axMessengerOverlayState = r45axMessengerOverlayState;
+window.r45axCloseMessengerOverlays = r45axCloseMessengerOverlays;
+window.r45axSideEffectState = r45axSideEffectState;
 window.r45axFlattenForScreenshot = r45axFlattenForScreenshot;
 window.r45axInstallNavBlocker = r45axInstallNavBlocker;
 return window.r45axInstallNavBlocker();
@@ -414,8 +471,14 @@ return window.r45axInstallNavBlocker();
         if (not scroller_info.get('ok')) or int((scroller_info.get('scroller') or {}).get('scrollHeight') or 0) <= int((scroller_info.get('scroller') or {}).get('clientHeight') or 0) + 80:
             receipt['status'] = 'BLOCKED_NO_REAL_SCROLLABLE_COMMENTS_SCROLLER'; (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8'); await context.close(); return 3
         await page.evaluate('r45axScroll("top")')
-        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; unsafe_skipped = 0; dead_click_skipped = 0; pass_had_click = False; dead_click_counts: Dict[str, int] = {}
+        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; unsafe_skipped = 0; dead_click_skipped = 0; messenger_blocked = 0; new_pages_closed = 0; pass_had_click = False; dead_click_counts: Dict[str, int] = {}
         log('R45AX_PROGRESS_GATED_START', {'max_seconds':args.expand_max_seconds, 'max_steps':args.max_steps, 'progress_gate_required': True, 'target_url': target_url})
+        known_pages = set(context.pages)
+        pre_existing_chat = await page.evaluate('r45axMessengerOverlayState()')
+        if pre_existing_chat.get('count'):
+            close_result = await page.evaluate('r45axCloseMessengerOverlays()')
+            log('R45AX_PREEXISTING_MESSENGER_OVERLAY_CLOSED', close_result)
+            await page.wait_for_timeout(350)
         for step in range(1, int(args.max_steps)+1):
             elapsed = time.monotonic() - start
             if elapsed > float(args.expand_max_seconds): break
@@ -432,22 +495,58 @@ return window.r45axInstallNavBlocker();
                 if clickinfo.get('clicked') and item.get('safe'):
                     before_scan = clickinfo.get('scan') or scan
                     before_key = str(item.get('key') or '')
-                    before_sig = (int(before_scan.get('scrollHeight') or 0), int(before_scan.get('scrollTop') or 0), int(before_scan.get('total') or 0), json.dumps(before_scan.get('counts') or {}, sort_keys=True), json.dumps(best_progress or {}, sort_keys=True))
+                    before_progress_for_sig = best_progress
+                    before_sig = (int(before_scan.get('scrollHeight') or 0), int(before_scan.get('scrollTop') or 0), int(before_scan.get('total') or 0), json.dumps(before_scan.get('counts') or {}, sort_keys=True), json.dumps(before_progress_for_sig or {}, sort_keys=True))
+                    before_side = await page.evaluate('r45axSideEffectState()')
+                    click_t0 = time.monotonic()
                     await page.mouse.click(float(item.get('x')), float(item.get('y'))); clicked += 1; pass_had_click = True
                     label = item.get('label',''); m = re.search(r'\d+', label); n = int(m.group(0)) if m else 0
-                    wait_ms = 2600 if n >= 100 else (1400 if n >= 30 else 900)
+                    wait_ms = 3000 if n >= 100 else (1800 if n >= 30 else 1200)
                     await page.wait_for_timeout(wait_ms)
+                    closed_new_pages = []
+                    for pg in list(context.pages):
+                        if pg is page or pg in known_pages:
+                            continue
+                        try:
+                            closed_new_pages.append({'url': pg.url, 'title': await pg.title()})
+                            await pg.close()
+                            new_pages_closed += 1
+                        except Exception as e:
+                            closed_new_pages.append({'error': repr(e)})
+                    after_side = await page.evaluate('r45axSideEffectState()')
+                    messenger_opened = int((after_side.get('messenger') or {}).get('count') or 0) > int((before_side.get('messenger') or {}).get('count') or 0) or int((after_side.get('messenger') or {}).get('count') or 0) > 0
+                    messenger_close_result = None
+                    if messenger_opened:
+                        messenger_blocked += 1
+                        messenger_close_result = await page.evaluate('r45axCloseMessengerOverlays()')
+                        await page.wait_for_timeout(450)
+                        if before_key:
+                            skip_result = await page.evaluate('(key) => r45axAddSkipKey(key)', before_key)
+                            log('R45AX_MESSENGER_OVERLAY_BLOCKED', {'step':step, 'key':before_key, 'label':label, 'messenger_blocked':messenger_blocked, 'before_side':before_side, 'after_side':after_side, 'close_result':messenger_close_result, 'skip_result':skip_result})
+                    if closed_new_pages and before_key:
+                        skip_result = await page.evaluate('(key) => r45axAddSkipKey(key)', before_key)
+                        log('R45AX_UNEXPECTED_PAGE_CLOSED', {'step':step, 'key':before_key, 'label':label, 'closed_pages':closed_new_pages, 'new_pages_closed':new_pages_closed, 'skip_result':skip_result})
                     after_scan = await page.evaluate('r45axScanVisible()')
                     after_prog = after_scan.get('progress')
                     if after_prog and (not best_progress or (after_prog.get('total',0), after_prog.get('current',0)) >= (best_progress.get('total',0), best_progress.get('current',0))): best_progress = after_prog
                     after_sig = (int(after_scan.get('scrollHeight') or 0), int(after_scan.get('scrollTop') or 0), int(after_scan.get('total') or 0), json.dumps(after_scan.get('counts') or {}, sort_keys=True), json.dumps(best_progress or {}, sort_keys=True))
                     still_same_key = bool(before_key and any(str(x.get('key') or '') == before_key for x in after_scan.get('items', [])))
-                    no_progress = still_same_key and after_sig == before_sig
+                    no_progress = (still_same_key and after_sig == before_sig) or messenger_opened or bool(closed_new_pages)
                     if no_progress:
                         dead_click_counts[before_key] = dead_click_counts.get(before_key, 0) + 1
                     else:
                         dead_click_counts.pop(before_key, None)
-                    log('R45AX_CLICK', {'step':step, 'clicked':clicked, 'label':label, 'category':item.get('category'), 'key':before_key, 'x':item.get('x'), 'y':item.get('y'), 'wait_ms':wait_ms, 'post_visible_total': after_scan.get('total'), 'no_progress': no_progress, 'dead_key_count': dead_click_counts.get(before_key,0)})
+                    click_elapsed_ms = int(round((time.monotonic() - click_t0) * 1000))
+                    timing_delta = {
+                        'scrollHeight_delta': int(after_scan.get('scrollHeight') or 0) - int(before_scan.get('scrollHeight') or 0),
+                        'scrollTop_delta': int(after_scan.get('scrollTop') or 0) - int(before_scan.get('scrollTop') or 0),
+                        'visible_total_delta': int(after_scan.get('total') or 0) - int(before_scan.get('total') or 0),
+                        'counts_before': before_scan.get('counts'),
+                        'counts_after': after_scan.get('counts'),
+                        'progress_before': before_progress_for_sig,
+                        'progress_after': best_progress,
+                    }
+                    log('R45AX_CLICK', {'step':step, 'clicked':clicked, 'label':label, 'category':item.get('category'), 'key':before_key, 'x':item.get('x'), 'y':item.get('y'), 'wait_ms':wait_ms, 'click_elapsed_ms':click_elapsed_ms, 'timing_delta':timing_delta, 'post_visible_total': after_scan.get('total'), 'no_progress': no_progress, 'messenger_opened': messenger_opened, 'new_pages_closed': closed_new_pages, 'dead_key_count': dead_click_counts.get(before_key,0)})
                     if no_progress and dead_click_counts.get(before_key, 0) >= 2:
                         dead_click_skipped += 1
                         skip_result = await page.evaluate('(key) => r45axAddSkipKey(key)', before_key)
@@ -474,7 +573,7 @@ return window.r45axInstallNavBlocker();
                     await page.evaluate('r45axScroll("top")')
                     await page.wait_for_timeout(650)
                     continue
-                receipt['auto_expand_summary'] = {'status':'pass', 'clicked':clicked, 'scrolls':scrolls, 'audit_passes':audit_pass, 'unsafe_skipped':unsafe_skipped, 'dead_click_skipped':dead_click_skipped, 'best_progress':best_progress, 'progress_ok':progress_ok, 'completed_by_full_zero_control_audit': True}; log('R45AX_EXPANSION_COMPLETE', receipt['auto_expand_summary']); break
+                receipt['auto_expand_summary'] = {'status':'pass', 'clicked':clicked, 'scrolls':scrolls, 'audit_passes':audit_pass, 'unsafe_skipped':unsafe_skipped, 'dead_click_skipped':dead_click_skipped, 'messenger_blocked':messenger_blocked, 'new_pages_closed':new_pages_closed, 'best_progress':best_progress, 'progress_ok':progress_ok, 'completed_by_full_zero_control_audit': True}; log('R45AX_EXPANSION_COMPLETE', receipt['auto_expand_summary']); break
         if 'auto_expand_summary' not in receipt:
             final_scan = await page.evaluate('r45axScanVisible()'); final_progress = await page.evaluate('r45axPageProgress()')
             receipt['status'] = 'BLOCKED_INCOMPLETE_EXPANSION'; receipt['final_scan'] = final_scan; receipt['best_progress'] = best_progress or final_progress
