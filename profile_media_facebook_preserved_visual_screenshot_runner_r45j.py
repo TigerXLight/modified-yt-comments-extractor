@@ -472,6 +472,7 @@ def contract() -> Dict[str, Any]:
         'r45ac_ordered_readonly_probe_rule': 'R45AC makes the expansion probe read-only and enforces a safe visible work band plus small dialog-only scroll steps, so controls are handled in visible top-to-bottom order instead of being reordered by probe-time scrollIntoView jumps.',
         'r45ad_dialog_body_band_anti_hover_rule': 'R45AD restricts expansion clicks to the comments dialog body band, moves the mouse to a neutral gutter after each click to dismiss hover cards, and stops immediately if the target comments dialog disappears.',
         'r45ae_rolebutton_expand_fallback_rule': 'R45AE adds an exact-label role=button/link fallback for visible View all N replies / View hidden replies controls that the text-node probe can miss; it remains locked to the comments dialog and clicks in visible top-to-bottom order.',
+        'r45af_textrect_fallback_first_rule': 'R45AF runs the clickable role=button/link expansion probe before the older text-node probe and clicks the actual visible label text rectangle, preventing View all N replies controls from being left behind or clicked at the centre of a wide Facebook row.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -931,9 +932,7 @@ JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE = r"""
       if (p.test(s)) return true;
     }
     for (const raw of patterns) {
-      try {
-        if (new RegExp(raw, 'i').test(s)) return true;
-      } catch(e) {}
+      try { if (new RegExp(raw, 'i').test(s)) return true; } catch(e) {}
     }
     return false;
   }
@@ -947,6 +946,47 @@ JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE = r"""
     const r = rects[0];
     if (r.bottom <= 0 || r.right <= 0 || r.top >= window.innerHeight || r.left >= window.innerWidth) return null;
     return r;
+  }
+
+  function textRectForLabel(root, label) {
+    // R45AF: click the visible text label itself, not the centre of a wide Facebook row/button.
+    const wanted = norm(label);
+    if (!wanted || !root) return null;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const s = norm(node.nodeValue || '');
+        if (!s) return NodeFilter.FILTER_REJECT;
+        return s.includes(wanted) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      }
+    });
+    let node;
+    while ((node = walker.nextNode())) {
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const rects = Array.from(range.getClientRects()).filter(r => r.width > 2 && r.height > 2);
+        range.detach();
+        if (!rects.length) continue;
+        rects.sort((a,b) => (a.width*a.height) - (b.width*b.height));
+        for (const r of rects) {
+          if (r.bottom > 0 && r.top < window.innerHeight && r.right > 0 && r.left < window.innerWidth) return r;
+        }
+      } catch(e) {}
+    }
+    return null;
+  }
+
+  function hasComposerAncestor(el) {
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      const txt = norm(n.innerText || n.textContent || '');
+      const aria = norm(n.getAttribute && n.getAttribute('aria-label'));
+      const role = norm(n.getAttribute && n.getAttribute('role'));
+      const ce = n.getAttribute && n.getAttribute('contenteditable');
+      if (ce === 'true') return true;
+      if (/Comment as|Reply to|Write a reply|Leave a comment/i.test(txt)) return true;
+      if (/comment|reply/i.test(aria) && (role === 'textbox' || ce === 'true')) return true;
+    }
+    return false;
   }
 
   function surfaceDialog() {
@@ -964,10 +1004,26 @@ JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE = r"""
     return visible[0];
   }
 
+  function composerTop(surface, sr) {
+    const nodes = Array.from(surface.querySelectorAll('[contenteditable="true"], [role="textbox"], textarea, input, div[aria-label], span[aria-label]'));
+    let best = null;
+    for (const el of nodes) {
+      const txt = norm(el.innerText || el.textContent || '');
+      const aria = norm(el.getAttribute && el.getAttribute('aria-label'));
+      if (!(/Comment as|Reply to|Write a reply|Leave a comment|comment|reply/i.test(txt + ' ' + aria))) continue;
+      const r = visibleRect(el);
+      if (!r) continue;
+      if (r.top < sr.top + sr.height * 0.40) continue;
+      if (best === null || r.top < best) best = r.top;
+    }
+    return best;
+  }
+
   const surfaceInfo = surfaceDialog();
   if (!surfaceInfo) {
     return {
       marker_r45ae: 'R45AE_ROLEBUTTON_EXPAND_FALLBACK',
+      marker_r45af: 'R45AF_TEXTRECT_FALLBACK_FIRST',
       surface_required: true,
       surface_found: false,
       stop_reason: 'target_comments_dialog_missing',
@@ -982,14 +1038,16 @@ JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE = r"""
 
   const surface = surfaceInfo.el;
   const sr = surfaceInfo.r;
+  const cTop = composerTop(surface, sr);
 
   const safeTop = Math.max(0, sr.top + 64);
-  const safeBottom = Math.min(window.innerHeight, sr.bottom - 34);
+  const safeBottom = Math.min(window.innerHeight, sr.bottom - 26, cTop === null ? Infinity : cTop - 10);
   const safeLeft = Math.max(0, sr.left + 12);
   const safeRight = Math.min(window.innerWidth, sr.right - 12);
 
   const nodes = Array.from(surface.querySelectorAll('[role="button"], [role="link"], a, div[tabindex="0"], span[tabindex="0"]'));
   const candidates = [];
+  const relaxed = [];
   const skipped = [];
   const seen = new Set();
 
@@ -997,13 +1055,15 @@ JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE = r"""
     let label = norm(el.innerText || el.textContent || el.getAttribute('aria-label') || '');
     if (!label || label.length > 96 || !isMatch(label)) continue;
     if (/^(Like|Reply|Share|Send|React|Comment|Leave a comment|Close|GIF|Sticker)$/i.test(label)) continue;
+    if (hasComposerAncestor(el)) continue;
 
-    const r = visibleRect(el);
-    if (!r) continue;
+    const er = visibleRect(el);
+    if (!er) continue;
 
-    const cx = r.left + (r.width / 2);
-    const cy = r.top + (r.height / 2);
-    const dedupe = `${label}|${Math.round(r.top)}|${Math.round(r.left)}|${Math.round(r.width)}|${Math.round(r.height)}`;
+    const tr = textRectForLabel(el, label) || er;
+    const cx = tr.left + (tr.width / 2);
+    const cy = tr.top + (tr.height / 2);
+    const dedupe = `${label}|${Math.round(tr.top)}|${Math.round(tr.left)}|${Math.round(tr.width)}|${Math.round(tr.height)}`;
     if (seen.has(dedupe)) continue;
     seen.add(dedupe);
 
@@ -1011,44 +1071,42 @@ JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE = r"""
     if (skip.has(key)) continue;
 
     const inBand = cy >= safeTop && cy <= safeBottom && cx >= safeLeft && cx <= safeRight;
+    const inRelaxedDialogBody = cy >= safeTop && cy <= Math.min(window.innerHeight - 10, sr.bottom - 10) && cx >= safeLeft && cx <= safeRight && (cTop === null || cy < cTop - 4);
     const item = {
-      label,
-      x: cx,
-      y: cy,
-      key,
-      top: r.top,
-      left: r.left,
-      width: r.width,
-      height: r.height,
-      inBand
+      label, x: cx, y: cy, key, top: tr.top, left: tr.left, width: tr.width, height: tr.height,
+      inBand, text_rect_click: true
     };
     if (inBand) candidates.push(item);
+    else if (inRelaxedDialogBody) relaxed.push({...item, relaxed_band_fallback: true});
     else skipped.push(item);
   }
 
   candidates.sort((a,b) => (a.top - b.top) || (a.left - b.left));
+  relaxed.sort((a,b) => (a.top - b.top) || (a.left - b.left));
   skipped.sort((a,b) => (a.top - b.top) || (a.left - b.left));
 
-  const c = candidates[0] || null;
+  const c = candidates[0] || relaxed[0] || null;
   return {
     marker_r45ae: 'R45AE_ROLEBUTTON_EXPAND_FALLBACK',
+    marker_r45af: 'R45AF_TEXTRECT_FALLBACK_FIRST',
     surface_required: true,
     surface_found: true,
     candidate: c,
-    visible_count: candidates.length,
-    visible_labels: candidates.slice(0, 12).map(x => x.label),
+    visible_count: candidates.length + relaxed.length,
+    visible_labels: candidates.concat(relaxed).slice(0, 12).map(x => x.label),
+    relaxed_band_candidate_count: relaxed.length,
     skipped_visible_expand_count: skipped.length,
     skipped_visible_labels: skipped.slice(0, 12).map(x => x.label),
     skipped_visible_reasons: skipped.slice(0, 8).map(x => ({
-      label: x.label,
-      y: Math.round(x.y),
-      safeTop: Math.round(safeTop),
-      safeBottom: Math.round(safeBottom)
+      label: x.label, y: Math.round(x.y), safeTop: Math.round(safeTop),
+      safeBottom: Math.round(safeBottom), composerTop: cTop === null ? null : Math.round(cTop)
     })),
     text_chars: norm(surface.innerText || surface.textContent || '').length,
     progress: null,
     ordered_probe_read_only: true,
     rolebutton_fallback: true,
+    rolebutton_fallback_first: true,
+    text_rect_click: true,
     top_to_bottom_ordered: true,
     dialog_body_band_only: true,
     current_url: location.href
@@ -1185,6 +1243,21 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
         return int(round(time.monotonic() - started))
 
     def _probe(skip_keys_local: List[str]) -> Dict[str, Any]:
+        # R45AF: try the real clickable role=button/link probe first. The video
+        # showed visible "View all N replies" controls left behind; the old
+        # text-node-first ordering could find another text candidate and never
+        # ask the clickable fallback. The fallback clicks the label text rect.
+        try:
+            fallback_first = page.evaluate(JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE, {
+                'patterns': patterns,
+                'viewportMarginPx': viewport_margin,
+                'skipKeys': skip_keys_local,
+            }) or {}
+            if isinstance(fallback_first, dict) and fallback_first.get('candidate'):
+                return fallback_first
+        except Exception:
+            fallback_first = {}
+
         primary: Dict[str, Any] = {}
         try:
             primary = page.evaluate(JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V, {
@@ -1195,30 +1268,24 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
         except Exception:
             primary = {}
 
-        # R45AE: if the text-node probe misses a visible Facebook role=button
-        # expansion label such as "View all 2 replies", fall back to scanning
-        # the actual clickable role=button/link nodes in the active comments
-        # dialog. The fallback is still exact-label, dialog-locked, and
-        # top-to-bottom ordered.
-        try:
-            if not (isinstance(primary, dict) and primary.get('candidate')):
-                fallback = page.evaluate(JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE, {
-                    'patterns': patterns,
-                    'viewportMarginPx': viewport_margin,
-                    'skipKeys': skip_keys_local,
-                }) or {}
-                if isinstance(fallback, dict) and fallback.get('candidate'):
-                    return fallback
-                if isinstance(fallback, dict) and fallback.get('skipped_visible_expand_count'):
-                    merged = dict(primary or {})
-                    merged['marker_r45ae'] = fallback.get('marker_r45ae')
-                    merged['r45ae_skipped_visible_expand_count'] = fallback.get('skipped_visible_expand_count')
-                    merged['r45ae_skipped_visible_labels'] = fallback.get('skipped_visible_labels')
-                    merged['r45ae_skipped_visible_reasons'] = fallback.get('skipped_visible_reasons')
-                    merged.setdefault('visible_labels', fallback.get('skipped_visible_labels') or [])
-                    return merged
-        except Exception:
-            pass
+        if isinstance(primary, dict) and primary.get('candidate'):
+            if isinstance(fallback_first, dict):
+                primary.setdefault('marker_r45af', fallback_first.get('marker_r45af'))
+                primary.setdefault('r45af_fallback_first_visible_labels', fallback_first.get('visible_labels'))
+                primary.setdefault('r45af_skipped_visible_labels', fallback_first.get('skipped_visible_labels'))
+            return primary
+
+        if isinstance(fallback_first, dict):
+            if fallback_first.get('skipped_visible_expand_count') or fallback_first.get('visible_labels'):
+                merged = dict(primary or {})
+                merged['marker_r45ae'] = fallback_first.get('marker_r45ae')
+                merged['marker_r45af'] = fallback_first.get('marker_r45af')
+                merged['r45ae_skipped_visible_expand_count'] = fallback_first.get('skipped_visible_expand_count')
+                merged['r45ae_skipped_visible_labels'] = fallback_first.get('skipped_visible_labels')
+                merged['r45ae_skipped_visible_reasons'] = fallback_first.get('skipped_visible_reasons')
+                merged['r45af_fallback_first_visible_labels'] = fallback_first.get('visible_labels')
+                merged.setdefault('visible_labels', fallback_first.get('visible_labels') or fallback_first.get('skipped_visible_labels') or [])
+                return merged
 
         return primary
 
@@ -1381,6 +1448,8 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
                 'remaining_visible_candidates': remaining_visible,
                 'visible_labels': (after_probe.get('visible_labels') or [])[:8],
                 'probe_marker': probe.get('marker_r45ae'),
+                'probe_marker_r45af': probe.get('marker_r45af'),
+                'text_rect_click': bool(probe.get('text_rect_click')),
                 'rolebutton_fallback': bool(probe.get('rolebutton_fallback')),
                 'settle_seconds': _extra_settle_seconds_for_label(label),
                 'minimum_settle_seconds': _minimum_settle_seconds_for_label(label),
@@ -1865,6 +1934,7 @@ def run_self_test(args: argparse.Namespace) -> Dict[str, Any]:
         {'name': 'r45ac_ordered_readonly_probe_present', 'status': 'pass' if 'r45ac_ordered_readonly_probe_rule' in contract() and 'R45AC_ORDERED_READONLY_PROBE' in open(__file__, encoding='utf-8').read() and 'ordered_probe_read_only: true' in open(__file__, encoding='utf-8').read() and 'small bounded scroll increments' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45ad_dialog_body_band_anti_hover_present', 'status': 'pass' if 'r45ad_dialog_body_band_anti_hover_rule' in contract() and 'R45AD_DIALOG_BODY_BAND_ANTI_HOVER' in open(__file__, encoding='utf-8').read() and '_move_mouse_to_neutral_page_gutter_r45ad' in open(__file__, encoding='utf-8').read() and 'R45AD_TARGET_SURFACE_LOST_AFTER_CLICK_STOP' in open(__file__, encoding='utf-8').read() and 'dialog_body_band_only: true' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45ae_rolebutton_expand_fallback_present', 'status': 'pass' if 'r45ae_rolebutton_expand_fallback_rule' in contract() and 'JS_FIND_ROLEBUTTON_EXPAND_CONTROL_R45AE' in open(__file__, encoding='utf-8').read() and 'R45AE_ROLEBUTTON_EXPAND_FALLBACK' in open(__file__, encoding='utf-8').read() and 'rolebutton_fallback' in open(__file__, encoding='utf-8').read() else 'fail'},
+        {'name': 'r45af_textrect_fallback_first_present', 'status': 'pass' if 'r45af_textrect_fallback_first_rule' in contract() and 'R45AF_TEXTRECT_FALLBACK_FIRST' in open(__file__, encoding='utf-8').read() and 'textRectForLabel' in open(__file__, encoding='utf-8').read() and 'rolebutton_fallback_first' in open(__file__, encoding='utf-8').read() and 'text_rect_click' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45m_launch_viewport_context_only', 'status': 'pass' if 'p.chromium.launch(**launch_kwargs)' in open(__file__, encoding='utf-8').read() and 'browser.new_context(**context_kwargs)' in open(__file__, encoding='utf-8').read() else 'fail'},
         {'name': 'r45h_expansion_reused', 'status': 'pass' if 'JS_BOUNDED_MODAL_AUTO_EXPAND' in dir(r45h) else 'fail'},
         {'name': 'hidden_platform_api_disabled', 'status': 'pass' if contract().get('hidden_platform_api_scraping_enabled') is False else 'fail'},
