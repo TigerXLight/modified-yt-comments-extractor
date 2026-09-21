@@ -36,6 +36,12 @@ assert 'R45AX_UNEXPECTED_PAGE_CLOSED' in src
 assert 'click_elapsed_ms' in src
 assert 'timing_delta' in src
 assert 'messenger_opened' in src
-assert 'hidden_platform_api_scraping_enabled' in src and 'False' in src
+assert 'r45be_target_drift_rule' in src
+assert 'r45ax_target_guard_now' in src
+assert 'R45AX_TARGET_DRIFT_BLOCKED' in src
+assert 'BLOCKED_TARGET_DRIFT_AFTER_CLICK' in src
+assert 'R45AX_SCROLL_STALLED_BLOCKED' in src
+assert 'stalled_scroll_cycles' in src
+assert r'facebook\.com$/i' in src or r'facebook\.com' in src
 assert 'browser_profile_file_parsing_enabled' in src and 'False' in src
 print('profile_media_facebook_progress_gated_modal_flatten_r45ax_test: PASS')

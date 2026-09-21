@@ -37,6 +37,7 @@ CONTRACT = {
     "r45ba_scroll_container_rule": "The active comments scroller must be a real scrollable comments container, not the outer role=dialog shell with scrollHeight equal to clientHeight. R45BA scores only scrollable candidates first and blocks rather than falsely passing on a 720px outer dialog.",
     "r45bc_dead_click_rule": "If an expansion control remains visible after repeated clicks at the same coordinate/key without increasing scrollHeight, text length, or progress, R45BC marks that exact candidate as inert and skips it so the run can continue downward instead of looping forever.",
     "r45bd_messenger_guard_rule": "If any click opens a Messenger/DM chat overlay or a new tab/page, R45BD closes the side effect, marks the candidate inert, and logs timing/delta evidence for that click instead of continuing with the overlay covering the comments modal.",
+    "r45be_target_drift_rule": "R45BE refuses any current-tab navigation away from the expected story, broadens same-tab Facebook href blocking (including /pages/ profile/page links), and stops on repeated no-movement scrolls instead of looping on the wrong page.",
 }
 
 EXPAND_PATTERNS_JS = r"""
@@ -113,11 +114,17 @@ function r45axElementHidden(el){
 function r45axUnsafeHref(href){
   if (!href) return false;
   const h = String(href);
-  if (/facebook\.com\/(permalink\.php|story\.php|posts\/|groups\/|photo\/|watch\/|reel\/)/i.test(h)) return false;
-  if (/comment_id=/i.test(h) && !/permalink\.php/i.test(h)) return true;
-  if (/facebook\.com\/[A-Za-z0-9._-]+\?/i.test(h) && !/permalink\.php/i.test(h)) return true;
-  if (/facebook\.com\/[A-Za-z0-9._-]+$/i.test(h)) return true;
-  return false;
+  if (/^(#|javascript:|about:blank)/i.test(h)) return false;
+  let u = null;
+  try { u = new URL(h, location.href); } catch(e) { return false; }
+  if (!/facebook\.com$/i.test(u.hostname) && !/\.facebook\.com$/i.test(u.hostname)) return false;
+  const path = u.pathname || '';
+  const qs = u.search || '';
+  const allowedStory = /\/(permalink\.php|story\.php)$/i.test(path) || /\/(posts|photo|watch|reel)\//i.test(path);
+  if (allowedStory && (qs.includes('story_fbid=') || h.includes('story_fbid=') || h.includes('/posts/') || h.includes('/photo/') || h.includes('/watch/') || h.includes('/reel/'))) return false;
+  // R45BE: anything else on facebook.com is not an expansion control. This blocks /pages/, /profile.php, /people/,
+  // username/profile links, comment permalinks, and other same-tab navigation targets.
+  return true;
 }
 function r45axClickSafetyAt(x, y){
   const chain = [];
@@ -420,6 +427,8 @@ async def self_test(output_root: Path) -> int:
             {'name':'r45bc_dead_click_skip_present','status':'pass' if 'R45AX_DEAD_CLICK_KEY_SKIPPED' in Path(__file__).read_text(encoding='utf-8') and 'r45axAddSkipKey' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'r45bd_messenger_overlay_guard_present','status':'pass' if 'R45AX_MESSENGER_OVERLAY_BLOCKED' in Path(__file__).read_text(encoding='utf-8') and 'r45axMessengerOverlayState' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'r45bd_click_timing_delta_present','status':'pass' if 'click_elapsed_ms' in Path(__file__).read_text(encoding='utf-8') and 'timing_delta' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45be_target_drift_guard_present','status':'pass' if 'R45AX_TARGET_DRIFT_BLOCKED' in Path(__file__).read_text(encoding='utf-8') and 'r45ax_target_guard_now' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45be_scroll_stall_block_present','status':'pass' if 'R45AX_SCROLL_STALLED_BLOCKED' in Path(__file__).read_text(encoding='utf-8') and 'stalled_scroll_cycles' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'no_hidden_platform_api','status':'pass'},
             {'name':'no_profile_parsing','status':'pass'},
         ],
@@ -428,6 +437,15 @@ async def self_test(output_root: Path) -> int:
     print(MARKER)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0 if all(x['status']=='pass' for x in result['checks']) else 1
+
+
+async def r45ax_target_guard_now(page, story: str) -> Dict[str, Any]:
+    guard = await page.evaluate("""(story) => {
+        const href = location.href;
+        const ok = Boolean(/facebook\.com/i.test(location.hostname) && (!story || href.includes(story)));
+        return {href, title: document.title, expectedStory: story, hasStory: story ? href.includes(story) : true, onFacebook: /facebook\.com/i.test(location.hostname), ok};
+    }""", story)
+    return guard
 
 async def run_live(args: argparse.Namespace) -> int:
     async_playwright = await import_playwright()
@@ -461,8 +479,7 @@ return window.r45axInstallNavBlocker();
 }"""
         install_result = await page.evaluate(install_js)
         log('R45AX_SCRIPT_INSTALL', install_result)
-        guard = await page.evaluate("""(story) => { const href = location.href; return {href, title: document.title, expectedStory: story, hasStory: story ? href.includes(story) : true, onFacebook: /facebook\.com/i.test(location.hostname)}; }""", story)
-        guard['ok'] = bool(guard.get('onFacebook') and guard.get('hasStory'))
+        guard = await r45ax_target_guard_now(page, story)
         log('R45AX_TARGET_GUARD', guard)
         if not guard['ok']:
             receipt['status'] = 'BLOCKED_TARGET_GUARD'; (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8'); await context.close(); return 2
@@ -471,7 +488,7 @@ return window.r45axInstallNavBlocker();
         if (not scroller_info.get('ok')) or int((scroller_info.get('scroller') or {}).get('scrollHeight') or 0) <= int((scroller_info.get('scroller') or {}).get('clientHeight') or 0) + 80:
             receipt['status'] = 'BLOCKED_NO_REAL_SCROLLABLE_COMMENTS_SCROLLER'; (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8'); await context.close(); return 3
         await page.evaluate('r45axScroll("top")')
-        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; unsafe_skipped = 0; dead_click_skipped = 0; messenger_blocked = 0; new_pages_closed = 0; pass_had_click = False; dead_click_counts: Dict[str, int] = {}
+        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; stalled_scroll_cycles = 0; unsafe_skipped = 0; dead_click_skipped = 0; messenger_blocked = 0; new_pages_closed = 0; target_drift_blocked = 0; pass_had_click = False; dead_click_counts: Dict[str, int] = {}
         log('R45AX_PROGRESS_GATED_START', {'max_seconds':args.expand_max_seconds, 'max_steps':args.max_steps, 'progress_gate_required': True, 'target_url': target_url})
         known_pages = set(context.pages)
         pre_existing_chat = await page.evaluate('r45axMessengerOverlayState()')
@@ -482,6 +499,15 @@ return window.r45axInstallNavBlocker();
         for step in range(1, int(args.max_steps)+1):
             elapsed = time.monotonic() - start
             if elapsed > float(args.expand_max_seconds): break
+            current_guard = await r45ax_target_guard_now(page, story)
+            if not current_guard.get('ok'):
+                target_drift_blocked += 1
+                receipt['status'] = 'BLOCKED_TARGET_DRIFT'
+                receipt['target_drift_guard'] = current_guard
+                log('R45AX_TARGET_DRIFT_BLOCKED', {'step': step, 'target_drift_blocked': target_drift_blocked, 'guard': current_guard})
+                (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8')
+                await context.close()
+                return 5
             scan = await page.evaluate('r45axScanVisible()')
             prog = scan.get('progress')
             if prog and (not best_progress or (prog.get('total',0), prog.get('current',0)) >= (best_progress.get('total',0), best_progress.get('current',0))): best_progress = prog
@@ -513,6 +539,21 @@ return window.r45axInstallNavBlocker();
                             new_pages_closed += 1
                         except Exception as e:
                             closed_new_pages.append({'error': repr(e)})
+                    after_target_guard = await r45ax_target_guard_now(page, story)
+                    if not after_target_guard.get('ok'):
+                        target_drift_blocked += 1
+                        if before_key:
+                            try:
+                                await page.evaluate('(key) => r45axAddSkipKey(key)', before_key)
+                            except Exception:
+                                pass
+                        receipt['status'] = 'BLOCKED_TARGET_DRIFT_AFTER_CLICK'
+                        receipt['target_drift_guard'] = after_target_guard
+                        receipt['last_click'] = {'step': step, 'key': before_key, 'label': label, 'x': item.get('x'), 'y': item.get('y')}
+                        log('R45AX_TARGET_DRIFT_BLOCKED', {'step': step, 'target_drift_blocked': target_drift_blocked, 'guard': after_target_guard, 'last_click': receipt['last_click']})
+                        (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8')
+                        await context.close()
+                        return 5
                     after_side = await page.evaluate('r45axSideEffectState()')
                     messenger_opened = int((after_side.get('messenger') or {}).get('count') or 0) > int((before_side.get('messenger') or {}).get('count') or 0) or int((after_side.get('messenger') or {}).get('count') or 0) > 0
                     messenger_close_result = None
@@ -554,7 +595,18 @@ return window.r45axInstallNavBlocker();
                     continue
             at_bottom = bool(scan.get('atBottom')); sh = int(scan.get('scrollHeight') or 0)
             if not at_bottom:
-                sr = await page.evaluate('r45axScroll("down")'); scrolls += 1; log('R45AX_SCROLL_DOWN', {'step':step, 'scrolls':scrolls, **sr}); await page.wait_for_timeout(180); continue
+                sr = await page.evaluate('r45axScroll("down")'); scrolls += 1; log('R45AX_SCROLL_DOWN', {'step':step, 'scrolls':scrolls, **sr})
+                no_movement = int(sr.get('after') or 0) == int(sr.get('before') or 0) and not bool(sr.get('atBottom'))
+                stalled_scroll_cycles = stalled_scroll_cycles + 1 if no_movement else 0
+                if stalled_scroll_cycles >= 6:
+                    current_guard = await r45ax_target_guard_now(page, story)
+                    receipt['status'] = 'BLOCKED_SCROLL_STALLED_OR_TARGET_DRIFT'
+                    receipt['scroll_stall'] = {'step': step, 'stalled_scroll_cycles': stalled_scroll_cycles, 'last_scroll_result': sr, 'guard': current_guard, 'best_progress': best_progress}
+                    log('R45AX_SCROLL_STALLED_BLOCKED', receipt['scroll_stall'])
+                    (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8')
+                    await context.close()
+                    return 6
+                await page.wait_for_timeout(180); continue
             if at_bottom and not progress_ok:
                 stable_bottom_cycles = stable_bottom_cycles + 1 if sh == last_scroll_height else 0; last_scroll_height = sh
                 log('R45AX_PROGRESS_GATE_NOT_SATISFIED', {'step':step, 'best_progress':best_progress, 'stable_bottom_cycles':stable_bottom_cycles, 'scrollHeight':sh})
@@ -573,7 +625,7 @@ return window.r45axInstallNavBlocker();
                     await page.evaluate('r45axScroll("top")')
                     await page.wait_for_timeout(650)
                     continue
-                receipt['auto_expand_summary'] = {'status':'pass', 'clicked':clicked, 'scrolls':scrolls, 'audit_passes':audit_pass, 'unsafe_skipped':unsafe_skipped, 'dead_click_skipped':dead_click_skipped, 'messenger_blocked':messenger_blocked, 'new_pages_closed':new_pages_closed, 'best_progress':best_progress, 'progress_ok':progress_ok, 'completed_by_full_zero_control_audit': True}; log('R45AX_EXPANSION_COMPLETE', receipt['auto_expand_summary']); break
+                receipt['auto_expand_summary'] = {'status':'pass', 'clicked':clicked, 'scrolls':scrolls, 'audit_passes':audit_pass, 'unsafe_skipped':unsafe_skipped, 'dead_click_skipped':dead_click_skipped, 'messenger_blocked':messenger_blocked, 'new_pages_closed':new_pages_closed, 'target_drift_blocked':target_drift_blocked, 'best_progress':best_progress, 'progress_ok':progress_ok, 'completed_by_full_zero_control_audit': True}; log('R45AX_EXPANSION_COMPLETE', receipt['auto_expand_summary']); break
         if 'auto_expand_summary' not in receipt:
             final_scan = await page.evaluate('r45axScanVisible()'); final_progress = await page.evaluate('r45axPageProgress()')
             receipt['status'] = 'BLOCKED_INCOMPLETE_EXPANSION'; receipt['final_scan'] = final_scan; receipt['best_progress'] = best_progress or final_progress
