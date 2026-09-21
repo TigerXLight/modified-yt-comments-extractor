@@ -468,6 +468,7 @@ def contract() -> Dict[str, Any]:
         'r45y_pre_pause_target_rule': 'R45Y opens a fresh target tab for a requested permalink and runs the target-page guard before the operator pre-expand pause, so a restored facebook.com feed tab is not shown/expanded as the working page.',
         'r45z_active_target_tab_rule': 'R45Z closes restored/crashed non-target tabs after opening the requested permalink and keeps the target page in front before expansion; it also waits for large expansion clicks to settle before scrolling downward.',
         'r45aa_large_bucket_settle_rule': 'R45AA enforces a real minimum hold after large reply openers such as View all 302 replies; the runner must not scroll away until the opened bucket has had time to stream newly inserted replies and expose their expansion controls.',
+        'r45ab_target_surface_lock_rule': 'R45AB locks expansion and downward scrolling to the active Facebook comments dialog; if the dialog disappears, the runner stops instead of scrolling the outer facebook.com feed.',
         'text_comparison_rule': 'Use the same R45H visible-text comparison before visual cleanup so the run still gates on reference coverage.',
         'hidden_platform_api_scraping_enabled': False,
         'login_automation_enabled': False,
@@ -634,6 +635,21 @@ def _capture_tiles(page: Any, run_dir: Path, prefix: str, steps: int, scroll_px:
 
 
 
+def _sanitize_facebook_target_url_r45ab(raw: str) -> str:
+    import re
+    raw_s = str(raw or '').strip().replace('\\&', '&')
+    try:
+        cleaned = r45d.sanitize_target_url(raw_s)
+    except Exception:
+        cleaned = raw_s
+    if cleaned and cleaned.startswith(('http://', 'https://')) and '[' not in cleaned and '](' not in cleaned:
+        return cleaned
+    m = re.search(r'https?://[^\]\)\s"\']+', raw_s)
+    if m:
+        return m.group(0).replace('\\&', '&')
+    return cleaned
+
+
 def _target_url_identity(target_url: str) -> Dict[str, str]:
     try:
         parsed = urlparse(target_url or '')
@@ -705,6 +721,8 @@ def _guard_or_reopen_target_page(page: Any, target_url: str, *, timeout_ms: int,
 JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
 (opts) => {
   const viewportMarginPx = Number((opts && opts.viewportMarginPx) || 90);
+  const clickGuardTopPx = Number((opts && opts.clickGuardTopPx) || 72);
+  const clickGuardBottomPx = Number((opts && opts.clickGuardBottomPx) || 16);
   const skipKeys = new Set((opts && opts.skipKeys) || []);
   const normalize = (text) => String(text || '').replace(/\s+/g, ' ').trim();
   const composerOrUploadDeny = /\b(comment as|write a comment|comment composer|add photo|photo\/video|photo or video|camera|gif|sticker|avatar|open sticker|choose file|upload|attach|send|emoji|emoticon)\b/i;
@@ -746,17 +764,50 @@ JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
     m = text.match(/^(View\s+more\s+(?:\d+\s+)?repl(?:y|ies))$/i); if (m) return normalize(m[1]);
     m = text.match(/^(View\s+previous\s+repl(?:y|ies))$/i); if (m) return normalize(m[1]);
     m = text.match(/^([\p{L}\p{M}' .-]{1,80}\s+replied\s*[·•\-–—]\s*\d+\s+repl(?:y|ies))$/iu); if (m) return normalize(m[1]);
-    // Some Facebook Comet buttons expose repeated text in their aria/text. Extract
-    // the first explicit expansion control but do not accept broad comment bodies.
     m = text.match(/\b(View\s+(?:hidden\s+(?:comments?|repl(?:y|ies))|all\s+\d+\s+repl(?:y|ies)|\d+\s+repl(?:y|ies)|more\s+(?:\d+\s+)?repl(?:y|ies)|previous\s+repl(?:y|ies)))\b/i);
     if (m && text.length <= 180) return normalize(m[1]);
     m = text.match(/\b([\p{L}\p{M}' .-]{1,80}\s+replied\s*[·•\-–—]\s*\d+\s+repl(?:y|ies))\b/iu);
     if (m && text.length <= 220) return normalize(m[1]);
     return '';
   };
+  const findDialogSurface = () => {
+    const dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisible);
+    const scored = [];
+    for (const el of dialogs) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 280 || rect.height < 180) continue;
+      const txt = textOf(el).slice(0, 6000).toLowerCase();
+      let score = rect.width * rect.height;
+      if (/post|comment|reply|view hidden|view all|comment as|write a comment|like reply/.test(txt)) score += 1000000;
+      if (/restore britain/.test(txt)) score += 1000000;
+      scored.push({el, score, width: Math.round(rect.width), height: Math.round(rect.height), text_sample: txt.slice(0, 220)});
+    }
+    scored.sort((a,b) => b.score - a.score);
+    return scored[0] || null;
+  };
+  const surfaceInfo = findDialogSurface();
+  if (!surfaceInfo) {
+    return {
+      marker: 'R45AB_SURFACE_LOCKED_PROBE',
+  // R45X_EXPAND_ONLY_PROBE compatibility marker retained for older static tests; R45AB now locks expansion to the target surface.
+      candidate: null,
+      visible_count: 0,
+      visible_labels: [],
+      text_chars: pageText().length,
+      progress: parseProgress(),
+      expansion_only: true,
+      broad_scan_used: false,
+      surface_required: true,
+      surface_found: false,
+      dialog_surface_required: true,
+      stop_reason: 'target_comments_dialog_missing',
+      current_url: location.href,
+    };
+  }
+  const surface = surfaceInfo.el;
   const clickableAncestor = (el) => {
     let n = el;
-    for (let i = 0; n && i < 8; i++, n = n.parentElement) {
+    for (let i = 0; n && i < 8 && surface.contains(n); i++, n = n.parentElement) {
       if (isComposerOrUploadSurface(n)) return null;
       const role = (n.getAttribute('role') || '').toLowerCase();
       const tag = (n.tagName || '').toLowerCase();
@@ -782,15 +833,10 @@ JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
     return null;
   };
   const keyFor = (label, rect) => [label.toLowerCase(), Math.round((rect.top + window.scrollY) / 8), Math.round(rect.left / 8)].join('|');
-
-  // R45X: expansion-only rail. Walk visible text nodes and accept only explicit
-  // Facebook expansion controls: View all replies, View hidden comments/replies,
-  // View more/previous replies, or Name replied · N replies. Do not inspect broad
-  // comment text, composer controls, reactions, Like/Reply, or upload widgets.
-  const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT, {
+  const walker = document.createTreeWalker(surface, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const parent = node.parentElement;
-      if (!parent || !isVisible(parent) || isComposerOrUploadSurface(parent)) return NodeFilter.FILTER_REJECT;
+      if (!parent || !surface.contains(parent) || !isVisible(parent) || isComposerOrUploadSurface(parent)) return NodeFilter.FILTER_REJECT;
       const val = normalize(node.nodeValue || '');
       if (!val || val.length > 220) return NodeFilter.FILTER_REJECT;
       return expansionLabel(val) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
@@ -802,22 +848,27 @@ JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
     const parent = node.parentElement;
     const label = expansionLabel(node.nodeValue || '') || expansionLabel(textOf(parent)) || expansionLabel(ariaOf(parent));
     if (!label) continue;
-    const rect = visibleTextRect(node, label);
+    let rect = visibleTextRect(node, label);
     if (!rect) continue;
     const target = clickableAncestor(parent);
     if (!target || !isVisible(target) || isComposerOrUploadSurface(target)) continue;
+    if (rect.top < clickGuardTopPx || rect.bottom > (window.innerHeight - clickGuardBottomPx)) {
+      try { target.scrollIntoView({block: 'center', inline: 'nearest'}); } catch(e) {}
+      rect = visibleTextRect(node, label) || rect;
+    }
+    if (rect.top < 8 || rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
     const key = keyFor(label, rect);
     if (skipKeys.has(key)) continue;
     const x = Math.min(Math.max(rect.left + rect.width / 2, 3), Math.max(3, window.innerWidth - 3));
     const y = Math.min(Math.max(rect.top + rect.height / 2, 3), Math.max(3, window.innerHeight - 3));
     const hit = document.elementFromPoint(x, y);
-    if (!hit || isComposerOrUploadSurface(hit)) continue;
+    if (!hit || !surface.contains(hit) || isComposerOrUploadSurface(hit)) continue;
     controls.push({label, key, x, y, top: rect.top, left: rect.left, width: rect.width, height: rect.height, targetRole: target.getAttribute('role') || '', targetTag: (target.tagName || '').toLowerCase()});
   }
   controls.sort((a,b) => (a.top - b.top) || (a.left - b.left));
   const first = controls[0] || null;
   return {
-    marker: 'R45X_EXPAND_ONLY_PROBE',
+    marker: 'R45AB_SURFACE_LOCKED_PROBE',
     candidate: first,
     visible_count: controls.length,
     visible_labels: controls.slice(0, 12).map(c => c.label),
@@ -826,6 +877,11 @@ JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V = r"""
     expansion_only: true,
     broad_scan_used: false,
     composer_upload_controls_excluded: true,
+    surface_required: true,
+    surface_found: true,
+    dialog_surface_required: true,
+    surface_width: surfaceInfo.width,
+    surface_height: surfaceInfo.height,
   };
 }
 """
@@ -839,10 +895,24 @@ JS_SCROLL_DOWNWARD_FRONTIER_R45V = r"""
     const style = window.getComputedStyle(el);
     return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
   };
-  const textOf = (el) => (el.innerText || '').slice(0, 1800).toLowerCase();
+  const textOf = (el) => (el.innerText || '').slice(0, 2600).toLowerCase();
+  const dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisible).map(el => {
+    const rect = el.getBoundingClientRect();
+    const text = textOf(el);
+    let score = rect.width * rect.height;
+    if (/post|comment|reply|view hidden|view all|comment as|write a comment|like reply/.test(text)) score += 1000000;
+    if (/restore britain/.test(text)) score += 1000000;
+    return {el, score, width: Math.round(rect.width), height: Math.round(rect.height)};
+  }).filter(item => item.width >= 280 && item.height >= 180).sort((a,b) => b.score - a.score);
+  const surfaceInfo = dialogs[0] || null;
+  if (!surfaceInfo) {
+    return {changed: 0, targets: [], surface_required: true, surface_found: false, stop_reason: 'target_comments_dialog_missing', window_before: window.scrollY, window_after: window.scrollY};
+  }
+  const surface = surfaceInfo.el;
   const targets = [];
-  for (const el of Array.from(document.querySelectorAll('[role="dialog"], div, section, main, article'))) {
-    if (!isVisible(el)) continue;
+  const candidates = [surface, ...Array.from(surface.querySelectorAll('div, section, main, article'))];
+  for (const el of candidates) {
+    if (!isVisible(el) || !surface.contains(el)) continue;
     const scrollable = (el.scrollHeight || 0) - (el.clientHeight || 0);
     if (scrollable < 120) continue;
     const rect = el.getBoundingClientRect();
@@ -851,29 +921,26 @@ JS_SCROLL_DOWNWARD_FRONTIER_R45V = r"""
     const aria = (el.getAttribute('aria-label') || '').toLowerCase();
     const text = textOf(el);
     let score = scrollable + rect.height;
-    if (role === 'dialog') score += 25000;
-    if (/restore britain|comment|reply|view hidden|write a comment|of\s+\d+/.test(text + ' ' + aria)) score += 10000;
+    if (el === surface) score += 5000;
+    if (/comment|reply|view hidden|view all|view more|like reply|of\s+\d+/.test(text + ' ' + aria)) score += 10000;
     targets.push({el, score, role, aria: aria.slice(0,80), scrollable, height: Math.round(rect.height), width: Math.round(rect.width)});
   }
   targets.sort((a,b) => b.score - a.score);
   let changed = 0;
   const summaries = [];
-  for (const item of targets.slice(0, 4)) {
+  const item = targets[0] || null;
+  if (item) {
     try {
       const before = item.el.scrollTop;
-      item.el.scrollTop = Math.min(item.el.scrollTop + px, item.el.scrollHeight);
+      item.el.scrollTop = Math.min(item.el.scrollTop + px, Math.max(0, item.el.scrollHeight - item.el.clientHeight));
       item.el.dispatchEvent(new Event('scroll', {bubbles:true}));
       if (item.el.scrollTop !== before) changed += 1;
       summaries.push({role: item.role, aria: item.aria, scrollable: item.scrollable, height: item.height, width: item.width, before, after: item.el.scrollTop});
     } catch(e) {}
   }
-  const winBefore = window.scrollY;
-  window.scrollBy(0, Math.max(250, Math.floor(px * 0.75)));
-  if (window.scrollY !== winBefore) changed += 1;
-  return {changed, targets: summaries, window_before: winBefore, window_after: window.scrollY};
+  return {changed, targets: summaries, surface_required: true, surface_found: true, surface_width: surfaceInfo.width, surface_height: surfaceInfo.height, window_before: window.scrollY, window_after: window.scrollY};
 }
 """
-
 
 def _close_non_working_pages_r45z(context: Any, page: Any, warnings: List[str], stage: str) -> None:
     """R45Z: keep the operator-visible browser on the requested target tab.
@@ -1099,6 +1166,17 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
             }, ensure_ascii=False))
             continue
 
+        if isinstance(probe, dict) and probe.get('surface_required') and not probe.get('surface_found'):
+            print('R45H_PROGRESS ' + json.dumps({
+                'event': 'R45AB_TARGET_SURFACE_MISSING_STOP',
+                'step': step,
+                'stop_reason': probe.get('stop_reason') or 'target_comments_dialog_missing',
+                'current_url': probe.get('current_url'),
+                'elapsed_seconds': elapsed(),
+            }, ensure_ascii=False))
+            stable_no_candidate_rounds = int(getattr(args, 'expand_stop_after_stable_rounds', 4) or 4)
+            break
+
         try:
             scroll_result = page.evaluate(JS_SCROLL_DOWNWARD_FRONTIER_R45V, {'scrollPx': scroll_px}) or {}
         except Exception as e:
@@ -1153,6 +1231,8 @@ def _playwright_mouse_downward_expand(page: Any, args: argparse.Namespace, patte
         'expansion_only': True,
         'broad_scan_used': False,
         'r45x_expand_comments_only': True,
+        'r45ab_surface_lock': True,
+        'surface_found': bool((final_probe or {}).get('surface_found')) if isinstance(final_probe, dict) else False,
     }
 
 def _main_expand_still_incomplete(summary: Optional[Dict[str, Any]]) -> bool:
@@ -1187,7 +1267,7 @@ def run_live(args: argparse.Namespace) -> Dict[str, Any]:
     output_root = Path(args.output_root)
     run_dir = r45d.ensure_dir(output_root / f'facebook_preserved_visual_screenshot_runner_{utc_stamp()}')
     reference_text = _safe_read(args.reference_text)
-    target_url = r45d.sanitize_target_url(args.target_url)
+    target_url = _sanitize_facebook_target_url_r45ab(args.target_url)
     warnings: List[str] = []
     if target_url != args.target_url:
         warnings.append('target_url_was_sanitized_from_markdown_or_escaped_form')

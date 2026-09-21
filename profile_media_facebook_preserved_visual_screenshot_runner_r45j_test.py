@@ -73,7 +73,11 @@ def test_contract_and_static_assets():
     assert '_wait_for_click_settle' in inspect.getsource(r45j)
     assert '--hide-crash-restore-bubble' in inspect.getsource(r45j.run_live)
     assert 'r45aa_large_bucket_settle_rule' in r45j.contract()
+    assert 'r45ab_target_surface_lock_rule' in r45j.contract()
     assert '_minimum_settle_seconds_for_label' in inspect.getsource(r45j)
+    assert 'R45AB_SURFACE_LOCKED_PROBE' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
+    assert 'dialog_surface_required' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
+    assert 'R45AB_TARGET_SURFACE_MISSING_STOP' in inspect.getsource(r45j._playwright_mouse_downward_expand)
     assert 'actual_settle_elapsed_seconds' in inspect.getsource(r45j)
     assert 'broad_scan_used' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
     assert r'View\s+all' in r45j.JS_FIND_FIRST_VISIBLE_EXPAND_CONTROL_R45V
