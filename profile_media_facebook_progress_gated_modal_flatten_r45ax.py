@@ -289,8 +289,20 @@ async def run_live(args: argparse.Namespace) -> int:
         await page.goto(target_url, wait_until='domcontentloaded', timeout=90000)
         await page.bring_to_front()
         await page.wait_for_timeout(1800)
-        await page.add_script_tag(content=EXPAND_PATTERNS_JS)
-        await page.evaluate('r45axInstallNavBlocker();')
+        install_js = """() => {
+""" + EXPAND_PATTERNS_JS + """
+window.r45axFindScroller = r45axFindScroller;
+window.r45axGetScroller = r45axGetScroller;
+window.r45axScroll = r45axScroll;
+window.r45axScanVisible = r45axScanVisible;
+window.r45axClickFirstVisible = r45axClickFirstVisible;
+window.r45axPageProgress = r45axPageProgress;
+window.r45axFlattenForScreenshot = r45axFlattenForScreenshot;
+window.r45axInstallNavBlocker = r45axInstallNavBlocker;
+return window.r45axInstallNavBlocker();
+}"""
+        install_result = await page.evaluate(install_js)
+        log('R45AX_SCRIPT_INSTALL', install_result)
         guard = await page.evaluate("""(story) => { const href = location.href; return {href, title: document.title, expectedStory: story, hasStory: story ? href.includes(story) : true, onFacebook: /facebook\.com/i.test(location.hostname)}; }""", story)
         guard['ok'] = bool(guard.get('onFacebook') and guard.get('hasStory'))
         log('R45AX_TARGET_GUARD', guard)

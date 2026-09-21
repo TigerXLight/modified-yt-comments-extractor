@@ -9,6 +9,8 @@ assert 'Fahad Malik replied · 3 replies' in src
 assert 'r45axProgressFromText' in src
 assert 'R45AX_PROGRESS_GATE_NOT_SATISFIED' in src
 assert 'r45axFlattenForScreenshot' in src
+assert 'add_script_tag' not in src
+assert 'R45AX_SCRIPT_INSTALL' in src
 assert 'hidden_platform_api_scraping_enabled' in src and 'False' in src
 assert 'browser_profile_file_parsing_enabled' in src and 'False' in src
 assert re.search(r'View all \\d\+ replies', src)
