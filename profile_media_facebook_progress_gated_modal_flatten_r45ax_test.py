@@ -45,3 +45,10 @@ assert 'stalled_scroll_cycles' in src
 assert r'facebook\.com$/i' in src or r'facebook\.com' in src
 assert 'browser_profile_file_parsing_enabled' in src and 'False' in src
 print('profile_media_facebook_progress_gated_modal_flatten_r45ax_test: PASS')
+
+assert 'r45bg_hover_guard_rule' in src
+assert 'r45ax_park_mouse' in src
+assert 'R45AX_PROFILE_HOVER_CARD_CLOSED' in src
+assert 'r45axProfileHoverOverlayState' in src
+assert 'r45axCloseProfileHoverCards' in src
+assert 'profile_hover_closed' in src
