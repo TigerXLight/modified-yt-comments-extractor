@@ -229,6 +229,10 @@ function r45axBand(scroller){
   const r = scroller ? scroller.getBoundingClientRect() : {top:0,bottom:innerHeight,left:0,right:innerWidth};
   return {top:Math.max(0, r.top + 8), bottom:Math.min(innerHeight, r.bottom - 86), left:Math.max(0, r.left + 8), right:Math.min(innerWidth, r.right - 8)};
 }
+function r45axHiddenExpansionBand(scroller){
+  const r = scroller ? scroller.getBoundingClientRect() : {top:0,bottom:innerHeight,left:0,right:innerWidth};
+  return {top:Math.max(0, r.top + 8), bottom:Math.min(innerHeight, r.bottom - 8), left:Math.max(0, r.left + 8), right:Math.min(innerWidth, r.right - 8)};
+}
 function r45axBadCandidateElement(el){
   if (!el || el.nodeType !== 1) return true;
   if (el.closest('textarea,input,select,[contenteditable="true"]')) return true;
@@ -239,13 +243,34 @@ function r45axBadCandidateElement(el){
   }
   return false;
 }
+function r45axHashText(text){
+  const s = r45axNorm(text).slice(0, 420);
+  let h = 2166136261;
+  for (let i=0; i<s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+function r45axCandidateContext(el, label){
+  let cur = el;
+  const cleanLabel = r45axNorm(label || '');
+  for (let i=0; cur && i<8; i++, cur=cur.parentElement) {
+    const text = r45axNorm(cur.innerText || cur.textContent || '');
+    if (!text || text === cleanLabel) continue;
+    if (text.length <= 1200) return text;
+  }
+  return cleanLabel;
+}
 function r45axTextCandidates(scroller){
   const band = r45axBand(scroller);
+  const hiddenBand = r45axHiddenExpansionBand(scroller);
   const out = [];
-  function addCandidate(info, rect, source){
+  function addCandidate(info, rect, source, sourceEl){
     const label = info.label;
     const category = info.category;
-    if (!r45axRectVisible(rect, band)) return;
+    const activeBand = category === 'view_hidden' ? hiddenBand : band;
+    if (!r45axRectVisible(rect, activeBand)) return;
     if (rect.width < 4 || rect.height < 4) return;
     const fractions = category === 'replied_bucket' ? [0.84, 0.94, 0.68, 0.50] : [0.50, 0.18, 0.82];
     const points = fractions.map(f => ({x: rect.left + Math.min(rect.width-2, Math.max(2, rect.width*f)), y: rect.top + rect.height/2}));
@@ -255,7 +280,8 @@ function r45axTextCandidates(scroller){
       if (s.ok){ chosen = p; safety = s; break; }
       if (!safety) safety = s;
     }
-    out.push({label, category, clickLabel:info.clickLabel || '', preferredPoint:info.preferredPoint || '', x:Math.round((chosen||points[0]).x), y:Math.round((chosen||points[0]).y), top:Math.round(rect.top), bottom:Math.round(rect.bottom), left:Math.round(rect.left), right:Math.round(rect.right), safe:!!chosen, safety, source});
+    const contextHash = r45axHashText(r45axCandidateContext(sourceEl, label));
+    out.push({label, category, clickLabel:info.clickLabel || '', preferredPoint:info.preferredPoint || '', contextHash, x:Math.round((chosen||points[0]).x), y:Math.round((chosen||points[0]).y), top:Math.round(rect.top), bottom:Math.round(rect.bottom), left:Math.round(rect.left), right:Math.round(rect.right), safe:!!chosen, safety, source});
   }
   const walker = document.createTreeWalker(scroller || document.body, NodeFilter.SHOW_TEXT);
   let n;
@@ -264,7 +290,8 @@ function r45axTextCandidates(scroller){
     const info = r45axExpansionLabelInfo(raw);
     if (!info) continue;
     const parent = n.parentElement;
-    if (!parent || r45axElementHidden(parent) || r45axBadCandidateElement(parent)) continue;
+    const forceHiddenExpansion = info.category === 'view_hidden';
+    if (!parent || r45axElementHidden(parent) || (!forceHiddenExpansion && r45axBadCandidateElement(parent))) continue;
     const range = document.createRange();
     try {
       const lowerRaw = raw.toLowerCase(), lowerLabel = info.label.toLowerCase(), lowerClickLabel = String(info.clickLabel || info.label).toLowerCase();
@@ -277,28 +304,31 @@ function r45axTextCandidates(scroller){
     } catch(e) {
       try { range.selectNodeContents(n); } catch(e2) { continue; }
     }
-    const rects = Array.from(range.getClientRects()).filter(rect => r45axRectVisible(rect, band));
+    const activeBand = forceHiddenExpansion ? hiddenBand : band;
+    const rects = Array.from(range.getClientRects()).filter(rect => r45axRectVisible(rect, activeBand));
     range.detach && range.detach();
-    for (const rect of rects) addCandidate(info, rect, 'text');
+    for (const rect of rects) addCandidate(info, rect, forceHiddenExpansion ? 'text_force_hidden' : 'text', parent);
   }
   const elementSelector = 'a, [role="button"], [tabindex], span, div';
   for (const el of Array.from((scroller || document.body).querySelectorAll(elementSelector))){
-    if (r45axElementHidden(el) || r45axBadCandidateElement(el)) continue;
+    if (r45axElementHidden(el)) continue;
     const text = r45axNorm(el.innerText || el.textContent || el.getAttribute('aria-label') || '');
     if (!text || text.length > 220) continue;
     const info = r45axExpansionLabelInfo(text);
     if (!info) continue;
+    const forceHiddenExpansion = info.category === 'view_hidden';
+    if (!forceHiddenExpansion && r45axBadCandidateElement(el)) continue;
     const rect = el.getBoundingClientRect();
     if (rect.height > 90 || rect.width > 460) continue;
-    addCandidate(info, rect, 'element');
+    addCandidate(info, rect, forceHiddenExpansion ? 'element_force_hidden' : 'element', el);
   }
   const seen = new Set();
   const skip = new Set(Array.isArray(window.__R45AX_SKIP_KEYS__) ? window.__R45AX_SKIP_KEYS__ : []);
   const dedup = [];
-  const sourceRank = (s) => s === 'text' ? 0 : 1;
+  const sourceRank = (s) => s === 'text_force_hidden' ? -1 : (s === 'text' ? 0 : (s === 'element_force_hidden' ? 1 : 2));
   const rowRank = (item) => Math.round(item.top/6);
   for (const item of out.sort((a,b)=>rowRank(a)-rowRank(b) || sourceRank(a.source)-sourceRank(b.source) || a.top-b.top || a.left-b.left || (a.source || '').localeCompare(b.source || ''))){
-    const key = item.category+'|'+item.label+'|'+Math.round(item.top/3)+'|'+Math.round(item.left/8);
+    const key = item.category+'|'+item.label+'|'+Math.round(item.top/3)+'|'+Math.round(item.left/8)+'|'+(item.contextHash || '');
     item.key = key;
     if (seen.has(key) || skip.has(key)) continue;
     seen.add(key); dedup.push(item);
@@ -583,6 +613,9 @@ async def self_test(output_root: Path) -> int:
             {'name':'r45bm_expected_total_evidence_probe_present','status':'pass' if 'r45axExpectedTotalEvidence' in EXPAND_PATTERNS_JS and 'window.r45axExpectedTotalEvidence = r45axExpectedTotalEvidence' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'r45bm_blank_audit_fast_scroll_present','status':'pass' if 'audit_fast' in EXPAND_PATTERNS_JS and 'blank_audit_fast_scrolls' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'r45bm_expected_total_diagnostic_block_present','status':'pass' if 'BLOCKED_EXPECTED_TOTAL_MARKER_NOT_OBSERVABLE_AFTER_STABLE_AUDIT' in Path(__file__).read_text(encoding='utf-8') and 'expected_total_diagnostic' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45bn_hidden_control_force_candidate_present','status':'pass' if 'text_force_hidden' in EXPAND_PATTERNS_JS and 'element_force_hidden' in EXPAND_PATTERNS_JS else 'fail'},
+            {'name':'r45bn_contextual_dead_key_present','status':'pass' if 'r45axCandidateContext' in EXPAND_PATTERNS_JS and 'contextHash' in EXPAND_PATTERNS_JS else 'fail'},
+            {'name':'r45bo_bottom_hidden_comments_band_present','status':'pass' if 'r45axHiddenExpansionBand' in EXPAND_PATTERNS_JS and 'r.bottom - 8' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'no_hidden_platform_api','status':'pass'},
             {'name':'no_profile_parsing','status':'pass'},
         ],

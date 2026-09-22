@@ -85,3 +85,14 @@ assert 'BLOCKED_EXPECTED_TOTAL_MARKER_NOT_OBSERVABLE_AFTER_STABLE_AUDIT' in src
 assert 'BLOCKED_EXPECTED_TOTAL_PROGRESS_UNSATISFIED_AFTER_STABLE_AUDIT' in src
 assert 'expected_total_diagnostic' in src
 assert 'r45bm_expected_total_diagnostic_block_present' in src
+assert 'text_force_hidden' in src
+assert 'element_force_hidden' in src
+assert 'r45axCandidateContext' in src
+assert 'contextHash' in src
+assert "+'|'+(item.contextHash || '')" in src
+assert 'r45bn_hidden_control_force_candidate_present' in src
+assert 'r45bn_contextual_dead_key_present' in src
+assert 'r45axHiddenExpansionBand' in src
+assert 'r.bottom - 8' in src
+assert "category === 'view_hidden' ? hiddenBand : band" in src
+assert 'r45bo_bottom_hidden_comments_band_present' in src
