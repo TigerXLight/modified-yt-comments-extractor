@@ -686,6 +686,7 @@ window.r45axPageProgress = r45axPageProgress;
 window.r45axMessengerOverlayState = r45axMessengerOverlayState;
 window.r45axCloseMessengerOverlays = r45axCloseMessengerOverlays;
 window.r45axSideEffectState = r45axSideEffectState;
+window.r45axMessengerSideEffectState = r45axMessengerSideEffectState;
 window.r45axProfileHoverOverlayState = r45axProfileHoverOverlayState;
 window.r45axCloseProfileHoverCards = r45axCloseProfileHoverCards;
 window.r45axFlattenForScreenshot = r45axFlattenForScreenshot;

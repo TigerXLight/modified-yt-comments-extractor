@@ -71,5 +71,6 @@ assert 'R45AX_REPLIED_BUCKET_NO_PROGRESS_SKIPPED' in src
 assert 'replied_bucket_fast_skipped' in src
 assert 'r45ax_click_wait_ms' in src
 assert 'r45axMessengerSideEffectState' in src
+assert 'window.r45axMessengerSideEffectState = r45axMessengerSideEffectState' in src
 assert 'r45bl_replied_bucket_right_biased_present' in src
 assert 'rowRank' in src and 'sourceRank(a.source)-sourceRank(b.source)' in src
