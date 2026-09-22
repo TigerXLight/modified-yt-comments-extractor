@@ -74,3 +74,14 @@ assert 'r45axMessengerSideEffectState' in src
 assert 'window.r45axMessengerSideEffectState = r45axMessengerSideEffectState' in src
 assert 'r45bl_replied_bucket_right_biased_present' in src
 assert 'rowRank' in src and 'sourceRank(a.source)-sourceRank(b.source)' in src
+assert 'r45axExpectedTotalEvidence' in src
+assert "new RegExp('\\\\b\\\\d{1,5}\\\\s+of\\\\s+'" in src
+assert "new RegExp('\\\\\\\\b\\\\\\\\d{1,5}" not in src
+assert 'window.r45axExpectedTotalEvidence = r45axExpectedTotalEvidence' in src
+assert 'audit_fast' in src
+assert 'blank_audit_fast_scrolls' in src
+assert 'audit_pass >= 2 and not audit_had_click' in src
+assert 'BLOCKED_EXPECTED_TOTAL_MARKER_NOT_OBSERVABLE_AFTER_STABLE_AUDIT' in src
+assert 'BLOCKED_EXPECTED_TOTAL_PROGRESS_UNSATISFIED_AFTER_STABLE_AUDIT' in src
+assert 'expected_total_diagnostic' in src
+assert 'r45bm_expected_total_diagnostic_block_present' in src
