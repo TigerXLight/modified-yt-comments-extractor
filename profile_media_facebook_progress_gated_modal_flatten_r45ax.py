@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """R45AX Facebook progress-gated modal flatten capture.
 
 Visible-page-only Facebook comment expansion runner.
@@ -26,7 +26,7 @@ CONTRACT = {
     "r45ax_rule": "Open the post, lock to the target story, use the active comments modal scroller, click the first safe visible expansion label, rescan the same viewport, continue downward while comments load, restart from the top after any pass that clicked controls, and gate completion on both zero visible expand controls in a full top-to-bottom audit and any detected Facebook progress text reaching its total, e.g. 715 of 715. Progress is checked against visible text, aria/title attributes, and stripped live HTML.",
     "progress_gate_rule": "If visible/modal text contains N of M where M looks like total loaded comments, final screenshot is refused until max observed N >= M. A run that stops at 657 of 715, 696 of 715, etc. is blocked as incomplete.",
     "screenshot_rule": "After completion, flatten the Facebook comments modal into a comments-only page with no internal scroll box, then capture the widest comments column as maximum-height bands, using the largest safe band height rather than many small tiles.",
-    "visible_controls": ["View all N replies", "View N replies", "View hidden replies/comments", "View more replies/comments", "replied · N replies"],
+    "visible_controls": ["View all N replies", "View N replies", "View hidden replies/comments", "View more replies/comments", "replied Â· N replies"],
     "hidden_platform_api_scraping_enabled": False,
     "login_automation_enabled": False,
     "cookie_or_token_extraction_enabled": False,
@@ -42,7 +42,7 @@ CONTRACT = {
     "r45bi_expected_total_gate_rule": "R45BI fixes the failed R45BH anchor patch and adds --expected-total-comments so a known Facebook total such as 715 is a hard gate. When set, unrelated counters such as 20 of 100 are logged and ignored; completion requires N of the expected total to reach that total.",
     "r45bj_no_random_overlay_close_rule": "R45BJ removes guessed coordinate clicks used to close Messenger/profile overlays. It only uses explicit close controls for Messenger, parks the mouse for profile hover cards, and writes page/text/screenshot artifacts before blocking if an overlay remains open.",
     "r45bk_strict_overlay_detection_rule": "R45BK prevents normal comment bubbles inside the active comments scroller from being misclassified as Messenger/profile overlays. It removes loose Aa matching, ignores scroller descendants, and requires strong chat/profile chrome before treating an overlay as blocking.",
-    "r45bl_replied_bucket_fast_path_rule": "R45BL treats labels such as 'replied · 14 replies' as reply-count controls: it ranges/clicks the numeric replies segment, prefers right-biased safe points, uses shorter per-click waits, and skips a replied bucket after one no-progress click so the runner does not waste minutes on duplicate visible controls.",
+    "r45bl_replied_bucket_fast_path_rule": "R45BL treats labels such as 'replied Â· 14 replies' as reply-count controls: it ranges/clicks the numeric replies segment, prefers right-biased safe points, uses shorter per-click waits, and skips a replied bucket after one no-progress click so the runner does not waste minutes on duplicate visible controls.",
 }
 
 EXPAND_PATTERNS_JS = r"""
@@ -54,12 +54,12 @@ function r45axCategory(label){
   if (/^View \d+ replies?$/i.test(t)) return 'view_n_replies';
   if (/^View \d+ more replies?$/i.test(t)) return 'view_more_replies';
   if (/^View more (replies|comments)$/i.test(t)) return 'view_more';
-  if (/\breplied\s*(?:[·•.\-]\s*)?\d+\s+repl(?:y|ies)\b/i.test(t)) return 'replied_bucket';
+  if (/\breplied\s*(?:[Â·â€¢.\-]\s*)?\d+\s+repl(?:y|ies)\b/i.test(t)) return 'replied_bucket';
   return '';
 }
 function r45axExpansionLabelInfo(text){
   const t = r45axNorm(text);
-  const replied = t.match(/\breplied\s*(?:[·•.\-]\s*)?(\d+)\s+repl(?:y|ies)\b/i);
+  const replied = t.match(/\breplied\s*(?:[Â·â€¢.\-]\s*)?(\d+)\s+repl(?:y|ies)\b/i);
   if (replied) {
     const n = replied[1];
     return {label:r45axNorm(replied[0]), clickLabel:n + (n === '1' ? ' reply' : ' replies'), category:'replied_bucket', preferredPoint:'reply_count_right'};
@@ -70,7 +70,7 @@ function r45axExpansionLabelInfo(text){
     {category:'view_more_replies', rx:/\bView \d+ more replies?\b/i},
     {category:'view_n_replies', rx:/\bView \d+ replies?\b/i},
     {category:'view_more', rx:/\bView more (?:replies|comments)\b/i},
-    {category:'replied_bucket', rx:/\breplied\s*(?:[·•.\-]\s*)?\d+\s+repl(?:y|ies)\b/i, preferredPoint:'reply_count_right'}
+    {category:'replied_bucket', rx:/\breplied\s*(?:[Â·â€¢.\-]\s*)?\d+\s+repl(?:y|ies)\b/i, preferredPoint:'reply_count_right'}
   ];
   for (const p of patterns){
     const m = t.match(p.rx);
@@ -164,7 +164,7 @@ function r45axFindScroller(){
     const sh = el.scrollHeight || 0, ch = el.clientHeight || 0;
     const scrollable = sh > ch + 80;
     const text = r45axNorm(el.innerText || el.textContent || '');
-    const hasComments = /\bLike\b\s+\bReply\b|View all \d+ replies|View \d+ replies|View hidden|View more|replied\s*[·•]\s*\d+\s+replies|\bof\s+\d{2,5}\b/i.test(text);
+    const hasComments = /\bLike\b\s+\bReply\b|View all \d+ replies|View \d+ replies|View hidden|View more|replied\s*[Â·â€¢]\s*\d+\s+replies|\bof\s+\d{2,5}\b/i.test(text);
     if (!hasComments) continue;
     const progress = r45axProgressFromText(text);
     /*
@@ -374,7 +374,7 @@ function r45axCloseMessengerOverlays(){
       if (r.left < info.rect.left || r.right > info.rect.right + 5 || r.top < info.rect.top || r.bottom > info.rect.bottom + 5) return false;
       const blob = r45axNorm([(el.getAttribute && (el.getAttribute('aria-label') || '')), (el.getAttribute && (el.getAttribute('title') || '')), (el.innerText || el.textContent || '')].join(' '));
       if (/(Close chat|Close conversation|Close tab|Close$|Minimize chat)/i.test(blob)) return true;
-      if (/^[×xX✕-]$/.test(blob) && r.top < info.rect.top + 80 && r.right > info.rect.right - 90) return true;
+      if (/^[Ã—xXâœ•-]$/.test(blob) && r.top < info.rect.top + 80 && r.right > info.rect.right - 90) return true;
       return false;
     });
     candidates.sort((a,b)=>{
@@ -435,7 +435,7 @@ function r45axCloseProfileHoverCards(){
       if (r.left < info.rect.left - 3 || r.right > info.rect.right + 8 || r.top < info.rect.top - 3 || r.bottom > info.rect.bottom + 8) return false;
       const blob = r45axNorm([(el.getAttribute && (el.getAttribute('aria-label') || '')), (el.getAttribute && (el.getAttribute('title') || '')), (el.innerText || el.textContent || '')].join(' '));
       if (/^(Close|Close card|Close preview|Dismiss)$/i.test(blob)) return true;
-      if (/^[×xX✕]$/.test(blob) && r.top < info.rect.top + 80 && r.right > info.rect.right - 95) return true;
+      if (/^[Ã—xXâœ•]$/.test(blob) && r.top < info.rect.top + 80 && r.right > info.rect.right - 95) return true;
       return false;
     });
     candidates.sort((a,b)=>{
@@ -487,7 +487,7 @@ function r45axFlattenForScreenshot(){
   document.documentElement.style.overflow = 'visible'; document.documentElement.style.height = 'auto';
   document.body.style.overflow = 'visible'; document.body.style.height = 'auto'; document.body.innerHTML = '';
   const page = document.createElement('main'); page.id = 'r45ax-page';
-  const meta = document.createElement('div'); meta.id = 'r45ax-meta'; meta.textContent = 'R45AX comments-only capture' + (progress ? (' · progress ' + progress.current + ' of ' + progress.total) : '');
+  const meta = document.createElement('div'); meta.id = 'r45ax-meta'; meta.textContent = 'R45AX comments-only capture' + (progress ? (' Â· progress ' + progress.current + ' of ' + progress.total) : '');
   page.appendChild(meta); page.appendChild(clone); document.body.appendChild(page);
   for (const el of Array.from(page.querySelectorAll('*'))) { const cs = getComputedStyle(el); if (cs.position === 'fixed' || cs.position === 'sticky') el.style.position = 'static'; el.style.maxHeight = 'none'; el.style.overflow = 'visible'; }
   window.scrollTo(0,0);
@@ -496,7 +496,7 @@ function r45axFlattenForScreenshot(){
 }
 """
 
-SELF_TEST_HTML = """<div role="dialog" style="height:500px;overflow:auto"><div>657 of 715</div><div>View all 302 replies</div><div>Fahad Malik replied · 3 replies</div><div>View hidden comments</div></div>"""
+SELF_TEST_HTML = """<div role="dialog" style="height:500px;overflow:auto"><div>657 of 715</div><div>View all 302 replies</div><div>Fahad Malik replied Â· 3 replies</div><div>View hidden comments</div></div>"""
 
 def now_stamp() -> str:
     return datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
@@ -530,7 +530,7 @@ async def self_test(output_root: Path) -> int:
         'checks': [
             {'name':'contract_marker','status':'pass'},
             {'name':'progress_fixture_657_of_715','status':'pass' if re.search(r'\b(\d+)\s+of\s+(\d+)\b', SELF_TEST_HTML) else 'fail'},
-            {'name':'fahad_replied_bucket_fixture','status':'pass' if 'Fahad Malik replied · 3 replies' in SELF_TEST_HTML else 'fail'},
+            {'name':'fahad_replied_bucket_fixture','status':'pass' if 'Fahad Malik replied Â· 3 replies' in SELF_TEST_HTML else 'fail'},
             {'name':'modal_flatten_present','status':'pass' if 'r45axFlattenForScreenshot' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'r45ba_real_scrollable_scroller_required','status':'pass' if 'no_real_scrollable_comments_container' in EXPAND_PATTERNS_JS and 'scrollHeight==clientHeight' in EXPAND_PATTERNS_JS else 'fail'},
             {'name':'r45bb_full_audit_restart_required','status':'pass' if 'R45AX_AUDIT_RESTART_TOP' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
@@ -742,7 +742,7 @@ return window.r45axInstallNavBlocker();
                     before_key = str(item.get('key') or '')
                     before_progress_for_sig = best_progress
                     before_sig = (int(before_scan.get('scrollHeight') or 0), int(before_scan.get('scrollTop') or 0), int(before_scan.get('total') or 0), json.dumps(before_scan.get('counts') or {}, sort_keys=True), json.dumps(before_progress_for_sig or {}, sort_keys=True))
-                    before_side = await page.evaluate('r45axMessengerSideEffectState()')
+                    before_side = await page.evaluate('typeof r45axMessengerSideEffectState === "function ? r45axMessengerSideEffectState() : r45axSideEffectState()')
                     click_t0 = time.monotonic()
                     await page.mouse.click(float(item.get('x')), float(item.get('y')))
                     await r45ax_park_mouse(page)
@@ -949,3 +949,4 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+
