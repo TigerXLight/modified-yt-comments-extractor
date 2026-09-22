@@ -44,6 +44,7 @@ CONTRACT = {
     "r45bk_strict_overlay_detection_rule": "R45BK prevents normal comment bubbles inside the active comments scroller from being misclassified as Messenger/profile overlays. It removes loose Aa matching, ignores scroller descendants, and requires strong chat/profile chrome before treating an overlay as blocking.",
     "r45bl_replied_bucket_fast_path_rule": "R45BL treats labels such as 'replied · 14 replies' as reply-count controls: it ranges/clicks the numeric replies segment, prefers right-biased safe points, uses shorter per-click waits, and skips a replied bucket after one no-progress click so the runner does not waste minutes on duplicate visible controls.",
     "r45bq_safe_fast_speed_rule": "R45BQ restores the older fast visible-page expansion cadence for exact safe labels. Safe-fast uses short adaptive waits for View hidden/View replies controls, keeps target drift checks, and runs expensive hover/Messenger/new-page probes periodically or on suspicious clicks instead of after every exact safe expansion click.",
+    "r45br_turbo_visible_rule": "R45BR adds a visible-page-only turbo batch mode that clicks multiple already-visible exact expansion controls inside the active comments scroller in one page-evaluate call, with foreground keepalives and Chromium background-throttling flags. It falls back to the coordinate-safe Playwright path if browser-side clicks do not materialize more comments.",
 }
 
 EXPAND_PATTERNS_JS = r"""
@@ -352,6 +353,121 @@ function r45axClickFirstVisible(){
   if (!item.safe) return {clicked:false, blocked:true, item, scan};
   return {clicked:true, item, scan};
 }
+function r45axTurboAllowedCategory(category){
+  return ['view_hidden','view_all_replies','view_n_replies','view_more_replies','view_more','replied_bucket'].includes(String(category || ''));
+}
+function r45axTurboClickElementAt(scroller, item){
+  const x = Number(item && item.x), y = Number(item && item.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return {ok:false, reason:'bad_point'};
+  const safety = r45axClickSafetyAt(x, y);
+  if (!safety.ok) return {ok:false, reason:'point_safety_failed', safety};
+  const hit = document.elementFromPoint(x, y);
+  if (!hit || !scroller || !scroller.contains(hit)) return {ok:false, reason:'hit_outside_active_scroller'};
+  let clickable = hit.closest && hit.closest('a, button, [role="button"], [tabindex], span, div');
+  if (!clickable || !scroller.contains(clickable)) clickable = hit;
+  if (r45axBadCandidateElement(clickable)) return {ok:false, reason:'bad_candidate_element'};
+  const blob = r45axNorm([
+    clickable.innerText || '',
+    clickable.textContent || '',
+    clickable.getAttribute && (clickable.getAttribute('aria-label') || ''),
+    clickable.getAttribute && (clickable.getAttribute('title') || ''),
+    clickable.getAttribute && (clickable.getAttribute('href') || '')
+  ].join(' '));
+  if (/\b(Like|Reply|Comment as|Write a comment|GIF|Photo|Camera|Upload|Sticker|React|Share)\b/i.test(blob) && !r45axExpansionLabelInfo(blob)) {
+    return {ok:false, reason:'unsafe_blob', blob:blob.slice(0,160)};
+  }
+  try {
+    const evt = {bubbles:true, cancelable:true, view:window, clientX:x, clientY:y, button:0};
+    clickable.dispatchEvent(new MouseEvent('mousedown', evt));
+    clickable.dispatchEvent(new MouseEvent('mouseup', evt));
+    clickable.dispatchEvent(new MouseEvent('click', evt));
+    return {ok:true, tag:clickable.tagName, role:clickable.getAttribute && (clickable.getAttribute('role') || ''), safety};
+  } catch(e) {
+    return {ok:false, reason:'dispatch_failed', error:String(e)};
+  }
+}
+async function r45axTurboVisibleBatch(opts){
+  opts = opts || {};
+  const scroller = r45axGetScroller();
+  if (!scroller) return {ok:false, reason:'no_scroller'};
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const beforeScan = r45axScanVisible();
+  const beforeProgress = r45axProgressFromPage();
+  const beforeTextLength = r45axNorm(scroller.innerText || scroller.textContent || '').length;
+  const beforeScrollHeight = scroller.scrollHeight || 0;
+  const onlyCategory = String(opts.onlyCategory || '');
+  const maxClicks = Math.max(1, Math.min(30, parseInt(opts.maxClicks || 16, 10) || 16));
+  const delayMs = Math.max(0, Math.min(120, parseInt(opts.delayMs || 35, 10) || 35));
+  const postBatchWaitMs = Math.max(0, Math.min(400, parseInt(opts.postBatchWaitMs || 90, 10) || 90));
+  const candidates = (beforeScan.items || []).filter(item => {
+    if (!item || !item.safe || !r45axTurboAllowedCategory(item.category)) return false;
+    if (onlyCategory && item.category !== onlyCategory) return false;
+    return true;
+  });
+  const seen = new Set();
+  const clickedLabels = [];
+  const clickedCategories = {};
+  const clickResults = [];
+  let clicked = 0;
+  for (const item of candidates) {
+    if (clicked >= maxClicks) break;
+    const key = String(item.key || `${item.category}|${item.label}|${item.x}|${item.y}`);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const result = r45axTurboClickElementAt(scroller, item);
+    clickResults.push({label:item.label, category:item.category, key, ok:result.ok, reason:result.reason || '', x:item.x, y:item.y});
+    if (!result.ok) continue;
+    clicked += 1;
+    clickedLabels.push(item.label);
+    clickedCategories[item.category] = (clickedCategories[item.category] || 0) + 1;
+    if (delayMs) await sleep(delayMs);
+  }
+  if (postBatchWaitMs) await sleep(postBatchWaitMs);
+  const afterScan = r45axScanVisible();
+  const afterProgress = r45axProgressFromPage();
+  const afterTextLength = r45axNorm(scroller.innerText || scroller.textContent || '').length;
+  const afterScrollHeight = scroller.scrollHeight || 0;
+  const materialized = clicked > 0 && (
+    afterScrollHeight > beforeScrollHeight ||
+    afterTextLength > beforeTextLength ||
+    JSON.stringify(afterProgress || {}) !== JSON.stringify(beforeProgress || {}) ||
+    JSON.stringify((afterScan || {}).counts || {}) !== JSON.stringify((beforeScan || {}).counts || {}) ||
+    Number((afterScan || {}).total || 0) !== Number((beforeScan || {}).total || 0)
+  );
+  return {
+    ok:true,
+    clicked,
+    attempted:candidates.length,
+    materialized,
+    labels:clickedLabels.slice(0,30),
+    categories:clickedCategories,
+    clickResults:clickResults.slice(0,12),
+    before:{scrollHeight:beforeScrollHeight, textLength:beforeTextLength, progress:beforeProgress, total:beforeScan.total, counts:beforeScan.counts, scrollTop:beforeScan.scrollTop},
+    after:{scrollHeight:afterScrollHeight, textLength:afterTextLength, progress:afterProgress, total:afterScan.total, counts:afterScan.counts, scrollTop:afterScan.scrollTop},
+    visibleRemaining:afterScan.total,
+    remainingLabels:(afterScan.labels || []).slice(0,12)
+  };
+}
+async function r45axTurboBottomHiddenCommentsChain(opts){
+  opts = opts || {};
+  const scroller = r45axGetScroller();
+  if (!scroller) return {ok:false, reason:'no_scroller'};
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const maxCycles = Math.max(1, Math.min(20, parseInt(opts.maxCycles || 8, 10) || 8));
+  const batchClicks = Math.max(1, Math.min(12, parseInt(opts.batchClicks || 4, 10) || 4));
+  const chain = [];
+  let totalClicked = 0;
+  for (let i=0; i<maxCycles; i++) {
+    scroller.scrollTop = scroller.scrollHeight || scroller.scrollTop || 0;
+    await sleep(Math.max(0, Math.min(120, parseInt(opts.preWaitMs || 35, 10) || 35)));
+    const batch = await r45axTurboVisibleBatch({maxClicks:batchClicks, delayMs:Math.max(0, Math.min(90, parseInt(opts.delayMs || 25, 10) || 25)), postBatchWaitMs:Math.max(20, Math.min(220, parseInt(opts.postBatchWaitMs || 70, 10) || 70)), onlyCategory:'view_hidden'});
+    chain.push({cycle:i+1, clicked:batch.clicked, materialized:batch.materialized, before:batch.before, after:batch.after, remaining:batch.visibleRemaining, labels:batch.labels});
+    totalClicked += Number(batch.clicked || 0);
+    if (!batch.clicked || !batch.materialized) break;
+  }
+  const finalScan = r45axScanVisible();
+  return {ok:true, totalClicked, cycles:chain.length, chain:chain.slice(0,12), finalScan};
+}
 function r45axAddSkipKey(key){
   if (!key) return {ok:false, reason:'missing_key'};
   if (!Array.isArray(window.__R45AX_SKIP_KEYS__)) window.__R45AX_SKIP_KEYS__ = [];
@@ -366,6 +482,7 @@ function r45axScroll(mode){
   if (mode === 'top') scroller.scrollTop = 0;
   else if (mode === 'bottom') scroller.scrollTop = scroller.scrollHeight;
   else if (mode === 'audit_fast') scroller.scrollTop = before + Math.max(1200, Math.floor((scroller.clientHeight || 600) * 2.4));
+  else if (mode === 'turbo_down') scroller.scrollTop = before + Math.max(780, Math.floor((scroller.clientHeight || 600) * 1.35));
   else scroller.scrollTop = before + Math.max(240, Math.floor((scroller.clientHeight || 600) * 0.72));
   const after = scroller.scrollTop || 0;
   return {ok:true, mode, before, after, scrollHeight:scroller.scrollHeight||0, clientHeight:scroller.clientHeight||0, atBottom:(after + (scroller.clientHeight||0) >= (scroller.scrollHeight||0)-8)};
@@ -682,6 +799,11 @@ async def self_test(output_root: Path) -> int:
             {'name':'fast_bottom_hidden_comments_loop_present','status':'pass' if 'R45AX_FAST_CLICK' in Path(__file__).read_text(encoding='utf-8') and 'view_hidden' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'adaptive_waits_present','status':'pass' if 'r45ax_adaptive_click_wait_ms' in Path(__file__).read_text(encoding='utf-8') and 'return 180' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'expensive_checks_periodic_not_every_fast_click','status':'pass' if 'run_expensive_click_checks' in Path(__file__).read_text(encoding='utf-8') and 'fast_clicks % 12 == 0' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45ax_turbo_visible_speed_profile_present','status':'pass' if "choices=['turbo_visible','safe_fast','strict']" in Path(__file__).read_text(encoding='utf-8') and "default='turbo_visible'" in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45ax_turbo_visible_batch_click_present','status':'pass' if 'r45axTurboVisibleBatch' in EXPAND_PATTERNS_JS and 'R45AX_TURBO_BATCH' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45ax_bottom_hidden_comments_turbo_chain_present','status':'pass' if 'r45axTurboBottomHiddenCommentsChain' in EXPAND_PATTERNS_JS and 'R45AX_TURBO_BOTTOM_CHAIN' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45ax_foreground_keepalive_present','status':'pass' if '--keep-page-foreground' in Path(__file__).read_text(encoding='utf-8') and 'R45AX_FOREGROUND_KEEPALIVE' in Path(__file__).read_text(encoding='utf-8') and 'page.bring_to_front' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45ax_chromium_throttle_flags_present','status':'pass' if '--disable-background-timer-throttling' in Path(__file__).read_text(encoding='utf-8') and '--disable-backgrounding-occluded-windows' in Path(__file__).read_text(encoding='utf-8') and 'R45AX_CHROMIUM_THROTTLE_FLAGS' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'expected_total_gate_preserved','status':'pass' if 'r45ax_progress_gate_ok' in Path(__file__).read_text(encoding='utf-8') and 'expected_total_comments' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'no_hidden_platform_api','status':'pass'},
             {'name':'no_profile_parsing','status':'pass'},
@@ -728,6 +850,89 @@ async def r45ax_close_profile_hover_cards(page) -> Dict[str, Any]:
         after = before
     return {'closed': 0, 'before': before, 'after': after, 'mouse_park_only': True}
 
+async def r45ax_foreground_keepalive(page, step: Any, reason: str) -> Dict[str, Any]:
+    try:
+        await page.bring_to_front()
+        return {'ok': True, 'step': step, 'reason': reason, 'method': 'page.bring_to_front'}
+    except Exception as e:
+        return {'ok': False, 'step': step, 'reason': reason, 'method': 'page.bring_to_front', 'error': repr(e)}
+
+async def r45ax_playwright_turbo_batch(page, scan: Dict[str, Any], speed_profile: str, max_clicks: int = 6) -> Dict[str, Any]:
+    """Batch exact visible expansion coordinates using Playwright mouse events.
+
+    Browser-side HTMLElement.click() is very fast when Facebook accepts it, but
+    some React controls ignore synthetic DOM events. This path keeps the same
+    visible-candidate safety contract and uses real Playwright mouse clicks,
+    batched bottom-to-top so lower-page materialization is less likely to move
+    the next target under the pointer.
+    """
+    if speed_profile != 'turbo_visible':
+        return {'ok': False, 'reason': 'speed_profile_not_turbo'}
+    items = []
+    seen_points = set()
+    for item in list((scan or {}).get('items') or []):
+        category = str(item.get('category') or '')
+        if not item.get('safe') or not r45ax_fast_safe_category(category):
+            continue
+        x = int(round(float(item.get('x') or 0)))
+        y = int(round(float(item.get('y') or 0)))
+        point_key = (round(x / 4), round(y / 4), category)
+        if point_key in seen_points:
+            continue
+        seen_points.add(point_key)
+        items.append({**item, 'x': x, 'y': y})
+    items.sort(key=lambda it: (int(it.get('y') or 0), int(it.get('x') or 0)), reverse=True)
+    items = items[:max(1, min(12, int(max_clicks or 6)))]
+    if not items:
+        return {'ok': False, 'reason': 'no_safe_turbo_items'}
+    before = await page.evaluate('r45axScanVisible()')
+    before_progress = (before or {}).get('progress')
+    before_sig = {
+        'scrollHeight': int((before or {}).get('scrollHeight') or 0),
+        'scrollTop': int((before or {}).get('scrollTop') or 0),
+        'total': int((before or {}).get('total') or 0),
+        'counts': (before or {}).get('counts') or {},
+        'progress': before_progress,
+    }
+    clicked_items = []
+    blocked_items = []
+    for item in items:
+        safety = await page.evaluate('(p) => r45axClickSafetyAt(p.x, p.y)', {'x': item['x'], 'y': item['y']})
+        if not (safety or {}).get('ok'):
+            blocked_items.append({'label': item.get('label'), 'category': item.get('category'), 'x': item.get('x'), 'y': item.get('y'), 'safety': safety})
+            continue
+        await page.mouse.click(float(item['x']), float(item['y']))
+        clicked_items.append({'label': item.get('label'), 'category': item.get('category'), 'x': item.get('x'), 'y': item.get('y'), 'key': item.get('key')})
+        await page.wait_for_timeout(45 if item.get('category') == 'view_hidden' else 70)
+    if clicked_items:
+        await r45ax_park_mouse(page)
+        await page.wait_for_timeout(120)
+    after = await page.evaluate('r45axScanVisible()')
+    after_progress = (after or {}).get('progress')
+    after_sig = {
+        'scrollHeight': int((after or {}).get('scrollHeight') or 0),
+        'scrollTop': int((after or {}).get('scrollTop') or 0),
+        'total': int((after or {}).get('total') or 0),
+        'counts': (after or {}).get('counts') or {},
+        'progress': after_progress,
+    }
+    materialized = bool(clicked_items) and (
+        after_sig['scrollHeight'] > before_sig['scrollHeight'] or
+        after_sig['total'] != before_sig['total'] or
+        json.dumps(after_sig.get('counts') or {}, sort_keys=True) != json.dumps(before_sig.get('counts') or {}, sort_keys=True) or
+        json.dumps(after_sig.get('progress') or {}, sort_keys=True) != json.dumps(before_sig.get('progress') or {}, sort_keys=True)
+    )
+    return {
+        'ok': True,
+        'clicked': len(clicked_items),
+        'attempted': len(items),
+        'materialized': materialized,
+        'items': clicked_items,
+        'blockedItems': blocked_items[:6],
+        'before': before_sig,
+        'after': after_sig,
+        'visibleRemaining': int((after or {}).get('total') or 0),
+    }
 
 
 def r45ax_filter_expected_progress(progress: Optional[Dict[str, Any]], expected_total_comments: int) -> Optional[Dict[str, Any]]:
@@ -774,7 +979,7 @@ def r45ax_fast_safe_category(category: str) -> bool:
     return category in {'view_hidden', 'view_all_replies', 'view_n_replies', 'view_more_replies', 'view_more', 'replied_bucket'}
 
 def r45ax_adaptive_click_wait_ms(label: str, category: str, speed_profile: str) -> int:
-    if speed_profile != 'safe_fast' or not r45ax_fast_safe_category(category):
+    if speed_profile not in {'safe_fast', 'turbo_visible'} or not r45ax_fast_safe_category(category):
         return r45ax_click_wait_ms(label, category)
     m = re.search(r'\d+', label or '')
     n = int(m.group(0)) if m else 0
@@ -823,18 +1028,35 @@ async def run_live(args: argparse.Namespace) -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
     receipt: Dict[str, Any] = {'marker': MARKER, 'schema_version': SCHEMA_VERSION, 'generated_at': datetime.now(timezone.utc).isoformat(), 'target_url': target_url, 'expected_story': story, 'run_dir': str(run_dir), 'contract': CONTRACT}
     async with async_playwright() as p:
-        context = await p.chromium.launch_persistent_context(user_data_dir=args.user_data_dir, executable_path=args.chromium_executable or None, headless=False, args=['--disable-session-crashed-bubble','--hide-crash-restore-bubble','--no-first-run','--no-default-browser-check'], viewport=None, accept_downloads=False)
+        chromium_args = [
+            '--disable-session-crashed-bubble',
+            '--hide-crash-restore-bubble',
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling',
+            '--start-maximized',
+        ]
+        receipt['chromium_throttle_flags'] = chromium_args
+        log('R45AX_CHROMIUM_THROTTLE_FLAGS', {'args': chromium_args})
+        context = await p.chromium.launch_persistent_context(user_data_dir=args.user_data_dir, executable_path=args.chromium_executable or None, headless=False, args=chromium_args, viewport=None, accept_downloads=False)
         page = await context.new_page()
         await page.goto(target_url, wait_until='domcontentloaded', timeout=90000)
-        await page.bring_to_front()
+        if getattr(args, 'keep_page_foreground', True):
+            log('R45AX_FOREGROUND_KEEPALIVE', await r45ax_foreground_keepalive(page, 'startup', 'after_goto'))
         await page.wait_for_timeout(1800)
         install_js = """() => {
 """ + EXPAND_PATTERNS_JS + """
 window.r45axFindScroller = r45axFindScroller;
 window.r45axGetScroller = r45axGetScroller;
+window.r45axClickSafetyAt = r45axClickSafetyAt;
 window.r45axScroll = r45axScroll;
 window.r45axScanVisible = r45axScanVisible;
 window.r45axClickFirstVisible = r45axClickFirstVisible;
+window.r45axTurboVisibleBatch = r45axTurboVisibleBatch;
+window.r45axTurboBottomHiddenCommentsChain = r45axTurboBottomHiddenCommentsChain;
 window.r45axAddSkipKey = r45axAddSkipKey;
 window.r45axClearSkipKeys = r45axClearSkipKeys;
 window.r45axPageProgress = r45axPageProgress;
@@ -863,9 +1085,25 @@ return window.r45axInstallNavBlocker();
             receipt['status'] = 'BLOCKED_NO_REAL_SCROLLABLE_COMMENTS_SCROLLER'; (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8'); await context.close(); return 3
         await page.evaluate('r45axScroll("top")')
         await r45ax_park_mouse(page)
-        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; stalled_scroll_cycles = 0; unsafe_skipped = 0; dead_click_skipped = 0; replied_bucket_fast_skipped = 0; blank_audit_fast_scrolls = 0; final_bottom_materialization_runs = 0; messenger_blocked = 0; new_pages_closed = 0; target_drift_blocked = 0; profile_hover_closed = 0; fast_clicks = 0; slow_clicks = 0; click_elapsed_total_ms = 0; pass_had_click = False; audit_had_click = False; dead_click_counts: Dict[str, int] = {}; expected_total_evidence: Optional[Dict[str, Any]] = None; final_bottom_materialization_result: Optional[Dict[str, Any]] = None; last_ignored_progress_text = ''
-        speed_profile = str(getattr(args, 'speed_profile', 'safe_fast') or 'safe_fast')
+        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; stalled_scroll_cycles = 0; unsafe_skipped = 0; dead_click_skipped = 0; replied_bucket_fast_skipped = 0; blank_audit_fast_scrolls = 0; final_bottom_materialization_runs = 0; messenger_blocked = 0; new_pages_closed = 0; target_drift_blocked = 0; profile_hover_closed = 0; fast_clicks = 0; slow_clicks = 0; turbo_clicks = 0; turbo_batches = 0; turbo_bottom_chain_clicks = 0; turbo_elapsed_total_ms = 0; click_elapsed_total_ms = 0; pass_had_click = False; audit_had_click = False; dead_click_counts: Dict[str, int] = {}; expected_total_evidence: Optional[Dict[str, Any]] = None; final_bottom_materialization_result: Optional[Dict[str, Any]] = None; last_ignored_progress_text = ''
+        speed_profile = str(getattr(args, 'speed_profile', 'turbo_visible') or 'turbo_visible')
         log('R45AX_PROGRESS_GATED_START', {'max_seconds':args.expand_max_seconds, 'max_steps':args.max_steps, 'progress_gate_required': True, 'expected_total_comments': expected_total_comments, 'target_url': target_url, 'speed_profile': speed_profile})
+        def current_speed_metrics() -> Dict[str, Any]:
+            elapsed_now = max((time.monotonic() - start) / 60.0, 0.01)
+            return {
+                'speed_profile': speed_profile,
+                'fast_clicks': fast_clicks,
+                'slow_clicks': slow_clicks,
+                'turbo_clicks': turbo_clicks,
+                'turbo_batches': turbo_batches,
+                'turbo_bottom_chain_clicks': turbo_bottom_chain_clicks,
+                'total_expand_seconds': round(time.monotonic() - start, 2),
+                'clicks_per_minute': round(clicked / elapsed_now, 2),
+                'average_click_elapsed_ms': round(click_elapsed_total_ms / max(1, clicked), 1),
+                'average_turbo_batch_ms': round(turbo_elapsed_total_ms / max(1, turbo_batches), 1),
+                'average_turbo_click_ms': round(turbo_elapsed_total_ms / max(1, turbo_clicks), 1),
+                'progress_per_minute': round((int((best_progress or {}).get('current') or 0) / elapsed_now), 2) if best_progress else None,
+            }
         known_pages = set(context.pages)
         pre_existing_chat = await page.evaluate('r45axMessengerOverlayState()')
         if pre_existing_chat.get('count'):
@@ -875,7 +1113,7 @@ return window.r45axInstallNavBlocker();
         for step in range(1, int(args.max_steps)+1):
             elapsed = time.monotonic() - start
             if elapsed > float(args.expand_max_seconds): break
-            if speed_profile != 'safe_fast' or step <= 3 or step % 15 == 0:
+            if speed_profile not in {'safe_fast', 'turbo_visible'} or step <= 3 or step % 15 == 0:
                 current_guard = await r45ax_target_guard_now(page, story)
                 if not current_guard.get('ok'):
                     target_drift_blocked += 1
@@ -896,6 +1134,158 @@ return window.r45axInstallNavBlocker();
             progress_ok = r45ax_progress_gate_ok(best_progress, expected_total_comments)
             log('R45AX_SCAN', {'step':step, 'audit_pass':audit_pass, 'elapsed_seconds':round(elapsed,2), 'scrollTop':scan.get('scrollTop'), 'scrollHeight':scan.get('scrollHeight'), 'atBottom':scan.get('atBottom'), 'visible_total':scan.get('total'), 'visible_counts':scan.get('counts'), 'visible_labels':scan.get('labels'), 'progress':prog, 'raw_progress': prog_raw, 'best_progress':best_progress, 'expected_total_comments': expected_total_comments, 'progress_ok':progress_ok})
             if scan.get('total',0) > 0:
+                if speed_profile == 'turbo_visible':
+                    if getattr(args, 'keep_page_foreground', True) and (clicked == 0 or clicked % 40 == 0):
+                        log('R45AX_FOREGROUND_KEEPALIVE', await r45ax_foreground_keepalive(page, step, 'before_turbo_batch'))
+                    coordinate_t0 = time.monotonic()
+                    coordinate_result = await r45ax_playwright_turbo_batch(page, scan, speed_profile, max_clicks=8)
+                    coordinate_elapsed_ms = int(round((time.monotonic() - coordinate_t0) * 1000))
+                    coordinate_clicked = int((coordinate_result or {}).get('clicked') or 0)
+                    coordinate_materialized = bool((coordinate_result or {}).get('materialized'))
+                    if coordinate_clicked > 0:
+                        after_target_guard = await r45ax_target_guard_now(page, story)
+                        if not after_target_guard.get('ok'):
+                            target_drift_blocked += 1
+                            receipt['status'] = 'BLOCKED_TARGET_DRIFT_AFTER_TURBO_COORDINATE_BATCH'
+                            receipt['target_drift_guard'] = after_target_guard
+                            receipt['last_turbo_batch'] = {'step': step, 'marker': 'R45AX_TURBO_COORDINATE_BATCH', 'result': coordinate_result}
+                            log('R45AX_TARGET_DRIFT_BLOCKED', {'step': step, 'target_drift_blocked': target_drift_blocked, 'guard': after_target_guard, 'last_turbo_batch': receipt['last_turbo_batch']})
+                            (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8')
+                            await context.close()
+                            return 5
+                        after_side = await page.evaluate('r45axMessengerSideEffectState()')
+                        if int((after_side.get('messenger') or {}).get('count') or 0) > 0:
+                            messenger_blocked += 1
+                            close_result = await page.evaluate('r45axCloseMessengerOverlays()')
+                            log('R45AX_MESSENGER_OVERLAY_BLOCKED', {'step': step, 'marker': 'R45AX_TURBO_COORDINATE_BATCH', 'messenger_blocked': messenger_blocked, 'after_side': after_side, 'close_result': close_result, 'coordinate_result': coordinate_result})
+                            if int(((close_result or {}).get('after') or {}).get('count') or 0) > 0:
+                                receipt['status'] = 'BLOCKED_MESSENGER_OVERLAY_STILL_OPEN'
+                                receipt['messenger_overlay'] = {'after_side': after_side, 'close_result': close_result, 'coordinate_result': coordinate_result}
+                                receipt['failure_artifacts'] = await r45ax_write_failure_artifacts(page, run_dir, 'blocked_messenger_overlay_still_open')
+                                (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8')
+                                await context.close()
+                                return 7
+                        closed_new_pages = []
+                        for pg in list(context.pages):
+                            if pg is page or pg in known_pages:
+                                continue
+                            try:
+                                closed_new_pages.append({'url': pg.url, 'title': await pg.title()})
+                                await pg.close()
+                                new_pages_closed += 1
+                            except Exception as e:
+                                closed_new_pages.append({'error': repr(e)})
+                        if closed_new_pages:
+                            log('R45AX_UNEXPECTED_PAGE_CLOSED', {'step': step, 'marker': 'R45AX_TURBO_COORDINATE_BATCH', 'closed_pages': closed_new_pages, 'new_pages_closed': new_pages_closed, 'coordinate_result': coordinate_result})
+                    if coordinate_clicked > 0:
+                        clicked += coordinate_clicked
+                        fast_clicks += coordinate_clicked
+                        turbo_clicks += coordinate_clicked
+                        turbo_batches += 1
+                        turbo_elapsed_total_ms += coordinate_elapsed_ms
+                        click_elapsed_total_ms += coordinate_elapsed_ms
+                        pass_had_click = True
+                        audit_had_click = True
+                        after_prog_raw = ((coordinate_result or {}).get('after') or {}).get('progress')
+                        after_prog = r45ax_filter_expected_progress(after_prog_raw, expected_total_comments)
+                        if after_prog_raw and expected_total_comments > 0 and not after_prog:
+                            ignored_after_progress_text = str((after_prog_raw or {}).get('text') or '')
+                            if ignored_after_progress_text != last_ignored_progress_text or step % 50 == 0:
+                                last_ignored_progress_text = ignored_after_progress_text
+                                log('R45AX_PROGRESS_IGNORED_EXPECTED_TOTAL_MISMATCH', {'step': step, 'expected_total_comments': expected_total_comments, 'ignored_progress': after_prog_raw})
+                        if after_prog and (not best_progress or (after_prog.get('total',0), after_prog.get('current',0)) >= (best_progress.get('total',0), best_progress.get('current',0))):
+                            best_progress = after_prog
+                        log('R45AX_TURBO_COORDINATE_BATCH', {'step': step, 'clicked': clicked, 'batch_clicked': coordinate_clicked, 'elapsed_ms': coordinate_elapsed_ms, 'materialized': coordinate_materialized, 'pending_materialization': not coordinate_materialized, 'progress': best_progress, 'labels': [x.get('label') for x in ((coordinate_result or {}).get('items') or [])][:12], 'visible_remaining': (coordinate_result or {}).get('visibleRemaining'), **current_speed_metrics()})
+                        continue
+                    log('R45AX_TURBO_COORDINATE_BATCH_SKIPPED', {'step': step, 'elapsed_ms': coordinate_elapsed_ms, 'reason': (coordinate_result or {}).get('reason'), 'visible_total': scan.get('total'), 'counts': scan.get('counts')})
+                    if coordinate_clicked == 0:
+                        # Try browser-side DOM batch only when real coordinate batching had nothing to click.
+                        pass
+                    else:
+                        # Skip the DOM synthetic batch after a real coordinate attempt; it is mostly useful
+                        # before a visible coordinate target can be selected.
+                        turbo_result = None
+                        turbo_batch_clicked = 0
+                        turbo_materialized = False
+                        turbo_marker = 'R45AX_TURBO_BATCH'
+                    if coordinate_clicked == 0:
+                        turbo_t0 = time.monotonic()
+                        turbo_counts = scan.get('counts') or {}
+                        if bool(scan.get('atBottom')) and int(turbo_counts.get('view_hidden') or 0) > 0:
+                            turbo_result = await page.evaluate('(opts) => r45axTurboBottomHiddenCommentsChain(opts)', {'maxCycles': 4, 'batchClicks': 5, 'delayMs': 25, 'postBatchWaitMs': 70})
+                            turbo_marker = 'R45AX_TURBO_BOTTOM_CHAIN'
+                            turbo_batch_clicked = int((turbo_result or {}).get('totalClicked') or 0)
+                            turbo_materialized = turbo_batch_clicked > 0 and any(bool(x.get('materialized')) for x in ((turbo_result or {}).get('chain') or []))
+                        else:
+                            turbo_result = await page.evaluate('(opts) => r45axTurboVisibleBatch(opts)', {'maxClicks': 18, 'delayMs': 35, 'postBatchWaitMs': 90})
+                            turbo_marker = 'R45AX_TURBO_BATCH'
+                            turbo_batch_clicked = int((turbo_result or {}).get('clicked') or 0)
+                            turbo_materialized = bool((turbo_result or {}).get('materialized'))
+                        turbo_elapsed_ms = int(round((time.monotonic() - turbo_t0) * 1000))
+                    if turbo_batch_clicked > 0:
+                        after_target_guard = await r45ax_target_guard_now(page, story)
+                        if not after_target_guard.get('ok'):
+                            target_drift_blocked += 1
+                            receipt['status'] = 'BLOCKED_TARGET_DRIFT_AFTER_TURBO_BATCH'
+                            receipt['target_drift_guard'] = after_target_guard
+                            receipt['last_turbo_batch'] = {'step': step, 'marker': turbo_marker, 'result': turbo_result}
+                            log('R45AX_TARGET_DRIFT_BLOCKED', {'step': step, 'target_drift_blocked': target_drift_blocked, 'guard': after_target_guard, 'last_turbo_batch': receipt['last_turbo_batch']})
+                            (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8')
+                            await context.close()
+                            return 5
+                        after_side = await page.evaluate('r45axMessengerSideEffectState()')
+                        if int((after_side.get('messenger') or {}).get('count') or 0) > 0:
+                            messenger_blocked += 1
+                            close_result = await page.evaluate('r45axCloseMessengerOverlays()')
+                            log('R45AX_MESSENGER_OVERLAY_BLOCKED', {'step': step, 'marker': turbo_marker, 'messenger_blocked': messenger_blocked, 'after_side': after_side, 'close_result': close_result, 'turbo_result': turbo_result})
+                            if int(((close_result or {}).get('after') or {}).get('count') or 0) > 0:
+                                receipt['status'] = 'BLOCKED_MESSENGER_OVERLAY_STILL_OPEN'
+                                receipt['messenger_overlay'] = {'after_side': after_side, 'close_result': close_result, 'turbo_result': turbo_result}
+                                receipt['failure_artifacts'] = await r45ax_write_failure_artifacts(page, run_dir, 'blocked_messenger_overlay_still_open')
+                                (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8')
+                                await context.close()
+                                return 7
+                        closed_new_pages = []
+                        for pg in list(context.pages):
+                            if pg is page or pg in known_pages:
+                                continue
+                            try:
+                                closed_new_pages.append({'url': pg.url, 'title': await pg.title()})
+                                await pg.close()
+                                new_pages_closed += 1
+                            except Exception as e:
+                                closed_new_pages.append({'error': repr(e)})
+                        if closed_new_pages:
+                            log('R45AX_UNEXPECTED_PAGE_CLOSED', {'step': step, 'marker': turbo_marker, 'closed_pages': closed_new_pages, 'new_pages_closed': new_pages_closed, 'turbo_result': turbo_result})
+                    if turbo_batch_clicked > 0 and turbo_materialized:
+                        clicked += turbo_batch_clicked
+                        fast_clicks += turbo_batch_clicked
+                        turbo_clicks += turbo_batch_clicked
+                        turbo_batches += 1
+                        turbo_elapsed_total_ms += turbo_elapsed_ms
+                        if turbo_marker == 'R45AX_TURBO_BOTTOM_CHAIN':
+                            turbo_bottom_chain_clicks += turbo_batch_clicked
+                        click_elapsed_total_ms += turbo_elapsed_ms
+                        pass_had_click = True
+                        audit_had_click = True
+                        after_obj = (turbo_result or {}).get('after') or {}
+                        if turbo_marker == 'R45AX_TURBO_BOTTOM_CHAIN':
+                            chain = (turbo_result or {}).get('chain') or []
+                            after_obj = (chain[-1] or {}).get('after') if chain else {}
+                        after_prog_raw = (after_obj or {}).get('progress')
+                        after_prog = r45ax_filter_expected_progress(after_prog_raw, expected_total_comments)
+                        if after_prog_raw and expected_total_comments > 0 and not after_prog:
+                            ignored_after_progress_text = str((after_prog_raw or {}).get('text') or '')
+                            if ignored_after_progress_text != last_ignored_progress_text or step % 50 == 0:
+                                last_ignored_progress_text = ignored_after_progress_text
+                                log('R45AX_PROGRESS_IGNORED_EXPECTED_TOTAL_MISMATCH', {'step': step, 'expected_total_comments': expected_total_comments, 'ignored_progress': after_prog_raw})
+                        if after_prog and (not best_progress or (after_prog.get('total',0), after_prog.get('current',0)) >= (best_progress.get('total',0), best_progress.get('current',0))):
+                            best_progress = after_prog
+                        speed_metrics = current_speed_metrics()
+                        log(turbo_marker, {'step': step, 'clicked': clicked, 'batch_clicked': turbo_batch_clicked, 'elapsed_ms': turbo_elapsed_ms, 'progress': best_progress, 'labels': (turbo_result or {}).get('labels') or [], 'categories': (turbo_result or {}).get('categories') or {}, 'visible_remaining': (turbo_result or {}).get('visibleRemaining'), **speed_metrics})
+                        continue
+                    if turbo_batch_clicked > 0:
+                        log('R45AX_TURBO_BATCH_FALLBACK', {'step': step, 'marker': turbo_marker, 'batch_clicked': turbo_batch_clicked, 'elapsed_ms': turbo_elapsed_ms, 'materialized': turbo_materialized, 'reason': 'browser_side_clicks_did_not_materialize_visible_progress', 'result': turbo_result})
                 clickinfo = await page.evaluate('r45axClickFirstVisible()')
                 if clickinfo.get('blocked'):
                     unsafe_skipped += 1; log('R45AX_UNSAFE_VISIBLE_CONTROL_SKIPPED', {'step':step, 'item':clickinfo.get('item'), 'unsafe_skipped':unsafe_skipped}); await page.evaluate('r45axScroll("down")'); scrolls += 1; await page.wait_for_timeout(220); continue
@@ -908,7 +1298,7 @@ return window.r45axInstallNavBlocker();
                     click_t0 = time.monotonic()
                     label = item.get('label','')
                     category = item.get('category') or ''
-                    fast_safe_click = bool(speed_profile == 'safe_fast' and r45ax_fast_safe_category(category))
+                    fast_safe_click = bool(speed_profile in {'safe_fast', 'turbo_visible'} and r45ax_fast_safe_category(category))
                     if fast_safe_click:
                         fast_clicks += 1
                     else:
@@ -1006,8 +1396,7 @@ return window.r45axInstallNavBlocker();
                         'progress_before': before_progress_for_sig,
                         'progress_after': best_progress,
                     }
-                    avg_click_elapsed_ms = round(click_elapsed_total_ms / max(1, clicked), 1)
-                    speed_metrics = {'speed_profile': speed_profile, 'fast_clicks': fast_clicks, 'slow_clicks': slow_clicks, 'clicks_per_minute': round(clicked / max((time.monotonic() - start) / 60.0, 0.01), 2), 'average_click_elapsed_ms': avg_click_elapsed_ms, 'progress_per_minute': round((int((best_progress or {}).get('current') or 0) / max((time.monotonic() - start) / 60.0, 0.01)), 2) if best_progress else None}
+                    speed_metrics = current_speed_metrics()
                     if fast_safe_click and not no_progress and not messenger_opened and not closed_new_pages and int(dead_click_counts.get(before_key,0) or 0) == 0:
                         log('R45AX_FAST_CLICK', {'step':step, 'clicked':clicked, 'label':label, 'category':item.get('category'), 'wait_ms':wait_ms, 'click_elapsed_ms':click_elapsed_ms, 'post_visible_total': after_scan.get('total'), 'progress': best_progress, 'run_expensive_checks': run_expensive_click_checks, **speed_metrics})
                     else:
@@ -1023,7 +1412,7 @@ return window.r45axInstallNavBlocker();
                     continue
             at_bottom = bool(scan.get('atBottom')); sh = int(scan.get('scrollHeight') or 0)
             if not at_bottom:
-                scroll_mode = 'audit_fast' if audit_pass >= 2 and not audit_had_click and int(scan.get('total') or 0) == 0 else 'down'
+                scroll_mode = 'audit_fast' if audit_pass >= 2 and not audit_had_click and int(scan.get('total') or 0) == 0 else ('turbo_down' if speed_profile == 'turbo_visible' and int(scan.get('total') or 0) == 0 else 'down')
                 sr = await page.evaluate('(mode) => r45axScroll(mode)', scroll_mode); scrolls += 1; await r45ax_park_mouse(page)
                 if scroll_mode == 'audit_fast':
                     blank_audit_fast_scrolls += 1
@@ -1070,7 +1459,7 @@ return window.r45axInstallNavBlocker();
                             continue
                     status = 'BLOCKED_EXPECTED_TOTAL_PROGRESS_UNSATISFIED_AFTER_STABLE_AUDIT' if (expected_total_evidence or {}).get('found') else 'BLOCKED_EXPECTED_TOTAL_MARKER_NOT_OBSERVABLE_AFTER_STABLE_AUDIT'
                     receipt['status'] = status
-                    receipt['expected_total_diagnostic'] = {'step': step, 'audit_pass': audit_pass, 'expected_total_comments': expected_total_comments, 'best_progress': best_progress, 'raw_progress': prog_raw, 'expected_total_evidence': expected_total_evidence, 'stable_bottom_cycles': stable_bottom_cycles, 'scrollHeight': sh, 'clicked': clicked, 'scrolls': scrolls, 'blank_audit_fast_scrolls': blank_audit_fast_scrolls, 'final_bottom_materialization_runs': final_bottom_materialization_runs, 'final_bottom_materialization_result': final_bottom_materialization_result, 'speed_metrics': {'speed_profile': speed_profile, 'fast_clicks': fast_clicks, 'slow_clicks': slow_clicks, 'total_expand_seconds': round(time.monotonic() - start, 2), 'clicks_per_minute': round(clicked / max((time.monotonic() - start) / 60.0, 0.01), 2), 'average_click_elapsed_ms': round(click_elapsed_total_ms / max(1, clicked), 1), 'progress_per_minute': round((int((best_progress or {}).get('current') or 0) / max((time.monotonic() - start) / 60.0, 0.01)), 2) if best_progress else None}}
+                    receipt['expected_total_diagnostic'] = {'step': step, 'audit_pass': audit_pass, 'expected_total_comments': expected_total_comments, 'best_progress': best_progress, 'raw_progress': prog_raw, 'expected_total_evidence': expected_total_evidence, 'stable_bottom_cycles': stable_bottom_cycles, 'scrollHeight': sh, 'clicked': clicked, 'scrolls': scrolls, 'blank_audit_fast_scrolls': blank_audit_fast_scrolls, 'final_bottom_materialization_runs': final_bottom_materialization_runs, 'final_bottom_materialization_result': final_bottom_materialization_result, 'speed_metrics': current_speed_metrics()}
                     receipt['failure_artifacts'] = await r45ax_write_failure_artifacts(page, run_dir, status.lower())
                     log(status, receipt['expected_total_diagnostic'])
                     (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8')
@@ -1093,7 +1482,7 @@ return window.r45axInstallNavBlocker();
                     await r45ax_park_mouse(page)
                     await page.wait_for_timeout(650)
                     continue
-                receipt['auto_expand_summary'] = {'status':'pass', 'clicked':clicked, 'scrolls':scrolls, 'audit_passes':audit_pass, 'unsafe_skipped':unsafe_skipped, 'dead_click_skipped':dead_click_skipped, 'replied_bucket_fast_skipped': replied_bucket_fast_skipped, 'blank_audit_fast_scrolls': blank_audit_fast_scrolls, 'messenger_blocked':messenger_blocked, 'new_pages_closed':new_pages_closed, 'target_drift_blocked':target_drift_blocked, 'profile_hover_closed':profile_hover_closed, 'expected_total_comments': expected_total_comments, 'best_progress':best_progress, 'progress_ok':progress_ok, 'progress_gate_status': r45ax_progress_gate_status(best_progress, expected_total_comments), 'completed_by_full_zero_control_audit': True, 'speed_metrics': {'speed_profile': speed_profile, 'fast_clicks': fast_clicks, 'slow_clicks': slow_clicks, 'total_expand_seconds': round(time.monotonic() - start, 2), 'clicks_per_minute': round(clicked / max((time.monotonic() - start) / 60.0, 0.01), 2), 'average_click_elapsed_ms': round(click_elapsed_total_ms / max(1, clicked), 1), 'progress_per_minute': round((int((best_progress or {}).get('current') or 0) / max((time.monotonic() - start) / 60.0, 0.01)), 2) if best_progress else None}}; log('R45AX_EXPANSION_COMPLETE', receipt['auto_expand_summary']); break
+                receipt['auto_expand_summary'] = {'status':'pass', 'clicked':clicked, 'scrolls':scrolls, 'audit_passes':audit_pass, 'unsafe_skipped':unsafe_skipped, 'dead_click_skipped':dead_click_skipped, 'replied_bucket_fast_skipped': replied_bucket_fast_skipped, 'blank_audit_fast_scrolls': blank_audit_fast_scrolls, 'messenger_blocked':messenger_blocked, 'new_pages_closed':new_pages_closed, 'target_drift_blocked':target_drift_blocked, 'profile_hover_closed':profile_hover_closed, 'expected_total_comments': expected_total_comments, 'best_progress':best_progress, 'progress_ok':progress_ok, 'progress_gate_status': r45ax_progress_gate_status(best_progress, expected_total_comments), 'completed_by_full_zero_control_audit': True, 'speed_metrics': current_speed_metrics()}; log('R45AX_EXPANSION_COMPLETE', receipt['auto_expand_summary']); break
         if 'auto_expand_summary' not in receipt:
             final_scan = await page.evaluate('r45axScanVisible()'); final_progress_raw = await page.evaluate('r45axPageProgress()')
             final_progress = r45ax_filter_expected_progress(final_progress_raw, expected_total_comments)
@@ -1102,7 +1491,7 @@ return window.r45axInstallNavBlocker();
             final_expected_total_evidence = await page.evaluate('(n) => r45axExpectedTotalEvidence(n)', expected_total_comments) if expected_total_comments > 0 else None
             receipt['status'] = 'BLOCKED_INCOMPLETE_EXPANSION'; receipt['final_scan'] = final_scan; receipt['best_progress'] = best_progress or final_progress; receipt['raw_final_progress'] = final_progress_raw; receipt['expected_total_comments'] = expected_total_comments
             receipt['expected_total_evidence'] = final_expected_total_evidence
-            receipt['timeout_or_loop_diagnostic'] = {'audit_pass': audit_pass, 'clicked': clicked, 'scrolls': scrolls, 'blank_audit_fast_scrolls': blank_audit_fast_scrolls, 'audit_had_click': audit_had_click, 'elapsed_seconds': round(time.monotonic() - start, 2), 'speed_metrics': {'speed_profile': speed_profile, 'fast_clicks': fast_clicks, 'slow_clicks': slow_clicks, 'total_expand_seconds': round(time.monotonic() - start, 2), 'clicks_per_minute': round(clicked / max((time.monotonic() - start) / 60.0, 0.01), 2), 'average_click_elapsed_ms': round(click_elapsed_total_ms / max(1, clicked), 1), 'progress_per_minute': round((int((best_progress or {}).get('current') or 0) / max((time.monotonic() - start) / 60.0, 0.01)), 2) if best_progress else None}}
+            receipt['timeout_or_loop_diagnostic'] = {'audit_pass': audit_pass, 'clicked': clicked, 'scrolls': scrolls, 'blank_audit_fast_scrolls': blank_audit_fast_scrolls, 'audit_had_click': audit_had_click, 'elapsed_seconds': round(time.monotonic() - start, 2), 'speed_metrics': current_speed_metrics()}
             receipt['progress_gate_satisfied'] = r45ax_progress_gate_ok(receipt.get('best_progress'), expected_total_comments)
             receipt['failure_artifacts'] = await r45ax_write_failure_artifacts(page, run_dir, 'blocked_incomplete_expansion')
             log('R45AX_BLOCKED_INCOMPLETE_EXPANSION', {'best_progress':receipt.get('best_progress'), 'raw_final_progress': final_progress_raw, 'expected_total_comments': expected_total_comments, 'expected_total_evidence': final_expected_total_evidence, 'progress_gate_satisfied':receipt.get('progress_gate_satisfied'), 'gate_status': r45ax_progress_gate_status(receipt.get('best_progress'), expected_total_comments), 'final_visible_total':final_scan.get('total'), 'final_labels':final_scan.get('labels'), 'failure_artifacts': receipt.get('failure_artifacts')})
@@ -1148,7 +1537,9 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     ap.add_argument('--max-audit-passes', type=int, default=12)
     ap.add_argument('--progress-stall-cycles', type=int, default=3)
     ap.add_argument('--expected-total-comments', type=int, default=0, help='Known Facebook total comment count; when set, only N of this total satisfies the progress gate')
-    ap.add_argument('--speed-profile', choices=['safe_fast','strict'], default='safe_fast', help='safe_fast keeps exact visible expansion safety but uses adaptive waits and periodic expensive overlay checks')
+    ap.add_argument('--speed-profile', choices=['turbo_visible','safe_fast','strict'], default='turbo_visible', help='turbo_visible batch-clicks already-visible exact expansion controls inside the active comments scroller, then falls back to safe_fast coordinate clicks')
+    ap.add_argument('--keep-page-foreground', dest='keep_page_foreground', action='store_true', default=True, help='periodically bring the Chromium page to the foreground to resist background timer throttling')
+    ap.add_argument('--no-keep-page-foreground', dest='keep_page_foreground', action='store_false', help='disable foreground keepalive calls')
     ap.add_argument('--max-band-height', type=int, default=30000)
     ap.add_argument('--chromium-executable', default='')
     ap.add_argument('--user-data-dir', default=str(Path.home()/'.ytce_facebook_profile'))
