@@ -742,7 +742,7 @@ return window.r45axInstallNavBlocker();
                     before_key = str(item.get('key') or '')
                     before_progress_for_sig = best_progress
                     before_sig = (int(before_scan.get('scrollHeight') or 0), int(before_scan.get('scrollTop') or 0), int(before_scan.get('total') or 0), json.dumps(before_scan.get('counts') or {}, sort_keys=True), json.dumps(before_progress_for_sig or {}, sort_keys=True))
-                    before_side = await page.evaluate('typeof r45axMessengerSideEffectState === "function\ ? r45axMessengerSideEffectState() : r45axSideEffectState()')
+                    before_side = await page.evaluate('r45axMessengerSideEffectState()')
                     click_t0 = time.monotonic()
                     await page.mouse.click(float(item.get('x')), float(item.get('y')))
                     await r45ax_park_mouse(page)
