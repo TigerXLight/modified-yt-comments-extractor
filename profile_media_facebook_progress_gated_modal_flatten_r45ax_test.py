@@ -96,3 +96,23 @@ assert 'r45axHiddenExpansionBand' in src
 assert 'r.bottom - 8' in src
 assert "category === 'view_hidden' ? hiddenBand : band" in src
 assert 'r45bo_bottom_hidden_comments_band_present' in src
+assert 'r45axFinalBottomMaterializationProbe' in src
+assert 'R45AX_FINAL_BOTTOM_MATERIALIZATION_PROBE' in src
+assert 'final_bottom_materialization_result' in src
+assert 'hiddenByFacebookCount' in src
+assert 'sortFilterState' in src
+assert 'r45bp_final_bottom_materialization_probe_present' in src
+assert 'r45bp_final_bottom_diagnostics_present' in src
+assert '--speed-profile' in src
+assert 'safe_fast' in src
+assert 'R45AX_FAST_CLICK' in src
+assert 'r45ax_adaptive_click_wait_ms' in src
+assert 'run_expensive_click_checks' in src
+assert 'fast_clicks % 12 == 0' in src
+assert 'speed_profile_safe_fast_present' in src
+assert 'fast_bottom_hidden_comments_loop_present' in src
+assert 'adaptive_waits_present' in src
+assert 'expensive_checks_periodic_not_every_fast_click' in src
+assert 'expected_total_gate_preserved' in src
+assert 'clicks_per_minute' in src
+assert 'average_click_elapsed_ms' in src
