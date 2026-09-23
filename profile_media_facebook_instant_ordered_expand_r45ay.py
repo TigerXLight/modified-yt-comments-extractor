@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import json
 import math
+import re
 import statistics
 import time
 import zipfile
@@ -47,7 +48,7 @@ CHROMIUM_THROTTLE_FLAGS = [
 R45AY_ENGINE_JS = r"""
 function r45ayPriority(category, label){
   const c = String(category || '');
-  if (c === 'view_hidden' && /comments/i.test(String(label || ''))) return 1;
+  if (c === 'comment_list_loader') return 1;
   if (c === 'view_hidden') return 2;
   if (c === 'view_all_replies') return 3;
   if (c === 'view_n_replies') return 4;
@@ -57,17 +58,105 @@ function r45ayPriority(category, label){
 }
 function r45ayAllowedCategory(category, includeGuardedViewMore){
   const c = String(category || '');
-  if (['view_hidden','view_all_replies','view_n_replies','replied_bucket'].includes(c)) return true;
+  if (['comment_list_loader','view_hidden','view_all_replies','view_n_replies','replied_bucket'].includes(c)) return true;
   return !!includeGuardedViewMore && c === 'view_more_replies';
+}
+function r45ayProgressEvidenceFromSources(expectedTotal, sources){
+  const expected = parseInt(expectedTotal || 0, 10) || 0;
+  let progress = null;
+  let evidence = expected > 0 ? {expected_total: expected, found: false, searched_sources: []} : null;
+  const patterns = expected > 0 ? [
+    new RegExp('\\b\\d{1,5}\\s+of\\s+' + expected + '\\b', 'i'),
+    new RegExp('\\b' + expected + '\\b.{0,40}\\b(?:comments?|replies)\\b', 'i'),
+    new RegExp('\\b(?:comments?|replies)\\b.{0,40}\\b' + expected + '\\b', 'i')
+  ] : [];
+  for (const src of sources || []) {
+    const text = String((src && src.text) || '');
+    if (evidence) evidence.searched_sources.push(src.name || 'unknown');
+    const foundProgress = r45axProgressFromText(text);
+    if (foundProgress && (!progress || foundProgress.total > progress.total || (foundProgress.total === progress.total && foundProgress.current > progress.current))) {
+      progress = {...foundProgress, source:src.name || 'unknown'};
+    }
+    if (evidence && !evidence.found) {
+      for (const rx of patterns) {
+        const match = text.match(rx);
+        if (match) {
+          const idx = Math.max(0, (match.index || 0) - 90);
+          evidence = {
+            expected_total: expected,
+            found: true,
+            source: src.name || 'unknown',
+            match: match[0],
+            snippet: text.slice(idx, Math.min(text.length, idx + 260)).replace(/\s+/g, ' ').trim()
+          };
+          break;
+        }
+      }
+    }
+  }
+  return {progress, expectedTotalEvidence:evidence};
+}
+function r45ayVisibleScrollerText(scroller){
+  if (!scroller) return '';
+  const sr = scroller.getBoundingClientRect();
+  const band = {top:Math.max(0, sr.top), bottom:Math.min(innerHeight, sr.bottom), left:Math.max(0, sr.left), right:Math.min(innerWidth, sr.right)};
+  const pieces = [];
+  const nodes = Array.from(scroller.querySelectorAll('[role="button"], button, a, span, div, [aria-label], [title]')).slice(0, 1800);
+  for (const el of nodes) {
+    if (!el || r45axElementHidden(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 3 || r.height < 3) continue;
+    if (r.bottom <= band.top || r.top >= band.bottom || r.right <= band.left || r.left >= band.right) continue;
+    const text = r45axNorm([el.innerText || '', el.textContent || '', el.getAttribute && (el.getAttribute('aria-label') || ''), el.getAttribute && (el.getAttribute('title') || '')].join(' '));
+    if (text) pieces.push(text);
+    if (pieces.length >= 500) break;
+  }
+  return pieces.join(' ');
+}
+function r45ayProgressEvidenceScan(expectedTotal, mode){
+  const started = performance.now();
+  const expected = parseInt(expectedTotal || 0, 10) || 0;
+  const scanMode = String(mode || 'cheap');
+  const scroller = r45axGetScroller();
+  let sources = [];
+  if (scanMode === 'heavy') {
+    const progress = r45axProgressFromPage();
+    const expectedTotalEvidence = expected ? r45axExpectedTotalEvidence(expected) : null;
+    return {
+      ok:true,
+      mode:scanMode,
+      progress,
+      expectedTotalEvidence,
+      durationMs:Math.round((performance.now() - started) * 100) / 100,
+      scroller:{scrollTop:scroller ? (scroller.scrollTop || 0) : 0, scrollHeight:scroller ? (scroller.scrollHeight || 0) : 0, clientHeight:scroller ? (scroller.clientHeight || 0) : 0}
+    };
+  }
+  if (scroller) {
+    sources.push({name:'visible_scroller_viewport_text', text:r45ayVisibleScrollerText(scroller)});
+  }
+  const out = r45ayProgressEvidenceFromSources(expected, sources);
+  return {
+    ok:true,
+    mode:scanMode,
+    progress:out.progress,
+    expectedTotalEvidence:out.expectedTotalEvidence,
+    durationMs:Math.round((performance.now() - started) * 100) / 100,
+    scroller:{scrollTop:scroller ? (scroller.scrollTop || 0) : 0, scrollHeight:scroller ? (scroller.scrollHeight || 0) : 0, clientHeight:scroller ? (scroller.clientHeight || 0) : 0}
+  };
 }
 function r45ayScanOrdered(opts){
   opts = opts || {};
   const includeGuardedViewMore = !!opts.includeGuardedViewMore;
+  const includeProgress = !!opts.includeProgress;
+  const includeExpectedEvidence = !!opts.includeExpectedEvidence;
   const maxCandidates = Math.max(1, Math.min(80, parseInt(opts.maxCandidates || 50, 10) || 50));
   const scroller = r45axGetScroller();
   if (!scroller) return {ok:false, reason:'no_active_scroller'};
   const scanStart = performance.now();
-  const raw = r45axTextCandidates(scroller).filter(item => {
+  const raw = r45axTextCandidates(scroller).map(item => {
+    const info = r45ayExactInfo(item && item.label);
+    return info ? {...item, label:info.label, category:info.category} : item;
+  }).filter(item => {
     if (!item || !item.safe) return false;
     if (!r45ayAllowedCategory(item.category, includeGuardedViewMore)) return false;
     const label = r45axNorm(item.label || '');
@@ -99,8 +188,8 @@ function r45ayScanOrdered(opts){
     candidateCount:items.length,
     counts,
     items,
-    progress:r45axProgressFromPage(),
-    expectedTotalEvidence: opts.expectedTotal ? r45axExpectedTotalEvidence(opts.expectedTotal) : null,
+    progress: includeProgress ? r45axProgressFromPage() : null,
+    expectedTotalEvidence: includeExpectedEvidence && opts.expectedTotal ? r45axExpectedTotalEvidence(opts.expectedTotal) : null,
     scroller:{
       scrollTop:scroller.scrollTop || 0,
       scrollHeight:scroller.scrollHeight || 0,
@@ -123,15 +212,20 @@ function r45ayScroll(mode){
 }
 function r45ayExactInfo(text){
   const t = r45axNorm(text);
+  if (/^(View|See|Show|More) (?:more )?comments$/i.test(t)) return {label:t, category:'comment_list_loader'};
+  if (/^(View|See) previous comments$/i.test(t)) return {label:t, category:'comment_list_loader'};
+  if (/^More comments$/i.test(t)) return {label:t, category:'comment_list_loader'};
   if (/^View hidden comments$/i.test(t)) return {label:t, category:'view_hidden'};
   if (/^View hidden replies$/i.test(t)) return {label:t, category:'view_hidden'};
-  if (/^View all \d+ replies$/i.test(t)) return {label:t, category:'view_all_replies'};
-  if (/^View \d+ replies$/i.test(t)) return {label:t, category:'view_n_replies'};
-  if (/^replied\s*(?:[·•.\-]\s*)?\d+\s+replies$/i.test(t)) return {label:t, category:'replied_bucket'};
+  if (/^View all \d+ replies?$/i.test(t)) return {label:t, category:'view_all_replies'};
+  if (/^View \d+ replies?$/i.test(t)) return {label:t, category:'view_n_replies'};
+  if (/^replied\s*(?:[·•.\-]\s*)?\d+\s+repl(?:y|ies)$/i.test(t)) return {label:t, category:'replied_bucket'};
   return null;
 }
 function r45ayFastVisibleCandidates(opts){
   opts = opts || {};
+  const includeProgress = !!opts.includeProgress;
+  const includeExpectedEvidence = !!opts.includeExpectedEvidence;
   const maxCandidates = Math.max(1, Math.min(120, parseInt(opts.maxCandidates || 50, 10) || 50));
   const scroller = r45axGetScroller();
   if (!scroller) return {ok:false, reason:'no_active_scroller', items:[]};
@@ -147,9 +241,15 @@ function r45ayFastVisibleCandidates(opts){
     const r = el.getBoundingClientRect();
     if (r.width < 4 || r.height < 4 || r.height > 90 || r.width > 520) continue;
     if (r.bottom <= band.top || r.top >= band.bottom || r.right <= band.left || r.left >= band.right) continue;
-    const text = r45axNorm([el.innerText || '', el.textContent || '', el.getAttribute && (el.getAttribute('aria-label') || ''), el.getAttribute && (el.getAttribute('title') || '')].join(' '));
-    if (!text || text.length > 80) continue;
-    const info = r45ayExactInfo(text);
+    const variants = [el.innerText || '', el.textContent || '', el.getAttribute && (el.getAttribute('aria-label') || ''), el.getAttribute && (el.getAttribute('title') || '')]
+      .map(value => r45axNorm(value)).filter(value => value && value.length <= 80);
+    if (!variants.length) continue;
+    let text = variants[0];
+    let info = null;
+    for (const variant of variants) {
+      const candidateInfo = r45ayExactInfo(variant);
+      if (candidateInfo) { text = variant; info = candidateInfo; break; }
+    }
     if (!info || !r45ayAllowedCategory(info.category, !!opts.includeGuardedViewMore)) continue;
     const fractions = info.category === 'replied_bucket' ? [0.88, 0.70, 0.50] : [0.50, 0.18, 0.82];
     let chosen = null, safety = null;
@@ -175,6 +275,7 @@ function r45ayFastVisibleCandidates(opts){
       left:Math.round(r.left),
       right:Math.round(r.right),
       priority:r45ayPriority(info.category, info.label),
+      insideActiveScroller:true,
       firstSeenPerformanceNow:started,
       safety
     });
@@ -191,14 +292,25 @@ function r45ayFastVisibleCandidates(opts){
     candidateCount:items.length,
     counts,
     items,
+    rejected:[],
+    progress: includeProgress ? r45axProgressFromPage() : null,
+    expectedTotalEvidence: includeExpectedEvidence && opts.expectedTotal ? r45axExpectedTotalEvidence(opts.expectedTotal) : null,
     scroller:{scrollTop:scroller.scrollTop||0, scrollHeight:scroller.scrollHeight||0, clientHeight:scroller.clientHeight||0, atBottom:(scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8)}
   };
+}
+function r45ayCommentFilterState(){
+  const scroller = r45axGetScroller();
+  const root = scroller || document.body;
+  const text = r45axNorm(root ? (root.innerText || root.textContent || '') : '');
+  const labels = ['Most relevant', 'All comments', 'Newest', 'Top comments'];
+  const present = labels.filter(label => new RegExp('(^|\\s)' + label.replace(/ /g, '\\s+') + '($|\\s)', 'i').test(text));
+  return {ok:!!scroller, present, current:present[0] || '', scroller:!!scroller};
 }
 function r45ayPageLoopScan(opts){
   opts = opts || {};
   let scan = r45ayFastVisibleCandidates(opts);
   if (scan.ok && scan.candidateCount === 0) {
-    const full = r45ayScanOrdered({maxCandidates:opts.maxCandidates, includeGuardedViewMore:!!opts.includeGuardedViewMore, expectedTotal:opts.expectedTotal});
+    const full = r45ayScanOrdered(opts);
     if (full.ok && full.candidateCount > 0) scan = full;
   }
   return scan;
@@ -451,6 +563,21 @@ def now_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+def sanitize_target_url(raw_url: str) -> Dict[str, Any]:
+    """Reject ambiguous Markdown wrappers before Playwright navigation."""
+    raw = str(raw_url or "").strip().strip('"').strip("'")
+    match = re.fullmatch(r"\[([^\]]+)\]\((https?://[^)]+)\)", raw, flags=re.IGNORECASE)
+    if match:
+        href = match.group(2).replace("\\&", "&").replace("&amp;", "&").strip()
+        label = match.group(1).replace("\\&", "&").strip()
+        if href and (label == href or label.startswith("http://") or label.startswith("https://")):
+            return {"ok": True, "url": href, "sanitized": True, "reason": "markdown_href_extracted"}
+        return {"ok": False, "url": "", "sanitized": False, "reason": "markdown_label_href_mismatch"}
+    if raw.startswith("[") or "](" in raw or (raw.count("http") > 1 and raw.endswith(")")):
+        return {"ok": False, "url": "", "sanitized": False, "reason": "ambiguous_markdown_target_url"}
+    return {"ok": True, "url": raw.replace("\\&", "&").replace("&amp;", "&"), "sanitized": False, "reason": "raw_url"}
+
+
 def log(marker: str, data: Any = None) -> None:
     print(marker if data is None else marker + " " + json.dumps(data, ensure_ascii=True, sort_keys=True), flush=True)
 
@@ -545,6 +672,8 @@ window.r45axInstallNavBlocker = r45axInstallNavBlocker;
 window.r45ayScanOrdered = r45ayScanOrdered;
 window.r45ayScroll = r45ayScroll;
 window.r45ayFastVisibleCandidates = r45ayFastVisibleCandidates;
+window.r45ayCommentFilterState = r45ayCommentFilterState;
+window.r45ayProgressEvidenceScan = r45ayProgressEvidenceScan;
 window.r45ayPageLoopScan = r45ayPageLoopScan;
 window.r45ayDispatchPageBurst = r45ayDispatchPageBurst;
 window.r45ayRunInstantPageLoop = r45ayRunInstantPageLoop;
@@ -765,14 +894,17 @@ async def settle_after_trusted_cdp_burst(
         polls += 1
         after_scan = await page.evaluate(
             "(opts) => r45ayPageLoopScan(opts)",
-            {"maxCandidates": 60, "includeGuardedViewMore": include_guarded_view_more, "expectedTotal": expected_total},
+            {
+                "maxCandidates": 60,
+                "includeGuardedViewMore": include_guarded_view_more,
+                "expectedTotal": expected_total,
+                "includeProgress": False,
+                "includeExpectedEvidence": False,
+            },
         )
         after_sig = scan_signature(after_scan)
-        after_progress = after_scan.get("progress")
-        materialized = (
-            signature_changed(before_sig, after_sig)
-            or json.dumps(before_progress or {}, sort_keys=True) != json.dumps(after_progress or {}, sort_keys=True)
-        )
+        after_progress = None
+        materialized = signature_changed(before_sig, after_sig)
         if materialized:
             break
     duration_ms = round((time.perf_counter() - started) * 1000.0, 3)
@@ -787,6 +919,208 @@ async def settle_after_trusted_cdp_burst(
         "scroll_height_after": (((after_scan or {}).get("scroller") or {}).get("scrollHeight")),
         "visible_candidates_after": int((after_scan or {}).get("candidateCount") or 0),
     }
+
+
+async def trusted_wheel_scroll(page, cdp_session: Any, delta_y: float) -> Dict[str, Any]:
+    """Send a real wheel event over the visible browser input boundary."""
+    point = await page.evaluate(
+        """() => {
+          const s = r45axGetScroller();
+          if (!s) return null;
+          const r = s.getBoundingClientRect();
+          return {x: Math.max(1, r.left + r.width / 2), y: Math.max(1, r.top + Math.min(r.height / 2, 400))};
+        }"""
+    )
+    if not point:
+        return {"ok": False, "reason": "no_active_scroller"}
+    params = {
+        "type": "mouseWheel",
+        "x": float(point["x"]),
+        "y": float(point["y"]),
+        "deltaX": 0,
+        "deltaY": float(delta_y),
+    }
+    try:
+        await cdp_session.send("Input.dispatchMouseEvent", params)
+        return {"ok": True, "method": "cdp_mouseWheel", "delta_y": float(delta_y), "point": point}
+    except Exception as cdp_error:
+        try:
+            await page.mouse.wheel(0, float(delta_y))
+            return {"ok": True, "method": "playwright_mouse_wheel_fallback", "delta_y": float(delta_y), "point": point}
+        except Exception as wheel_error:
+            return {"ok": False, "reason": "wheel_dispatch_failed", "cdp_error": repr(cdp_error), "wheel_error": repr(wheel_error)}
+
+
+async def progress_evidence_scan(page, expected_total: int, *, mode: str, step: int = 0, reason: str = "") -> Dict[str, Any]:
+    result = await page.evaluate(
+        "(opts) => r45ayProgressEvidenceScan(opts.expectedTotal, opts.mode)",
+        {"expectedTotal": int(expected_total or 0), "mode": mode},
+    )
+    progress = r45ax_filter_expected_progress((result or {}).get("progress"), int(expected_total or 0))
+    log("R45AY_PROGRESS_SCAN", {
+        "step": step,
+        "mode": mode,
+        "reason": reason,
+        "progress": progress or (result or {}).get("progress"),
+        "expected_total": int(expected_total or 0),
+        "evidence": (result or {}).get("expectedTotalEvidence"),
+        "duration_ms": (result or {}).get("durationMs"),
+        "source": "visible_scroller_viewport" if mode == "cheap" else "scroller_body_aria_title_html",
+    })
+    return {**(result or {}), "filtered_progress": progress}
+
+
+async def false_bottom_recovery(
+    page,
+    cdp_session: Any,
+    args: argparse.Namespace,
+    *,
+    expected_total: int,
+    recovery_number: int,
+) -> Dict[str, Any]:
+    """Give virtualized comment lists a bounded top/bottom materialization chance."""
+    log("R45AY_FALSE_BOTTOM_RECOVERY_START", {"recovery": recovery_number, "expected_total": expected_total})
+    actions = [("top", 0), ("bottom", 0), ("wheel_up", -520), ("wheel_down", 920), ("bottom", 0)]
+    loader_clicks = 0
+    boundary_clicks = 0
+    height_before = 0
+    height_after = 0
+    progress_before = None
+    progress_after = None
+    boundary_text = {"top": "", "bottom": ""}
+    initial_progress_scan = await progress_evidence_scan(page, expected_total, mode="heavy", reason="false_bottom_before_recovery")
+    progress_before = initial_progress_scan.get("filtered_progress")
+    for action, delta in actions:
+        if action.startswith("wheel"):
+            scroll_result = await trusted_wheel_scroll(page, cdp_session, delta)
+        else:
+            scroll_result = await page.evaluate("(mode) => r45ayScroll(mode)", action)
+        log("R45AY_FALSE_BOTTOM_RECOVERY_SCROLL", {"recovery": recovery_number, "mode": action, "scroll": scroll_result})
+        await page.wait_for_timeout(55 if action != "bottom" else 80)
+        scan = await page.evaluate(
+            "(opts) => r45ayPageLoopScan(opts)",
+            {"maxCandidates": 50, "includeGuardedViewMore": bool(args.include_guarded_view_more), "expectedTotal": expected_total},
+        )
+        scroller = (scan or {}).get("scroller") or {}
+        height_before = max(height_before, int(scroller.get("scrollHeight") or 0))
+        before_signature = scan_signature(scan)
+        boundary_candidates = list((scan or {}).get("items") or [])
+        loaders = [item for item in boundary_candidates if item.get("category") == "comment_list_loader"]
+        expansions = [item for item in boundary_candidates if item.get("category") != "comment_list_loader"]
+        labels_summary = [str(item.get("label") or "") for item in boundary_candidates[:16]]
+        log("R45AY_FALSE_BOTTOM_BOUNDARY_CANDIDATES", {
+            "recovery": recovery_number,
+            "mode": action,
+            "candidate_count": len(boundary_candidates),
+            "loader_count": len(loaders),
+            "expansion_count": len(expansions),
+            "labels": labels_summary,
+            "rejected_count": len(list((scan or {}).get("rejected") or [])),
+            "scrollTop": scroller.get("scrollTop"),
+            "scrollHeight": scroller.get("scrollHeight"),
+        })
+        log("R45AY_LOADER_CANDIDATES", {
+            "recovery": recovery_number,
+            "mode": action,
+            "count": len(loaders),
+            "items": [{"label": item.get("label"), "category": item.get("category"), "key": item.get("key"), "inside_active_scroller": bool(item.get("insideActiveScroller", True)), "safety": item.get("safety")} for item in loaders[:8]],
+        })
+        log("R45AY_EXPANSION_CANDIDATES_AT_BOTTOM", {
+            "recovery": recovery_number,
+            "mode": action,
+            "count": len(expansions),
+            "items": [{"label": item.get("label"), "category": item.get("category"), "key": item.get("key"), "inside_active_scroller": bool(item.get("insideActiveScroller", True)), "safety": item.get("safety")} for item in expansions[:12]],
+        })
+        rejected = list((scan or {}).get("rejected") or [])
+        if rejected:
+            log("R45AY_FALSE_BOTTOM_REJECTED_CANDIDATE", {"recovery": recovery_number, "mode": action, "count": len(rejected), "items": rejected[:8]})
+        if boundary_candidates:
+            burst = await trusted_cdp_burst(cdp_session, boundary_candidates, max_clicks=min(20, len(boundary_candidates)), debug_clicks=bool(args.debug_clicks))
+            clicked_in_burst = int(burst.get("clicked") or 0)
+            boundary_clicks += clicked_in_burst
+            loader_clicks += sum(1 for item in list(burst.get("items") or []) if item.get("category") == "comment_list_loader")
+            log("R45AY_FALSE_BOTTOM_RECOVERY_CLICK", {
+                "recovery": recovery_number,
+                "mode": action,
+                "candidate_count": len(boundary_candidates),
+                "clicked": clicked_in_burst,
+                "labels": [item.get("label") for item in boundary_candidates[:12]],
+            })
+            log("R45AY_FALSE_BOTTOM_RECOVERY_BURST", {
+                "recovery": recovery_number,
+                "mode": action,
+                "candidate_count": len(boundary_candidates),
+                "clicked": clicked_in_burst,
+                "loader_clicks": loader_clicks,
+                "expansion_candidates": len(expansions),
+                "materialized_hint": bool(burst.get("clicked")),
+            })
+            await page.wait_for_timeout(75)
+        refreshed = await page.evaluate(
+            "(opts) => r45ayPageLoopScan(opts)",
+            {"maxCandidates": 50, "includeGuardedViewMore": bool(args.include_guarded_view_more), "includeProgress": False, "includeExpectedEvidence": False},
+        )
+        refreshed_scroller = (refreshed or {}).get("scroller") or {}
+        height_after = max(height_after, int(refreshed_scroller.get("scrollHeight") or 0))
+        refreshed_progress_scan = await progress_evidence_scan(page, expected_total, mode="heavy", reason=f"false_bottom_after_{action}")
+        refreshed_progress = refreshed_progress_scan.get("filtered_progress")
+        if refreshed_progress and (not progress_after or int(refreshed_progress.get("current") or 0) > int(progress_after.get("current") or 0)):
+            progress_after = refreshed_progress
+        after_signature = scan_signature(refreshed)
+        progress_improved = bool(
+            progress_after
+            and (
+                not progress_before
+                or int(progress_after.get("current") or 0) > int(progress_before.get("current") or 0)
+            )
+        )
+        before_candidate_count = int((scan or {}).get("candidateCount") or 0)
+        after_candidate_count = int((refreshed or {}).get("candidateCount") or 0)
+        candidate_signature_changed = signature_changed(before_signature, after_signature)
+        new_visible_controls = after_candidate_count > before_candidate_count
+        materialized = (
+            height_after > height_before
+            or progress_improved
+            or candidate_signature_changed
+            or new_visible_controls
+        )
+        if materialized:
+            return {
+                "recovered": True,
+                "clicked": boundary_clicks,
+                "loader_clicks": loader_clicks,
+                "scroll_height_before": height_before,
+                "scroll_height_after": height_after,
+                "progress_before": progress_before,
+                "progress_after": progress_after,
+                "materialized_reason": {
+                    "scroll_height_increased": height_after > height_before,
+                    "progress_improved": progress_improved,
+                    "candidate_signature_changed": candidate_signature_changed,
+                    "new_visible_controls": new_visible_controls,
+                    "before_candidate_count": before_candidate_count,
+                    "after_candidate_count": after_candidate_count,
+                },
+            }
+    boundary_text = await page.evaluate(
+        """() => {
+          const s = r45axGetScroller();
+          const text = s ? String(s.innerText || s.textContent || '') : '';
+          return {top: text.slice(0, 1200), bottom: text.slice(Math.max(0, text.length - 1200))};
+        }"""
+    )
+    result = {
+        "recovered": False,
+        "clicked": boundary_clicks,
+        "loader_clicks": loader_clicks,
+        "scroll_height_before": height_before,
+        "scroll_height_after": height_after,
+        "progress_before": progress_before,
+        "progress_after": progress_after,
+        "visible_boundary_text": boundary_text,
+    }
+    log("R45AY_FALSE_BOTTOM_RECOVERY_RESULT", {"recovery": recovery_number, **result})
+    return result
 
 
 async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespace, story: str) -> Dict[str, Any]:
@@ -804,6 +1138,12 @@ async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespac
     target_drift_count = 0
     empty_scans = 0
     scroll_count = 0
+    trusted_wheel_count = 0
+    loader_click_count = 0
+    false_bottom_recovery_count = 0
+    max_scroll_height = 0
+    last_scroll_signature: Optional[Tuple[int, int]] = None
+    stalled_wheels = 0
     best_progress: Optional[Dict[str, Any]] = None
     click_timings_all: List[Dict[str, Any]] = []
     scan_durations: List[float] = []
@@ -816,7 +1156,14 @@ async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespac
         "max_seconds": max_seconds,
         "expected_total": expected_total,
         "max_burst_clicks": max_burst,
+        "scroll_engine": getattr(args, "scroll_engine", "trusted_wheel"),
     })
+    filter_state = await page.evaluate("r45ayCommentFilterState()")
+    log("R45AY_COMMENT_FILTER_STATE", filter_state)
+    if expected_total:
+        startup_progress = await progress_evidence_scan(page, expected_total, mode="heavy", step=0, reason="startup")
+        if startup_progress.get("filtered_progress"):
+            best_progress = startup_progress["filtered_progress"]
     for step in range(1, max_steps + 1):
         elapsed = time.monotonic() - started
         if elapsed >= max_seconds:
@@ -836,6 +1183,10 @@ async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespac
                     "targetDriftCount": target_drift_count,
                     "bestProgress": best_progress,
                     "scrolls": scroll_count,
+                    "trustedWheelScrolls": trusted_wheel_count,
+                    "loaderClicks": loader_click_count,
+                    "falseBottomRecoveries": false_bottom_recovery_count,
+                    "maxScrollHeight": max_scroll_height,
                     "events": events,
                     "metrics": {
                         "clickTimings": click_timings_all,
@@ -847,12 +1198,36 @@ async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespac
         scan_t0 = time.perf_counter()
         scan = await page.evaluate(
             "(opts) => r45ayPageLoopScan(opts)",
-            {"maxCandidates": max_burst, "includeGuardedViewMore": include_guarded, "expectedTotal": expected_total},
+            {
+                "maxCandidates": max_burst,
+                "includeGuardedViewMore": include_guarded,
+                "expectedTotal": expected_total,
+                "includeProgress": False,
+                "includeExpectedEvidence": False,
+            },
         )
         scan_ms = round((time.perf_counter() - scan_t0) * 1000.0, 3)
         scan_durations.append(scan_ms)
-        raw_progress = scan.get("progress")
-        progress = r45ax_filter_expected_progress(raw_progress, expected_total)
+        scroller_state = scan.get("scroller") or {}
+        max_scroll_height = max(max_scroll_height, int(scroller_state.get("scrollHeight") or 0))
+        progress = None
+        raw_progress = None
+        if expected_total:
+            progress_mode = ""
+            progress_reason = ""
+            if bool(scroller_state.get("atBottom")) and (empty_scans > 0 or step % 5 == 0):
+                progress_mode = "heavy"
+                progress_reason = "near_bottom"
+            elif step % 25 == 0:
+                progress_mode = "heavy"
+                progress_reason = "cadence_25_steps"
+            elif step % 10 == 0:
+                progress_mode = "cheap"
+                progress_reason = "cadence_10_steps"
+            if progress_mode:
+                progress_result = await progress_evidence_scan(page, expected_total, mode=progress_mode, step=step, reason=progress_reason)
+                raw_progress = progress_result.get("progress")
+                progress = progress_result.get("filtered_progress")
         if progress and ((not best_progress) or int(progress.get("current") or 0) > int(best_progress.get("current") or 0)):
             best_progress = progress
         if expected_total and r45ax_progress_gate_ok(best_progress, expected_total):
@@ -866,6 +1241,10 @@ async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespac
                 "targetDriftCount": target_drift_count,
                 "bestProgress": best_progress,
                 "scrolls": scroll_count,
+                "trustedWheelScrolls": trusted_wheel_count,
+                "loaderClicks": loader_click_count,
+                "falseBottomRecoveries": false_bottom_recovery_count,
+                "maxScrollHeight": max_scroll_height,
                 "elapsed_ms": round((time.monotonic() - started) * 1000.0, 3),
                 "events": events,
                 "metrics": {
@@ -893,10 +1272,10 @@ async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespac
                 "step": step,
                 "candidate_count": len(candidates),
                 "counts": scan.get("counts"),
-                "progress": progress or raw_progress,
+                "progress": progress or raw_progress or best_progress,
                 "scan_duration_ms": scan_ms,
-                "scrollTop": ((scan.get("scroller") or {}).get("scrollTop")),
-                "scrollHeight": ((scan.get("scroller") or {}).get("scrollHeight")),
+                "scrollTop": scroller_state.get("scrollTop"),
+                "scrollHeight": scroller_state.get("scrollHeight"),
             })
         if candidates:
             empty_scans = 0
@@ -909,6 +1288,7 @@ async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespac
             )
             burst_count += 1
             clicked += int(burst.get("clicked") or 0)
+            loader_click_count += sum(1 for item in list(burst.get("items") or []) if item.get("category") == "comment_list_loader")
             click_timings_all.extend(list(burst.get("click_timings") or []))
             settle = await settle_after_trusted_cdp_burst(
                 page,
@@ -953,14 +1333,78 @@ async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespac
         empty_scans += 1
         scroll_t0 = time.perf_counter()
         mode = "bottom_chain_nudge" if (best_progress and expected_total and int(best_progress.get("current") or 0) >= expected_total - 40) else "down"
-        scroll = await page.evaluate("(mode) => r45ayScroll(mode)", mode)
-        await page.wait_for_timeout(20 if empty_scans < 3 else 45)
+        if getattr(args, "scroll_engine", "trusted_wheel") == "trusted_wheel":
+            delta = -420 if mode == "bottom_chain_nudge" else 980
+            scroll = await trusted_wheel_scroll(page, cdp_session, delta)
+            if scroll.get("ok"):
+                trusted_wheel_count += 1
+            log("R45AY_TRUSTED_WHEEL_SCROLL", {"step": step, "mode": mode, "delta_y": delta, "scroll": scroll})
+        else:
+            scroll = await page.evaluate("(mode) => r45ayScroll(mode)", mode)
+        await page.wait_for_timeout(35 if empty_scans < 3 else 70)
         scroll_ms = round((time.perf_counter() - scroll_t0) * 1000.0, 3)
         scroll_durations.append(scroll_ms)
         scroll_count += 1
-        log("R45AY_TRUSTED_CDP_SCROLL", {"step": step, "mode": mode, "scroll": scroll, "empty_scans": empty_scans, "scroll_duration_ms": scroll_ms})
-        if empty_scans >= int(args.progress_stall_cycles or 3) and (scroll or {}).get("atBottom"):
+        post_scroll = await page.evaluate(
+            "(opts) => r45ayPageLoopScan(opts)",
+            {"maxCandidates": max_burst, "includeGuardedViewMore": include_guarded, "includeProgress": False, "includeExpectedEvidence": False},
+        )
+        post_scroller = (post_scroll.get("scroller") or {})
+        post_scroll_height = int(post_scroller.get("scrollHeight") or 0)
+        post_scroll_top = int(post_scroller.get("scrollTop") or 0)
+        max_scroll_height = max(max_scroll_height, post_scroll_height)
+        current_scroll_signature = (post_scroll_top, post_scroll_height)
+        if current_scroll_signature == last_scroll_signature:
+            stalled_wheels += 1
+        else:
+            stalled_wheels = 0
+        last_scroll_signature = current_scroll_signature
+        at_bottom = bool(post_scroller.get("atBottom"))
+        log("R45AY_TRUSTED_CDP_SCROLL", {"step": step, "mode": mode, "scroll": scroll, "empty_scans": empty_scans, "stalled_wheels": stalled_wheels, "scroll_duration_ms": scroll_ms, "scrollHeight": max_scroll_height, "scrollTop": post_scroll_top})
+        if empty_scans >= int(args.progress_stall_cycles or 3) and (at_bottom or stalled_wheels >= int(args.progress_stall_cycles or 3)):
+            if expected_total and (not best_progress or int(best_progress.get("current") or 0) < expected_total):
+                false_bottom_recovery_count += 1
+                recovery = await false_bottom_recovery(page, cdp_session, args, expected_total=expected_total, recovery_number=false_bottom_recovery_count)
+                clicked += int(recovery.get("clicked") or 0)
+                loader_click_count += int(recovery.get("loader_clicks") or 0)
+                max_scroll_height = max(max_scroll_height, int(recovery.get("scroll_height_after") or 0))
+                if recovery.get("progress_after") and (not best_progress or int(recovery["progress_after"].get("current") or 0) > int(best_progress.get("current") or 0)):
+                    best_progress = recovery["progress_after"]
+                log("R45AY_FALSE_BOTTOM_RECOVERY_RESULT", {"recovery": false_bottom_recovery_count, **recovery})
+                if recovery.get("recovered") and false_bottom_recovery_count < 3:
+                    empty_scans = 0
+                    continue
             break
+    final_progress_scan = None
+    if expected_total:
+        final_progress_scan = await progress_evidence_scan(page, expected_total, mode="heavy", step=max_steps, reason="final_block")
+        final_progress = final_progress_scan.get("filtered_progress")
+        if final_progress and (not best_progress or int(final_progress.get("current") or 0) > int(best_progress.get("current") or 0)):
+            best_progress = final_progress
+        if r45ax_progress_gate_ok(best_progress, expected_total):
+            return {
+                "ok": True,
+                "status": "PASS_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_REACHED",
+                "clicked": clicked,
+                "bursts": burst_count,
+                "materializedBursts": materialized_burst_count,
+                "fallbackCount": fallback_count,
+                "targetDriftCount": target_drift_count,
+                "bestProgress": best_progress,
+                "scrolls": scroll_count,
+                "trustedWheelScrolls": trusted_wheel_count,
+                "loaderClicks": loader_click_count,
+                "falseBottomRecoveries": false_bottom_recovery_count,
+                "maxScrollHeight": max_scroll_height,
+                "elapsed_ms": round((time.monotonic() - started) * 1000.0, 3),
+                "events": events,
+                "metrics": {
+                    "clickTimings": click_timings_all,
+                    "scanDurations": scan_durations,
+                    "settleDurations": settle_durations,
+                    "emptyScrollDurations": scroll_durations,
+                },
+            }
     return {
         "ok": False,
         "status": "BLOCKED_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_UNSATISFIED",
@@ -971,6 +1415,11 @@ async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespac
         "targetDriftCount": target_drift_count,
         "bestProgress": best_progress,
         "scrolls": scroll_count,
+        "trustedWheelScrolls": trusted_wheel_count,
+        "loaderClicks": loader_click_count,
+        "falseBottomRecoveries": false_bottom_recovery_count,
+        "maxScrollHeight": max_scroll_height,
+        "finalProgressScan": final_progress_scan,
         "totalCandidatesSeen": total_candidates_seen,
         "elapsed_ms": round((time.monotonic() - started) * 1000.0, 3),
         "events": events,
@@ -1107,7 +1556,13 @@ async def flatten_and_capture(page, run_dir: Path, max_band_height: int) -> Dict
 
 
 async def run_live(args: argparse.Namespace) -> int:
-    target_url = clean_target_url(args.target_url)
+    target_info = sanitize_target_url(args.target_url)
+    if not target_info.get("ok"):
+        log("R45AY_TARGET_URL_INVALID_MARKDOWN", {"reason": target_info.get("reason"), "target_url": str(args.target_url)[:240]})
+        return 2
+    if target_info.get("sanitized"):
+        log("R45AY_TARGET_URL_SANITIZED", {"reason": target_info.get("reason"), "from_markdown": True})
+    target_url = clean_target_url(str(target_info.get("url") or ""))
     story = expected_story(target_url)
     run_dir = Path(args.output_root) / ("r45ay_instant_ordered_expand_" + now_stamp())
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -1116,6 +1571,7 @@ async def run_live(args: argparse.Namespace) -> int:
         "schema_version": SCHEMA_VERSION,
         "mode": "real_visible_smoke" if args.instant_audit else "real_capture",
         "target_url": target_url,
+        "target_url_sanitized": bool(target_info.get("sanitized")),
         "expected_story": story,
         "run_dir": str(run_dir),
         "status": "RUNNING",
@@ -1187,6 +1643,10 @@ async def run_live(args: argparse.Namespace) -> int:
                 "fallback_count": trusted_result.get("fallbackCount"),
                 "target_drift_count": target_drift_count,
                 "scrolls": trusted_result.get("scrolls"),
+                "trusted_wheel_scrolls": trusted_result.get("trustedWheelScrolls"),
+                "loader_clicks": trusted_result.get("loaderClicks"),
+                "false_bottom_recoveries": trusted_result.get("falseBottomRecoveries"),
+                "max_scroll_height": trusted_result.get("maxScrollHeight"),
                 "elapsed_ms": elapsed_ms,
                 "clicks_per_minute": clicks_per_minute,
                 "timing": trusted_timing,
@@ -1198,6 +1658,10 @@ async def run_live(args: argparse.Namespace) -> int:
                 "clicked": clicked,
                 "burst_count": int(trusted_result.get("bursts") or 0),
                 "candidate_count": int(trusted_result.get("totalCandidatesSeen") or 0),
+                "loader_click_count": int(trusted_result.get("loaderClicks") or 0),
+                "false_bottom_recovery_count": int(trusted_result.get("falseBottomRecoveries") or 0),
+                "trusted_wheel_scroll_count": int(trusted_result.get("trustedWheelScrolls") or 0),
+                "max_scroll_height": int(trusted_result.get("maxScrollHeight") or 0),
                 "materialized_burst_count": int(trusted_result.get("materializedBursts") or 0),
                 "fallback_count": int(trusted_result.get("fallbackCount") or 0),
                 "target_drift_count": target_drift_count,
@@ -1506,6 +1970,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     ap.add_argument("--no-keep-page-foreground", dest="keep_page_foreground", action="store_false")
     ap.add_argument("--instant-audit", action="store_true")
     ap.add_argument("--instant-engine", choices=["trusted_cdp", "page_loop", "python_sweep"], default="trusted_cdp")
+    ap.add_argument("--scroll-engine", choices=["trusted_wheel", "dom_scroll"], default="trusted_wheel")
     ap.add_argument("--debug-clicks", action="store_true")
     ap.add_argument("--include-guarded-view-more", action="store_true")
     ap.add_argument("--max-burst-clicks", type=int, default=30)
