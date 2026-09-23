@@ -117,6 +117,8 @@ assert 'r45ax_turbo_visible_speed_profile_present' in src
 assert 'r45ax_turbo_visible_batch_click_present' in src
 assert 'r45ax_turbo_burst_speed_profile_present' in src
 assert 'r45ax_turbo_burst_cdp_click_present' in src
+assert 'r45ax_turbo_burst_rejection_diagnostics_present' in src
+assert 'r45ax_turbo_burst_no_progress_inert_skip_present' in src
 assert 'r45ax_bottom_hidden_comments_turbo_chain_present' in src
 assert 'r45ax_foreground_keepalive_present' in src
 assert 'r45ax_active_window_keepalive_present' in src
@@ -132,6 +134,9 @@ assert 'R45AX_TURBO_BURST_START' in src
 assert 'R45AX_TURBO_BURST_CLICKED' in src
 assert 'R45AX_TURBO_BURST_SETTLE' in src
 assert 'R45AX_TURBO_BURST_FALLBACK' in src
+assert 'R45AX_TURBO_BURST_REJECTED_CANDIDATE' in src
+assert 'R45AX_TURBO_BURST_VALIDATION_MISMATCH' in src
+assert 'R45AX_TURBO_BURST_INERT_KEY_SKIPPED' in src
 assert 'R45AX_TURBO_BATCH' in src
 assert 'R45AX_TURBO_BOTTOM_CHAIN' in src
 assert '--keep-page-foreground' in src
@@ -145,6 +150,10 @@ assert 'CalculateNativeWinOcclusion,IntensiveWakeUpThrottling' in src
 assert 'turbo_clicks' in src
 assert 'burst_candidates' in src
 assert 'burst_clicked' in src
+assert 'burst_fallback_count' in src
+assert 'burst_no_validated_count' in src
+assert 'burst_validation_mismatch_count' in src
+assert 'burst_no_progress_counts' in src
 assert 'burst_clicks_per_second' in src
 assert 'cdp_clicks' in src
 assert 'playwright_fallback_clicks' in src

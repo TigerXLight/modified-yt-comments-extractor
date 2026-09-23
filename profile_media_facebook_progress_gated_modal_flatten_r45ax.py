@@ -804,6 +804,8 @@ async def self_test(output_root: Path) -> int:
             {'name':'r45ax_turbo_visible_batch_click_present','status':'pass' if 'r45axTurboVisibleBatch' in EXPAND_PATTERNS_JS and 'R45AX_TURBO_BATCH' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'r45ax_turbo_burst_speed_profile_present','status':'pass' if '--speed-profile' in Path(__file__).read_text(encoding='utf-8') and 'turbo_burst' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'r45ax_turbo_burst_cdp_click_present','status':'pass' if 'Input.dispatchMouseEvent' in Path(__file__).read_text(encoding='utf-8') and 'R45AX_TURBO_BURST_CLICKED' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45ax_turbo_burst_rejection_diagnostics_present','status':'pass' if 'R45AX_TURBO_BURST_REJECTED_CANDIDATE' in Path(__file__).read_text(encoding='utf-8') and 'R45AX_TURBO_BURST_VALIDATION_MISMATCH' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
+            {'name':'r45ax_turbo_burst_no_progress_inert_skip_present','status':'pass' if 'R45AX_TURBO_BURST_INERT_KEY_SKIPPED' in Path(__file__).read_text(encoding='utf-8') and 'burst_no_progress_counts' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'r45ax_bottom_hidden_comments_turbo_chain_present','status':'pass' if 'r45axTurboBottomHiddenCommentsChain' in EXPAND_PATTERNS_JS and 'R45AX_TURBO_BOTTOM_CHAIN' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'r45ax_foreground_keepalive_present','status':'pass' if '--keep-page-foreground' in Path(__file__).read_text(encoding='utf-8') and 'R45AX_FOREGROUND_KEEPALIVE' in Path(__file__).read_text(encoding='utf-8') and 'page.bring_to_front' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
             {'name':'r45ax_active_window_keepalive_present','status':'pass' if 'R45AX_ACTIVE_WINDOW_KEEPALIVE' in Path(__file__).read_text(encoding='utf-8') and 'SetForegroundWindow' in Path(__file__).read_text(encoding='utf-8') else 'fail'},
@@ -954,15 +956,33 @@ async def r45ax_cdp_turbo_burst(page, cdp_session: Any, scan: Dict[str, Any], sp
             const safety = r45axClickSafetyAt(x, y);
             const hit = document.elementFromPoint(x, y);
             const inside = !!(hit && scroller.contains(hit));
-            out.push({x, y, category:item.category, label:item.label, ok:!!(safety && safety.ok && inside), safety, inside});
+            const scanSafetyOk = !!(item.scanSafety && item.scanSafety.ok);
+            const ok = !!((safety && safety.ok) || scanSafetyOk);
+            out.push({x, y, category:item.category, label:item.label, key:item.key || '', ok, safety, scanSafety:item.scanSafety || null, inside, hitTag:hit && hit.tagName || ''});
           }
           return {ok:true, items:out};
         }""",
-        validate_payload,
+        [{**p, 'key': it.get('key'), 'scanSafety': it.get('safety')} for p, it in zip(validate_payload, items)],
     )
-    valid = [dict(items[i], validation=((validation or {}).get('items') or [])[i]) for i in range(len(items)) if i < len((validation or {}).get('items') or []) and (((validation or {}).get('items') or [])[i] or {}).get('ok')]
+    validation_items = (validation or {}).get('items') or []
+    valid = [dict(items[i], validation=validation_items[i]) for i in range(len(items)) if i < len(validation_items) and (validation_items[i] or {}).get('ok')]
+    rejected = [
+        {
+            'label': (validation_items[i] or {}).get('label') if i < len(validation_items) else items[i].get('label'),
+            'category': (validation_items[i] or {}).get('category') if i < len(validation_items) else items[i].get('category'),
+            'key': (validation_items[i] or {}).get('key') if i < len(validation_items) else items[i].get('key'),
+            'point': {'x': items[i].get('x'), 'y': items[i].get('y')},
+            'rect': {'top': items[i].get('top'), 'bottom': items[i].get('bottom'), 'left': items[i].get('left'), 'right': items[i].get('right')},
+            'safety': (validation_items[i] or {}).get('safety') if i < len(validation_items) else None,
+            'scanSafety': (validation_items[i] or {}).get('scanSafety') if i < len(validation_items) else items[i].get('safety'),
+            'inside': (validation_items[i] or {}).get('inside') if i < len(validation_items) else None,
+            'reason': 'safety_failed',
+        }
+        for i in range(len(items))
+        if not (i < len(validation_items) and (validation_items[i] or {}).get('ok'))
+    ]
     if not valid:
-        return {'ok': False, 'reason': 'no_validated_burst_points', 'burst_candidates': len(items), 'validation': validation}
+        return {'ok': False, 'reason': 'no_validated_burst_points', 'burst_candidates': len(items), 'validation': validation, 'rejectedCandidates': rejected[:8]}
     before = await page.evaluate('r45axScanVisible()')
     before_sig = {
         'scrollHeight': int((before or {}).get('scrollHeight') or 0),
@@ -1010,6 +1030,7 @@ async def r45ax_cdp_turbo_burst(page, cdp_session: Any, scan: Dict[str, Any], sp
         'cdp_clicks': len(clicked_items),
         'materialized': materialized,
         'items': clicked_items[:24],
+        'rejectedCandidates': rejected[:8],
         'before': before_sig,
         'after': after_sig,
         'visibleRemaining': int((after or {}).get('total') or 0),
@@ -1254,7 +1275,7 @@ return window.r45axInstallNavBlocker();
             receipt['status'] = 'BLOCKED_NO_REAL_SCROLLABLE_COMMENTS_SCROLLER'; (run_dir/'r45ax_progress_gated_receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding='utf-8'); await context.close(); return 3
         await page.evaluate('r45axScroll("top")')
         await r45ax_park_mouse(page)
-        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; stalled_scroll_cycles = 0; unsafe_skipped = 0; dead_click_skipped = 0; replied_bucket_fast_skipped = 0; blank_audit_fast_scrolls = 0; final_bottom_materialization_runs = 0; messenger_blocked = 0; new_pages_closed = 0; target_drift_blocked = 0; profile_hover_closed = 0; fast_clicks = 0; slow_clicks = 0; turbo_clicks = 0; turbo_batches = 0; turbo_bottom_chain_clicks = 0; turbo_elapsed_total_ms = 0; click_elapsed_total_ms = 0; burst_candidates = 0; burst_clicked = 0; burst_batches = 0; burst_elapsed_total_ms = 0; cdp_clicks = 0; playwright_fallback_clicks = 0; dom_clicks = 0; pass_had_click = False; audit_had_click = False; dead_click_counts: Dict[str, int] = {}; expected_total_evidence: Optional[Dict[str, Any]] = None; final_bottom_materialization_result: Optional[Dict[str, Any]] = None; last_ignored_progress_text = ''
+        start = time.monotonic(); clicked = 0; scrolls = 0; audit_pass = 1; best_progress: Optional[Dict[str, Any]] = None; last_scroll_height = 0; stable_bottom_cycles = 0; stalled_scroll_cycles = 0; unsafe_skipped = 0; dead_click_skipped = 0; replied_bucket_fast_skipped = 0; blank_audit_fast_scrolls = 0; final_bottom_materialization_runs = 0; messenger_blocked = 0; new_pages_closed = 0; target_drift_blocked = 0; profile_hover_closed = 0; fast_clicks = 0; slow_clicks = 0; turbo_clicks = 0; turbo_batches = 0; turbo_bottom_chain_clicks = 0; turbo_elapsed_total_ms = 0; click_elapsed_total_ms = 0; burst_candidates = 0; burst_clicked = 0; burst_batches = 0; burst_elapsed_total_ms = 0; burst_fallback_count = 0; burst_no_validated_count = 0; burst_validation_mismatch_count = 0; cdp_clicks = 0; playwright_fallback_clicks = 0; dom_clicks = 0; pass_had_click = False; audit_had_click = False; dead_click_counts: Dict[str, int] = {}; burst_no_progress_counts: Dict[str, int] = {}; expected_total_evidence: Optional[Dict[str, Any]] = None; final_bottom_materialization_result: Optional[Dict[str, Any]] = None; last_ignored_progress_text = ''
         speed_profile = str(getattr(args, 'speed_profile', 'turbo_burst') or 'turbo_burst')
         log('R45AX_PROGRESS_GATED_START', {'max_seconds':args.expand_max_seconds, 'max_steps':args.max_steps, 'progress_gate_required': True, 'expected_total_comments': expected_total_comments, 'target_url': target_url, 'speed_profile': speed_profile})
         def current_speed_metrics() -> Dict[str, Any]:
@@ -1269,6 +1290,9 @@ return window.r45axInstallNavBlocker();
                 'burst_candidates': burst_candidates,
                 'burst_clicked': burst_clicked,
                 'burst_batches': burst_batches,
+                'burst_fallback_count': burst_fallback_count,
+                'burst_no_validated_count': burst_no_validated_count,
+                'burst_validation_mismatch_count': burst_validation_mismatch_count,
                 'cdp_clicks': cdp_clicks,
                 'playwright_fallback_clicks': playwright_fallback_clicks,
                 'dom_clicks': dom_clicks,
@@ -1331,6 +1355,8 @@ return window.r45axInstallNavBlocker();
                         burst_batch_clicked = int((burst_result or {}).get('burst_clicked') or (burst_result or {}).get('clicked') or 0)
                         burst_materialized = bool((burst_result or {}).get('materialized'))
                         burst_candidates += int((burst_result or {}).get('burst_candidates') or 0)
+                        for rejected_candidate in list((burst_result or {}).get('rejectedCandidates') or [])[:3]:
+                            log('R45AX_TURBO_BURST_REJECTED_CANDIDATE', {'step': step, **rejected_candidate})
                     elif speed_profile == 'turbo_burst':
                         burst_result = {'ok': False, 'reason': 'cdp_session_unavailable'}
                     if speed_profile == 'turbo_burst' and burst_batch_clicked > 0:
@@ -1405,14 +1431,37 @@ return window.r45axInstallNavBlocker();
                             **current_speed_metrics()
                         })
                         log('R45AX_TURBO_BURST_SETTLE', {'step': step, 'burst_clicked': burst_batch_clicked, 'materialized': burst_materialized, 'visible_remaining': (burst_result or {}).get('visibleRemaining')})
+                        burst_inert_skips = []
+                        for burst_item in list((burst_result or {}).get('items') or []):
+                            burst_key = str(burst_item.get('key') or '')
+                            if not burst_key:
+                                continue
+                            if burst_materialized:
+                                burst_no_progress_counts.pop(burst_key, None)
+                                continue
+                            burst_no_progress_counts[burst_key] = int(burst_no_progress_counts.get(burst_key, 0) or 0) + 1
+                            if burst_no_progress_counts[burst_key] >= 2:
+                                try:
+                                    skip_result = await page.evaluate('(key) => r45axAddSkipKey(key)', burst_key)
+                                except Exception as e:
+                                    skip_result = {'ok': False, 'error': repr(e), 'key': burst_key}
+                                burst_inert_skips.append({'key': burst_key, 'label': burst_item.get('label'), 'category': burst_item.get('category'), 'attempts': burst_no_progress_counts[burst_key], 'skip_result': skip_result})
+                        if burst_inert_skips:
+                            log('R45AX_TURBO_BURST_INERT_KEY_SKIPPED', {'step': step, 'items': burst_inert_skips[:6]})
                         continue
                     if speed_profile == 'turbo_burst' and burst_result is not None:
+                        burst_fallback_count += 1
+                        if (burst_result or {}).get('reason') == 'no_validated_burst_points':
+                            burst_no_validated_count += 1
                         log('R45AX_TURBO_BURST_FALLBACK', {'step': step, 'reason': (burst_result or {}).get('reason'), 'clicked': burst_batch_clicked, 'materialized': burst_materialized, 'elapsed_ms': burst_elapsed_ms})
                     coordinate_t0 = time.monotonic()
                     coordinate_result = await r45ax_playwright_turbo_batch(page, scan, speed_profile, max_clicks=(8 if speed_profile == 'turbo_visible' else 12))
                     coordinate_elapsed_ms = int(round((time.monotonic() - coordinate_t0) * 1000))
                     coordinate_clicked = int((coordinate_result or {}).get('clicked') or 0)
                     coordinate_materialized = bool((coordinate_result or {}).get('materialized'))
+                    if speed_profile == 'turbo_burst' and coordinate_clicked > 0 and burst_result is not None and (burst_result or {}).get('reason') == 'no_validated_burst_points':
+                        burst_validation_mismatch_count += 1
+                        log('R45AX_TURBO_BURST_VALIDATION_MISMATCH', {'step': step, 'burst_reason': (burst_result or {}).get('reason'), 'coordinate_clicked': coordinate_clicked, 'coordinate_items': ((coordinate_result or {}).get('items') or [])[:6], 'rejectedCandidates': ((burst_result or {}).get('rejectedCandidates') or [])[:6], **current_speed_metrics()})
                     if coordinate_clicked > 0:
                         after_target_guard = await r45ax_target_guard_now(page, story)
                         if not after_target_guard.get('ok'):
