@@ -1844,7 +1844,305 @@ async def collect_final_block_evidence(
     return evidence
 
 
+async def bottom_range_check(
+    page,
+    cdp_session: Any,
+    args: argparse.Namespace,
+    *,
+    expected_total: int,
+    check_number: int,
+    started_monotonic: float,
+    max_seconds: float,
+) -> Dict[str, Any]:
+    """Check only the loaded tail; the normal engine must not back-scan the whole list."""
+    log("R45AY_BOTTOM_RANGE_CHECK_START", {"check": check_number, "expected_total": expected_total})
+    state = await page.evaluate("""() => {
+      const s = r45axGetScroller();
+      return s ? {scrollTop:Math.round(s.scrollTop||0), scrollHeight:Math.round(s.scrollHeight||0), clientHeight:Math.round(s.clientHeight||0), atBottom:(s.scrollTop+s.clientHeight>=s.scrollHeight-8)} : {scrollTop:0, scrollHeight:0, clientHeight:0, atBottom:true};
+    }""")
+    height_start = int((state or {}).get("scrollHeight") or 0)
+    client_height = max(220, int((state or {}).get("clientHeight") or 0) or 520)
+    max_top = max(0, height_start - client_height)
+    step_px = max(160, min(350, int(client_height * 0.65)))
+    range_start = max(0, max_top - (client_height * 4))
+    positions = list(range(range_start, max_top + 1, step_px))
+    positions.extend([range_start, max_top])
+    positions = sorted(set(max(0, min(max_top, int(pos))) for pos in positions))
+    bands_scanned = 0
+    clicked = 0
+    bursts = 0
+    materialized = 0
+    candidate_labels: List[str] = []
+    expansion_matches: List[str] = []
+    safe_candidates = 0
+    inert: Dict[str, int] = {}
+    for band_index, position in enumerate(positions, start=1):
+        if time.monotonic() - started_monotonic >= max_seconds:
+            break
+        await page.evaluate("""(top) => {
+          const s = r45axGetScroller();
+          if (s) s.scrollTop = Math.max(0, Math.min(Number(top)||0, Math.max(0, (s.scrollHeight||0)-(s.clientHeight||0))));
+        }""", position)
+        await page.wait_for_timeout(12)
+        scan = await page.evaluate(
+            "(opts) => r45ayPageLoopScan(opts)",
+            {
+                "maxCandidates": int(args.max_burst_clicks or 30),
+                "includeGuardedViewMore": bool(args.include_guarded_view_more),
+                "expectedTotal": expected_total,
+                "includeProgress": False,
+                "includeExpectedEvidence": False,
+            },
+        )
+        bands_scanned += 1
+        raw_items = list((scan or {}).get("items") or [])
+        candidates, duplicates = dedupe_candidates(raw_items)
+        if duplicates:
+            log("R45AY_CANDIDATE_DEDUPE", {"scope": "bottom_range", "check": check_number, "band": band_index, "duplicate_count": len(duplicates)})
+        candidates = [item for item in candidates if inert.get(py_stable_candidate_key(item), 0) < 2]
+        safe_candidates += len(candidates)
+        candidate_labels.extend(str(item.get("label") or "") for item in candidates[:10])
+        text = await page.evaluate("""() => {
+          const s = r45axGetScroller();
+          return s ? r45ayExpansionTextMatches(r45ayVisibleScrollerText(s)) : [];
+        }""")
+        expansion_matches.extend(str(label) for label in (text or []) if label)
+        log("R45AY_BOTTOM_RANGE_CHECK_BAND", {
+            "check": check_number,
+            "band": band_index,
+            "position": position,
+            "candidate_count": len(candidates),
+            "labels": [item.get("label") for item in candidates[:10]],
+            "scroll": (scan or {}).get("scroller"),
+        })
+        if not candidates:
+            continue
+        burst = await trusted_cdp_burst(
+            page,
+            cdp_session,
+            candidates,
+            max_clicks=min(int(args.max_burst_clicks or 30), len(candidates)),
+            debug_clicks=bool(args.debug_clicks),
+            no_hover_clicks=bool(getattr(args, "no_hover_clicks", True)),
+        )
+        clicked_now = int(burst.get("clicked") or 0)
+        clicked += clicked_now
+        bursts += 1
+        settle = await settle_after_trusted_cdp_burst(
+            page,
+            scan,
+            max_ms=650 if any(str(item.get("category")) == "view_all_replies" for item in candidates) else 400,
+            include_guarded_view_more=bool(args.include_guarded_view_more),
+            expected_total=expected_total,
+        )
+        if settle.get("materialized"):
+            materialized += 1
+        else:
+            for item in candidates[:max(1, clicked_now)]:
+                key = py_stable_candidate_key(item)
+                inert[key] = inert.get(key, 0) + 1
+                if inert[key] == 2:
+                    log("R45AY_INERT_CANDIDATE", {"scope": "bottom_range", "check": check_number, "label": item.get("label"), "key": key, "reason": "two_non_materializing_attempts"})
+        log("R45AY_BOTTOM_RANGE_CHECK_BURST", {
+            "check": check_number,
+            "band": band_index,
+            "candidate_count": len(candidates),
+            "clicked": clicked_now,
+            "materialized": bool(settle.get("materialized")),
+            "settle_ms": settle.get("duration_ms"),
+            "labels": [item.get("label") for item in candidates[:10]],
+        })
+    final_state = await page.evaluate("""() => {
+      const s = r45axGetScroller();
+      return s ? {scrollTop:Math.round(s.scrollTop||0), scrollHeight:Math.round(s.scrollHeight||0), clientHeight:Math.round(s.clientHeight||0), atBottom:(s.scrollTop+s.clientHeight>=s.scrollHeight-8)} : {scrollTop:0, scrollHeight:0, clientHeight:0, atBottom:true};
+    }""")
+    height_end = int((final_state or {}).get("scrollHeight") or height_start)
+    result = {
+        "check": check_number,
+        "bands_scanned": bands_scanned,
+        "clicked": clicked,
+        "bursts": bursts,
+        "materialized_bursts": materialized,
+        "safe_candidates": safe_candidates,
+        "candidate_labels": sorted(set(label for label in candidate_labels if label))[:40],
+        "expansion_text_matches": sorted(set(label for label in expansion_matches if label))[:40],
+        "scroll_height_start": height_start,
+        "scroll_height_end": height_end,
+        "growth": height_end > height_start,
+        "at_bottom": bool((final_state or {}).get("atBottom")),
+        "terminal": not safe_candidates and not expansion_matches and height_end <= height_start,
+    }
+    log("R45AY_BOTTOM_RANGE_CHECK_DONE", result)
+    return result
+
+
+async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.Namespace, story: str) -> Dict[str, Any]:
+    """Monotonic visible-page conveyor for real Facebook; no global backward proof sweep."""
+    started = time.monotonic()
+    max_seconds = float(args.expand_max_seconds or 120)
+    expected_total = int(args.expected_total_comments or 0)
+    max_steps = max(200000, max(1, int(args.max_steps or 300)))
+    max_burst = max(1, int(args.max_burst_clicks or 30))
+    include_guarded = bool(args.include_guarded_view_more)
+    inert_counts: Dict[str, int] = {}
+    clicked = 0
+    bursts = 0
+    materialized_bursts = 0
+    fallback_count = 0
+    target_drift_count = 0
+    scrolls = 0
+    trusted_wheel_scrolls = 0
+    loader_clicks = 0
+    bottom_checks = 0
+    forward_bands_scanned = 0
+    bottom_range_bands_scanned = 0
+    max_scroll_height = 0
+    best_progress: Optional[Dict[str, Any]] = None
+    total_candidates_seen = 0
+    scan_durations: List[float] = []
+    settle_durations: List[float] = []
+    scroll_durations: List[float] = []
+    click_timings_all: List[Dict[str, Any]] = []
+    events: List[Dict[str, Any]] = []
+    stalled_wheels = 0
+    last_scroll_signature: Optional[Tuple[int, int]] = None
+    same_band_attempts = 0
+    previous_band_top: Optional[int] = None
+    bootstrap: Dict[str, Any] = {}
+    log("R45AY_FORWARD_THROUGHPUT_START", {"max_seconds": max_seconds, "expected_total": expected_total, "max_steps": max_steps, "no_hover_clicks": bool(getattr(args, "no_hover_clicks", True))})
+    if expected_total:
+        startup_progress = await progress_evidence_scan(page, expected_total, mode="heavy", step=0, reason="forward_startup")
+        best_progress = startup_progress.get("filtered_progress")
+        bootstrap = await large_bucket_bootstrap(page, cdp_session, args, expected_total=expected_total)
+        clicked += int(bootstrap.get("clicked") or 0)
+        bursts += int(bootstrap.get("bursts") or 0)
+        materialized_bursts += int(bootstrap.get("materializedBursts") or 0)
+        await page.evaluate("(mode) => r45ayScroll(mode)", "top")
+    for step in range(1, max_steps + 1):
+        if time.monotonic() - started >= max_seconds:
+            break
+        if story:
+            href = await page.evaluate("location.href")
+            if story not in str(href):
+                target_drift_count += 1
+                return {"ok": False, "status": "BLOCKED_TARGET_DRIFT", "clicked": clicked, "bursts": bursts, "materializedBursts": materialized_bursts, "fallbackCount": fallback_count, "targetDriftCount": target_drift_count, "bestProgress": best_progress, "forwardBandsScanned": forward_bands_scanned, "bottomRangeBandsScanned": bottom_range_bands_scanned, "maxScrollHeight": max_scroll_height, "elapsed_ms": round((time.monotonic()-started)*1000, 3)}
+        scan_started = time.perf_counter()
+        scan = await page.evaluate("(opts) => r45ayPageLoopScan(opts)", {
+            "maxCandidates": max_burst,
+            "includeGuardedViewMore": include_guarded,
+            "expectedTotal": expected_total,
+            "includeProgress": False,
+            "includeExpectedEvidence": False,
+        })
+        scan_ms = round((time.perf_counter() - scan_started) * 1000.0, 3)
+        scan_durations.append(scan_ms)
+        scroller = scan.get("scroller") or {}
+        current_top = int(scroller.get("scrollTop") or 0)
+        current_height = int(scroller.get("scrollHeight") or 0)
+        client_height = max(220, int(scroller.get("clientHeight") or 520))
+        max_scroll_height = max(max_scroll_height, current_height)
+        forward_bands_scanned += 1
+        if previous_band_top != current_top:
+            same_band_attempts = 0
+            previous_band_top = current_top
+        if expected_total and (step % 25 == 0 or bool(scroller.get("atBottom"))):
+            progress_scan = await progress_evidence_scan(page, expected_total, mode="heavy" if scroller.get("atBottom") else "cheap", step=step, reason="forward_cadence")
+            progress = progress_scan.get("filtered_progress")
+            if progress and (not best_progress or int(progress.get("current") or 0) > int(best_progress.get("current") or 0)):
+                best_progress = progress
+            if r45ax_progress_gate_ok(best_progress, expected_total):
+                break
+        raw_items = list(scan.get("items") or [])
+        candidates, duplicates = dedupe_candidates(raw_items)
+        if duplicates:
+            log("R45AY_CANDIDATE_DEDUPE", {"scope": "forward_throughput", "step": step, "duplicate_count": len(duplicates)})
+        filtered: List[Dict[str, Any]] = []
+        for item in candidates:
+            key = py_stable_candidate_key(item)
+            if inert_counts.get(key, 0) >= 2:
+                log("R45AY_INERT_SKIP", {"scope": "forward_throughput", "step": step, "label": item.get("label"), "key": key})
+                continue
+            copied = dict(item)
+            copied["loopKey"] = key
+            filtered.append(copied)
+        total_candidates_seen += len(filtered)
+        log("R45AY_FORWARD_BAND_SCAN", {"step": step, "band": forward_bands_scanned, "candidate_count": len(filtered), "labels": [item.get("label") for item in filtered[:10]], "scrollTop": current_top, "scrollHeight": current_height, "scan_ms": scan_ms})
+        if filtered and same_band_attempts < 3:
+            same_band_attempts += 1
+            burst = await trusted_cdp_burst(page, cdp_session, filtered, max_clicks=min(max_burst, len(filtered)), debug_clicks=bool(args.debug_clicks), no_hover_clicks=bool(getattr(args, "no_hover_clicks", True)))
+            bursts += 1
+            clicked_now = int(burst.get("clicked") or 0)
+            clicked += clicked_now
+            loader_clicks += sum(1 for item in list(burst.get("items") or []) if item.get("category") == "comment_list_loader")
+            click_timings_all.extend(list(burst.get("click_timings") or []))
+            settle = await settle_after_trusted_cdp_burst(page, scan, max_ms=700 if any(str(item.get("category")) == "view_all_replies" for item in filtered) else 400, include_guarded_view_more=include_guarded, expected_total=expected_total)
+            settle_ms = float(settle.get("duration_ms") or 0.0)
+            settle_durations.append(settle_ms)
+            materialized = bool(settle.get("materialized"))
+            if materialized:
+                materialized_bursts += 1
+                for item in filtered:
+                    inert_counts.pop(str(item.get("loopKey") or py_stable_candidate_key(item)), None)
+            else:
+                for item in filtered[:max(1, clicked_now)]:
+                    key = str(item.get("loopKey") or py_stable_candidate_key(item))
+                    inert_counts[key] = inert_counts.get(key, 0) + 1
+                    if inert_counts[key] == 2:
+                        log("R45AY_INERT_CANDIDATE", {"scope": "forward_throughput", "step": step, "label": item.get("label"), "key": key, "reason": "two_non_materializing_attempts"})
+            log("R45AY_FORWARD_BURST", {"step": step, "band": forward_bands_scanned, "candidate_count": len(filtered), "clicked": clicked_now, "materialized": materialized, "settle_ms": settle_ms, "labels": [item.get("label") for item in filtered[:10]], "cdp_event_count": burst.get("cdp_event_count"), "cdp_events_per_click": burst.get("cdp_events_per_click"), "no_hover_clicks": burst.get("no_hover_clicks")})
+            continue
+        scroll_started = time.perf_counter()
+        delta = max(760, min(1400, int(client_height * 1.35)))
+        if getattr(args, "scroll_engine", "trusted_wheel") == "trusted_wheel":
+            scroll_result = await trusted_wheel_scroll(page, cdp_session, delta)
+            if scroll_result.get("ok"):
+                trusted_wheel_scrolls += 1
+        else:
+            scroll_result = await page.evaluate("(mode) => r45ayScroll(mode)", "down")
+        await page.wait_for_timeout(25)
+        scroll_ms = round((time.perf_counter() - scroll_started) * 1000.0, 3)
+        scroll_durations.append(scroll_ms)
+        scrolls += 1
+        post = await page.evaluate("(opts) => r45ayPageLoopScan(opts)", {"maxCandidates": max_burst, "includeGuardedViewMore": include_guarded, "includeProgress": False, "includeExpectedEvidence": False})
+        post_scroller = post.get("scroller") or {}
+        signature = (int(post_scroller.get("scrollTop") or 0), int(post_scroller.get("scrollHeight") or 0))
+        if signature == last_scroll_signature:
+            stalled_wheels += 1
+        else:
+            stalled_wheels = 0
+        last_scroll_signature = signature
+        max_scroll_height = max(max_scroll_height, signature[1])
+        log("R45AY_FORWARD_SCROLL", {"step": step, "scroll": scroll_result, "scroll_ms": scroll_ms, "scrollTop": signature[0], "scrollHeight": signature[1], "stalled_wheels": stalled_wheels})
+        at_bottom = bool(post_scroller.get("atBottom"))
+        if at_bottom and stalled_wheels >= 2:
+            bottom_checks += 1
+            bottom = await bottom_range_check(page, cdp_session, args, expected_total=expected_total, check_number=bottom_checks, started_monotonic=started, max_seconds=max_seconds)
+            bottom_range_bands_scanned += int(bottom.get("bands_scanned") or 0)
+            clicked += int(bottom.get("clicked") or 0)
+            bursts += int(bottom.get("bursts") or 0)
+            materialized_bursts += int(bottom.get("materialized_bursts") or 0)
+            max_scroll_height = max(max_scroll_height, int(bottom.get("scroll_height_end") or 0))
+            if bottom.get("terminal") and expected_total and not r45ax_progress_gate_ok(best_progress, expected_total):
+                break
+            stalled_wheels = 0
+            same_band_attempts = 0
+    elapsed_ms = round((time.monotonic() - started) * 1000.0, 3)
+    final_progress = None
+    if expected_total:
+        final_progress_scan = await progress_evidence_scan(page, expected_total, mode="heavy", step=max_steps, reason="forward_final")
+        final_progress = final_progress_scan.get("filtered_progress")
+        if final_progress and (not best_progress or int(final_progress.get("current") or 0) > int(best_progress.get("current") or 0)):
+            best_progress = final_progress
+    ok = bool(expected_total and r45ax_progress_gate_ok(best_progress, expected_total))
+    status = "PASS_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_REACHED" if ok else ("BLOCKED_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_UNSATISFIED" if bottom_checks and bool(bottom.get("terminal")) else "BLOCKED_R45AY_TRUSTED_CDP_TIME_BUDGET_EXPIRED_WITHOUT_TERMINAL_PROOF")
+    timing = {"scan_duration": value_summary(scan_durations), "adaptive_settle": value_summary(settle_durations), "empty_scan_scroll": value_summary(scroll_durations), "clicks": timing_summary(click_timings_all)}
+    log("R45AY_FORWARD_TIMING", {"clicked": clicked, "materialized_bursts": materialized_bursts, "inert_count": sum(1 for value in inert_counts.values() if value >= 2), "forward_bands_scanned": forward_bands_scanned, "bottom_range_bands_scanned": bottom_range_bands_scanned, "max_scroll_height": max_scroll_height, "fallback_count": fallback_count, "target_drift_count": target_drift_count, "cdp_events_per_click": timing.get("clicks", {}).get("click_count") and 2.0 or 0.0, "median_scan_duration_ms": timing["scan_duration"]["median_ms"], "median_settle_ms": timing["adaptive_settle"]["median_ms"], "status": status, "elapsed_ms": elapsed_ms})
+    return {"ok": ok, "status": status, "clicked": clicked, "bursts": bursts, "materializedBursts": materialized_bursts, "fallbackCount": fallback_count, "targetDriftCount": target_drift_count, "bestProgress": best_progress, "scrolls": scrolls, "trustedWheelScrolls": trusted_wheel_scrolls, "loaderClicks": loader_clicks, "falseBottomRecoveries": 0, "bottomRangeChecks": bottom_checks, "forwardBandsScanned": forward_bands_scanned, "bottomRangeBandsScanned": bottom_range_bands_scanned, "inertCount": sum(1 for value in inert_counts.values() if value >= 2), "maxScrollHeight": max_scroll_height, "totalCandidatesSeen": total_candidates_seen, "fullSweepRetries": 0, "lastFullSurfaceSweep": {}, "largeBucketBootstrap": bootstrap, "elapsed_ms": elapsed_ms, "events": events, "timing": timing, "metrics": {"clickTimings": click_timings_all, "scanDurations": scan_durations, "settleDurations": settle_durations, "emptyScrollDurations": scroll_durations}}
+
+
 async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespace, story: str) -> Dict[str, Any]:
+    if not bool(getattr(args, "debug_full_surface_proof", False)):
+        return await run_forward_throughput_engine(page, cdp_session, args, story)
     started = time.monotonic()
     max_steps = max(1, int(args.max_steps or 300))
     max_seconds = float(args.expand_max_seconds or 120)
