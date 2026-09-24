@@ -560,6 +560,133 @@ function r45ayFinalBlockEvidence(opts){
     reason_for_block: expansionTextMatches.length ? 'expansion_text_still_visible_requires_recorded_rejection_or_more_sweeps' : 'no_visible_whitelisted_expansion_text_or_safe_candidates'
   };
 }
+function r45ayLocateExpansionTextCandidates(opts){
+  opts = opts || {};
+  const started = performance.now();
+  const scroller = r45axGetScroller();
+  if (!scroller) {
+    return {ok:false, reason:'no_active_scroller', text_matches:0, candidates:[], rejected:[], durationMs:0};
+  }
+  const maxCandidates = Math.max(1, Math.min(240, parseInt(opts.maxCandidates || 120, 10) || 120));
+  const maxNodes = Math.max(200, Math.min(12000, parseInt(opts.maxNodes || 7000, 10) || 7000));
+  const candidates = [];
+  const rejected = [];
+  const seen = new Set();
+  const scrollerRect = scroller.getBoundingClientRect();
+  const scrollerTop = scroller.scrollTop || 0;
+  let textMatches = 0;
+  let scannedNodes = 0;
+  const rx = /\bView hidden (?:replies|comments)\b|\bView all \d+ replies?\b|\bView \d+ replies?\b|\breplied\s*(?:[·•.\-]\s*)?\d+\s+repl(?:y|ies)\b/ig;
+  const reject = (label, reason, extra) => {
+    rejected.push({label:r45axNorm(label || ''), reason, ...(extra || {})});
+  };
+  const contextHash = (el, label) => {
+    try { return r45axHashText(r45axCandidateContext(el, label)); } catch(e) { return r45axHashText(String(label || '')); }
+  };
+  const loadedSafety = (el, label, category) => {
+    if (!el || !scroller.contains(el)) return {ok:false, reason:'outside_active_scroller'};
+    if (r45axBadCandidateElement(el)) return {ok:false, reason:'bad_candidate_element'};
+    const text = r45axNorm([el.getAttribute && (el.getAttribute('aria-label') || ''), el.getAttribute && (el.getAttribute('title') || ''), el.innerText || el.textContent || ''].join(' '));
+    const immediate = text.slice(0, 260);
+    if (/^(Like|Reply|Share|React|GIF|Photo|Camera|Upload)$/i.test(immediate)) return {ok:false, reason:'unsafe_control_label', text:immediate};
+    if (/\b(Comment as|Reply to|Write a comment|Add photo|Choose a GIF|Upload|Camera|Sticker)\b/i.test(immediate)) return {ok:false, reason:'composer_or_media_control_text', text:immediate};
+    const anchor = el.closest && el.closest('a[href]');
+    const button = el.closest && el.closest('button,[role="button"],[tabindex="0"]');
+    if (anchor && (!button || !scroller.contains(button))) {
+      const href = anchor.href || anchor.getAttribute('href') || '';
+      if (href && !/^(#|javascript:|about:blank)/i.test(String(href))) {
+        return {ok:false, reason:'unsafe_anchor_without_button_ancestor', href:String(href).slice(0, 220)};
+      }
+    }
+    const info = r45ayExpansionTextInfo(label);
+    if (!info || !r45ayAllowedCategory(info.category, !!opts.includeGuardedViewMore)) return {ok:false, reason:'label_not_whitelisted', label};
+    if (info.category !== category) return {ok:false, reason:'category_mismatch', label, category, infoCategory:info.category};
+    return {ok:true, reason:'loaded_scroller_expansion_text'};
+  };
+  try {
+    const walker = document.createTreeWalker(scroller, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode()) && scannedNodes < maxNodes && candidates.length < maxCandidates) {
+      scannedNodes += 1;
+      const raw = String(node.nodeValue || '');
+      if (!raw || raw.length > 800) continue;
+      rx.lastIndex = 0;
+      let match;
+      while ((match = rx.exec(raw)) !== null && candidates.length < maxCandidates) {
+        const label = r45axNorm(match[0]);
+        const info = r45ayExpansionTextInfo(label);
+        if (!info || !r45ayAllowedCategory(info.category, !!opts.includeGuardedViewMore)) continue;
+        textMatches += 1;
+        const parent = node.parentElement;
+        if (!parent) {
+          reject(label, 'text_node_without_parent');
+          continue;
+        }
+        let rect = null;
+        try {
+          const range = document.createRange();
+          range.setStart(node, match.index);
+          range.setEnd(node, Math.min(raw.length, match.index + match[0].length));
+          const rects = Array.from(range.getClientRects()).filter(r => r.width >= 2 && r.height >= 2);
+          rect = rects[0] || null;
+          try { range.detach && range.detach(); } catch(e) {}
+        } catch(e) {}
+        if (!rect) {
+          try {
+            const r = parent.getBoundingClientRect();
+            if (r && r.width >= 2 && r.height >= 2) rect = r;
+          } catch(e) {}
+        }
+        if (!rect) {
+          reject(label, 'no_range_or_parent_rect');
+          continue;
+        }
+        const safety = loadedSafety(parent, label, info.category);
+        if (!safety.ok) {
+          reject(label, safety.reason, {safety});
+          continue;
+        }
+        const approx = Math.max(0, Math.round(scrollerTop + rect.top - scrollerRect.top));
+        const xBand = Math.round((rect.left || 0) / 24);
+        const yBand = Math.round(approx / 24);
+        const key = [info.category, info.label, yBand, xBand, contextHash(parent, info.label)].join('|');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        candidates.push({
+          label:info.label,
+          category:info.category,
+          replyCount:Number(info.replyCount || 0),
+          key,
+          contextual_key:key,
+          approx_scroll_position:approx,
+          band:Math.floor(approx / 350),
+          top:Math.round(rect.top),
+          bottom:Math.round(rect.bottom),
+          left:Math.round(rect.left),
+          right:Math.round(rect.right),
+          source:'loaded_scroller_text_locator',
+          safety
+        });
+      }
+    }
+  } catch(e) {
+    return {ok:false, reason:'locator_failed', error:String(e), text_matches:textMatches, candidates, rejected, durationMs:Math.round((performance.now() - started) * 100) / 100};
+  }
+  return {
+    ok:true,
+    marker:'R45AY_RESIDUAL_TEXT_LOCATOR_DONE',
+    text_matches:textMatches,
+    candidates_created:candidates.length,
+    rejected_count:rejected.length,
+    labels:Array.from(new Set(candidates.map(c => c.label))).slice(0, 40),
+    approx_positions:candidates.map(c => c.approx_scroll_position).slice(0, 40),
+    scanned_nodes:scannedNodes,
+    candidates,
+    rejected:rejected.slice(0, 80),
+    scroll:{scrollTop:scroller.scrollTop || 0, scrollHeight:scroller.scrollHeight || 0, clientHeight:scroller.clientHeight || 0},
+    durationMs:Math.round((performance.now() - started) * 100) / 100
+  };
+}
 function r45ayCommentFilterState(){
   const scroller = r45axGetScroller();
   const root = scroller || document.body;
@@ -1074,6 +1201,68 @@ def residual_queue_update(
     return key
 
 
+def residual_queue_merge_text_candidates(
+    queue: Dict[str, Dict[str, Any]],
+    candidates: List[Dict[str, Any]],
+    *,
+    step: int,
+) -> Dict[str, Any]:
+    added = 0
+    updated = 0
+    labels: List[str] = []
+    positions: List[int] = []
+    for item in candidates or []:
+        key = str(item.get("contextual_key") or item.get("key") or py_stable_candidate_key(item))
+        if not key:
+            continue
+        position = max(0, int(float(item.get("approx_scroll_position") or 0)))
+        band = int(position / 350)
+        labels.append(str(item.get("label") or ""))
+        positions.append(position)
+        entry = queue.get(key)
+        marker = "R45AY_RESIDUAL_QUEUE_UPDATE" if entry else "R45AY_RESIDUAL_QUEUE_ADD"
+        if not entry:
+            queue[key] = {
+                "category": str(item.get("category") or ""),
+                "label": str(item.get("label") or ""),
+                "contextual_key": key,
+                "approx_scroll_position": position,
+                "band": band,
+                "first_seen_step": step,
+                "last_seen_step": step,
+                "attempt_count": 0,
+                "last_result": "text_locator_seen",
+                "last_reject_reason": "",
+                "source": "loaded_scroller_text_locator",
+            }
+            added += 1
+        else:
+            entry["last_seen_step"] = step
+            entry["approx_scroll_position"] = min(int(entry.get("approx_scroll_position") or position), position)
+            entry["band"] = min(int(entry.get("band") or band), band)
+            entry["last_result"] = "text_locator_seen"
+            updated += 1
+        log(marker, {
+            "key": key,
+            "label": str(item.get("label") or ""),
+            "category": str(item.get("category") or ""),
+            "band": band,
+            "position": position,
+            "step": step,
+            "last_result": "text_locator_seen",
+        })
+    summary = {
+        "text_candidates": len(candidates or []),
+        "added": added,
+        "updated": updated,
+        "queue_size": len(queue),
+        "labels": sorted(set(label for label in labels if label))[:40],
+        "approx_positions": positions[:40],
+    }
+    log("R45AY_RESIDUAL_QUEUE_TEXT_MERGE", summary)
+    return summary
+
+
 def residual_queue_resolve(queue: Dict[str, Dict[str, Any]], item: Dict[str, Any], *, step: int, reason: str) -> None:
     key = py_stable_candidate_key(item)
     if key in queue:
@@ -1171,6 +1360,7 @@ window.r45ayPageLoopScan = r45ayPageLoopScan;
 window.r45ayTrustedCdpSettle = r45ayTrustedCdpSettle;
 window.r45ayDispatchPageBurst = r45ayDispatchPageBurst;
 window.r45ayFinalBlockEvidence = r45ayFinalBlockEvidence;
+window.r45ayLocateExpansionTextCandidates = r45ayLocateExpansionTextCandidates;
 window.r45ayRunInstantPageLoop = r45ayRunInstantPageLoop;
 window.r45aySyntheticStats = r45aySyntheticStats;
 return window.r45axInstallNavBlocker();
@@ -2324,6 +2514,50 @@ async def collect_final_residual_evidence(
     return evidence
 
 
+async def locate_residual_text_candidates(
+    page,
+    args: argparse.Namespace,
+    *,
+    max_candidates: int = 160,
+) -> Dict[str, Any]:
+    log("R45AY_RESIDUAL_TEXT_LOCATOR_START", {"max_candidates": max_candidates})
+    result = await page.evaluate(
+        "(opts) => r45ayLocateExpansionTextCandidates(opts)",
+        {
+            "includeGuardedViewMore": bool(args.include_guarded_view_more),
+            "maxCandidates": max_candidates,
+        },
+    )
+    candidates = list((result or {}).get("candidates") or [])
+    rejected = list((result or {}).get("rejected") or [])
+    for item in candidates[:20]:
+        log("R45AY_RESIDUAL_TEXT_LOCATOR_CANDIDATE", {
+            "label": item.get("label"),
+            "category": item.get("category"),
+            "replyCount": item.get("replyCount"),
+            "approx_scroll_position": item.get("approx_scroll_position"),
+            "key": item.get("key"),
+            "source": item.get("source"),
+        })
+    for item in rejected[:20]:
+        log("R45AY_RESIDUAL_TEXT_LOCATOR_REJECT", item)
+    summary = {
+        "ok": bool((result or {}).get("ok")),
+        "text_matches": int((result or {}).get("text_matches") or 0),
+        "candidates_created": len(candidates),
+        "rejected": len(rejected),
+        "labels": list((result or {}).get("labels") or []),
+        "approx_positions": list((result or {}).get("approx_positions") or []),
+        "duration_ms": (result or {}).get("durationMs"),
+        "scanned_nodes": (result or {}).get("scanned_nodes"),
+        "scroll": (result or {}).get("scroll"),
+        "candidates": candidates,
+        "rejected_items": rejected,
+    }
+    log("R45AY_RESIDUAL_TEXT_LOCATOR_DONE", {k: v for k, v in summary.items() if k not in {"candidates", "rejected_items"}})
+    return summary
+
+
 async def residual_forward_drain(
     page,
     cdp_session: Any,
@@ -2535,10 +2769,21 @@ async def residual_forward_drain(
     return result
 
 
-async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.Namespace, story: str) -> Dict[str, Any]:
+async def run_forward_throughput_engine(
+    page,
+    cdp_session: Any,
+    args: argparse.Namespace,
+    story: str,
+    *,
+    started_monotonic: Optional[float] = None,
+    skip_bootstrap: bool = False,
+    skip_residual_phase: bool = False,
+    resume_depth: int = 0,
+) -> Dict[str, Any]:
     """Monotonic visible-page conveyor for real Facebook; no global backward proof sweep."""
-    started = time.monotonic()
+    started = started_monotonic if started_monotonic is not None else time.monotonic()
     max_seconds = float(args.expand_max_seconds or 120)
+    residual_reserve_ms = max(30000, int(getattr(args, "residual_reserve_ms", 45000) or 45000))
     expected_total = int(args.expected_total_comments or 0)
     max_steps = max(200000, max(1, int(args.max_steps or 300)))
     max_burst = max(1, int(args.max_burst_clicks or 30))
@@ -2575,12 +2820,22 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
     last_height_seen = 0
     residual_queue: Dict[str, Dict[str, Any]] = {}
     residual_drains: List[Dict[str, Any]] = []
+    residual_text_locator_runs: List[Dict[str, Any]] = []
+    residual_queue_text_merges: List[Dict[str, Any]] = []
+    residual_progress_continued = False
+    last_residual_cycle_made_progress = False
+    last_residual_cycle_no_progress = False
     final_residual_evidence: Dict[str, Any] = {}
+    residual_reserve_triggered = False
+    residual_phase_ran = False
+    residual_phase_skipped_no_time = False
     bottom: Optional[Dict[str, Any]] = None
     bootstrap: Dict[str, Any] = {}
-    log("R45AY_FORWARD_THROUGHPUT_START", {"max_seconds": max_seconds, "expected_total": expected_total, "max_steps": max_steps, "no_hover_clicks": bool(getattr(args, "no_hover_clicks", True)), "forward_settle_ms": forward_settle_ms, "forward_settle_max_ms": forward_settle_max_ms})
+    resumed_inert_count = 0
+    resumed_result: Optional[Dict[str, Any]] = None
+    log("R45AY_FORWARD_THROUGHPUT_START", {"max_seconds": max_seconds, "expected_total": expected_total, "max_steps": max_steps, "residual_reserve_ms": residual_reserve_ms, "no_hover_clicks": bool(getattr(args, "no_hover_clicks", True)), "forward_settle_ms": forward_settle_ms, "forward_settle_max_ms": forward_settle_max_ms, "resume_depth": resume_depth, "skip_bootstrap": skip_bootstrap, "skip_residual_phase": skip_residual_phase})
     log("R45AY_PROGRESS_CADENCE", {"cheap_visible_every_steps": 50, "heavy_every_steps": 250, "heavy_min_interval_seconds": 60, "heavy_reasons": ["startup", "cadence_250_steps", "final"]})
-    if expected_total:
+    if expected_total and not skip_bootstrap:
         startup_progress = await progress_evidence_scan(page, expected_total, mode="heavy", step=0, reason="forward_startup")
         best_progress = startup_progress.get("filtered_progress")
         bootstrap = await large_bucket_bootstrap(page, cdp_session, args, expected_total=expected_total)
@@ -2588,8 +2843,30 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
         bursts += int(bootstrap.get("bursts") or 0)
         materialized_bursts += int(bootstrap.get("materializedBursts") or 0)
         await page.evaluate("(mode) => r45ayScroll(mode)", "top")
+    elif expected_total:
+        log("R45AY_RESIDUAL_FORWARD_RESUME_START", {"resume_depth": resume_depth, "elapsed_ms": round((time.monotonic() - started) * 1000.0, 3), "reason": "productive_residual_drain"})
     for step in range(1, max_steps + 1):
-        if time.monotonic() - started >= max_seconds:
+        elapsed_now = time.monotonic() - started
+        if elapsed_now >= max_seconds:
+            break
+        remaining_before_scan_ms = max(0, round((max_seconds - elapsed_now) * 1000.0, 3))
+        if (
+            not skip_residual_phase
+            and not residual_reserve_triggered
+            and remaining_before_scan_ms <= residual_reserve_ms
+            and (residual_queue or (expected_total and not r45ax_progress_gate_ok(best_progress, expected_total)))
+        ):
+            residual_reserve_triggered = True
+            log("R45AY_RESIDUAL_RESERVE_TRIGGER", {
+                "step": step,
+                "time_remaining_ms": remaining_before_scan_ms,
+                "residual_reserve_ms": residual_reserve_ms,
+                "residual_queue_count": len(residual_queue),
+                "reason": "time_reserve_reached_before_next_forward_scan",
+                "scrollTop": None,
+                "scrollHeight": max_scroll_height,
+                "progress": best_progress,
+            })
             break
         if story:
             href = await page.evaluate("location.href")
@@ -2718,6 +2995,28 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
         log("R45AY_FORWARD_SCROLL", {"step": step, "scroll": scroll_result, "scroll_ms": scroll_ms, "scrollTop": signature[0], "scrollHeight": signature[1], "stalled_wheels": stalled_wheels})
         at_bottom = bool(post_scroller.get("atBottom"))
         near_bottom = bool(signature[0] + client_height >= signature[1] - client_height)
+        remaining_ms = max(0, round((max_seconds - (time.monotonic() - started)) * 1000.0, 3))
+        progress_below_expected = bool(expected_total and not r45ax_progress_gate_ok(best_progress, expected_total))
+        if (
+            not skip_residual_phase
+            and not residual_reserve_triggered
+            and remaining_ms <= residual_reserve_ms
+            and (residual_queue or filtered or near_bottom or stalled_wheels >= 3 or progress_below_expected)
+        ):
+            residual_reserve_triggered = True
+            log("R45AY_RESIDUAL_RESERVE_TRIGGER", {
+                "step": step,
+                "time_remaining_ms": remaining_ms,
+                "residual_reserve_ms": residual_reserve_ms,
+                "residual_queue_count": len(residual_queue),
+                "reason": "time_reserve_reached_with_incomplete_expected_total_or_residual_candidates",
+                "scrollTop": signature[0],
+                "scrollHeight": signature[1],
+                "progress": best_progress,
+                "near_bottom": near_bottom,
+                "stalled_wheels": stalled_wheels,
+            })
+            break
         bottom_cooldown_active = (step - last_bottom_check_step) < 80 and signature[1] <= last_bottom_check_height
         bottom_trigger = bool((at_bottom or near_bottom) and stalled_wheels >= 3 and stable_height_checks >= 2)
         if (at_bottom or near_bottom) and not bottom_trigger:
@@ -2748,21 +3047,66 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
         if final_progress and (not best_progress or int(final_progress.get("current") or 0) > int(best_progress.get("current") or 0)):
             best_progress = final_progress
     ok = bool(expected_total and r45ax_progress_gate_ok(best_progress, expected_total))
-    if not ok:
-        final_residual_evidence = await collect_final_residual_evidence(
-            page,
-            args,
-            expected_total=expected_total,
-            best_progress=best_progress,
-            residual_queue=residual_queue,
-            bottom=bottom,
-        )
-        needs_residual_drain = bool(
-            final_residual_evidence.get("final_loaded_expansion_text_count")
-            or final_residual_evidence.get("residual_queue_count")
-            or final_residual_evidence.get("safe_candidates_in_current_viewport")
-        )
-        if needs_residual_drain and time.monotonic() - started < max_seconds:
+    if not ok and not skip_residual_phase:
+        residual_phase_ran = True
+        for residual_cycle in range(1, 3):
+            final_residual_evidence = await collect_final_residual_evidence(
+                page,
+                args,
+                expected_total=expected_total,
+                best_progress=best_progress,
+                residual_queue=residual_queue,
+                bottom=bottom,
+            )
+            final_text_count = int(final_residual_evidence.get("final_loaded_expansion_text_count") or 0)
+            queue_count = int(final_residual_evidence.get("residual_queue_count") or 0)
+            needs_residual_drain = bool(
+                final_text_count
+                or queue_count
+                or final_residual_evidence.get("safe_candidates_in_current_viewport")
+            )
+            log("R45AY_RESIDUAL_CYCLE_START", {
+                "cycle": residual_cycle,
+                "needs_residual_drain": needs_residual_drain,
+                "final_loaded_expansion_text_count": final_text_count,
+                "residual_queue_count": queue_count,
+                "time_remaining_ms": max(0, round((max_seconds - (time.monotonic() - started)) * 1000.0, 3)),
+            })
+            if not needs_residual_drain:
+                break
+            if time.monotonic() - started >= max_seconds:
+                residual_phase_skipped_no_time = True
+                log("R45AY_RESIDUAL_SKIPPED_NO_TIME", {
+                    "cycle": residual_cycle,
+                    "time_remaining_ms": 0,
+                    "residual_queue_count": queue_count,
+                    "final_loaded_expansion_text_count": final_text_count,
+                    "reason": "time_budget_expired_before_residual_locator_or_drain",
+                })
+                break
+            locator_summary: Dict[str, Any] = {}
+            merge_summary: Dict[str, Any] = {}
+            if final_text_count > queue_count or final_text_count:
+                locator_summary = await locate_residual_text_candidates(page, args, max_candidates=180)
+                residual_text_locator_runs.append(locator_summary)
+                merge_summary = residual_queue_merge_text_candidates(
+                    residual_queue,
+                    list(locator_summary.get("candidates") or []),
+                    step=-1000 - residual_cycle,
+                )
+                residual_queue_text_merges.append(merge_summary)
+            if not residual_queue:
+                log("R45AY_RESIDUAL_NO_PROGRESS_BLOCK", {
+                    "cycle": residual_cycle,
+                    "reason": "no_safe_residual_candidates_after_text_locator",
+                    "final_loaded_expansion_text_count": final_text_count,
+                    "locator_candidates_created": int(locator_summary.get("candidates_created") or 0) if locator_summary else 0,
+                    "locator_rejected": int(locator_summary.get("rejected") or 0) if locator_summary else 0,
+                })
+                last_residual_cycle_no_progress = True
+                break
+            queue_count_before_drain = len(residual_queue)
+            progress_before_drain = dict(best_progress) if best_progress else None
             drain = await residual_forward_drain(
                 page,
                 cdp_session,
@@ -2771,7 +3115,7 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
                 expected_total=expected_total,
                 started_monotonic=started,
                 max_seconds=max_seconds,
-                pass_number=1,
+                pass_number=residual_cycle,
             )
             residual_drains.append(drain)
             clicked += int(drain.get("clicked") or 0)
@@ -2781,31 +3125,154 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
             settle_durations.extend(float(v) for v in list(drain.get("settle_durations") or []) if isinstance(v, (int, float)))
             scan_durations.extend(float(v) for v in list(drain.get("scan_durations") or []) if isinstance(v, (int, float)))
             max_scroll_height = max(max_scroll_height, int(drain.get("scrollHeight_end") or 0))
-            if (int(drain.get("clicked") or 0) or int(drain.get("materialized_bursts") or 0)) and time.monotonic() - started < max_seconds:
-                drain2 = await residual_forward_drain(
-                    page,
-                    cdp_session,
-                    args,
-                    residual_queue=residual_queue,
-                    expected_total=expected_total,
-                    started_monotonic=started,
-                    max_seconds=max_seconds,
-                    pass_number=2,
-                )
-                residual_drains.append(drain2)
-                clicked += int(drain2.get("clicked") or 0)
-                bursts += int(drain2.get("bursts") or 0)
-                materialized_bursts += int(drain2.get("materialized_bursts") or 0)
-                click_timings_all.extend(list(drain2.get("click_timings") or []))
-                settle_durations.extend(float(v) for v in list(drain2.get("settle_durations") or []) if isinstance(v, (int, float)))
-                scan_durations.extend(float(v) for v in list(drain2.get("scan_durations") or []) if isinstance(v, (int, float)))
-                max_scroll_height = max(max_scroll_height, int(drain2.get("scrollHeight_end") or 0))
+            clicked_in_drain = int(drain.get("residual_candidates_clicked") or drain.get("clicked") or 0)
+            materialized_in_drain = int(drain.get("residual_candidates_materialized") or drain.get("materialized_bursts") or 0)
+            scroll_height_start = int(drain.get("scrollHeight_start") or 0)
+            scroll_height_end = int(drain.get("scrollHeight_end") or 0)
+            queue_decreased = len(residual_queue) < queue_count_before_drain
+            growth = bool(drain.get("growth")) or scroll_height_end > scroll_height_start
             if expected_total:
                 final_progress_scan = await progress_evidence_scan(page, expected_total, mode="heavy", step=max_steps, reason="after_residual_drain")
                 final_progress = final_progress_scan.get("filtered_progress")
                 if final_progress and (not best_progress or int(final_progress.get("current") or 0) > int(best_progress.get("current") or 0)):
                     best_progress = final_progress
                 ok = bool(r45ax_progress_gate_ok(best_progress, expected_total))
+            progress_improved = bool(
+                best_progress
+                and (
+                    not progress_before_drain
+                    or int(best_progress.get("current") or 0) > int(progress_before_drain.get("current") or 0)
+                    or int(best_progress.get("total") or 0) > int(progress_before_drain.get("total") or 0)
+                )
+            )
+            last_residual_cycle_made_progress = bool(
+                clicked_in_drain > 0
+                or materialized_in_drain > 0
+                or growth
+                or progress_improved
+                or queue_decreased
+            )
+            last_residual_cycle_no_progress = not last_residual_cycle_made_progress
+            time_remaining_after_drain_ms = max(0, round((max_seconds - (time.monotonic() - started)) * 1000.0, 3))
+            if last_residual_cycle_made_progress:
+                residual_progress_continued = True
+                log("R45AY_RESIDUAL_PROGRESS_CONTINUE", {
+                    "cycle": residual_cycle,
+                    "clicked": clicked_in_drain,
+                    "materialized_bursts": materialized_in_drain,
+                    "growth": growth,
+                    "scrollHeight_start": scroll_height_start,
+                    "scrollHeight_end": scroll_height_end,
+                    "progress_improved": progress_improved,
+                    "queue_decreased": queue_decreased,
+                    "time_remaining_ms": time_remaining_after_drain_ms,
+                    "remaining_queue": len(residual_queue),
+                })
+                if time_remaining_after_drain_ms <= 0:
+                    log("R45AY_RESIDUAL_PROGRESS_NO_TIME", {
+                        "cycle": residual_cycle,
+                        "reason": "residual_drain_made_progress_but_absolute_deadline_expired",
+                        "clicked": clicked_in_drain,
+                        "materialized_bursts": materialized_in_drain,
+                        "growth": growth,
+                        "remaining_queue": len(residual_queue),
+                    })
+                    break
+            else:
+                log("R45AY_RESIDUAL_NO_PROGRESS_BLOCK", {
+                    "cycle": residual_cycle,
+                    "clicked": clicked_in_drain,
+                    "materialized_bursts": materialized_in_drain,
+                    "growth": growth,
+                    "progress_improved": progress_improved,
+                    "queue_decreased": queue_decreased,
+                    "remaining_queue": len(residual_queue),
+                })
+                break
+            log("R45AY_RESIDUAL_CYCLE_DONE", {
+                "cycle": residual_cycle,
+                "progress": last_residual_cycle_made_progress,
+                "ok": ok,
+                "remaining_queue": len(residual_queue),
+            })
+            if ok:
+                break
+            final_residual_evidence = await collect_final_residual_evidence(
+                page,
+                args,
+                expected_total=expected_total,
+                best_progress=best_progress,
+                residual_queue=residual_queue,
+                bottom=bottom,
+            )
+        if residual_progress_continued and not ok and time.monotonic() - started < max_seconds and resume_depth < 1:
+            log("R45AY_FORWARD_RESUME_START", {
+                "resume_depth": resume_depth + 1,
+                "remaining_ms": max(0, round((max_seconds - (time.monotonic() - started)) * 1000.0, 3)),
+                "reason": "residual_progress_detected",
+            })
+            log("R45AY_RESIDUAL_PROGRESS_RESUME_FORWARD", {
+                "resume_depth": resume_depth,
+                "remaining_ms": max(0, round((max_seconds - (time.monotonic() - started)) * 1000.0, 3)),
+                "reason": "residual_drain_made_progress_after_bounded_cycles",
+            })
+            resumed_result = await run_forward_throughput_engine(
+                page,
+                cdp_session,
+                args,
+                story,
+                started_monotonic=started,
+                skip_bootstrap=True,
+                skip_residual_phase=True,
+                resume_depth=resume_depth + 1,
+            )
+            log("R45AY_FORWARD_RESUME_DONE", {
+                "resume_depth": resume_depth + 1,
+                "status": resumed_result.get("status"),
+                "clicked": int(resumed_result.get("clicked") or 0),
+                "materialized_bursts": int(resumed_result.get("materializedBursts") or 0),
+                "remaining_ms": max(0, round((max_seconds - (time.monotonic() - started)) * 1000.0, 3)),
+            })
+            clicked += int(resumed_result.get("clicked") or 0)
+            bursts += int(resumed_result.get("bursts") or 0)
+            materialized_bursts += int(resumed_result.get("materializedBursts") or 0)
+            fallback_count += int(resumed_result.get("fallbackCount") or 0)
+            target_drift_count += int(resumed_result.get("targetDriftCount") or 0)
+            scrolls += int(resumed_result.get("scrolls") or 0)
+            trusted_wheel_scrolls += int(resumed_result.get("trustedWheelScrolls") or 0)
+            loader_clicks += int(resumed_result.get("loaderClicks") or 0)
+            bottom_checks += int(resumed_result.get("bottomRangeChecks") or 0)
+            forward_bands_scanned += int(resumed_result.get("forwardBandsScanned") or 0)
+            bottom_range_bands_scanned += int(resumed_result.get("bottomRangeBandsScanned") or 0)
+            max_scroll_height = max(max_scroll_height, int(resumed_result.get("maxScrollHeight") or 0))
+            total_candidates_seen += int(resumed_result.get("totalCandidatesSeen") or 0)
+            resumed_inert_count = int(resumed_result.get("inertCount") or 0)
+            scan_durations.extend(float(v) for v in (resumed_result.get("metrics") or {}).get("scanDurations", []) if isinstance(v, (int, float)))
+            settle_durations.extend(float(v) for v in (resumed_result.get("metrics") or {}).get("settleDurations", []) if isinstance(v, (int, float)))
+            scroll_durations.extend(float(v) for v in (resumed_result.get("metrics") or {}).get("emptyScrollDurations", []) if isinstance(v, (int, float)))
+            click_timings_all.extend(list((resumed_result.get("metrics") or {}).get("clickTimings", [])))
+            residual_drains.extend(list(resumed_result.get("residualDrains") or []))
+            resumed_summary = resumed_result.get("residualSummary") or {}
+            if resumed_summary.get("text_locator_runs"):
+                residual_text_locator_runs.extend([{
+                    "text_matches": resumed_summary.get("text_locator_matches", 0),
+                    "candidates_created": resumed_summary.get("text_locator_candidates_created", 0),
+                    "rejected": resumed_summary.get("text_locator_rejected", 0),
+                }])
+            if resumed_result.get("bestProgress") and (not best_progress or int(resumed_result["bestProgress"].get("current") or 0) > int(best_progress.get("current") or 0)):
+                best_progress = resumed_result["bestProgress"]
+            ok = bool(resumed_result.get("ok"))
+            if resumed_result.get("status") == "BLOCKED_TARGET_DRIFT":
+                target_drift_count = max(1, target_drift_count)
+            final_residual_evidence = await collect_final_residual_evidence(
+                page,
+                args,
+                expected_total=expected_total,
+                best_progress=best_progress,
+                residual_queue=residual_queue,
+                bottom=bottom,
+            )
+        if not final_residual_evidence:
             final_residual_evidence = await collect_final_residual_evidence(
                 page,
                 args,
@@ -2816,12 +3283,22 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
             )
     if ok:
         status = "PASS_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_REACHED"
-    elif final_residual_evidence and not final_residual_evidence.get("terminal_block_allowed"):
+    elif (
+        final_residual_evidence
+        and not final_residual_evidence.get("terminal_block_allowed")
+        and last_residual_cycle_no_progress
+    ):
         status = "BLOCKED_R45AY_TRUSTED_CDP_RESIDUAL_EXPANSION_REMAINS"
+    elif final_residual_evidence and int(final_residual_evidence.get("final_loaded_expansion_text_count") or 0) > 0:
+        status = (
+            "BLOCKED_R45AY_TRUSTED_CDP_RESIDUAL_NOT_RUN_TIME_EXPIRED"
+            if residual_phase_skipped_no_time
+            else "BLOCKED_R45AY_TRUSTED_CDP_TIME_BUDGET_EXPIRED_WITHOUT_TERMINAL_PROOF"
+        )
     else:
         status = "BLOCKED_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_UNSATISFIED" if bottom_checks and bool((bottom or {}).get("terminal")) else "BLOCKED_R45AY_TRUSTED_CDP_TIME_BUDGET_EXPIRED_WITHOUT_TERMINAL_PROOF"
     timing = {"scan_duration": value_summary(scan_durations), "adaptive_settle": value_summary(settle_durations), "empty_scan_scroll": value_summary(scroll_durations), "clicks": timing_summary(click_timings_all)}
-    inert_count = sum(1 for value in inert_counts.values() if value >= 1)
+    inert_count = sum(1 for value in inert_counts.values() if value >= 1) + resumed_inert_count
     clicks_per_minute = round(clicked / max((elapsed_ms / 1000.0) / 60.0, 0.001), 2)
     residual_summary = {
         "drain_count": len(residual_drains),
@@ -2830,6 +3307,17 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
         "residual_candidates_rejected": sum(int(drain.get("residual_candidates_rejected") or 0) for drain in residual_drains),
         "residual_candidates_remaining": len(residual_queue),
         "residual_drain_bands_scanned": sum(int(drain.get("residual_drain_bands_scanned") or 0) for drain in residual_drains),
+        "text_locator_runs": len(residual_text_locator_runs),
+        "text_locator_matches": sum(int(run.get("text_matches") or 0) for run in residual_text_locator_runs),
+        "text_locator_candidates_created": sum(int(run.get("candidates_created") or 0) for run in residual_text_locator_runs),
+        "text_locator_rejected": sum(int(run.get("rejected") or 0) for run in residual_text_locator_runs),
+        "text_merge_added": sum(int(run.get("added") or 0) for run in residual_queue_text_merges),
+        "text_merge_updated": sum(int(run.get("updated") or 0) for run in residual_queue_text_merges),
+        "continued_after_residual_progress": residual_progress_continued,
+        "reserve_triggered": residual_reserve_triggered,
+        "residual_phase_ran": residual_phase_ran,
+        "residual_phase_skipped_no_time": residual_phase_skipped_no_time,
+        "residual_reserve_ms": residual_reserve_ms,
     }
     log("R45AY_FORWARD_TIMING", {"clicked": clicked, "clicks_per_minute": clicks_per_minute, "materialized_bursts": materialized_bursts, "inert_count": inert_count, "forward_bands_scanned": forward_bands_scanned, "bottom_range_bands_scanned": bottom_range_bands_scanned, "max_scroll_height": max_scroll_height, "fallback_count": fallback_count, "target_drift_count": target_drift_count, "cdp_events_per_click": timing.get("clicks", {}).get("click_count") and 2.0 or 0.0, "median_scan_duration_ms": timing["scan_duration"]["median_ms"], "p95_scan_duration_ms": timing["scan_duration"]["p95_ms"], "median_settle_ms": timing["adaptive_settle"]["median_ms"], "p95_settle_ms": timing["adaptive_settle"]["p95_ms"], "status": status, "elapsed_ms": elapsed_ms, **residual_summary})
     return {"ok": ok, "status": status, "clicked": clicked, "bursts": bursts, "materializedBursts": materialized_bursts, "fallbackCount": fallback_count, "targetDriftCount": target_drift_count, "bestProgress": best_progress, "scrolls": scrolls, "trustedWheelScrolls": trusted_wheel_scrolls, "loaderClicks": loader_clicks, "falseBottomRecoveries": 0, "bottomRangeChecks": bottom_checks, "forwardBandsScanned": forward_bands_scanned, "bottomRangeBandsScanned": bottom_range_bands_scanned, "inertCount": inert_count, "maxScrollHeight": max_scroll_height, "totalCandidatesSeen": total_candidates_seen, "fullSweepRetries": 0, "lastFullSurfaceSweep": {}, "largeBucketBootstrap": bootstrap, "residualDrains": residual_drains, "residualSummary": residual_summary, "finalResidualEvidence": final_residual_evidence, "elapsed_ms": elapsed_ms, "events": events, "timing": timing, "metrics": {"clickTimings": click_timings_all, "scanDurations": scan_durations, "settleDurations": settle_durations, "emptyScrollDurations": scroll_durations}}
@@ -3867,6 +4355,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     ap.add_argument("--settle-ms", type=int, default=125)
     ap.add_argument("--forward-settle-ms", type=int, default=120)
     ap.add_argument("--forward-settle-max-ms", type=int, default=350)
+    ap.add_argument("--residual-reserve-ms", type=int, default=45000)
     return ap.parse_args(argv)
 
 
