@@ -134,17 +134,19 @@ function r45ayProgressEvidenceFromSources(expectedTotal, sources){
 function r45ayVisibleScrollerText(scroller){
   if (!scroller) return '';
   const sr = scroller.getBoundingClientRect();
-  const band = {top:Math.max(0, sr.top), bottom:Math.min(innerHeight, sr.bottom), left:Math.max(0, sr.left), right:Math.min(innerWidth, sr.right)};
+  const band = {top:Math.max(0, sr.top - 160), bottom:Math.min(innerHeight, sr.bottom + 160), left:Math.max(0, sr.left), right:Math.min(innerWidth, sr.right)};
   const pieces = [];
-  const nodes = Array.from(scroller.querySelectorAll('[role="button"], button, a, span, div, [aria-label], [title]')).slice(0, 1800);
-  for (const el of nodes) {
-    if (!el || r45axElementHidden(el)) continue;
+  const seen = new Set();
+  const els = r45ayViewportProbeElements(scroller, band, {maxElements:260});
+  for (const el of els.elements) {
+    if (!el || seen.has(el) || r45axElementHidden(el)) continue;
+    seen.add(el);
     const r = el.getBoundingClientRect();
     if (r.width < 3 || r.height < 3) continue;
     if (r.bottom <= band.top || r.top >= band.bottom || r.right <= band.left || r.left >= band.right) continue;
-    const text = r45axNorm([el.innerText || '', el.textContent || '', el.getAttribute && (el.getAttribute('aria-label') || ''), el.getAttribute && (el.getAttribute('title') || '')].join(' '));
+    const text = r45axNorm([el.getAttribute && (el.getAttribute('aria-label') || ''), el.getAttribute && (el.getAttribute('title') || ''), el.textContent || ''].join(' '));
     if (text) pieces.push(text);
-    if (pieces.length >= 500) break;
+    if (pieces.length >= 220) break;
   }
   return pieces.join(' ');
 }
@@ -190,7 +192,7 @@ function r45ayScanOrdered(opts){
   const scanStart = performance.now();
   const raw = r45axTextCandidates(scroller).map(item => {
     const info = r45ayExactInfo(item && item.label);
-    return info ? {...item, label:info.label, category:info.category} : item;
+    return info ? {...item, label:info.label, category:info.category, replyCount:info.replyCount || 0, clickLabel:info.clickLabel || info.label} : item;
   }).filter(item => {
     if (!item || !item.safe) return false;
     if (!r45ayAllowedCategory(item.category, includeGuardedViewMore)) return false;
@@ -209,6 +211,7 @@ function r45ayScanOrdered(opts){
     left:item.left,
     right:item.right,
     source:item.source || '',
+    replyCount:Number(item.replyCount || 0),
     priority:r45ayPriority(item.category, item.label),
     firstSeenPerformanceNow:scanStart,
     safety:item.safety || null
@@ -229,9 +232,103 @@ function r45ayScanOrdered(opts){
       scrollTop:scroller.scrollTop || 0,
       scrollHeight:scroller.scrollHeight || 0,
       clientHeight:scroller.clientHeight || 0,
+      childElementCount:scroller.childElementCount || 0,
       atBottom:(scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8)
     }
   };
+}
+function r45ayViewportProbeElements(scroller, band, opts){
+  opts = opts || {};
+  const started = performance.now();
+  const maxElements = Math.max(40, Math.min(180, parseInt(opts.maxElements || 120, 10) || 120));
+  const out = [];
+  const seen = new Set();
+  let skippedOffscreen = 0, probes = 0;
+  const width = Math.max(1, band.right - band.left);
+  const xs = [
+    band.left + width * 0.36,
+    band.left + width * 0.68
+  ].filter(x => x >= band.left + 1 && x <= band.right - 1);
+  const stepY = Math.max(58, Math.min(96, Math.floor(((band.bottom - band.top) || 600) / 8)));
+  const maybeAdd = el => {
+    if (!el || el === scroller || seen.has(el) || !scroller.contains(el)) return;
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2 || r.bottom <= band.top || r.top >= band.bottom || r.right <= band.left || r.left >= band.right) {
+      skippedOffscreen += 1;
+      return;
+    }
+    seen.add(el);
+    out.push(el);
+  };
+  for (let y = band.top + 6; y <= band.bottom - 3 && out.length < maxElements; y += stepY) {
+    for (const x of xs) {
+      probes += 1;
+      const stack = document.elementsFromPoint(x, y).slice(0, 8);
+      for (const hit of stack) {
+          if (!hit || !scroller.contains(hit)) continue;
+          for (let cur = hit, depth = 0; cur && cur !== scroller && depth < 8 && out.length < maxElements; cur = cur.parentElement, depth++) {
+          maybeAdd(cur);
+          const role = cur.getAttribute && (cur.getAttribute('role') || '');
+          if (role === 'button' || cur.tagName === 'BUTTON' || cur.tagName === 'A') break;
+        }
+      }
+    }
+  }
+  return {elements:out, probes, skippedOffscreen, durationMs:Math.round((performance.now() - started) * 100) / 100};
+}
+function r45ayViewportRoleElements(scroller, band, opts){
+  opts = opts || {};
+  const started = performance.now();
+  const maxElements = Math.max(80, Math.min(900, parseInt(opts.maxElements || 520, 10) || 520));
+  const out = [];
+  const seen = new Set();
+  let considered = 0, skippedOffscreen = 0;
+  const selector = '[role="button"],button,a[href],[tabindex="0"],[aria-label],[title]';
+  let nodes = [];
+  try { nodes = Array.from(scroller.querySelectorAll(selector)); } catch(e) { nodes = []; }
+  for (const el of nodes) {
+    if (out.length >= maxElements) break;
+    if (!el || seen.has(el) || !scroller.contains(el)) continue;
+    considered += 1;
+    const r = el.getBoundingClientRect();
+    if (r.width < 3 || r.height < 3 || r.bottom <= band.top || r.top >= band.bottom || r.right <= band.left || r.left >= band.right) {
+      skippedOffscreen += 1;
+      continue;
+    }
+    seen.add(el);
+    out.push(el);
+  }
+  return {elements:out, considered, skippedOffscreen, durationMs:Math.round((performance.now() - started) * 100) / 100};
+}
+function r45ayAddRangeCandidateForText(out, seen, el, info, started, source){
+  if (!el || !info) return false;
+  const needle = String(info.clickLabel || info.label || '').toLowerCase();
+  if (!needle) return false;
+  let walker = null, node = null, scanned = 0;
+  try {
+    walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    while ((node = walker.nextNode()) && scanned < 80) {
+      scanned += 1;
+      const raw = String(node.nodeValue || '');
+      if (!raw || raw.length > 420) continue;
+      const start = raw.toLowerCase().indexOf(needle);
+      if (start < 0) continue;
+      const range = document.createRange();
+      try {
+        range.setStart(node, start);
+        range.setEnd(node, Math.min(raw.length, start + needle.length));
+        const rects = Array.from(range.getClientRects());
+        for (const rect of rects) {
+          const before = out.length;
+          r45ayAddVisibleCandidate(out, seen, el, rect, info, started, source);
+          if (out.length > before) return true;
+        }
+      } finally {
+        try { range.detach && range.detach(); } catch(e) {}
+      }
+    }
+  } catch(e) {}
+  return false;
 }
 function r45ayScroll(mode){
   const scroller = r45axGetScroller();
@@ -355,74 +452,86 @@ function r45ayFastVisibleCandidates(opts){
   if (!scroller) return {ok:false, reason:'no_active_scroller', items:[]};
   const started = performance.now();
   const sr = scroller.getBoundingClientRect();
-  const band = {top:Math.max(0, sr.top + 6), bottom:Math.min(innerHeight, sr.bottom - 8), left:Math.max(0, sr.left + 6), right:Math.min(innerWidth, sr.right - 6)};
+  const buffer = Math.max(0, Math.min(300, parseInt(opts.viewportBufferPx || 250, 10) || 250));
+  const band = {top:Math.max(0, sr.top - buffer), bottom:Math.min(innerHeight, sr.bottom + buffer), left:Math.max(0, sr.left + 6), right:Math.min(innerWidth, sr.right - 6)};
   const out = [];
   const seen = new Set();
-  const textWalker = document.createTreeWalker(scroller, NodeFilter.SHOW_TEXT);
-  let textNode, textScanned = 0;
-  while ((textNode = textWalker.nextNode()) && textScanned < 2500 && out.length < maxCandidates * 3) {
-    textScanned += 1;
-    const raw = String(textNode.nodeValue || '');
-    if (!raw || raw.length > 420) continue;
-    const info = r45ayExpansionTextInfo(raw);
-    if (!info || !r45ayAllowedCategory(info.category, !!opts.includeGuardedViewMore)) continue;
-    const parent = textNode.parentElement;
-    if (!parent || r45axElementHidden(parent) || r45axBadCandidateElement(parent)) continue;
-    let range = null;
-    try {
-      const lowerRaw = raw.toLowerCase();
-      const lowerClick = String(info.clickLabel || info.label || '').toLowerCase();
-      let start = lowerRaw.indexOf(lowerClick);
-      if (start < 0) start = lowerRaw.indexOf(String(info.label || '').toLowerCase());
-      if (start < 0) continue;
-      range = document.createRange();
-      range.setStart(textNode, start);
-      range.setEnd(textNode, Math.min(raw.length, start + (lowerClick || info.label).length));
-      const rects = Array.from(range.getClientRects());
-      for (const rect of rects) {
-        if (rect.bottom <= band.top || rect.top >= band.bottom || rect.right <= band.left || rect.left >= band.right) continue;
-        r45ayAddVisibleCandidate(out, seen, parent, rect, info, started, 'text_range');
-      }
-    } catch(e) {
-    } finally {
-      try { range && range.detach && range.detach(); } catch(e2) {}
-    }
-  }
-  const nodes = Array.from(scroller.querySelectorAll('[role="button"], button, a, span, div, [tabindex]'));
-  for (const el of nodes) {
+  const roleProbe = r45ayViewportRoleElements(scroller, band, {maxElements:520});
+  const pointProbe = {elements:[], probes:0, skippedOffscreen:0, durationMs:0};
+  let probe = roleProbe;
+  let scannedNodes = 0;
+  let scannedRanges = 0;
+  const scanElements = (elements, source) => {
+  for (const el of elements) {
     if (out.length >= maxCandidates * 3) break;
+    scannedNodes += 1;
     if (!el || r45axElementHidden(el) || r45axBadCandidateElement(el)) continue;
     const r = el.getBoundingClientRect();
-    if (r.width < 4 || r.height < 4 || r.height > 90 || r.width > 520) continue;
+    if (r.width < 4 || r.height < 4 || r.height > 180) continue;
     if (r.bottom <= band.top || r.top >= band.bottom || r.right <= band.left || r.left >= band.right) continue;
-    const variants = [el.innerText || '', el.textContent || '', el.getAttribute && (el.getAttribute('aria-label') || ''), el.getAttribute && (el.getAttribute('title') || '')]
-      .map(value => r45axNorm(value)).filter(value => value && value.length <= 80);
+    const variants = [el.getAttribute && (el.getAttribute('aria-label') || ''), el.getAttribute && (el.getAttribute('title') || ''), el.textContent || '']
+      .map(value => r45axNorm(value)).filter(value => value && value.length <= 260);
     if (!variants.length) continue;
-    let text = variants[0];
     let info = null;
     for (const variant of variants) {
-      const candidateInfo = r45ayExactInfo(variant);
-      if (candidateInfo) { text = variant; info = candidateInfo; break; }
+      const candidateInfo = r45ayExactInfo(variant) || r45ayExpansionTextInfo(variant);
+      if (candidateInfo) { info = candidateInfo; break; }
     }
     if (!info || !r45ayAllowedCategory(info.category, !!opts.includeGuardedViewMore)) continue;
-    r45ayAddVisibleCandidate(out, seen, el, r, info, started, 'element');
+    const exactLabel = variants.some(value => r45axNorm(value) === info.label);
+    if (r.width > 680) {
+      scannedRanges += 1;
+      if (r45ayAddRangeCandidateForText(out, seen, el, info, started, source + '_wide_text_range')) continue;
+      continue;
+    }
+    if (!exactLabel && (info.category === 'replied_bucket' || String(variants.join(' ')).length > String(info.label || '').length + 10)) {
+      scannedRanges += 1;
+      if (r45ayAddRangeCandidateForText(out, seen, el, info, started, source + '_text_range')) continue;
+    }
+    r45ayAddVisibleCandidate(out, seen, el, r, info, started, source);
+  }
+  };
+  scanElements(roleProbe.elements, 'viewport_role_element');
+  if (out.length === 0) {
+    const p = r45ayViewportProbeElements(scroller, band, {maxElements:120});
+    pointProbe.elements = p.elements;
+    pointProbe.probes = p.probes;
+    pointProbe.skippedOffscreen = p.skippedOffscreen;
+    pointProbe.durationMs = p.durationMs;
+    probe = p;
+    scanElements(pointProbe.elements, 'viewport_point_element');
   }
   out.sort((a,b) => (a.priority - b.priority) || (b.y - a.y) || (a.x - b.x));
   const items = out.slice(0, maxCandidates);
   const counts = {};
   for (const item of items) counts[item.category] = (counts[item.category] || 0) + 1;
+  const scanMs = Math.round((performance.now() - started) * 100) / 100;
   return {
     ok:true,
     marker:'R45AY_FAST_VISIBLE_SCAN',
+    viewportOnly:true,
     scanPerformanceNow:started,
-    scanDurationMs:Math.round((performance.now() - started) * 100) / 100,
+    scanDurationMs:scanMs,
+    scanStats:{
+      viewport_only:true,
+      scanned_nodes:scannedNodes,
+      scanned_ranges:scannedRanges,
+      role_nodes:roleProbe.elements.length,
+      role_considered:roleProbe.considered,
+      role_skipped_offscreen_nodes:roleProbe.skippedOffscreen,
+      role_probe_ms:roleProbe.durationMs,
+      probe_points:pointProbe.probes,
+      skipped_offscreen_nodes:(roleProbe.skippedOffscreen || 0) + (pointProbe.skippedOffscreen || 0),
+      probe_ms:(roleProbe.durationMs || 0) + (pointProbe.durationMs || 0),
+      scan_ms:scanMs
+    },
     candidateCount:items.length,
     counts,
     items,
     rejected:[],
     progress: includeProgress ? r45axProgressFromPage() : null,
     expectedTotalEvidence: includeExpectedEvidence && opts.expectedTotal ? r45axExpectedTotalEvidence(opts.expectedTotal) : null,
-    scroller:{scrollTop:scroller.scrollTop||0, scrollHeight:scroller.scrollHeight||0, clientHeight:scroller.clientHeight||0, atBottom:(scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8)}
+    scroller:{scrollTop:scroller.scrollTop||0, scrollHeight:scroller.scrollHeight||0, clientHeight:scroller.clientHeight||0, childElementCount:scroller.childElementCount||0, atBottom:(scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8)}
   };
 }
 function r45ayFinalBlockEvidence(opts){
@@ -462,7 +571,22 @@ function r45ayCommentFilterState(){
 function r45ayPageLoopScan(opts){
   opts = opts || {};
   let scan = r45ayFastVisibleCandidates(opts);
-  if (scan.ok && scan.candidateCount === 0) {
+  if (scan.ok && scan.candidateCount === 0 && opts.allowVisibleTextFallback) {
+    const scroller = r45axGetScroller();
+    const visibleMatches = scroller ? r45ayExpansionTextMatches(r45ayVisibleScrollerText(scroller)) : [];
+    if (visibleMatches.length) {
+      const full = r45ayScanOrdered(opts);
+      if (full.ok && full.candidateCount > 0) {
+        full.viewportOnly = false;
+        full.viewportFallbackReason = 'visible_expansion_text_without_probe_candidates';
+        full.visibleExpansionTextMatches = visibleMatches.slice(0, 20);
+        scan = full;
+      } else {
+        scan.visibleExpansionTextMatches = visibleMatches.slice(0, 20);
+      }
+    }
+  }
+  if (scan.ok && scan.candidateCount === 0 && opts.allowFullFallback) {
     const full = r45ayScanOrdered(opts);
     if (full.ok && full.candidateCount > 0) scan = full;
   }
@@ -530,6 +654,22 @@ function r45aySignature(scroller, scan){
     candidateKeys:keys
   };
 }
+function r45ayCheapScrollerSignature(scroller){
+  scroller = scroller || r45axGetScroller();
+  if (!scroller) return {ok:false, reason:'no_active_scroller'};
+  return {
+    ok:true,
+    scrollHeight:scroller.scrollHeight || 0,
+    scrollTop:scroller.scrollTop || 0,
+    clientHeight:scroller.clientHeight || 0,
+    childElementCount:scroller.childElementCount || 0,
+    atBottom:(scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8)
+  };
+}
+function r45ayCheapSignatureChanged(a, b){
+  if (!a || !b || !a.ok || !b.ok) return true;
+  return a.scrollHeight !== b.scrollHeight || a.scrollTop !== b.scrollTop || a.clientHeight !== b.clientHeight || a.childElementCount !== b.childElementCount || a.atBottom !== b.atBottom;
+}
 function r45aySignatureChanged(a, b){
   return !a || !b || a.scrollHeight !== b.scrollHeight || a.candidateCount !== b.candidateCount || JSON.stringify(a.counts || {}) !== JSON.stringify(b.counts || {}) || JSON.stringify(a.candidateKeys || []) !== JSON.stringify(b.candidateKeys || []);
 }
@@ -557,41 +697,43 @@ async function r45ayAdaptiveSettle(scroller, beforeSig, opts){
 async function r45ayTrustedCdpSettle(opts){
   opts = opts || {};
   const started = performance.now();
-  const maxMs = Math.max(50, Math.min(1200, parseInt(opts.maxMs || 500, 10) || 500));
-  const beforeSignature = opts.beforeSignature || null;
-  const scanOpts = {
-    maxCandidates: Math.max(20, Math.min(80, parseInt(opts.maxCandidates || 60, 10) || 60)),
-    includeGuardedViewMore: !!opts.includeGuardedViewMore,
-    includeProgress: false,
-    includeExpectedEvidence: false
-  };
+  const maxMs = Math.max(40, Math.min(600, parseInt(opts.maxMs || 160, 10) || 160));
+  const beforeSignature = opts.beforeScrollerSignature || null;
   let scroller = r45axGetScroller();
   if (!scroller) return {materialized:false, duration_ms:0, polls:0, reason:'no_active_scroller', after_scan:{}};
   let observer = null, resizeObserver = null, timeoutId = null, settled = false, polls = 0;
-  const scanNow = () => {
+  const signatureNow = () => {
     scroller = r45axGetScroller() || scroller;
-    const scan = r45ayPageLoopScan(scanOpts);
     polls += 1;
-    return scan;
+    return r45ayCheapScrollerSignature(scroller);
   };
-  const changed = scan => r45aySignatureChanged(beforeSignature, r45aySignature(scroller, scan));
+  const changed = sig => r45ayCheapSignatureChanged(beforeSignature, sig);
   return await new Promise(resolve => {
-    const finish = (scan, reason) => {
+    const finish = (sig, reason, observedChange) => {
       if (settled) return;
       settled = true;
       try { if (observer) observer.disconnect(); } catch(e) {}
       try { if (resizeObserver) resizeObserver.disconnect(); } catch(e) {}
       try { if (timeoutId) clearTimeout(timeoutId); } catch(e) {}
+      const materialized = !!observedChange || changed(sig);
       resolve({
-        materialized: changed(scan),
+        materialized,
         duration_ms:Math.round((performance.now() - started) * 1000) / 1000,
         polls,
         reason,
-        after_scan: scan
+        after_signature:sig,
+        after_scan:{
+          ok:!!(sig && sig.ok),
+          marker:'R45AY_CHEAP_SETTLE_SIGNATURE',
+          candidateCount:null,
+          counts:null,
+          items:[],
+          scroller:sig && sig.ok ? {scrollTop:sig.scrollTop, scrollHeight:sig.scrollHeight, clientHeight:sig.clientHeight, atBottom:sig.atBottom} : {}
+        }
       });
     };
     const checkAfterFrame = reason => {
-      requestAnimationFrame(() => finish(scanNow(), reason));
+      requestAnimationFrame(() => finish(signatureNow(), reason, true));
     };
     try {
       observer = new MutationObserver(() => checkAfterFrame('mutation'));
@@ -601,12 +743,12 @@ async function r45ayTrustedCdpSettle(opts){
       resizeObserver = new ResizeObserver(() => checkAfterFrame('resize'));
       resizeObserver.observe(scroller);
     } catch(e) {}
-    const initial = scanNow();
+    const initial = signatureNow();
     if (changed(initial)) {
-      finish(initial, 'immediate_change');
+      finish(initial, 'immediate_change', true);
       return;
     }
-    timeoutId = setTimeout(() => finish(scanNow(), 'timeout'), maxMs);
+    timeoutId = setTimeout(() => finish(signatureNow(), 'timeout', false), maxMs);
   });
 }
 async function r45ayRunInstantPageLoop(options){
@@ -885,6 +1027,21 @@ def scan_signature(scan: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def scroller_signature(scan: Dict[str, Any]) -> Dict[str, Any]:
+    scroller = (scan or {}).get("scroller") or {}
+    scroll_top = int(scroller.get("scrollTop") or 0)
+    scroll_height = int(scroller.get("scrollHeight") or 0)
+    client_height = int(scroller.get("clientHeight") or 0)
+    return {
+        "ok": bool(scroller),
+        "scrollHeight": scroll_height,
+        "scrollTop": scroll_top,
+        "clientHeight": client_height,
+        "childElementCount": int(scroller.get("childElementCount") or 0),
+        "atBottom": bool(scroll_top + client_height >= scroll_height - 8) if client_height else bool(scroller.get("atBottom")),
+    }
+
+
 def signature_changed(before: Dict[str, Any], after: Dict[str, Any]) -> bool:
     return json.dumps(before or {}, sort_keys=True) != json.dumps(after or {}, sort_keys=True)
 
@@ -1148,7 +1305,7 @@ async def settle_after_trusted_cdp_burst(
     expected_total: int,
 ) -> Dict[str, Any]:
     started = time.perf_counter()
-    before_sig = scan_signature(before_scan)
+    before_scroller_sig = scroller_signature(before_scan)
     before_progress = before_scan.get("progress")
     after_scan = before_scan
     settle = await page.evaluate(
@@ -1157,24 +1314,40 @@ async def settle_after_trusted_cdp_burst(
             "maxMs": max_ms,
             "maxCandidates": 60,
             "includeGuardedViewMore": include_guarded_view_more,
-            "beforeSignature": before_sig,
+            "beforeScrollerSignature": before_scroller_sig,
         },
     )
     after_scan = (settle or {}).get("after_scan") or before_scan
     materialized = bool((settle or {}).get("materialized"))
     polls = int((settle or {}).get("polls") or 0)
     duration_ms = round((time.perf_counter() - started) * 1000.0, 3)
+    before_scroll_height = ((before_scan or {}).get("scroller") or {}).get("scrollHeight")
+    after_scroll_height = (((after_scan or {}).get("scroller") or {}).get("scrollHeight"))
+    before_candidates = int((before_scan or {}).get("candidateCount") or 0)
+    after_candidate_value = (after_scan or {}).get("candidateCount")
+    after_candidates = int(after_candidate_value) if after_candidate_value is not None else None
+    reason = (settle or {}).get("reason") or "unknown"
+    materialization_reason = "no_change"
+    if int(after_scroll_height or 0) > int(before_scroll_height or 0):
+        materialization_reason = "scrollHeight_growth"
+        materialized = True
+    elif after_candidates is not None and after_candidates != before_candidates:
+        materialization_reason = "candidate_list_changed"
+        materialized = True
+    elif materialized:
+        materialization_reason = str(reason)
     return {
         "duration_ms": duration_ms,
         "polls": polls,
         "materialized": materialized,
         "after_scan": after_scan,
-        "reason": (settle or {}).get("reason") or "unknown",
+        "reason": reason,
+        "materialization_reason": materialization_reason,
         "progress_before": before_scan.get("progress"),
         "progress_after": (after_scan or {}).get("progress"),
-        "scroll_height_before": ((before_scan or {}).get("scroller") or {}).get("scrollHeight"),
-        "scroll_height_after": (((after_scan or {}).get("scroller") or {}).get("scrollHeight")),
-        "visible_candidates_after": int((after_scan or {}).get("candidateCount") or 0),
+        "scroll_height_before": before_scroll_height,
+        "scroll_height_after": after_scroll_height,
+        "visible_candidates_after": after_candidates,
     }
 
 
@@ -1485,7 +1658,7 @@ async def large_bucket_bootstrap(
         settle = await settle_after_trusted_cdp_burst(
             page,
             scan,
-            max_ms=1800,
+            max_ms=max(160, min(450, int(getattr(args, "forward_settle_max_ms", 350) or 350))),
             include_guarded_view_more=bool(args.include_guarded_view_more),
             expected_total=expected_total,
         )
@@ -1863,8 +2036,8 @@ async def bottom_range_check(
     height_start = int((state or {}).get("scrollHeight") or 0)
     client_height = max(220, int((state or {}).get("clientHeight") or 0) or 520)
     max_top = max(0, height_start - client_height)
-    step_px = max(160, min(350, int(client_height * 0.65)))
-    range_start = max(0, max_top - (client_height * 4))
+    step_px = max(260, min(520, int(client_height * 0.85)))
+    range_start = max(0, max_top - (client_height * 3))
     positions = list(range(range_start, max_top + 1, step_px))
     positions.extend([range_start, max_top])
     positions = sorted(set(max(0, min(max_top, int(pos))) for pos in positions))
@@ -1899,7 +2072,7 @@ async def bottom_range_check(
         candidates, duplicates = dedupe_candidates(raw_items)
         if duplicates:
             log("R45AY_CANDIDATE_DEDUPE", {"scope": "bottom_range", "check": check_number, "band": band_index, "duplicate_count": len(duplicates)})
-        candidates = [item for item in candidates if inert.get(py_stable_candidate_key(item), 0) < 2]
+        candidates = [item for item in candidates if inert.get(py_stable_candidate_key(item), 0) < 1]
         safe_candidates += len(candidates)
         candidate_labels.extend(str(item.get("label") or "") for item in candidates[:10])
         text = await page.evaluate("""() => {
@@ -1928,10 +2101,17 @@ async def bottom_range_check(
         clicked_now = int(burst.get("clicked") or 0)
         clicked += clicked_now
         bursts += 1
+        settle_limit = max(
+            int(getattr(args, "forward_settle_ms", 120) or 120),
+            min(
+                int(getattr(args, "forward_settle_max_ms", 350) or 350),
+                350 if any(str(item.get("category")) == "view_all_replies" for item in candidates) else 180,
+            ),
+        )
         settle = await settle_after_trusted_cdp_burst(
             page,
             scan,
-            max_ms=650 if any(str(item.get("category")) == "view_all_replies" for item in candidates) else 400,
+            max_ms=settle_limit,
             include_guarded_view_more=bool(args.include_guarded_view_more),
             expected_total=expected_total,
         )
@@ -1941,8 +2121,8 @@ async def bottom_range_check(
             for item in candidates[:max(1, clicked_now)]:
                 key = py_stable_candidate_key(item)
                 inert[key] = inert.get(key, 0) + 1
-                if inert[key] == 2:
-                    log("R45AY_INERT_CANDIDATE", {"scope": "bottom_range", "check": check_number, "label": item.get("label"), "key": key, "reason": "two_non_materializing_attempts"})
+                if inert[key] == 1:
+                    log("R45AY_INERT_CANDIDATE", {"scope": "bottom_range", "check": check_number, "label": item.get("label"), "key": key, "reason": "fast_settle_no_change_current_bottom_range"})
         log("R45AY_BOTTOM_RANGE_CHECK_BURST", {
             "check": check_number,
             "band": band_index,
@@ -1983,6 +2163,8 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
     expected_total = int(args.expected_total_comments or 0)
     max_steps = max(200000, max(1, int(args.max_steps or 300)))
     max_burst = max(1, int(args.max_burst_clicks or 30))
+    forward_settle_ms = max(40, min(300, int(getattr(args, "forward_settle_ms", 120) or 120)))
+    forward_settle_max_ms = max(forward_settle_ms, min(600, int(getattr(args, "forward_settle_max_ms", 350) or 350)))
     include_guarded = bool(args.include_guarded_view_more)
     inert_counts: Dict[str, int] = {}
     clicked = 0
@@ -2008,8 +2190,13 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
     last_scroll_signature: Optional[Tuple[int, int]] = None
     same_band_attempts = 0
     previous_band_top: Optional[int] = None
+    last_bottom_check_step = -1000000
+    last_bottom_check_height = -1
+    stable_height_checks = 0
+    last_height_seen = 0
     bootstrap: Dict[str, Any] = {}
-    log("R45AY_FORWARD_THROUGHPUT_START", {"max_seconds": max_seconds, "expected_total": expected_total, "max_steps": max_steps, "no_hover_clicks": bool(getattr(args, "no_hover_clicks", True))})
+    log("R45AY_FORWARD_THROUGHPUT_START", {"max_seconds": max_seconds, "expected_total": expected_total, "max_steps": max_steps, "no_hover_clicks": bool(getattr(args, "no_hover_clicks", True)), "forward_settle_ms": forward_settle_ms, "forward_settle_max_ms": forward_settle_max_ms})
+    log("R45AY_PROGRESS_CADENCE", {"cheap_visible_every_steps": 50, "heavy_every_steps": 250, "heavy_min_interval_seconds": 60, "heavy_reasons": ["startup", "cadence_250_steps", "final"]})
     if expected_total:
         startup_progress = await progress_evidence_scan(page, expected_total, mode="heavy", step=0, reason="forward_startup")
         best_progress = startup_progress.get("filtered_progress")
@@ -2041,12 +2228,21 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
         current_height = int(scroller.get("scrollHeight") or 0)
         client_height = max(220, int(scroller.get("clientHeight") or 520))
         max_scroll_height = max(max_scroll_height, current_height)
+        if current_height == last_height_seen:
+            stable_height_checks += 1
+        else:
+            stable_height_checks = 0
+            last_height_seen = current_height
+            if inert_counts:
+                inert_counts.clear()
+                log("R45AY_INERT_RESET_ON_GROWTH", {"step": step, "scrollHeight": current_height})
         forward_bands_scanned += 1
         if previous_band_top != current_top:
             same_band_attempts = 0
             previous_band_top = current_top
-        if expected_total and (step % 25 == 0 or bool(scroller.get("atBottom"))):
-            progress_scan = await progress_evidence_scan(page, expected_total, mode="heavy" if scroller.get("atBottom") else "cheap", step=step, reason="forward_cadence")
+        if expected_total and (step % 50 == 0 or step % 250 == 0):
+            progress_mode = "heavy" if step % 250 == 0 else "cheap"
+            progress_scan = await progress_evidence_scan(page, expected_total, mode=progress_mode, step=step, reason=f"forward_cadence_{progress_mode}")
             progress = progress_scan.get("filtered_progress")
             if progress and (not best_progress or int(progress.get("current") or 0) > int(best_progress.get("current") or 0)):
                 best_progress = progress
@@ -2059,14 +2255,17 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
         filtered: List[Dict[str, Any]] = []
         for item in candidates:
             key = py_stable_candidate_key(item)
-            if inert_counts.get(key, 0) >= 2:
+            if inert_counts.get(key, 0) >= 1:
                 log("R45AY_INERT_SKIP", {"scope": "forward_throughput", "step": step, "label": item.get("label"), "key": key})
                 continue
             copied = dict(item)
             copied["loopKey"] = key
             filtered.append(copied)
         total_candidates_seen += len(filtered)
-        log("R45AY_FORWARD_BAND_SCAN", {"step": step, "band": forward_bands_scanned, "candidate_count": len(filtered), "labels": [item.get("label") for item in filtered[:10]], "scrollTop": current_top, "scrollHeight": current_height, "scan_ms": scan_ms})
+        scan_stats = scan.get("scanStats") or {}
+        if step == 1 or step % 50 == 0 or scan_ms > 500:
+            log("R45AY_VIEWPORT_SCAN_MODE", {"step": step, **scan_stats})
+        log("R45AY_FORWARD_BAND_SCAN", {"step": step, "band": forward_bands_scanned, "candidate_count": len(filtered), "labels": [item.get("label") for item in filtered[:10]], "scrollTop": current_top, "scrollHeight": current_height, "scan_ms": scan_ms, "viewport_only": bool(scan.get("viewportOnly")), "scanned_nodes": scan_stats.get("scanned_nodes"), "skipped_offscreen_nodes": scan_stats.get("skipped_offscreen_nodes")})
         if filtered and same_band_attempts < 3:
             same_band_attempts += 1
             burst = await trusted_cdp_burst(page, cdp_session, filtered, max_clicks=min(max_burst, len(filtered)), debug_clicks=bool(args.debug_clicks), no_hover_clicks=bool(getattr(args, "no_hover_clicks", True)))
@@ -2075,10 +2274,13 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
             clicked += clicked_now
             loader_clicks += sum(1 for item in list(burst.get("items") or []) if item.get("category") == "comment_list_loader")
             click_timings_all.extend(list(burst.get("click_timings") or []))
-            settle = await settle_after_trusted_cdp_burst(page, scan, max_ms=700 if any(str(item.get("category")) == "view_all_replies" for item in filtered) else 400, include_guarded_view_more=include_guarded, expected_total=expected_total)
+            settle_limit = forward_settle_max_ms if any(str(item.get("category")) == "view_all_replies" for item in filtered) else forward_settle_ms
+            settle = await settle_after_trusted_cdp_burst(page, scan, max_ms=settle_limit, include_guarded_view_more=include_guarded, expected_total=expected_total)
             settle_ms = float(settle.get("duration_ms") or 0.0)
             settle_durations.append(settle_ms)
             materialized = bool(settle.get("materialized"))
+            log("R45AY_FORWARD_FAST_SETTLE", {"step": step, "max_ms": settle_limit, "duration_ms": settle_ms, "reason": settle.get("reason"), "materialized": materialized, "materialization_reason": settle.get("materialization_reason")})
+            log("R45AY_MATERIALIZATION_REASON", {"step": step, "reason": settle.get("materialization_reason"), "label_count": len(filtered), "labels": [item.get("label") for item in filtered[:5]]})
             if materialized:
                 materialized_bursts += 1
                 for item in filtered:
@@ -2087,8 +2289,8 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
                 for item in filtered[:max(1, clicked_now)]:
                     key = str(item.get("loopKey") or py_stable_candidate_key(item))
                     inert_counts[key] = inert_counts.get(key, 0) + 1
-                    if inert_counts[key] == 2:
-                        log("R45AY_INERT_CANDIDATE", {"scope": "forward_throughput", "step": step, "label": item.get("label"), "key": key, "reason": "two_non_materializing_attempts"})
+                    if inert_counts[key] == 1:
+                        log("R45AY_INERT_CANDIDATE", {"scope": "forward_throughput", "step": step, "label": item.get("label"), "key": key, "reason": "fast_settle_no_change_current_band"})
             log("R45AY_FORWARD_BURST", {"step": step, "band": forward_bands_scanned, "candidate_count": len(filtered), "clicked": clicked_now, "materialized": materialized, "settle_ms": settle_ms, "labels": [item.get("label") for item in filtered[:10]], "cdp_event_count": burst.get("cdp_event_count"), "cdp_events_per_click": burst.get("cdp_events_per_click"), "no_hover_clicks": burst.get("no_hover_clicks")})
             continue
         scroll_started = time.perf_counter()
@@ -2114,7 +2316,18 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
         max_scroll_height = max(max_scroll_height, signature[1])
         log("R45AY_FORWARD_SCROLL", {"step": step, "scroll": scroll_result, "scroll_ms": scroll_ms, "scrollTop": signature[0], "scrollHeight": signature[1], "stalled_wheels": stalled_wheels})
         at_bottom = bool(post_scroller.get("atBottom"))
-        if at_bottom and stalled_wheels >= 2:
+        near_bottom = bool(signature[0] + client_height >= signature[1] - client_height)
+        bottom_cooldown_active = (step - last_bottom_check_step) < 80 and signature[1] <= last_bottom_check_height
+        bottom_trigger = bool((at_bottom or near_bottom) and stalled_wheels >= 3 and stable_height_checks >= 2)
+        if (at_bottom or near_bottom) and not bottom_trigger:
+            log("R45AY_BOTTOM_RANGE_SUPPRESSED", {"step": step, "atBottom": at_bottom, "nearBottom": near_bottom, "stalled_wheels": stalled_wheels, "stable_height_checks": stable_height_checks})
+        if bottom_trigger and bottom_cooldown_active:
+            log("R45AY_BOTTOM_RANGE_COOLDOWN", {"step": step, "last_bottom_check_step": last_bottom_check_step, "scrollHeight": signature[1]})
+            bottom_trigger = False
+        if bottom_trigger:
+            log("R45AY_BOTTOM_RANGE_TRIGGER", {"step": step, "atBottom": at_bottom, "nearBottom": near_bottom, "stalled_wheels": stalled_wheels, "stable_height_checks": stable_height_checks, "scrollHeight": signature[1]})
+            last_bottom_check_step = step
+            last_bottom_check_height = signature[1]
             bottom_checks += 1
             bottom = await bottom_range_check(page, cdp_session, args, expected_total=expected_total, check_number=bottom_checks, started_monotonic=started, max_seconds=max_seconds)
             bottom_range_bands_scanned += int(bottom.get("bands_scanned") or 0)
@@ -2136,8 +2349,10 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
     ok = bool(expected_total and r45ax_progress_gate_ok(best_progress, expected_total))
     status = "PASS_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_REACHED" if ok else ("BLOCKED_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_UNSATISFIED" if bottom_checks and bool(bottom.get("terminal")) else "BLOCKED_R45AY_TRUSTED_CDP_TIME_BUDGET_EXPIRED_WITHOUT_TERMINAL_PROOF")
     timing = {"scan_duration": value_summary(scan_durations), "adaptive_settle": value_summary(settle_durations), "empty_scan_scroll": value_summary(scroll_durations), "clicks": timing_summary(click_timings_all)}
-    log("R45AY_FORWARD_TIMING", {"clicked": clicked, "materialized_bursts": materialized_bursts, "inert_count": sum(1 for value in inert_counts.values() if value >= 2), "forward_bands_scanned": forward_bands_scanned, "bottom_range_bands_scanned": bottom_range_bands_scanned, "max_scroll_height": max_scroll_height, "fallback_count": fallback_count, "target_drift_count": target_drift_count, "cdp_events_per_click": timing.get("clicks", {}).get("click_count") and 2.0 or 0.0, "median_scan_duration_ms": timing["scan_duration"]["median_ms"], "median_settle_ms": timing["adaptive_settle"]["median_ms"], "status": status, "elapsed_ms": elapsed_ms})
-    return {"ok": ok, "status": status, "clicked": clicked, "bursts": bursts, "materializedBursts": materialized_bursts, "fallbackCount": fallback_count, "targetDriftCount": target_drift_count, "bestProgress": best_progress, "scrolls": scrolls, "trustedWheelScrolls": trusted_wheel_scrolls, "loaderClicks": loader_clicks, "falseBottomRecoveries": 0, "bottomRangeChecks": bottom_checks, "forwardBandsScanned": forward_bands_scanned, "bottomRangeBandsScanned": bottom_range_bands_scanned, "inertCount": sum(1 for value in inert_counts.values() if value >= 2), "maxScrollHeight": max_scroll_height, "totalCandidatesSeen": total_candidates_seen, "fullSweepRetries": 0, "lastFullSurfaceSweep": {}, "largeBucketBootstrap": bootstrap, "elapsed_ms": elapsed_ms, "events": events, "timing": timing, "metrics": {"clickTimings": click_timings_all, "scanDurations": scan_durations, "settleDurations": settle_durations, "emptyScrollDurations": scroll_durations}}
+    inert_count = sum(1 for value in inert_counts.values() if value >= 1)
+    clicks_per_minute = round(clicked / max((elapsed_ms / 1000.0) / 60.0, 0.001), 2)
+    log("R45AY_FORWARD_TIMING", {"clicked": clicked, "clicks_per_minute": clicks_per_minute, "materialized_bursts": materialized_bursts, "inert_count": inert_count, "forward_bands_scanned": forward_bands_scanned, "bottom_range_bands_scanned": bottom_range_bands_scanned, "max_scroll_height": max_scroll_height, "fallback_count": fallback_count, "target_drift_count": target_drift_count, "cdp_events_per_click": timing.get("clicks", {}).get("click_count") and 2.0 or 0.0, "median_scan_duration_ms": timing["scan_duration"]["median_ms"], "p95_scan_duration_ms": timing["scan_duration"]["p95_ms"], "median_settle_ms": timing["adaptive_settle"]["median_ms"], "p95_settle_ms": timing["adaptive_settle"]["p95_ms"], "status": status, "elapsed_ms": elapsed_ms})
+    return {"ok": ok, "status": status, "clicked": clicked, "bursts": bursts, "materializedBursts": materialized_bursts, "fallbackCount": fallback_count, "targetDriftCount": target_drift_count, "bestProgress": best_progress, "scrolls": scrolls, "trustedWheelScrolls": trusted_wheel_scrolls, "loaderClicks": loader_clicks, "falseBottomRecoveries": 0, "bottomRangeChecks": bottom_checks, "forwardBandsScanned": forward_bands_scanned, "bottomRangeBandsScanned": bottom_range_bands_scanned, "inertCount": inert_count, "maxScrollHeight": max_scroll_height, "totalCandidatesSeen": total_candidates_seen, "fullSweepRetries": 0, "lastFullSurfaceSweep": {}, "largeBucketBootstrap": bootstrap, "elapsed_ms": elapsed_ms, "events": events, "timing": timing, "metrics": {"clickTimings": click_timings_all, "scanDurations": scan_durations, "settleDurations": settle_durations, "emptyScrollDurations": scroll_durations}}
 
 
 async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespace, story: str) -> Dict[str, Any]:
@@ -3166,6 +3381,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     ap.add_argument("--max-burst-clicks", type=int, default=30)
     ap.add_argument("--inter-click-delay-ms", type=int, default=0)
     ap.add_argument("--settle-ms", type=int, default=125)
+    ap.add_argument("--forward-settle-ms", type=int, default=120)
+    ap.add_argument("--forward-settle-max-ms", type=int, default=350)
     return ap.parse_args(argv)
 
 
