@@ -1017,6 +1017,107 @@ def dedupe_candidates(items: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]]
     return out, duplicates
 
 
+def residual_candidate_position(item: Dict[str, Any], scan: Dict[str, Any]) -> int:
+    scroller = (scan or {}).get("scroller") or {}
+    try:
+        return max(0, int(float(scroller.get("scrollTop") or 0) + float((item or {}).get("y") or 0)))
+    except Exception:
+        return max(0, int(scroller.get("scrollTop") or 0))
+
+
+def residual_queue_update(
+    queue: Dict[str, Dict[str, Any]],
+    item: Dict[str, Any],
+    *,
+    step: int,
+    scan: Dict[str, Any],
+    result: str,
+    reject_reason: str = "",
+) -> str:
+    key = py_stable_candidate_key(item)
+    position = residual_candidate_position(item, scan)
+    band = int(position / 350)
+    entry = queue.get(key)
+    marker = "R45AY_RESIDUAL_QUEUE_UPDATE" if entry else "R45AY_RESIDUAL_QUEUE_ADD"
+    if not entry:
+        entry = {
+            "category": str((item or {}).get("category") or ""),
+            "label": str((item or {}).get("label") or ""),
+            "contextual_key": key,
+            "approx_scroll_position": position,
+            "band": band,
+            "first_seen_step": step,
+            "attempt_count": 0,
+            "last_result": "",
+            "last_reject_reason": "",
+        }
+        queue[key] = entry
+    entry["last_seen_step"] = step
+    entry["approx_scroll_position"] = min(int(entry.get("approx_scroll_position") or position), position)
+    entry["band"] = min(int(entry.get("band") or band), band)
+    entry["last_result"] = result
+    if reject_reason:
+        entry["last_reject_reason"] = reject_reason
+    if result in {"clicked", "clicked_no_materialization", "rejected"}:
+        entry["attempt_count"] = int(entry.get("attempt_count") or 0) + 1
+    log(marker, {
+        "key": key,
+        "label": entry.get("label"),
+        "category": entry.get("category"),
+        "band": entry.get("band"),
+        "position": entry.get("approx_scroll_position"),
+        "step": step,
+        "attempt_count": entry.get("attempt_count"),
+        "last_result": entry.get("last_result"),
+        "last_reject_reason": entry.get("last_reject_reason"),
+    })
+    return key
+
+
+def residual_queue_resolve(queue: Dict[str, Dict[str, Any]], item: Dict[str, Any], *, step: int, reason: str) -> None:
+    key = py_stable_candidate_key(item)
+    if key in queue:
+        entry = queue.pop(key)
+        log("R45AY_RESIDUAL_QUEUE_UPDATE", {
+            "key": key,
+            "label": entry.get("label"),
+            "category": entry.get("category"),
+            "step": step,
+            "last_result": "resolved",
+            "reason": reason,
+            "remaining": len(queue),
+        })
+
+
+def residual_queue_resolve_near(
+    queue: Dict[str, Dict[str, Any]],
+    *,
+    position: int,
+    client_height: int,
+    step: int,
+    reason: str,
+) -> int:
+    low = max(0, int(position) - 220)
+    high = max(low + 1, int(position) + max(220, int(client_height)) + 420)
+    removed = 0
+    for key, entry in list(queue.items()):
+        entry_pos = int(entry.get("approx_scroll_position") or 0)
+        if low <= entry_pos <= high:
+            queue.pop(key, None)
+            removed += 1
+            log("R45AY_RESIDUAL_QUEUE_UPDATE", {
+                "key": key,
+                "label": entry.get("label"),
+                "category": entry.get("category"),
+                "step": step,
+                "last_result": "resolved_nearby",
+                "reason": reason,
+                "position": entry_pos,
+                "remaining": len(queue),
+            })
+    return removed
+
+
 def scan_signature(scan: Dict[str, Any]) -> Dict[str, Any]:
     scroller = (scan or {}).get("scroller") or {}
     return {
@@ -2156,6 +2257,284 @@ async def bottom_range_check(
     return result
 
 
+async def collect_final_residual_evidence(
+    page,
+    args: argparse.Namespace,
+    *,
+    expected_total: int,
+    best_progress: Optional[Dict[str, Any]],
+    residual_queue: Dict[str, Dict[str, Any]],
+    bottom: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    include_guarded = bool(args.include_guarded_view_more)
+    result = await page.evaluate(
+        """(opts) => {
+          const scroller = r45axGetScroller();
+          const scan = r45ayPageLoopScan({
+            maxCandidates:80,
+            includeGuardedViewMore:!!opts.includeGuardedViewMore,
+            includeProgress:false,
+            includeExpectedEvidence:false,
+            allowVisibleTextFallback:true
+          });
+          const text = scroller ? String(scroller.innerText || scroller.textContent || '') : '';
+          const matches = r45ayExpansionTextMatches(text);
+          return {
+            ok:!!scroller,
+            loadedTextLength:text.length,
+            matches,
+            samples:matches.slice(0, 40),
+            safeCandidates:scan.candidateCount || 0,
+            candidateLabels:(scan.items || []).map(item => item.label).slice(0, 30),
+            rejectedCandidates:(scan.rejected || []).length,
+            scroll:scan.scroller || null
+          };
+        }""",
+        {"includeGuardedViewMore": include_guarded},
+    )
+    final_matches = list((result or {}).get("matches") or [])
+    queue_entries = list(residual_queue.values())
+    rejected_reasons: Dict[str, int] = {}
+    for entry in queue_entries:
+        reason = str(entry.get("last_reject_reason") or entry.get("last_result") or "unknown")
+        rejected_reasons[reason] = rejected_reasons.get(reason, 0) + 1
+    terminal_allowed = not final_matches and not queue_entries and int((result or {}).get("safeCandidates") or 0) == 0
+    reason = (
+        "no_loaded_expansion_text_or_residual_queue"
+        if terminal_allowed
+        else "loaded_expansion_text_or_residual_queue_remains"
+    )
+    evidence = {
+        "expected_total": expected_total,
+        "best_progress": best_progress,
+        "residual_queue_count": len(queue_entries),
+        "final_loaded_expansion_text_count": len(final_matches),
+        "final_loaded_expansion_text_samples": final_matches[:40],
+        "safe_candidates_in_current_viewport": int((result or {}).get("safeCandidates") or 0),
+        "current_viewport_candidate_labels": list((result or {}).get("candidateLabels") or []),
+        "bottom_range_candidates": int((bottom or {}).get("safe_candidates") or 0) if bottom else 0,
+        "bottom_range_candidate_labels": list((bottom or {}).get("candidate_labels") or [])[:30] if bottom else [],
+        "rejected_candidate_reasons": rejected_reasons,
+        "terminal_block_allowed": terminal_allowed,
+        "reason": reason,
+        "scroll": (result or {}).get("scroll"),
+        "loaded_text_length": int((result or {}).get("loadedTextLength") or 0),
+    }
+    log("R45AY_FINAL_RESIDUAL_EVIDENCE", evidence)
+    return evidence
+
+
+async def residual_forward_drain(
+    page,
+    cdp_session: Any,
+    args: argparse.Namespace,
+    *,
+    residual_queue: Dict[str, Dict[str, Any]],
+    expected_total: int,
+    started_monotonic: float,
+    max_seconds: float,
+    pass_number: int,
+) -> Dict[str, Any]:
+    include_guarded = bool(args.include_guarded_view_more)
+    max_burst = max(1, int(args.max_burst_clicks or 30))
+    forward_settle_ms = max(40, min(300, int(getattr(args, "forward_settle_ms", 120) or 120)))
+    forward_settle_max_ms = max(forward_settle_ms, min(600, int(getattr(args, "forward_settle_max_ms", 350) or 350)))
+    entries = sorted(list(residual_queue.values()), key=lambda entry: (int(entry.get("approx_scroll_position") or 0), str(entry.get("contextual_key") or "")))
+    if not entries:
+        log("R45AY_RESIDUAL_DRAIN_START", {"pass": pass_number, "residual_candidates_start": 0})
+        result = {
+            "pass": pass_number,
+            "residual_candidates_start": 0,
+            "residual_candidates_revisited": 0,
+            "residual_candidates_clicked": 0,
+            "residual_candidates_materialized": 0,
+            "residual_candidates_rejected": 0,
+            "residual_candidates_remaining": 0,
+            "residual_drain_bands_scanned": 0,
+            "scrollHeight_start": 0,
+            "scrollHeight_end": 0,
+            "elapsed_ms": 0.0,
+            "clicked": 0,
+            "bursts": 0,
+            "materialized_bursts": 0,
+            "click_timings": [],
+            "settle_durations": [],
+            "scan_durations": [],
+            "ok": True,
+        }
+        log("R45AY_RESIDUAL_DRAIN_DONE", result)
+        return result
+    drain_started = time.perf_counter()
+    start_state = await page.evaluate("""() => {
+      const s = r45axGetScroller();
+      return s ? {scrollTop:Math.round(s.scrollTop||0), scrollHeight:Math.round(s.scrollHeight||0), clientHeight:Math.round(s.clientHeight||0)} : {scrollTop:0, scrollHeight:0, clientHeight:0};
+    }""")
+    scroll_height_start = int((start_state or {}).get("scrollHeight") or 0)
+    client_height = max(220, int((start_state or {}).get("clientHeight") or 0) or 520)
+    log("R45AY_RESIDUAL_DRAIN_START", {
+        "pass": pass_number,
+        "residual_candidates_start": len(entries),
+        "scrollHeight_start": scroll_height_start,
+    })
+    clicked = 0
+    bursts = 0
+    materialized_bursts = 0
+    rejected_count = 0
+    bands_scanned = 0
+    revisited = 0
+    click_timings: List[Dict[str, Any]] = []
+    settle_durations: List[float] = []
+    scan_durations: List[float] = []
+    visited_bands = set()
+    for entry in entries:
+        if time.monotonic() - started_monotonic >= max_seconds:
+            break
+        position = max(0, int(entry.get("approx_scroll_position") or 0) - int(client_height * 0.35))
+        band = int(position / max(280, int(client_height * 0.5)))
+        if band in visited_bands:
+            continue
+        visited_bands.add(band)
+        await page.evaluate(
+            """(top) => {
+              const s = r45axGetScroller();
+              if (s) s.scrollTop = Math.max(0, Math.min(Number(top)||0, Math.max(0, (s.scrollHeight||0) - (s.clientHeight||0))));
+            }""",
+            position,
+        )
+        await page.wait_for_timeout(18)
+        for local_attempt in range(1, 3):
+            if time.monotonic() - started_monotonic >= max_seconds:
+                break
+            scan_started = time.perf_counter()
+            scan = await page.evaluate(
+                "(opts) => r45ayPageLoopScan(opts)",
+                {
+                    "maxCandidates": max_burst,
+                    "includeGuardedViewMore": include_guarded,
+                    "expectedTotal": expected_total,
+                    "includeProgress": False,
+                    "includeExpectedEvidence": False,
+                    "allowVisibleTextFallback": True,
+                },
+            )
+            scan_ms = round((time.perf_counter() - scan_started) * 1000.0, 3)
+            scan_durations.append(scan_ms)
+            bands_scanned += 1
+            raw_items = list((scan or {}).get("items") or [])
+            candidates, duplicates = dedupe_candidates(raw_items)
+            if duplicates:
+                log("R45AY_CANDIDATE_DEDUPE", {"scope": "residual_drain", "pass": pass_number, "duplicate_count": len(duplicates)})
+            revisited += len(candidates)
+            log("R45AY_RESIDUAL_DRAIN_BAND", {
+                "pass": pass_number,
+                "band": bands_scanned,
+                "local_attempt": local_attempt,
+                "position": position,
+                "candidate_count": len(candidates),
+                "labels": [item.get("label") for item in candidates[:10]],
+                "scan_ms": scan_ms,
+                "scroll": (scan or {}).get("scroller"),
+            })
+            if not candidates:
+                break
+            burst = await trusted_cdp_burst(
+                page,
+                cdp_session,
+                candidates,
+                max_clicks=min(max_burst, len(candidates)),
+                debug_clicks=bool(args.debug_clicks),
+                no_hover_clicks=bool(getattr(args, "no_hover_clicks", True)),
+            )
+            rejected = list(burst.get("rejected") or [])
+            rejected_count += len(rejected)
+            for rejected_item in rejected:
+                residual_queue_update(
+                    residual_queue,
+                    rejected_item,
+                    step=-pass_number,
+                    scan=scan,
+                    result="rejected",
+                    reject_reason=str(rejected_item.get("reason") or "trusted_cdp_validation_rejected"),
+                )
+            clicked_now = int(burst.get("clicked") or 0)
+            clicked += clicked_now
+            bursts += 1
+            click_timings.extend(list(burst.get("click_timings") or []))
+            settle_limit = forward_settle_max_ms if any(str(item.get("category")) == "view_all_replies" for item in candidates) else forward_settle_ms
+            settle = await settle_after_trusted_cdp_burst(
+                page,
+                scan,
+                max_ms=settle_limit,
+                include_guarded_view_more=include_guarded,
+                expected_total=expected_total,
+            )
+            settle_ms = float(settle.get("duration_ms") or 0.0)
+            settle_durations.append(settle_ms)
+            materialized = bool(settle.get("materialized"))
+            if materialized:
+                materialized_bursts += 1
+                for item in candidates:
+                    residual_queue_resolve(residual_queue, item, step=-pass_number, reason="residual_drain_materialized")
+                residual_queue_resolve_near(
+                    residual_queue,
+                    position=position,
+                    client_height=client_height,
+                    step=-pass_number,
+                    reason="residual_drain_materialized_nearby_band",
+                )
+            else:
+                for item in candidates[:max(1, clicked_now)]:
+                    residual_queue_update(
+                        residual_queue,
+                        item,
+                        step=-pass_number,
+                        scan=scan,
+                        result="clicked_no_materialization",
+                    )
+            log("R45AY_RESIDUAL_DRAIN_BURST", {
+                "pass": pass_number,
+                "band": bands_scanned,
+                "candidate_count": len(candidates),
+                "clicked": clicked_now,
+                "materialized": materialized,
+                "settle_ms": settle_ms,
+                "labels": [item.get("label") for item in candidates[:10]],
+                "cdp_event_count": burst.get("cdp_event_count"),
+                "cdp_events_per_click": burst.get("cdp_events_per_click"),
+                "no_hover_clicks": burst.get("no_hover_clicks"),
+            })
+            if not materialized:
+                break
+    end_state = await page.evaluate("""() => {
+      const s = r45axGetScroller();
+      return s ? {scrollTop:Math.round(s.scrollTop||0), scrollHeight:Math.round(s.scrollHeight||0), clientHeight:Math.round(s.clientHeight||0)} : {scrollTop:0, scrollHeight:0, clientHeight:0};
+    }""")
+    scroll_height_end = int((end_state or {}).get("scrollHeight") or scroll_height_start)
+    result = {
+        "pass": pass_number,
+        "residual_candidates_start": len(entries),
+        "residual_candidates_revisited": revisited,
+        "residual_candidates_clicked": clicked,
+        "residual_candidates_materialized": materialized_bursts,
+        "residual_candidates_rejected": rejected_count,
+        "residual_candidates_remaining": len(residual_queue),
+        "residual_drain_bands_scanned": bands_scanned,
+        "scrollHeight_start": scroll_height_start,
+        "scrollHeight_end": scroll_height_end,
+        "growth": scroll_height_end > scroll_height_start,
+        "elapsed_ms": round((time.perf_counter() - drain_started) * 1000.0, 3),
+        "clicked": clicked,
+        "bursts": bursts,
+        "materialized_bursts": materialized_bursts,
+        "click_timings": click_timings,
+        "settle_durations": settle_durations,
+        "scan_durations": scan_durations,
+        "ok": True,
+    }
+    log("R45AY_RESIDUAL_DRAIN_DONE", result)
+    return result
+
+
 async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.Namespace, story: str) -> Dict[str, Any]:
     """Monotonic visible-page conveyor for real Facebook; no global backward proof sweep."""
     started = time.monotonic()
@@ -2194,6 +2573,10 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
     last_bottom_check_height = -1
     stable_height_checks = 0
     last_height_seen = 0
+    residual_queue: Dict[str, Dict[str, Any]] = {}
+    residual_drains: List[Dict[str, Any]] = []
+    final_residual_evidence: Dict[str, Any] = {}
+    bottom: Optional[Dict[str, Any]] = None
     bootstrap: Dict[str, Any] = {}
     log("R45AY_FORWARD_THROUGHPUT_START", {"max_seconds": max_seconds, "expected_total": expected_total, "max_steps": max_steps, "no_hover_clicks": bool(getattr(args, "no_hover_clicks", True)), "forward_settle_ms": forward_settle_ms, "forward_settle_max_ms": forward_settle_max_ms})
     log("R45AY_PROGRESS_CADENCE", {"cheap_visible_every_steps": 50, "heavy_every_steps": 250, "heavy_min_interval_seconds": 60, "heavy_reasons": ["startup", "cadence_250_steps", "final"]})
@@ -2256,8 +2639,10 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
         for item in candidates:
             key = py_stable_candidate_key(item)
             if inert_counts.get(key, 0) >= 1:
+                residual_queue_update(residual_queue, item, step=step, scan=scan, result="inert_skip")
                 log("R45AY_INERT_SKIP", {"scope": "forward_throughput", "step": step, "label": item.get("label"), "key": key})
                 continue
+            residual_queue_update(residual_queue, item, step=step, scan=scan, result="seen")
             copied = dict(item)
             copied["loopKey"] = key
             filtered.append(copied)
@@ -2265,10 +2650,21 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
         scan_stats = scan.get("scanStats") or {}
         if step == 1 or step % 50 == 0 or scan_ms > 500:
             log("R45AY_VIEWPORT_SCAN_MODE", {"step": step, **scan_stats})
+        if step == 1 or step % 50 == 0 or filtered or residual_queue:
+            log("R45AY_RESIDUAL_QUEUE_SIZE", {"step": step, "size": len(residual_queue)})
         log("R45AY_FORWARD_BAND_SCAN", {"step": step, "band": forward_bands_scanned, "candidate_count": len(filtered), "labels": [item.get("label") for item in filtered[:10]], "scrollTop": current_top, "scrollHeight": current_height, "scan_ms": scan_ms, "viewport_only": bool(scan.get("viewportOnly")), "scanned_nodes": scan_stats.get("scanned_nodes"), "skipped_offscreen_nodes": scan_stats.get("skipped_offscreen_nodes")})
         if filtered and same_band_attempts < 3:
             same_band_attempts += 1
             burst = await trusted_cdp_burst(page, cdp_session, filtered, max_clicks=min(max_burst, len(filtered)), debug_clicks=bool(args.debug_clicks), no_hover_clicks=bool(getattr(args, "no_hover_clicks", True)))
+            for rejected_item in list(burst.get("rejected") or []):
+                residual_queue_update(
+                    residual_queue,
+                    rejected_item,
+                    step=step,
+                    scan=scan,
+                    result="rejected",
+                    reject_reason=str(rejected_item.get("reason") or "trusted_cdp_validation_rejected"),
+                )
             bursts += 1
             clicked_now = int(burst.get("clicked") or 0)
             clicked += clicked_now
@@ -2285,14 +2681,19 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
                 materialized_bursts += 1
                 for item in filtered:
                     inert_counts.pop(str(item.get("loopKey") or py_stable_candidate_key(item)), None)
+                    residual_queue_resolve(residual_queue, item, step=step, reason=str(settle.get("materialization_reason") or "forward_materialized"))
             else:
                 for item in filtered[:max(1, clicked_now)]:
                     key = str(item.get("loopKey") or py_stable_candidate_key(item))
                     inert_counts[key] = inert_counts.get(key, 0) + 1
+                    residual_queue_update(residual_queue, item, step=step, scan=scan, result="clicked_no_materialization")
                     if inert_counts[key] == 1:
                         log("R45AY_INERT_CANDIDATE", {"scope": "forward_throughput", "step": step, "label": item.get("label"), "key": key, "reason": "fast_settle_no_change_current_band"})
             log("R45AY_FORWARD_BURST", {"step": step, "band": forward_bands_scanned, "candidate_count": len(filtered), "clicked": clicked_now, "materialized": materialized, "settle_ms": settle_ms, "labels": [item.get("label") for item in filtered[:10]], "cdp_event_count": burst.get("cdp_event_count"), "cdp_events_per_click": burst.get("cdp_events_per_click"), "no_hover_clicks": burst.get("no_hover_clicks")})
             continue
+        if filtered:
+            for item in filtered:
+                residual_queue_update(residual_queue, item, step=step, scan=scan, result="found_not_clicked_same_band_limit")
         scroll_started = time.perf_counter()
         delta = max(760, min(1400, int(client_height * 1.35)))
         if getattr(args, "scroll_engine", "trusted_wheel") == "trusted_wheel":
@@ -2347,12 +2748,91 @@ async def run_forward_throughput_engine(page, cdp_session: Any, args: argparse.N
         if final_progress and (not best_progress or int(final_progress.get("current") or 0) > int(best_progress.get("current") or 0)):
             best_progress = final_progress
     ok = bool(expected_total and r45ax_progress_gate_ok(best_progress, expected_total))
-    status = "PASS_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_REACHED" if ok else ("BLOCKED_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_UNSATISFIED" if bottom_checks and bool(bottom.get("terminal")) else "BLOCKED_R45AY_TRUSTED_CDP_TIME_BUDGET_EXPIRED_WITHOUT_TERMINAL_PROOF")
+    if not ok:
+        final_residual_evidence = await collect_final_residual_evidence(
+            page,
+            args,
+            expected_total=expected_total,
+            best_progress=best_progress,
+            residual_queue=residual_queue,
+            bottom=bottom,
+        )
+        needs_residual_drain = bool(
+            final_residual_evidence.get("final_loaded_expansion_text_count")
+            or final_residual_evidence.get("residual_queue_count")
+            or final_residual_evidence.get("safe_candidates_in_current_viewport")
+        )
+        if needs_residual_drain and time.monotonic() - started < max_seconds:
+            drain = await residual_forward_drain(
+                page,
+                cdp_session,
+                args,
+                residual_queue=residual_queue,
+                expected_total=expected_total,
+                started_monotonic=started,
+                max_seconds=max_seconds,
+                pass_number=1,
+            )
+            residual_drains.append(drain)
+            clicked += int(drain.get("clicked") or 0)
+            bursts += int(drain.get("bursts") or 0)
+            materialized_bursts += int(drain.get("materialized_bursts") or 0)
+            click_timings_all.extend(list(drain.get("click_timings") or []))
+            settle_durations.extend(float(v) for v in list(drain.get("settle_durations") or []) if isinstance(v, (int, float)))
+            scan_durations.extend(float(v) for v in list(drain.get("scan_durations") or []) if isinstance(v, (int, float)))
+            max_scroll_height = max(max_scroll_height, int(drain.get("scrollHeight_end") or 0))
+            if (int(drain.get("clicked") or 0) or int(drain.get("materialized_bursts") or 0)) and time.monotonic() - started < max_seconds:
+                drain2 = await residual_forward_drain(
+                    page,
+                    cdp_session,
+                    args,
+                    residual_queue=residual_queue,
+                    expected_total=expected_total,
+                    started_monotonic=started,
+                    max_seconds=max_seconds,
+                    pass_number=2,
+                )
+                residual_drains.append(drain2)
+                clicked += int(drain2.get("clicked") or 0)
+                bursts += int(drain2.get("bursts") or 0)
+                materialized_bursts += int(drain2.get("materialized_bursts") or 0)
+                click_timings_all.extend(list(drain2.get("click_timings") or []))
+                settle_durations.extend(float(v) for v in list(drain2.get("settle_durations") or []) if isinstance(v, (int, float)))
+                scan_durations.extend(float(v) for v in list(drain2.get("scan_durations") or []) if isinstance(v, (int, float)))
+                max_scroll_height = max(max_scroll_height, int(drain2.get("scrollHeight_end") or 0))
+            if expected_total:
+                final_progress_scan = await progress_evidence_scan(page, expected_total, mode="heavy", step=max_steps, reason="after_residual_drain")
+                final_progress = final_progress_scan.get("filtered_progress")
+                if final_progress and (not best_progress or int(final_progress.get("current") or 0) > int(best_progress.get("current") or 0)):
+                    best_progress = final_progress
+                ok = bool(r45ax_progress_gate_ok(best_progress, expected_total))
+            final_residual_evidence = await collect_final_residual_evidence(
+                page,
+                args,
+                expected_total=expected_total,
+                best_progress=best_progress,
+                residual_queue=residual_queue,
+                bottom=bottom,
+            )
+    if ok:
+        status = "PASS_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_REACHED"
+    elif final_residual_evidence and not final_residual_evidence.get("terminal_block_allowed"):
+        status = "BLOCKED_R45AY_TRUSTED_CDP_RESIDUAL_EXPANSION_REMAINS"
+    else:
+        status = "BLOCKED_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_UNSATISFIED" if bottom_checks and bool((bottom or {}).get("terminal")) else "BLOCKED_R45AY_TRUSTED_CDP_TIME_BUDGET_EXPIRED_WITHOUT_TERMINAL_PROOF"
     timing = {"scan_duration": value_summary(scan_durations), "adaptive_settle": value_summary(settle_durations), "empty_scan_scroll": value_summary(scroll_durations), "clicks": timing_summary(click_timings_all)}
     inert_count = sum(1 for value in inert_counts.values() if value >= 1)
     clicks_per_minute = round(clicked / max((elapsed_ms / 1000.0) / 60.0, 0.001), 2)
-    log("R45AY_FORWARD_TIMING", {"clicked": clicked, "clicks_per_minute": clicks_per_minute, "materialized_bursts": materialized_bursts, "inert_count": inert_count, "forward_bands_scanned": forward_bands_scanned, "bottom_range_bands_scanned": bottom_range_bands_scanned, "max_scroll_height": max_scroll_height, "fallback_count": fallback_count, "target_drift_count": target_drift_count, "cdp_events_per_click": timing.get("clicks", {}).get("click_count") and 2.0 or 0.0, "median_scan_duration_ms": timing["scan_duration"]["median_ms"], "p95_scan_duration_ms": timing["scan_duration"]["p95_ms"], "median_settle_ms": timing["adaptive_settle"]["median_ms"], "p95_settle_ms": timing["adaptive_settle"]["p95_ms"], "status": status, "elapsed_ms": elapsed_ms})
-    return {"ok": ok, "status": status, "clicked": clicked, "bursts": bursts, "materializedBursts": materialized_bursts, "fallbackCount": fallback_count, "targetDriftCount": target_drift_count, "bestProgress": best_progress, "scrolls": scrolls, "trustedWheelScrolls": trusted_wheel_scrolls, "loaderClicks": loader_clicks, "falseBottomRecoveries": 0, "bottomRangeChecks": bottom_checks, "forwardBandsScanned": forward_bands_scanned, "bottomRangeBandsScanned": bottom_range_bands_scanned, "inertCount": inert_count, "maxScrollHeight": max_scroll_height, "totalCandidatesSeen": total_candidates_seen, "fullSweepRetries": 0, "lastFullSurfaceSweep": {}, "largeBucketBootstrap": bootstrap, "elapsed_ms": elapsed_ms, "events": events, "timing": timing, "metrics": {"clickTimings": click_timings_all, "scanDurations": scan_durations, "settleDurations": settle_durations, "emptyScrollDurations": scroll_durations}}
+    residual_summary = {
+        "drain_count": len(residual_drains),
+        "residual_candidates_clicked": sum(int(drain.get("residual_candidates_clicked") or 0) for drain in residual_drains),
+        "residual_candidates_materialized": sum(int(drain.get("residual_candidates_materialized") or 0) for drain in residual_drains),
+        "residual_candidates_rejected": sum(int(drain.get("residual_candidates_rejected") or 0) for drain in residual_drains),
+        "residual_candidates_remaining": len(residual_queue),
+        "residual_drain_bands_scanned": sum(int(drain.get("residual_drain_bands_scanned") or 0) for drain in residual_drains),
+    }
+    log("R45AY_FORWARD_TIMING", {"clicked": clicked, "clicks_per_minute": clicks_per_minute, "materialized_bursts": materialized_bursts, "inert_count": inert_count, "forward_bands_scanned": forward_bands_scanned, "bottom_range_bands_scanned": bottom_range_bands_scanned, "max_scroll_height": max_scroll_height, "fallback_count": fallback_count, "target_drift_count": target_drift_count, "cdp_events_per_click": timing.get("clicks", {}).get("click_count") and 2.0 or 0.0, "median_scan_duration_ms": timing["scan_duration"]["median_ms"], "p95_scan_duration_ms": timing["scan_duration"]["p95_ms"], "median_settle_ms": timing["adaptive_settle"]["median_ms"], "p95_settle_ms": timing["adaptive_settle"]["p95_ms"], "status": status, "elapsed_ms": elapsed_ms, **residual_summary})
+    return {"ok": ok, "status": status, "clicked": clicked, "bursts": bursts, "materializedBursts": materialized_bursts, "fallbackCount": fallback_count, "targetDriftCount": target_drift_count, "bestProgress": best_progress, "scrolls": scrolls, "trustedWheelScrolls": trusted_wheel_scrolls, "loaderClicks": loader_clicks, "falseBottomRecoveries": 0, "bottomRangeChecks": bottom_checks, "forwardBandsScanned": forward_bands_scanned, "bottomRangeBandsScanned": bottom_range_bands_scanned, "inertCount": inert_count, "maxScrollHeight": max_scroll_height, "totalCandidatesSeen": total_candidates_seen, "fullSweepRetries": 0, "lastFullSurfaceSweep": {}, "largeBucketBootstrap": bootstrap, "residualDrains": residual_drains, "residualSummary": residual_summary, "finalResidualEvidence": final_residual_evidence, "elapsed_ms": elapsed_ms, "events": events, "timing": timing, "metrics": {"clickTimings": click_timings_all, "scanDurations": scan_durations, "settleDurations": settle_durations, "emptyScrollDurations": scroll_durations}}
 
 
 async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespace, story: str) -> Dict[str, Any]:
@@ -3054,6 +3534,8 @@ async def run_live(args: argparse.Namespace) -> int:
                 "clicks_per_minute": clicks_per_minute,
                 "timing": trusted_timing,
                 "target_guard_ok": bool(final_guard.get("ok")),
+                "residual_summary": trusted_result.get("residualSummary"),
+                "final_loaded_expansion_text_count": ((trusted_result.get("finalResidualEvidence") or {}).get("final_loaded_expansion_text_count")),
             })
             receipt.update({
                 "instant_engine": "trusted_cdp",
@@ -3114,6 +3596,8 @@ async def run_live(args: argparse.Namespace) -> int:
                 "materialized_bursts": trusted_result.get("materializedBursts"),
                 "fallback_count": trusted_result.get("fallbackCount"),
                 "clicks_per_minute": clicks_per_minute,
+                "residual_summary": trusted_result.get("residualSummary"),
+                "final_residual_evidence": trusted_result.get("finalResidualEvidence"),
                 "failure_artifacts": receipt["failure_artifacts"],
             })
             (run_dir / "r45ay_receipt.json").write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding="utf-8")
