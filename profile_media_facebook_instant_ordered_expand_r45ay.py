@@ -164,7 +164,7 @@ function r45ayCommentsRootDebug(root, scroller, matches, confidence, reason){
     aria,
     classSample,
     childElementCount:root && root.childElementCount || 0,
-    rootTextLength:root ? Math.min(4000, String(root.innerText || root.textContent || '').length) : 0,
+    rootTextLength:r45ayApproxTextLength(root, 4000, 220),
     scrollerChildElementCount:scroller && scroller.childElementCount || 0,
     matchCount:Array.isArray(matches) ? matches.length : 0,
     rootRect:rect ? {top:Math.round(rect.top), bottom:Math.round(rect.bottom), left:Math.round(rect.left), right:Math.round(rect.right)} : null,
@@ -218,6 +218,78 @@ function r45ayResolveCommentsRoot(){
 function r45ayResolveCommentsRootInfo(){
   const info = r45ayResolveCommentsRoot();
   const out = {...info};
+  delete out.commentsRoot;
+  return out;
+}
+function r45ayApproxTextLength(root, maxLength, maxTextNodes){
+  if (!root) return 0;
+  const limit = Math.max(200, parseInt(maxLength || 4000, 10) || 4000);
+  const nodeLimit = Math.max(20, parseInt(maxTextNodes || 220, 10) || 220);
+  let total = 0;
+  let seen = 0;
+  try {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node || !node.nodeValue || !String(node.nodeValue).trim()) return NodeFilter.FILTER_REJECT;
+        const parent = node.parentElement;
+        if (!parent || r45axElementHidden(parent)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    while (walker.nextNode()) {
+      total += String(walker.currentNode.nodeValue || '').length;
+      seen += 1;
+      if (total >= limit || seen >= nodeLimit) return Math.min(limit, total);
+    }
+  } catch(e) {
+    return 0;
+  }
+  return Math.min(limit, total);
+}
+function r45ayResolveCommentSurface(){
+  const scroller = r45axGetScroller();
+  const rootInfo = r45ayResolveCommentsRoot();
+  let root = (rootInfo && rootInfo.commentsRoot) || scroller || null;
+  const fallbackToBody = !!(root && (root === document.body || root === document.documentElement));
+  if (fallbackToBody && scroller) root = scroller;
+  const scrollerRect = scroller && scroller.getBoundingClientRect ? scroller.getBoundingClientRect() : null;
+  const rootRect = root && root.getBoundingClientRect ? root.getBoundingClientRect() : null;
+  const info = {
+    ok:!!(scroller && root && root !== document.body && root !== document.documentElement),
+    confidence:Number((rootInfo && rootInfo.confidence) || 0),
+    fallback_to_body:fallbackToBody,
+    reason:fallbackToBody ? 'body_or_html_root_rejected_for_hot_surface' : ((rootInfo && rootInfo.reason) || ''),
+    activeScroller:scroller,
+    commentsRoot:root,
+    scroller_tag:scroller && scroller.tagName || '',
+    root_tag:root && root.tagName || '',
+    root_role:root && root.getAttribute ? String(root.getAttribute('role') || '') : '',
+    root_aria:root && root.getAttribute ? String(root.getAttribute('aria-label') || '').slice(0, 180) : '',
+    root_childElementCount:root && root.childElementCount || 0,
+    rootTextLength:r45ayApproxTextLength(root, 4000, 220),
+    scrollerChildElementCount:scroller && scroller.childElementCount || 0,
+    scrollerRect:scrollerRect ? {top:Math.round(scrollerRect.top), bottom:Math.round(scrollerRect.bottom), left:Math.round(scrollerRect.left), right:Math.round(scrollerRect.right)} : null,
+    rootRect:rootRect ? {top:Math.round(rootRect.top), bottom:Math.round(rootRect.bottom), left:Math.round(rootRect.left), right:Math.round(rootRect.right)} : null,
+    rootSelector:(rootInfo && rootInfo.rootSelector) || ''
+  };
+  if (!info.ok && scroller) {
+    info.ok = true;
+    info.commentsRoot = scroller;
+    info.fallback_to_body = false;
+    info.root_tag = scroller.tagName || '';
+    info.root_role = scroller.getAttribute ? String(scroller.getAttribute('role') || '') : '';
+    info.root_aria = scroller.getAttribute ? String(scroller.getAttribute('aria-label') || '').slice(0, 180) : '';
+    info.root_childElementCount = scroller.childElementCount || 0;
+    info.rootTextLength = r45ayApproxTextLength(scroller, 4000, 220);
+    info.confidence = Math.max(info.confidence || 0, 0.35);
+    info.reason = info.reason || 'fallback_to_active_scroller_surface';
+  }
+  return info;
+}
+function r45ayResolveCommentSurfaceInfo(){
+  const info = r45ayResolveCommentSurface();
+  const out = {...info};
+  delete out.activeScroller;
   delete out.commentsRoot;
   return out;
 }
@@ -521,19 +593,21 @@ function r45ayFastVisibleCandidates(opts){
   const includeProgress = !!opts.includeProgress;
   const includeExpectedEvidence = !!opts.includeExpectedEvidence;
   const maxCandidates = Math.max(1, Math.min(120, parseInt(opts.maxCandidates || 50, 10) || 50));
-  const scroller = r45axGetScroller();
+  const surface = r45ayResolveCommentSurface();
+  const scroller = surface.activeScroller || r45axGetScroller();
   if (!scroller) return {ok:false, reason:'no_active_scroller', items:[]};
-  const rootInfo = r45ayResolveCommentsRoot();
-  const commentsRoot = rootInfo.commentsRoot || scroller;
+  const commentsRoot = surface.commentsRoot || scroller;
   const started = performance.now();
   const sr = scroller.getBoundingClientRect();
   const buffer = Math.max(0, Math.min(300, parseInt(opts.viewportBufferPx || 250, 10) || 250));
   const band = {top:Math.max(0, sr.top - buffer), bottom:Math.min(innerHeight, sr.bottom + buffer), left:Math.max(0, sr.left + 6), right:Math.min(innerWidth, sr.right - 6)};
   const out = [];
   const seen = new Set();
-  const roleProbe = r45ayViewportRoleElements(scroller, band, {maxElements:520, scope:commentsRoot});
-  const pointProbe = {elements:[], probes:0, skippedOffscreen:0, durationMs:0};
-  let probe = roleProbe;
+  const preferPointProbe = opts.preferPointProbe !== false;
+  const allowRoleFallback = !!opts.allowRoleFallback;
+  let roleProbe = {elements:[], considered:0, skippedOffscreen:0, durationMs:0};
+  let pointProbe = {elements:[], probes:0, skippedOffscreen:0, durationMs:0};
+  let probe = pointProbe;
   let scannedNodes = 0;
   let scannedRanges = 0;
   const scanElements = (elements, source) => {
@@ -566,22 +640,28 @@ function r45ayFastVisibleCandidates(opts){
     r45ayAddVisibleCandidate(out, seen, el, r, info, started, source);
   }
   };
-  scanElements(roleProbe.elements, 'viewport_role_element');
-  if (out.length === 0) {
-    const p = r45ayViewportProbeElements(scroller, band, {maxElements:120, scope:commentsRoot});
-    pointProbe.elements = p.elements;
-    pointProbe.probes = p.probes;
-    pointProbe.skippedOffscreen = p.skippedOffscreen;
-    pointProbe.durationMs = p.durationMs;
-    probe = p;
+  if (preferPointProbe) {
+    pointProbe = r45ayViewportProbeElements(scroller, band, {maxElements:220, scope:commentsRoot});
+    probe = pointProbe;
     scanElements(pointProbe.elements, 'viewport_point_element');
+  }
+  if (out.length === 0 && allowRoleFallback) {
+    roleProbe = r45ayViewportRoleElements(scroller, band, {maxElements:260, scope:commentsRoot});
+    probe = roleProbe;
+    scanElements(roleProbe.elements, 'viewport_role_element');
+  }
+  if (!preferPointProbe && out.length === 0) {
+    roleProbe = r45ayViewportRoleElements(scroller, band, {maxElements:260, scope:commentsRoot});
+    probe = roleProbe;
+    scanElements(roleProbe.elements, 'viewport_role_element');
   }
   out.sort((a,b) => (a.priority - b.priority) || (b.y - a.y) || (a.x - b.x));
   const items = out.slice(0, maxCandidates);
   const counts = {};
   for (const item of items) counts[item.category] = (counts[item.category] || 0) + 1;
   const scanMs = Math.round((performance.now() - started) * 100) / 100;
-  const rootDebug = {...rootInfo};
+  const rootDebug = {...surface};
+  delete rootDebug.activeScroller;
   delete rootDebug.commentsRoot;
   return {
     ok:true,
@@ -591,15 +671,18 @@ function r45ayFastVisibleCandidates(opts){
     scanDurationMs:scanMs,
     scanStats:{
       viewport_only:true,
-      scan_scope:'comment_root',
-      comment_root_ok:!!rootInfo.ok,
-      comment_root_confidence:rootInfo.confidence || 0,
+      scan_scope:'comment_surface',
+      comment_surface_ok:!!surface.ok,
+      comment_surface_confidence:surface.confidence || 0,
+      comment_root_ok:!!surface.ok,
+      comment_root_confidence:surface.confidence || 0,
       root_scanned_nodes:scannedNodes,
       root_skipped_offscreen_nodes:(roleProbe.skippedOffscreen || 0) + (pointProbe.skippedOffscreen || 0),
       scanned_nodes:scannedNodes,
       scanned_ranges:scannedRanges,
       role_nodes:roleProbe.elements.length,
       role_considered:0,
+      global_role_considered:0,
       root_role_considered:roleProbe.considered,
       role_skipped_offscreen_nodes:roleProbe.skippedOffscreen,
       role_probe_ms:roleProbe.durationMs,
@@ -615,7 +698,8 @@ function r45ayFastVisibleCandidates(opts){
     progress: includeProgress ? r45axProgressFromPage() : null,
     expectedTotalEvidence: includeExpectedEvidence && opts.expectedTotal ? r45axExpectedTotalEvidence(opts.expectedTotal) : null,
     scroller:{scrollTop:scroller.scrollTop||0, scrollHeight:scroller.scrollHeight||0, clientHeight:scroller.clientHeight||0, childElementCount:scroller.childElementCount||0, atBottom:(scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8)},
-    commentRoot:rootDebug
+    commentRoot:rootDebug,
+    commentSurface:rootDebug
   };
 }
 function r45ayFinalBlockEvidence(opts){
@@ -1290,14 +1374,27 @@ def residual_queue_merge_text_candidates(
     candidates: List[Dict[str, Any]],
     *,
     step: int,
+    stale_text_keys: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
     added = 0
     updated = 0
+    skipped_stale = 0
     labels: List[str] = []
     positions: List[int] = []
     for item in candidates or []:
         key = str(item.get("contextual_key") or item.get("key") or py_stable_candidate_key(item))
         if not key:
+            continue
+        if stale_text_keys and int(stale_text_keys.get(key) or 0) >= 2:
+            skipped_stale += 1
+            log("R45AY_RESIDUAL_QUEUE_SKIP", {
+                "key": key,
+                "label": str(item.get("label") or ""),
+                "category": str(item.get("category") or ""),
+                "step": step,
+                "reason": "text_locator_candidate_stale_after_local_misses",
+                "stale_count": int(stale_text_keys.get(key) or 0),
+            })
             continue
         position = max(0, int(float(item.get("approx_scroll_position") or 0)))
         band = int(position / 350)
@@ -1339,6 +1436,7 @@ def residual_queue_merge_text_candidates(
         "text_candidates": len(candidates or []),
         "added": added,
         "updated": updated,
+        "skipped_stale": skipped_stale,
         "queue_size": len(queue),
         "labels": sorted(set(label for label in labels if label))[:40],
         "approx_positions": positions[:40],
@@ -1391,6 +1489,30 @@ def residual_queue_resolve_near(
     return removed
 
 
+def residual_queue_mark_stale(
+    queue: Dict[str, Dict[str, Any]],
+    entry: Dict[str, Any],
+    *,
+    step: int,
+    reason: str,
+) -> bool:
+    key = str((entry or {}).get("contextual_key") or "")
+    if not key or key not in queue:
+        return False
+    removed = queue.pop(key)
+    log("R45AY_RESIDUAL_QUEUE_UPDATE", {
+        "key": key,
+        "label": removed.get("label"),
+        "category": removed.get("category"),
+        "step": step,
+        "last_result": "stale_missed",
+        "reason": reason,
+        "position": removed.get("approx_scroll_position"),
+        "remaining": len(queue),
+    })
+    return True
+
+
 def scan_signature(scan: Dict[str, Any]) -> Dict[str, Any]:
     scroller = (scan or {}).get("scroller") or {}
     return {
@@ -1420,6 +1542,102 @@ def signature_changed(before: Dict[str, Any], after: Dict[str, Any]) -> bool:
     return json.dumps(before or {}, sort_keys=True) != json.dumps(after or {}, sort_keys=True)
 
 
+def r45ay_scroll_window(scroll_top: int, client_height: int) -> int:
+    return int(max(0, scroll_top) / max(280, int(max(220, client_height) * 0.75)))
+
+
+def r45ay_next_residual_position(
+    residual_queue: Dict[str, Dict[str, Any]],
+    *,
+    current_top: int,
+    client_height: int,
+    scroll_height: int,
+) -> Optional[int]:
+    if not residual_queue:
+        return None
+    lower_bound = max(0, current_top + int(client_height * 0.85))
+    upper_bound = max(0, scroll_height - client_height)
+    positions = sorted(
+        max(0, int(entry.get("approx_scroll_position") or 0))
+        for entry in residual_queue.values()
+        if int(entry.get("approx_scroll_position") or 0) >= lower_bound
+    )
+    if not positions:
+        return None
+    return max(0, min(positions[0] - int(client_height * 0.35), upper_bound))
+
+
+def r45ay_scroll_gate_decision(
+    *,
+    step: int,
+    scan: Dict[str, Any],
+    residual_queue: Dict[str, Dict[str, Any]],
+    visited_windows: Dict[int, int],
+    current_top: int,
+    current_height: int,
+    client_height: int,
+    stable_height_checks: int,
+    stalled_wheels: int,
+    last_scroll_signature: Optional[Tuple[int, int]],
+    expected_total: int,
+    best_progress: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    at_bottom = bool(current_top + client_height >= current_height - 8)
+    near_bottom = bool(current_top + client_height >= current_height - client_height)
+    counts = (scan or {}).get("counts") or {}
+    labels = [str(item.get("label") or "") for item in ((scan or {}).get("items") or [])[:20]]
+    has_loader = bool(counts.get("comment_list_loader")) or any(re.search(r"\b(Loading|See more comments|View more comments|More comments|Show more comments)\b", label, re.I) for label in labels)
+    height_growing = bool(last_scroll_signature and int(last_scroll_signature[1]) < int(current_height))
+    mutation_pending = bool(height_growing or stable_height_checks <= 0)
+    residual_target = r45ay_next_residual_position(
+        residual_queue,
+        current_top=current_top,
+        client_height=client_height,
+        scroll_height=current_height,
+    )
+    residual_target_pending = residual_target is not None
+    window = r45ay_scroll_window(current_top, client_height)
+    next_top = min(max(0, current_height - client_height), current_top + max(760, min(1400, int(client_height * 1.35))))
+    next_window = r45ay_scroll_window(next_top, client_height)
+    current_window_visits = int(visited_windows.get(window, 0))
+    next_window_visits = int(visited_windows.get(next_window, 0))
+    unvisited_window_pending = bool(next_top > current_top and next_window_visits == 0)
+    progress_below_expected = bool(expected_total and not r45ax_progress_gate_ok(best_progress, expected_total))
+    bottom_loading = bool((at_bottom or near_bottom) and (has_loader or height_growing or mutation_pending or (progress_below_expected and stable_height_checks < 2)))
+    decision: Dict[str, Any] = {
+        "allowed": False,
+        "reason": "no_loading_or_unvisited_window_evidence",
+        "method": "none",
+        "target_top": None,
+        "atBottom": at_bottom,
+        "nearBottom": near_bottom,
+        "has_loader": has_loader,
+        "height_growing": height_growing,
+        "mutation_pending": mutation_pending,
+        "residual_target_pending": residual_target_pending,
+        "unvisited_window_pending": unvisited_window_pending,
+        "scrollTop": current_top,
+        "scrollHeight": current_height,
+        "clientHeight": client_height,
+        "step": step,
+        "window": window,
+        "current_window_visits": current_window_visits,
+        "next_window": next_window,
+        "next_window_visits": next_window_visits,
+        "residual_queue_size": len(residual_queue),
+        "safe_candidates_in_viewport": int((scan or {}).get("candidateCount") or 0),
+    }
+    if residual_target_pending:
+        decision.update({"allowed": True, "reason": "residual_target_pending", "method": "direct_position", "target_top": residual_target})
+    elif unvisited_window_pending:
+        decision.update({"allowed": True, "reason": "unvisited_comment_surface_window", "method": "direct_position", "target_top": next_top})
+    elif bottom_loading:
+        decision.update({"allowed": True, "reason": "bottom_loading_evidence", "method": "wheel", "target_top": None})
+    elif current_window_visits > 1 and not has_loader and not height_growing and not mutation_pending:
+        decision.update({"reason": "repeated_empty_window_without_loading_evidence"})
+    return decision
+
+
 async def install_engine(page) -> None:
     install_js = """() => {
 """ + EXPAND_PATTERNS_JS + "\n" + R45AY_ENGINE_JS + """
@@ -1440,6 +1658,8 @@ window.r45ayScroll = r45ayScroll;
 window.r45ayFastVisibleCandidates = r45ayFastVisibleCandidates;
 window.r45ayResolveCommentsRoot = r45ayResolveCommentsRoot;
 window.r45ayResolveCommentsRootInfo = r45ayResolveCommentsRootInfo;
+window.r45ayResolveCommentSurface = r45ayResolveCommentSurface;
+window.r45ayResolveCommentSurfaceInfo = r45ayResolveCommentSurfaceInfo;
 window.r45ayCommentFilterState = r45ayCommentFilterState;
 window.r45ayProgressEvidenceScan = r45ayProgressEvidenceScan;
 window.r45ayPageLoopScan = r45ayPageLoopScan;
@@ -1773,6 +1993,7 @@ async def progress_evidence_scan(page, expected_total: int, *, mode: str, step: 
         "evidence": (result or {}).get("expectedTotalEvidence"),
         "duration_ms": (result or {}).get("durationMs"),
         "source": "visible_scroller_viewport" if mode == "cheap" else "scroller_body_aria_title_html",
+        "progress_scan_scope": "hot_visible_viewport" if mode == "cheap" else "cold_diagnostic",
     })
     return {**(result or {}), "filtered_progress": progress}
 
@@ -2654,6 +2875,7 @@ async def residual_forward_drain(
     started_monotonic: float,
     max_seconds: float,
     pass_number: int,
+    stale_text_keys: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
     include_guarded = bool(args.include_guarded_view_more)
     max_burst = max(1, int(args.max_burst_clicks or 30))
@@ -2751,12 +2973,15 @@ async def residual_forward_drain(
                     "includeProgress": False,
                     "includeExpectedEvidence": False,
                     "allowVisibleTextFallback": False,
+                    "preferPointProbe": True,
+                    "allowRoleFallback": False,
                 },
             )
             scan_ms = round((time.perf_counter() - scan_started) * 1000.0, 3)
             scan_durations.append(scan_ms)
             bands_scanned += 1
             raw_items = list((scan or {}).get("items") or [])
+            scan_stats = (scan or {}).get("scanStats") or {}
             candidates, duplicates = dedupe_candidates(raw_items)
             if duplicates:
                 log("R45AY_CANDIDATE_DEDUPE", {"scope": "residual_drain", "pass": pass_number, "duplicate_count": len(duplicates)})
@@ -2770,10 +2995,26 @@ async def residual_forward_drain(
                 "labels": [item.get("label") for item in candidates[:10]],
                 "scan_ms": scan_ms,
                 "scroll": (scan or {}).get("scroller"),
+                "scan_scope": scan_stats.get("scan_scope"),
+                "comment_surface_ok": scan_stats.get("comment_surface_ok"),
+                "comment_surface_confidence": scan_stats.get("comment_surface_confidence"),
+                "root_scanned_nodes": scan_stats.get("root_scanned_nodes"),
+                "root_skipped_offscreen_nodes": scan_stats.get("root_skipped_offscreen_nodes"),
+                "global_role_considered": scan_stats.get("global_role_considered", scan_stats.get("role_considered")),
             })
             if not candidates:
                 empty_visits += 1
                 stale_skips += 1
+                removed_stale = residual_queue_mark_stale(
+                    residual_queue,
+                    entry,
+                    step=-pass_number,
+                    reason="residual_position_local_window_no_candidate",
+                )
+                if removed_stale and stale_text_keys is not None:
+                    stale_key = str(entry.get("contextual_key") or "")
+                    if stale_key:
+                        stale_text_keys[stale_key] = int(stale_text_keys.get(stale_key) or 0) + 1
                 if scan_ms > 700:
                     log("R45AY_RESIDUAL_EMPTY_SCAN_SKIP_AHEAD", {
                         "pass": pass_number,
@@ -2961,6 +3202,7 @@ async def run_forward_throughput_engine(
     residual_drains: List[Dict[str, Any]] = []
     residual_text_locator_runs: List[Dict[str, Any]] = []
     residual_queue_text_merges: List[Dict[str, Any]] = []
+    residual_text_stale_keys: Dict[str, int] = {}
     residual_progress_continued = False
     last_residual_cycle_made_progress = False
     last_residual_cycle_no_progress = False
@@ -2969,6 +3211,14 @@ async def run_forward_throughput_engine(
     residual_phase_ran = False
     residual_phase_skipped_no_time = False
     bottom: Optional[Dict[str, Any]] = None
+    visited_scroll_windows: Dict[int, int] = {}
+    scroll_gate_allowed_count = 0
+    scroll_gate_suppressed_count = 0
+    repeated_empty_window_suppressed_count = 0
+    direct_position_scroll_count = 0
+    wheel_scroll_count = 0
+    bottom_loading_scroll_count = 0
+    comment_surface_scope_leak_count = 0
     bootstrap: Dict[str, Any] = {}
     resumed_inert_count = 0
     resumed_result: Optional[Dict[str, Any]] = None
@@ -2988,8 +3238,9 @@ async def run_forward_throughput_engine(
         "phase": "forward_start",
     })
     log("R45AY_PROGRESS_CADENCE", {"cheap_visible_every_steps": 50, "heavy_every_steps": 250, "heavy_min_interval_seconds": 60, "heavy_reasons": ["startup", "cadence_250_steps", "final"]})
-    comments_root_info = await page.evaluate("r45ayResolveCommentsRootInfo()")
+    comments_root_info = await page.evaluate("r45ayResolveCommentSurfaceInfo()")
     log("R45AY_COMMENT_ROOT_RESOLVE", comments_root_info)
+    log("R45AY_COMMENT_SURFACE_RESOLVE", comments_root_info)
     if expected_total and not skip_bootstrap:
         startup_progress = await progress_evidence_scan(page, expected_total, mode="heavy", step=0, reason="forward_startup")
         best_progress = startup_progress.get("filtered_progress")
@@ -3039,6 +3290,8 @@ async def run_forward_throughput_engine(
             "expectedTotal": expected_total,
             "includeProgress": False,
             "includeExpectedEvidence": False,
+            "preferPointProbe": True,
+            "allowRoleFallback": False,
         })
         scan_ms = round((time.perf_counter() - scan_started) * 1000.0, 3)
         scan_durations.append(scan_ms)
@@ -3046,6 +3299,8 @@ async def run_forward_throughput_engine(
         current_top = int(scroller.get("scrollTop") or 0)
         current_height = int(scroller.get("scrollHeight") or 0)
         client_height = max(220, int(scroller.get("clientHeight") or 520))
+        current_window = r45ay_scroll_window(current_top, client_height)
+        visited_scroll_windows[current_window] = int(visited_scroll_windows.get(current_window, 0)) + 1
         max_scroll_height = max(max_scroll_height, current_height)
         if current_height == last_height_seen:
             stable_height_checks += 1
@@ -3084,6 +3339,15 @@ async def run_forward_throughput_engine(
             filtered.append(copied)
         total_candidates_seen += len(filtered)
         scan_stats = scan.get("scanStats") or {}
+        global_role_considered = int(scan_stats.get("global_role_considered") or scan_stats.get("role_considered") or 0)
+        if global_role_considered > 0:
+            comment_surface_scope_leak_count += 1
+            log("R45AY_COMMENT_SURFACE_SCOPE_LEAK", {
+                "scan_name": "forward_throughput",
+                "global_role_considered": global_role_considered,
+                "step": step,
+                "reason": "hot_scan_reported_global_role_considered_inside_comment_surface_mode",
+            })
         if step == 1 or step % 50 == 0 or scan_ms > 500:
             log("R45AY_VIEWPORT_SCAN_MODE", {"step": step, **scan_stats})
         if step == 1 or step % 50 == 0 or filtered or residual_queue:
@@ -3130,19 +3394,88 @@ async def run_forward_throughput_engine(
         if filtered:
             for item in filtered:
                 residual_queue_update(residual_queue, item, step=step, scan=scan, result="found_not_clicked_same_band_limit")
+        gate = r45ay_scroll_gate_decision(
+            step=step,
+            scan=scan,
+            residual_queue=residual_queue,
+            visited_windows=visited_scroll_windows,
+            current_top=current_top,
+            current_height=current_height,
+            client_height=client_height,
+            stable_height_checks=stable_height_checks,
+            stalled_wheels=stalled_wheels,
+            last_scroll_signature=last_scroll_signature,
+            expected_total=expected_total,
+            best_progress=best_progress,
+        )
+        log("R45AY_SCROLL_GATE_DECISION", gate)
+        if not gate.get("allowed"):
+            scroll_gate_suppressed_count += 1
+            if str(gate.get("reason")) == "repeated_empty_window_without_loading_evidence":
+                repeated_empty_window_suppressed_count += 1
+            log("R45AY_SCROLL_SUPPRESSED_NO_LOADING_EVIDENCE", {
+                "reason": gate.get("reason"),
+                "atBottom": gate.get("atBottom"),
+                "nearBottom": gate.get("nearBottom"),
+                "scrollTop": current_top,
+                "scrollHeight": current_height,
+                "clientHeight": client_height,
+                "residual_queue_size": len(residual_queue),
+                "safe_candidates_in_viewport": int(scan.get("candidateCount") or 0),
+                "step": step,
+            })
+            if residual_queue or (expected_total and not r45ax_progress_gate_ok(best_progress, expected_total)):
+                if not residual_reserve_triggered:
+                    residual_reserve_triggered = True
+                    log("R45AY_RESIDUAL_RESERVE_TRIGGER", {
+                        "step": step,
+                        "time_remaining_ms": hard_time_remaining_ms(),
+                        "total_time_elapsed_ms": total_elapsed_ms(),
+                        "hard_time_remaining_ms": hard_time_remaining_ms(),
+                        "residual_reserve_ms": residual_reserve_ms,
+                        "forward_elapsed_ms": total_elapsed_ms(),
+                        "residual_queue_count": len(residual_queue),
+                        "reason": "scroll_gate_suppressed_forward_conveyor_with_residual_or_incomplete_expected_total",
+                        "scrollTop": current_top,
+                        "scrollHeight": current_height,
+                        "progress": best_progress,
+                    })
+                break
+            break
+        scroll_gate_allowed_count += 1
         scroll_started = time.perf_counter()
         delta = max(760, min(1400, int(client_height * 1.35)))
-        if getattr(args, "scroll_engine", "trusted_wheel") == "trusted_wheel":
+        if gate.get("method") == "direct_position":
+            target_top = int(gate.get("target_top") or 0)
+            scroll_result = await page.evaluate(
+                """(top) => {
+                  const s = r45axGetScroller();
+                  if (!s) return {ok:false, reason:'no_active_scroller'};
+                  const before = Math.round(s.scrollTop || 0);
+                  const bounded = Math.max(0, Math.min(Number(top)||0, Math.max(0, (s.scrollHeight||0) - (s.clientHeight||0))));
+                  s.scrollTop = bounded;
+                  return {ok:true, method:'direct_scrollTop', before, after:Math.round(s.scrollTop||0), targetTop:Math.round(bounded), scrollHeight:Math.round(s.scrollHeight||0), clientHeight:Math.round(s.clientHeight||0), atBottom:(s.scrollTop + s.clientHeight >= s.scrollHeight - 8)};
+                }""",
+                target_top,
+            )
+            direct_position_scroll_count += 1
+        elif getattr(args, "scroll_engine", "trusted_wheel") == "trusted_wheel":
             scroll_result = await trusted_wheel_scroll(page, cdp_session, delta)
             if scroll_result.get("ok"):
                 trusted_wheel_scrolls += 1
+                wheel_scroll_count += 1
+                if gate.get("reason") == "bottom_loading_evidence":
+                    bottom_loading_scroll_count += 1
         else:
             scroll_result = await page.evaluate("(mode) => r45ayScroll(mode)", "down")
+            wheel_scroll_count += 1
+            if gate.get("reason") == "bottom_loading_evidence":
+                bottom_loading_scroll_count += 1
         await page.wait_for_timeout(25)
         scroll_ms = round((time.perf_counter() - scroll_started) * 1000.0, 3)
         scroll_durations.append(scroll_ms)
         scrolls += 1
-        post = await page.evaluate("(opts) => r45ayPageLoopScan(opts)", {"maxCandidates": max_burst, "includeGuardedViewMore": include_guarded, "includeProgress": False, "includeExpectedEvidence": False})
+        post = await page.evaluate("(opts) => r45ayPageLoopScan(opts)", {"maxCandidates": max_burst, "includeGuardedViewMore": include_guarded, "includeProgress": False, "includeExpectedEvidence": False, "preferPointProbe": True, "allowRoleFallback": False})
         post_scroller = post.get("scroller") or {}
         signature = (int(post_scroller.get("scrollTop") or 0), int(post_scroller.get("scrollHeight") or 0))
         if signature == last_scroll_signature:
@@ -3151,7 +3484,7 @@ async def run_forward_throughput_engine(
             stalled_wheels = 0
         last_scroll_signature = signature
         max_scroll_height = max(max_scroll_height, signature[1])
-        log("R45AY_FORWARD_SCROLL", {"step": step, "scroll": scroll_result, "scroll_ms": scroll_ms, "scrollTop": signature[0], "scrollHeight": signature[1], "stalled_wheels": stalled_wheels})
+        log("R45AY_FORWARD_SCROLL", {"step": step, "scroll": scroll_result, "scroll_ms": scroll_ms, "scrollTop": signature[0], "scrollHeight": signature[1], "stalled_wheels": stalled_wheels, "gate_reason": gate.get("reason"), "gate_method": gate.get("method")})
         at_bottom = bool(post_scroller.get("atBottom"))
         near_bottom = bool(signature[0] + client_height >= signature[1] - client_height)
         remaining_ms = hard_time_remaining_ms()
@@ -3265,6 +3598,7 @@ async def run_forward_throughput_engine(
                     residual_queue,
                     list(locator_summary.get("candidates") or []),
                     step=-1000 - residual_cycle,
+                    stale_text_keys=residual_text_stale_keys,
                 )
                 residual_queue_text_merges.append(merge_summary)
             if not residual_queue:
@@ -3288,6 +3622,7 @@ async def run_forward_throughput_engine(
                 started_monotonic=started,
                 max_seconds=max_seconds,
                 pass_number=residual_cycle,
+                stale_text_keys=residual_text_stale_keys,
             )
             residual_drains.append(drain)
             clicked += int(drain.get("clicked") or 0)
@@ -3327,6 +3662,13 @@ async def run_forward_throughput_engine(
             last_residual_cycle_no_progress = not last_residual_cycle_made_progress
             time_remaining_after_drain_ms = hard_time_remaining_ms()
             if last_residual_cycle_made_progress:
+                if growth and residual_text_stale_keys:
+                    residual_text_stale_keys.clear()
+                    log("R45AY_RESIDUAL_TEXT_STALE_RESET_ON_GROWTH", {
+                        "cycle": residual_cycle,
+                        "scrollHeight_start": scroll_height_start,
+                        "scrollHeight_end": scroll_height_end,
+                    })
                 residual_progress_continued = True
                 log("R45AY_RESIDUAL_PROGRESS_CONTINUE", {
                     "cycle": residual_cycle,
@@ -3428,6 +3770,14 @@ async def run_forward_throughput_engine(
             click_timings_all.extend(list((resumed_result.get("metrics") or {}).get("clickTimings", [])))
             residual_drains.extend(list(resumed_result.get("residualDrains") or []))
             resumed_summary = resumed_result.get("residualSummary") or {}
+            resumed_gate = resumed_result.get("gateSummary") or {}
+            scroll_gate_allowed_count += int(resumed_gate.get("scrollGateAllowedCount") or resumed_summary.get("scroll_gate_allowed_count") or 0)
+            scroll_gate_suppressed_count += int(resumed_gate.get("scrollGateSuppressedCount") or resumed_summary.get("scroll_gate_suppressed_count") or 0)
+            repeated_empty_window_suppressed_count += int(resumed_gate.get("repeatedEmptyWindowSuppressedCount") or resumed_summary.get("repeated_empty_window_suppressed_count") or 0)
+            direct_position_scroll_count += int(resumed_gate.get("directPositionScrollCount") or resumed_summary.get("direct_position_scroll_count") or 0)
+            wheel_scroll_count += int(resumed_gate.get("wheelScrollCount") or resumed_summary.get("wheel_scroll_count") or 0)
+            bottom_loading_scroll_count += int(resumed_gate.get("bottomLoadingScrollCount") or resumed_summary.get("bottom_loading_scroll_count") or 0)
+            comment_surface_scope_leak_count += int(resumed_gate.get("commentSurfaceScopeLeakCount") or resumed_summary.get("comment_surface_scope_leak_count") or 0)
             if resumed_summary.get("text_locator_runs"):
                 residual_text_locator_runs.extend([{
                     "text_matches": resumed_summary.get("text_locator_matches", 0),
@@ -3470,6 +3820,8 @@ async def run_forward_throughput_engine(
             if residual_phase_skipped_no_time
             else "BLOCKED_R45AY_TRUSTED_CDP_TIME_BUDGET_EXPIRED_WITHOUT_TERMINAL_PROOF"
         )
+    elif final_residual_evidence and final_residual_evidence.get("terminal_block_allowed"):
+        status = "BLOCKED_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_UNSATISFIED"
     else:
         status = "BLOCKED_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_UNSATISFIED" if bottom_checks and bool((bottom or {}).get("terminal")) else "BLOCKED_R45AY_TRUSTED_CDP_TIME_BUDGET_EXPIRED_WITHOUT_TERMINAL_PROOF"
     elapsed_ms = total_elapsed_ms()
@@ -3492,14 +3844,31 @@ async def run_forward_throughput_engine(
         "text_locator_rejected": sum(int(run.get("rejected") or 0) for run in residual_text_locator_runs),
         "text_merge_added": sum(int(run.get("added") or 0) for run in residual_queue_text_merges),
         "text_merge_updated": sum(int(run.get("updated") or 0) for run in residual_queue_text_merges),
+        "text_merge_skipped_stale": sum(int(run.get("skipped_stale") or 0) for run in residual_queue_text_merges),
         "continued_after_residual_progress": residual_progress_continued,
         "reserve_triggered": residual_reserve_triggered,
         "residual_phase_ran": residual_phase_ran,
         "residual_phase_skipped_no_time": residual_phase_skipped_no_time,
         "residual_reserve_ms": residual_reserve_ms,
+        "scroll_gate_allowed_count": scroll_gate_allowed_count,
+        "scroll_gate_suppressed_count": scroll_gate_suppressed_count,
+        "repeated_empty_window_suppressed_count": repeated_empty_window_suppressed_count,
+        "direct_position_scroll_count": direct_position_scroll_count,
+        "wheel_scroll_count": wheel_scroll_count,
+        "bottom_loading_scroll_count": bottom_loading_scroll_count,
+        "comment_surface_scope_leak_count": comment_surface_scope_leak_count,
     }
     log("R45AY_FORWARD_TIMING", {"clicked": clicked, "clicks_per_minute": clicks_per_minute, "materialized_bursts": materialized_bursts, "inert_count": inert_count, "forward_bands_scanned": forward_bands_scanned, "bottom_range_bands_scanned": bottom_range_bands_scanned, "max_scroll_height": max_scroll_height, "fallback_count": fallback_count, "target_drift_count": target_drift_count, "cdp_events_per_click": timing.get("clicks", {}).get("click_count") and 2.0 or 0.0, "median_scan_duration_ms": timing["scan_duration"]["median_ms"], "p95_scan_duration_ms": timing["scan_duration"]["p95_ms"], "median_settle_ms": timing["adaptive_settle"]["median_ms"], "p95_settle_ms": timing["adaptive_settle"]["p95_ms"], "status": status, "elapsed_ms": elapsed_ms, **residual_summary})
-    return {"ok": ok, "status": status, "clicked": clicked, "bursts": bursts, "materializedBursts": materialized_bursts, "fallbackCount": fallback_count, "targetDriftCount": target_drift_count, "bestProgress": best_progress, "scrolls": scrolls, "trustedWheelScrolls": trusted_wheel_scrolls, "loaderClicks": loader_clicks, "falseBottomRecoveries": 0, "bottomRangeChecks": bottom_checks, "forwardBandsScanned": forward_bands_scanned, "bottomRangeBandsScanned": bottom_range_bands_scanned, "inertCount": inert_count, "maxScrollHeight": max_scroll_height, "totalCandidatesSeen": total_candidates_seen, "fullSweepRetries": 0, "lastFullSurfaceSweep": {}, "largeBucketBootstrap": bootstrap, "residualDrains": residual_drains, "residualSummary": residual_summary, "finalResidualEvidence": final_residual_evidence, "elapsed_ms": elapsed_ms, "events": events, "timing": timing, "metrics": {"clickTimings": click_timings_all, "scanDurations": scan_durations, "settleDurations": settle_durations, "emptyScrollDurations": scroll_durations}}
+    gate_summary = {
+        "scrollGateAllowedCount": scroll_gate_allowed_count,
+        "scrollGateSuppressedCount": scroll_gate_suppressed_count,
+        "repeatedEmptyWindowSuppressedCount": repeated_empty_window_suppressed_count,
+        "directPositionScrollCount": direct_position_scroll_count,
+        "wheelScrollCount": wheel_scroll_count,
+        "bottomLoadingScrollCount": bottom_loading_scroll_count,
+        "commentSurfaceScopeLeakCount": comment_surface_scope_leak_count,
+    }
+    return {"ok": ok, "status": status, "clicked": clicked, "bursts": bursts, "materializedBursts": materialized_bursts, "fallbackCount": fallback_count, "targetDriftCount": target_drift_count, "bestProgress": best_progress, "scrolls": scrolls, "trustedWheelScrolls": trusted_wheel_scrolls, "loaderClicks": loader_clicks, "falseBottomRecoveries": 0, "bottomRangeChecks": bottom_checks, "forwardBandsScanned": forward_bands_scanned, "bottomRangeBandsScanned": bottom_range_bands_scanned, "inertCount": inert_count, "maxScrollHeight": max_scroll_height, "totalCandidatesSeen": total_candidates_seen, "fullSweepRetries": 0, "lastFullSurfaceSweep": {}, "largeBucketBootstrap": bootstrap, "residualDrains": residual_drains, "residualSummary": residual_summary, "gateSummary": gate_summary, "finalResidualEvidence": final_residual_evidence, "elapsed_ms": elapsed_ms, "events": events, "timing": timing, "metrics": {"clickTimings": click_timings_all, "scanDurations": scan_durations, "settleDurations": settle_durations, "emptyScrollDurations": scroll_durations}}
 
 
 async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespace, story: str) -> Dict[str, Any]:
