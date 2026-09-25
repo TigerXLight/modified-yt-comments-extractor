@@ -1447,6 +1447,97 @@ def residual_candidate_position(item: Dict[str, Any], scan: Dict[str, Any]) -> i
         return max(0, int(scroller.get("scrollTop") or 0))
 
 
+def residual_normalized_label(label: str) -> str:
+    return re.sub(r"\s+", " ", str(label or "").strip().lower())
+
+
+def residual_tombstone_key(category: str, label: str, position: int, *, band_px: int = 700) -> str:
+    band = int(max(0, int(position or 0)) / max(220, int(band_px or 700)))
+    return "|".join([str(category or ""), residual_normalized_label(label), str(band)])
+
+
+def residual_tombstone_key_for_item(item: Dict[str, Any]) -> str:
+    position = max(0, int(float((item or {}).get("approx_scroll_position") or 0)))
+    return residual_tombstone_key(
+        str((item or {}).get("category") or ""),
+        str((item or {}).get("label") or ""),
+        position,
+    )
+
+
+def residual_tombstone_should_skip(
+    tombstones: Dict[str, Dict[str, Any]],
+    item: Dict[str, Any],
+    *,
+    current_scroll_height: int,
+    local_signature: Optional[str] = None,
+    min_misses: int = 3,
+) -> Tuple[bool, str, Dict[str, Any]]:
+    key = residual_tombstone_key_for_item(item)
+    tombstone = tombstones.get(key) or {}
+    if not tombstone or int(tombstone.get("miss_count") or 0) < min_misses:
+        return False, key, tombstone
+    old_scroll_height = int(tombstone.get("scroll_height") or 0)
+    old_position = int(tombstone.get("position") or 0)
+    position = max(0, int(float((item or {}).get("approx_scroll_position") or 0)))
+    old_signature = str(tombstone.get("local_signature") or "")
+    local_signature = str(local_signature or "")
+    height_delta = max(0, int(current_scroll_height or 0) - old_scroll_height)
+    height_threshold = max(1500, int(max(old_scroll_height, 1) * 0.04))
+    position_delta = abs(position - old_position)
+    position_threshold = 120
+    if position_delta >= position_threshold:
+        return False, key, tombstone
+    if old_signature and local_signature and old_signature != local_signature:
+        return False, key, tombstone
+    if height_delta >= height_threshold and local_signature and not old_signature:
+        return False, key, tombstone
+    return True, key, tombstone
+
+
+def residual_tombstone_add(
+    tombstones: Dict[str, Dict[str, Any]],
+    entry: Dict[str, Any],
+    *,
+    scan: Dict[str, Any],
+    local_signature: str = "",
+    reason: str,
+) -> Dict[str, Any]:
+    scroller = (scan or {}).get("scroller") or {}
+    position = max(0, int((entry or {}).get("approx_scroll_position") or 0))
+    key = residual_tombstone_key(
+        str((entry or {}).get("category") or ""),
+        str((entry or {}).get("label") or ""),
+        position,
+    )
+    existing = tombstones.get(key) or {}
+    tombstone = {
+        "key": key,
+        "category": str((entry or {}).get("category") or ""),
+        "label": str((entry or {}).get("label") or ""),
+        "position": position,
+        "position_band": int(position / 700),
+        "scroll_height": int(scroller.get("scrollHeight") or 0),
+        "scroll_top": int(scroller.get("scrollTop") or 0),
+        "local_signature": str(local_signature or existing.get("local_signature") or ""),
+        "miss_count": int(existing.get("miss_count") or 0) + 1,
+        "reason": reason,
+    }
+    tombstones[key] = tombstone
+    log("R45AY_RESIDUAL_TOMBSTONE_ADD", {
+        "key": key,
+        "category": tombstone["category"],
+        "label": tombstone["label"],
+        "position": tombstone["position"],
+        "position_band": tombstone["position_band"],
+        "scroll_height": tombstone["scroll_height"],
+        "miss_count": tombstone["miss_count"],
+        "reason": reason,
+        "local_signature": tombstone["local_signature"][:24],
+    })
+    return tombstone
+
+
 def residual_queue_update(
     queue: Dict[str, Dict[str, Any]],
     item: Dict[str, Any],
@@ -1502,10 +1593,13 @@ def residual_queue_merge_text_candidates(
     *,
     step: int,
     stale_text_keys: Optional[Dict[str, int]] = None,
+    residual_tombstones: Optional[Dict[str, Dict[str, Any]]] = None,
+    current_scroll_height: int = 0,
 ) -> Dict[str, Any]:
     added = 0
     updated = 0
     skipped_stale = 0
+    tombstone_skips = 0
     labels: List[str] = []
     positions: List[int] = []
     for item in candidates or []:
@@ -1524,6 +1618,27 @@ def residual_queue_merge_text_candidates(
             })
             continue
         position = max(0, int(float(item.get("approx_scroll_position") or 0)))
+        if residual_tombstones is not None:
+            skip_tombstone, tombstone_key, tombstone = residual_tombstone_should_skip(
+                residual_tombstones,
+                item,
+                current_scroll_height=current_scroll_height,
+            )
+            if skip_tombstone:
+                tombstone_skips += 1
+                log("R45AY_RESIDUAL_TOMBSTONE_SKIP", {
+                    "key": tombstone_key,
+                    "candidate_key": key,
+                    "label": str(item.get("label") or ""),
+                    "category": str(item.get("category") or ""),
+                    "position": position,
+                    "tombstone_position": tombstone.get("position"),
+                    "miss_count": tombstone.get("miss_count"),
+                    "scroll_height": current_scroll_height,
+                    "tombstone_scroll_height": tombstone.get("scroll_height"),
+                    "reason": "text_locator_candidate_tombstoned_stale_local_window",
+                })
+                continue
         band = int(position / 350)
         labels.append(str(item.get("label") or ""))
         positions.append(position)
@@ -1564,6 +1679,7 @@ def residual_queue_merge_text_candidates(
         "added": added,
         "updated": updated,
         "skipped_stale": skipped_stale,
+        "tombstone_skips": tombstone_skips,
         "queue_size": len(queue),
         "labels": sorted(set(label for label in labels if label))[:40],
         "approx_positions": positions[:40],
@@ -1623,7 +1739,7 @@ def residual_queue_mark_stale(
     step: int,
     reason: str,
 ) -> bool:
-    key = str((entry or {}).get("contextual_key") or "")
+    key = str((entry or {}).get("contextual_key") or (entry or {}).get("key") or "")
     if not key or key not in queue:
         return False
     removed = queue.pop(key)
@@ -2999,6 +3115,7 @@ async def actionable_expansion_verify(
     args: argparse.Namespace,
     *,
     final_residual_evidence: Dict[str, Any],
+    residual_tombstones: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Cold final verifier: classify stale expansion-looking text without clicking."""
     started = time.perf_counter()
@@ -3031,7 +3148,34 @@ async def actionable_expansion_verify(
         rejected = [item for item in rejected if str(item.get("label") or "") in label_filter]
     positions: List[int] = []
     seen_bands = set()
+    tombstone_skips = 0
+    tombstone_skip_labels: List[str] = []
+    current_scroll_height = int((start_state or {}).get("scrollHeight") or 0)
     for item in located:
+        if residual_tombstones is not None:
+            skip_tombstone, tombstone_key, tombstone = residual_tombstone_should_skip(
+                residual_tombstones,
+                item,
+                current_scroll_height=current_scroll_height,
+            )
+            if skip_tombstone:
+                tombstone_skips += 1
+                label = str(item.get("label") or "")
+                if label:
+                    tombstone_skip_labels.append(label)
+                log("R45AY_RESIDUAL_TOMBSTONE_SKIP", {
+                    "key": tombstone_key,
+                    "candidate_key": str(item.get("contextual_key") or item.get("key") or ""),
+                    "label": label,
+                    "category": str(item.get("category") or ""),
+                    "position": max(0, int(item.get("approx_scroll_position") or 0)),
+                    "tombstone_position": tombstone.get("position"),
+                    "miss_count": tombstone.get("miss_count"),
+                    "scroll_height": current_scroll_height,
+                    "tombstone_scroll_height": tombstone.get("scroll_height"),
+                    "reason": "actionable_verify_candidate_tombstoned_stale_local_window",
+                })
+                continue
         pos = max(0, int(item.get("approx_scroll_position") or 0))
         band = int(pos / 260)
         if band in seen_bands:
@@ -3042,10 +3186,12 @@ async def actionable_expansion_verify(
     scan_ms_values: List[float] = []
     checked_positions: List[int] = []
     actionable_labels = set()
+    actionable_candidates: List[Dict[str, Any]] = []
     local_text_labels = set()
     loader_or_growth_pending = False
     include_guarded = bool(args.include_guarded_view_more)
     start_scroll_height = int((start_state or {}).get("scrollHeight") or 0)
+    height_growth_seen = False
     client_height = max(220, int((start_state or {}).get("clientHeight") or 0) or 520)
     for pos in positions:
         scroll_top = max(0, pos - int(client_height * 0.35))
@@ -3090,10 +3236,20 @@ async def actionable_expansion_verify(
         )
         scan_ms_values.append(float((scan or {}).get("scanDurationMs") or 0.0))
         scan_labels = {str(label) for label in list((scan or {}).get("labels") or []) if str(label)}
+        scan_label_list = [str(label) for label in list((scan or {}).get("labels") or []) if str(label)]
+        scan_category_list = [str(category) for category in list((scan or {}).get("categories") or [])]
         local_labels = {str(label) for label in list((scan or {}).get("localExpansionTextMatches") or []) if str(label)}
         # Any safe expansion candidate in a final checked window is actionable,
         # even if it was not one of the sampled stale text strings.
         actionable_labels.update(scan_labels)
+        for idx, label in enumerate(scan_label_list):
+            category = scan_category_list[idx] if idx < len(scan_category_list) and scan_category_list[idx] else "residual_actionable"
+            actionable_candidates.append({
+                "label": label,
+                "category": category,
+                "approx_scroll_position": int((state or {}).get("scrollTop") or scroll_top),
+                "key": f"actionable_verify|{category}|{label}|{int((state or {}).get('scrollTop') or scroll_top)}|{idx}",
+            })
         if label_filter:
             local_text_labels.update(local_labels.intersection(label_filter))
         else:
@@ -3102,7 +3258,7 @@ async def actionable_expansion_verify(
             loader_or_growth_pending = True
         scan_scroll = (scan or {}).get("scroll") or {}
         if int(scan_scroll.get("scrollHeight") or 0) > start_scroll_height:
-            loader_or_growth_pending = True
+            height_growth_seen = True
     await page.evaluate(
         """(top) => {
           const s = r45axGetScroller();
@@ -3127,7 +3283,6 @@ async def actionable_expansion_verify(
         and int((final_residual_evidence or {}).get("residual_queue_count") or 0) == 0
         and int((final_residual_evidence or {}).get("safe_candidates_in_current_viewport") or 0) == 0
         and int((final_residual_evidence or {}).get("bottom_range_candidates") or 0) == 0
-        and not loader_or_growth_pending
     )
     reason = (
         "no_actionable_safe_expansion_candidates_found_for_remaining_text"
@@ -3138,6 +3293,7 @@ async def actionable_expansion_verify(
         "labels_checked": labels_to_check,
         "actionable_count": actionable_count,
         "actionable_labels": sorted(actionable_labels)[:40],
+        "actionable_candidates": actionable_candidates[:80],
         "stale_text_count": len(stale_labels),
         "stale_text_labels": stale_labels[:40],
         "unsafe_rejected_count": unsafe_rejected_count,
@@ -3145,6 +3301,9 @@ async def actionable_expansion_verify(
         "locator_miss_count": len(locator_miss_labels),
         "locator_miss_labels": locator_miss_labels[:40],
         "loader_or_growth_pending": loader_or_growth_pending,
+        "height_growth_seen_during_verify": height_growth_seen,
+        "tombstone_skips": tombstone_skips,
+        "tombstone_skip_labels": sorted(set(tombstone_skip_labels))[:40],
         "checked_positions": checked_positions[:80],
         "scan_ms": value_summary(scan_ms_values),
         "locator": {k: v for k, v in locator.items() if k not in {"candidates", "rejected_items"}},
@@ -3200,6 +3359,39 @@ async def locate_residual_text_candidates(
     return summary
 
 
+async def residual_local_text_signature(page) -> str:
+    try:
+        result = await page.evaluate(
+            """() => {
+              const surface = (typeof r45ayResolveCommentSurface === 'function') ? r45ayResolveCommentSurface() : null;
+              const scroller = (surface && surface.activeScroller) || (typeof r45axGetScroller === 'function' ? r45axGetScroller() : null);
+              const root = (surface && surface.commentsRoot) || scroller;
+              if (!scroller || !root) return '';
+              const sr = scroller.getBoundingClientRect();
+              const top = sr.top - 140;
+              const bottom = sr.bottom + 140;
+              const parts = [];
+              const nodes = Array.from(root.querySelectorAll('span, div, a, [role="button"]'));
+              for (const el of nodes) {
+                if (parts.length >= 36) break;
+                const rect = el.getBoundingClientRect();
+                if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+                if (rect.bottom < top || rect.top > bottom) continue;
+                const text = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+                if (!text || text.length > 96) continue;
+                parts.push(text.slice(0, 96));
+              }
+              const joined = parts.join('|').slice(0, 2000);
+              let hash = 0;
+              for (let i = 0; i < joined.length; i++) hash = ((hash * 31) + joined.charCodeAt(i)) >>> 0;
+              return String(hash) + ':' + String(joined.length);
+            }"""
+        )
+        return str(result or "")
+    except Exception:
+        return ""
+
+
 async def residual_forward_drain(
     page,
     cdp_session: Any,
@@ -3211,6 +3403,7 @@ async def residual_forward_drain(
     max_seconds: float,
     pass_number: int,
     stale_text_keys: Optional[Dict[str, int]] = None,
+    residual_tombstones: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     include_guarded = bool(args.include_guarded_view_more)
     max_burst = max(1, int(args.max_burst_clicks or 30))
@@ -3267,6 +3460,7 @@ async def residual_forward_drain(
     positions_visited = 0
     empty_visits = 0
     stale_skips = 0
+    tombstone_adds = 0
     click_timings: List[Dict[str, Any]] = []
     settle_durations: List[float] = []
     scan_durations: List[float] = []
@@ -3274,7 +3468,8 @@ async def residual_forward_drain(
     for entry in entries:
         if time.monotonic() - started_monotonic >= max_seconds:
             break
-        position = max(0, int(entry.get("approx_scroll_position") or 0) - int(client_height * 0.35))
+        raw_position = max(0, int(entry.get("approx_scroll_position") or 0))
+        position = raw_position if bool(entry.get("exact_scroll_position")) else max(0, raw_position - int(client_height * 0.35))
         band = int(position / max(280, int(client_height * 0.5)))
         if band in visited_bands:
             continue
@@ -3340,12 +3535,22 @@ async def residual_forward_drain(
             if not candidates:
                 empty_visits += 1
                 stale_skips += 1
+                local_signature = await residual_local_text_signature(page)
                 removed_stale = residual_queue_mark_stale(
                     residual_queue,
                     entry,
                     step=-pass_number,
                     reason="residual_position_local_window_no_candidate",
                 )
+                if removed_stale and residual_tombstones is not None:
+                    residual_tombstone_add(
+                        residual_tombstones,
+                        entry,
+                        scan=scan,
+                        local_signature=local_signature,
+                        reason="residual_position_local_window_no_candidate",
+                    )
+                    tombstone_adds += 1
                 if removed_stale and stale_text_keys is not None:
                     stale_key = str(entry.get("contextual_key") or "")
                     if stale_key:
@@ -3452,6 +3657,7 @@ async def residual_forward_drain(
         "positions_visited": positions_visited,
         "empty_visits": empty_visits,
         "stale_skips": stale_skips,
+        "tombstone_adds": tombstone_adds,
         "scrollHeight_start": scroll_height_start,
         "scrollHeight_end": scroll_height_end,
         "growth": scroll_height_end > scroll_height_start,
@@ -3471,6 +3677,7 @@ async def residual_forward_drain(
         "positions_visited": positions_visited,
         "empty_visits": empty_visits,
         "stale_skips": stale_skips,
+        "tombstone_adds": tombstone_adds,
         "clicked": clicked,
         "materialized": materialized_bursts,
         "rejected": rejected_count,
@@ -3538,6 +3745,9 @@ async def run_forward_throughput_engine(
     residual_text_locator_runs: List[Dict[str, Any]] = []
     residual_queue_text_merges: List[Dict[str, Any]] = []
     residual_text_stale_keys: Dict[str, int] = {}
+    residual_tombstones: Dict[str, Dict[str, Any]] = {}
+    stale_only_pass_suppressed_count = 0
+    residual_stale_exhausted = False
     residual_progress_continued = False
     last_residual_cycle_made_progress = False
     last_residual_cycle_no_progress = False
@@ -3931,11 +4141,14 @@ async def run_forward_throughput_engine(
             if final_text_count > queue_count or final_text_count:
                 locator_summary = await locate_residual_text_candidates(page, args, max_candidates=180)
                 residual_text_locator_runs.append(locator_summary)
+                locator_scroll_height = int(((locator_summary.get("scroll") or {}).get("scrollHeight")) or 0)
                 merge_summary = residual_queue_merge_text_candidates(
                     residual_queue,
                     list(locator_summary.get("candidates") or []),
                     step=-1000 - residual_cycle,
                     stale_text_keys=residual_text_stale_keys,
+                    residual_tombstones=residual_tombstones,
+                    current_scroll_height=locator_scroll_height,
                 )
                 residual_queue_text_merges.append(merge_summary)
             if not residual_queue:
@@ -3960,6 +4173,7 @@ async def run_forward_throughput_engine(
                 max_seconds=max_seconds,
                 pass_number=residual_cycle,
                 stale_text_keys=residual_text_stale_keys,
+                residual_tombstones=residual_tombstones,
             )
             residual_drains.append(drain)
             clicked += int(drain.get("clicked") or 0)
@@ -3989,12 +4203,20 @@ async def run_forward_throughput_engine(
                     or int(best_progress.get("total") or 0) > int(progress_before_drain.get("total") or 0)
                 )
             )
+            stale_only_pass = bool(
+                clicked_in_drain == 0
+                and materialized_in_drain == 0
+                and not growth
+                and not progress_improved
+                and int(drain.get("positions_visited") or 0) > 0
+                and int(drain.get("stale_skips") or 0) >= max(1, int(drain.get("positions_visited") or 0) - 1)
+            )
             last_residual_cycle_made_progress = bool(
                 clicked_in_drain > 0
                 or materialized_in_drain > 0
                 or growth
                 or progress_improved
-                or queue_decreased
+                or (queue_decreased and not stale_only_pass)
             )
             last_residual_cycle_no_progress = not last_residual_cycle_made_progress
             time_remaining_after_drain_ms = hard_time_remaining_ms()
@@ -4030,6 +4252,23 @@ async def run_forward_throughput_engine(
                     })
                     break
             else:
+                if stale_only_pass:
+                    stale_only_pass_suppressed_count += 1
+                    residual_stale_exhausted = True
+                    stale_remaining = len(residual_queue)
+                    residual_queue.clear()
+                    log("R45AY_RESIDUAL_STALE_PASS_SUPPRESSED", {
+                        "cycle": residual_cycle,
+                        "positions_visited": int(drain.get("positions_visited") or 0),
+                        "stale_skips": int(drain.get("stale_skips") or 0),
+                        "empty_visits": int(drain.get("empty_visits") or 0),
+                        "tombstone_count": len(residual_tombstones),
+                        "clicked": clicked_in_drain,
+                        "materialized_bursts": materialized_in_drain,
+                        "growth": growth,
+                        "cleared_remaining_queue": stale_remaining,
+                        "reason": "residual_pass_only_revisited_stale_non_actionable_positions",
+                    })
                 log("R45AY_RESIDUAL_NO_PROGRESS_BLOCK", {
                     "cycle": residual_cycle,
                     "clicked": clicked_in_drain,
@@ -4038,7 +4277,17 @@ async def run_forward_throughput_engine(
                     "progress_improved": progress_improved,
                     "queue_decreased": queue_decreased,
                     "remaining_queue": len(residual_queue),
+                    "stale_only_pass": stale_only_pass,
                 })
+                if stale_only_pass:
+                    final_residual_evidence = await collect_final_residual_evidence(
+                        page,
+                        args,
+                        expected_total=expected_total,
+                        best_progress=best_progress,
+                        residual_queue=residual_queue,
+                        bottom=bottom,
+                    )
                 break
             log("R45AY_RESIDUAL_CYCLE_DONE", {
                 "cycle": residual_cycle,
@@ -4059,7 +4308,7 @@ async def run_forward_throughput_engine(
                 residual_queue=residual_queue,
                 bottom=bottom,
             )
-        if residual_progress_continued and not ok and time.monotonic() < hard_deadline and resume_depth < 1:
+        if residual_progress_continued and not residual_stale_exhausted and not ok and time.monotonic() < hard_deadline and resume_depth < 1:
             log("R45AY_FORWARD_RESUME_START", {
                 "resume_depth": resume_depth + 1,
                 "remaining_ms": hard_time_remaining_ms(),
@@ -4143,18 +4392,114 @@ async def run_forward_throughput_engine(
                 residual_queue=residual_queue,
                 bottom=bottom,
             )
+        elif residual_stale_exhausted:
+            if residual_queue:
+                stale_remaining = len(residual_queue)
+                residual_queue.clear()
+                log("R45AY_RESIDUAL_STALE_QUEUE_FINAL_CLEAR", {
+                    "cleared_remaining_queue": stale_remaining,
+                    "reason": "stale_only_pass_exhausted_before_terminal_verifier",
+                })
+            final_residual_evidence = await collect_final_residual_evidence(
+                page,
+                args,
+                expected_total=expected_total,
+                best_progress=best_progress,
+                residual_queue=residual_queue,
+                bottom=bottom,
+            )
     if final_residual_evidence:
         scroll = (final_residual_evidence or {}).get("scroll") or {}
         scroll_top = int(scroll.get("scrollTop") or 0)
         scroll_height = int(scroll.get("scrollHeight") or 0)
         client_height = int(scroll.get("clientHeight") or 0)
         near_bottom = bool(scroll_height and client_height and scroll_top + client_height >= scroll_height - max(12, client_height))
+        for current_round in range(3):
+            current_candidates = int(final_residual_evidence.get("safe_candidates_in_current_viewport") or 0)
+            if current_candidates <= 0 or time.monotonic() >= hard_deadline:
+                break
+            current_scroll = (final_residual_evidence or {}).get("scroll") or {}
+            current_top = max(0, int(current_scroll.get("scrollTop") or 0))
+            labels = [str(label) for label in list(final_residual_evidence.get("current_viewport_candidate_labels") or []) if str(label)]
+            current_queue: Dict[str, Dict[str, Any]] = {}
+            for idx, label in enumerate(labels[:80]):
+                key = f"pre_terminal_current|{label}|{current_top}|{current_round}|{idx}"
+                current_queue[key] = {
+                    "key": key,
+                    "label": label,
+                    "category": "pre_terminal_current",
+                    "approx_scroll_position": current_top,
+                    "band": int(current_top / 350),
+                    "first_seen_step": -9200 - current_round,
+                    "last_seen_step": -9200 - current_round,
+                    "attempt_count": 0,
+                    "last_result": "pre_terminal_current_seen",
+                    "last_reject_reason": "",
+                }
+            if not current_queue:
+                break
+            log("R45AY_ACTIONABLE_CURRENT_VIEWPORT_RECOVERY_START", {
+                "round": current_round + 1,
+                "stage": "pre_terminal",
+                "candidate_count": len(current_queue),
+                "labels": sorted(set(labels))[:40],
+                "scrollTop": current_top,
+                "time_remaining_ms": hard_time_remaining_ms(),
+            })
+            current_drain = await residual_forward_drain(
+                page,
+                cdp_session,
+                args,
+                residual_queue=current_queue,
+                expected_total=expected_total,
+                started_monotonic=started,
+                max_seconds=max_seconds,
+                pass_number=9200 + len(residual_drains) + current_round,
+                stale_text_keys=residual_text_stale_keys,
+                residual_tombstones=residual_tombstones,
+            )
+            residual_drains.append(current_drain)
+            clicked += int(current_drain.get("clicked") or 0)
+            bursts += int(current_drain.get("bursts") or 0)
+            materialized_bursts += int(current_drain.get("materialized_bursts") or 0)
+            click_timings_all.extend(list(current_drain.get("click_timings") or []))
+            settle_durations.extend(float(v) for v in list(current_drain.get("settle_durations") or []) if isinstance(v, (int, float)))
+            scan_durations.extend(float(v) for v in list(current_drain.get("scan_durations") or []) if isinstance(v, (int, float)))
+            max_scroll_height = max(max_scroll_height, int(current_drain.get("scrollHeight_end") or 0))
+            current_clicked = int(current_drain.get("residual_candidates_clicked") or current_drain.get("clicked") or 0)
+            current_materialized = int(current_drain.get("residual_candidates_materialized") or current_drain.get("materialized_bursts") or 0)
+            current_growth = bool(current_drain.get("growth")) or int(current_drain.get("scrollHeight_end") or 0) > int(current_drain.get("scrollHeight_start") or 0)
+            log("R45AY_ACTIONABLE_CURRENT_VIEWPORT_RECOVERY_DONE", {
+                "round": current_round + 1,
+                "stage": "pre_terminal",
+                "clicked": current_clicked,
+                "materialized": current_materialized,
+                "growth": current_growth,
+                "remaining_queue": len(current_queue),
+                "time_remaining_ms": hard_time_remaining_ms(),
+            })
+            if not (current_clicked or current_materialized or current_growth):
+                break
+            final_residual_evidence = await collect_final_residual_evidence(
+                page,
+                args,
+                expected_total=expected_total,
+                best_progress=best_progress,
+                residual_queue=residual_queue,
+                bottom=bottom,
+            )
+            scroll = (final_residual_evidence or {}).get("scroll") or {}
+            scroll_top = int(scroll.get("scrollTop") or 0)
+            scroll_height = int(scroll.get("scrollHeight") or 0)
+            client_height = int(scroll.get("clientHeight") or 0)
+            near_bottom = bool(scroll_height and client_height and scroll_top + client_height >= scroll_height - max(12, client_height))
+        effective_residual_queue_count = 0 if residual_stale_exhausted and not residual_queue else int(final_residual_evidence.get("residual_queue_count") or 0)
         should_verify_actionable = bool(
             int(final_residual_evidence.get("final_loaded_expansion_text_count") or 0) > 0
-            and int(final_residual_evidence.get("residual_queue_count") or 0) == 0
+            and effective_residual_queue_count == 0
             and int(final_residual_evidence.get("safe_candidates_in_current_viewport") or 0) == 0
             and int(final_residual_evidence.get("bottom_range_candidates") or 0) == 0
-            and (bool(scroll.get("atBottom")) or near_bottom)
+            and (bool(scroll.get("atBottom")) or near_bottom or residual_stale_exhausted)
             and not bool((bottom or {}).get("growth"))
         )
         if should_verify_actionable:
@@ -4162,7 +4507,506 @@ async def run_forward_throughput_engine(
                 page,
                 args,
                 final_residual_evidence=final_residual_evidence,
+                residual_tombstones=residual_tombstones,
             )
+            actionable_candidates = list((actionable_verify or {}).get("actionable_candidates") or [])
+            if actionable_candidates and time.monotonic() < hard_deadline:
+                recovery_queue: Dict[str, Dict[str, Any]] = {}
+                for idx, item in enumerate(actionable_candidates[:80]):
+                    label = str(item.get("label") or "").strip()
+                    if not label:
+                        continue
+                    category = str(item.get("category") or "residual_actionable").strip() or "residual_actionable"
+                    position = max(0, int(item.get("approx_scroll_position") or 0))
+                    key = f"actionable_verify|{category}|{label}|{position}|{idx}"
+                    recovery_queue[key] = {
+                        "key": key,
+                        "label": label,
+                        "category": category,
+                        "approx_scroll_position": position,
+                        "band": int(position / 350),
+                        "first_seen_step": -9000,
+                        "last_seen_step": -9000,
+                        "attempt_count": 0,
+                        "last_result": "actionable_verify_seen",
+                        "last_reject_reason": "",
+                        "exact_scroll_position": True,
+                    }
+                if recovery_queue:
+                    log("R45AY_ACTIONABLE_EXPANSION_RECOVERY_START", {
+                        "candidate_count": len(recovery_queue),
+                        "labels": sorted({str(item.get("label") or "") for item in recovery_queue.values() if str(item.get("label") or "")})[:40],
+                        "time_remaining_ms": hard_time_remaining_ms(),
+                    })
+                    recovery_drain = await residual_forward_drain(
+                        page,
+                        cdp_session,
+                        args,
+                        residual_queue=recovery_queue,
+                        expected_total=expected_total,
+                        started_monotonic=started,
+                        max_seconds=max_seconds,
+                        pass_number=9000 + len(residual_drains),
+                        stale_text_keys=residual_text_stale_keys,
+                        residual_tombstones=residual_tombstones,
+                    )
+                    residual_drains.append(recovery_drain)
+                    clicked += int(recovery_drain.get("clicked") or 0)
+                    bursts += int(recovery_drain.get("bursts") or 0)
+                    materialized_bursts += int(recovery_drain.get("materialized_bursts") or 0)
+                    click_timings_all.extend(list(recovery_drain.get("click_timings") or []))
+                    settle_durations.extend(float(v) for v in list(recovery_drain.get("settle_durations") or []) if isinstance(v, (int, float)))
+                    scan_durations.extend(float(v) for v in list(recovery_drain.get("scan_durations") or []) if isinstance(v, (int, float)))
+                    max_scroll_height = max(max_scroll_height, int(recovery_drain.get("scrollHeight_end") or 0))
+                    recovery_clicked = int(recovery_drain.get("residual_candidates_clicked") or recovery_drain.get("clicked") or 0)
+                    recovery_materialized = int(recovery_drain.get("residual_candidates_materialized") or recovery_drain.get("materialized_bursts") or 0)
+                    recovery_growth = bool(recovery_drain.get("growth")) or int(recovery_drain.get("scrollHeight_end") or 0) > int(recovery_drain.get("scrollHeight_start") or 0)
+                    log("R45AY_ACTIONABLE_EXPANSION_RECOVERY_DONE", {
+                        "clicked": recovery_clicked,
+                        "materialized": recovery_materialized,
+                        "growth": recovery_growth,
+                        "remaining_queue": len(recovery_queue),
+                        "time_remaining_ms": hard_time_remaining_ms(),
+                    })
+                    if recovery_clicked or recovery_materialized or recovery_growth:
+                        final_residual_evidence = await collect_final_residual_evidence(
+                            page,
+                            args,
+                            expected_total=expected_total,
+                            best_progress=best_progress,
+                            residual_queue=residual_queue,
+                            bottom=bottom,
+                        )
+                        for current_round in range(2):
+                            current_candidates = int(final_residual_evidence.get("safe_candidates_in_current_viewport") or 0)
+                            if current_candidates <= 0 or time.monotonic() >= hard_deadline:
+                                break
+                            current_scroll = (final_residual_evidence or {}).get("scroll") or {}
+                            current_top = max(0, int(current_scroll.get("scrollTop") or 0))
+                            labels = [str(label) for label in list(final_residual_evidence.get("current_viewport_candidate_labels") or []) if str(label)]
+                            current_queue: Dict[str, Dict[str, Any]] = {}
+                            for idx, label in enumerate(labels[:80]):
+                                key = f"actionable_current|{label}|{current_top}|{current_round}|{idx}"
+                                current_queue[key] = {
+                                    "key": key,
+                                    "label": label,
+                                    "category": "actionable_current",
+                                    "approx_scroll_position": current_top,
+                                    "band": int(current_top / 350),
+                                    "first_seen_step": -9100 - current_round,
+                                    "last_seen_step": -9100 - current_round,
+                                    "attempt_count": 0,
+                                    "last_result": "actionable_current_seen",
+                                    "last_reject_reason": "",
+                                    "exact_scroll_position": True,
+                                }
+                            if not current_queue:
+                                break
+                            log("R45AY_ACTIONABLE_CURRENT_VIEWPORT_RECOVERY_START", {
+                                "round": current_round + 1,
+                                "candidate_count": len(current_queue),
+                                "labels": sorted(set(labels))[:40],
+                                "scrollTop": current_top,
+                                "time_remaining_ms": hard_time_remaining_ms(),
+                            })
+                            current_drain = await residual_forward_drain(
+                                page,
+                                cdp_session,
+                                args,
+                                residual_queue=current_queue,
+                                expected_total=expected_total,
+                                started_monotonic=started,
+                                max_seconds=max_seconds,
+                                pass_number=9100 + len(residual_drains) + current_round,
+                                stale_text_keys=residual_text_stale_keys,
+                                residual_tombstones=residual_tombstones,
+                            )
+                            residual_drains.append(current_drain)
+                            clicked += int(current_drain.get("clicked") or 0)
+                            bursts += int(current_drain.get("bursts") or 0)
+                            materialized_bursts += int(current_drain.get("materialized_bursts") or 0)
+                            click_timings_all.extend(list(current_drain.get("click_timings") or []))
+                            settle_durations.extend(float(v) for v in list(current_drain.get("settle_durations") or []) if isinstance(v, (int, float)))
+                            scan_durations.extend(float(v) for v in list(current_drain.get("scan_durations") or []) if isinstance(v, (int, float)))
+                            max_scroll_height = max(max_scroll_height, int(current_drain.get("scrollHeight_end") or 0))
+                            current_clicked = int(current_drain.get("residual_candidates_clicked") or current_drain.get("clicked") or 0)
+                            current_materialized = int(current_drain.get("residual_candidates_materialized") or current_drain.get("materialized_bursts") or 0)
+                            current_growth = bool(current_drain.get("growth")) or int(current_drain.get("scrollHeight_end") or 0) > int(current_drain.get("scrollHeight_start") or 0)
+                            log("R45AY_ACTIONABLE_CURRENT_VIEWPORT_RECOVERY_DONE", {
+                                "round": current_round + 1,
+                                "clicked": current_clicked,
+                                "materialized": current_materialized,
+                                "growth": current_growth,
+                                "remaining_queue": len(current_queue),
+                                "time_remaining_ms": hard_time_remaining_ms(),
+                            })
+                            if not (current_clicked or current_materialized or current_growth):
+                                final_residual_evidence = await collect_final_residual_evidence(
+                                    page,
+                                    args,
+                                    expected_total=expected_total,
+                                    best_progress=best_progress,
+                                    residual_queue=residual_queue,
+                                    bottom=bottom,
+                                )
+                                break
+                            final_residual_evidence = await collect_final_residual_evidence(
+                                page,
+                                args,
+                                expected_total=expected_total,
+                                best_progress=best_progress,
+                                residual_queue=residual_queue,
+                                bottom=bottom,
+                            )
+                        scroll = (final_residual_evidence or {}).get("scroll") or {}
+                        scroll_top = int(scroll.get("scrollTop") or 0)
+                        scroll_height = int(scroll.get("scrollHeight") or 0)
+                        client_height = int(scroll.get("clientHeight") or 0)
+                        near_bottom = bool(scroll_height and client_height and scroll_top + client_height >= scroll_height - max(12, client_height))
+                        if (
+                            int(final_residual_evidence.get("final_loaded_expansion_text_count") or 0) > 0
+                            and int(final_residual_evidence.get("residual_queue_count") or 0) == 0
+                            and int(final_residual_evidence.get("safe_candidates_in_current_viewport") or 0) == 0
+                            and int(final_residual_evidence.get("bottom_range_candidates") or 0) == 0
+                            and (bool(scroll.get("atBottom")) or near_bottom or residual_stale_exhausted)
+                            and not bool((bottom or {}).get("growth"))
+                        ):
+                            actionable_verify = await actionable_expansion_verify(
+                                page,
+                                args,
+                                final_residual_evidence=final_residual_evidence,
+                                residual_tombstones=residual_tombstones,
+                            )
+                        else:
+                            actionable_verify = {}
+        for actionable_round in range(12):
+            if time.monotonic() >= hard_deadline or not final_residual_evidence:
+                break
+            scroll = (final_residual_evidence or {}).get("scroll") or {}
+            scroll_top = int(scroll.get("scrollTop") or 0)
+            scroll_height = int(scroll.get("scrollHeight") or 0)
+            client_height = int(scroll.get("clientHeight") or 0)
+            near_bottom = bool(scroll_height and client_height and scroll_top + client_height >= scroll_height - max(12, client_height))
+            effective_residual_queue_count = 0 if residual_stale_exhausted and not residual_queue else int(final_residual_evidence.get("residual_queue_count") or 0)
+            if not (
+                int(final_residual_evidence.get("final_loaded_expansion_text_count") or 0) > 0
+                and effective_residual_queue_count == 0
+                and int(final_residual_evidence.get("safe_candidates_in_current_viewport") or 0) == 0
+                and int(final_residual_evidence.get("bottom_range_candidates") or 0) == 0
+                and (bool(scroll.get("atBottom")) or near_bottom or residual_stale_exhausted)
+                and not bool((bottom or {}).get("growth"))
+            ):
+                break
+            repeat_verify = await actionable_expansion_verify(
+                page,
+                args,
+                final_residual_evidence=final_residual_evidence,
+                residual_tombstones=residual_tombstones,
+            )
+            repeat_candidates = list((repeat_verify or {}).get("actionable_candidates") or [])
+            actionable_verify = repeat_verify
+            if not repeat_candidates:
+                break
+            recovery_queue = {}
+            for idx, item in enumerate(repeat_candidates[:80]):
+                label = str(item.get("label") or "").strip()
+                if not label:
+                    continue
+                category = str(item.get("category") or "residual_actionable").strip() or "residual_actionable"
+                position = max(0, int(item.get("approx_scroll_position") or 0))
+                key = f"actionable_repeat|{actionable_round}|{category}|{label}|{position}|{idx}"
+                recovery_queue[key] = {
+                    "key": key,
+                    "label": label,
+                    "category": category,
+                    "approx_scroll_position": position,
+                    "band": int(position / 350),
+                    "first_seen_step": -9300 - actionable_round,
+                    "last_seen_step": -9300 - actionable_round,
+                    "attempt_count": 0,
+                    "last_result": "actionable_repeat_seen",
+                    "last_reject_reason": "",
+                    "exact_scroll_position": True,
+                }
+            if not recovery_queue:
+                break
+            log("R45AY_ACTIONABLE_EXPANSION_RECOVERY_START", {
+                "round": actionable_round + 1,
+                "stage": "repeat_pre_terminal",
+                "candidate_count": len(recovery_queue),
+                "labels": sorted({str(item.get("label") or "") for item in recovery_queue.values() if str(item.get("label") or "")})[:40],
+                "time_remaining_ms": hard_time_remaining_ms(),
+            })
+            recovery_drain = await residual_forward_drain(
+                page,
+                cdp_session,
+                args,
+                residual_queue=recovery_queue,
+                expected_total=expected_total,
+                started_monotonic=started,
+                max_seconds=max_seconds,
+                pass_number=9300 + len(residual_drains) + actionable_round,
+                stale_text_keys=residual_text_stale_keys,
+                residual_tombstones=residual_tombstones,
+            )
+            residual_drains.append(recovery_drain)
+            clicked += int(recovery_drain.get("clicked") or 0)
+            bursts += int(recovery_drain.get("bursts") or 0)
+            materialized_bursts += int(recovery_drain.get("materialized_bursts") or 0)
+            click_timings_all.extend(list(recovery_drain.get("click_timings") or []))
+            settle_durations.extend(float(v) for v in list(recovery_drain.get("settle_durations") or []) if isinstance(v, (int, float)))
+            scan_durations.extend(float(v) for v in list(recovery_drain.get("scan_durations") or []) if isinstance(v, (int, float)))
+            max_scroll_height = max(max_scroll_height, int(recovery_drain.get("scrollHeight_end") or 0))
+            recovery_clicked = int(recovery_drain.get("residual_candidates_clicked") or recovery_drain.get("clicked") or 0)
+            recovery_materialized = int(recovery_drain.get("residual_candidates_materialized") or recovery_drain.get("materialized_bursts") or 0)
+            recovery_growth = bool(recovery_drain.get("growth")) or int(recovery_drain.get("scrollHeight_end") or 0) > int(recovery_drain.get("scrollHeight_start") or 0)
+            log("R45AY_ACTIONABLE_EXPANSION_RECOVERY_DONE", {
+                "round": actionable_round + 1,
+                "stage": "repeat_pre_terminal",
+                "clicked": recovery_clicked,
+                "materialized": recovery_materialized,
+                "growth": recovery_growth,
+                "remaining_queue": len(recovery_queue),
+                "time_remaining_ms": hard_time_remaining_ms(),
+            })
+            if not (recovery_clicked or recovery_materialized or recovery_growth):
+                break
+            final_residual_evidence = await collect_final_residual_evidence(
+                page,
+                args,
+                expected_total=expected_total,
+                best_progress=best_progress,
+                residual_queue=residual_queue,
+                bottom=bottom,
+            )
+            actionable_verify = {}
+        terminal_cleanup_progress_rounds = 0
+        terminal_cleanup_round_limit = 16
+        for cleanup_round in range(terminal_cleanup_round_limit):
+            if time.monotonic() >= hard_deadline or not final_residual_evidence:
+                break
+            current_candidates = int(final_residual_evidence.get("safe_candidates_in_current_viewport") or 0)
+            if current_candidates > 0:
+                current_scroll = (final_residual_evidence or {}).get("scroll") or {}
+                current_top = max(0, int(current_scroll.get("scrollTop") or 0))
+                labels = [str(label) for label in list(final_residual_evidence.get("current_viewport_candidate_labels") or []) if str(label)]
+                current_queue: Dict[str, Dict[str, Any]] = {}
+                for idx, label in enumerate(labels[:80]):
+                    key = f"terminal_cleanup_current|{cleanup_round}|{label}|{current_top}|{idx}"
+                    current_queue[key] = {
+                        "key": key,
+                        "label": label,
+                        "category": "terminal_cleanup_current",
+                        "approx_scroll_position": current_top,
+                        "band": int(current_top / 350),
+                        "first_seen_step": -9400 - cleanup_round,
+                        "last_seen_step": -9400 - cleanup_round,
+                        "attempt_count": 0,
+                        "last_result": "terminal_cleanup_current_seen",
+                        "last_reject_reason": "",
+                        "exact_scroll_position": True,
+                    }
+                if not current_queue:
+                    break
+                log("R45AY_ACTIONABLE_CURRENT_VIEWPORT_RECOVERY_START", {
+                    "round": cleanup_round + 1,
+                    "stage": "terminal_cleanup",
+                    "candidate_count": len(current_queue),
+                    "labels": sorted(set(labels))[:40],
+                    "scrollTop": current_top,
+                    "time_remaining_ms": hard_time_remaining_ms(),
+                })
+                cleanup_drain = await residual_forward_drain(
+                    page,
+                    cdp_session,
+                    args,
+                    residual_queue=current_queue,
+                    expected_total=expected_total,
+                    started_monotonic=started,
+                    max_seconds=max_seconds,
+                    pass_number=9400 + len(residual_drains) + cleanup_round,
+                    stale_text_keys=residual_text_stale_keys,
+                    residual_tombstones=residual_tombstones,
+                )
+                residual_drains.append(cleanup_drain)
+                clicked += int(cleanup_drain.get("clicked") or 0)
+                bursts += int(cleanup_drain.get("bursts") or 0)
+                materialized_bursts += int(cleanup_drain.get("materialized_bursts") or 0)
+                click_timings_all.extend(list(cleanup_drain.get("click_timings") or []))
+                settle_durations.extend(float(v) for v in list(cleanup_drain.get("settle_durations") or []) if isinstance(v, (int, float)))
+                scan_durations.extend(float(v) for v in list(cleanup_drain.get("scan_durations") or []) if isinstance(v, (int, float)))
+                max_scroll_height = max(max_scroll_height, int(cleanup_drain.get("scrollHeight_end") or 0))
+                cleanup_clicked = int(cleanup_drain.get("residual_candidates_clicked") or cleanup_drain.get("clicked") or 0)
+                cleanup_materialized = int(cleanup_drain.get("residual_candidates_materialized") or cleanup_drain.get("materialized_bursts") or 0)
+                cleanup_growth = bool(cleanup_drain.get("growth")) or int(cleanup_drain.get("scrollHeight_end") or 0) > int(cleanup_drain.get("scrollHeight_start") or 0)
+                log("R45AY_ACTIONABLE_CURRENT_VIEWPORT_RECOVERY_DONE", {
+                    "round": cleanup_round + 1,
+                    "stage": "terminal_cleanup",
+                    "clicked": cleanup_clicked,
+                    "materialized": cleanup_materialized,
+                    "growth": cleanup_growth,
+                    "remaining_queue": len(current_queue),
+                    "time_remaining_ms": hard_time_remaining_ms(),
+                })
+                if not (cleanup_clicked or cleanup_materialized or cleanup_growth):
+                    final_residual_evidence = await collect_final_residual_evidence(
+                        page,
+                        args,
+                        expected_total=expected_total,
+                        best_progress=best_progress,
+                        residual_queue=residual_queue,
+                        bottom=bottom,
+                    )
+                    break
+                terminal_cleanup_progress_rounds += 1
+                final_residual_evidence = await collect_final_residual_evidence(
+                    page,
+                    args,
+                    expected_total=expected_total,
+                    best_progress=best_progress,
+                    residual_queue=residual_queue,
+                    bottom=bottom,
+                )
+                actionable_verify = {}
+                continue
+            scroll = (final_residual_evidence or {}).get("scroll") or {}
+            scroll_top = int(scroll.get("scrollTop") or 0)
+            scroll_height = int(scroll.get("scrollHeight") or 0)
+            client_height = int(scroll.get("clientHeight") or 0)
+            near_bottom = bool(scroll_height and client_height and scroll_top + client_height >= scroll_height - max(12, client_height))
+            effective_residual_queue_count = 0 if residual_stale_exhausted and not residual_queue else int(final_residual_evidence.get("residual_queue_count") or 0)
+            if not (
+                int(final_residual_evidence.get("final_loaded_expansion_text_count") or 0) > 0
+                and effective_residual_queue_count == 0
+                and int(final_residual_evidence.get("bottom_range_candidates") or 0) == 0
+                and (bool(scroll.get("atBottom")) or near_bottom or residual_stale_exhausted)
+                and not bool((bottom or {}).get("growth"))
+            ):
+                break
+            cleanup_verify = await actionable_expansion_verify(
+                page,
+                args,
+                final_residual_evidence=final_residual_evidence,
+                residual_tombstones=residual_tombstones,
+            )
+            actionable_verify = cleanup_verify
+            cleanup_candidates = list((cleanup_verify or {}).get("actionable_candidates") or [])
+            if not cleanup_candidates:
+                break
+            recovery_queue = {}
+            for idx, item in enumerate(cleanup_candidates[:80]):
+                label = str(item.get("label") or "").strip()
+                if not label:
+                    continue
+                category = str(item.get("category") or "residual_actionable").strip() or "residual_actionable"
+                position = max(0, int(item.get("approx_scroll_position") or 0))
+                key = f"terminal_cleanup_verify|{cleanup_round}|{category}|{label}|{position}|{idx}"
+                recovery_queue[key] = {
+                    "key": key,
+                    "label": label,
+                    "category": category,
+                    "approx_scroll_position": position,
+                    "band": int(position / 350),
+                    "first_seen_step": -9500 - cleanup_round,
+                    "last_seen_step": -9500 - cleanup_round,
+                    "attempt_count": 0,
+                    "last_result": "terminal_cleanup_verify_seen",
+                    "last_reject_reason": "",
+                    "exact_scroll_position": True,
+                }
+            if not recovery_queue:
+                break
+            log("R45AY_ACTIONABLE_EXPANSION_RECOVERY_START", {
+                "round": cleanup_round + 1,
+                "stage": "terminal_cleanup",
+                "candidate_count": len(recovery_queue),
+                "labels": sorted({str(item.get("label") or "") for item in recovery_queue.values() if str(item.get("label") or "")})[:40],
+                "time_remaining_ms": hard_time_remaining_ms(),
+            })
+            cleanup_drain = await residual_forward_drain(
+                page,
+                cdp_session,
+                args,
+                residual_queue=recovery_queue,
+                expected_total=expected_total,
+                started_monotonic=started,
+                max_seconds=max_seconds,
+                pass_number=9500 + len(residual_drains) + cleanup_round,
+                stale_text_keys=residual_text_stale_keys,
+                residual_tombstones=residual_tombstones,
+            )
+            residual_drains.append(cleanup_drain)
+            clicked += int(cleanup_drain.get("clicked") or 0)
+            bursts += int(cleanup_drain.get("bursts") or 0)
+            materialized_bursts += int(cleanup_drain.get("materialized_bursts") or 0)
+            click_timings_all.extend(list(cleanup_drain.get("click_timings") or []))
+            settle_durations.extend(float(v) for v in list(cleanup_drain.get("settle_durations") or []) if isinstance(v, (int, float)))
+            scan_durations.extend(float(v) for v in list(cleanup_drain.get("scan_durations") or []) if isinstance(v, (int, float)))
+            max_scroll_height = max(max_scroll_height, int(cleanup_drain.get("scrollHeight_end") or 0))
+            cleanup_clicked = int(cleanup_drain.get("residual_candidates_clicked") or cleanup_drain.get("clicked") or 0)
+            cleanup_materialized = int(cleanup_drain.get("residual_candidates_materialized") or cleanup_drain.get("materialized_bursts") or 0)
+            cleanup_growth = bool(cleanup_drain.get("growth")) or int(cleanup_drain.get("scrollHeight_end") or 0) > int(cleanup_drain.get("scrollHeight_start") or 0)
+            log("R45AY_ACTIONABLE_EXPANSION_RECOVERY_DONE", {
+                "round": cleanup_round + 1,
+                "stage": "terminal_cleanup",
+                "clicked": cleanup_clicked,
+                "materialized": cleanup_materialized,
+                "growth": cleanup_growth,
+                "remaining_queue": len(recovery_queue),
+                "time_remaining_ms": hard_time_remaining_ms(),
+            })
+            if not (cleanup_clicked or cleanup_materialized or cleanup_growth):
+                break
+            terminal_cleanup_progress_rounds += 1
+            final_residual_evidence = await collect_final_residual_evidence(
+                page,
+                args,
+                expected_total=expected_total,
+                best_progress=best_progress,
+                residual_queue=residual_queue,
+                bottom=bottom,
+            )
+            actionable_verify = {}
+        if terminal_cleanup_progress_rounds >= terminal_cleanup_round_limit and time.monotonic() < hard_deadline:
+            log("R45AY_TERMINAL_CLEANUP_LIMIT_REACHED_WITH_PROGRESS", {
+                "round_limit": terminal_cleanup_round_limit,
+                "progress_rounds": terminal_cleanup_progress_rounds,
+                "time_remaining_ms": hard_time_remaining_ms(),
+                "reason": "terminal_cleanup_kept_materializing_candidates_until_round_limit",
+            })
+        if final_residual_evidence and time.monotonic() < hard_deadline:
+            scroll = (final_residual_evidence or {}).get("scroll") or {}
+            scroll_top = int(scroll.get("scrollTop") or 0)
+            scroll_height = int(scroll.get("scrollHeight") or 0)
+            client_height = int(scroll.get("clientHeight") or 0)
+            near_bottom = bool(scroll_height and client_height and scroll_top + client_height >= scroll_height - max(12, client_height))
+            effective_residual_queue_count = 0 if residual_stale_exhausted and not residual_queue else int(final_residual_evidence.get("residual_queue_count") or 0)
+            needs_final_actionable_verify = bool(
+                int(final_residual_evidence.get("final_loaded_expansion_text_count") or 0) > 0
+                and effective_residual_queue_count == 0
+                and int(final_residual_evidence.get("safe_candidates_in_current_viewport") or 0) == 0
+                and int(final_residual_evidence.get("bottom_range_candidates") or 0) == 0
+                and (bool(scroll.get("atBottom")) or near_bottom or residual_stale_exhausted)
+                and not bool((bottom or {}).get("growth"))
+                and not bool((actionable_verify or {}).get("open_html_exhausted"))
+                and int((actionable_verify or {}).get("actionable_count") or 0) == 0
+            )
+            if needs_final_actionable_verify:
+                log("R45AY_ACTIONABLE_EXPANSION_VERIFY_FINAL_START", {
+                    "final_loaded_expansion_text_count": int(final_residual_evidence.get("final_loaded_expansion_text_count") or 0),
+                    "residual_queue_count": effective_residual_queue_count,
+                    "safe_candidates_in_current_viewport": int(final_residual_evidence.get("safe_candidates_in_current_viewport") or 0),
+                    "bottom_range_candidates": int(final_residual_evidence.get("bottom_range_candidates") or 0),
+                    "nearBottom": near_bottom,
+                    "residual_stale_exhausted": residual_stale_exhausted,
+                    "time_remaining_ms": hard_time_remaining_ms(),
+                })
+                actionable_verify = await actionable_expansion_verify(
+                    page,
+                    args,
+                    final_residual_evidence=final_residual_evidence,
+                    residual_tombstones=residual_tombstones,
+                )
         terminal_proof = await terminal_proof_audit(
             page,
             expected_total=expected_total,
@@ -4233,6 +5077,10 @@ async def run_forward_throughput_engine(
         "text_merge_added": sum(int(run.get("added") or 0) for run in residual_queue_text_merges),
         "text_merge_updated": sum(int(run.get("updated") or 0) for run in residual_queue_text_merges),
         "text_merge_skipped_stale": sum(int(run.get("skipped_stale") or 0) for run in residual_queue_text_merges),
+        "residual_tombstone_count": len(residual_tombstones),
+        "residual_tombstone_skip_count": sum(int(run.get("tombstone_skips") or 0) for run in residual_queue_text_merges),
+        "stale_only_pass_suppressed_count": stale_only_pass_suppressed_count,
+        "residual_stale_exhausted": residual_stale_exhausted,
         "continued_after_residual_progress": residual_progress_continued,
         "reserve_triggered": residual_reserve_triggered,
         "residual_phase_ran": residual_phase_ran,
