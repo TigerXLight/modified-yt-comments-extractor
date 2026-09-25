@@ -728,6 +728,133 @@ function r45ayFinalBlockEvidence(opts){
     reason_for_block: expansionTextMatches.length ? 'expansion_text_still_visible_requires_recorded_rejection_or_more_sweeps' : 'no_visible_whitelisted_expansion_text_or_safe_candidates'
   };
 }
+function r45ayTerminalProofAudit(opts){
+  opts = opts || {};
+  const started = performance.now();
+  const expected = parseInt(opts.expectedTotal || 0, 10) || 0;
+  const residualQueueCount = parseInt(opts.residualQueueCount || 0, 10) || 0;
+  const finalExpansionTextCount = parseInt(opts.finalLoadedExpansionTextCount || 0, 10) || 0;
+  const safeCandidatesInCurrentViewport = parseInt(opts.safeCandidatesInCurrentViewport || 0, 10) || 0;
+  const openHtmlExhausted = !!opts.openHtmlExhausted;
+  const openHtmlExhaustedStatus = opts.openHtmlExhaustedStatus || null;
+  const scroller = r45axGetScroller();
+  const surface = r45ayResolveCommentSurface();
+  const root = surface.commentsRoot || scroller || null;
+  const scrollTop = scroller ? (scroller.scrollTop || 0) : 0;
+  const scrollHeight = scroller ? (scroller.scrollHeight || 0) : 0;
+  const clientHeight = scroller ? (scroller.clientHeight || 0) : 0;
+  const atBottom = !!(scroller && scrollTop + clientHeight >= scrollHeight - 8);
+  const nearBottom = !!(scroller && scrollTop + clientHeight >= scrollHeight - Math.max(12, clientHeight));
+  const loadedText = scroller ? String(scroller.innerText || scroller.textContent || '') : '';
+  const surfaceTextLength = r45ayApproxTextLength(root, 200000, 12000);
+  const progressSources = [];
+  if (scroller) {
+    progressSources.push({name:'terminal_scroller_inner_text', text:String(scroller.innerText || '')});
+    progressSources.push({name:'terminal_scroller_text_content', text:String(scroller.textContent || '')});
+  }
+  if (root && root !== scroller) {
+    progressSources.push({name:'terminal_comment_surface_text', text:String(root.innerText || root.textContent || '')});
+  }
+  const progressEvidence = r45ayProgressEvidenceFromSources(expected, progressSources);
+  const pageProgress = r45axProgressFromPage();
+  const expectedTotalEvidence = expected ? r45axExpectedTotalEvidence(expected) : null;
+  let progress = progressEvidence.progress || pageProgress || null;
+  if (pageProgress && (!progress || pageProgress.total > progress.total || (pageProgress.total === progress.total && pageProgress.current > progress.current))) {
+    progress = {...pageProgress, source:'r45axProgressFromPage'};
+  }
+  const expansionMatches = r45ayExpansionTextMatches(loadedText);
+  const loaderRx = /\b(Loading|See more comments|View more comments|More comments|Show more comments|View previous comments|See previous comments)\b/i;
+  const hasLoader = loaderRx.test(loadedText);
+  let commentLikeCount = 0;
+  let replyLikeCount = 0;
+  let loadedTotalLikeCount = 0;
+  let countReliable = false;
+  try {
+    const scope = root || scroller;
+    const nodes = scope ? Array.from(scope.querySelectorAll('[role="article"], [aria-label*="comment" i], [aria-label*="reply" i]')).slice(0, 5000) : [];
+    const seen = new Set();
+    for (const el of nodes) {
+      if (!el || seen.has(el) || r45axElementHidden(el)) continue;
+      seen.add(el);
+      const label = r45axNorm([el.getAttribute && (el.getAttribute('aria-label') || ''), el.textContent || ''].join(' '));
+      if (!label || /^(Like|Reply|Share|React)$/i.test(label)) continue;
+      if (/\bcomment\b/i.test(label)) commentLikeCount += 1;
+      if (/\brepl(?:y|ies)\b/i.test(label)) replyLikeCount += 1;
+    }
+    loadedTotalLikeCount = Math.max(commentLikeCount, commentLikeCount + replyLikeCount);
+    countReliable = false;
+  } catch(e) {
+    commentLikeCount = 0;
+    replyLikeCount = 0;
+    loadedTotalLikeCount = 0;
+    countReliable = false;
+  }
+  const progressFound = !!progress;
+  const progressCurrent = progress ? (parseInt(progress.current || 0, 10) || 0) : 0;
+  const progressTotal = progress ? (parseInt(progress.total || 0, 10) || 0) : 0;
+  const expectedFoundInProgressPhrase = !!(
+    progress
+    && expected
+    && (progressTotal === expected || progressTotal === expected - 1)
+  );
+  const exhausted = !!(
+    scroller
+    && (finalExpansionTextCount === 0 || openHtmlExhausted)
+    && residualQueueCount === 0
+    && safeCandidatesInCurrentViewport === 0
+    && (expansionMatches.length === 0 || openHtmlExhausted)
+    && !hasLoader
+    && (atBottom || nearBottom)
+  );
+  let proofStatus = 'EXPECTED_TOTAL_UNSATISFIED';
+  let reason = 'terminal_audit_found_remaining_work_or_missing_surface';
+  if (expected && progress && progressTotal === expected && progressCurrent >= expected) {
+    proofStatus = 'EXPECTED_TOTAL_REACHED';
+    reason = 'progress_marker_reached_expected_total';
+  } else if (expected && progress && progressTotal === expected - 1 && progressCurrent >= expected - 1) {
+    proofStatus = 'EXPECTED_TOTAL_REACHED';
+    reason = 'progress_marker_reached_expected_minus_one_visible_total';
+  } else if (expected && countReliable && loadedTotalLikeCount >= expected) {
+    proofStatus = 'EXPECTED_TOTAL_REACHED';
+    reason = 'verified_loaded_comment_count_reached_expected_total';
+  } else if (expected && progress && progressTotal === expected && progressCurrent < expected) {
+    proofStatus = 'EXPECTED_TOTAL_UNSATISFIED';
+    reason = 'trusted_progress_marker_below_expected_total';
+  } else if (exhausted) {
+    proofStatus = 'EXPANSION_EXHAUSTED_EXPECTED_UNPROVEN';
+    reason = openHtmlExhausted ? 'open_html_actionable_expansions_exhausted_but_expected_total_not_proven' : 'no_loaded_expansion_controls_or_residuals_but_expected_total_not_proven';
+  }
+  return {
+    ok:!!scroller,
+    expected_total:expected,
+    progress_found:progressFound,
+    progress_current:progressCurrent,
+    progress_total:progressTotal,
+    progress_source:progress ? (progress.source || '') : '',
+    expected_or_minus_one_found_in_progress_phrase:expectedFoundInProgressPhrase,
+    expected_total_evidence:expectedTotalEvidence,
+    loaded_comment_like_count:commentLikeCount,
+    loaded_reply_like_count:replyLikeCount,
+    loaded_total_like_count:loadedTotalLikeCount,
+    loaded_count_reliable:countReliable,
+    loaded_scroller_text_length:loadedText.length,
+    comment_surface_text_length:surfaceTextLength,
+    final_loaded_expansion_text_count:finalExpansionTextCount,
+    loaded_expansion_text_count_from_audit:expansionMatches.length,
+    residual_queue_count:residualQueueCount,
+    safe_candidates_in_current_viewport: safeCandidatesInCurrentViewport,
+    atBottom,
+    nearBottom,
+    has_loader:hasLoader,
+    height_growing:false,
+    proof_status:proofStatus,
+    reason,
+    open_html_exhausted_status:openHtmlExhaustedStatus,
+    duration_ms:Math.round((performance.now() - started) * 100) / 100,
+    scroll:{scrollTop, scrollHeight, clientHeight, atBottom, nearBottom},
+    comment_surface:{ok:!!surface.ok, confidence:surface.confidence || 0, fallback_to_body:!!surface.fallback_to_body}
+  };
+}
 function r45ayLocateExpansionTextCandidates(opts){
   opts = opts || {};
   const started = performance.now();
@@ -1666,6 +1793,7 @@ window.r45ayPageLoopScan = r45ayPageLoopScan;
 window.r45ayTrustedCdpSettle = r45ayTrustedCdpSettle;
 window.r45ayDispatchPageBurst = r45ayDispatchPageBurst;
 window.r45ayFinalBlockEvidence = r45ayFinalBlockEvidence;
+window.r45ayTerminalProofAudit = r45ayTerminalProofAudit;
 window.r45ayLocateExpansionTextCandidates = r45ayLocateExpansionTextCandidates;
 window.r45ayRunInstantPageLoop = r45ayRunInstantPageLoop;
 window.r45aySyntheticStats = r45aySyntheticStats;
@@ -2821,6 +2949,213 @@ async def collect_final_residual_evidence(
     return evidence
 
 
+async def terminal_proof_audit(
+    page,
+    *,
+    expected_total: int,
+    final_residual_evidence: Dict[str, Any],
+    actionable_verify: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    scroll = (final_residual_evidence or {}).get("scroll") or {}
+    open_html_exhausted = bool((actionable_verify or {}).get("open_html_exhausted"))
+    start_payload = {
+        "expected_total": expected_total,
+        "final_loaded_expansion_text_count": int((final_residual_evidence or {}).get("final_loaded_expansion_text_count") or 0),
+        "residual_queue_count": int((final_residual_evidence or {}).get("residual_queue_count") or 0),
+        "safe_candidates_in_current_viewport": int((final_residual_evidence or {}).get("safe_candidates_in_current_viewport") or 0),
+        "open_html_exhausted": open_html_exhausted,
+        "atBottom": bool(scroll.get("atBottom")),
+        "scrollTop": int(scroll.get("scrollTop") or 0),
+        "scrollHeight": int(scroll.get("scrollHeight") or 0),
+        "clientHeight": int(scroll.get("clientHeight") or 0),
+    }
+    log("R45AY_TERMINAL_PROOF_AUDIT_START", start_payload)
+    result = await page.evaluate(
+        """(opts) => r45ayTerminalProofAudit(opts)""",
+        {
+            "expectedTotal": int(expected_total or 0),
+            "finalLoadedExpansionTextCount": int((final_residual_evidence or {}).get("final_loaded_expansion_text_count") or 0),
+            "residualQueueCount": int((final_residual_evidence or {}).get("residual_queue_count") or 0),
+            "safeCandidatesInCurrentViewport": int((final_residual_evidence or {}).get("safe_candidates_in_current_viewport") or 0),
+            "openHtmlExhausted": open_html_exhausted,
+            "openHtmlExhaustedStatus": {
+                "open_html_exhausted": open_html_exhausted,
+                "actionable_count": int((actionable_verify or {}).get("actionable_count") or 0),
+                "stale_text_count": int((actionable_verify or {}).get("stale_text_count") or 0),
+                "unsafe_rejected_count": int((actionable_verify or {}).get("unsafe_rejected_count") or 0),
+                "locator_miss_count": int((actionable_verify or {}).get("locator_miss_count") or 0),
+                "loader_or_growth_pending": bool((actionable_verify or {}).get("loader_or_growth_pending")),
+                "reason": str((actionable_verify or {}).get("reason") or ""),
+            },
+        },
+    )
+    result = dict(result or {})
+    log("R45AY_TERMINAL_PROOF_AUDIT_RESULT", result)
+    return result
+
+
+async def actionable_expansion_verify(
+    page,
+    args: argparse.Namespace,
+    *,
+    final_residual_evidence: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Cold final verifier: classify stale expansion-looking text without clicking."""
+    started = time.perf_counter()
+    samples = [str(item) for item in list((final_residual_evidence or {}).get("final_loaded_expansion_text_samples") or []) if str(item)]
+    labels_to_check = sorted(set(samples))
+    scroll = (final_residual_evidence or {}).get("scroll") or {}
+    log("R45AY_ACTIONABLE_EXPANSION_VERIFY_START", {
+        "labels_checked": labels_to_check,
+        "final_loaded_expansion_text_count": int((final_residual_evidence or {}).get("final_loaded_expansion_text_count") or 0),
+        "residual_queue_count": int((final_residual_evidence or {}).get("residual_queue_count") or 0),
+        "safe_candidates_in_current_viewport": int((final_residual_evidence or {}).get("safe_candidates_in_current_viewport") or 0),
+        "bottom_range_candidates": int((final_residual_evidence or {}).get("bottom_range_candidates") or 0),
+        "atBottom": bool(scroll.get("atBottom")),
+    })
+    start_state = await page.evaluate("""() => {
+      const s = r45axGetScroller();
+      return s ? {
+        scrollTop:Math.round(s.scrollTop||0),
+        scrollHeight:Math.round(s.scrollHeight||0),
+        clientHeight:Math.round(s.clientHeight||0),
+        atBottom:(s.scrollTop+s.clientHeight>=s.scrollHeight-8)
+      } : {scrollTop:0, scrollHeight:0, clientHeight:0, atBottom:false};
+    }""")
+    locator = await locate_residual_text_candidates(page, args, max_candidates=240)
+    located = list(locator.get("candidates") or [])
+    rejected = list(locator.get("rejected_items") or [])
+    label_filter = set(labels_to_check)
+    if label_filter:
+        located = [item for item in located if str(item.get("label") or "") in label_filter]
+        rejected = [item for item in rejected if str(item.get("label") or "") in label_filter]
+    positions: List[int] = []
+    seen_bands = set()
+    for item in located:
+        pos = max(0, int(item.get("approx_scroll_position") or 0))
+        band = int(pos / 260)
+        if band in seen_bands:
+            continue
+        seen_bands.add(band)
+        positions.append(pos)
+    positions = sorted(positions)[:80]
+    scan_ms_values: List[float] = []
+    checked_positions: List[int] = []
+    actionable_labels = set()
+    local_text_labels = set()
+    loader_or_growth_pending = False
+    include_guarded = bool(args.include_guarded_view_more)
+    start_scroll_height = int((start_state or {}).get("scrollHeight") or 0)
+    client_height = max(220, int((start_state or {}).get("clientHeight") or 0) or 520)
+    for pos in positions:
+        scroll_top = max(0, pos - int(client_height * 0.35))
+        state = await page.evaluate(
+            """(top) => {
+              const s = r45axGetScroller();
+              if (!s) return {ok:false, scrollTop:0, scrollHeight:0, clientHeight:0};
+              s.scrollTop = Math.max(0, Math.min(Number(top)||0, Math.max(0, (s.scrollHeight||0) - (s.clientHeight||0))));
+              return {ok:true, scrollTop:Math.round(s.scrollTop||0), scrollHeight:Math.round(s.scrollHeight||0), clientHeight:Math.round(s.clientHeight||0)};
+            }""",
+            scroll_top,
+        )
+        checked_positions.append(int((state or {}).get("scrollTop") or scroll_top))
+        await page.wait_for_timeout(24)
+        scan = await page.evaluate(
+            """(opts) => {
+              const scan = r45ayPageLoopScan(opts);
+              const s = r45axGetScroller();
+              const localText = s ? r45ayExpansionTextMatches(r45ayVisibleScrollerText(s)) : [];
+              const counts = scan.counts || {};
+              return {
+                ok:!!scan.ok,
+                candidateCount:scan.candidateCount || 0,
+                labels:(scan.items || []).map(item => item.label).slice(0, 80),
+                categories:(scan.items || []).map(item => item.category).slice(0, 80),
+                rejectedCount:(scan.rejected || []).length,
+                localExpansionTextMatches:localText,
+                scanDurationMs:scan.scanDurationMs || ((scan.scanStats || {}).scan_ms) || 0,
+                loaderCount:counts.comment_list_loader || 0,
+                scroll:scan.scroller || null
+              };
+            }""",
+            {
+                "maxCandidates": 80,
+                "includeGuardedViewMore": include_guarded,
+                "includeProgress": False,
+                "includeExpectedEvidence": False,
+                "preferPointProbe": True,
+                "allowRoleFallback": False,
+                "allowVisibleTextFallback": False,
+            },
+        )
+        scan_ms_values.append(float((scan or {}).get("scanDurationMs") or 0.0))
+        scan_labels = {str(label) for label in list((scan or {}).get("labels") or []) if str(label)}
+        local_labels = {str(label) for label in list((scan or {}).get("localExpansionTextMatches") or []) if str(label)}
+        # Any safe expansion candidate in a final checked window is actionable,
+        # even if it was not one of the sampled stale text strings.
+        actionable_labels.update(scan_labels)
+        if label_filter:
+            local_text_labels.update(local_labels.intersection(label_filter))
+        else:
+            local_text_labels.update(local_labels)
+        if int((scan or {}).get("loaderCount") or 0):
+            loader_or_growth_pending = True
+        scan_scroll = (scan or {}).get("scroll") or {}
+        if int(scan_scroll.get("scrollHeight") or 0) > start_scroll_height:
+            loader_or_growth_pending = True
+    await page.evaluate(
+        """(top) => {
+          const s = r45axGetScroller();
+          if (s) s.scrollTop = Math.max(0, Math.min(Number(top)||0, Math.max(0, (s.scrollHeight||0) - (s.clientHeight||0))));
+        }""",
+        int((start_state or {}).get("scrollTop") or 0),
+    )
+    labels_with_locator_candidate = {str(item.get("label") or "") for item in located if str(item.get("label") or "")}
+    rejected_labels = {str(item.get("label") or "") for item in rejected if str(item.get("label") or "")}
+    checked_label_set = set(labels_to_check) or labels_with_locator_candidate.union(rejected_labels).union(local_text_labels)
+    locator_miss_labels = sorted(label for label in checked_label_set if label and label not in labels_with_locator_candidate and label not in rejected_labels)
+    stale_labels = sorted(label for label in checked_label_set if label and label not in actionable_labels and label not in rejected_labels and label not in locator_miss_labels)
+    if local_text_labels:
+        for label in local_text_labels:
+            if label not in actionable_labels and label not in rejected_labels and label not in locator_miss_labels:
+                stale_labels.append(label)
+        stale_labels = sorted(set(stale_labels))
+    unsafe_rejected_count = len(rejected)
+    actionable_count = len(actionable_labels)
+    open_html_exhausted = bool(
+        actionable_count == 0
+        and int((final_residual_evidence or {}).get("residual_queue_count") or 0) == 0
+        and int((final_residual_evidence or {}).get("safe_candidates_in_current_viewport") or 0) == 0
+        and int((final_residual_evidence or {}).get("bottom_range_candidates") or 0) == 0
+        and not loader_or_growth_pending
+    )
+    reason = (
+        "no_actionable_safe_expansion_candidates_found_for_remaining_text"
+        if open_html_exhausted
+        else "actionable_or_loading_evidence_remains"
+    )
+    result = {
+        "labels_checked": labels_to_check,
+        "actionable_count": actionable_count,
+        "actionable_labels": sorted(actionable_labels)[:40],
+        "stale_text_count": len(stale_labels),
+        "stale_text_labels": stale_labels[:40],
+        "unsafe_rejected_count": unsafe_rejected_count,
+        "unsafe_rejected_labels": sorted(rejected_labels)[:40],
+        "locator_miss_count": len(locator_miss_labels),
+        "locator_miss_labels": locator_miss_labels[:40],
+        "loader_or_growth_pending": loader_or_growth_pending,
+        "checked_positions": checked_positions[:80],
+        "scan_ms": value_summary(scan_ms_values),
+        "locator": {k: v for k, v in locator.items() if k not in {"candidates", "rejected_items"}},
+        "reason": reason,
+        "open_html_exhausted": open_html_exhausted,
+        "duration_ms": round((time.perf_counter() - started) * 1000.0, 3),
+    }
+    log("R45AY_ACTIONABLE_EXPANSION_VERIFY_RESULT", result)
+    return result
+
+
 async def locate_residual_text_candidates(
     page,
     args: argparse.Namespace,
@@ -3207,6 +3542,8 @@ async def run_forward_throughput_engine(
     last_residual_cycle_made_progress = False
     last_residual_cycle_no_progress = False
     final_residual_evidence: Dict[str, Any] = {}
+    terminal_proof: Dict[str, Any] = {}
+    actionable_verify: Dict[str, Any] = {}
     residual_reserve_triggered = False
     residual_phase_ran = False
     residual_phase_skipped_no_time = False
@@ -3806,8 +4143,53 @@ async def run_forward_throughput_engine(
                 residual_queue=residual_queue,
                 bottom=bottom,
             )
+    if final_residual_evidence:
+        scroll = (final_residual_evidence or {}).get("scroll") or {}
+        scroll_top = int(scroll.get("scrollTop") or 0)
+        scroll_height = int(scroll.get("scrollHeight") or 0)
+        client_height = int(scroll.get("clientHeight") or 0)
+        near_bottom = bool(scroll_height and client_height and scroll_top + client_height >= scroll_height - max(12, client_height))
+        should_verify_actionable = bool(
+            int(final_residual_evidence.get("final_loaded_expansion_text_count") or 0) > 0
+            and int(final_residual_evidence.get("residual_queue_count") or 0) == 0
+            and int(final_residual_evidence.get("safe_candidates_in_current_viewport") or 0) == 0
+            and int(final_residual_evidence.get("bottom_range_candidates") or 0) == 0
+            and (bool(scroll.get("atBottom")) or near_bottom)
+            and not bool((bottom or {}).get("growth"))
+        )
+        if should_verify_actionable:
+            actionable_verify = await actionable_expansion_verify(
+                page,
+                args,
+                final_residual_evidence=final_residual_evidence,
+            )
+        terminal_proof = await terminal_proof_audit(
+            page,
+            expected_total=expected_total,
+            final_residual_evidence=final_residual_evidence,
+            actionable_verify=actionable_verify,
+        )
+        proof_status = str(terminal_proof.get("proof_status") or "")
+        if proof_status == "EXPECTED_TOTAL_REACHED":
+            ok = True
+    open_html_exhausted_pass = bool(
+        int(final_residual_evidence.get("residual_queue_count") or 0) == 0
+        and int(final_residual_evidence.get("safe_candidates_in_current_viewport") or 0) == 0
+        and int(final_residual_evidence.get("bottom_range_candidates") or 0) == 0
+        and fallback_count == 0
+        and target_drift_count == 0
+        and (
+            bool(actionable_verify and actionable_verify.get("open_html_exhausted"))
+            or (
+                int(final_residual_evidence.get("final_loaded_expansion_text_count") or 0) == 0
+                and str((terminal_proof or {}).get("proof_status") or "") == "EXPANSION_EXHAUSTED_EXPECTED_UNPROVEN"
+            )
+        )
+    )
     if ok:
         status = "PASS_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_REACHED"
+    elif open_html_exhausted_pass:
+        status = "PASS_R45AY_TRUSTED_CDP_EXPANSION_EXHAUSTED_OPEN_HTML"
     elif (
         final_residual_evidence
         and not final_residual_evidence.get("terminal_block_allowed")
@@ -3821,7 +4203,13 @@ async def run_forward_throughput_engine(
             else "BLOCKED_R45AY_TRUSTED_CDP_TIME_BUDGET_EXPIRED_WITHOUT_TERMINAL_PROOF"
         )
     elif final_residual_evidence and final_residual_evidence.get("terminal_block_allowed"):
-        status = "BLOCKED_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_UNSATISFIED"
+        proof_status = str((terminal_proof or {}).get("proof_status") or "")
+        if proof_status == "EXPANSION_EXHAUSTED_EXPECTED_UNPROVEN":
+            status = "BLOCKED_R45AY_TRUSTED_CDP_EXPANSION_EXHAUSTED_EXPECTED_UNPROVEN"
+        elif proof_status == "EXPECTED_TOTAL_UNSATISFIED":
+            status = "BLOCKED_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_UNSATISFIED"
+        else:
+            status = "BLOCKED_R45AY_TRUSTED_CDP_TIME_BUDGET_EXPIRED_WITHOUT_TERMINAL_PROOF"
     else:
         status = "BLOCKED_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_UNSATISFIED" if bottom_checks and bool((bottom or {}).get("terminal")) else "BLOCKED_R45AY_TRUSTED_CDP_TIME_BUDGET_EXPIRED_WITHOUT_TERMINAL_PROOF"
     elapsed_ms = total_elapsed_ms()
@@ -3858,7 +4246,7 @@ async def run_forward_throughput_engine(
         "bottom_loading_scroll_count": bottom_loading_scroll_count,
         "comment_surface_scope_leak_count": comment_surface_scope_leak_count,
     }
-    log("R45AY_FORWARD_TIMING", {"clicked": clicked, "clicks_per_minute": clicks_per_minute, "materialized_bursts": materialized_bursts, "inert_count": inert_count, "forward_bands_scanned": forward_bands_scanned, "bottom_range_bands_scanned": bottom_range_bands_scanned, "max_scroll_height": max_scroll_height, "fallback_count": fallback_count, "target_drift_count": target_drift_count, "cdp_events_per_click": timing.get("clicks", {}).get("click_count") and 2.0 or 0.0, "median_scan_duration_ms": timing["scan_duration"]["median_ms"], "p95_scan_duration_ms": timing["scan_duration"]["p95_ms"], "median_settle_ms": timing["adaptive_settle"]["median_ms"], "p95_settle_ms": timing["adaptive_settle"]["p95_ms"], "status": status, "elapsed_ms": elapsed_ms, **residual_summary})
+    log("R45AY_FORWARD_TIMING", {"clicked": clicked, "clicks_per_minute": clicks_per_minute, "materialized_bursts": materialized_bursts, "inert_count": inert_count, "forward_bands_scanned": forward_bands_scanned, "bottom_range_bands_scanned": bottom_range_bands_scanned, "max_scroll_height": max_scroll_height, "fallback_count": fallback_count, "target_drift_count": target_drift_count, "cdp_events_per_click": timing.get("clicks", {}).get("click_count") and 2.0 or 0.0, "median_scan_duration_ms": timing["scan_duration"]["median_ms"], "p95_scan_duration_ms": timing["scan_duration"]["p95_ms"], "median_settle_ms": timing["adaptive_settle"]["median_ms"], "p95_settle_ms": timing["adaptive_settle"]["p95_ms"], "terminal_proof_status": (terminal_proof or {}).get("proof_status"), "actionable_open_html_exhausted": bool((actionable_verify or {}).get("open_html_exhausted")), "status": status, "elapsed_ms": elapsed_ms, **residual_summary})
     gate_summary = {
         "scrollGateAllowedCount": scroll_gate_allowed_count,
         "scrollGateSuppressedCount": scroll_gate_suppressed_count,
@@ -3868,7 +4256,7 @@ async def run_forward_throughput_engine(
         "bottomLoadingScrollCount": bottom_loading_scroll_count,
         "commentSurfaceScopeLeakCount": comment_surface_scope_leak_count,
     }
-    return {"ok": ok, "status": status, "clicked": clicked, "bursts": bursts, "materializedBursts": materialized_bursts, "fallbackCount": fallback_count, "targetDriftCount": target_drift_count, "bestProgress": best_progress, "scrolls": scrolls, "trustedWheelScrolls": trusted_wheel_scrolls, "loaderClicks": loader_clicks, "falseBottomRecoveries": 0, "bottomRangeChecks": bottom_checks, "forwardBandsScanned": forward_bands_scanned, "bottomRangeBandsScanned": bottom_range_bands_scanned, "inertCount": inert_count, "maxScrollHeight": max_scroll_height, "totalCandidatesSeen": total_candidates_seen, "fullSweepRetries": 0, "lastFullSurfaceSweep": {}, "largeBucketBootstrap": bootstrap, "residualDrains": residual_drains, "residualSummary": residual_summary, "gateSummary": gate_summary, "finalResidualEvidence": final_residual_evidence, "elapsed_ms": elapsed_ms, "events": events, "timing": timing, "metrics": {"clickTimings": click_timings_all, "scanDurations": scan_durations, "settleDurations": settle_durations, "emptyScrollDurations": scroll_durations}}
+    return {"ok": ok, "openHtmlExhaustedPass": open_html_exhausted_pass, "status": status, "clicked": clicked, "bursts": bursts, "materializedBursts": materialized_bursts, "fallbackCount": fallback_count, "targetDriftCount": target_drift_count, "bestProgress": best_progress, "scrolls": scrolls, "trustedWheelScrolls": trusted_wheel_scrolls, "loaderClicks": loader_clicks, "falseBottomRecoveries": 0, "bottomRangeChecks": bottom_checks, "forwardBandsScanned": forward_bands_scanned, "bottomRangeBandsScanned": bottom_range_bands_scanned, "inertCount": inert_count, "maxScrollHeight": max_scroll_height, "totalCandidatesSeen": total_candidates_seen, "fullSweepRetries": 0, "lastFullSurfaceSweep": {}, "largeBucketBootstrap": bootstrap, "residualDrains": residual_drains, "residualSummary": residual_summary, "gateSummary": gate_summary, "finalResidualEvidence": final_residual_evidence, "actionableExpansionVerify": actionable_verify, "terminalProofAudit": terminal_proof, "elapsed_ms": elapsed_ms, "events": events, "timing": timing, "metrics": {"clickTimings": click_timings_all, "scanDurations": scan_durations, "settleDurations": settle_durations, "emptyScrollDurations": scroll_durations}}
 
 
 async def run_trusted_cdp_engine(page, cdp_session: Any, args: argparse.Namespace, story: str) -> Dict[str, Any]:
@@ -4572,6 +4960,8 @@ async def run_live(args: argparse.Namespace) -> int:
                 "target_guard_ok": bool(final_guard.get("ok")),
                 "residual_summary": trusted_result.get("residualSummary"),
                 "final_loaded_expansion_text_count": ((trusted_result.get("finalResidualEvidence") or {}).get("final_loaded_expansion_text_count")),
+                "actionable_expansion_verify": trusted_result.get("actionableExpansionVerify"),
+                "terminal_proof_audit": trusted_result.get("terminalProofAudit"),
             })
             receipt.update({
                 "instant_engine": "trusted_cdp",
@@ -4587,12 +4977,21 @@ async def run_live(args: argparse.Namespace) -> int:
                 "fallback_count": int(trusted_result.get("fallbackCount") or 0),
                 "target_drift_count": target_drift_count,
                 "best_progress": trusted_result.get("bestProgress"),
+                "actionable_expansion_verify": trusted_result.get("actionableExpansionVerify"),
+                "terminal_proof_audit": trusted_result.get("terminalProofAudit"),
                 "timing": trusted_timing,
                 "clicks_per_minute": clicks_per_minute,
                 "target_guard": final_guard,
             })
             expected = int(args.expected_total_comments or 0)
-            passed_expected = bool(expected and r45ax_progress_gate_ok(trusted_result.get("bestProgress"), expected))
+            terminal_proof_status = str(((trusted_result.get("terminalProofAudit") or {}).get("proof_status")) or "")
+            passed_expected = bool(
+                expected
+                and (
+                    r45ax_progress_gate_ok(trusted_result.get("bestProgress"), expected)
+                    or terminal_proof_status == "EXPECTED_TOTAL_REACHED"
+                )
+            )
             if not final_guard.get("ok"):
                 receipt.update({
                     "status": "BLOCKED_TARGET_DRIFT",
@@ -4619,6 +5018,31 @@ async def run_live(args: argparse.Namespace) -> int:
                 (run_dir / "r45ay_receipt.json").write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding="utf-8")
                 await context.close()
                 return 0
+            open_html_status = str(trusted_result.get("status") or "")
+            if trusted_result.get("openHtmlExhaustedPass") and open_html_status:
+                receipt.update({
+                    "status": open_html_status,
+                    "auto_expand_summary": {
+                        "status": "open_html_exhausted_expected_total_unproven",
+                        "best_progress": trusted_result.get("bestProgress"),
+                        "clicked": clicked,
+                        "bursts": trusted_result.get("bursts"),
+                        "materialized_bursts": trusted_result.get("materializedBursts"),
+                        "final_loaded_expansion_text_count": ((trusted_result.get("finalResidualEvidence") or {}).get("final_loaded_expansion_text_count")),
+                        "actionable_expansion_verify": trusted_result.get("actionableExpansionVerify"),
+                        "terminal_proof_audit": trusted_result.get("terminalProofAudit"),
+                    },
+                })
+                log("R45AY_TRUSTED_CDP_OPEN_HTML_EXHAUSTED", {
+                    "status": open_html_status,
+                    "clicked": clicked,
+                    "clicks_per_minute": clicks_per_minute,
+                    "actionable_expansion_verify": trusted_result.get("actionableExpansionVerify"),
+                    "terminal_proof_audit": trusted_result.get("terminalProofAudit"),
+                })
+                (run_dir / "r45ay_receipt.json").write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding="utf-8")
+                await context.close()
+                return 0
             status = str(trusted_result.get("status") or "BLOCKED_R45AY_TRUSTED_CDP_EXPECTED_TOTAL_UNSATISFIED")
             receipt.update({
                 "status": status,
@@ -4634,6 +5058,8 @@ async def run_live(args: argparse.Namespace) -> int:
                 "clicks_per_minute": clicks_per_minute,
                 "residual_summary": trusted_result.get("residualSummary"),
                 "final_residual_evidence": trusted_result.get("finalResidualEvidence"),
+                "actionable_expansion_verify": trusted_result.get("actionableExpansionVerify"),
+                "terminal_proof_audit": trusted_result.get("terminalProofAudit"),
                 "failure_artifacts": receipt["failure_artifacts"],
             })
             (run_dir / "r45ay_receipt.json").write_text(json.dumps(receipt, indent=2, ensure_ascii=False), encoding="utf-8")
